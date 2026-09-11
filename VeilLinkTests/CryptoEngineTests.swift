@@ -103,7 +103,7 @@ extension CryptoEngineTests {
     }
 
     func testReplayWindowAcceptsOutOfOrderOnceAndRejectsDuplicate() {
-        var window = ReplayWindow(); XCTAssertTrue(window.accept(10)); XCTAssertTrue(window.accept(12)); XCTAssertTrue(window.accept(11)); XCTAssertFalse(window.accept(11)); XCTAssertFalse(window.accept(0)); XCTAssertFalse(window.accept(1))
+        var window = ReplayWindow(); XCTAssertTrue(window.accept(10)); XCTAssertTrue(window.accept(12)); XCTAssertTrue(window.accept(11)); XCTAssertFalse(window.accept(11)); XCTAssertFalse(window.accept(0)); XCTAssertTrue(window.accept(66)); XCTAssertFalse(window.accept(1))
     }
 
     func testBLEAssemblerRejectsOversizedPacket() {
