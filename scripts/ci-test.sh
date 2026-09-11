@@ -29,5 +29,4 @@ xcodebuild \
   -configuration Debug \
   -destination "platform=iOS Simulator,id=$DEVICE_ID" \
   -resultBundlePath TestResults.xcresult \
-  CODE_SIGNING_ALLOWED=NO \
   test
