@@ -69,7 +69,7 @@ struct OnboardingView: View {
                     showsImporter = true
                 } label: {
                     Label("从加密备份恢复", systemImage: "arrow.counterclockwise.circle")
-                        .fontWeight(.medium)
+                        .font(.body.weight(.medium))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
                         .background(VeilTheme.elevated)
