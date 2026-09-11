@@ -21,7 +21,7 @@ jobs:
           rm -rf "$RUNNER_TEMP/veillink-v022"
           mkdir -p "$RUNNER_TEMP/veillink-v022"
           unzip -q VeilLink_V0.2.2_CHECKPOINT_RuntimeStability.zip -d "$RUNNER_TEMP/veillink-v022"
-          rsync -a "$RUNNER_TEMP/veillink-v022/veillink_v02/" ./
+          rsync -a --exclude '.github/workflows/' "$RUNNER_TEMP/veillink-v022/veillink_v02/" ./
       - name: Commit synchronized source
         run: |
           git config user.name "github-actions[bot]"
