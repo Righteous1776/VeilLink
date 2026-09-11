@@ -43,3 +43,7 @@ targets:
       - path: VeilLinkTests
     dependencies:
       - target: VeilLink
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.VeilLinkTests
