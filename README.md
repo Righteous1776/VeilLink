@@ -12,15 +12,26 @@ to compact iPhone screens and regular-width iPad layouts.
 - CoreBluetooth central + peripheral discovery and state restoration.
 - Signed identity hello, ephemeral X25519 handshake and six-digit verification.
 - ChaCha20-Poly1305 encrypted text packets with replay counters.
-- Fragmented BLE GATT transport with flow-aware queues and JPEG transfer.
+- Fragmented BLE GATT transport with flow-aware queues and resumable JPEG / HEIC / PNG transfer.
 - SQLite WAL storage with encrypted message bodies.
 - Password-encrypted ZIP backup and rollback-first restore path.
 - Hidden black-and-gold Owner Mode with expiring, privacy-bounded capabilities.
 - GitHub Actions workflows for simulator compilation and unsigned IPA packaging.
 
-Resumable attachment checkpoints, multi-hop relay, signed Owner token generation,
-and full on-device BLE testing remain for the next
-iteration. Their boundaries are already represented in the architecture.
+The current V0.2 engineering checkpoints additionally add compact binary envelopes,
+bounded BLE reassembly/queue memory, persistent outbound resend with authenticated
+ACK handling, explicit delivery failure reasons, manual retry, and Protocol 4
+receiver-confirmed resumable image transfer. V0.2.2 further tightens runtime stability with
+96 KB wire-aligned BLE reassembly budgets, per-source invalid-packet isolation, batched
+SQLite maintenance, and self-healing completed-attachment state. Images are split into
+authenticated 48 KiB application chunks whose encrypted checkpoints survive disconnects
+and app relaunches. The transfer UI now uses checkpoint-driven shard animation: the sender's
+local photo fragments as confirmed chunks leave, while the receiver assembles an
+encrypted shard field and reveals the real image only after integrity validation.
+
+Multi-hop relay, signed Owner token generation, and full on-device BLE testing
+remain for later iterations. Their boundaries are already represented in the
+architecture.
 
 ## Build entirely on GitHub
 
@@ -47,8 +58,12 @@ open VeilLink.xcodeproj
 ## Security status
 
 This is an engineering prototype, not an independently audited cryptographic
-product. Do not represent V0.1 as suitable for high-risk communications until the
+product. Do not represent V0.2 as suitable for high-risk communications until the
 protocol, key lifecycle, restore path and real-device BLE behavior have been tested
 and reviewed.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the protocol boundaries.
+
+## Image import and photo export
+
+VeilLink accepts common image files plus RAW / DNG / ProRAW when the current iOS decoder supports them. Large or RAW inputs are processed off the main thread, capped to 4096 px on the long edge, encoded as high-quality HEIC when available (JPEG fallback), and kept near a 1.8 MB soft target with a 3 MB protocol hard limit. Small JPEG/HEIC files and lossless PNG graphics can be preserved without re-encoding. Received JPEG/HEIC/PNG attachments can be written to Photos through PhotoKit after explicit add-only permission.

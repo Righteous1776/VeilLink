@@ -55,6 +55,8 @@ struct ChatMessage: Identifiable, Hashable {
     let sentAt: Date
     var isOutgoing: Bool
     var deliveryState: DeliveryState
+    var failureReason: String? = nil
+    var transferProgress: Double? = nil
     var attachment: ChatAttachment? = nil
 }
 
@@ -62,6 +64,12 @@ struct ChatAttachment: Identifiable, Hashable {
     let id: String
     let mimeType: String
     let byteCount: Int
+}
+
+enum TransportSendResult {
+    case accepted
+    case temporarilyUnavailable
+    case unsupportedLink
 }
 
 enum SidebarSection: String, CaseIterable, Identifiable {
