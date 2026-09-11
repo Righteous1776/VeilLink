@@ -1,22 +1,43 @@
-# This workflow will build a Swift project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-swift
-
-name: Swift
+name: Bootstrap VeilLink and iOS CI
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
-
-    runs-on: macos-latest
-
+    runs-on: macos-15
+    timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: swift build -v
-    - name: Run tests
-      run: swift test -v
+      - uses: actions/checkout@v5
+
+      - name: Expand complete source bundle
+        run: |
+          ditto -x -k VeilLink_V0.1_GitHub_Source.zip .
+          rm -f VeilLink_V0.1_GitHub_Source.zip
+          rm -f .github/workflows/swift.yml
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for iOS Simulator
+        run: |
+          set -o pipefail
+          xcodebuild             -project VeilLink.xcodeproj             -scheme VeilLink             -configuration Debug             -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             CODE_SIGNING_ALLOWED=NO             build
+
+      - name: Publish verified source tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Import verified complete VeilLink source"
+            git push
+          fi
