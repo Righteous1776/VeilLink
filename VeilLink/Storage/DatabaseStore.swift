@@ -623,7 +623,7 @@ final class DatabaseStore {
             } else {
                 preview = ""
             }
-            ConversationSummary(
+            return ConversationSummary(
                 id: text(statement, 0),
                 title: text(statement, 1),
                 peerIdentityID: text(statement, 2),
