@@ -667,7 +667,8 @@ final class DatabaseStore {
 
     func validateSnapshot(at snapshotURL: URL) throws {
         var handle: OpaquePointer?
-        guard sqlite3_open_v2(snapshotURL.path, &handle, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+        let immutableURI = snapshotURL.absoluteString + "?immutable=1"
+        guard sqlite3_open_v2(immutableURI, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK,
               let handle else {
             sqlite3_close(handle)
             throw DatabaseError.backupFailed("恢复包中的数据库无法打开。")
@@ -710,7 +711,8 @@ final class DatabaseStore {
         try queue.sync {
             guard let current = db else { throw DatabaseError.openFailed("数据库尚未打开。") }
             var source: OpaquePointer?
-            guard sqlite3_open_v2(snapshotURL.path, &source, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+            let immutableURI = snapshotURL.absoluteString + "?immutable=1"
+            guard sqlite3_open_v2(immutableURI, &source, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK,
                   let source else {
                 sqlite3_close(source)
                 throw DatabaseError.backupFailed("恢复包中的数据库无法打开。")
