@@ -297,7 +297,7 @@ private struct MessageBubble: View {
                         if message.deliveryState == .failed, let onRetry {
                             Button("重试", action: onRetry)
                                 .buttonStyle(.plain)
-                                .fontWeight(.semibold)
+                                .font(.caption2.weight(.semibold))
                         }
                     }
                 }
