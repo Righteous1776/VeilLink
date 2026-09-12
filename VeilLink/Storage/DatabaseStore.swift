@@ -812,7 +812,9 @@ final class DatabaseStore {
 
     func deleteMessageLocally(messageID: String, conversationID: String) throws {
         guard let message = fetchMessage(id: messageID), message.conversationID == conversationID else { return }
-        if !message.isOutgoing, message.attachment != nil, (message.transferProgress ?? 0) < 1 {
+        if !message.isOutgoing,
+           (inboundAttachmentMetadata(messageID: messageID) != nil ||
+            (message.attachment != nil && (message.transferProgress ?? 0) < 1)) {
             throw DatabaseError.statementFailed("正在接收的图片完成前不能直接本地删除；请等待传输完成。")
         }
         let attachmentPaths = read(
