@@ -664,7 +664,7 @@ private struct VeilChatIdentityTitle: View {
                         .font(.system(size: 7.5, weight: .bold, design: .monospaced))
                         .tracking(0.9)
                         .foregroundColor(VeilTheme.mutedGold)
-                    VeilLinkTrace(active: true, width: 26)
+                    VeilLinkTrace(active: false, width: 26)
                 }
             }
         }
@@ -1010,7 +1010,7 @@ private struct ContactDetailsSheet: View {
                             .foregroundColor(VeilTheme.mutedGold)
                         Text(conversation.title)
                             .font(.system(.title3, design: .rounded).weight(.semibold))
-                        VeilLinkTrace(active: true, width: 86)
+                        VeilLinkTrace(active: false, width: 86)
                     }
                     .padding(.top, 12)
 

@@ -1,4 +1,6 @@
 import SwiftUI
+import Foundation
+import Darwin
 
 /// VeilLink visual system.
 ///
@@ -52,6 +54,30 @@ enum VeilTheme {
     )
 }
 
+
+/// Hardware/OS render capability gate. iPhone 7 / 7 Plus on iOS 15 use an older
+/// SwiftUI compositor path that can invalidate large clipped/shadowed scroll layers while
+/// repeat-forever animations are active. Keep the visual language, but switch persistent motion
+/// and expensive off-screen composition to a lighter path on that exact device family.
+enum VeilRenderProfile {
+    static let machineIdentifier: String = {
+        var info = utsname()
+        guard uname(&info) == 0 else { return "unknown" }
+        return withUnsafePointer(to: &info.machine) { pointer in
+            pointer.withMemoryRebound(to: CChar.self, capacity: 1) {
+                String(cString: $0)
+            }
+        }
+    }()
+
+    static var usesLegacyCompositorPath: Bool {
+        RenderCompatibilityPolicy.shouldUseLegacyCompositor(
+            machineIdentifier: machineIdentifier,
+            osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        )
+    }
+}
+
 enum VeilMotion {
     static let reveal = Animation.easeOut(duration: 0.24)
     static let transit = Animation.interactiveSpring(response: 0.38, dampingFraction: 0.84)
@@ -99,52 +125,70 @@ private struct VeilCurtainShape: Shape {
 
 struct VeilAmbientBackground: View {
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                LinearGradient(
-                    colors: [VeilTheme.backgroundLift, VeilTheme.background, Color.black],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-
-                // "Veil" layers: broad, almost-black planes that subtly shift the visual weight.
-                VeilCurtainShape(
-                    leadingInset: geometry.size.width * 0.12,
-                    trailingInset: geometry.size.width * 0.48
-                )
-                .fill(
+        Group {
+            if VeilRenderProfile.usesLegacyCompositorPath {
+                // iPhone 7 / iOS 15: avoid GeometryReader-driven multi-layer composition.
+                ZStack {
                     LinearGradient(
-                        colors: [Color.white.opacity(0.020), Color.clear],
-                        startPoint: .top,
-                        endPoint: .bottom
+                        colors: [VeilTheme.backgroundLift, VeilTheme.background, Color.black],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
-                )
-
-                VeilCurtainShape(
-                    leadingInset: geometry.size.width * 0.64,
-                    trailingInset: geometry.size.width * 0.04
-                )
-                .fill(
-                    LinearGradient(
-                        colors: [VeilTheme.gold.opacity(0.032), Color.clear],
-                        startPoint: .top,
-                        endPoint: .bottom
+                    RadialGradient(
+                        colors: [VeilTheme.gold.opacity(0.045), Color.clear],
+                        center: UnitPoint(x: 0.94, y: 0.04),
+                        startRadius: 0,
+                        endRadius: 280
                     )
-                )
+                }
+            } else {
+                GeometryReader { geometry in
+                    ZStack {
+                        LinearGradient(
+                            colors: [VeilTheme.backgroundLift, VeilTheme.background, Color.black],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
 
-                RadialGradient(
-                    colors: [VeilTheme.gold.opacity(0.070), Color.clear],
-                    center: UnitPoint(x: 0.95, y: 0.02),
-                    startRadius: 0,
-                    endRadius: 330
-                )
+                        VeilCurtainShape(
+                            leadingInset: geometry.size.width * 0.12,
+                            trailingInset: geometry.size.width * 0.48
+                        )
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.020), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
 
-                RadialGradient(
-                    colors: [Color.white.opacity(0.018), Color.clear],
-                    center: UnitPoint(x: 0.08, y: 0.76),
-                    startRadius: 0,
-                    endRadius: 260
-                )
+                        VeilCurtainShape(
+                            leadingInset: geometry.size.width * 0.64,
+                            trailingInset: geometry.size.width * 0.04
+                        )
+                        .fill(
+                            LinearGradient(
+                                colors: [VeilTheme.gold.opacity(0.032), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                        RadialGradient(
+                            colors: [VeilTheme.gold.opacity(0.070), Color.clear],
+                            center: UnitPoint(x: 0.95, y: 0.02),
+                            startRadius: 0,
+                            endRadius: 330
+                        )
+
+                        RadialGradient(
+                            colors: [Color.white.opacity(0.018), Color.clear],
+                            center: UnitPoint(x: 0.08, y: 0.76),
+                            startRadius: 0,
+                            endRadius: 260
+                        )
+                    }
+                }
             }
         }
         .ignoresSafeArea()
@@ -159,53 +203,85 @@ struct VeilCardModifier: ViewModifier {
         self.emphasized = emphasized
     }
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .padding(16)
-            .background(
-                ZStack {
+        if VeilRenderProfile.usesLegacyCompositorPath {
+            // Preserve the cut-panel identity, but avoid clip + duplicate-shape + large shadow
+            // off-screen rendering inside ScrollView/Sheet on iPhone 7.
+            content
+                .padding(16)
+                .background(
                     VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8)
                         .fill(emphasized ? VeilTheme.panel : VeilTheme.elevated)
+                )
+                .overlay(
                     VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8)
-                        .fill(VeilTheme.surfaceGradient)
+                        .stroke(emphasized ? VeilTheme.gold.opacity(0.22) : VeilTheme.hairline, lineWidth: 1)
+                )
+                .overlay(alignment: .topLeading) {
+                    Rectangle()
+                        .fill(emphasized ? VeilTheme.goldBright.opacity(0.50) : VeilTheme.hairline)
+                        .frame(width: emphasized ? 30 : 16, height: 1)
+                        .padding(.leading, 12)
                 }
-            )
-            .clipShape(VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8))
-            .overlay(
-                VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8)
-                    .stroke(emphasized ? VeilTheme.gold.opacity(0.24) : VeilTheme.hairline, lineWidth: 1)
-            )
-            .overlay(alignment: .topLeading) {
-                Rectangle()
-                    .fill(emphasized ? VeilTheme.goldBright.opacity(0.58) : VeilTheme.hairline)
-                    .frame(width: emphasized ? 34 : 18, height: 1)
-                    .padding(.leading, 12)
-            }
-            .shadow(color: Color.black.opacity(0.26), radius: 16, x: 0, y: 8)
+        } else {
+            content
+                .padding(16)
+                .background(
+                    ZStack {
+                        VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8)
+                            .fill(emphasized ? VeilTheme.panel : VeilTheme.elevated)
+                        VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8)
+                            .fill(VeilTheme.surfaceGradient)
+                    }
+                )
+                .clipShape(VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8))
+                .overlay(
+                    VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8)
+                        .stroke(emphasized ? VeilTheme.gold.opacity(0.24) : VeilTheme.hairline, lineWidth: 1)
+                )
+                .overlay(alignment: .topLeading) {
+                    Rectangle()
+                        .fill(emphasized ? VeilTheme.goldBright.opacity(0.58) : VeilTheme.hairline)
+                        .frame(width: emphasized ? 34 : 18, height: 1)
+                        .padding(.leading, 12)
+                }
+                .shadow(color: Color.black.opacity(0.26), radius: 16, x: 0, y: 8)
+        }
     }
 }
 
 struct VeilGlassModifier: ViewModifier {
     let cornerRadius: CGFloat
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .background(VeilTheme.elevated.opacity(0.90))
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(VeilTheme.hairline, lineWidth: 1)
-            )
-            .overlay(alignment: .top) {
-                LinearGradient(
-                    colors: [Color.clear, Color.white.opacity(0.11), Color.clear],
-                    startPoint: .leading,
-                    endPoint: .trailing
+        if VeilRenderProfile.usesLegacyCompositorPath {
+            content
+                .background(VeilTheme.elevated.opacity(0.96))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(VeilTheme.hairline, lineWidth: 1)
                 )
-                .frame(height: 1)
-                .padding(.horizontal, 18)
-            }
-            .shadow(color: Color.black.opacity(0.18), radius: 10, x: 0, y: 5)
+        } else {
+            content
+                .background(VeilTheme.elevated.opacity(0.90))
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(VeilTheme.hairline, lineWidth: 1)
+                )
+                .overlay(alignment: .top) {
+                    LinearGradient(
+                        colors: [Color.clear, Color.white.opacity(0.11), Color.clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(height: 1)
+                    .padding(.horizontal, 18)
+                }
+                .shadow(color: Color.black.opacity(0.18), radius: 10, x: 0, y: 5)
+        }
     }
 }
 
@@ -214,9 +290,9 @@ struct VeilPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.968 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion && !VeilRenderProfile.usesLegacyCompositorPath ? 0.968 : 1)
             .opacity(configuration.isPressed ? 0.80 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation((reduceMotion || VeilRenderProfile.usesLegacyCompositorPath) ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -272,7 +348,10 @@ struct VeilIdentityGlyph: View {
                 .rotationEffect(.degrees(Double(bits[7] % 4) * 45))
         }
         .frame(width: size, height: size)
-        .shadow(color: active ? VeilTheme.gold.opacity(0.20) : .clear, radius: 9)
+        .shadow(
+            color: active && !VeilRenderProfile.usesLegacyCompositorPath ? VeilTheme.gold.opacity(0.20) : .clear,
+            radius: VeilRenderProfile.usesLegacyCompositorPath ? 0 : 9
+        )
         .accessibilityHidden(true)
     }
 }
@@ -308,8 +387,11 @@ struct VeilLinkTrace: View {
                 Circle()
                     .fill(VeilTheme.goldBright)
                     .frame(width: 3.5, height: 3.5)
-                    .shadow(color: VeilTheme.gold.opacity(0.75), radius: 5)
-                    .offset(x: travels ? width - 4 : 0)
+                    .shadow(
+                        color: VeilRenderProfile.usesLegacyCompositorPath ? .clear : VeilTheme.gold.opacity(0.75),
+                        radius: VeilRenderProfile.usesLegacyCompositorPath ? 0 : 5
+                    )
+                    .offset(x: VeilRenderProfile.usesLegacyCompositorPath ? width * 0.70 : (travels ? width - 4 : 0))
             }
         }
         .frame(width: width, height: 4)
@@ -320,7 +402,7 @@ struct VeilLinkTrace: View {
 
     private func updateMotion() {
         travels = false
-        guard active, !reduceMotion else { return }
+        guard active, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }
         withAnimation(.linear(duration: 1.7).repeatForever(autoreverses: false)) {
             travels = true
         }
@@ -349,7 +431,7 @@ struct VeilResolveMark: View {
 
     private func resolve() {
         expanded = false
-        guard resolved, !reduceMotion else { return }
+        guard resolved, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }
         withAnimation(VeilMotion.resolve) { expanded = true }
     }
 }

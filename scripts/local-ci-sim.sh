@@ -21,8 +21,8 @@ assert project['settings']['base']['SWIFT_VERSION'] == 5.9
 assert 'VeilLink' in project['targets'] and 'VeilLinkTests' in project['targets']
 with open(root/'VeilLink/Resources/Info.plist', 'rb') as fh:
     plist = plistlib.load(fh)
-assert plist['CFBundleShortVersionString'] == '0.3.6'
-assert plist['CFBundleVersion'] == '12'
+assert plist['CFBundleShortVersionString'] == '0.3.7'
+assert plist['CFBundleVersion'] == '13'
 ci = yaml.safe_load((root/'.github/workflows/ios-ci.yml').read_text(encoding='utf-8'))
 ipa = yaml.safe_load((root/'.github/workflows/unsigned-ipa.yml').read_text(encoding='utf-8'))
 ci_job = ci['jobs']['build-and-test']
@@ -49,6 +49,7 @@ pass "swiftc -parse ${#SWIFT_FILES[@]} Swift files"
 swiftc -typecheck \
     VeilLink/Core/Models.swift \
     VeilLink/Core/MessageTextFeatures.swift \
+    VeilLink/Core/RenderCompatibilityPolicy.swift \
     VeilLink/Transport/ConnectionEventGate.swift \
     VeilLink/Security/PacketAbuseLimiter.swift \
     VeilLink/Transport/BLEFramer.swift
@@ -62,6 +63,9 @@ import Foundation
 let reply = ReplyTextCodec.encode(quoted: "old message", reply: "new message")
 precondition(ReplyTextCodec.decode(reply)?.reply == "new message")
 precondition(ReplyTextCodec.previewText(for: reply) == "↪︎ new message")
+precondition(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone9,1", osMajorVersion: 15))
+precondition(!RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone9,1", osMajorVersion: 16))
+precondition(!RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone14,2", osMajorVersion: 15))
 
 var gate = ConnectionEventGate()
 let transport = UUID()
@@ -88,7 +92,7 @@ for fragment in fragments.reversed() {
 precondition(rebuilt == payload)
 print("core-harness-ok")
 SWIFT
-swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
+swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Core/RenderCompatibilityPolicy.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
 "$HARNESS_DIR/core-harness" >/dev/null
 pass "core executable behavior harness"
 
@@ -148,6 +152,25 @@ if bad:
 print('ios15-ok')
 PY
 pass "iOS 15 compatibility guard"
+
+python3 - <<'PY'
+from pathlib import Path
+theme=Path('VeilLink/Core/AppTheme.swift').read_text(encoding='utf-8')
+nearby=Path('VeilLink/UI/NearbyView.swift').read_text(encoding='utf-8')
+settings=Path('VeilLink/UI/SettingsView.swift').read_text(encoding='utf-8')
+adaptive=Path('VeilLink/UI/AdaptiveRootView.swift').read_text(encoding='utf-8')
+conversation=Path('VeilLink/UI/ConversationViews.swift').read_text(encoding='utf-8')
+assert 'RenderCompatibilityPolicy.shouldUseLegacyCompositor' in theme
+assert 'guard active, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }' in theme
+assert 'guard isRunning, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }' in nearby
+assert 'VeilLinkTrace(active: peer.trustState == .awaitingConfirmation, width: 30)' in nearby
+assert 'VeilLinkTrace(active: true, width: 34)' not in settings
+assert 'VeilLinkTrace(active: true, width: 34)' not in adaptive
+assert 'VeilLinkTrace(active: true, width: 26)' not in conversation
+assert 'VeilLinkTrace(active: true, width: 86)' not in conversation
+print('legacy-render-ok')
+PY
+pass "iPhone 7 / iOS 15 legacy compositor guard"
 
 python3 - <<'PY'
 import sqlite3, tempfile, os

@@ -156,7 +156,7 @@ private struct RadarStatusView: View {
     private func updateMotion() {
         pulse = false
         sweep = false
-        guard isRunning, !reduceMotion else { return }
+        guard isRunning, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }
         withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) {
             pulse = true
         }
@@ -185,7 +185,7 @@ private struct NearbyPeerCard: View {
                         Text(signalDescription)
                             .font(.footnote)
                             .foregroundColor(VeilTheme.secondaryText)
-                        VeilLinkTrace(active: peer.trustState == .awaitingConfirmation || peer.trustState == .trusted, width: 30)
+                        VeilLinkTrace(active: peer.trustState == .awaitingConfirmation, width: 30)
                     }
                 }
                 Spacer()

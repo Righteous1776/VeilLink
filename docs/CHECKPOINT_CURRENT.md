@@ -1,3 +1,3 @@
-# Current checkpoint
+# VeilLink Current Checkpoint
 
-V0.3.6 Runtime Optimization, based on V0.3.5 Haptics & Conversation Controls. Protocol 4 and SQLite Schema V8 remain unchanged. This checkpoint focuses on lower CPU/memory/SQLite/UI-refresh overhead without changing feature semantics: cheaper BLE reassembly bookkeeping, throttled stale cleanup, single-statement retry scheduling, quantized attachment UI notifications, conversation-list refresh isolation, and additional V8 lookup indexes.
+V0.3.7 iPhone 7 Render Compatibility, based on GitHub main 7397c537 after the V0.3.6 runtime optimization sync and subsequent iOS 15 fixes. Protocol 4 and SQLite Schema V8 remain unchanged. This checkpoint adds an automatic lightweight SwiftUI compositor path for iPhone 7 / 7 Plus on iOS 15, eliminates persistent decorative transit animation from static identity states, and reduces clip/shadow/background off-screen composition on the affected hardware while preserving the Veil visual identity.

@@ -1,4 +1,4 @@
-# VeilLink V0.3.6-dev architecture
+# VeilLink V0.3.7-dev architecture
 
 VeilLink is an offline nearby E2EE messenger for iOS 15+. Runtime communication uses CoreBluetooth; ZIPFoundation is used only for local backup packaging.
 
@@ -105,3 +105,7 @@ Local CI simulation validates manifests, all Swift syntax, Linux-compatible core
 ## V0.3.6 runtime optimization layer
 
 V0.3.6 keeps Protocol 4 and Schema V8 unchanged while reducing hot-path work. BLE reassembly now uses typed keys, per-source partial counts, and throttled stale pruning, reducing per-packet bookkeeping without changing the wire format. Attachment progress notifications are emitted only when persisted progress actually changes, conversation-list refreshes are separated from message-only refreshes, accepted outbound retry scheduling uses one SQLite UPDATE instead of SELECT+UPDATE, and V8 adds non-destructive lookup indexes for conversation peers and attachment message joins.
+
+## V0.3.7 legacy compositor layer
+
+The visual layer includes a pure `RenderCompatibilityPolicy` plus an iOS hardware identifier bridge. iPhone 7 / 7 Plus on iOS 15 select a reduced compositor path: persistent link/radar motion is static, ambient backgrounds avoid GeometryReader-driven curtain layers, and shared card/glass modifiers avoid the heaviest clip + duplicate overlay + shadow composition. This is presentation-only and does not alter transport, protocol, trust, crypto or persistence semantics.

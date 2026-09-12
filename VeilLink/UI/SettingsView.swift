@@ -96,7 +96,7 @@ struct SettingsView: View {
                         Text(String((identity.activeIdentity?.id ?? "offline").prefix(12)).uppercased())
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .foregroundColor(VeilTheme.secondaryText)
-                        VeilLinkTrace(active: true, width: 34)
+                        VeilLinkTrace(active: false, width: 34)
                     }
                 }
                 Spacer()
@@ -252,7 +252,7 @@ struct SettingsView: View {
 
     private var versionFooter: some View {
         VStack(spacing: 5) {
-            Text("VeilLink 0.3.6-dev · Protocol 4")
+            Text("VeilLink 0.3.7-dev · Protocol 4")
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
             Text("ZeoStudio")

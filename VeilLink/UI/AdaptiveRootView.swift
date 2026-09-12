@@ -142,7 +142,7 @@ private struct IdentityHeader: View {
                         .font(.system(size: 8.5, weight: .bold, design: .monospaced))
                         .tracking(1.1)
                         .foregroundColor(VeilTheme.mutedGold)
-                    VeilLinkTrace(active: true, width: 34)
+                    VeilLinkTrace(active: false, width: 34)
                     Text(String((identity?.id ?? "offline").prefix(8)).uppercased())
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .foregroundColor(VeilTheme.secondaryText)
