@@ -1,0 +1,34 @@
+name: Sync V0.3.6 source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - VeilLink_V0.3.6_CHECKPOINT_RuntimeOptimization.zip
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Expand V0.3.6 checkpoint
+        run: |
+          rm -rf "$RUNNER_TEMP/veillink-v036"
+          mkdir -p "$RUNNER_TEMP/veillink-v036"
+          unzip -q VeilLink_V0.3.6_CHECKPOINT_RuntimeOptimization.zip -d "$RUNNER_TEMP/veillink-v036"
+          rsync -a --exclude '.github/workflows/' "$RUNNER_TEMP/veillink-v036/" ./
+      - name: Commit synchronized V0.3.6 source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --cached --quiet; then
+            echo "V0.3.6 source is already current."
+            exit 0
+          fi
+          git commit -m "Add V0.3.6 runtime optimization"
+          git push
