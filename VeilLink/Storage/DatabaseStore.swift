@@ -32,6 +32,12 @@ final class DatabaseStore {
     private let storageKeyName = "storage.database.key"
     private let queue = DispatchQueue(label: "studio.zeo.veillink.sqlite", qos: .userInitiated)
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    // Message bodies are immutable after insertion. Cache decrypted text so delivery/progress
+    // refreshes do not repeatedly run ChaChaPoly over the same history. Access is serialized by queue.
+    private var decryptedBodyCache: [String: String] = [:]
+    private var decryptedBodyCacheOrder: [String] = []
+    private var decryptedBodyCacheOrderHead = 0
+    private var maximumDecryptedBodyCacheEntries: Int { VeilDevicePerformance.current.decryptedBodyCacheEntries }
     static let inboundAttachmentRetention: TimeInterval = 7 * 24 * 60 * 60
     static let maximumIncompleteInboundAttachments = 16
     static let maximumIncompleteInboundAttachmentsPerSender = 4
@@ -238,12 +244,20 @@ final class DatabaseStore {
     }
 
     func saveAttachment(messageID: String, data: Data, mimeType: String) throws -> ChatAttachment {
+        try saveAttachment(messageID: messageID, data: data, mimeType: mimeType, knownSHA256: nil)
+    }
+
+    private func saveAttachment(messageID: String, data: Data, mimeType: String, knownSHA256: Data?) throws -> ChatAttachment {
         let id = UUID().uuidString
         let relativePath = "\(id).bin"
         let destination = attachmentsURL.appendingPathComponent(relativePath)
         let protected = try ChaChaPoly.seal(data, using: storageKey).combined
         try protected.write(to: destination, options: [.atomic, .completeFileProtection])
-        let hash = Data(SHA256.hash(data: data))
+        let hash = knownSHA256 ?? Data(SHA256.hash(data: data))
+        guard hash.count == 32 else {
+            try? FileManager.default.removeItem(at: destination)
+            throw DatabaseError.statementFailed("附件摘要长度无效。")
+        }
         do {
             try write(
                 "INSERT INTO attachments(id, message_id, relative_path, mime_type, byte_count, sha256) VALUES(?, ?, ?, ?, ?, ?);",
@@ -369,6 +383,16 @@ final class DatabaseStore {
     func deferOutbound(messageID: String, targetIdentityID: String, localIdentityID: String, delay: TimeInterval = 3) throws {
         let safeDelay = min(max(delay, 1), 30)
         try write("UPDATE outbound_queue SET next_attempt_at = ? WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;", bindings: [.double(Date().timeIntervalSince1970 + safeDelay), .text(messageID), .text(localIdentityID), .text(targetIdentityID)])
+    }
+
+    /// A newly authenticated BLE session is stronger evidence than the old retry timer. Wake all
+    /// pending rows for this peer immediately while keeping retry counters/backoff history intact.
+    func wakeOutboundForPeer(targetIdentityID: String, localIdentityID: String) throws {
+        let now = Date().timeIntervalSince1970
+        try write(
+            "UPDATE outbound_queue SET next_attempt_at = ? WHERE local_identity_id = ? AND target_identity_id = ? AND is_paused = 0 AND expires_at > ?;",
+            bindings: [.double(now), .text(localIdentityID), .text(targetIdentityID), .double(now)]
+        )
     }
 
     func outboundRetryCount(messageID: String, targetIdentityID: String, localIdentityID: String) -> Int {
@@ -728,27 +752,62 @@ final class DatabaseStore {
 
     private func finalizeInboundAttachment(messageID: String, metadata: InboundAttachmentMetadata) throws {
         if fetchMessage(id: messageID)?.attachment != nil {
-            try write("DELETE FROM inbound_attachment_chunks WHERE message_id = ?;", bindings: [.text(messageID)])
-            try write("DELETE FROM inbound_attachment_transfers WHERE message_id = ?;", bindings: [.text(messageID)])
-            try updateTransferProgress(messageID: messageID, progress: 1)
+            try writeBatch([
+                ("DELETE FROM inbound_attachment_chunks WHERE message_id = ?;", [.text(messageID)]),
+                ("DELETE FROM inbound_attachment_transfers WHERE message_id = ?;", [.text(messageID)]),
+                ("UPDATE messages SET transfer_progress = 1 WHERE id = ?;", [.text(messageID)])
+            ])
             return
         }
-        var assembled = Data()
-        assembled.reserveCapacity(metadata.byteCount)
-        for index in 0..<metadata.chunkCount {
-            guard let chunk = inboundChunkClearData(messageID: messageID, index: index) else {
-                throw DatabaseError.statementFailed("附件 checkpoint 指向不存在的分块。")
+
+        // Read/decrypt every persisted chunk with one prepared statement and one queue hop.
+        // The old path prepared a SELECT and synchronously entered the SQLite queue once per 48 KiB
+        // chunk (roughly 64 times for a 3 MB image), then hashed the full image twice.
+        let assembled: Data = try queue.sync {
+            guard let db else { throw DatabaseError.openFailed("数据库尚未打开。") }
+            var statement: OpaquePointer?
+            let sql = "SELECT chunk_index, ciphertext FROM inbound_attachment_chunks WHERE message_id = ? ORDER BY chunk_index ASC;"
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+                throw DatabaseError.statementFailed(String(cString: sqlite3_errmsg(db)))
             }
-            assembled.append(chunk)
-            guard assembled.count <= metadata.byteCount else { throw DatabaseError.statementFailed("附件实际体积超过 Manifest。") }
+            defer { sqlite3_finalize(statement) }
+            bind([.text(messageID)], to: statement)
+
+            var output = Data()
+            output.reserveCapacity(metadata.byteCount)
+            var expectedIndex = 0
+            var hasher = SHA256()
+            while sqlite3_step(statement) == SQLITE_ROW {
+                let index = Int(sqlite3_column_int64(statement, 0))
+                guard index == expectedIndex else {
+                    throw DatabaseError.statementFailed("附件 checkpoint 指向不存在的分块。")
+                }
+                let protected = data(statement, 1)
+                guard let box = try? ChaChaPoly.SealedBox(combined: protected),
+                      let clear = try? ChaChaPoly.open(box, using: storageKey) else {
+                    throw DatabaseError.statementFailed("附件分块解密失败。")
+                }
+                output.append(clear)
+                hasher.update(data: clear)
+                guard output.count <= metadata.byteCount else {
+                    throw DatabaseError.statementFailed("附件实际体积超过 Manifest。")
+                }
+                expectedIndex += 1
+            }
+            guard expectedIndex == metadata.chunkCount,
+                  output.count == metadata.byteCount,
+                  Data(hasher.finalize()) == metadata.sha256 else {
+                throw DatabaseError.statementFailed("附件完整性校验失败。")
+            }
+            return output
         }
-        guard assembled.count == metadata.byteCount, Data(SHA256.hash(data: assembled)) == metadata.sha256 else {
-            throw DatabaseError.statementFailed("附件完整性校验失败。")
-        }
-        _ = try saveAttachment(messageID: messageID, data: assembled, mimeType: metadata.mimeType)
-        try write("DELETE FROM inbound_attachment_chunks WHERE message_id = ?;", bindings: [.text(messageID)])
-        try write("DELETE FROM inbound_attachment_transfers WHERE message_id = ?;", bindings: [.text(messageID)])
-        try updateTransferProgress(messageID: messageID, progress: 1)
+
+        _ = try saveAttachment(messageID: messageID, data: assembled, mimeType: metadata.mimeType, knownSHA256: metadata.sha256)
+        try writeBatch([
+            ("DELETE FROM inbound_attachment_chunks WHERE message_id = ?;", [.text(messageID)]),
+            ("DELETE FROM inbound_attachment_transfers WHERE message_id = ?;", [.text(messageID)]),
+            ("UPDATE messages SET transfer_progress = 1 WHERE id = ?;", [.text(messageID)])
+        ])
     }
 
     func fetchConversations(localIdentityID: String) -> [ConversationSummary] {
@@ -779,12 +838,50 @@ final class DatabaseStore {
         }
     }
 
+    struct MessagePage {
+        let messages: [ChatMessage]
+        let hasOlder: Bool
+    }
+
+    /// Normal chat rendering only needs a bounded tail of history. Decrypting an entire multi-year
+    /// conversation for every ACK/progress update is especially expensive on A10 devices.
+    func fetchRecentMessages(conversationID: String, limit: Int = 120) -> MessagePage {
+        let safeLimit = max(32, min(limit, 2_000))
+        var rows = read("""
+            SELECT m.id, m.conversation_id, m.sender_identity_id, m.body_ciphertext,
+                   m.sent_at, m.is_outgoing, m.delivery_state, m.delivery_error, m.transfer_progress, a.id, a.mime_type, a.byte_count
+            FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
+            WHERE m.conversation_id = ?
+            ORDER BY m.sent_at DESC, m.id DESC
+            LIMIT \(safeLimit + 1);
+            """, bindings: [.text(conversationID)]) { decodedMessage($0) }
+        let hasOlder = rows.count > safeLimit
+        if hasOlder { rows.removeLast(rows.count - safeLimit) }
+        rows.reverse()
+        return MessagePage(messages: rows, hasOlder: hasOlder)
+    }
+
+    func clearTransientCaches() {
+        queue.sync {
+            decryptedBodyCache.removeAll(keepingCapacity: false)
+            decryptedBodyCacheOrder.removeAll(keepingCapacity: false)
+            decryptedBodyCacheOrderHead = 0
+        }
+    }
+
+    func fetchMessageIDs(conversationID: String) -> [String] {
+        read(
+            "SELECT id FROM messages WHERE conversation_id = ? ORDER BY sent_at ASC, id ASC;",
+            bindings: [.text(conversationID)]
+        ) { text($0, 0) }
+    }
+
     func fetchMessages(conversationID: String) -> [ChatMessage] {
         read("""
             SELECT m.id, m.conversation_id, m.sender_identity_id, m.body_ciphertext,
                    m.sent_at, m.is_outgoing, m.delivery_state, m.delivery_error, m.transfer_progress, a.id, a.mime_type, a.byte_count
             FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
-            WHERE m.conversation_id = ? ORDER BY m.sent_at ASC;
+            WHERE m.conversation_id = ? ORDER BY m.sent_at ASC, m.id ASC;
             """, bindings: [.text(conversationID)]) { decodedMessage($0) }
     }
 
@@ -811,6 +908,7 @@ final class DatabaseStore {
     }
 
     func deleteMessageLocally(messageID: String, conversationID: String) throws {
+        queue.sync { decryptedBodyCache.removeValue(forKey: messageID) }
         guard let message = fetchMessage(id: messageID), message.conversationID == conversationID else { return }
         if !message.isOutgoing,
            (inboundAttachmentMetadata(messageID: messageID) != nil ||
@@ -868,6 +966,11 @@ final class DatabaseStore {
     }
 
     func clearConversationLocally(conversationID: String) throws {
+        queue.sync {
+            decryptedBodyCache.removeAll(keepingCapacity: true)
+            decryptedBodyCacheOrder.removeAll(keepingCapacity: true)
+            decryptedBodyCacheOrderHead = 0
+        }
         guard !hasIncompleteInboundAttachments(conversationID: conversationID) else {
             throw DatabaseError.statementFailed("当前仍有图片正在接收。请等待图片完成后再清空聊天记录。")
         }
@@ -989,6 +1092,9 @@ final class DatabaseStore {
 
     func replaceDatabase(with snapshotURL: URL) throws {
         try queue.sync {
+            decryptedBodyCache.removeAll(keepingCapacity: true)
+            decryptedBodyCacheOrder.removeAll(keepingCapacity: true)
+            decryptedBodyCacheOrderHead = 0
             guard let current = db else { throw DatabaseError.openFailed("数据库尚未打开。") }
             var source: OpaquePointer?
             let immutableURI = snapshotURL.absoluteString + "?immutable=1"
@@ -1058,19 +1164,54 @@ final class DatabaseStore {
         let rawKey = try ChaChaPoly.open(box, using: backupKey)
         guard rawKey.count == 32 else { throw BackupError.corruptedPackage }
         try keychain.set(rawKey, for: storageKeyName)
-        storageKeyData = rawKey
-        storageKey = SymmetricKey(data: rawKey)
+        queue.sync {
+            decryptedBodyCache.removeAll(keepingCapacity: true)
+            decryptedBodyCacheOrder.removeAll(keepingCapacity: true)
+            decryptedBodyCacheOrderHead = 0
+            storageKeyData = rawKey
+            storageKey = SymmetricKey(data: rawKey)
+        }
+    }
+
+
+    private func cacheDecodedBody(_ body: String, messageID: String) {
+        guard maximumDecryptedBodyCacheEntries > 0 else { return }
+        if decryptedBodyCache[messageID] == nil {
+            decryptedBodyCacheOrder.append(messageID)
+        }
+        decryptedBodyCache[messageID] = body
+        while decryptedBodyCache.count > maximumDecryptedBodyCacheEntries, decryptedBodyCacheOrderHead < decryptedBodyCacheOrder.count {
+            let oldest = decryptedBodyCacheOrder[decryptedBodyCacheOrderHead]
+            decryptedBodyCacheOrderHead += 1
+            decryptedBodyCache.removeValue(forKey: oldest)
+        }
+        if decryptedBodyCacheOrderHead >= 256, decryptedBodyCacheOrderHead * 2 >= decryptedBodyCacheOrder.count {
+            decryptedBodyCacheOrder.removeFirst(decryptedBodyCacheOrderHead)
+            decryptedBodyCacheOrderHead = 0
+        }
     }
 
     private func decodedMessage(_ statement: OpaquePointer) -> ChatMessage {
-        let blob = data(statement, 3)
-        let plaintext: Data
-        if let box = try? ChaChaPoly.SealedBox(combined: blob), let opened = try? ChaChaPoly.open(box, using: storageKey) { plaintext = opened } else { plaintext = Data() }
+        let messageID = text(statement, 0)
+        let body: String
+        if let cached = decryptedBodyCache[messageID] {
+            body = cached
+        } else {
+            let blob = data(statement, 3)
+            if let box = try? ChaChaPoly.SealedBox(combined: blob),
+               let opened = try? ChaChaPoly.open(box, using: storageKey),
+               let decoded = String(data: opened, encoding: .utf8) {
+                body = decoded
+                cacheDecodedBody(decoded, messageID: messageID)
+            } else {
+                body = ""
+            }
+        }
         let failureReason = sqlite3_column_type(statement, 7) == SQLITE_NULL ? nil : text(statement, 7)
         let transferProgress = sqlite3_column_type(statement, 8) == SQLITE_NULL ? nil : sqlite3_column_double(statement, 8)
         let attachment: ChatAttachment?
         if sqlite3_column_type(statement, 9) != SQLITE_NULL { attachment = ChatAttachment(id: text(statement, 9), mimeType: text(statement, 10), byteCount: Int(sqlite3_column_int64(statement, 11))) } else { attachment = nil }
-        return ChatMessage(id: text(statement, 0), conversationID: text(statement, 1), senderIdentityID: text(statement, 2), body: String(data: plaintext, encoding: .utf8) ?? "", sentAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4)), isOutgoing: sqlite3_column_int(statement, 5) == 1, deliveryState: ChatMessage.DeliveryState(rawValue: text(statement, 6)) ?? .failed, failureReason: failureReason, transferProgress: transferProgress, attachment: attachment)
+        return ChatMessage(id: messageID, conversationID: text(statement, 1), senderIdentityID: text(statement, 2), body: body, sentAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4)), isOutgoing: sqlite3_column_int(statement, 5) == 1, deliveryState: ChatMessage.DeliveryState(rawValue: text(statement, 6)) ?? .failed, failureReason: failureReason, transferProgress: transferProgress, attachment: attachment)
     }
 
     func adoptLegacyUnscopedRows(localIdentityID: String) throws {

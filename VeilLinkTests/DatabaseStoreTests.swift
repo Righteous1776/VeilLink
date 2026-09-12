@@ -86,6 +86,23 @@ final class DatabaseStoreTests: XCTestCase {
         XCTAssertEqual(store.outboundRetryCount(messageID: message.id, targetIdentityID: peer, localIdentityID: local), 1)
     }
 
+
+    func testAuthenticatedReconnectWakesPendingOutboundImmediately() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-wake"
+        let peer = "peer-wake"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Wake Peer")
+        let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "wake", sentAt: Date(), isOutgoing: true, deliveryState: .queued)
+        try store.saveMessage(message)
+        try store.enqueueOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+        try store.recordAcceptedOutboundAttempt(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+        XCTAssertTrue(store.dueOutboundMessageIDs(for: peer, localIdentityID: local).isEmpty)
+
+        try store.wakeOutboundForPeer(targetIdentityID: peer, localIdentityID: local)
+        XCTAssertEqual(store.dueOutboundMessageIDs(for: peer, localIdentityID: local), [message.id])
+        XCTAssertEqual(store.outboundRetryCount(messageID: message.id, targetIdentityID: peer, localIdentityID: local), 1)
+    }
+
     func testFailureReasonPersistsAndManualRestartClearsRetryBudget() throws {
         let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
         let local = "local-failure"
@@ -619,6 +636,37 @@ final class DatabaseStoreTests: XCTestCase {
         XCTAssertTrue(try store.acceptOutboundAttachmentCheckpoint(messageID: message.id, targetIdentityID: peer, localIdentityID: local, nextChunk: 0, chunkCount: 64))
         XCTAssertFalse(try store.acceptOutboundAttachmentCheckpoint(messageID: message.id, targetIdentityID: peer, localIdentityID: local, nextChunk: 1, chunkCount: 64))
         XCTAssertTrue(try store.acceptOutboundAttachmentCheckpoint(messageID: message.id, targetIdentityID: peer, localIdentityID: local, nextChunk: 2, chunkCount: 64))
+    }
+
+    func testRecentMessagePageBoundsNormalChatHistory() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-page"
+        let peer = "peer-page"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        for index in 0..<150 {
+            let message = ChatMessage(
+                id: String(format: "%04d-0000-0000-0000-000000000000", index),
+                conversationID: conversation,
+                senderIdentityID: index.isMultiple(of: 2) ? local : peer,
+                body: "m\(index)",
+                sentAt: base.addingTimeInterval(Double(index)),
+                isOutgoing: index.isMultiple(of: 2),
+                deliveryState: .delivered
+            )
+            try store.saveMessage(message)
+        }
+
+        let page = store.fetchRecentMessages(conversationID: conversation, limit: 120)
+        XCTAssertTrue(page.hasOlder)
+        XCTAssertEqual(page.messages.count, 120)
+        XCTAssertEqual(page.messages.first?.body, "m30")
+        XCTAssertEqual(page.messages.last?.body, "m149")
+
+        let expanded = store.fetchRecentMessages(conversationID: conversation, limit: 240)
+        XCTAssertFalse(expanded.hasOlder)
+        XCTAssertEqual(expanded.messages.count, 150)
+        XCTAssertEqual(expanded.messages.first?.body, "m0")
     }
 
 }

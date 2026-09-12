@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
     @Published var alertMessage: String?
     @Published private(set) var messagesRevision = 0
     @Published private(set) var activeConversationID: String?
+    @Published private(set) var performanceRevision = 0
     @Published var autoSaveReceivedImages: Bool {
         didSet { UserDefaults.standard.set(autoSaveReceivedImages, forKey: Self.autoSaveReceivedImagesKey) }
     }
@@ -26,6 +27,7 @@ final class AppModel: ObservableObject {
     let sessions: SessionCoordinator
     let backups: BackupManager
     let haptics: HapticEngine
+    let performanceOverrides: PerformanceOverrideController
 
     var totalUnreadCount: Int {
         conversations.reduce(0) { partial, conversation in
@@ -45,10 +47,14 @@ final class AppModel: ObservableObject {
         }
         appLock = AppLockController(keychain: keychain)
         ownerMode = OwnerModeController()
+        performanceOverrides = PerformanceOverrideController()
         bluetooth = BLETransport()
         sessions = SessionCoordinator(identity: identity, database: database)
         backups = BackupManager(database: database, identity: identity)
         haptics = HapticEngine()
+        performanceOverrides.onChange = { [weak self] in
+            self?.applyPerformanceOverrideChange()
+        }
 
         bluetooth.onDiscovered = { [weak sessions] id, rssi in
             sessions?.discovered(transportID: id, rssi: rssi)
@@ -60,7 +66,9 @@ final class AppModel: ObservableObject {
             sessions?.disconnected(transportID: id)
         }
         bluetooth.onReceive = { [weak sessions] id, data in sessions?.receive(transportID: id, data: data) }
-        sessions.transportSend = { [weak bluetooth] id, data in bluetooth?.send(data, to: id) ?? .temporarilyUnavailable }
+        sessions.transportSend = { [weak bluetooth] id, data, priority in
+            bluetooth?.send(data, to: id, priority: priority) ?? .temporarilyUnavailable
+        }
         sessions.transportDisconnect = { [weak bluetooth] id in bluetooth?.disconnect(id) }
         sessions.onMessagesChanged = { [weak self] refreshConversations in
             self?.scheduleMessageRefresh(refreshConversations: refreshConversations)
@@ -78,12 +86,21 @@ final class AppModel: ObservableObject {
         reloadConversations()
     }
 
+    private func applyPerformanceOverrideChange() {
+        messageRefreshTask?.cancel()
+        pendingConversationRefresh = false
+        database.clearTransientCaches()
+        sessions.clearTransientCaches()
+        ImagePreviewCache.shared.removeAll()
+        ImagePreviewCache.shared.reconfigureForCurrentProfile()
+        performanceRevision &+= 1
+    }
 
     private func scheduleMessageRefresh(refreshConversations: Bool) {
         pendingConversationRefresh = pendingConversationRefresh || refreshConversations
         messageRefreshTask?.cancel()
         messageRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 75_000_000)
+            try? await Task.sleep(nanoseconds: VeilDevicePerformance.current.messageRefreshDebounceNanoseconds)
             guard !Task.isCancelled, let self else { return }
             let shouldRefreshConversations = self.pendingConversationRefresh
             self.pendingConversationRefresh = false
@@ -96,6 +113,17 @@ final class AppModel: ObservableObject {
             }
             self.messagesRevision &+= 1
         }
+    }
+
+    func handleMemoryPressure() {
+        database.clearTransientCaches()
+        sessions.clearTransientCaches()
+        ImagePreviewCache.shared.removeAll()
+    }
+
+    func trimCachesForBackgroundIfNeeded() {
+        guard VeilDevicePerformance.current.aggressiveBackgroundCacheTrim else { return }
+        handleMemoryPressure()
     }
 
     func start() {
@@ -204,7 +232,7 @@ final class AppModel: ObservableObject {
     }
 
     func clearConversationLocally(conversationID: String) -> Bool {
-        let messageIDs = database.fetchMessages(conversationID: conversationID).map(\.id)
+        let messageIDs = database.fetchMessageIDs(conversationID: conversationID)
         messageIDs.forEach { sessions.discardLocalMessage($0) }
         do {
             try database.clearConversationLocally(conversationID: conversationID)

@@ -13,7 +13,7 @@ struct NearbyView: View {
     }
 
     var body: some View {
-        ScrollView {
+        VeilStableScrollView {
             VStack(spacing: 16) {
                 HStack(spacing: 16) {
                     RadarStatusView(isRunning: bluetooth.isRunning, reduceMotion: reduceMotion)
@@ -60,9 +60,6 @@ struct NearbyView: View {
                     }
                 }
             }
-            .frame(maxWidth: 760)
-            .padding()
-            .frame(maxWidth: .infinity)
         }
         .background(VeilAmbientBackground())
         .navigationTitle("附近设备")
@@ -156,7 +153,7 @@ private struct RadarStatusView: View {
     private func updateMotion() {
         pulse = false
         sweep = false
-        guard isRunning, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }
+        guard isRunning, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }
         withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) {
             pulse = true
         }

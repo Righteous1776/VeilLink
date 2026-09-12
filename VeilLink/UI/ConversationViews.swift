@@ -223,7 +223,16 @@ struct ChatView: View {
     @State private var replyingTo: ChatMessage?
     @State private var showsSearchBar = false
     @State private var searchQuery = ""
+    @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
+    @State private var hasOlderMessages = false
+    @State private var messageReloadGeneration = 0
+    @State private var isReloadingMessages = false
+    @State private var loadedFullHistoryForSearch = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var usesReducedInteractionMotion: Bool {
+        reduceMotion || VeilDevicePerformance.current.transferVisualComplexity != .full
+    }
 
     private var visibleMessages: [ChatMessage] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -247,11 +256,13 @@ struct ChatView: View {
                     }
                     Button {
                         searchQuery = ""
-                        if reduceMotion {
+                        loadedFullHistoryForSearch = false
+                        if usesReducedInteractionMotion {
                             showsSearchBar = false
                         } else {
                             withAnimation(.easeIn(duration: 0.16)) { showsSearchBar = false }
                         }
+                        reload()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(VeilTheme.secondaryText)
@@ -270,6 +281,23 @@ struct ChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 12) {
+                        if hasOlderMessages && !showsSearchBar {
+                            Button(action: loadOlderMessages) {
+                                HStack(spacing: 7) {
+                                    if isReloadingMessages { ProgressView().controlSize(.small) }
+                                    Image(systemName: "clock.arrow.circlepath")
+                                    Text("加载更早消息")
+                                }
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(VeilTheme.mutedGold)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(Color.white.opacity(0.035))
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isReloadingMessages)
+                        }
                         ForEach(visibleMessages) { message in
                             MessageBubble(
                                 message: message,
@@ -290,7 +318,7 @@ struct ChatView: View {
                                 }
                                 Button {
                                     model.haptics.selection()
-                                    if reduceMotion {
+                                    if usesReducedInteractionMotion {
                                         replyingTo = message
                                     } else {
                                         withAnimation(.easeOut(duration: 0.18)) { replyingTo = message }
@@ -302,7 +330,7 @@ struct ChatView: View {
                                     Label("本地删除", systemImage: "trash")
                                 }
                             }
-                            .transition(reduceMotion ? .opacity : .asymmetric(
+                            .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
                                 insertion: .opacity.combined(with: .scale(scale: 0.985)),
                                 removal: .opacity
                             ))
@@ -322,9 +350,9 @@ struct ChatView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 14)
-                    .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
+                    .animation(usesReducedInteractionMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
                 }
-                .onChange(of: messages.count) { _ in
+                .onChange(of: messages.last?.id) { _ in
                     if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
@@ -362,7 +390,7 @@ struct ChatView: View {
                         }
                         Spacer(minLength: 0)
                         Button {
-                            if reduceMotion {
+                            if usesReducedInteractionMotion {
                                 self.replyingTo = nil
                             } else {
                                 withAnimation(.easeIn(duration: 0.16)) { self.replyingTo = nil }
@@ -452,7 +480,7 @@ struct ChatView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button {
-                        if reduceMotion {
+                        if usesReducedInteractionMotion {
                             showsSearchBar = true
                         } else {
                             withAnimation(.easeOut(duration: 0.18)) { showsSearchBar = true }
@@ -482,7 +510,14 @@ struct ChatView: View {
         .onDisappear {
             model.setConversationVisible(conversation.id, visible: false)
         }
-        .onChange(of: model.messagesRevision) { _ in reload() }
+        .onChange(of: model.messagesRevision) { _ in reload(loadAll: showsSearchBar && loadedFullHistoryForSearch) }
+        .onChange(of: searchQuery) { value in
+            let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if showsSearchBar, !query.isEmpty, !loadedFullHistoryForSearch {
+                loadedFullHistoryForSearch = true
+                reload(loadAll: true)
+            }
+        }
         .sheet(isPresented: $showsPhotoPicker) {
             PhotoPicker(
                 onPicked: { imported in prepareAndSendImage(imported) },
@@ -546,8 +581,39 @@ struct ChatView: View {
         }
     }
 
-    private func reload() {
-        messages = model.database.fetchMessages(conversationID: conversation.id)
+    private func reload(loadAll: Bool = false) {
+        messageReloadGeneration &+= 1
+        let generation = messageReloadGeneration
+        let store = model.database
+        let conversationID = conversation.id
+        let limit = messageWindowLimit
+        isReloadingMessages = true
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loadedMessages: [ChatMessage]
+            let hasOlder: Bool
+            if loadAll {
+                loadedMessages = store.fetchMessages(conversationID: conversationID)
+                hasOlder = false
+            } else {
+                let page = store.fetchRecentMessages(conversationID: conversationID, limit: limit)
+                loadedMessages = page.messages
+                hasOlder = page.hasOlder
+            }
+            DispatchQueue.main.async {
+                guard generation == messageReloadGeneration else { return }
+                messages = loadedMessages
+                hasOlderMessages = hasOlder
+                isReloadingMessages = false
+            }
+        }
+    }
+
+    private func loadOlderMessages() {
+        guard hasOlderMessages, !isReloadingMessages else { return }
+        let profile = VeilDevicePerformance.current
+        messageWindowLimit = min(profile.messageWindowMaximum, messageWindowLimit + profile.messageWindowIncrement)
+        reload()
     }
 
     private func send() {
@@ -836,6 +902,12 @@ private struct EncryptedImageView: View {
     @State private var isSavingToPhotos = false
     @State private var savedToPhotos = false
     @State private var saveErrorMessage: String?
+    @State private var showsLargeImage = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var usesReducedImageMotion: Bool {
+        reduceMotion || VeilDevicePerformance.current.transferVisualComplexity != .full
+    }
 
     private var progress: Double {
         min(max(transferProgress ?? 1, 0), 1)
@@ -852,6 +924,9 @@ private struct EncryptedImageView: View {
                         mode: .sending,
                         phase: (deliveryState == .failed || deliveryState == .cancelled) ? .failed : .active
                     )
+                    .contentShape(Rectangle())
+                    .onTapGesture { showsLargeImage = true }
+                    .accessibilityHint("轻点查看大图")
                 } else {
                     Image(uiImage: image)
                         .resizable()
@@ -859,6 +934,9 @@ private struct EncryptedImageView: View {
                         .opacity(revealCompletedImage ? 1 : 0.72)
                         .scaleEffect(revealCompletedImage ? 1 : 0.985)
                         .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                        .contentShape(Rectangle())
+                        .onTapGesture { showsLargeImage = true }
+                        .accessibilityHint("轻点查看大图")
                         .overlay(
                             RoundedRectangle(cornerRadius: 15, style: .continuous)
                                 .stroke(VeilTheme.gold.opacity(completionPulse ? 0 : 0.86), lineWidth: completionPulse ? 1 : 3)
@@ -906,6 +984,17 @@ private struct EncryptedImageView: View {
         .onChange(of: progress) { _ in
             if image == nil { loadImage() }
         }
+        .fullScreenCover(isPresented: $showsLargeImage) {
+            if let image {
+                FullScreenImageViewer(
+                    attachmentID: attachment.id,
+                    database: database,
+                    initialImage: image
+                )
+            } else {
+                Color.black.ignoresSafeArea()
+            }
+        }
         .alert("保存失败", isPresented: Binding(
             get: { saveErrorMessage != nil },
             set: { if !$0 { saveErrorMessage = nil } }
@@ -920,12 +1009,17 @@ private struct EncryptedImageView: View {
         guard image == nil, !isLoading else { return }
         isLoading = true
         let attachmentID = attachment.id
-        let shouldPrepareShards = isOutgoing && (progress < 1 || deliveryState == .failed)
+        let shouldPrepareShards = VeilDevicePerformance.current.shouldPrecomputeTransferShards && isOutgoing && (progress < 1 || deliveryState == .failed)
         let store = database
+        let previewCache = ImagePreviewCache.shared
         DispatchQueue.global(qos: .userInitiated).async {
             let decoded: UIImage?
-            if let data = store.loadAttachment(id: attachmentID) {
-                decoded = UIImage(data: data)
+            if let cached = previewCache.image(for: attachmentID) {
+                decoded = cached
+            } else if let data = store.loadAttachment(id: attachmentID),
+                      let preview = ImagePreviewCache.downsample(data: data) {
+                previewCache.insert(preview, for: attachmentID)
+                decoded = preview
             } else {
                 decoded = nil
             }
@@ -971,11 +1065,16 @@ private struct EncryptedImageView: View {
         revealCompletedImage = false
         completionPulse = false
         DispatchQueue.main.async {
-            withAnimation(.spring(response: 0.30, dampingFraction: 0.84)) {
+            if usesReducedImageMotion {
                 revealCompletedImage = true
-            }
-            withAnimation(.easeOut(duration: 0.58)) {
                 completionPulse = true
+            } else {
+                withAnimation(.spring(response: 0.30, dampingFraction: 0.84)) {
+                    revealCompletedImage = true
+                }
+                withAnimation(.easeOut(duration: 0.58)) {
+                    completionPulse = true
+                }
             }
         }
     }
@@ -1000,7 +1099,7 @@ private struct ContactDetailsSheet: View {
 
     var body: some View {
         NavigationView {
-            ScrollView {
+            VeilStableScrollView(maxContentWidth: 520, horizontalPadding: 18, verticalPadding: 18) {
                 VStack(spacing: 18) {
                     VStack(spacing: 10) {
                         VeilIdentityGlyph(seed: conversation.peerIdentityID, size: 76, active: true)
@@ -1042,9 +1141,6 @@ private struct ContactDetailsSheet: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 10)
                 }
-                .frame(maxWidth: 520)
-                .padding(18)
-                .frame(maxWidth: .infinity)
             }
             .background(VeilAmbientBackground())
             .navigationTitle("联系人信息")

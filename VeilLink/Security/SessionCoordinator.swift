@@ -9,7 +9,6 @@ private enum WireProtocol {
     static let maximumImageBytes = MediaTransferPolicy.maximumImageBytes
     static let attachmentChunkBytes = 48 * 1_024
     static let maximumDisplayNameBytes = 128
-    static let maximumAcknowledgementAttempts = 10
 }
 
 private struct WireAcknowledgement: Codable { let messageID: String }
@@ -58,7 +57,7 @@ final class SessionCoordinator: ObservableObject {
     @Published var lastError: String?
     @Published private(set) var securityEvents: [String] = []
 
-    var transportSend: ((UUID, Data) -> TransportSendResult)?
+    var transportSend: ((UUID, Data, BLESendPriority) -> TransportSendResult)?
     var transportDisconnect: ((UUID) -> Void)?
     var onMessagesChanged: ((Bool) -> Void)?
     var onInboundAttachmentCompleted: ((String) -> Void)?
@@ -79,16 +78,22 @@ final class SessionCoordinator: ObservableObject {
     private var outboundAttachmentCache: [String: CachedOutboundAttachment] = [:]
     private var outboundAttachmentCacheOrder: [String] = []
     private var outboundAttachmentCacheBytes = 0
-    private let maximumOutboundAttachmentCacheBytes = 12 * 1_024 * 1_024
+    private var maximumOutboundAttachmentCacheBytes: Int { VeilDevicePerformance.current.outboundAttachmentCacheBytes }
 
     private var packetAbuseLimiter = PacketAbuseLimiter()
     private var retryTimer: AnyCancellable?
     private var handshakeTimeoutTasks: [UUID: Task<Void, Never>] = [:]
-    private let handshakeTimeoutNanoseconds: UInt64 = 15_000_000_000
+    private let handshakeRetryScheduleNanoseconds: [UInt64] = [
+        1_000_000_000,
+        2_000_000_000,
+        4_000_000_000,
+        6_000_000_000,
+        8_000_000_000
+    ]
 
     init(identity: IdentityManager, database: DatabaseStore) {
         self.identity = identity; self.database = database
-        retryTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect().sink { [weak self] _ in
+        retryTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect().sink { [weak self] _ in
             Task { @MainActor in self?.retryDueOutbound() }
         }
     }
@@ -101,6 +106,10 @@ final class SessionCoordinator: ObservableObject {
             nearbyPeers.append(NearbyPeer(id: transportID.uuidString, transportID: transportID, displayName: "未认证设备", rssi: rssi, trustState: .discovered, pairingCode: nil, lastSeen: Date()))
             if nearbyPeers.count > 100 { nearbyPeers.sort { $0.lastSeen > $1.lastSeen }; nearbyPeers = Array(nearbyPeers.prefix(100)) }
         }
+    }
+
+    func clearTransientCaches() {
+        clearOutboundAttachmentCache()
     }
 
     func connected(transportID: UUID) {
@@ -286,7 +295,10 @@ final class SessionCoordinator: ObservableObject {
     private func sendHello(to transportID: UUID) throws {
         if let context = sessions[transportID] {
             let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .hello, payload: try encoder.encode(context.localHello))
-            guard transportSend?(transportID, envelope) == .accepted else { throw NSError(domain: "VeilLink", code: 20, userInfo: [NSLocalizedDescriptionKey: "蓝牙发送队列暂时不可用。"]) }
+            let result = transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable
+            guard result != .unsupportedLink else {
+                throw NSError(domain: "VeilLink", code: 20, userInfo: [NSLocalizedDescriptionKey: "蓝牙链路无法承载安全握手。"])
+            }
             return
         }
         guard let local = identity.activeIdentity else { throw IdentityError.missingIdentity }
@@ -295,9 +307,10 @@ final class SessionCoordinator: ObservableObject {
         let hello = HelloPacket(protocolVersion: unsigned.protocolVersion, identityID: unsigned.identityID, displayName: unsigned.displayName, identityPublicKey: unsigned.identityPublicKey, agreementPublicKey: unsigned.agreementPublicKey, nonce: unsigned.nonce, signature: try identity.signingKey().signature(for: unsigned.signedPayload))
         sessions[transportID] = SessionContext(transportID: transportID, localEphemeral: ephemeral, localHello: hello)
         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .hello, payload: try encoder.encode(hello))
-        guard transportSend?(transportID, envelope) == .accepted else {
+        let result = transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable
+        guard result != .unsupportedLink else {
             sessions.removeValue(forKey: transportID)
-            throw NSError(domain: "VeilLink", code: 20, userInfo: [NSLocalizedDescriptionKey: "蓝牙发送队列暂时不可用。"])
+            throw NSError(domain: "VeilLink", code: 20, userInfo: [NSLocalizedDescriptionKey: "蓝牙链路无法承载安全握手。"])
         }
     }
 
@@ -308,7 +321,13 @@ final class SessionCoordinator: ObservableObject {
               remote.displayName.lengthOfBytes(using: .utf8) <= WireProtocol.maximumDisplayNameBytes,
               CryptoEngine.identityID(publicKey: remote.identityPublicKey) == remote.identityID else { throw CryptoEngineError.invalidSignature }
         try CryptoEngine.verify(signature: remote.signature, for: remote.signedPayload, publicKey: remote.identityPublicKey)
-        if sessions[transportID] == nil { try sendHello(to: transportID) }
+        if sessions[transportID] == nil {
+            try sendHello(to: transportID)
+        } else if sessions[transportID]?.remoteHello == nil {
+            // If our first Hello was lost but the peer's Hello arrived, echo the same signed
+            // local Hello again. This closes a real asymmetric-handshake loss window.
+            try? sendHello(to: transportID)
+        }
         guard var context = sessions[transportID], remote.identityID != context.localHello.identityID else { throw CryptoEngineError.invalidKeyMaterial }
         if database.peerTrustState(localIdentityID: context.localHello.identityID, identityID: remote.identityID) == .blocked {
             nearbyPeers.removeAll { $0.transportID == transportID || $0.id == remote.identityID }
@@ -333,7 +352,10 @@ final class SessionCoordinator: ObservableObject {
         let trustState: NearbyPeer.TrustState = trusted?.publicKey == remote.identityPublicKey ? .trusted : .awaitingConfirmation
         let peer = NearbyPeer(id: remote.identityID, transportID: transportID, displayName: remote.displayName, rssi: nearbyPeers.first(where: { $0.transportID == transportID })?.rssi ?? -100, trustState: trustState, pairingCode: trustState == .trusted ? nil : CryptoEngine.pairingCode(key: keys.rootKey, transcript: transcript), lastSeen: Date())
         nearbyPeers.removeAll { $0.transportID == transportID || $0.id == remote.identityID }; nearbyPeers.append(peer)
-        if trustState == .trusted { flushOutbound(for: remote.identityID) }
+        if trustState == .trusted {
+            try? database.wakeOutboundForPeer(targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
+            flushOutbound(for: remote.identityID)
+        }
     }
 
     private func handleEncryptedMessage(transportID: UUID, data: Data) throws {
@@ -465,7 +487,7 @@ final class SessionCoordinator: ObservableObject {
         let encrypted = try CryptoEngine.encrypt(try encoder.encode(WireAcknowledgement(messageID: messageID)), key: keys.sendKey, messageID: messageID, sequence: context.nextSendSequence, context: "ack")
         context.nextSendSequence += 1
         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .acknowledgement, payload: try WireCodec.encodeEncryptedPayload(encrypted))
-        _ = transportSend?(transportID, envelope)
+        _ = transportSend?(transportID, envelope, .control)
     }
 
     private func sendAttachmentCheckpoint(messageID: String, nextChunk: Int, chunkCount: Int, transportID: UUID, context: inout SessionContext) throws {
@@ -476,7 +498,7 @@ final class SessionCoordinator: ObservableObject {
         let encrypted = try CryptoEngine.encrypt(clear, key: keys.sendKey, messageID: messageID, sequence: context.nextSendSequence, context: "attachment-checkpoint")
         context.nextSendSequence += 1
         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .attachmentCheckpoint, payload: try WireCodec.encodeEncryptedPayload(encrypted))
-        _ = transportSend?(transportID, envelope)
+        _ = transportSend?(transportID, envelope, .control)
     }
 
     private func flushOutbound(for peerIdentityID: String) {
@@ -494,10 +516,10 @@ final class SessionCoordinator: ObservableObject {
 
         var didChangeVisibleState = false
         for item in dueItems {
-            if item.retryCount >= WireProtocol.maximumAcknowledgementAttempts {
-                failOutbound(messageID: item.messageID, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "多次发送后仍未收到对方确认。可手动重试。")
-                continue
-            }
+            // Do not declare a live message failed merely because a noisy BLE link needed many
+            // retries. The persistent outbox expiry remains the upper bound; reconnecting peers
+            // can therefore recover after long marginal-link periods without user intervention.
+            _ = item.retryCount
             guard let message = database.fetchMessage(id: item.messageID), message.isOutgoing, message.senderIdentityID == localIdentityID else {
                 try? database.completeOutbound(messageID: item.messageID, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
                 continue
@@ -526,7 +548,7 @@ final class SessionCoordinator: ObservableObject {
         let encrypted = try CryptoEngine.encrypt(try encoder.encode(content), key: keys.sendKey, messageID: message.id, sequence: context.nextSendSequence, context: "chat")
         context.nextSendSequence += 1
         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .encryptedMessage, payload: try WireCodec.encodeEncryptedPayload(encrypted))
-        return try applySendResult(transportSend?(transportID, envelope) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+        return try applySendResult(transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
     }
 
     private func sendAttachmentStep(message: ChatMessage, attachment: ChatAttachment, peerIdentityID: String, transportID: UUID, localIdentityID: String, keys: SessionKeyMaterial, context: inout SessionContext) throws -> Bool {
@@ -552,12 +574,15 @@ final class SessionCoordinator: ObservableObject {
         }
 
         let envelope: Data
+        let priority: BLESendPriority
         if state.nextChunk < 0 {
+            priority = .control
             let manifest = WireChatContent(kind: .image, text: nil, attachment: nil, mimeType: attachment.mimeType, sentAt: message.sentAt, attachmentByteCount: data.count, attachmentSHA256: digest, attachmentChunkCount: expectedChunkCount)
             let encrypted = try CryptoEngine.encrypt(try encoder.encode(manifest), key: keys.sendKey, messageID: message.id, sequence: context.nextSendSequence, context: "chat")
             context.nextSendSequence += 1
             envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .encryptedMessage, payload: try WireCodec.encodeEncryptedPayload(encrypted))
         } else if state.nextChunk < state.chunkCount {
+            priority = .bulk
             let lower = state.nextChunk * WireProtocol.attachmentChunkBytes
             let upper = min(lower + WireProtocol.attachmentChunkBytes, data.count)
             guard lower < upper else { throw CryptoEngineError.invalidCiphertext }
@@ -576,7 +601,7 @@ final class SessionCoordinator: ObservableObject {
             failOutbound(messageID: message.id, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "附件分块编码后超过当前协议允许的最大体积。")
             return false
         }
-        return try applySendResult(transportSend?(transportID, envelope) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+        return try applySendResult(transportSend?(transportID, envelope, priority) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
     }
 
     private func applySendResult(_ result: TransportSendResult, message: ChatMessage, peerIdentityID: String, localIdentityID: String) throws -> Bool {
@@ -653,7 +678,20 @@ final class SessionCoordinator: ObservableObject {
         cancelHandshakeTimeout(for: transportID)
         handshakeTimeoutTasks[transportID] = Task { @MainActor [weak self] in
             guard let self else { return }
-            try? await Task.sleep(nanoseconds: self.handshakeTimeoutNanoseconds)
+            for delay in self.handshakeRetryScheduleNanoseconds {
+                try? await Task.sleep(nanoseconds: delay)
+                guard !Task.isCancelled else { return }
+                guard let context = self.sessions[transportID] else { return }
+                if context.remoteHello != nil {
+                    self.handshakeTimeoutTasks.removeValue(forKey: transportID)
+                    return
+                }
+                // Reuse the same ephemeral key/nonce for this handshake attempt. The signed Hello
+                // is idempotent and a duplicate is harmless, while a lost first Hello no longer
+                // forces a manual reconnect.
+                try? self.sendHello(to: transportID)
+            }
+
             guard !Task.isCancelled,
                   let context = self.sessions[transportID],
                   context.remoteHello == nil else { return }
@@ -661,10 +699,17 @@ final class SessionCoordinator: ObservableObject {
             self.sessions.removeValue(forKey: transportID)
             self.packetAbuseLimiter.reset(transportID)
             self.peerTransport = self.peerTransport.filter { $0.value != transportID }
-            self.nearbyPeers.removeAll { $0.transportID == transportID }
-            self.recordSecurityEvent("安全握手超时，已释放未完成连接")
-            self.lastError = "安全握手超时，已断开未完成连接。"
-            self.transportDisconnect?(transportID)
+            self.recordSecurityEvent("安全握手持续丢包，已在现有链路上重新发起")
+            self.lastError = "蓝牙链路较弱，正在重新建立安全会话。"
+            // The physical BLE link may still be alive (especially when this device is the
+            // peripheral). Re-seed the secure handshake in place instead of permanently dropping
+            // the user's connection intent.
+            do {
+                try self.sendHello(to: transportID)
+                self.scheduleHandshakeTimeout(for: transportID)
+            } catch {
+                self.lastError = "安全会话恢复失败，等待蓝牙链路重新连接。"
+            }
         }
     }
 

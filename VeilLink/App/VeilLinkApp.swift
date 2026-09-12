@@ -18,9 +18,13 @@ struct VeilLinkApp: App {
                         .onAppear { model.start() }
                         .onChange(of: scenePhase) { phase in
                             if phase != .active {
+                                model.trimCachesForBackgroundIfNeeded()
                                 model.appLock.lock()
                                 model.ownerMode.lock()
                             }
+                        }
+                        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                            model.handleMemoryPressure()
                         }
                 } else {
                     StartupFailureView(message: bootstrap.errorMessage)

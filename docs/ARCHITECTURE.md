@@ -1,4 +1,4 @@
-# VeilLink V0.3.7-dev architecture
+# VeilLink V0.3.13-dev architecture
 
 VeilLink is an offline nearby E2EE messenger for iOS 15+. Runtime communication uses CoreBluetooth; ZIPFoundation is used only for local backup packaging.
 
@@ -77,7 +77,7 @@ Transport v2 preflights fragmentation before allocating packets. Protocol 4 enve
 
 ## V0.2.3 session consistency
 
-CoreBluetooth can report progress through multiple delegate callbacks. Central-side readiness is published only after the data characteristic exists and notification subscription succeeds; `ConnectionEventGate` then turns readiness into one logical connected/disconnected transition per transport ID, and `SessionCoordinator` independently ignores duplicate connected callbacks. A pre-authentication session is bounded to 15 seconds; successful Hello authentication cancels the deadline, while expiry removes the incomplete session and disconnects that BLE transport. Message insertion and conversation preview advancement share one SQLite transaction. Attachment file creation is rollback-safe with respect to its database row: if the row insert fails, the just-written encrypted file is deleted.
+CoreBluetooth can report progress through multiple delegate callbacks. Central-side readiness is published only after the data characteristic exists and notification subscription succeeds; `ConnectionEventGate` then turns readiness into one logical connected/disconnected transition per transport ID, and `SessionCoordinator` independently ignores duplicate connected callbacks. Pre-authentication Hello delivery is now retried on an idempotent short schedule. A weak link no longer turns one dropped Hello into a permanent disconnect; the session can reseed the handshake while the physical BLE link remains alive. Message insertion and conversation preview advancement share one SQLite transaction. Attachment file creation is rollback-safe with respect to its database row: if the row insert fails, the just-written encrypted file is deleted.
 
 
 ## V0.3.3 visual and motion layer
@@ -109,3 +109,31 @@ V0.3.6 keeps Protocol 4 and Schema V8 unchanged while reducing hot-path work. BL
 ## V0.3.7 legacy compositor layer
 
 The visual layer includes a pure `RenderCompatibilityPolicy` plus an iOS hardware identifier bridge. iPhone 7 / 7 Plus on iOS 15 select a reduced compositor path: persistent link/radar motion is static, ambient backgrounds avoid GeometryReader-driven curtain layers, and shared card/glass modifiers avoid the heaviest clip + duplicate overlay + shadow composition. This is presentation-only and does not alter transport, protocol, trust, crypto or persistence semantics.
+
+## V0.3.8 iOS 15 stable scroll layout
+
+The real-device failure pattern was refined from a pure compositor-load hypothesis to a ScrollView content-host layout instability: navigation/tab chrome stayed fixed while the entire scrolling content layer shifted horizontally, clipped, disappeared and later returned. Shared affected screens used nested `maxWidth`/`infinity` sizing inside a vertical ScrollView. V0.3.8 introduces `VeilStableScrollView`, which measures the viewport outside scroll content and assigns a concrete centered content width. iOS 15 builds also expose a stable-layout diagnostic label; the iPhone 7 compositor reduction from V0.3.7 remains active.
+
+
+## V0.3.9 performance overhaul
+
+The hot path is now bounded around real screen needs rather than total history size. ChatView loads the most recent 120 messages on a background queue and expands in 120-message windows on demand; full-history decryption is reserved for an explicit search. DatabaseStore caches up to 512 immutable decrypted message bodies so delivery/progress refreshes do not repeatedly perform ChaChaPoly opens. Image bubbles decrypt original bytes only once per cache miss, then ImageIO creates a <=1024 px display preview without a full-resolution decode; previews are held in a 32 MiB cost-bounded NSCache. Inbound image finalization replaces roughly one SQLite prepare/queue hop per 48 KiB chunk with one ordered statement and an incremental SHA-256 pass, then reuses that verified digest while saving. The legacy iPhone 7 compositor path also disables shard trails, per-shard shadows and spring interpolation while preserving checkpoint-driven visual progress.
+
+
+## V0.3.10 targeted device performance
+
+`DevicePerformancePolicy` maps the small, explicit deployment fleet to local-only runtime budgets without changing Protocol 4. SE1 (`iPhone8,4`) is the constrained A9 profile; iPhone 7/7 Plus (`iPhone9,x`) use a legacy A10 profile; SE2 (`iPhone12,8`) uses a balanced A13 profile; iPhone 13 Pro (`iPhone14,2`) uses the high profile; and iPad Air 4 (`iPad13,1/2`) has a deterministic performance profile while its UI repair remains deferred. The policy controls chat history windowing, immutable decrypted-body cache size, image thumbnail resolution/cache cost, outbound attachment cache, BLE queue/reassembly budgets, message refresh coalescing, transfer visual complexity and background cache trimming. Memory warnings always clear transient caches. The cache policy is strictly local and does not alter message encoding, cryptographic domains, chunk size, checkpoint semantics or peer compatibility.
+
+
+## V0.3.11 Owner Mode performance overrides
+
+`PerformanceOverrideStore` keeps a thread-safe local snapshot of explicit developer overrides, while `PerformanceOverridePolicy` derives an effective runtime profile from the existing hardware-specific base profile. Owner Mode is the only UI surface that can edit these values. The master override is disabled by default. Optional overrides can raise local preview resolution to 2048 px, expand the in-memory outbound attachment cache to at least 16 MiB, disable message-refresh debounce, force full visual complexity, and re-enable persistent animations on SE1/iPhone 7. The override layer intentionally does not modify BLE queue/reassembly limits, Protocol 4, Schema V8, encryption, chunking or peer compatibility.
+
+## V0.3.12 in-app image viewer
+
+Chat image bubbles use the normal `ImagePreviewCache` device budget. Opening a large image presents `FullScreenImageViewer`, which immediately reuses the bubble thumbnail and asynchronously decrypts the local attachment and performs a second ImageIO downsample governed by `ImageViewerPolicy`. This keeps scroll-time memory cheap while allowing explicit detail viewing. The viewer owns its larger `UIImage` only for the lifetime of the full-screen presentation and supports 1–5× interaction entirely in-process.
+
+
+## V0.3.13 BLE reliability layer
+
+BLE reliability is layered rather than expressed as a distance promise. CoreBluetooth still owns the physical radio/link-layer retries; VeilLink adds live RSSI smoothing, signal-aware burst pacing, control-over-bulk queue priority, persistent capped reconnect, stalled-queue recovery and repeated Hello delivery. Persistent messages are not failed merely because a marginal link exceeded ten accepted sends: the outbox continues until authenticated ACK/checkpoint or expiry. A newly authenticated trusted session wakes old pending rows immediately. These changes leave Protocol 4 and Schema V8 unchanged and do not alter RF transmit power.

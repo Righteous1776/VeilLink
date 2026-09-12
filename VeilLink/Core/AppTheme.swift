@@ -1,6 +1,5 @@
 import SwiftUI
 import Foundation
-import Darwin
 
 /// VeilLink visual system.
 ///
@@ -60,15 +59,7 @@ enum VeilTheme {
 /// repeat-forever animations are active. Keep the visual language, but switch persistent motion
 /// and expensive off-screen composition to a lighter path on that exact device family.
 enum VeilRenderProfile {
-    static let machineIdentifier: String = {
-        var info = utsname()
-        guard uname(&info) == 0 else { return "unknown" }
-        return withUnsafePointer(to: &info.machine) { pointer in
-            pointer.withMemoryRebound(to: CChar.self, capacity: 1) {
-                String(cString: $0)
-            }
-        }
-    }()
+    static var machineIdentifier: String { VeilDevicePerformance.machineIdentifier }
 
     static var usesLegacyCompositorPath: Bool {
         RenderCompatibilityPolicy.shouldUseLegacyCompositor(
@@ -76,12 +67,67 @@ enum VeilRenderProfile {
             osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         )
     }
+
+    static var usesStableScrollLayout: Bool {
+        RenderCompatibilityPolicy.shouldUseStableScrollLayout(
+            osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        )
+    }
+
+    static var allowsExpensiveVisualEffects: Bool {
+        !usesLegacyCompositorPath || VeilPerformanceOverrides.forceFullVisualEffects
+    }
+
+    static var allowsPersistentAnimations: Bool {
+        !usesLegacyCompositorPath || VeilPerformanceOverrides.allowPersistentAnimations
+    }
+
+    static var diagnosticLabel: String {
+        let renderer: String
+        if usesLegacyCompositorPath { renderer = "LEGACY15" }
+        else if usesStableScrollLayout { renderer = "STABLE15" }
+        else { renderer = "MODERN" }
+        let god = PerformanceOverrideStore.shared.snapshot().isEnabled ? " · GOD" : ""
+        return "\(renderer) · \(VeilDevicePerformance.current.label) · \(machineIdentifier)\(god)"
+    }
+}
+
+enum VeilBuildInfo {
+    static var shortVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    }
+
+    static var build: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+    }
+
+    static var display: String { "VeilLink \(shortVersion) (\(build)) · Protocol 4" }
 }
 
 enum VeilMotion {
-    static let reveal = Animation.easeOut(duration: 0.24)
-    static let transit = Animation.interactiveSpring(response: 0.38, dampingFraction: 0.84)
-    static let resolve = Animation.spring(response: 0.42, dampingFraction: 0.72)
+    static var reveal: Animation {
+        switch VeilDevicePerformance.current.transferVisualComplexity {
+        case .minimal: return .easeOut(duration: 0.15)
+        case .balanced: return .easeOut(duration: 0.20)
+        case .full: return .easeOut(duration: 0.24)
+        }
+    }
+
+    static var transit: Animation {
+        switch VeilDevicePerformance.current.transferVisualComplexity {
+        case .minimal: return .easeOut(duration: 0.18)
+        case .balanced: return .interactiveSpring(response: 0.32, dampingFraction: 0.88)
+        case .full: return .interactiveSpring(response: 0.38, dampingFraction: 0.84)
+        }
+    }
+
+    static var resolve: Animation {
+        switch VeilDevicePerformance.current.transferVisualComplexity {
+        case .minimal: return .easeOut(duration: 0.18)
+        case .balanced: return .spring(response: 0.34, dampingFraction: 0.80)
+        case .full: return .spring(response: 0.42, dampingFraction: 0.72)
+        }
+    }
 }
 
 /// Asymmetric panel geometry used throughout VeilLink. The cuts deliberately replace generic
@@ -127,20 +173,14 @@ struct VeilAmbientBackground: View {
     var body: some View {
         Group {
             if VeilRenderProfile.usesLegacyCompositorPath {
-                // iPhone 7 / iOS 15: avoid GeometryReader-driven multi-layer composition.
-                ZStack {
-                    LinearGradient(
-                        colors: [VeilTheme.backgroundLift, VeilTheme.background, Color.black],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    RadialGradient(
-                        colors: [VeilTheme.gold.opacity(0.045), Color.clear],
-                        center: UnitPoint(x: 0.94, y: 0.04),
-                        startRadius: 0,
-                        endRadius: 280
-                    )
-                }
+                // Keep the legacy background strictly within its parent's bounds. On iOS 15,
+                // an ignoresSafeArea background attached to ScrollView can participate in the
+                // same content-host invalidation we are trying to avoid.
+                LinearGradient(
+                    colors: [VeilTheme.backgroundLift, VeilTheme.background, Color.black],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             } else {
                 GeometryReader { geometry in
                     ZStack {
@@ -189,10 +229,51 @@ struct VeilAmbientBackground: View {
                         )
                     }
                 }
+                .ignoresSafeArea()
             }
         }
-        .ignoresSafeArea()
         .allowsHitTesting(false)
+    }
+}
+
+/// Explicit-width vertical scroll host. The iOS 15 path never asks ScrollView to resolve a
+/// nested maxWidth(.infinity) chain: viewport width is measured once outside the scroll content,
+/// then the content receives a concrete width. This targets the whole-content horizontal jump /
+/// disappearance seen on real iPhone 7 recordings while preserving centering on iPad/newer iOS.
+struct VeilStableScrollView<Content: View>: View {
+    let maxContentWidth: CGFloat
+    let horizontalPadding: CGFloat
+    let verticalPadding: CGFloat
+    private let content: Content
+
+    init(
+        maxContentWidth: CGFloat = 760,
+        horizontalPadding: CGFloat = 16,
+        verticalPadding: CGFloat = 16,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.maxContentWidth = maxContentWidth
+        self.horizontalPadding = horizontalPadding
+        self.verticalPadding = verticalPadding
+        self.content = content()
+    }
+
+    var body: some View {
+        GeometryReader { viewport in
+            let available = max(1, viewport.size.width - horizontalPadding * 2)
+            let width = min(maxContentWidth, available)
+            ScrollView(.vertical, showsIndicators: true) {
+                HStack(alignment: .top, spacing: 0) {
+                    Spacer(minLength: 0)
+                    content
+                        .frame(width: width, alignment: .top)
+                    Spacer(minLength: 0)
+                }
+                .frame(width: max(1, viewport.size.width), alignment: .top)
+                .padding(.vertical, verticalPadding)
+            }
+            .frame(width: viewport.size.width, height: viewport.size.height, alignment: .top)
+        }
     }
 }
 
@@ -290,9 +371,9 @@ struct VeilPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion && !VeilRenderProfile.usesLegacyCompositorPath ? 0.968 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion && VeilRenderProfile.allowsExpensiveVisualEffects ? 0.968 : 1)
             .opacity(configuration.isPressed ? 0.80 : 1)
-            .animation((reduceMotion || VeilRenderProfile.usesLegacyCompositorPath) ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation((reduceMotion || !VeilRenderProfile.allowsExpensiveVisualEffects) ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -349,8 +430,8 @@ struct VeilIdentityGlyph: View {
         }
         .frame(width: size, height: size)
         .shadow(
-            color: active && !VeilRenderProfile.usesLegacyCompositorPath ? VeilTheme.gold.opacity(0.20) : .clear,
-            radius: VeilRenderProfile.usesLegacyCompositorPath ? 0 : 9
+            color: active && VeilRenderProfile.allowsExpensiveVisualEffects ? VeilTheme.gold.opacity(0.20) : .clear,
+            radius: VeilRenderProfile.allowsExpensiveVisualEffects ? 9 : 0
         )
         .accessibilityHidden(true)
     }
@@ -388,10 +469,10 @@ struct VeilLinkTrace: View {
                     .fill(VeilTheme.goldBright)
                     .frame(width: 3.5, height: 3.5)
                     .shadow(
-                        color: VeilRenderProfile.usesLegacyCompositorPath ? .clear : VeilTheme.gold.opacity(0.75),
-                        radius: VeilRenderProfile.usesLegacyCompositorPath ? 0 : 5
+                        color: VeilRenderProfile.allowsExpensiveVisualEffects ? VeilTheme.gold.opacity(0.75) : .clear,
+                        radius: VeilRenderProfile.allowsExpensiveVisualEffects ? 5 : 0
                     )
-                    .offset(x: VeilRenderProfile.usesLegacyCompositorPath ? width * 0.70 : (travels ? width - 4 : 0))
+                    .offset(x: VeilRenderProfile.allowsPersistentAnimations ? (travels ? width - 4 : 0) : width * 0.70)
             }
         }
         .frame(width: width, height: 4)
@@ -402,7 +483,7 @@ struct VeilLinkTrace: View {
 
     private func updateMotion() {
         travels = false
-        guard active, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }
+        guard active, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }
         withAnimation(.linear(duration: 1.7).repeatForever(autoreverses: false)) {
             travels = true
         }
@@ -431,7 +512,7 @@ struct VeilResolveMark: View {
 
     private func resolve() {
         expanded = false
-        guard resolved, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }
+        guard resolved, !reduceMotion, VeilRenderProfile.allowsExpensiveVisualEffects else { return }
         withAnimation(VeilMotion.resolve) { expanded = true }
     }
 }

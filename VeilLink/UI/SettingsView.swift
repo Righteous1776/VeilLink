@@ -25,7 +25,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
+        VeilStableScrollView {
             VStack(spacing: 16) {
                 profileCard
                 securityCard
@@ -35,9 +35,6 @@ struct SettingsView: View {
                 bluetoothCard
                 versionFooter
             }
-            .frame(maxWidth: 760)
-            .padding()
-            .frame(maxWidth: .infinity)
         }
         .background(VeilAmbientBackground())
         .navigationTitle("设置")
@@ -252,9 +249,18 @@ struct SettingsView: View {
 
     private var versionFooter: some View {
         VStack(spacing: 5) {
-            Text("VeilLink 0.3.7-dev · Protocol 4")
+            Text(VeilBuildInfo.display)
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
+            if VeilRenderProfile.usesStableScrollLayout {
+                Text(VeilRenderProfile.diagnosticLabel)
+                    .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            } else {
+                Text(VeilDevicePerformance.diagnosticLabel)
+                    .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
             Text("ZeoStudio")
                 .font(.caption2)
                 .foregroundColor(VeilTheme.mutedGold)

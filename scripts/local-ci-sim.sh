@@ -21,8 +21,8 @@ assert project['settings']['base']['SWIFT_VERSION'] == 5.9
 assert 'VeilLink' in project['targets'] and 'VeilLinkTests' in project['targets']
 with open(root/'VeilLink/Resources/Info.plist', 'rb') as fh:
     plist = plistlib.load(fh)
-assert plist['CFBundleShortVersionString'] == '0.3.7'
-assert plist['CFBundleVersion'] == '13'
+assert plist['CFBundleShortVersionString'] == '0.3.13'
+assert plist['CFBundleVersion'] == '19'
 ci = yaml.safe_load((root/'.github/workflows/ios-ci.yml').read_text(encoding='utf-8'))
 ipa = yaml.safe_load((root/'.github/workflows/unsigned-ipa.yml').read_text(encoding='utf-8'))
 ci_job = ci['jobs']['build-and-test']
@@ -50,7 +50,11 @@ swiftc -typecheck \
     VeilLink/Core/Models.swift \
     VeilLink/Core/MessageTextFeatures.swift \
     VeilLink/Core/RenderCompatibilityPolicy.swift \
+    VeilLink/Core/PerformanceOverrides.swift \
+    VeilLink/Core/DevicePerformanceProfile.swift \
+    VeilLink/Core/ImageViewerPolicy.swift \
     VeilLink/Transport/ConnectionEventGate.swift \
+    VeilLink/Transport/BLELinkReliabilityPolicy.swift \
     VeilLink/Security/PacketAbuseLimiter.swift \
     VeilLink/Transport/BLEFramer.swift
 pass "Linux-compatible core typecheck"
@@ -63,9 +67,45 @@ import Foundation
 let reply = ReplyTextCodec.encode(quoted: "old message", reply: "new message")
 precondition(ReplyTextCodec.decode(reply)?.reply == "new message")
 precondition(ReplyTextCodec.previewText(for: reply) == "↪︎ new message")
+precondition(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone8,4", osMajorVersion: 15))
 precondition(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone9,1", osMajorVersion: 15))
 precondition(!RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone9,1", osMajorVersion: 16))
 precondition(!RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone14,2", osMajorVersion: 15))
+precondition(RenderCompatibilityPolicy.shouldUseStableScrollLayout(osMajorVersion: 15))
+precondition(!RenderCompatibilityPolicy.shouldUseStableScrollLayout(osMajorVersion: 16))
+let se1Profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone8,4", osMajorVersion: 15)
+precondition(se1Profile.label == "SE1-LOW" && se1Profile.messageWindowInitial == 48)
+let iPhone7Profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone9,1", osMajorVersion: 15)
+precondition(iPhone7Profile.label == "LEGACY-COMPACT")
+let se2Profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone12,8", osMajorVersion: 15)
+precondition(se2Profile.label == "SE2-BALANCED")
+let proProfile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone14,2", osMajorVersion: 18)
+precondition(proProfile.label == "13PRO-HIGH")
+precondition(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone8,4", previewMaxPixelSize: 640, highDefinitionOverride: false) == 1_536)
+precondition(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone9,1", previewMaxPixelSize: 768, highDefinitionOverride: false) == 2_048)
+precondition(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone12,8", previewMaxPixelSize: 1_024, highDefinitionOverride: false) == 2_560)
+precondition(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone14,2", previewMaxPixelSize: 1_280, highDefinitionOverride: false) == 3_072)
+precondition(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone8,4", previewMaxPixelSize: 2_048, highDefinitionOverride: true) == 4_096)
+let godSnapshot = PerformanceOverrideSnapshot(
+    isEnabled: true,
+    highDefinitionPreview: true,
+    expandedAttachmentCache: true,
+    disableRefreshCoalescing: true,
+    forceFullVisualEffects: true,
+    allowPersistentAnimations: true
+)
+let godProfile = PerformanceOverridePolicy.effectiveProfile(base: iPhone7Profile, snapshot: godSnapshot)
+precondition(godProfile.imagePreviewMaxPixelSize == 2_048)
+precondition(godProfile.outboundAttachmentCacheBytes == 16 * 1_024 * 1_024)
+precondition(godProfile.messageRefreshDebounceNanoseconds == 0)
+precondition(godProfile.transferVisualComplexity == .full)
+precondition(godProfile.bleQueueByteLimit == iPhone7Profile.bleQueueByteLimit)
+let weakLegacyLink = BLELinkReliabilityPolicy.tuning(rssi: -88, machineIdentifier: "iPhone9,1")
+let weakModernLink = BLELinkReliabilityPolicy.tuning(rssi: -88, machineIdentifier: "iPhone14,2")
+precondition(weakLegacyLink.quality == .weak)
+precondition(weakLegacyLink.packetBurstLimit <= weakModernLink.packetBurstLimit)
+precondition(BLELinkReliabilityPolicy.reconnectDelay(attempt: 100) == 30)
+precondition(BLELinkReliabilityPolicy.smoothedRSSI(previous: -70, sample: 127) == -70)
 
 var gate = ConnectionEventGate()
 let transport = UUID()
@@ -92,7 +132,7 @@ for fragment in fragments.reversed() {
 precondition(rebuilt == payload)
 print("core-harness-ok")
 SWIFT
-swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Core/RenderCompatibilityPolicy.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
+swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Core/RenderCompatibilityPolicy.swift     VeilLink/Core/PerformanceOverrides.swift     VeilLink/Core/DevicePerformanceProfile.swift     VeilLink/Core/ImageViewerPolicy.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Transport/BLELinkReliabilityPolicy.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
 "$HARNESS_DIR/core-harness" >/dev/null
 pass "core executable behavior harness"
 
@@ -104,6 +144,11 @@ public protocol ObservableObject: AnyObject {}
 }
 SWIFT
 swiftc -emit-module -module-name Combine "$HARNESS_DIR/Combine.swift" -emit-module-path "$HARNESS_DIR/Combine.swiftmodule"
+swiftc -typecheck -I "$HARNESS_DIR" \
+    VeilLink/Core/PerformanceOverrides.swift \
+    VeilLink/Core/DevicePerformanceProfile.swift \
+    VeilLink/Core/PerformanceOverrideController.swift
+pass "performance override controller API-shape typecheck (Linux Combine stub)"
 cat > "$HARNESS_DIR/UIKit.swift" <<'SWIFT'
 @_exported import Foundation
 public typealias CGFloat = Double
@@ -161,16 +206,16 @@ settings=Path('VeilLink/UI/SettingsView.swift').read_text(encoding='utf-8')
 adaptive=Path('VeilLink/UI/AdaptiveRootView.swift').read_text(encoding='utf-8')
 conversation=Path('VeilLink/UI/ConversationViews.swift').read_text(encoding='utf-8')
 assert 'RenderCompatibilityPolicy.shouldUseLegacyCompositor' in theme
-assert 'guard active, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }' in theme
-assert 'guard isRunning, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }' in nearby
+assert 'guard active, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }' in theme
+assert 'guard isRunning, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }' in nearby
 assert 'VeilLinkTrace(active: peer.trustState == .awaitingConfirmation, width: 30)' in nearby
 assert 'VeilLinkTrace(active: true, width: 34)' not in settings
 assert 'VeilLinkTrace(active: true, width: 34)' not in adaptive
 assert 'VeilLinkTrace(active: true, width: 26)' not in conversation
 assert 'VeilLinkTrace(active: true, width: 86)' not in conversation
-print('legacy-render-ok')
+print('legacy-render-and-stable-scroll-ok')
 PY
-pass "iPhone 7 / iOS 15 legacy compositor guard"
+pass "SE1 / iPhone 7 / iOS 15 legacy compositor guard"
 
 python3 - <<'PY'
 import sqlite3, tempfile, os
@@ -242,6 +287,51 @@ for retry,delay in expected:
 print('runtime-sql-opt-ok')
 PY
 pass "runtime optimization SQLite/index smoke"
+
+python3 - <<'PY2'
+from pathlib import Path
+root = Path('.')
+db = (root/'VeilLink/Storage/DatabaseStore.swift').read_text(encoding='utf-8')
+chat = (root/'VeilLink/UI/ConversationViews.swift').read_text(encoding='utf-8')
+preview = (root/'VeilLink/Media/ImagePreviewCache.swift').read_text(encoding='utf-8')
+shards = (root/'VeilLink/UI/TransferShardView.swift').read_text(encoding='utf-8')
+profile = (root/'VeilLink/Core/DevicePerformanceProfile.swift').read_text(encoding='utf-8')
+app = (root/'VeilLink/App/AppModel.swift').read_text(encoding='utf-8')
+ble = (root/'VeilLink/Transport/BLETransport.swift').read_text(encoding='utf-8')
+session = (root/'VeilLink/Security/SessionCoordinator.swift').read_text(encoding='utf-8')
+overrides = (root/'VeilLink/Core/PerformanceOverrides.swift').read_text(encoding='utf-8')
+owner = (root/'VeilLink/UI/OwnerConsoleView.swift').read_text(encoding='utf-8')
+viewer = (root/'VeilLink/UI/FullScreenImageViewer.swift').read_text(encoding='utf-8')
+viewer_policy = (root/'VeilLink/Core/ImageViewerPolicy.swift').read_text(encoding='utf-8')
+reliability = (root/'VeilLink/Transport/BLELinkReliabilityPolicy.swift').read_text(encoding='utf-8')
+assert 'fetchRecentMessages' in db and 'VeilDevicePerformance.current.decryptedBodyCacheEntries' in db
+assert 'decryptedBodyCacheOrderHead' in db and 'fetchMessageIDs' in db
+assert 'SELECT chunk_index, ciphertext FROM inbound_attachment_chunks' in db
+assert 'ImagePreviewCache.downsample' in chat and 'kCGImageSourceThumbnailMaxPixelSize' in preview
+assert 'VeilDevicePerformance.current.messageWindowInitial' in chat and 'DispatchQueue.global(qos: .userInitiated).async' in chat
+assert 'usesMinimalRendering' in shards and 'ShardGridShape' in shards
+for token in ['iPhone8,4','iPhone9,1','iPhone12,8','iPhone14,2','iPad13,1']:
+    assert token in profile
+assert 'messageRefreshDebounceNanoseconds' in app and 'handleMemoryPressure' in app
+assert 'bleQueueByteLimit' in ble and 'bleReassemblyByteLimit' in ble
+assert 'outboundAttachmentCacheBytes' in session
+assert 'PerformanceOverridePolicy' in overrides and '2_048' in overrides and '16 * 1_024 * 1_024' in overrides
+assert 'THERMAL HERESY' in owner and '把散热交给命运' in owner and '恢复理智' in owner
+assert 'allowPersistentAnimations' in owner and 'disableRefreshCoalescing' in owner
+assert 'FullScreenImageViewer' in chat and 'showsLargeImage' in chat
+assert 'MagnificationGesture()' in viewer and 'DragGesture(minimumDistance: 4)' in viewer
+assert 'ImagePreviewCache.downsample' in viewer and '4_096' in viewer_policy
+assert 'CBCentralManagerScanOptionAllowDuplicatesKey: true' in ble
+assert 'PeerOutboundQueue' in ble and 'priority: BLESendPriority' in ble
+assert 'readRSSI()' in ble and 'recoverStalledTransportQueuesIfNeeded' in ble
+assert 'attempt <= 5' not in ble and 'reconnectDelay(attempt:' in ble
+assert 'CBAdvertisementDataLocalNameKey' not in ble
+assert 'handshakeRetryScheduleNanoseconds' in session and 'wakeOutboundForPeer' in session
+assert 'maximumAcknowledgementAttempts' not in session
+assert 'packetBurstLimit' in reliability and 'interBurstDelay' in reliability
+print('targeted-perf-ok')
+PY2
+pass "V0.3.13 targeted-device + God Mode + image viewer + BLE reliability guard"
 
 python3 - <<'PY'
 from pathlib import Path

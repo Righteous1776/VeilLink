@@ -74,6 +74,14 @@ struct TransferShardView: View {
         min(max(progress, 0), 1)
     }
 
+    private var usesMinimalRendering: Bool {
+        VeilDevicePerformance.current.transferVisualComplexity == .minimal
+    }
+
+    private var usesLowCostRendering: Bool {
+        reduceMotion || (VeilRenderProfile.usesLegacyCompositorPath && !VeilPerformanceOverrides.forceFullVisualEffects) || VeilDevicePerformance.current.transferVisualComplexity != .full
+    }
+
     private var visualProgress: Double {
         if phase == .failed, mode == .sending { return 0 }
         return clampedProgress
@@ -95,14 +103,18 @@ struct TransferShardView: View {
                 )
                 .allowsHitTesting(false)
 
-                if !reduceMotion && phase == .active {
-                    ForEach(Array(stride(from: 0, to: columns * rows, by: 4)), id: \.self) { index in
-                        shardTrail(index: index, in: size)
+                if usesMinimalRendering {
+                    minimalShardSurface(in: size)
+                } else {
+                    if !usesLowCostRendering && phase == .active {
+                        ForEach(Array(stride(from: 0, to: columns * rows, by: 4)), id: \.self) { index in
+                            shardTrail(index: index, in: size)
+                        }
                     }
-                }
 
-                ForEach(0..<(columns * rows), id: \.self) { index in
-                    shard(index: index, in: size)
+                    ForEach(0..<(columns * rows), id: \.self) { index in
+                        shard(index: index, in: size)
+                    }
                 }
 
                 transferOverlay
@@ -141,14 +153,50 @@ struct TransferShardView: View {
                 .padding(.top, 8)
                 .opacity(clampedProgress < 1 || phase == .failed ? 0.92 : 0)
             }
-            .shadow(color: phase == .failed ? VeilTheme.danger.opacity(0.10) : VeilTheme.gold.opacity(clampedProgress < 1 ? 0.10 : 0), radius: 12, x: 0, y: 6)
-            .animation(reduceMotion ? nil : .interactiveSpring(response: 0.40, dampingFraction: phase == .failed ? 0.70 : 0.82), value: progressBucket)
-            .animation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.68), value: phase)
+            .shadow(
+                color: usesLowCostRendering ? .clear : (phase == .failed ? VeilTheme.danger.opacity(0.10) : VeilTheme.gold.opacity(clampedProgress < 1 ? 0.10 : 0)),
+                radius: usesLowCostRendering ? 0 : 12,
+                x: 0, y: usesLowCostRendering ? 0 : 6
+            )
+            .animation(usesLowCostRendering ? nil : .interactiveSpring(response: 0.40, dampingFraction: phase == .failed ? 0.70 : 0.82), value: progressBucket)
+            .animation(usesLowCostRendering ? nil : .spring(response: 0.46, dampingFraction: 0.68), value: phase)
         }
         .aspectRatio(4.0 / 3.0, contentMode: .fit)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(phase == .failed ? "传输已中断" : "\(Int(clampedProgress * 100))%")
+    }
+
+    @ViewBuilder
+    private func minimalShardSurface(in size: CGSize) -> some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                    .opacity(mode == .receiving ? max(0.16, clampedProgress) : max(0.34, 1 - clampedProgress * 0.46))
+            } else {
+                LinearGradient(
+                    colors: [VeilTheme.gold.opacity(0.44), VeilTheme.panel, VeilTheme.obsidian],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+
+            ShardGridShape(columns: columns, rows: rows)
+                .stroke(Color.white.opacity(0.075), lineWidth: 0.55)
+
+            if mode == .receiving {
+                Rectangle()
+                    .fill(VeilTheme.obsidian.opacity(0.72))
+                    .frame(width: size.width * CGFloat(max(0, 1 - clampedProgress)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .allowsHitTesting(false)
     }
 
     @ViewBuilder
@@ -163,10 +211,13 @@ struct TransferShardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
             .position(x: rect.midX, y: rect.midY)
             .opacity(shardOpacity(visible: visible))
-            .scaleEffect(reduceMotion ? 1 : shardScale(visible: visible))
-            .rotationEffect(reduceMotion ? .zero : .degrees(vector.rotation))
-            .offset(x: reduceMotion ? 0 : vector.x, y: reduceMotion ? 0 : vector.y)
-            .shadow(color: VeilTheme.gold.opacity(trailIntensity(visible: visible) * 0.28), radius: 3)
+            .scaleEffect(usesLowCostRendering ? 1 : shardScale(visible: visible))
+            .rotationEffect(usesLowCostRendering ? .zero : .degrees(vector.rotation))
+            .offset(x: usesLowCostRendering ? 0 : vector.x, y: usesLowCostRendering ? 0 : vector.y)
+            .shadow(
+                color: usesLowCostRendering ? .clear : VeilTheme.gold.opacity(trailIntensity(visible: visible) * 0.28),
+                radius: usesLowCostRendering ? 0 : 3
+            )
     }
 
     @ViewBuilder
@@ -296,7 +347,7 @@ struct TransferShardView: View {
     }
 
     private func shardOpacity(visible: Double) -> Double {
-        if reduceMotion { return visible > 0.15 ? 1 : 0 }
+        if usesLowCostRendering { return visible > 0.15 ? 1 : 0 }
         return min(max(visible, 0), 1)
     }
 
@@ -319,5 +370,30 @@ struct TransferShardView: View {
         let rotationSign: Double = index.isMultiple(of: 2) ? 1 : -1
         let rotation = rotationSign * Double(escaped) * Double(8 + (index % 4) * 3)
         return (horizontal, vertical, rotation)
+    }
+}
+
+
+private struct ShardGridShape: Shape {
+    let columns: Int
+    let rows: Int
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        if columns > 1 {
+            for column in 1..<columns {
+                let x = rect.minX + rect.width * CGFloat(column) / CGFloat(columns)
+                path.move(to: CGPoint(x: x, y: rect.minY))
+                path.addLine(to: CGPoint(x: x, y: rect.maxY))
+            }
+        }
+        if rows > 1 {
+            for row in 1..<rows {
+                let y = rect.minY + rect.height * CGFloat(row) / CGFloat(rows)
+                path.move(to: CGPoint(x: rect.minX, y: y))
+                path.addLine(to: CGPoint(x: rect.maxX, y: y))
+            }
+        }
+        return path
     }
 }

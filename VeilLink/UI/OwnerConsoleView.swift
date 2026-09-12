@@ -45,32 +45,32 @@ struct OwnerUnlockSheet: View {
 struct OwnerConsoleView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var ownerMode: OwnerModeController
+    @ObservedObject var performanceOverrides: PerformanceOverrideController
     @Environment(\.dismiss) private var dismiss
     @State private var scanProgress: Double = 0
 
     init(model: AppModel) {
         self.model = model
         ownerMode = model.ownerMode
+        performanceOverrides = model.performanceOverrides
     }
 
     var body: some View {
         NavigationView {
-            ScrollView {
+            VeilStableScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     consoleHeader
                     diagnosticCard
                     capabilityCard
+                    performanceOverrideCard
                     easterEggCard
                     Text("权限边界：Owner Mode 不读取消息正文、不导出私钥、不绕过其他用户的应用锁。")
                         .font(.caption)
                         .foregroundColor(VeilTheme.secondaryText)
                         .padding(.top, 8)
                 }
-                .frame(maxWidth: 760)
-                .padding()
-                .frame(maxWidth: .infinity)
             }
-            .background(VeilTheme.background.ignoresSafeArea())
+            .background(VeilTheme.background)
             .navigationTitle("ROOT OBSERVATORY")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -106,6 +106,7 @@ struct OwnerConsoleView: View {
             consoleRow("BLE", value: model.bluetooth.statusText)
             consoleRow("Nodes", value: "\(model.sessions.nearbyPeers.count)")
             consoleRow("Protocol", value: "VL-BLE/4")
+            consoleRow("Profile", value: VeilDevicePerformance.diagnosticLabel)
         }
         .veilCard()
     }
@@ -120,6 +121,117 @@ struct OwnerConsoleView: View {
         }
         .foregroundColor(VeilTheme.text)
         .veilCard()
+    }
+
+    private var performanceOverrideCard: some View {
+        let canTune = ownerMode.isAuthorized(for: .protocolTuning)
+        let canAnimate = ownerMode.isAuthorized(for: .visualEffects)
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("THERMAL HERESY")
+                        .font(.system(.subheadline, design: .monospaced))
+                        .foregroundColor(VeilTheme.gold)
+                    Text("上帝性能台 · 违抗硬件建议，但不违抗加密协议")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer()
+                Text("\(performanceOverrides.riskCount)/5")
+                    .font(.system(.caption, design: .monospaced).weight(.bold))
+                    .foregroundColor(performanceOverrides.riskCount >= 4 ? VeilTheme.danger : VeilTheme.goldBright)
+            }
+
+            Toggle(isOn: $performanceOverrides.isEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("解除设备封印")
+                    Text(performanceOverrides.isEnabled ? "OVERRIDE ARMED · \(performanceOverrides.riskLabel)" : "AUTO POLICY · 设备仍有尊严")
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+            }
+            .tint(VeilTheme.gold)
+            .disabled(!canTune)
+
+            Divider().background(Color.white.opacity(0.08))
+
+            godToggle(
+                "高清预览越狱",
+                subtitle: "把聊天图片预览上限提高到 2048 px；不改变原始附件和传输质量。",
+                isOn: $performanceOverrides.highDefinitionPreview,
+                enabled: performanceOverrides.isEnabled && canTune
+            )
+            godToggle(
+                "附件缓存贪婪症",
+                subtitle: "把发送附件内存缓存放宽到至少 16 MiB；更快重发，也更吃 RAM。",
+                isOn: $performanceOverrides.expandedAttachmentCache,
+                enabled: performanceOverrides.isEnabled && canTune
+            )
+            godToggle(
+                "关闭刷新合并器",
+                subtitle: "消息状态一到就刷新，不再等设备档位的 debounce。响应更直接，CPU 也更直接。",
+                isOn: $performanceOverrides.disableRefreshCoalescing,
+                enabled: performanceOverrides.isEnabled && canTune
+            )
+            godToggle(
+                "完整动态效果",
+                subtitle: "强制使用 Full motion / 30 碎片完整效果；SE1 与 iPhone 7 也不例外。",
+                isOn: $performanceOverrides.forceFullVisualEffects,
+                enabled: performanceOverrides.isEnabled && canAnimate
+            )
+            godToggle(
+                "永动机许可",
+                subtitle: "重新允许雷达和 Link Trace 的持续动画。iOS 15 旧机闪屏风险会回来。",
+                isOn: $performanceOverrides.allowPersistentAnimations,
+                enabled: performanceOverrides.isEnabled && canAnimate
+            )
+
+            HStack(spacing: 10) {
+                Button("把散热交给命运") {
+                    model.haptics.warning()
+                    performanceOverrides.enableChaosPreset()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(VeilTheme.danger)
+                .disabled(!canTune || !canAnimate)
+
+                Button("恢复理智") {
+                    performanceOverrides.restoreAutomaticPolicy()
+                    model.handleMemoryPressure()
+                    model.haptics.resolved()
+                }
+                .buttonStyle(.bordered)
+                .tint(VeilTheme.gold)
+            }
+
+            Text("本面板只覆盖本机性能策略。Protocol 4、Schema V8、密钥与消息内容规则不会因此改变。高风险选项会持久化，直到你手动恢复自动策略。")
+                .font(.caption2)
+                .foregroundColor(VeilTheme.tertiaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .veilCard(emphasized: performanceOverrides.isEnabled)
+    }
+
+    private func godToggle(
+        _ title: String,
+        subtitle: String,
+        isOn: Binding<Bool>,
+        enabled: Bool
+    ) -> some View {
+        Toggle(isOn: isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(VeilTheme.gold)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.46)
     }
 
     private var easterEggCard: some View {
