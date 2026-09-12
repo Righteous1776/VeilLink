@@ -1,0 +1,3535 @@
+diff --git a/README.md b/README.md
+index f4e3230..9500d12 100644
+--- a/README.md
++++ b/README.md
+@@ -34,7 +34,7 @@ message deletion / conversation clearing, persistent pause-resume-cancel control
+ outgoing images, and an opt-in setting to save fully verified received images to Photos.
+ Protocol 4 is unchanged; the local SQLite schema is V7.
+ V0.3.4 establishes VeilLink's own visual identity instead of a generic black/gold skin. Identity IDs now derive deterministic local visual glyphs; broad near-black "veil" planes create depth without bright glass effects; asymmetric cut panels replace most generic rounded cards; and motion is constrained to three meanings: Reveal, Transit, and Resolve. Conversation headers, peers, settings, lock/onboarding, transfer surfaces, and iPad navigation share the same language. Protocol 4 and Schema V7 remain unchanged.
+-V0.3.7 keeps the V0.3.6 runtime optimizations and adds a dedicated iPhone 7 / iOS 15 render-compatibility path after real-device recording exposed SwiftUI compositor instability across Nearby, Settings and Contact Details. Persistent motion and expensive off-screen card/background composition are reduced only on the affected legacy device family; Protocol 4 and Schema V8 remain unchanged. `scripts/local-ci-sim.sh` now also verifies the legacy render guard.
++V0.3.9 keeps the V0.3.8 iOS 15 layout stabilization and adds a performance overhaul aimed at A10-era devices: normal chat rendering decrypts only a bounded recent window off the main thread, immutable message bodies use a bounded decrypted-text cache, image bubbles use ImageIO downsampled previews with an NSCache instead of full-resolution UIImage decoding, inbound attachment finalization reads/decrypts all persisted chunks with one prepared SQLite statement and one SHA-256 pass, and iPhone 7 uses a lower-cost shard animation path. Protocol 4 and Schema V8 remain unchanged. V0.3.10 then specializes those budgets for the actual deployment devices: SE1, iPhone 7/7 Plus, SE2 and iPhone 13 Pro each receive different message-history, image-cache, BLE-memory, refresh and transfer-rendering budgets. Memory warnings actively release transient caches, A9/A10 devices trim them on background, and the decrypted-message cache evicts incrementally instead of periodically flushing everything. iPad Air 4 remains a tracked experimental target with known UI defects intentionally deferred. V0.3.11 keeps those automatic profiles as the safe default but adds an authenticated Owner Mode performance switchboard: local-only toggles can lift image-preview resolution, attachment-cache, refresh-coalescing and visual-motion limits when explicitly requested, with a deliberately theatrical high-risk preset and a one-tap return to automatic policy.
+ 
+ Multi-hop relay, signed Owner token generation, and full on-device BLE testing
+ remain for later iterations. Their boundaries are already represented in the
+@@ -74,3 +74,10 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the protocol boundaries.
+ ## Image import and photo export
+ 
+ VeilLink accepts common image files plus RAW / DNG / ProRAW when the current iOS decoder supports them. Large or RAW inputs are processed off the main thread, capped to 4096 px on the long edge, encoded as high-quality HEIC when available (JPEG fallback), and kept near a 1.8 MB soft target with a 3 MB protocol hard limit. Small JPEG/HEIC files and lossless PNG graphics can be preserved without re-encoding. Received JPEG/HEIC/PNG attachments can be written to Photos through PhotoKit after explicit add-only permission.
++
++V0.3.12 adds an entirely local full-screen image viewer for verified chat attachments. Tapping an image opens a black full-screen canvas with pinch zoom up to 5×, double-tap zoom, panning while zoomed, and swipe-down dismissal at 1×. Chat bubbles keep device-budgeted thumbnails; the viewer performs a separate on-demand ImageIO decode sized for the actual deployment devices (1536 px SE1, 2048 px iPhone 7, 2560 px SE2, 3072 px iPhone 13 Pro / iPad Air 4, or 4096 px only when the Owner Mode high-definition override is explicitly enabled). Source attachment bytes remain encrypted at rest and are never sent anywhere for viewing.
++
++
++## V0.3.13 BLE reliability
++
++V0.3.13 focuses on real-device reliability for SE1, iPhone 7, SE2 and iPhone 13 Pro. The transport now refreshes/smooths RSSI, paces packet bursts more conservatively as the link becomes marginal, prioritizes handshake/ACK/checkpoint/text traffic ahead of bulk image fragments, reconnects indefinitely with capped backoff while the user still wants the link, and detects stalled send queues. The secure Hello is retried idempotently and pending outbox rows are woken immediately after a trusted session re-authenticates. Messages no longer fail merely because a noisy link passed ten send attempts; the existing persistent outbox expiry is the final bound. This improves eventual delivery but does not claim a guaranteed number of meters, because iOS scheduling, obstruction and 2.4 GHz interference remain physical constraints. Protocol 4 and Schema V8 are unchanged.
+diff --git a/VeilLink/App/AppModel.swift b/VeilLink/App/AppModel.swift
+index 552e6fe..850425d 100644
+--- a/VeilLink/App/AppModel.swift
++++ b/VeilLink/App/AppModel.swift
+@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
+     @Published var alertMessage: String?
+     @Published private(set) var messagesRevision = 0
+     @Published private(set) var activeConversationID: String?
++    @Published private(set) var performanceRevision = 0
+     @Published var autoSaveReceivedImages: Bool {
+         didSet { UserDefaults.standard.set(autoSaveReceivedImages, forKey: Self.autoSaveReceivedImagesKey) }
+     }
+@@ -26,6 +27,7 @@ final class AppModel: ObservableObject {
+     let sessions: SessionCoordinator
+     let backups: BackupManager
+     let haptics: HapticEngine
++    let performanceOverrides: PerformanceOverrideController
+ 
+     var totalUnreadCount: Int {
+         conversations.reduce(0) { partial, conversation in
+@@ -45,10 +47,14 @@ final class AppModel: ObservableObject {
+         }
+         appLock = AppLockController(keychain: keychain)
+         ownerMode = OwnerModeController()
++        performanceOverrides = PerformanceOverrideController()
+         bluetooth = BLETransport()
+         sessions = SessionCoordinator(identity: identity, database: database)
+         backups = BackupManager(database: database, identity: identity)
+         haptics = HapticEngine()
++        performanceOverrides.onChange = { [weak self] in
++            self?.applyPerformanceOverrideChange()
++        }
+ 
+         bluetooth.onDiscovered = { [weak sessions] id, rssi in
+             sessions?.discovered(transportID: id, rssi: rssi)
+@@ -60,7 +66,9 @@ final class AppModel: ObservableObject {
+             sessions?.disconnected(transportID: id)
+         }
+         bluetooth.onReceive = { [weak sessions] id, data in sessions?.receive(transportID: id, data: data) }
+-        sessions.transportSend = { [weak bluetooth] id, data in bluetooth?.send(data, to: id) ?? .temporarilyUnavailable }
++        sessions.transportSend = { [weak bluetooth] id, data, priority in
++            bluetooth?.send(data, to: id, priority: priority) ?? .temporarilyUnavailable
++        }
+         sessions.transportDisconnect = { [weak bluetooth] id in bluetooth?.disconnect(id) }
+         sessions.onMessagesChanged = { [weak self] refreshConversations in
+             self?.scheduleMessageRefresh(refreshConversations: refreshConversations)
+@@ -78,12 +86,21 @@ final class AppModel: ObservableObject {
+         reloadConversations()
+     }
+ 
++    private func applyPerformanceOverrideChange() {
++        messageRefreshTask?.cancel()
++        pendingConversationRefresh = false
++        database.clearTransientCaches()
++        sessions.clearTransientCaches()
++        ImagePreviewCache.shared.removeAll()
++        ImagePreviewCache.shared.reconfigureForCurrentProfile()
++        performanceRevision &+= 1
++    }
+ 
+     private func scheduleMessageRefresh(refreshConversations: Bool) {
+         pendingConversationRefresh = pendingConversationRefresh || refreshConversations
+         messageRefreshTask?.cancel()
+         messageRefreshTask = Task { @MainActor [weak self] in
+-            try? await Task.sleep(nanoseconds: 75_000_000)
++            try? await Task.sleep(nanoseconds: VeilDevicePerformance.current.messageRefreshDebounceNanoseconds)
+             guard !Task.isCancelled, let self else { return }
+             let shouldRefreshConversations = self.pendingConversationRefresh
+             self.pendingConversationRefresh = false
+@@ -98,6 +115,17 @@ final class AppModel: ObservableObject {
+         }
+     }
+ 
++    func handleMemoryPressure() {
++        database.clearTransientCaches()
++        sessions.clearTransientCaches()
++        ImagePreviewCache.shared.removeAll()
++    }
++
++    func trimCachesForBackgroundIfNeeded() {
++        guard VeilDevicePerformance.current.aggressiveBackgroundCacheTrim else { return }
++        handleMemoryPressure()
++    }
++
+     func start() {
+         guard identity.activeIdentity != nil else { return }
+         _ = try? database.cleanupStaleInboundAttachments()
+@@ -204,7 +232,7 @@ final class AppModel: ObservableObject {
+     }
+ 
+     func clearConversationLocally(conversationID: String) -> Bool {
+-        let messageIDs = database.fetchMessages(conversationID: conversationID).map(\.id)
++        let messageIDs = database.fetchMessageIDs(conversationID: conversationID)
+         messageIDs.forEach { sessions.discardLocalMessage($0) }
+         do {
+             try database.clearConversationLocally(conversationID: conversationID)
+diff --git a/VeilLink/App/VeilLinkApp.swift b/VeilLink/App/VeilLinkApp.swift
+index e6d0e54..ddb2aed 100644
+--- a/VeilLink/App/VeilLinkApp.swift
++++ b/VeilLink/App/VeilLinkApp.swift
+@@ -18,10 +18,14 @@ struct VeilLinkApp: App {
+                         .onAppear { model.start() }
+                         .onChange(of: scenePhase) { phase in
+                             if phase != .active {
++                                model.trimCachesForBackgroundIfNeeded()
+                                 model.appLock.lock()
+                                 model.ownerMode.lock()
+                             }
+                         }
++                        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
++                            model.handleMemoryPressure()
++                        }
+                 } else {
+                     StartupFailureView(message: bootstrap.errorMessage)
+                 }
+diff --git a/VeilLink/Core/AppTheme.swift b/VeilLink/Core/AppTheme.swift
+index 63e72c6..85420de 100644
+--- a/VeilLink/Core/AppTheme.swift
++++ b/VeilLink/Core/AppTheme.swift
+@@ -1,6 +1,5 @@
+ import SwiftUI
+ import Foundation
+-import Darwin
+ 
+ /// VeilLink visual system.
+ ///
+@@ -60,15 +59,7 @@ enum VeilTheme {
+ /// repeat-forever animations are active. Keep the visual language, but switch persistent motion
+ /// and expensive off-screen composition to a lighter path on that exact device family.
+ enum VeilRenderProfile {
+-    static let machineIdentifier: String = {
+-        var info = utsname()
+-        guard uname(&info) == 0 else { return "unknown" }
+-        return withUnsafePointer(to: &info.machine) { pointer in
+-            pointer.withMemoryRebound(to: CChar.self, capacity: 1) {
+-                String(cString: $0)
+-            }
+-        }
+-    }()
++    static var machineIdentifier: String { VeilDevicePerformance.machineIdentifier }
+ 
+     static var usesLegacyCompositorPath: Bool {
+         RenderCompatibilityPolicy.shouldUseLegacyCompositor(
+@@ -76,12 +67,67 @@ enum VeilRenderProfile {
+             osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+         )
+     }
++
++    static var usesStableScrollLayout: Bool {
++        RenderCompatibilityPolicy.shouldUseStableScrollLayout(
++            osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
++        )
++    }
++
++    static var allowsExpensiveVisualEffects: Bool {
++        !usesLegacyCompositorPath || VeilPerformanceOverrides.forceFullVisualEffects
++    }
++
++    static var allowsPersistentAnimations: Bool {
++        !usesLegacyCompositorPath || VeilPerformanceOverrides.allowPersistentAnimations
++    }
++
++    static var diagnosticLabel: String {
++        let renderer: String
++        if usesLegacyCompositorPath { renderer = "LEGACY15" }
++        else if usesStableScrollLayout { renderer = "STABLE15" }
++        else { renderer = "MODERN" }
++        let god = PerformanceOverrideStore.shared.snapshot().isEnabled ? " · GOD" : ""
++        return "\(renderer) · \(VeilDevicePerformance.current.label) · \(machineIdentifier)\(god)"
++    }
++}
++
++enum VeilBuildInfo {
++    static var shortVersion: String {
++        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
++    }
++
++    static var build: String {
++        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
++    }
++
++    static var display: String { "VeilLink \(shortVersion) (\(build)) · Protocol 4" }
+ }
+ 
+ enum VeilMotion {
+-    static let reveal = Animation.easeOut(duration: 0.24)
+-    static let transit = Animation.interactiveSpring(response: 0.38, dampingFraction: 0.84)
+-    static let resolve = Animation.spring(response: 0.42, dampingFraction: 0.72)
++    static var reveal: Animation {
++        switch VeilDevicePerformance.current.transferVisualComplexity {
++        case .minimal: return .easeOut(duration: 0.15)
++        case .balanced: return .easeOut(duration: 0.20)
++        case .full: return .easeOut(duration: 0.24)
++        }
++    }
++
++    static var transit: Animation {
++        switch VeilDevicePerformance.current.transferVisualComplexity {
++        case .minimal: return .easeOut(duration: 0.18)
++        case .balanced: return .interactiveSpring(response: 0.32, dampingFraction: 0.88)
++        case .full: return .interactiveSpring(response: 0.38, dampingFraction: 0.84)
++        }
++    }
++
++    static var resolve: Animation {
++        switch VeilDevicePerformance.current.transferVisualComplexity {
++        case .minimal: return .easeOut(duration: 0.18)
++        case .balanced: return .spring(response: 0.34, dampingFraction: 0.80)
++        case .full: return .spring(response: 0.42, dampingFraction: 0.72)
++        }
++    }
+ }
+ 
+ /// Asymmetric panel geometry used throughout VeilLink. The cuts deliberately replace generic
+@@ -127,20 +173,14 @@ struct VeilAmbientBackground: View {
+     var body: some View {
+         Group {
+             if VeilRenderProfile.usesLegacyCompositorPath {
+-                // iPhone 7 / iOS 15: avoid GeometryReader-driven multi-layer composition.
+-                ZStack {
+-                    LinearGradient(
+-                        colors: [VeilTheme.backgroundLift, VeilTheme.background, Color.black],
+-                        startPoint: .topLeading,
+-                        endPoint: .bottomTrailing
+-                    )
+-                    RadialGradient(
+-                        colors: [VeilTheme.gold.opacity(0.045), Color.clear],
+-                        center: UnitPoint(x: 0.94, y: 0.04),
+-                        startRadius: 0,
+-                        endRadius: 280
+-                    )
+-                }
++                // Keep the legacy background strictly within its parent's bounds. On iOS 15,
++                // an ignoresSafeArea background attached to ScrollView can participate in the
++                // same content-host invalidation we are trying to avoid.
++                LinearGradient(
++                    colors: [VeilTheme.backgroundLift, VeilTheme.background, Color.black],
++                    startPoint: .topLeading,
++                    endPoint: .bottomTrailing
++                )
+             } else {
+                 GeometryReader { geometry in
+                     ZStack {
+@@ -189,13 +229,54 @@ struct VeilAmbientBackground: View {
+                         )
+                     }
+                 }
++                .ignoresSafeArea()
+             }
+         }
+-        .ignoresSafeArea()
+         .allowsHitTesting(false)
+     }
+ }
+ 
++/// Explicit-width vertical scroll host. The iOS 15 path never asks ScrollView to resolve a
++/// nested maxWidth(.infinity) chain: viewport width is measured once outside the scroll content,
++/// then the content receives a concrete width. This targets the whole-content horizontal jump /
++/// disappearance seen on real iPhone 7 recordings while preserving centering on iPad/newer iOS.
++struct VeilStableScrollView<Content: View>: View {
++    let maxContentWidth: CGFloat
++    let horizontalPadding: CGFloat
++    let verticalPadding: CGFloat
++    private let content: Content
++
++    init(
++        maxContentWidth: CGFloat = 760,
++        horizontalPadding: CGFloat = 16,
++        verticalPadding: CGFloat = 16,
++        @ViewBuilder content: () -> Content
++    ) {
++        self.maxContentWidth = maxContentWidth
++        self.horizontalPadding = horizontalPadding
++        self.verticalPadding = verticalPadding
++        self.content = content()
++    }
++
++    var body: some View {
++        GeometryReader { viewport in
++            let available = max(1, viewport.size.width - horizontalPadding * 2)
++            let width = min(maxContentWidth, available)
++            ScrollView(.vertical, showsIndicators: true) {
++                HStack(alignment: .top, spacing: 0) {
++                    Spacer(minLength: 0)
++                    content
++                        .frame(width: width, alignment: .top)
++                    Spacer(minLength: 0)
++                }
++                .frame(width: max(1, viewport.size.width), alignment: .top)
++                .padding(.vertical, verticalPadding)
++            }
++            .frame(width: viewport.size.width, height: viewport.size.height, alignment: .top)
++        }
++    }
++}
++
+ struct VeilCardModifier: ViewModifier {
+     let emphasized: Bool
+ 
+@@ -290,9 +371,9 @@ struct VeilPressStyle: ButtonStyle {
+ 
+     func makeBody(configuration: Configuration) -> some View {
+         configuration.label
+-            .scaleEffect(configuration.isPressed && !reduceMotion && !VeilRenderProfile.usesLegacyCompositorPath ? 0.968 : 1)
++            .scaleEffect(configuration.isPressed && !reduceMotion && VeilRenderProfile.allowsExpensiveVisualEffects ? 0.968 : 1)
+             .opacity(configuration.isPressed ? 0.80 : 1)
+-            .animation((reduceMotion || VeilRenderProfile.usesLegacyCompositorPath) ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
++            .animation((reduceMotion || !VeilRenderProfile.allowsExpensiveVisualEffects) ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+     }
+ }
+ 
+@@ -349,8 +430,8 @@ struct VeilIdentityGlyph: View {
+         }
+         .frame(width: size, height: size)
+         .shadow(
+-            color: active && !VeilRenderProfile.usesLegacyCompositorPath ? VeilTheme.gold.opacity(0.20) : .clear,
+-            radius: VeilRenderProfile.usesLegacyCompositorPath ? 0 : 9
++            color: active && VeilRenderProfile.allowsExpensiveVisualEffects ? VeilTheme.gold.opacity(0.20) : .clear,
++            radius: VeilRenderProfile.allowsExpensiveVisualEffects ? 9 : 0
+         )
+         .accessibilityHidden(true)
+     }
+@@ -388,10 +469,10 @@ struct VeilLinkTrace: View {
+                     .fill(VeilTheme.goldBright)
+                     .frame(width: 3.5, height: 3.5)
+                     .shadow(
+-                        color: VeilRenderProfile.usesLegacyCompositorPath ? .clear : VeilTheme.gold.opacity(0.75),
+-                        radius: VeilRenderProfile.usesLegacyCompositorPath ? 0 : 5
++                        color: VeilRenderProfile.allowsExpensiveVisualEffects ? VeilTheme.gold.opacity(0.75) : .clear,
++                        radius: VeilRenderProfile.allowsExpensiveVisualEffects ? 5 : 0
+                     )
+-                    .offset(x: VeilRenderProfile.usesLegacyCompositorPath ? width * 0.70 : (travels ? width - 4 : 0))
++                    .offset(x: VeilRenderProfile.allowsPersistentAnimations ? (travels ? width - 4 : 0) : width * 0.70)
+             }
+         }
+         .frame(width: width, height: 4)
+@@ -402,7 +483,7 @@ struct VeilLinkTrace: View {
+ 
+     private func updateMotion() {
+         travels = false
+-        guard active, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }
++        guard active, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }
+         withAnimation(.linear(duration: 1.7).repeatForever(autoreverses: false)) {
+             travels = true
+         }
+@@ -431,7 +512,7 @@ struct VeilResolveMark: View {
+ 
+     private func resolve() {
+         expanded = false
+-        guard resolved, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }
++        guard resolved, !reduceMotion, VeilRenderProfile.allowsExpensiveVisualEffects else { return }
+         withAnimation(VeilMotion.resolve) { expanded = true }
+     }
+ }
+diff --git a/VeilLink/Core/DevicePerformanceProfile.swift b/VeilLink/Core/DevicePerformanceProfile.swift
+new file mode 100644
+index 0000000..0471a8a
+--- /dev/null
++++ b/VeilLink/Core/DevicePerformanceProfile.swift
+@@ -0,0 +1,198 @@
++#if canImport(Darwin)
++import Darwin
++#elseif canImport(Glibc)
++import Glibc
++#endif
++import Foundation
++
++enum TransferVisualComplexity: String, Equatable {
++    case minimal
++    case balanced
++    case full
++}
++
++struct DevicePerformanceProfile: Equatable {
++    let label: String
++    let messageWindowInitial: Int
++    let messageWindowIncrement: Int
++    let messageWindowMaximum: Int
++    let decryptedBodyCacheEntries: Int
++    let imagePreviewMaxPixelSize: Int
++    let imagePreviewCacheCount: Int
++    let imagePreviewCacheBytes: Int
++    let outboundAttachmentCacheBytes: Int
++    let bleQueuePacketLimit: Int
++    let bleQueueByteLimit: Int
++    let bleReassemblyMessageLimit: Int
++    let bleReassemblyPerSourceLimit: Int
++    let bleReassemblyByteLimit: Int
++    let messageRefreshDebounceNanoseconds: UInt64
++    let transferVisualComplexity: TransferVisualComplexity
++    let shouldPrecomputeTransferShards: Bool
++    let aggressiveBackgroundCacheTrim: Bool
++
++    static let genericLegacy = DevicePerformanceProfile(
++        label: "LEGACY-COMPACT",
++        messageWindowInitial: 72,
++        messageWindowIncrement: 72,
++        messageWindowMaximum: 1_200,
++        decryptedBodyCacheEntries: 256,
++        imagePreviewMaxPixelSize: 768,
++        imagePreviewCacheCount: 4,
++        imagePreviewCacheBytes: 16 * 1_024 * 1_024,
++        outboundAttachmentCacheBytes: 4 * 1_024 * 1_024,
++        bleQueuePacketLimit: 12_288,
++        bleQueueByteLimit: 1_250_000,
++        bleReassemblyMessageLimit: 24,
++        bleReassemblyPerSourceLimit: 6,
++        bleReassemblyByteLimit: 512_000,
++        messageRefreshDebounceNanoseconds: 140_000_000,
++        transferVisualComplexity: .balanced,
++        shouldPrecomputeTransferShards: true,
++        aggressiveBackgroundCacheTrim: true
++    )
++
++    static let genericModern = DevicePerformanceProfile(
++        label: "MODERN",
++        messageWindowInitial: 120,
++        messageWindowIncrement: 120,
++        messageWindowMaximum: 2_000,
++        decryptedBodyCacheEntries: 512,
++        imagePreviewMaxPixelSize: 1_024,
++        imagePreviewCacheCount: 8,
++        imagePreviewCacheBytes: 32 * 1_024 * 1_024,
++        outboundAttachmentCacheBytes: 6 * 1_024 * 1_024,
++        bleQueuePacketLimit: 16_384,
++        bleQueueByteLimit: 2_500_000,
++        bleReassemblyMessageLimit: 32,
++        bleReassemblyPerSourceLimit: 8,
++        bleReassemblyByteLimit: 768_000,
++        messageRefreshDebounceNanoseconds: 100_000_000,
++        transferVisualComplexity: .full,
++        shouldPrecomputeTransferShards: true,
++        aggressiveBackgroundCacheTrim: false
++    )
++}
++
++enum DevicePerformancePolicy {
++    static func profile(machineIdentifier: String, osMajorVersion: Int) -> DevicePerformanceProfile {
++        switch machineIdentifier {
++        case "iPhone8,4": // iPhone SE (1st generation), A9 / 2 GB
++            return DevicePerformanceProfile(
++                label: "SE1-LOW",
++                messageWindowInitial: 48,
++                messageWindowIncrement: 48,
++                messageWindowMaximum: 720,
++                decryptedBodyCacheEntries: 128,
++                imagePreviewMaxPixelSize: 640,
++                imagePreviewCacheCount: 3,
++                imagePreviewCacheBytes: 10 * 1_024 * 1_024,
++                outboundAttachmentCacheBytes: 3 * 1_024 * 1_024,
++                bleQueuePacketLimit: 8_192,
++                bleQueueByteLimit: 640_000,
++                bleReassemblyMessageLimit: 16,
++                bleReassemblyPerSourceLimit: 4,
++                bleReassemblyByteLimit: 384_000,
++                messageRefreshDebounceNanoseconds: 180_000_000,
++                transferVisualComplexity: .minimal,
++                shouldPrecomputeTransferShards: false,
++                aggressiveBackgroundCacheTrim: true
++            )
++        case "iPhone9,1", "iPhone9,2", "iPhone9,3", "iPhone9,4": // iPhone 7 / 7 Plus
++            return .genericLegacy
++        case "iPhone12,8": // iPhone SE (2nd generation), A13 / 3 GB
++            return DevicePerformanceProfile(
++                label: "SE2-BALANCED",
++                messageWindowInitial: 120,
++                messageWindowIncrement: 120,
++                messageWindowMaximum: 2_000,
++                decryptedBodyCacheEntries: 384,
++                imagePreviewMaxPixelSize: 1_024,
++                imagePreviewCacheCount: 6,
++                imagePreviewCacheBytes: 24 * 1_024 * 1_024,
++                outboundAttachmentCacheBytes: 6 * 1_024 * 1_024,
++                bleQueuePacketLimit: 16_384,
++                bleQueueByteLimit: 2_000_000,
++                bleReassemblyMessageLimit: 32,
++                bleReassemblyPerSourceLimit: 8,
++                bleReassemblyByteLimit: 768_000,
++                messageRefreshDebounceNanoseconds: 90_000_000,
++                transferVisualComplexity: .full,
++                shouldPrecomputeTransferShards: true,
++                aggressiveBackgroundCacheTrim: false
++            )
++        case "iPhone14,2": // iPhone 13 Pro, A15 / 6 GB
++            return DevicePerformanceProfile(
++                label: "13PRO-HIGH",
++                messageWindowInitial: 180,
++                messageWindowIncrement: 180,
++                messageWindowMaximum: 3_000,
++                decryptedBodyCacheEntries: 768,
++                imagePreviewMaxPixelSize: 1_280,
++                imagePreviewCacheCount: 10,
++                imagePreviewCacheBytes: 48 * 1_024 * 1_024,
++                outboundAttachmentCacheBytes: 9 * 1_024 * 1_024,
++                bleQueuePacketLimit: 16_384,
++                bleQueueByteLimit: 2_500_000,
++                bleReassemblyMessageLimit: 40,
++                bleReassemblyPerSourceLimit: 10,
++                bleReassemblyByteLimit: 1_024_000,
++                messageRefreshDebounceNanoseconds: 60_000_000,
++                transferVisualComplexity: .full,
++                shouldPrecomputeTransferShards: true,
++                aggressiveBackgroundCacheTrim: false
++            )
++        case "iPad13,1", "iPad13,2": // iPad Air (4th generation); UI bugs tracked separately.
++            return DevicePerformanceProfile(
++                label: "AIR4-DEFERRED-UI",
++                messageWindowInitial: 180,
++                messageWindowIncrement: 180,
++                messageWindowMaximum: 3_000,
++                decryptedBodyCacheEntries: 640,
++                imagePreviewMaxPixelSize: 1_280,
++                imagePreviewCacheCount: 10,
++                imagePreviewCacheBytes: 40 * 1_024 * 1_024,
++                outboundAttachmentCacheBytes: 8 * 1_024 * 1_024,
++                bleQueuePacketLimit: 16_384,
++                bleQueueByteLimit: 2_500_000,
++                bleReassemblyMessageLimit: 40,
++                bleReassemblyPerSourceLimit: 10,
++                bleReassemblyByteLimit: 1_024_000,
++                messageRefreshDebounceNanoseconds: 75_000_000,
++                transferVisualComplexity: .full,
++                shouldPrecomputeTransferShards: true,
++                aggressiveBackgroundCacheTrim: false
++            )
++        default:
++            return osMajorVersion <= 15 ? .genericLegacy : .genericModern
++        }
++    }
++}
++
++enum VeilDevicePerformance {
++    static let machineIdentifier: String = {
++        var info = utsname()
++        guard uname(&info) == 0 else { return "unknown" }
++        return withUnsafePointer(to: &info.machine) { pointer in
++            pointer.withMemoryRebound(to: CChar.self, capacity: 1) {
++                String(cString: $0)
++            }
++        }
++    }()
++
++    static let base = DevicePerformancePolicy.profile(
++        machineIdentifier: machineIdentifier,
++        osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
++    )
++
++    static var current: DevicePerformanceProfile {
++        PerformanceOverridePolicy.effectiveProfile(
++            base: base,
++            snapshot: PerformanceOverrideStore.shared.snapshot()
++        )
++    }
++
++    static var diagnosticLabel: String {
++        "\(current.label) · \(machineIdentifier)"
++    }
++}
+diff --git a/VeilLink/Core/ImageViewerPolicy.swift b/VeilLink/Core/ImageViewerPolicy.swift
+new file mode 100644
+index 0000000..81c7fc0
+--- /dev/null
++++ b/VeilLink/Core/ImageViewerPolicy.swift
+@@ -0,0 +1,37 @@
++import Foundation
++
++/// On-demand large-image decode policy. Chat bubbles keep their cheap device-sized thumbnails;
++/// a larger decode is only requested after the user explicitly opens the full-screen viewer.
++enum ImageViewerPolicy {
++    static func maxPixelSize(
++        machineIdentifier: String,
++        previewMaxPixelSize: Int,
++        highDefinitionOverride: Bool
++    ) -> Int {
++        if highDefinitionOverride { return 4_096 }
++
++        switch machineIdentifier {
++        case "iPhone8,4": // iPhone SE (1st generation)
++            return 1_536
++        case "iPhone9,1", "iPhone9,2", "iPhone9,3", "iPhone9,4": // iPhone 7 / 7 Plus
++            return 2_048
++        case "iPhone12,8": // iPhone SE (2nd generation)
++            return 2_560
++        case "iPhone14,2": // iPhone 13 Pro
++            return 3_072
++        case "iPad13,1", "iPad13,2": // iPad Air 4
++            return 3_072
++        default:
++            return min(3_072, max(1_536, previewMaxPixelSize * 2))
++        }
++    }
++
++    static var currentMaxPixelSize: Int {
++        let overrides = PerformanceOverrideStore.shared.snapshot()
++        return maxPixelSize(
++            machineIdentifier: VeilDevicePerformance.machineIdentifier,
++            previewMaxPixelSize: VeilDevicePerformance.current.imagePreviewMaxPixelSize,
++            highDefinitionOverride: overrides.isEnabled && overrides.highDefinitionPreview
++        )
++    }
++}
+diff --git a/VeilLink/Core/PerformanceOverrideController.swift b/VeilLink/Core/PerformanceOverrideController.swift
+new file mode 100644
+index 0000000..ccb4c96
+--- /dev/null
++++ b/VeilLink/Core/PerformanceOverrideController.swift
+@@ -0,0 +1,90 @@
++import Combine
++import Foundation
++
++@MainActor
++final class PerformanceOverrideController: ObservableObject {
++    @Published var isEnabled: Bool { didSet { persistIfNeeded() } }
++    @Published var highDefinitionPreview: Bool { didSet { persistIfNeeded() } }
++    @Published var expandedAttachmentCache: Bool { didSet { persistIfNeeded() } }
++    @Published var disableRefreshCoalescing: Bool { didSet { persistIfNeeded() } }
++    @Published var forceFullVisualEffects: Bool { didSet { persistIfNeeded() } }
++    @Published var allowPersistentAnimations: Bool { didSet { persistIfNeeded() } }
++
++    var onChange: (() -> Void)?
++    private var isApplyingBatch = false
++    private let store: PerformanceOverrideStore
++
++    init(store: PerformanceOverrideStore = .shared) {
++        self.store = store
++        let snapshot = store.snapshot()
++        isEnabled = snapshot.isEnabled
++        highDefinitionPreview = snapshot.highDefinitionPreview
++        expandedAttachmentCache = snapshot.expandedAttachmentCache
++        disableRefreshCoalescing = snapshot.disableRefreshCoalescing
++        forceFullVisualEffects = snapshot.forceFullVisualEffects
++        allowPersistentAnimations = snapshot.allowPersistentAnimations
++    }
++
++    var snapshot: PerformanceOverrideSnapshot {
++        PerformanceOverrideSnapshot(
++            isEnabled: isEnabled,
++            highDefinitionPreview: highDefinitionPreview,
++            expandedAttachmentCache: expandedAttachmentCache,
++            disableRefreshCoalescing: disableRefreshCoalescing,
++            forceFullVisualEffects: forceFullVisualEffects,
++            allowPersistentAnimations: allowPersistentAnimations
++        )
++    }
++
++    var riskCount: Int { snapshot.activeRiskCount }
++
++    var riskLabel: String {
++        switch riskCount {
++        case 0: return "理性尚存"
++        case 1: return "轻微亵渎"
++        case 2: return "开始藐视设备建议"
++        case 3: return "热力学正在旁观"
++        case 4: return "散热系统已提出异议"
++        default: return "物理定律已提交工单"
++        }
++    }
++
++    func enableChaosPreset() {
++        applyBatch(
++            PerformanceOverrideSnapshot(
++                isEnabled: true,
++                highDefinitionPreview: true,
++                expandedAttachmentCache: true,
++                disableRefreshCoalescing: true,
++                forceFullVisualEffects: true,
++                allowPersistentAnimations: true
++            )
++        )
++    }
++
++    func restoreAutomaticPolicy() {
++        applyBatch(.automatic)
++    }
++
++    private func applyBatch(_ value: PerformanceOverrideSnapshot) {
++        isApplyingBatch = true
++        isEnabled = value.isEnabled
++        highDefinitionPreview = value.highDefinitionPreview
++        expandedAttachmentCache = value.expandedAttachmentCache
++        disableRefreshCoalescing = value.disableRefreshCoalescing
++        forceFullVisualEffects = value.forceFullVisualEffects
++        allowPersistentAnimations = value.allowPersistentAnimations
++        isApplyingBatch = false
++        persist()
++    }
++
++    private func persistIfNeeded() {
++        guard !isApplyingBatch else { return }
++        persist()
++    }
++
++    private func persist() {
++        store.update(snapshot)
++        onChange?()
++    }
++}
+diff --git a/VeilLink/Core/PerformanceOverrides.swift b/VeilLink/Core/PerformanceOverrides.swift
+new file mode 100644
+index 0000000..1057a6a
+--- /dev/null
++++ b/VeilLink/Core/PerformanceOverrides.swift
+@@ -0,0 +1,122 @@
++import Foundation
++
++struct PerformanceOverrideSnapshot: Equatable, Sendable {
++    var isEnabled: Bool
++    var highDefinitionPreview: Bool
++    var expandedAttachmentCache: Bool
++    var disableRefreshCoalescing: Bool
++    var forceFullVisualEffects: Bool
++    var allowPersistentAnimations: Bool
++
++    static let automatic = PerformanceOverrideSnapshot(
++        isEnabled: false,
++        highDefinitionPreview: false,
++        expandedAttachmentCache: false,
++        disableRefreshCoalescing: false,
++        forceFullVisualEffects: false,
++        allowPersistentAnimations: false
++    )
++
++    var activeRiskCount: Int {
++        guard isEnabled else { return 0 }
++        return [
++            highDefinitionPreview,
++            expandedAttachmentCache,
++            disableRefreshCoalescing,
++            forceFullVisualEffects,
++            allowPersistentAnimations
++        ].filter { $0 }.count
++    }
++}
++
++final class PerformanceOverrideStore: @unchecked Sendable {
++    static let shared = PerformanceOverrideStore()
++
++    private enum Key {
++        static let enabled = "developer.performanceOverride.enabled"
++        static let highDefinitionPreview = "developer.performanceOverride.highDefinitionPreview"
++        static let expandedAttachmentCache = "developer.performanceOverride.expandedAttachmentCache"
++        static let disableRefreshCoalescing = "developer.performanceOverride.disableRefreshCoalescing"
++        static let forceFullVisualEffects = "developer.performanceOverride.forceFullVisualEffects"
++        static let allowPersistentAnimations = "developer.performanceOverride.allowPersistentAnimations"
++    }
++
++    private let lock = NSLock()
++    private let defaults: UserDefaults
++    private var value: PerformanceOverrideSnapshot
++
++    init(defaults: UserDefaults = .standard) {
++        self.defaults = defaults
++        value = PerformanceOverrideSnapshot(
++            isEnabled: defaults.bool(forKey: Key.enabled),
++            highDefinitionPreview: defaults.bool(forKey: Key.highDefinitionPreview),
++            expandedAttachmentCache: defaults.bool(forKey: Key.expandedAttachmentCache),
++            disableRefreshCoalescing: defaults.bool(forKey: Key.disableRefreshCoalescing),
++            forceFullVisualEffects: defaults.bool(forKey: Key.forceFullVisualEffects),
++            allowPersistentAnimations: defaults.bool(forKey: Key.allowPersistentAnimations)
++        )
++    }
++
++    func snapshot() -> PerformanceOverrideSnapshot {
++        lock.lock()
++        defer { lock.unlock() }
++        return value
++    }
++
++    func update(_ snapshot: PerformanceOverrideSnapshot) {
++        lock.lock()
++        value = snapshot
++        lock.unlock()
++
++        defaults.set(snapshot.isEnabled, forKey: Key.enabled)
++        defaults.set(snapshot.highDefinitionPreview, forKey: Key.highDefinitionPreview)
++        defaults.set(snapshot.expandedAttachmentCache, forKey: Key.expandedAttachmentCache)
++        defaults.set(snapshot.disableRefreshCoalescing, forKey: Key.disableRefreshCoalescing)
++        defaults.set(snapshot.forceFullVisualEffects, forKey: Key.forceFullVisualEffects)
++        defaults.set(snapshot.allowPersistentAnimations, forKey: Key.allowPersistentAnimations)
++    }
++}
++
++enum PerformanceOverridePolicy {
++    static func effectiveProfile(
++        base: DevicePerformanceProfile,
++        snapshot: PerformanceOverrideSnapshot
++    ) -> DevicePerformanceProfile {
++        guard snapshot.isEnabled else { return base }
++
++        return DevicePerformanceProfile(
++            label: snapshot.activeRiskCount == 0 ? base.label : "\(base.label)+GOD\(snapshot.activeRiskCount)",
++            messageWindowInitial: base.messageWindowInitial,
++            messageWindowIncrement: base.messageWindowIncrement,
++            messageWindowMaximum: base.messageWindowMaximum,
++            decryptedBodyCacheEntries: base.decryptedBodyCacheEntries,
++            imagePreviewMaxPixelSize: snapshot.highDefinitionPreview ? max(base.imagePreviewMaxPixelSize, 2_048) : base.imagePreviewMaxPixelSize,
++            imagePreviewCacheCount: base.imagePreviewCacheCount,
++            imagePreviewCacheBytes: base.imagePreviewCacheBytes,
++            outboundAttachmentCacheBytes: snapshot.expandedAttachmentCache ? max(base.outboundAttachmentCacheBytes, 16 * 1_024 * 1_024) : base.outboundAttachmentCacheBytes,
++            bleQueuePacketLimit: base.bleQueuePacketLimit,
++            bleQueueByteLimit: base.bleQueueByteLimit,
++            bleReassemblyMessageLimit: base.bleReassemblyMessageLimit,
++            bleReassemblyPerSourceLimit: base.bleReassemblyPerSourceLimit,
++            bleReassemblyByteLimit: base.bleReassemblyByteLimit,
++            messageRefreshDebounceNanoseconds: snapshot.disableRefreshCoalescing ? 0 : base.messageRefreshDebounceNanoseconds,
++            transferVisualComplexity: snapshot.forceFullVisualEffects ? .full : base.transferVisualComplexity,
++            shouldPrecomputeTransferShards: snapshot.forceFullVisualEffects ? true : base.shouldPrecomputeTransferShards,
++            aggressiveBackgroundCacheTrim: base.aggressiveBackgroundCacheTrim
++        )
++    }
++}
++
++enum VeilPerformanceOverrides {
++    static var snapshot: PerformanceOverrideSnapshot { PerformanceOverrideStore.shared.snapshot() }
++
++    static var forceFullVisualEffects: Bool {
++        let value = snapshot
++        return value.isEnabled && value.forceFullVisualEffects
++    }
++
++    static var allowPersistentAnimations: Bool {
++        let value = snapshot
++        return value.isEnabled && value.allowPersistentAnimations
++    }
++}
+diff --git a/VeilLink/Core/RenderCompatibilityPolicy.swift b/VeilLink/Core/RenderCompatibilityPolicy.swift
+index 12d9c0a..ead73c5 100644
+--- a/VeilLink/Core/RenderCompatibilityPolicy.swift
++++ b/VeilLink/Core/RenderCompatibilityPolicy.swift
+@@ -4,6 +4,7 @@ import Foundation
+ /// so the decision can be tested in the Linux-side CI simulation.
+ enum RenderCompatibilityPolicy {
+     private static let legacyMachines: Set<String> = [
++        "iPhone8,4",              // iPhone SE (1st generation)
+         "iPhone9,1", "iPhone9,3", // iPhone 7
+         "iPhone9,2", "iPhone9,4"  // iPhone 7 Plus
+     ]
+@@ -11,4 +12,12 @@ enum RenderCompatibilityPolicy {
+     static func shouldUseLegacyCompositor(machineIdentifier: String, osMajorVersion: Int) -> Bool {
+         osMajorVersion <= 15 && legacyMachines.contains(machineIdentifier)
+     }
++
++    /// iOS 15 SwiftUI can occasionally invalidate a vertically-scrolling content host when
++    /// its child width is derived from nested maxWidth/infinity frames during state updates.
++    /// Use an explicit viewport-derived width for all iOS 15 builds; this is layout-only and
++    /// intentionally broader than the iPhone 7 compositor reduction above.
++    static func shouldUseStableScrollLayout(osMajorVersion: Int) -> Bool {
++        osMajorVersion <= 15
++    }
+ }
+diff --git a/VeilLink/Media/ImagePreviewCache.swift b/VeilLink/Media/ImagePreviewCache.swift
+new file mode 100644
+index 0000000..c01ef4d
+--- /dev/null
++++ b/VeilLink/Media/ImagePreviewCache.swift
+@@ -0,0 +1,57 @@
++import ImageIO
++import UIKit
++
++/// Device-budgeted preview cache. NSCache is thread-safe, so callers can decode off-main without
++/// serializing every cache hit behind an extra lock. Source attachment bytes remain encrypted and
++/// untouched; only display-sized thumbnails are cached in memory.
++final class ImagePreviewCache: @unchecked Sendable {
++    static let shared = ImagePreviewCache()
++
++    private let cache = NSCache<NSString, UIImage>()
++
++    private init() {
++        reconfigureForCurrentProfile()
++    }
++
++    func reconfigureForCurrentProfile() {
++        let profile = VeilDevicePerformance.current
++        cache.countLimit = profile.imagePreviewCacheCount
++        cache.totalCostLimit = profile.imagePreviewCacheBytes
++    }
++
++    func image(for attachmentID: String) -> UIImage? {
++        cache.object(forKey: attachmentID as NSString)
++    }
++
++    func insert(_ image: UIImage, for attachmentID: String) {
++        let pixels = max(1, Int(image.size.width * image.scale) * Int(image.size.height * image.scale))
++        let cost = min(Int.max / 4, pixels * 4)
++        cache.setObject(image, forKey: attachmentID as NSString, cost: cost)
++    }
++
++    func remove(_ attachmentID: String) {
++        cache.removeObject(forKey: attachmentID as NSString)
++    }
++
++    func removeAll() {
++        cache.removeAllObjects()
++    }
++
++    /// Device-specific thumbnail limits keep A9/A10 decode peaks small while allowing the
++    /// iPhone 13 Pro to retain a visibly sharper preview. ImageIO never expands the full source.
++    static func downsample(data: Data, maxPixelSize: Int? = nil) -> UIImage? {
++        let targetPixels = maxPixelSize ?? VeilDevicePerformance.current.imagePreviewMaxPixelSize
++        guard !data.isEmpty,
++              let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
++            return nil
++        }
++        let options: [CFString: Any] = [
++            kCGImageSourceCreateThumbnailFromImageAlways: true,
++            kCGImageSourceCreateThumbnailWithTransform: true,
++            kCGImageSourceThumbnailMaxPixelSize: max(256, targetPixels),
++            kCGImageSourceShouldCacheImmediately: true
++        ]
++        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
++        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
++    }
++}
+diff --git a/VeilLink/Resources/Info.plist b/VeilLink/Resources/Info.plist
+index 09e9296..e6d91d0 100644
+--- a/VeilLink/Resources/Info.plist
++++ b/VeilLink/Resources/Info.plist
+@@ -17,9 +17,9 @@
+ 	<key>CFBundlePackageType</key>
+ 	<string>APPL</string>
+ 	<key>CFBundleShortVersionString</key>
+-	<string>0.3.7</string>
++	<string>0.3.13</string>
+ 	<key>CFBundleVersion</key>
+-	<string>13</string>
++	<string>19</string>
+ 	<key>LSRequiresIPhoneOS</key>
+ 	<true/>
+ 	<key>NSBluetoothAlwaysUsageDescription</key>
+diff --git a/VeilLink/Security/SessionCoordinator.swift b/VeilLink/Security/SessionCoordinator.swift
+index 854d546..f4f651e 100644
+--- a/VeilLink/Security/SessionCoordinator.swift
++++ b/VeilLink/Security/SessionCoordinator.swift
+@@ -9,7 +9,6 @@ private enum WireProtocol {
+     static let maximumImageBytes = MediaTransferPolicy.maximumImageBytes
+     static let attachmentChunkBytes = 48 * 1_024
+     static let maximumDisplayNameBytes = 128
+-    static let maximumAcknowledgementAttempts = 10
+ }
+ 
+ private struct WireAcknowledgement: Codable { let messageID: String }
+@@ -58,7 +57,7 @@ final class SessionCoordinator: ObservableObject {
+     @Published var lastError: String?
+     @Published private(set) var securityEvents: [String] = []
+ 
+-    var transportSend: ((UUID, Data) -> TransportSendResult)?
++    var transportSend: ((UUID, Data, BLESendPriority) -> TransportSendResult)?
+     var transportDisconnect: ((UUID) -> Void)?
+     var onMessagesChanged: ((Bool) -> Void)?
+     var onInboundAttachmentCompleted: ((String) -> Void)?
+@@ -79,16 +78,22 @@ final class SessionCoordinator: ObservableObject {
+     private var outboundAttachmentCache: [String: CachedOutboundAttachment] = [:]
+     private var outboundAttachmentCacheOrder: [String] = []
+     private var outboundAttachmentCacheBytes = 0
+-    private let maximumOutboundAttachmentCacheBytes = 12 * 1_024 * 1_024
++    private var maximumOutboundAttachmentCacheBytes: Int { VeilDevicePerformance.current.outboundAttachmentCacheBytes }
+ 
+     private var packetAbuseLimiter = PacketAbuseLimiter()
+     private var retryTimer: AnyCancellable?
+     private var handshakeTimeoutTasks: [UUID: Task<Void, Never>] = [:]
+-    private let handshakeTimeoutNanoseconds: UInt64 = 15_000_000_000
++    private let handshakeRetryScheduleNanoseconds: [UInt64] = [
++        1_000_000_000,
++        2_000_000_000,
++        4_000_000_000,
++        6_000_000_000,
++        8_000_000_000
++    ]
+ 
+     init(identity: IdentityManager, database: DatabaseStore) {
+         self.identity = identity; self.database = database
+-        retryTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect().sink { [weak self] _ in
++        retryTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect().sink { [weak self] _ in
+             Task { @MainActor in self?.retryDueOutbound() }
+         }
+     }
+@@ -103,6 +108,10 @@ final class SessionCoordinator: ObservableObject {
+         }
+     }
+ 
++    func clearTransientCaches() {
++        clearOutboundAttachmentCache()
++    }
++
+     func connected(transportID: UUID) {
+         guard sessions[transportID] == nil else { return }
+         do {
+@@ -286,7 +295,10 @@ final class SessionCoordinator: ObservableObject {
+     private func sendHello(to transportID: UUID) throws {
+         if let context = sessions[transportID] {
+             let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .hello, payload: try encoder.encode(context.localHello))
+-            guard transportSend?(transportID, envelope) == .accepted else { throw NSError(domain: "VeilLink", code: 20, userInfo: [NSLocalizedDescriptionKey: "蓝牙发送队列暂时不可用。"]) }
++            let result = transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable
++            guard result != .unsupportedLink else {
++                throw NSError(domain: "VeilLink", code: 20, userInfo: [NSLocalizedDescriptionKey: "蓝牙链路无法承载安全握手。"])
++            }
+             return
+         }
+         guard let local = identity.activeIdentity else { throw IdentityError.missingIdentity }
+@@ -295,9 +307,10 @@ final class SessionCoordinator: ObservableObject {
+         let hello = HelloPacket(protocolVersion: unsigned.protocolVersion, identityID: unsigned.identityID, displayName: unsigned.displayName, identityPublicKey: unsigned.identityPublicKey, agreementPublicKey: unsigned.agreementPublicKey, nonce: unsigned.nonce, signature: try identity.signingKey().signature(for: unsigned.signedPayload))
+         sessions[transportID] = SessionContext(transportID: transportID, localEphemeral: ephemeral, localHello: hello)
+         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .hello, payload: try encoder.encode(hello))
+-        guard transportSend?(transportID, envelope) == .accepted else {
++        let result = transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable
++        guard result != .unsupportedLink else {
+             sessions.removeValue(forKey: transportID)
+-            throw NSError(domain: "VeilLink", code: 20, userInfo: [NSLocalizedDescriptionKey: "蓝牙发送队列暂时不可用。"])
++            throw NSError(domain: "VeilLink", code: 20, userInfo: [NSLocalizedDescriptionKey: "蓝牙链路无法承载安全握手。"])
+         }
+     }
+ 
+@@ -308,7 +321,13 @@ final class SessionCoordinator: ObservableObject {
+               remote.displayName.lengthOfBytes(using: .utf8) <= WireProtocol.maximumDisplayNameBytes,
+               CryptoEngine.identityID(publicKey: remote.identityPublicKey) == remote.identityID else { throw CryptoEngineError.invalidSignature }
+         try CryptoEngine.verify(signature: remote.signature, for: remote.signedPayload, publicKey: remote.identityPublicKey)
+-        if sessions[transportID] == nil { try sendHello(to: transportID) }
++        if sessions[transportID] == nil {
++            try sendHello(to: transportID)
++        } else if sessions[transportID]?.remoteHello == nil {
++            // If our first Hello was lost but the peer's Hello arrived, echo the same signed
++            // local Hello again. This closes a real asymmetric-handshake loss window.
++            try? sendHello(to: transportID)
++        }
+         guard var context = sessions[transportID], remote.identityID != context.localHello.identityID else { throw CryptoEngineError.invalidKeyMaterial }
+         if database.peerTrustState(localIdentityID: context.localHello.identityID, identityID: remote.identityID) == .blocked {
+             nearbyPeers.removeAll { $0.transportID == transportID || $0.id == remote.identityID }
+@@ -333,7 +352,10 @@ final class SessionCoordinator: ObservableObject {
+         let trustState: NearbyPeer.TrustState = trusted?.publicKey == remote.identityPublicKey ? .trusted : .awaitingConfirmation
+         let peer = NearbyPeer(id: remote.identityID, transportID: transportID, displayName: remote.displayName, rssi: nearbyPeers.first(where: { $0.transportID == transportID })?.rssi ?? -100, trustState: trustState, pairingCode: trustState == .trusted ? nil : CryptoEngine.pairingCode(key: keys.rootKey, transcript: transcript), lastSeen: Date())
+         nearbyPeers.removeAll { $0.transportID == transportID || $0.id == remote.identityID }; nearbyPeers.append(peer)
+-        if trustState == .trusted { flushOutbound(for: remote.identityID) }
++        if trustState == .trusted {
++            try? database.wakeOutboundForPeer(targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
++            flushOutbound(for: remote.identityID)
++        }
+     }
+ 
+     private func handleEncryptedMessage(transportID: UUID, data: Data) throws {
+@@ -465,7 +487,7 @@ final class SessionCoordinator: ObservableObject {
+         let encrypted = try CryptoEngine.encrypt(try encoder.encode(WireAcknowledgement(messageID: messageID)), key: keys.sendKey, messageID: messageID, sequence: context.nextSendSequence, context: "ack")
+         context.nextSendSequence += 1
+         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .acknowledgement, payload: try WireCodec.encodeEncryptedPayload(encrypted))
+-        _ = transportSend?(transportID, envelope)
++        _ = transportSend?(transportID, envelope, .control)
+     }
+ 
+     private func sendAttachmentCheckpoint(messageID: String, nextChunk: Int, chunkCount: Int, transportID: UUID, context: inout SessionContext) throws {
+@@ -476,7 +498,7 @@ final class SessionCoordinator: ObservableObject {
+         let encrypted = try CryptoEngine.encrypt(clear, key: keys.sendKey, messageID: messageID, sequence: context.nextSendSequence, context: "attachment-checkpoint")
+         context.nextSendSequence += 1
+         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .attachmentCheckpoint, payload: try WireCodec.encodeEncryptedPayload(encrypted))
+-        _ = transportSend?(transportID, envelope)
++        _ = transportSend?(transportID, envelope, .control)
+     }
+ 
+     private func flushOutbound(for peerIdentityID: String) {
+@@ -494,10 +516,10 @@ final class SessionCoordinator: ObservableObject {
+ 
+         var didChangeVisibleState = false
+         for item in dueItems {
+-            if item.retryCount >= WireProtocol.maximumAcknowledgementAttempts {
+-                failOutbound(messageID: item.messageID, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "多次发送后仍未收到对方确认。可手动重试。")
+-                continue
+-            }
++            // Do not declare a live message failed merely because a noisy BLE link needed many
++            // retries. The persistent outbox expiry remains the upper bound; reconnecting peers
++            // can therefore recover after long marginal-link periods without user intervention.
++            _ = item.retryCount
+             guard let message = database.fetchMessage(id: item.messageID), message.isOutgoing, message.senderIdentityID == localIdentityID else {
+                 try? database.completeOutbound(messageID: item.messageID, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+                 continue
+@@ -526,7 +548,7 @@ final class SessionCoordinator: ObservableObject {
+         let encrypted = try CryptoEngine.encrypt(try encoder.encode(content), key: keys.sendKey, messageID: message.id, sequence: context.nextSendSequence, context: "chat")
+         context.nextSendSequence += 1
+         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .encryptedMessage, payload: try WireCodec.encodeEncryptedPayload(encrypted))
+-        return try applySendResult(transportSend?(transportID, envelope) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
++        return try applySendResult(transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+     }
+ 
+     private func sendAttachmentStep(message: ChatMessage, attachment: ChatAttachment, peerIdentityID: String, transportID: UUID, localIdentityID: String, keys: SessionKeyMaterial, context: inout SessionContext) throws -> Bool {
+@@ -552,12 +574,15 @@ final class SessionCoordinator: ObservableObject {
+         }
+ 
+         let envelope: Data
++        let priority: BLESendPriority
+         if state.nextChunk < 0 {
++            priority = .control
+             let manifest = WireChatContent(kind: .image, text: nil, attachment: nil, mimeType: attachment.mimeType, sentAt: message.sentAt, attachmentByteCount: data.count, attachmentSHA256: digest, attachmentChunkCount: expectedChunkCount)
+             let encrypted = try CryptoEngine.encrypt(try encoder.encode(manifest), key: keys.sendKey, messageID: message.id, sequence: context.nextSendSequence, context: "chat")
+             context.nextSendSequence += 1
+             envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .encryptedMessage, payload: try WireCodec.encodeEncryptedPayload(encrypted))
+         } else if state.nextChunk < state.chunkCount {
++            priority = .bulk
+             let lower = state.nextChunk * WireProtocol.attachmentChunkBytes
+             let upper = min(lower + WireProtocol.attachmentChunkBytes, data.count)
+             guard lower < upper else { throw CryptoEngineError.invalidCiphertext }
+@@ -576,7 +601,7 @@ final class SessionCoordinator: ObservableObject {
+             failOutbound(messageID: message.id, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "附件分块编码后超过当前协议允许的最大体积。")
+             return false
+         }
+-        return try applySendResult(transportSend?(transportID, envelope) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
++        return try applySendResult(transportSend?(transportID, envelope, priority) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+     }
+ 
+     private func applySendResult(_ result: TransportSendResult, message: ChatMessage, peerIdentityID: String, localIdentityID: String) throws -> Bool {
+@@ -653,7 +678,20 @@ final class SessionCoordinator: ObservableObject {
+         cancelHandshakeTimeout(for: transportID)
+         handshakeTimeoutTasks[transportID] = Task { @MainActor [weak self] in
+             guard let self else { return }
+-            try? await Task.sleep(nanoseconds: self.handshakeTimeoutNanoseconds)
++            for delay in self.handshakeRetryScheduleNanoseconds {
++                try? await Task.sleep(nanoseconds: delay)
++                guard !Task.isCancelled else { return }
++                guard let context = self.sessions[transportID] else { return }
++                if context.remoteHello != nil {
++                    self.handshakeTimeoutTasks.removeValue(forKey: transportID)
++                    return
++                }
++                // Reuse the same ephemeral key/nonce for this handshake attempt. The signed Hello
++                // is idempotent and a duplicate is harmless, while a lost first Hello no longer
++                // forces a manual reconnect.
++                try? self.sendHello(to: transportID)
++            }
++
+             guard !Task.isCancelled,
+                   let context = self.sessions[transportID],
+                   context.remoteHello == nil else { return }
+@@ -661,10 +699,17 @@ final class SessionCoordinator: ObservableObject {
+             self.sessions.removeValue(forKey: transportID)
+             self.packetAbuseLimiter.reset(transportID)
+             self.peerTransport = self.peerTransport.filter { $0.value != transportID }
+-            self.nearbyPeers.removeAll { $0.transportID == transportID }
+-            self.recordSecurityEvent("安全握手超时，已释放未完成连接")
+-            self.lastError = "安全握手超时，已断开未完成连接。"
+-            self.transportDisconnect?(transportID)
++            self.recordSecurityEvent("安全握手持续丢包，已在现有链路上重新发起")
++            self.lastError = "蓝牙链路较弱，正在重新建立安全会话。"
++            // The physical BLE link may still be alive (especially when this device is the
++            // peripheral). Re-seed the secure handshake in place instead of permanently dropping
++            // the user's connection intent.
++            do {
++                try self.sendHello(to: transportID)
++                self.scheduleHandshakeTimeout(for: transportID)
++            } catch {
++                self.lastError = "安全会话恢复失败，等待蓝牙链路重新连接。"
++            }
+         }
+     }
+ 
+diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseStore.swift
+index 4482708..cc7bc06 100644
+--- a/VeilLink/Storage/DatabaseStore.swift
++++ b/VeilLink/Storage/DatabaseStore.swift
+@@ -32,6 +32,12 @@ final class DatabaseStore {
+     private let storageKeyName = "storage.database.key"
+     private let queue = DispatchQueue(label: "studio.zeo.veillink.sqlite", qos: .userInitiated)
+     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
++    // Message bodies are immutable after insertion. Cache decrypted text so delivery/progress
++    // refreshes do not repeatedly run ChaChaPoly over the same history. Access is serialized by queue.
++    private var decryptedBodyCache: [String: String] = [:]
++    private var decryptedBodyCacheOrder: [String] = []
++    private var decryptedBodyCacheOrderHead = 0
++    private var maximumDecryptedBodyCacheEntries: Int { VeilDevicePerformance.current.decryptedBodyCacheEntries }
+     static let inboundAttachmentRetention: TimeInterval = 7 * 24 * 60 * 60
+     static let maximumIncompleteInboundAttachments = 16
+     static let maximumIncompleteInboundAttachmentsPerSender = 4
+@@ -238,12 +244,20 @@ final class DatabaseStore {
+     }
+ 
+     func saveAttachment(messageID: String, data: Data, mimeType: String) throws -> ChatAttachment {
++        try saveAttachment(messageID: messageID, data: data, mimeType: mimeType, knownSHA256: nil)
++    }
++
++    private func saveAttachment(messageID: String, data: Data, mimeType: String, knownSHA256: Data?) throws -> ChatAttachment {
+         let id = UUID().uuidString
+         let relativePath = "\(id).bin"
+         let destination = attachmentsURL.appendingPathComponent(relativePath)
+         let protected = try ChaChaPoly.seal(data, using: storageKey).combined
+         try protected.write(to: destination, options: [.atomic, .completeFileProtection])
+-        let hash = Data(SHA256.hash(data: data))
++        let hash = knownSHA256 ?? Data(SHA256.hash(data: data))
++        guard hash.count == 32 else {
++            try? FileManager.default.removeItem(at: destination)
++            throw DatabaseError.statementFailed("附件摘要长度无效。")
++        }
+         do {
+             try write(
+                 "INSERT INTO attachments(id, message_id, relative_path, mime_type, byte_count, sha256) VALUES(?, ?, ?, ?, ?, ?);",
+@@ -371,6 +385,16 @@ final class DatabaseStore {
+         try write("UPDATE outbound_queue SET next_attempt_at = ? WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;", bindings: [.double(Date().timeIntervalSince1970 + safeDelay), .text(messageID), .text(localIdentityID), .text(targetIdentityID)])
+     }
+ 
++    /// A newly authenticated BLE session is stronger evidence than the old retry timer. Wake all
++    /// pending rows for this peer immediately while keeping retry counters/backoff history intact.
++    func wakeOutboundForPeer(targetIdentityID: String, localIdentityID: String) throws {
++        let now = Date().timeIntervalSince1970
++        try write(
++            "UPDATE outbound_queue SET next_attempt_at = ? WHERE local_identity_id = ? AND target_identity_id = ? AND is_paused = 0 AND expires_at > ?;",
++            bindings: [.double(now), .text(localIdentityID), .text(targetIdentityID), .double(now)]
++        )
++    }
++
+     func outboundRetryCount(messageID: String, targetIdentityID: String, localIdentityID: String) -> Int {
+         read("SELECT retry_count FROM outbound_queue WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ? LIMIT 1;", bindings: [.text(messageID), .text(localIdentityID), .text(targetIdentityID)]) { Int(sqlite3_column_int64($0, 0)) }.first ?? 0
+     }
+@@ -728,27 +752,62 @@ final class DatabaseStore {
+ 
+     private func finalizeInboundAttachment(messageID: String, metadata: InboundAttachmentMetadata) throws {
+         if fetchMessage(id: messageID)?.attachment != nil {
+-            try write("DELETE FROM inbound_attachment_chunks WHERE message_id = ?;", bindings: [.text(messageID)])
+-            try write("DELETE FROM inbound_attachment_transfers WHERE message_id = ?;", bindings: [.text(messageID)])
+-            try updateTransferProgress(messageID: messageID, progress: 1)
++            try writeBatch([
++                ("DELETE FROM inbound_attachment_chunks WHERE message_id = ?;", [.text(messageID)]),
++                ("DELETE FROM inbound_attachment_transfers WHERE message_id = ?;", [.text(messageID)]),
++                ("UPDATE messages SET transfer_progress = 1 WHERE id = ?;", [.text(messageID)])
++            ])
+             return
+         }
+-        var assembled = Data()
+-        assembled.reserveCapacity(metadata.byteCount)
+-        for index in 0..<metadata.chunkCount {
+-            guard let chunk = inboundChunkClearData(messageID: messageID, index: index) else {
+-                throw DatabaseError.statementFailed("附件 checkpoint 指向不存在的分块。")
++
++        // Read/decrypt every persisted chunk with one prepared statement and one queue hop.
++        // The old path prepared a SELECT and synchronously entered the SQLite queue once per 48 KiB
++        // chunk (roughly 64 times for a 3 MB image), then hashed the full image twice.
++        let assembled: Data = try queue.sync {
++            guard let db else { throw DatabaseError.openFailed("数据库尚未打开。") }
++            var statement: OpaquePointer?
++            let sql = "SELECT chunk_index, ciphertext FROM inbound_attachment_chunks WHERE message_id = ? ORDER BY chunk_index ASC;"
++            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
++                throw DatabaseError.statementFailed(String(cString: sqlite3_errmsg(db)))
+             }
+-            assembled.append(chunk)
+-            guard assembled.count <= metadata.byteCount else { throw DatabaseError.statementFailed("附件实际体积超过 Manifest。") }
+-        }
+-        guard assembled.count == metadata.byteCount, Data(SHA256.hash(data: assembled)) == metadata.sha256 else {
+-            throw DatabaseError.statementFailed("附件完整性校验失败。")
++            defer { sqlite3_finalize(statement) }
++            bind([.text(messageID)], to: statement)
++
++            var output = Data()
++            output.reserveCapacity(metadata.byteCount)
++            var expectedIndex = 0
++            var hasher = SHA256()
++            while sqlite3_step(statement) == SQLITE_ROW {
++                let index = Int(sqlite3_column_int64(statement, 0))
++                guard index == expectedIndex else {
++                    throw DatabaseError.statementFailed("附件 checkpoint 指向不存在的分块。")
++                }
++                let protected = data(statement, 1)
++                guard let box = try? ChaChaPoly.SealedBox(combined: protected),
++                      let clear = try? ChaChaPoly.open(box, using: storageKey) else {
++                    throw DatabaseError.statementFailed("附件分块解密失败。")
++                }
++                output.append(clear)
++                hasher.update(data: clear)
++                guard output.count <= metadata.byteCount else {
++                    throw DatabaseError.statementFailed("附件实际体积超过 Manifest。")
++                }
++                expectedIndex += 1
++            }
++            guard expectedIndex == metadata.chunkCount,
++                  output.count == metadata.byteCount,
++                  Data(hasher.finalize()) == metadata.sha256 else {
++                throw DatabaseError.statementFailed("附件完整性校验失败。")
++            }
++            return output
+         }
+-        _ = try saveAttachment(messageID: messageID, data: assembled, mimeType: metadata.mimeType)
+-        try write("DELETE FROM inbound_attachment_chunks WHERE message_id = ?;", bindings: [.text(messageID)])
+-        try write("DELETE FROM inbound_attachment_transfers WHERE message_id = ?;", bindings: [.text(messageID)])
+-        try updateTransferProgress(messageID: messageID, progress: 1)
++
++        _ = try saveAttachment(messageID: messageID, data: assembled, mimeType: metadata.mimeType, knownSHA256: metadata.sha256)
++        try writeBatch([
++            ("DELETE FROM inbound_attachment_chunks WHERE message_id = ?;", [.text(messageID)]),
++            ("DELETE FROM inbound_attachment_transfers WHERE message_id = ?;", [.text(messageID)]),
++            ("UPDATE messages SET transfer_progress = 1 WHERE id = ?;", [.text(messageID)])
++        ])
+     }
+ 
+     func fetchConversations(localIdentityID: String) -> [ConversationSummary] {
+@@ -779,12 +838,50 @@ final class DatabaseStore {
+         }
+     }
+ 
++    struct MessagePage {
++        let messages: [ChatMessage]
++        let hasOlder: Bool
++    }
++
++    /// Normal chat rendering only needs a bounded tail of history. Decrypting an entire multi-year
++    /// conversation for every ACK/progress update is especially expensive on A10 devices.
++    func fetchRecentMessages(conversationID: String, limit: Int = 120) -> MessagePage {
++        let safeLimit = max(32, min(limit, 2_000))
++        var rows = read("""
++            SELECT m.id, m.conversation_id, m.sender_identity_id, m.body_ciphertext,
++                   m.sent_at, m.is_outgoing, m.delivery_state, m.delivery_error, m.transfer_progress, a.id, a.mime_type, a.byte_count
++            FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
++            WHERE m.conversation_id = ?
++            ORDER BY m.sent_at DESC, m.id DESC
++            LIMIT \(safeLimit + 1);
++            """, bindings: [.text(conversationID)]) { decodedMessage($0) }
++        let hasOlder = rows.count > safeLimit
++        if hasOlder { rows.removeLast(rows.count - safeLimit) }
++        rows.reverse()
++        return MessagePage(messages: rows, hasOlder: hasOlder)
++    }
++
++    func clearTransientCaches() {
++        queue.sync {
++            decryptedBodyCache.removeAll(keepingCapacity: false)
++            decryptedBodyCacheOrder.removeAll(keepingCapacity: false)
++            decryptedBodyCacheOrderHead = 0
++        }
++    }
++
++    func fetchMessageIDs(conversationID: String) -> [String] {
++        read(
++            "SELECT id FROM messages WHERE conversation_id = ? ORDER BY sent_at ASC, id ASC;",
++            bindings: [.text(conversationID)]
++        ) { text($0, 0) }
++    }
++
+     func fetchMessages(conversationID: String) -> [ChatMessage] {
+         read("""
+             SELECT m.id, m.conversation_id, m.sender_identity_id, m.body_ciphertext,
+                    m.sent_at, m.is_outgoing, m.delivery_state, m.delivery_error, m.transfer_progress, a.id, a.mime_type, a.byte_count
+             FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
+-            WHERE m.conversation_id = ? ORDER BY m.sent_at ASC;
++            WHERE m.conversation_id = ? ORDER BY m.sent_at ASC, m.id ASC;
+             """, bindings: [.text(conversationID)]) { decodedMessage($0) }
+     }
+ 
+@@ -811,6 +908,7 @@ final class DatabaseStore {
+     }
+ 
+     func deleteMessageLocally(messageID: String, conversationID: String) throws {
++        queue.sync { decryptedBodyCache.removeValue(forKey: messageID) }
+         guard let message = fetchMessage(id: messageID), message.conversationID == conversationID else { return }
+         if !message.isOutgoing,
+            (inboundAttachmentMetadata(messageID: messageID) != nil ||
+@@ -868,6 +966,11 @@ final class DatabaseStore {
+     }
+ 
+     func clearConversationLocally(conversationID: String) throws {
++        queue.sync {
++            decryptedBodyCache.removeAll(keepingCapacity: true)
++            decryptedBodyCacheOrder.removeAll(keepingCapacity: true)
++            decryptedBodyCacheOrderHead = 0
++        }
+         guard !hasIncompleteInboundAttachments(conversationID: conversationID) else {
+             throw DatabaseError.statementFailed("当前仍有图片正在接收。请等待图片完成后再清空聊天记录。")
+         }
+@@ -989,6 +1092,9 @@ final class DatabaseStore {
+ 
+     func replaceDatabase(with snapshotURL: URL) throws {
+         try queue.sync {
++            decryptedBodyCache.removeAll(keepingCapacity: true)
++            decryptedBodyCacheOrder.removeAll(keepingCapacity: true)
++            decryptedBodyCacheOrderHead = 0
+             guard let current = db else { throw DatabaseError.openFailed("数据库尚未打开。") }
+             var source: OpaquePointer?
+             let immutableURI = snapshotURL.absoluteString + "?immutable=1"
+@@ -1058,19 +1164,54 @@ final class DatabaseStore {
+         let rawKey = try ChaChaPoly.open(box, using: backupKey)
+         guard rawKey.count == 32 else { throw BackupError.corruptedPackage }
+         try keychain.set(rawKey, for: storageKeyName)
+-        storageKeyData = rawKey
+-        storageKey = SymmetricKey(data: rawKey)
++        queue.sync {
++            decryptedBodyCache.removeAll(keepingCapacity: true)
++            decryptedBodyCacheOrder.removeAll(keepingCapacity: true)
++            decryptedBodyCacheOrderHead = 0
++            storageKeyData = rawKey
++            storageKey = SymmetricKey(data: rawKey)
++        }
++    }
++
++
++    private func cacheDecodedBody(_ body: String, messageID: String) {
++        guard maximumDecryptedBodyCacheEntries > 0 else { return }
++        if decryptedBodyCache[messageID] == nil {
++            decryptedBodyCacheOrder.append(messageID)
++        }
++        decryptedBodyCache[messageID] = body
++        while decryptedBodyCache.count > maximumDecryptedBodyCacheEntries, decryptedBodyCacheOrderHead < decryptedBodyCacheOrder.count {
++            let oldest = decryptedBodyCacheOrder[decryptedBodyCacheOrderHead]
++            decryptedBodyCacheOrderHead += 1
++            decryptedBodyCache.removeValue(forKey: oldest)
++        }
++        if decryptedBodyCacheOrderHead >= 256, decryptedBodyCacheOrderHead * 2 >= decryptedBodyCacheOrder.count {
++            decryptedBodyCacheOrder.removeFirst(decryptedBodyCacheOrderHead)
++            decryptedBodyCacheOrderHead = 0
++        }
+     }
+ 
+     private func decodedMessage(_ statement: OpaquePointer) -> ChatMessage {
+-        let blob = data(statement, 3)
+-        let plaintext: Data
+-        if let box = try? ChaChaPoly.SealedBox(combined: blob), let opened = try? ChaChaPoly.open(box, using: storageKey) { plaintext = opened } else { plaintext = Data() }
++        let messageID = text(statement, 0)
++        let body: String
++        if let cached = decryptedBodyCache[messageID] {
++            body = cached
++        } else {
++            let blob = data(statement, 3)
++            if let box = try? ChaChaPoly.SealedBox(combined: blob),
++               let opened = try? ChaChaPoly.open(box, using: storageKey),
++               let decoded = String(data: opened, encoding: .utf8) {
++                body = decoded
++                cacheDecodedBody(decoded, messageID: messageID)
++            } else {
++                body = ""
++            }
++        }
+         let failureReason = sqlite3_column_type(statement, 7) == SQLITE_NULL ? nil : text(statement, 7)
+         let transferProgress = sqlite3_column_type(statement, 8) == SQLITE_NULL ? nil : sqlite3_column_double(statement, 8)
+         let attachment: ChatAttachment?
+         if sqlite3_column_type(statement, 9) != SQLITE_NULL { attachment = ChatAttachment(id: text(statement, 9), mimeType: text(statement, 10), byteCount: Int(sqlite3_column_int64(statement, 11))) } else { attachment = nil }
+-        return ChatMessage(id: text(statement, 0), conversationID: text(statement, 1), senderIdentityID: text(statement, 2), body: String(data: plaintext, encoding: .utf8) ?? "", sentAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4)), isOutgoing: sqlite3_column_int(statement, 5) == 1, deliveryState: ChatMessage.DeliveryState(rawValue: text(statement, 6)) ?? .failed, failureReason: failureReason, transferProgress: transferProgress, attachment: attachment)
++        return ChatMessage(id: messageID, conversationID: text(statement, 1), senderIdentityID: text(statement, 2), body: body, sentAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4)), isOutgoing: sqlite3_column_int(statement, 5) == 1, deliveryState: ChatMessage.DeliveryState(rawValue: text(statement, 6)) ?? .failed, failureReason: failureReason, transferProgress: transferProgress, attachment: attachment)
+     }
+ 
+     func adoptLegacyUnscopedRows(localIdentityID: String) throws {
+diff --git a/VeilLink/Transport/BLELinkReliabilityPolicy.swift b/VeilLink/Transport/BLELinkReliabilityPolicy.swift
+new file mode 100644
+index 0000000..be8c81e
+--- /dev/null
++++ b/VeilLink/Transport/BLELinkReliabilityPolicy.swift
+@@ -0,0 +1,102 @@
++import Foundation
++
++enum BLESendPriority: Int, Comparable {
++    case bulk = 0
++    case control = 1
++
++    static func < (lhs: BLESendPriority, rhs: BLESendPriority) -> Bool {
++        lhs.rawValue < rhs.rawValue
++    }
++}
++
++enum BLELinkQuality: String, Equatable {
++    case unknown
++    case strong
++    case good
++    case marginal
++    case weak
++}
++
++struct BLELinkTuning: Equatable {
++    let quality: BLELinkQuality
++    let packetBurstLimit: Int
++    let interBurstDelay: TimeInterval
++}
++
++enum BLELinkReliabilityPolicy {
++    static func normalizedRSSI(_ sample: Int) -> Int? {
++        guard sample != 127, sample < 0, sample >= -110 else { return nil }
++        return min(-20, sample)
++    }
++
++    static func smoothedRSSI(previous: Double?, sample: Int) -> Double? {
++        guard let normalized = normalizedRSSI(sample) else { return previous }
++        let next = Double(normalized)
++        guard let previous else { return next }
++        // Deliberately slow enough to avoid changing pacing on every advertisement,
++        // but responsive enough to react while a user is walking away from a peer.
++        return previous * 0.72 + next * 0.28
++    }
++
++    static func quality(rssi: Int?) -> BLELinkQuality {
++        guard let rssi else { return .unknown }
++        switch rssi {
++        case let value where value >= -62: return .strong
++        case -72 ... -63: return .good
++        case -82 ... -73: return .marginal
++        default: return .weak
++        }
++    }
++
++    static func tuning(rssi: Int?, machineIdentifier: String) -> BLELinkTuning {
++        let quality = quality(rssi: rssi)
++        let isSE1 = machineIdentifier == "iPhone8,4"
++        let isIPhone7 = ["iPhone9,1", "iPhone9,2", "iPhone9,3", "iPhone9,4"].contains(machineIdentifier)
++        let legacy = isSE1 || isIPhone7
++
++        switch quality {
++        case .strong:
++            return BLELinkTuning(
++                quality: quality,
++                packetBurstLimit: isSE1 ? 12 : (isIPhone7 ? 16 : 32),
++                interBurstDelay: legacy ? 0.002 : 0
++            )
++        case .good:
++            return BLELinkTuning(
++                quality: quality,
++                packetBurstLimit: isSE1 ? 10 : (isIPhone7 ? 12 : 24),
++                interBurstDelay: legacy ? 0.004 : 0.002
++            )
++        case .marginal:
++            return BLELinkTuning(
++                quality: quality,
++                packetBurstLimit: isSE1 ? 6 : (isIPhone7 ? 8 : 12),
++                interBurstDelay: legacy ? 0.010 : 0.007
++            )
++        case .weak:
++            return BLELinkTuning(
++                quality: quality,
++                packetBurstLimit: 4,
++                interBurstDelay: legacy ? 0.020 : 0.014
++            )
++        case .unknown:
++            return BLELinkTuning(
++                quality: quality,
++                packetBurstLimit: isSE1 ? 8 : (isIPhone7 ? 10 : 16),
++                interBurstDelay: legacy ? 0.006 : 0.003
++            )
++        }
++    }
++
++    static func reconnectDelay(attempt: Int) -> TimeInterval {
++        switch max(1, attempt) {
++        case 1: return 0.75
++        case 2: return 1.5
++        case 3: return 3
++        case 4: return 6
++        case 5: return 12
++        case 6: return 20
++        default: return 30
++        }
++    }
++}
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+index cbe3129..be07ea6 100644
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -37,6 +37,29 @@ private struct OutboundPacketQueue {
+     }
+ }
+ 
++private struct PeerOutboundQueue {
++    private var control = OutboundPacketQueue()
++    private var bulk = OutboundPacketQueue()
++
++    var pendingCount: Int { control.pendingCount + bulk.pendingCount }
++    var pendingBytes: Int { control.pendingBytes + bulk.pendingBytes }
++    var isEmpty: Bool { control.isEmpty && bulk.isEmpty }
++
++    mutating func append(contentsOf packets: [Data], priority: BLESendPriority) {
++        switch priority {
++        case .control: control.append(contentsOf: packets)
++        case .bulk: bulk.append(contentsOf: packets)
++        }
++    }
++
++    mutating func removeFirst() -> Data? {
++        if let packet = control.removeFirst() { return packet }
++        return bulk.removeFirst()
++    }
++
++    var first: Data? { control.first ?? bulk.first }
++}
++
+ @MainActor
+ final class BLETransport: NSObject, ObservableObject {
+     static let serviceUUID = CBUUID(string: "5D0F88D4-21A2-4DC4-A1E8-A2DF8C9AC001")
+@@ -57,28 +80,38 @@ final class BLETransport: NSObject, ObservableObject {
+     private var remotePeripherals: [UUID: CBPeripheral] = [:]
+     private var remoteCharacteristics: [UUID: CBCharacteristic] = [:]
+     private var subscribedCentrals: [UUID: CBCentral] = [:]
+-    private var peripheralOutboundQueues: [UUID: OutboundPacketQueue] = [:]
+-    private var centralOutboundQueues: [UUID: OutboundPacketQueue] = [:]
++    private var peripheralOutboundQueues: [UUID: PeerOutboundQueue] = [:]
++    private var centralOutboundQueues: [UUID: PeerOutboundQueue] = [:]
+     private var wantedConnections: Set<UUID> = []
+     private var reconnectAttempts: [UUID: Int] = [:]
+     private var reconnectWorkItems: [UUID: DispatchWorkItem] = [:]
++    private var centralDrainWorkItems: [UUID: DispatchWorkItem] = [:]
++    private var peripheralDrainWorkItems: [UUID: DispatchWorkItem] = [:]
++    private var smoothedRSSI: [UUID: Double] = [:]
++    private var lastRSSIPublishAt: [UUID: TimeInterval] = [:]
++    private var lastQueueProgressAt: [UUID: TimeInterval] = [:]
++    private var rssiPollTask: Task<Void, Never>?
+     private var connectionEvents = ConnectionEventGate()
+ 
+     private let maxFragmentsPerMessage = 16_384
+-    private let maxQueuedPacketsPerPeer = 16_384
+-    private let maxQueuedBytesPerPeer = 2_500_000
+-    // Protocol 4 envelopes are capped at 96 KB. Keep the pre-session BLE
+-    // reassembly budget close to that real wire limit so untrusted nearby
+-    // devices cannot reserve megabytes of impossible-to-accept frame state.
+-    private let assembler = BLEFragmentAssembler(
+-        maxConcurrentMessages: 32,
+-        maxConcurrentMessagesPerSource: 8,
+-        maxFragmentsPerMessage: 16_384,
+-        maxAssembledBytes: 96_000,
+-        maxTotalBufferedBytes: 768_000
+-    )
++    private let performanceProfile: DevicePerformanceProfile
++    private let assembler: BLEFragmentAssembler
++
++    private var maxQueuedPacketsPerPeer: Int { performanceProfile.bleQueuePacketLimit }
++    private var maxQueuedBytesPerPeer: Int { performanceProfile.bleQueueByteLimit }
+ 
+     override init() {
++        let profile = VeilDevicePerformance.current
++        performanceProfile = profile
++        // Protocol 4 envelopes remain capped at 96 KB. The total in-flight reassembly budget is
++        // device-specific so SE1/7 do not reserve the same memory as an iPhone 13 Pro.
++        assembler = BLEFragmentAssembler(
++            maxConcurrentMessages: profile.bleReassemblyMessageLimit,
++            maxConcurrentMessagesPerSource: profile.bleReassemblyPerSourceLimit,
++            maxFragmentsPerMessage: 16_384,
++            maxAssembledBytes: 96_000,
++            maxTotalBufferedBytes: profile.bleReassemblyByteLimit
++        )
+         super.init()
+         centralManager = CBCentralManager(
+             delegate: self,
+@@ -94,6 +127,7 @@ final class BLETransport: NSObject, ObservableObject {
+ 
+     func start() {
+         isRunning = true
++        startRSSIPolling()
+         beginScanningIfPossible()
+         beginAdvertisingIfPossible()
+     }
+@@ -109,6 +143,12 @@ final class BLETransport: NSObject, ObservableObject {
+         reconnectAttempts.removeAll()
+         reconnectWorkItems.values.forEach { $0.cancel() }
+         reconnectWorkItems.removeAll()
++        centralDrainWorkItems.values.forEach { $0.cancel() }
++        centralDrainWorkItems.removeAll()
++        peripheralDrainWorkItems.values.forEach { $0.cancel() }
++        peripheralDrainWorkItems.removeAll()
++        rssiPollTask?.cancel()
++        rssiPollTask = nil
+ 
+         connectionEvents.drainConnectedIDs().forEach { onDisconnected?($0) }
+         remoteCharacteristics.removeAll()
+@@ -119,11 +159,7 @@ final class BLETransport: NSObject, ObservableObject {
+ 
+     func disconnect(_ id: UUID) {
+         wantedConnections.remove(id)
+-        reconnectAttempts.removeValue(forKey: id)
+-        reconnectWorkItems.removeValue(forKey: id)?.cancel()
+-        centralOutboundQueues.removeValue(forKey: id)
+-        peripheralOutboundQueues.removeValue(forKey: id)
+-        remoteCharacteristics.removeValue(forKey: id)
++        tearDownTransportState(for: id)
+         if let peripheral = remotePeripherals[id], peripheral.state == .connected || peripheral.state == .connecting {
+             centralManager.cancelPeripheralConnection(peripheral)
+         }
+@@ -131,6 +167,32 @@ final class BLETransport: NSObject, ObservableObject {
+         publishDisconnected(id)
+     }
+ 
++    /// Drops the current link while preserving the user's intent to stay connected.
++    /// Used by the security/session watchdog when a connection becomes stale.
++    func recover(_ id: UUID) {
++        wantedConnections.insert(id)
++        tearDownTransportState(for: id, keepReconnectAttempt: true)
++        if let peripheral = remotePeripherals[id] {
++            if peripheral.state == .connected || peripheral.state == .connecting {
++                centralManager.cancelPeripheralConnection(peripheral)
++            } else if peripheral.state == .disconnected {
++                scheduleReconnect(peripheral, immediate: true)
++            }
++        }
++        publishDisconnected(id)
++    }
++
++    private func tearDownTransportState(for id: UUID, keepReconnectAttempt: Bool = false) {
++        if !keepReconnectAttempt { reconnectAttempts.removeValue(forKey: id) }
++        reconnectWorkItems.removeValue(forKey: id)?.cancel()
++        centralDrainWorkItems.removeValue(forKey: id)?.cancel()
++        peripheralDrainWorkItems.removeValue(forKey: id)?.cancel()
++        centralOutboundQueues.removeValue(forKey: id)
++        peripheralOutboundQueues.removeValue(forKey: id)
++        remoteCharacteristics.removeValue(forKey: id)
++        lastQueueProgressAt.removeValue(forKey: id)
++    }
++
+     func connect(to id: UUID) {
+         wantedConnections.insert(id)
+         reconnectAttempts[id] = 0
+@@ -145,7 +207,7 @@ final class BLETransport: NSObject, ObservableObject {
+     }
+ 
+     @discardableResult
+-    func send(_ data: Data, to transportID: UUID) -> TransportSendResult {
++    func send(_ data: Data, to transportID: UUID, priority: BLESendPriority = .bulk) -> TransportSendResult {
+         if let peripheral = remotePeripherals[transportID],
+            let characteristic = remoteCharacteristics[transportID],
+            peripheral.state == .connected {
+@@ -158,7 +220,8 @@ final class BLETransport: NSObject, ObservableObject {
+                 return .temporarilyUnavailable
+             }
+             let packets = BLEFragment.split(data, maximumPacketSize: maximum).map(\.encoded)
+-            centralOutboundQueues[transportID, default: OutboundPacketQueue()].append(contentsOf: packets)
++            centralOutboundQueues[transportID, default: PeerOutboundQueue()].append(contentsOf: packets, priority: priority)
++            if lastQueueProgressAt[transportID] == nil { lastQueueProgressAt[transportID] = Date().timeIntervalSinceReferenceDate }
+             drainCentralQueue(peripheral: peripheral, characteristic: characteristic)
+             return .accepted
+         }
+@@ -174,38 +237,93 @@ final class BLETransport: NSObject, ObservableObject {
+             return .temporarilyUnavailable
+         }
+         let packets = BLEFragment.split(data, maximumPacketSize: maximum).map(\.encoded)
+-        peripheralOutboundQueues[transportID, default: OutboundPacketQueue()].append(contentsOf: packets)
++        peripheralOutboundQueues[transportID, default: PeerOutboundQueue()].append(contentsOf: packets, priority: priority)
++        if lastQueueProgressAt[transportID] == nil { lastQueueProgressAt[transportID] = Date().timeIntervalSinceReferenceDate }
+         drainPeripheralQueue(for: transportID, characteristic: localCharacteristic)
+         return .accepted
+     }
+ 
+     private func drainCentralQueue(peripheral: CBPeripheral, characteristic: CBCharacteristic) {
+         let id = peripheral.identifier
++        centralDrainWorkItems.removeValue(forKey: id)?.cancel()
+         guard var queue = centralOutboundQueues[id] else { return }
+-        while peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
++        let tuning = linkTuning(for: id)
++        var sent = 0
++        while sent < tuning.packetBurstLimit, peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
+             peripheral.writeValue(packet, for: characteristic, type: .withoutResponse)
++            sent += 1
++            lastQueueProgressAt[id] = Date().timeIntervalSinceReferenceDate
+         }
+         if queue.isEmpty {
+             centralOutboundQueues.removeValue(forKey: id)
++            lastQueueProgressAt.removeValue(forKey: id)
+         } else {
+             centralOutboundQueues[id] = queue
++            if peripheral.canSendWriteWithoutResponse {
++                scheduleCentralDrain(for: id, after: tuning.interBurstDelay)
++            }
+         }
+     }
+ 
+     private func drainPeripheralQueue(for centralID: UUID, characteristic: CBMutableCharacteristic) {
++        peripheralDrainWorkItems.removeValue(forKey: centralID)?.cancel()
+         guard let central = subscribedCentrals[centralID] else {
+             peripheralOutboundQueues.removeValue(forKey: centralID)
+             return
+         }
+         guard var queue = peripheralOutboundQueues[centralID] else { return }
+-        while let packet = queue.first {
++        let tuning = linkTuning(for: centralID)
++        var sent = 0
++        while sent < tuning.packetBurstLimit, let packet = queue.first {
+             guard peripheralManager.updateValue(packet, for: characteristic, onSubscribedCentrals: [central]) else {
+                 peripheralOutboundQueues[centralID] = queue
+                 return
+             }
+             _ = queue.removeFirst()
++            sent += 1
++            lastQueueProgressAt[centralID] = Date().timeIntervalSinceReferenceDate
++        }
++        if queue.isEmpty {
++            peripheralOutboundQueues.removeValue(forKey: centralID)
++            lastQueueProgressAt.removeValue(forKey: centralID)
++        } else {
++            peripheralOutboundQueues[centralID] = queue
++            schedulePeripheralDrain(for: centralID, after: tuning.interBurstDelay)
+         }
+-        peripheralOutboundQueues.removeValue(forKey: centralID)
++    }
++
++    private func linkTuning(for id: UUID) -> BLELinkTuning {
++        BLELinkReliabilityPolicy.tuning(
++            rssi: smoothedRSSI[id].map { Int($0.rounded()) } ?? discoveredRSSI[id],
++            machineIdentifier: VeilDevicePerformance.machineIdentifier
++        )
++    }
++
++    private func scheduleCentralDrain(for id: UUID, after delay: TimeInterval) {
++        guard centralDrainWorkItems[id] == nil else { return }
++        let work = DispatchWorkItem { [weak self] in
++            guard let self else { return }
++            self.centralDrainWorkItems.removeValue(forKey: id)
++            guard self.isRunning,
++                  let peripheral = self.remotePeripherals[id],
++                  peripheral.state == .connected,
++                  let characteristic = self.remoteCharacteristics[id] else { return }
++            self.drainCentralQueue(peripheral: peripheral, characteristic: characteristic)
++        }
++        centralDrainWorkItems[id] = work
++        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, delay), execute: work)
++    }
++
++    private func schedulePeripheralDrain(for id: UUID, after delay: TimeInterval) {
++        guard peripheralDrainWorkItems[id] == nil else { return }
++        let work = DispatchWorkItem { [weak self] in
++            guard let self else { return }
++            self.peripheralDrainWorkItems.removeValue(forKey: id)
++            guard self.isRunning, let characteristic = self.localCharacteristic else { return }
++            self.drainPeripheralQueue(for: id, characteristic: characteristic)
++        }
++        peripheralDrainWorkItems[id] = work
++        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, delay), execute: work)
+     }
+ 
+     private func publishConnected(_ id: UUID) {
+@@ -218,24 +336,24 @@ final class BLETransport: NSObject, ObservableObject {
+         onDisconnected?(id)
+     }
+ 
+-    private func scheduleReconnect(_ peripheral: CBPeripheral) {
++    private func scheduleReconnect(_ peripheral: CBPeripheral, immediate: Bool = false) {
+         let id = peripheral.identifier
+         guard isRunning,
+               wantedConnections.contains(id),
+               peripheral.state == .disconnected else { return }
+ 
++        reconnectWorkItems[id]?.cancel()
+         let attempt = (reconnectAttempts[id] ?? 0) + 1
+         reconnectAttempts[id] = attempt
+-        guard attempt <= 5 else {
+-            statusText = "自动重连已暂停，可手动再次连接"
+-            return
+-        }
++        let baseDelay = immediate ? 0 : BLELinkReliabilityPolicy.reconnectDelay(attempt: attempt)
++        let jitter = immediate ? 0 : Double.random(in: 0...min(1.0, baseDelay * 0.12))
++        let delay = baseDelay + jitter
++        statusText = attempt <= 2 ? "蓝牙链路恢复中" : "蓝牙链路较弱，持续重连中"
+ 
+-        reconnectWorkItems[id]?.cancel()
+-        let delay = min(30.0, pow(2.0, Double(attempt)))
+         let work = DispatchWorkItem { [weak self, weak peripheral] in
+-            guard let self,
+-                  let peripheral,
++            guard let self else { return }
++            self.reconnectWorkItems.removeValue(forKey: id)
++            guard let peripheral,
+                   self.isRunning,
+                   self.wantedConnections.contains(id),
+                   peripheral.state == .disconnected else { return }
+@@ -252,7 +370,7 @@ final class BLETransport: NSObject, ObservableObject {
+         guard isRunning, centralManager.state == .poweredOn else { return }
+         centralManager.scanForPeripherals(
+             withServices: [Self.serviceUUID],
+-            options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
++            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+         )
+         statusText = "正在发现附近设备"
+     }
+@@ -278,17 +396,76 @@ final class BLETransport: NSObject, ObservableObject {
+ 
+     private func advertise() {
+         guard isRunning, !peripheralManager.isAdvertising else { return }
++        // The 128-bit service UUID is sufficient for discovery. Omitting the local name keeps
++        // the legacy advertisement compact, reducing airtime/collision pressure on crowded 2.4 GHz.
+         peripheralManager.startAdvertising([
+-            CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID],
+-            CBAdvertisementDataLocalNameKey: "VeilLink"
++            CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID]
+         ])
+     }
++
++    private func startRSSIPolling() {
++        rssiPollTask?.cancel()
++        rssiPollTask = Task { @MainActor [weak self] in
++            guard let self else { return }
++            while !Task.isCancelled {
++                try? await Task.sleep(nanoseconds: 2_000_000_000)
++                guard !Task.isCancelled, self.isRunning else { continue }
++                for peripheral in self.remotePeripherals.values where peripheral.state == .connected {
++                    peripheral.readRSSI()
++                }
++                self.recoverStalledTransportQueuesIfNeeded()
++            }
++        }
++    }
++
++    private func recoverStalledTransportQueuesIfNeeded() {
++        let now = Date().timeIntervalSinceReferenceDate
++        for id in Array(centralOutboundQueues.keys) {
++            guard let queue = centralOutboundQueues[id], !queue.isEmpty else { continue }
++            let tuning = linkTuning(for: id)
++            let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
++            guard now - (lastQueueProgressAt[id] ?? now) >= timeout else { continue }
++            centralOutboundQueues.removeValue(forKey: id)
++            lastQueueProgressAt.removeValue(forKey: id)
++            statusText = "检测到蓝牙发送停滞，正在自动恢复链路"
++            if wantedConnections.contains(id) { recover(id) }
++        }
++        for id in Array(peripheralOutboundQueues.keys) {
++            guard let queue = peripheralOutboundQueues[id], !queue.isEmpty else { continue }
++            let tuning = linkTuning(for: id)
++            let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
++            guard now - (lastQueueProgressAt[id] ?? now) >= timeout else { continue }
++            // A peripheral cannot force-disconnect one subscribed central. Drop only the stale
++            // transport frame; the persistent application outbox/checkpoint logic will resend it.
++            peripheralOutboundQueues.removeValue(forKey: id)
++            peripheralDrainWorkItems.removeValue(forKey: id)?.cancel()
++            lastQueueProgressAt.removeValue(forKey: id)
++            statusText = "检测到蓝牙发送停滞，已切换到应用层重传"
++        }
++    }
++
++    private func observeRSSI(_ sample: Int, for id: UUID, forcePublish: Bool = false) {
++        guard let next = BLELinkReliabilityPolicy.smoothedRSSI(previous: smoothedRSSI[id], sample: sample) else { return }
++        smoothedRSSI[id] = next
++        let rounded = Int(next.rounded())
++        let now = Date().timeIntervalSinceReferenceDate
++        let previousPublished = discoveredRSSI[id]
++        if forcePublish || previousPublished == nil || abs((previousPublished ?? rounded) - rounded) >= 2 || now - (lastRSSIPublishAt[id] ?? 0) >= 0.75 {
++            discoveredRSSI[id] = rounded
++            lastRSSIPublishAt[id] = now
++            onDiscovered?(id, rounded)
++        }
++    }
+ }
+ 
+ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
+     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+         switch central.state {
+-        case .poweredOn: beginScanningIfPossible()
++        case .poweredOn:
++            beginScanningIfPossible()
++            for peripheral in remotePeripherals.values where wantedConnections.contains(peripheral.identifier) && peripheral.state == .disconnected {
++                scheduleReconnect(peripheral, immediate: true)
++            }
+         case .poweredOff: statusText = "蓝牙已关闭"
+         case .unauthorized: statusText = "没有蓝牙权限"
+         case .unsupported: statusText = "此设备不支持低功耗蓝牙"
+@@ -302,9 +479,12 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
+         advertisementData: [String: Any],
+         rssi RSSI: NSNumber
+     ) {
+-        remotePeripherals[peripheral.identifier] = peripheral
+-        discoveredRSSI[peripheral.identifier] = RSSI.intValue
+-        onDiscovered?(peripheral.identifier, RSSI.intValue)
++        let id = peripheral.identifier
++        remotePeripherals[id] = peripheral
++        observeRSSI(RSSI.intValue, for: id)
++        if wantedConnections.contains(id), peripheral.state == .disconnected, reconnectWorkItems[id] == nil {
++            scheduleReconnect(peripheral, immediate: true)
++        }
+     }
+ 
+     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+@@ -312,10 +492,12 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
+         reconnectWorkItems.removeValue(forKey: peripheral.identifier)?.cancel()
+         peripheral.delegate = self
+         peripheral.discoverServices([Self.serviceUUID])
++        peripheral.readRSSI()
+         statusText = "已建立蓝牙链路"
+     }
+ 
+     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
++        centralDrainWorkItems.removeValue(forKey: peripheral.identifier)?.cancel()
+         remoteCharacteristics.removeValue(forKey: peripheral.identifier)
+         centralOutboundQueues.removeValue(forKey: peripheral.identifier)
+         publishDisconnected(peripheral.identifier)
+@@ -324,6 +506,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
+     }
+ 
+     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
++        centralDrainWorkItems.removeValue(forKey: peripheral.identifier)?.cancel()
+         remoteCharacteristics.removeValue(forKey: peripheral.identifier)
+         centralOutboundQueues.removeValue(forKey: peripheral.identifier)
+         publishDisconnected(peripheral.identifier)
+@@ -345,6 +528,11 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
+ }
+ 
+ extension BLETransport: @preconcurrency CBPeripheralDelegate {
++    func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
++        guard error == nil else { return }
++        observeRSSI(RSSI.intValue, for: peripheral.identifier, forcePublish: true)
++    }
++
+     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+         guard let characteristic = remoteCharacteristics[peripheral.identifier] else { return }
+         drainCentralQueue(peripheral: peripheral, characteristic: characteristic)
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+index 3c84927..85ad7db 100644
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -223,8 +223,17 @@ struct ChatView: View {
+     @State private var replyingTo: ChatMessage?
+     @State private var showsSearchBar = false
+     @State private var searchQuery = ""
++    @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
++    @State private var hasOlderMessages = false
++    @State private var messageReloadGeneration = 0
++    @State private var isReloadingMessages = false
++    @State private var loadedFullHistoryForSearch = false
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+ 
++    private var usesReducedInteractionMotion: Bool {
++        reduceMotion || VeilDevicePerformance.current.transferVisualComplexity != .full
++    }
++
+     private var visibleMessages: [ChatMessage] {
+         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard showsSearchBar, !query.isEmpty else { return messages }
+@@ -247,11 +256,13 @@ struct ChatView: View {
+                     }
+                     Button {
+                         searchQuery = ""
+-                        if reduceMotion {
++                        loadedFullHistoryForSearch = false
++                        if usesReducedInteractionMotion {
+                             showsSearchBar = false
+                         } else {
+                             withAnimation(.easeIn(duration: 0.16)) { showsSearchBar = false }
+                         }
++                        reload()
+                     } label: {
+                         Image(systemName: "xmark.circle.fill")
+                             .foregroundColor(VeilTheme.secondaryText)
+@@ -270,6 +281,23 @@ struct ChatView: View {
+             ScrollViewReader { proxy in
+                 ScrollView {
+                     LazyVStack(spacing: 12) {
++                        if hasOlderMessages && !showsSearchBar {
++                            Button(action: loadOlderMessages) {
++                                HStack(spacing: 7) {
++                                    if isReloadingMessages { ProgressView().controlSize(.small) }
++                                    Image(systemName: "clock.arrow.circlepath")
++                                    Text("加载更早消息")
++                                }
++                                .font(.caption.weight(.semibold))
++                                .foregroundColor(VeilTheme.mutedGold)
++                                .padding(.horizontal, 12)
++                                .padding(.vertical, 7)
++                                .background(Color.white.opacity(0.035))
++                                .clipShape(Capsule())
++                            }
++                            .buttonStyle(.plain)
++                            .disabled(isReloadingMessages)
++                        }
+                         ForEach(visibleMessages) { message in
+                             MessageBubble(
+                                 message: message,
+@@ -290,7 +318,7 @@ struct ChatView: View {
+                                 }
+                                 Button {
+                                     model.haptics.selection()
+-                                    if reduceMotion {
++                                    if usesReducedInteractionMotion {
+                                         replyingTo = message
+                                     } else {
+                                         withAnimation(.easeOut(duration: 0.18)) { replyingTo = message }
+@@ -302,7 +330,7 @@ struct ChatView: View {
+                                     Label("本地删除", systemImage: "trash")
+                                 }
+                             }
+-                            .transition(reduceMotion ? .opacity : .asymmetric(
++                            .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
+                                 insertion: .opacity.combined(with: .scale(scale: 0.985)),
+                                 removal: .opacity
+                             ))
+@@ -322,9 +350,9 @@ struct ChatView: View {
+                     }
+                     .padding(.horizontal, 12)
+                     .padding(.vertical, 14)
+-                    .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
++                    .animation(usesReducedInteractionMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
+                 }
+-                .onChange(of: messages.count) { _ in
++                .onChange(of: messages.last?.id) { _ in
+                     if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                 }
+             }
+@@ -362,7 +390,7 @@ struct ChatView: View {
+                         }
+                         Spacer(minLength: 0)
+                         Button {
+-                            if reduceMotion {
++                            if usesReducedInteractionMotion {
+                                 self.replyingTo = nil
+                             } else {
+                                 withAnimation(.easeIn(duration: 0.16)) { self.replyingTo = nil }
+@@ -452,7 +480,7 @@ struct ChatView: View {
+             ToolbarItem(placement: .navigationBarTrailing) {
+                 Menu {
+                     Button {
+-                        if reduceMotion {
++                        if usesReducedInteractionMotion {
+                             showsSearchBar = true
+                         } else {
+                             withAnimation(.easeOut(duration: 0.18)) { showsSearchBar = true }
+@@ -482,7 +510,14 @@ struct ChatView: View {
+         .onDisappear {
+             model.setConversationVisible(conversation.id, visible: false)
+         }
+-        .onChange(of: model.messagesRevision) { _ in reload() }
++        .onChange(of: model.messagesRevision) { _ in reload(loadAll: showsSearchBar && loadedFullHistoryForSearch) }
++        .onChange(of: searchQuery) { value in
++            let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
++            if showsSearchBar, !query.isEmpty, !loadedFullHistoryForSearch {
++                loadedFullHistoryForSearch = true
++                reload(loadAll: true)
++            }
++        }
+         .sheet(isPresented: $showsPhotoPicker) {
+             PhotoPicker(
+                 onPicked: { imported in prepareAndSendImage(imported) },
+@@ -546,8 +581,39 @@ struct ChatView: View {
+         }
+     }
+ 
+-    private func reload() {
+-        messages = model.database.fetchMessages(conversationID: conversation.id)
++    private func reload(loadAll: Bool = false) {
++        messageReloadGeneration &+= 1
++        let generation = messageReloadGeneration
++        let store = model.database
++        let conversationID = conversation.id
++        let limit = messageWindowLimit
++        isReloadingMessages = true
++
++        DispatchQueue.global(qos: .userInitiated).async {
++            let loadedMessages: [ChatMessage]
++            let hasOlder: Bool
++            if loadAll {
++                loadedMessages = store.fetchMessages(conversationID: conversationID)
++                hasOlder = false
++            } else {
++                let page = store.fetchRecentMessages(conversationID: conversationID, limit: limit)
++                loadedMessages = page.messages
++                hasOlder = page.hasOlder
++            }
++            DispatchQueue.main.async {
++                guard generation == messageReloadGeneration else { return }
++                messages = loadedMessages
++                hasOlderMessages = hasOlder
++                isReloadingMessages = false
++            }
++        }
++    }
++
++    private func loadOlderMessages() {
++        guard hasOlderMessages, !isReloadingMessages else { return }
++        let profile = VeilDevicePerformance.current
++        messageWindowLimit = min(profile.messageWindowMaximum, messageWindowLimit + profile.messageWindowIncrement)
++        reload()
+     }
+ 
+     private func send() {
+@@ -836,6 +902,12 @@ private struct EncryptedImageView: View {
+     @State private var isSavingToPhotos = false
+     @State private var savedToPhotos = false
+     @State private var saveErrorMessage: String?
++    @State private var showsLargeImage = false
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    private var usesReducedImageMotion: Bool {
++        reduceMotion || VeilDevicePerformance.current.transferVisualComplexity != .full
++    }
+ 
+     private var progress: Double {
+         min(max(transferProgress ?? 1, 0), 1)
+@@ -852,6 +924,9 @@ private struct EncryptedImageView: View {
+                         mode: .sending,
+                         phase: (deliveryState == .failed || deliveryState == .cancelled) ? .failed : .active
+                     )
++                    .contentShape(Rectangle())
++                    .onTapGesture { showsLargeImage = true }
++                    .accessibilityHint("轻点查看大图")
+                 } else {
+                     Image(uiImage: image)
+                         .resizable()
+@@ -859,6 +934,9 @@ private struct EncryptedImageView: View {
+                         .opacity(revealCompletedImage ? 1 : 0.72)
+                         .scaleEffect(revealCompletedImage ? 1 : 0.985)
+                         .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
++                        .contentShape(Rectangle())
++                        .onTapGesture { showsLargeImage = true }
++                        .accessibilityHint("轻点查看大图")
+                         .overlay(
+                             RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                 .stroke(VeilTheme.gold.opacity(completionPulse ? 0 : 0.86), lineWidth: completionPulse ? 1 : 3)
+@@ -906,6 +984,17 @@ private struct EncryptedImageView: View {
+         .onChange(of: progress) { _ in
+             if image == nil { loadImage() }
+         }
++        .fullScreenCover(isPresented: $showsLargeImage) {
++            if let image {
++                FullScreenImageViewer(
++                    attachmentID: attachment.id,
++                    database: database,
++                    initialImage: image
++                )
++            } else {
++                Color.black.ignoresSafeArea()
++            }
++        }
+         .alert("保存失败", isPresented: Binding(
+             get: { saveErrorMessage != nil },
+             set: { if !$0 { saveErrorMessage = nil } }
+@@ -920,12 +1009,17 @@ private struct EncryptedImageView: View {
+         guard image == nil, !isLoading else { return }
+         isLoading = true
+         let attachmentID = attachment.id
+-        let shouldPrepareShards = isOutgoing && (progress < 1 || deliveryState == .failed)
++        let shouldPrepareShards = VeilDevicePerformance.current.shouldPrecomputeTransferShards && isOutgoing && (progress < 1 || deliveryState == .failed)
+         let store = database
++        let previewCache = ImagePreviewCache.shared
+         DispatchQueue.global(qos: .userInitiated).async {
+             let decoded: UIImage?
+-            if let data = store.loadAttachment(id: attachmentID) {
+-                decoded = UIImage(data: data)
++            if let cached = previewCache.image(for: attachmentID) {
++                decoded = cached
++            } else if let data = store.loadAttachment(id: attachmentID),
++                      let preview = ImagePreviewCache.downsample(data: data) {
++                previewCache.insert(preview, for: attachmentID)
++                decoded = preview
+             } else {
+                 decoded = nil
+             }
+@@ -971,11 +1065,16 @@ private struct EncryptedImageView: View {
+         revealCompletedImage = false
+         completionPulse = false
+         DispatchQueue.main.async {
+-            withAnimation(.spring(response: 0.30, dampingFraction: 0.84)) {
++            if usesReducedImageMotion {
+                 revealCompletedImage = true
+-            }
+-            withAnimation(.easeOut(duration: 0.58)) {
+                 completionPulse = true
++            } else {
++                withAnimation(.spring(response: 0.30, dampingFraction: 0.84)) {
++                    revealCompletedImage = true
++                }
++                withAnimation(.easeOut(duration: 0.58)) {
++                    completionPulse = true
++                }
+             }
+         }
+     }
+@@ -1000,7 +1099,7 @@ private struct ContactDetailsSheet: View {
+ 
+     var body: some View {
+         NavigationView {
+-            ScrollView {
++            VeilStableScrollView(maxContentWidth: 520, horizontalPadding: 18, verticalPadding: 18) {
+                 VStack(spacing: 18) {
+                     VStack(spacing: 10) {
+                         VeilIdentityGlyph(seed: conversation.peerIdentityID, size: 76, active: true)
+@@ -1042,9 +1141,6 @@ private struct ContactDetailsSheet: View {
+                         .multilineTextAlignment(.center)
+                         .padding(.horizontal, 10)
+                 }
+-                .frame(maxWidth: 520)
+-                .padding(18)
+-                .frame(maxWidth: .infinity)
+             }
+             .background(VeilAmbientBackground())
+             .navigationTitle("联系人信息")
+diff --git a/VeilLink/UI/FullScreenImageViewer.swift b/VeilLink/UI/FullScreenImageViewer.swift
+new file mode 100644
+index 0000000..4adc018
+--- /dev/null
++++ b/VeilLink/UI/FullScreenImageViewer.swift
+@@ -0,0 +1,215 @@
++import SwiftUI
++import UIKit
++
++/// In-app large-image viewer. Source bytes stay local and encrypted at rest; only the requested
++/// display-sized image is decrypted/decoded into memory while this full-screen view is presented.
++struct FullScreenImageViewer: View {
++    let attachmentID: String
++    let database: DatabaseStore
++    let initialImage: UIImage
++
++    @Environment(\.dismiss) private var dismiss
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    @State private var image: UIImage
++    @State private var isLoadingLargeImage = false
++    @State private var scale: CGFloat = 1
++    @State private var committedScale: CGFloat = 1
++    @State private var offset: CGSize = .zero
++    @State private var committedOffset: CGSize = .zero
++    @State private var dismissDrag: CGFloat = 0
++    @State private var controlsVisible = true
++
++    init(attachmentID: String, database: DatabaseStore, initialImage: UIImage) {
++        self.attachmentID = attachmentID
++        self.database = database
++        self.initialImage = initialImage
++        _image = State(initialValue: initialImage)
++    }
++
++    var body: some View {
++        ZStack {
++            Color.black.ignoresSafeArea()
++
++            GeometryReader { geometry in
++                Image(uiImage: image)
++                    .resizable()
++                    .scaledToFit()
++                    .frame(width: geometry.size.width, height: geometry.size.height)
++                    .scaleEffect(scale)
++                    .offset(x: offset.width, y: offset.height + dismissDrag)
++                    .opacity(dismissOpacity)
++                    .contentShape(Rectangle())
++                    .gesture(magnificationGesture)
++                    .simultaneousGesture(dragGesture)
++                    .onTapGesture(count: 2, perform: toggleZoom)
++                    .onTapGesture { toggleControls() }
++            }
++            .ignoresSafeArea()
++
++            if controlsVisible {
++                viewerChrome
++                    .transition(.opacity)
++            }
++        }
++        .statusBar(hidden: true)
++        .onAppear(perform: loadLargeImage)
++        .accessibilityAction(named: "关闭大图") { dismiss() }
++    }
++
++    private var dismissOpacity: Double {
++        guard scale <= 1.01 else { return 1 }
++        return Double(max(0.55, 1 - min(dismissDrag, 260) / 520))
++    }
++
++    private var viewerChrome: some View {
++        VStack {
++            HStack {
++                if isLoadingLargeImage {
++                    HStack(spacing: 7) {
++                        ProgressView().tint(.white)
++                        Text("正在载入高清大图")
++                            .font(.caption.weight(.medium))
++                    }
++                    .foregroundColor(.white.opacity(0.78))
++                    .padding(.horizontal, 12)
++                    .frame(height: 38)
++                    .background(Color.black.opacity(0.56), in: Capsule())
++                } else {
++                    Text(scale > 1.01 ? String(format: "%.1f×", scale) : "大图")
++                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
++                        .foregroundColor(.white.opacity(0.80))
++                        .padding(.horizontal, 12)
++                        .frame(height: 38)
++                        .background(Color.black.opacity(0.56), in: Capsule())
++                }
++
++                Spacer()
++
++                Button(action: { dismiss() }) {
++                    Image(systemName: "xmark")
++                        .font(.system(size: 14, weight: .bold))
++                        .frame(width: 38, height: 38)
++                        .foregroundColor(.white)
++                        .background(Color.black.opacity(0.62), in: Circle())
++                }
++                .buttonStyle(.plain)
++                .accessibilityLabel("关闭大图")
++            }
++            .padding(.horizontal, 14)
++            .padding(.top, 10)
++
++            Spacer()
++
++            if scale <= 1.01 {
++                Text("双指缩放 · 双击放大 · 下滑关闭")
++                    .font(.caption2.weight(.medium))
++                    .foregroundColor(.white.opacity(0.62))
++                    .padding(.horizontal, 13)
++                    .frame(height: 34)
++                    .background(Color.black.opacity(0.48), in: Capsule())
++                    .padding(.bottom, 14)
++            }
++        }
++        .padding(.top, 2)
++    }
++
++    private var magnificationGesture: some Gesture {
++        MagnificationGesture()
++            .onChanged { value in
++                let proposed = committedScale * value
++                scale = min(5, max(1, proposed))
++                if scale > 1.01 { dismissDrag = 0 }
++            }
++            .onEnded { _ in
++                committedScale = scale
++                if scale <= 1.01 { resetTransform(animated: true) }
++            }
++    }
++
++    private var dragGesture: some Gesture {
++        DragGesture(minimumDistance: 4)
++            .onChanged { value in
++                if scale > 1.01 {
++                    offset = CGSize(
++                        width: committedOffset.width + value.translation.width,
++                        height: committedOffset.height + value.translation.height
++                    )
++                } else {
++                    let primarilyVertical = abs(value.translation.height) > abs(value.translation.width)
++                    dismissDrag = primarilyVertical ? max(0, value.translation.height) : 0
++                }
++            }
++            .onEnded { value in
++                if scale > 1.01 {
++                    committedOffset = offset
++                    return
++                }
++
++                let primarilyVertical = abs(value.translation.height) > abs(value.translation.width)
++                if primarilyVertical && value.translation.height > 120 {
++                    dismiss()
++                } else {
++                    if reduceMotion {
++                        dismissDrag = 0
++                    } else {
++                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) { dismissDrag = 0 }
++                    }
++                }
++            }
++    }
++
++    private func toggleZoom() {
++        if scale > 1.01 {
++            resetTransform(animated: true)
++        } else {
++            let change = {
++                scale = 2.5
++                committedScale = 2.5
++                offset = .zero
++                committedOffset = .zero
++                dismissDrag = 0
++            }
++            if reduceMotion { change() } else { withAnimation(.easeOut(duration: 0.20), change) }
++        }
++    }
++
++    private func resetTransform(animated: Bool) {
++        let change = {
++            scale = 1
++            committedScale = 1
++            offset = .zero
++            committedOffset = .zero
++            dismissDrag = 0
++        }
++        if animated && !reduceMotion {
++            withAnimation(.spring(response: 0.28, dampingFraction: 0.88), change)
++        } else {
++            change()
++        }
++    }
++
++    private func toggleControls() {
++        let change = { controlsVisible.toggle() }
++        if reduceMotion { change() } else { withAnimation(.easeOut(duration: 0.16), change) }
++    }
++
++    private func loadLargeImage() {
++        guard !isLoadingLargeImage else { return }
++        isLoadingLargeImage = true
++        let store = database
++        let id = attachmentID
++        let targetPixels = ImageViewerPolicy.currentMaxPixelSize
++
++        DispatchQueue.global(qos: .userInitiated).async {
++            let decoded: UIImage? = autoreleasepool {
++                guard let data = store.loadAttachment(id: id) else { return nil }
++                return ImagePreviewCache.downsample(data: data, maxPixelSize: targetPixels)
++            }
++            DispatchQueue.main.async {
++                if let decoded { image = decoded }
++                isLoadingLargeImage = false
++            }
++        }
++    }
++}
+diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
+index ee218dd..a3bdaa3 100644
+--- a/VeilLink/UI/NearbyView.swift
++++ b/VeilLink/UI/NearbyView.swift
+@@ -13,7 +13,7 @@ struct NearbyView: View {
+     }
+ 
+     var body: some View {
+-        ScrollView {
++        VeilStableScrollView {
+             VStack(spacing: 16) {
+                 HStack(spacing: 16) {
+                     RadarStatusView(isRunning: bluetooth.isRunning, reduceMotion: reduceMotion)
+@@ -60,9 +60,6 @@ struct NearbyView: View {
+                     }
+                 }
+             }
+-            .frame(maxWidth: 760)
+-            .padding()
+-            .frame(maxWidth: .infinity)
+         }
+         .background(VeilAmbientBackground())
+         .navigationTitle("附近设备")
+@@ -156,7 +153,7 @@ private struct RadarStatusView: View {
+     private func updateMotion() {
+         pulse = false
+         sweep = false
+-        guard isRunning, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }
++        guard isRunning, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }
+         withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) {
+             pulse = true
+         }
+diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.swift
+index db7ede2..530099b 100644
+--- a/VeilLink/UI/OwnerConsoleView.swift
++++ b/VeilLink/UI/OwnerConsoleView.swift
+@@ -45,32 +45,32 @@ struct OwnerUnlockSheet: View {
+ struct OwnerConsoleView: View {
+     @ObservedObject var model: AppModel
+     @ObservedObject var ownerMode: OwnerModeController
++    @ObservedObject var performanceOverrides: PerformanceOverrideController
+     @Environment(\.dismiss) private var dismiss
+     @State private var scanProgress: Double = 0
+ 
+     init(model: AppModel) {
+         self.model = model
+         ownerMode = model.ownerMode
++        performanceOverrides = model.performanceOverrides
+     }
+ 
+     var body: some View {
+         NavigationView {
+-            ScrollView {
++            VeilStableScrollView {
+                 VStack(alignment: .leading, spacing: 16) {
+                     consoleHeader
+                     diagnosticCard
+                     capabilityCard
++                    performanceOverrideCard
+                     easterEggCard
+                     Text("权限边界：Owner Mode 不读取消息正文、不导出私钥、不绕过其他用户的应用锁。")
+                         .font(.caption)
+                         .foregroundColor(VeilTheme.secondaryText)
+                         .padding(.top, 8)
+                 }
+-                .frame(maxWidth: 760)
+-                .padding()
+-                .frame(maxWidth: .infinity)
+             }
+-            .background(VeilTheme.background.ignoresSafeArea())
++            .background(VeilTheme.background)
+             .navigationTitle("ROOT OBSERVATORY")
+             .navigationBarTitleDisplayMode(.inline)
+             .toolbar {
+@@ -106,6 +106,7 @@ struct OwnerConsoleView: View {
+             consoleRow("BLE", value: model.bluetooth.statusText)
+             consoleRow("Nodes", value: "\(model.sessions.nearbyPeers.count)")
+             consoleRow("Protocol", value: "VL-BLE/4")
++            consoleRow("Profile", value: VeilDevicePerformance.diagnosticLabel)
+         }
+         .veilCard()
+     }
+@@ -122,6 +123,117 @@ struct OwnerConsoleView: View {
+         .veilCard()
+     }
+ 
++    private var performanceOverrideCard: some View {
++        let canTune = ownerMode.isAuthorized(for: .protocolTuning)
++        let canAnimate = ownerMode.isAuthorized(for: .visualEffects)
++
++        return VStack(alignment: .leading, spacing: 14) {
++            HStack(alignment: .firstTextBaseline) {
++                VStack(alignment: .leading, spacing: 4) {
++                    Text("THERMAL HERESY")
++                        .font(.system(.subheadline, design: .monospaced))
++                        .foregroundColor(VeilTheme.gold)
++                    Text("上帝性能台 · 违抗硬件建议，但不违抗加密协议")
++                        .font(.caption)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++                Spacer()
++                Text("\(performanceOverrides.riskCount)/5")
++                    .font(.system(.caption, design: .monospaced).weight(.bold))
++                    .foregroundColor(performanceOverrides.riskCount >= 4 ? VeilTheme.danger : VeilTheme.goldBright)
++            }
++
++            Toggle(isOn: $performanceOverrides.isEnabled) {
++                VStack(alignment: .leading, spacing: 2) {
++                    Text("解除设备封印")
++                    Text(performanceOverrides.isEnabled ? "OVERRIDE ARMED · \(performanceOverrides.riskLabel)" : "AUTO POLICY · 设备仍有尊严")
++                        .font(.caption2)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++            }
++            .tint(VeilTheme.gold)
++            .disabled(!canTune)
++
++            Divider().background(Color.white.opacity(0.08))
++
++            godToggle(
++                "高清预览越狱",
++                subtitle: "把聊天图片预览上限提高到 2048 px；不改变原始附件和传输质量。",
++                isOn: $performanceOverrides.highDefinitionPreview,
++                enabled: performanceOverrides.isEnabled && canTune
++            )
++            godToggle(
++                "附件缓存贪婪症",
++                subtitle: "把发送附件内存缓存放宽到至少 16 MiB；更快重发，也更吃 RAM。",
++                isOn: $performanceOverrides.expandedAttachmentCache,
++                enabled: performanceOverrides.isEnabled && canTune
++            )
++            godToggle(
++                "关闭刷新合并器",
++                subtitle: "消息状态一到就刷新，不再等设备档位的 debounce。响应更直接，CPU 也更直接。",
++                isOn: $performanceOverrides.disableRefreshCoalescing,
++                enabled: performanceOverrides.isEnabled && canTune
++            )
++            godToggle(
++                "完整动态效果",
++                subtitle: "强制使用 Full motion / 30 碎片完整效果；SE1 与 iPhone 7 也不例外。",
++                isOn: $performanceOverrides.forceFullVisualEffects,
++                enabled: performanceOverrides.isEnabled && canAnimate
++            )
++            godToggle(
++                "永动机许可",
++                subtitle: "重新允许雷达和 Link Trace 的持续动画。iOS 15 旧机闪屏风险会回来。",
++                isOn: $performanceOverrides.allowPersistentAnimations,
++                enabled: performanceOverrides.isEnabled && canAnimate
++            )
++
++            HStack(spacing: 10) {
++                Button("把散热交给命运") {
++                    model.haptics.warning()
++                    performanceOverrides.enableChaosPreset()
++                }
++                .buttonStyle(.borderedProminent)
++                .tint(VeilTheme.danger)
++                .disabled(!canTune || !canAnimate)
++
++                Button("恢复理智") {
++                    performanceOverrides.restoreAutomaticPolicy()
++                    model.handleMemoryPressure()
++                    model.haptics.resolved()
++                }
++                .buttonStyle(.bordered)
++                .tint(VeilTheme.gold)
++            }
++
++            Text("本面板只覆盖本机性能策略。Protocol 4、Schema V8、密钥与消息内容规则不会因此改变。高风险选项会持久化，直到你手动恢复自动策略。")
++                .font(.caption2)
++                .foregroundColor(VeilTheme.tertiaryText)
++                .fixedSize(horizontal: false, vertical: true)
++        }
++        .veilCard(emphasized: performanceOverrides.isEnabled)
++    }
++
++    private func godToggle(
++        _ title: String,
++        subtitle: String,
++        isOn: Binding<Bool>,
++        enabled: Bool
++    ) -> some View {
++        Toggle(isOn: isOn) {
++            VStack(alignment: .leading, spacing: 2) {
++                Text(title)
++                    .font(.subheadline.weight(.semibold))
++                Text(subtitle)
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .fixedSize(horizontal: false, vertical: true)
++            }
++        }
++        .tint(VeilTheme.gold)
++        .disabled(!enabled)
++        .opacity(enabled ? 1 : 0.46)
++    }
++
+     private var easterEggCard: some View {
+         VStack(alignment: .leading, spacing: 12) {
+             Text("UNIVERSE DECRYPTION").font(.system(.subheadline, design: .monospaced)).foregroundColor(VeilTheme.gold)
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+index 8646840..c9b3073 100644
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -25,7 +25,7 @@ struct SettingsView: View {
+     }
+ 
+     var body: some View {
+-        ScrollView {
++        VeilStableScrollView {
+             VStack(spacing: 16) {
+                 profileCard
+                 securityCard
+@@ -35,9 +35,6 @@ struct SettingsView: View {
+                 bluetoothCard
+                 versionFooter
+             }
+-            .frame(maxWidth: 760)
+-            .padding()
+-            .frame(maxWidth: .infinity)
+         }
+         .background(VeilAmbientBackground())
+         .navigationTitle("设置")
+@@ -252,9 +249,18 @@ struct SettingsView: View {
+ 
+     private var versionFooter: some View {
+         VStack(spacing: 5) {
+-            Text("VeilLink 0.3.7-dev · Protocol 4")
++            Text(VeilBuildInfo.display)
+                 .font(.caption)
+                 .foregroundColor(VeilTheme.secondaryText)
++            if VeilRenderProfile.usesStableScrollLayout {
++                Text(VeilRenderProfile.diagnosticLabel)
++                    .font(.system(size: 8.5, weight: .medium, design: .monospaced))
++                    .foregroundColor(VeilTheme.tertiaryText)
++            } else {
++                Text(VeilDevicePerformance.diagnosticLabel)
++                    .font(.system(size: 8.5, weight: .medium, design: .monospaced))
++                    .foregroundColor(VeilTheme.tertiaryText)
++            }
+             Text("ZeoStudio")
+                 .font(.caption2)
+                 .foregroundColor(VeilTheme.mutedGold)
+diff --git a/VeilLink/UI/TransferShardView.swift b/VeilLink/UI/TransferShardView.swift
+index ba48c22..06105f0 100644
+--- a/VeilLink/UI/TransferShardView.swift
++++ b/VeilLink/UI/TransferShardView.swift
+@@ -74,6 +74,14 @@ struct TransferShardView: View {
+         min(max(progress, 0), 1)
+     }
+ 
++    private var usesMinimalRendering: Bool {
++        VeilDevicePerformance.current.transferVisualComplexity == .minimal
++    }
++
++    private var usesLowCostRendering: Bool {
++        reduceMotion || (VeilRenderProfile.usesLegacyCompositorPath && !VeilPerformanceOverrides.forceFullVisualEffects) || VeilDevicePerformance.current.transferVisualComplexity != .full
++    }
++
+     private var visualProgress: Double {
+         if phase == .failed, mode == .sending { return 0 }
+         return clampedProgress
+@@ -95,14 +103,18 @@ struct TransferShardView: View {
+                 )
+                 .allowsHitTesting(false)
+ 
+-                if !reduceMotion && phase == .active {
+-                    ForEach(Array(stride(from: 0, to: columns * rows, by: 4)), id: \.self) { index in
+-                        shardTrail(index: index, in: size)
++                if usesMinimalRendering {
++                    minimalShardSurface(in: size)
++                } else {
++                    if !usesLowCostRendering && phase == .active {
++                        ForEach(Array(stride(from: 0, to: columns * rows, by: 4)), id: \.self) { index in
++                            shardTrail(index: index, in: size)
++                        }
+                     }
+-                }
+ 
+-                ForEach(0..<(columns * rows), id: \.self) { index in
+-                    shard(index: index, in: size)
++                    ForEach(0..<(columns * rows), id: \.self) { index in
++                        shard(index: index, in: size)
++                    }
+                 }
+ 
+                 transferOverlay
+@@ -141,9 +153,13 @@ struct TransferShardView: View {
+                 .padding(.top, 8)
+                 .opacity(clampedProgress < 1 || phase == .failed ? 0.92 : 0)
+             }
+-            .shadow(color: phase == .failed ? VeilTheme.danger.opacity(0.10) : VeilTheme.gold.opacity(clampedProgress < 1 ? 0.10 : 0), radius: 12, x: 0, y: 6)
+-            .animation(reduceMotion ? nil : .interactiveSpring(response: 0.40, dampingFraction: phase == .failed ? 0.70 : 0.82), value: progressBucket)
+-            .animation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.68), value: phase)
++            .shadow(
++                color: usesLowCostRendering ? .clear : (phase == .failed ? VeilTheme.danger.opacity(0.10) : VeilTheme.gold.opacity(clampedProgress < 1 ? 0.10 : 0)),
++                radius: usesLowCostRendering ? 0 : 12,
++                x: 0, y: usesLowCostRendering ? 0 : 6
++            )
++            .animation(usesLowCostRendering ? nil : .interactiveSpring(response: 0.40, dampingFraction: phase == .failed ? 0.70 : 0.82), value: progressBucket)
++            .animation(usesLowCostRendering ? nil : .spring(response: 0.46, dampingFraction: 0.68), value: phase)
+         }
+         .aspectRatio(4.0 / 3.0, contentMode: .fit)
+         .accessibilityElement(children: .ignore)
+@@ -151,6 +167,38 @@ struct TransferShardView: View {
+         .accessibilityValue(phase == .failed ? "传输已中断" : "\(Int(clampedProgress * 100))%")
+     }
+ 
++    @ViewBuilder
++    private func minimalShardSurface(in size: CGSize) -> some View {
++        ZStack {
++            if let image {
++                Image(uiImage: image)
++                    .resizable()
++                    .scaledToFill()
++                    .frame(width: size.width, height: size.height)
++                    .clipped()
++                    .opacity(mode == .receiving ? max(0.16, clampedProgress) : max(0.34, 1 - clampedProgress * 0.46))
++            } else {
++                LinearGradient(
++                    colors: [VeilTheme.gold.opacity(0.44), VeilTheme.panel, VeilTheme.obsidian],
++                    startPoint: .topLeading,
++                    endPoint: .bottomTrailing
++                )
++            }
++
++            ShardGridShape(columns: columns, rows: rows)
++                .stroke(Color.white.opacity(0.075), lineWidth: 0.55)
++
++            if mode == .receiving {
++                Rectangle()
++                    .fill(VeilTheme.obsidian.opacity(0.72))
++                    .frame(width: size.width * CGFloat(max(0, 1 - clampedProgress)))
++                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
++            }
++        }
++        .frame(width: size.width, height: size.height)
++        .allowsHitTesting(false)
++    }
++
+     @ViewBuilder
+     private func shard(index: Int, in size: CGSize) -> some View {
+         let rect = shardRect(index: index, in: size)
+@@ -163,10 +211,13 @@ struct TransferShardView: View {
+             .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
+             .position(x: rect.midX, y: rect.midY)
+             .opacity(shardOpacity(visible: visible))
+-            .scaleEffect(reduceMotion ? 1 : shardScale(visible: visible))
+-            .rotationEffect(reduceMotion ? .zero : .degrees(vector.rotation))
+-            .offset(x: reduceMotion ? 0 : vector.x, y: reduceMotion ? 0 : vector.y)
+-            .shadow(color: VeilTheme.gold.opacity(trailIntensity(visible: visible) * 0.28), radius: 3)
++            .scaleEffect(usesLowCostRendering ? 1 : shardScale(visible: visible))
++            .rotationEffect(usesLowCostRendering ? .zero : .degrees(vector.rotation))
++            .offset(x: usesLowCostRendering ? 0 : vector.x, y: usesLowCostRendering ? 0 : vector.y)
++            .shadow(
++                color: usesLowCostRendering ? .clear : VeilTheme.gold.opacity(trailIntensity(visible: visible) * 0.28),
++                radius: usesLowCostRendering ? 0 : 3
++            )
+     }
+ 
+     @ViewBuilder
+@@ -296,7 +347,7 @@ struct TransferShardView: View {
+     }
+ 
+     private func shardOpacity(visible: Double) -> Double {
+-        if reduceMotion { return visible > 0.15 ? 1 : 0 }
++        if usesLowCostRendering { return visible > 0.15 ? 1 : 0 }
+         return min(max(visible, 0), 1)
+     }
+ 
+@@ -321,3 +372,28 @@ struct TransferShardView: View {
+         return (horizontal, vertical, rotation)
+     }
+ }
++
++
++private struct ShardGridShape: Shape {
++    let columns: Int
++    let rows: Int
++
++    func path(in rect: CGRect) -> Path {
++        var path = Path()
++        if columns > 1 {
++            for column in 1..<columns {
++                let x = rect.minX + rect.width * CGFloat(column) / CGFloat(columns)
++                path.move(to: CGPoint(x: x, y: rect.minY))
++                path.addLine(to: CGPoint(x: x, y: rect.maxY))
++            }
++        }
++        if rows > 1 {
++            for row in 1..<rows {
++                let y = rect.minY + rect.height * CGFloat(row) / CGFloat(rows)
++                path.move(to: CGPoint(x: rect.minX, y: y))
++                path.addLine(to: CGPoint(x: rect.maxX, y: y))
++            }
++        }
++        return path
++    }
++}
+diff --git a/VeilLinkTests/BLELinkReliabilityPolicyTests.swift b/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
+new file mode 100644
+index 0000000..30a236d
+--- /dev/null
++++ b/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
+@@ -0,0 +1,33 @@
++import XCTest
++@testable import VeilLink
++
++final class BLELinkReliabilityPolicyTests: XCTestCase {
++    func testRSSIQualityBands() {
++        XCTAssertEqual(BLELinkReliabilityPolicy.quality(rssi: -55), .strong)
++        XCTAssertEqual(BLELinkReliabilityPolicy.quality(rssi: -68), .good)
++        XCTAssertEqual(BLELinkReliabilityPolicy.quality(rssi: -78), .marginal)
++        XCTAssertEqual(BLELinkReliabilityPolicy.quality(rssi: -91), .weak)
++        XCTAssertEqual(BLELinkReliabilityPolicy.quality(rssi: nil), .unknown)
++    }
++
++    func testInvalidRSSISamplesDoNotPoisonSmoothing() {
++        XCTAssertNil(BLELinkReliabilityPolicy.normalizedRSSI(127))
++        XCTAssertNil(BLELinkReliabilityPolicy.normalizedRSSI(0))
++        XCTAssertEqual(BLELinkReliabilityPolicy.smoothedRSSI(previous: -70, sample: 127), -70)
++    }
++
++    func testLegacyDevicesPaceMarginalLinksMoreConservatively() {
++        let legacy = BLELinkReliabilityPolicy.tuning(rssi: -79, machineIdentifier: "iPhone9,1")
++        let modern = BLELinkReliabilityPolicy.tuning(rssi: -79, machineIdentifier: "iPhone14,2")
++        XCTAssertEqual(legacy.quality, .marginal)
++        XCTAssertLessThan(legacy.packetBurstLimit, modern.packetBurstLimit)
++        XCTAssertGreaterThan(legacy.interBurstDelay, modern.interBurstDelay)
++    }
++
++    func testReconnectBackoffNeverStopsAndCapsAtThirtySeconds() {
++        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 1), 0.75)
++        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 6), 20)
++        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 7), 30)
++        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 100), 30)
++    }
++}
+diff --git a/VeilLinkTests/DatabaseStoreTests.swift b/VeilLinkTests/DatabaseStoreTests.swift
+index bd97750..0e02764 100644
+--- a/VeilLinkTests/DatabaseStoreTests.swift
++++ b/VeilLinkTests/DatabaseStoreTests.swift
+@@ -86,6 +86,23 @@ final class DatabaseStoreTests: XCTestCase {
+         XCTAssertEqual(store.outboundRetryCount(messageID: message.id, targetIdentityID: peer, localIdentityID: local), 1)
+     }
+ 
++
++    func testAuthenticatedReconnectWakesPendingOutboundImmediately() throws {
++        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
++        let local = "local-wake"
++        let peer = "peer-wake"
++        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Wake Peer")
++        let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "wake", sentAt: Date(), isOutgoing: true, deliveryState: .queued)
++        try store.saveMessage(message)
++        try store.enqueueOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
++        try store.recordAcceptedOutboundAttempt(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
++        XCTAssertTrue(store.dueOutboundMessageIDs(for: peer, localIdentityID: local).isEmpty)
++
++        try store.wakeOutboundForPeer(targetIdentityID: peer, localIdentityID: local)
++        XCTAssertEqual(store.dueOutboundMessageIDs(for: peer, localIdentityID: local), [message.id])
++        XCTAssertEqual(store.outboundRetryCount(messageID: message.id, targetIdentityID: peer, localIdentityID: local), 1)
++    }
++
+     func testFailureReasonPersistsAndManualRestartClearsRetryBudget() throws {
+         let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+         let local = "local-failure"
+@@ -621,4 +638,35 @@ final class DatabaseStoreTests: XCTestCase {
+         XCTAssertTrue(try store.acceptOutboundAttachmentCheckpoint(messageID: message.id, targetIdentityID: peer, localIdentityID: local, nextChunk: 2, chunkCount: 64))
+     }
+ 
++    func testRecentMessagePageBoundsNormalChatHistory() throws {
++        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
++        let local = "local-page"
++        let peer = "peer-page"
++        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
++        let base = Date(timeIntervalSince1970: 1_700_000_000)
++        for index in 0..<150 {
++            let message = ChatMessage(
++                id: String(format: "%04d-0000-0000-0000-000000000000", index),
++                conversationID: conversation,
++                senderIdentityID: index.isMultiple(of: 2) ? local : peer,
++                body: "m\(index)",
++                sentAt: base.addingTimeInterval(Double(index)),
++                isOutgoing: index.isMultiple(of: 2),
++                deliveryState: .delivered
++            )
++            try store.saveMessage(message)
++        }
++
++        let page = store.fetchRecentMessages(conversationID: conversation, limit: 120)
++        XCTAssertTrue(page.hasOlder)
++        XCTAssertEqual(page.messages.count, 120)
++        XCTAssertEqual(page.messages.first?.body, "m30")
++        XCTAssertEqual(page.messages.last?.body, "m149")
++
++        let expanded = store.fetchRecentMessages(conversationID: conversation, limit: 240)
++        XCTAssertFalse(expanded.hasOlder)
++        XCTAssertEqual(expanded.messages.count, 150)
++        XCTAssertEqual(expanded.messages.first?.body, "m0")
++    }
++
+ }
+diff --git a/VeilLinkTests/DevicePerformancePolicyTests.swift b/VeilLinkTests/DevicePerformancePolicyTests.swift
+new file mode 100644
+index 0000000..8851527
+--- /dev/null
++++ b/VeilLinkTests/DevicePerformancePolicyTests.swift
+@@ -0,0 +1,38 @@
++import XCTest
++@testable import VeilLink
++
++final class DevicePerformancePolicyTests: XCTestCase {
++    func testSE1UsesMostConstrainedProfile() {
++        let profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone8,4", osMajorVersion: 15)
++        XCTAssertEqual(profile.label, "SE1-LOW")
++        XCTAssertEqual(profile.messageWindowInitial, 48)
++        XCTAssertEqual(profile.transferVisualComplexity, .minimal)
++        XCTAssertFalse(profile.shouldPrecomputeTransferShards)
++    }
++
++    func testIPhone7UsesLegacyBalancedProfile() {
++        let profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone9,1", osMajorVersion: 15)
++        XCTAssertEqual(profile.label, "LEGACY-COMPACT")
++        XCTAssertEqual(profile.imagePreviewMaxPixelSize, 768)
++        XCTAssertEqual(profile.transferVisualComplexity, .balanced)
++    }
++
++    func testSE2UsesBalancedModernProfile() {
++        let profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone12,8", osMajorVersion: 15)
++        XCTAssertEqual(profile.label, "SE2-BALANCED")
++        XCTAssertEqual(profile.messageWindowInitial, 120)
++        XCTAssertTrue(profile.shouldPrecomputeTransferShards)
++    }
++
++    func testIPhone13ProGetsHighPerformanceBudget() {
++        let profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone14,2", osMajorVersion: 18)
++        XCTAssertEqual(profile.label, "13PRO-HIGH")
++        XCTAssertEqual(profile.messageWindowInitial, 180)
++        XCTAssertGreaterThan(profile.imagePreviewCacheBytes, DevicePerformanceProfile.genericModern.imagePreviewCacheBytes)
++    }
++
++    func testIPadAir4ProfileIsTrackedButNotUIOptimizedHere() {
++        let profile = DevicePerformancePolicy.profile(machineIdentifier: "iPad13,1", osMajorVersion: 18)
++        XCTAssertEqual(profile.label, "AIR4-DEFERRED-UI")
++    }
++}
+diff --git a/VeilLinkTests/ImageViewerPolicyTests.swift b/VeilLinkTests/ImageViewerPolicyTests.swift
+new file mode 100644
+index 0000000..ae8461a
+--- /dev/null
++++ b/VeilLinkTests/ImageViewerPolicyTests.swift
+@@ -0,0 +1,20 @@
++import XCTest
++@testable import VeilLink
++
++final class ImageViewerPolicyTests: XCTestCase {
++    func testTargetDevicesGetPurposeBuiltLargeImageBudgets() {
++        XCTAssertEqual(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone8,4", previewMaxPixelSize: 640, highDefinitionOverride: false), 1_536)
++        XCTAssertEqual(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone9,1", previewMaxPixelSize: 768, highDefinitionOverride: false), 2_048)
++        XCTAssertEqual(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone12,8", previewMaxPixelSize: 1_024, highDefinitionOverride: false), 2_560)
++        XCTAssertEqual(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone14,2", previewMaxPixelSize: 1_280, highDefinitionOverride: false), 3_072)
++    }
++
++    func testGodModeHighDefinitionOverrideAllows4096ViewerDecode() {
++        XCTAssertEqual(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone8,4", previewMaxPixelSize: 2_048, highDefinitionOverride: true), 4_096)
++    }
++
++    func testUnknownDeviceUsesBoundedFallback() {
++        XCTAssertEqual(ImageViewerPolicy.maxPixelSize(machineIdentifier: "unknown", previewMaxPixelSize: 1_024, highDefinitionOverride: false), 2_048)
++        XCTAssertEqual(ImageViewerPolicy.maxPixelSize(machineIdentifier: "unknown", previewMaxPixelSize: 2_048, highDefinitionOverride: false), 3_072)
++    }
++}
+diff --git a/VeilLinkTests/PerformanceOverridePolicyTests.swift b/VeilLinkTests/PerformanceOverridePolicyTests.swift
+new file mode 100644
+index 0000000..530f9e7
+--- /dev/null
++++ b/VeilLinkTests/PerformanceOverridePolicyTests.swift
+@@ -0,0 +1,68 @@
++import XCTest
++@testable import VeilLink
++
++final class PerformanceOverridePolicyTests: XCTestCase {
++    func testDisabledOverrideReturnsBaseProfileUnchanged() {
++        let base = DevicePerformancePolicy.profile(machineIdentifier: "iPhone8,4", osMajorVersion: 15)
++        let effective = PerformanceOverridePolicy.effectiveProfile(base: base, snapshot: .automatic)
++        XCTAssertEqual(effective, base)
++    }
++
++    func testGodModeCanLiftOnlyRequestedPerformanceGuards() {
++        let base = DevicePerformancePolicy.profile(machineIdentifier: "iPhone9,1", osMajorVersion: 15)
++        let snapshot = PerformanceOverrideSnapshot(
++            isEnabled: true,
++            highDefinitionPreview: true,
++            expandedAttachmentCache: true,
++            disableRefreshCoalescing: true,
++            forceFullVisualEffects: true,
++            allowPersistentAnimations: false
++        )
++        let effective = PerformanceOverridePolicy.effectiveProfile(base: base, snapshot: snapshot)
++
++        XCTAssertEqual(effective.imagePreviewMaxPixelSize, 2_048)
++        XCTAssertEqual(effective.outboundAttachmentCacheBytes, 16 * 1_024 * 1_024)
++        XCTAssertEqual(effective.messageRefreshDebounceNanoseconds, 0)
++        XCTAssertEqual(effective.transferVisualComplexity, .full)
++        XCTAssertTrue(effective.shouldPrecomputeTransferShards)
++        XCTAssertEqual(effective.bleQueueByteLimit, base.bleQueueByteLimit)
++        XCTAssertEqual(effective.messageWindowInitial, base.messageWindowInitial)
++    }
++
++    func testPersistentAnimationPermissionDoesNotAlterTransportBudgets() {
++        let base = DevicePerformancePolicy.profile(machineIdentifier: "iPhone8,4", osMajorVersion: 15)
++        let snapshot = PerformanceOverrideSnapshot(
++            isEnabled: true,
++            highDefinitionPreview: false,
++            expandedAttachmentCache: false,
++            disableRefreshCoalescing: false,
++            forceFullVisualEffects: false,
++            allowPersistentAnimations: true
++        )
++        let effective = PerformanceOverridePolicy.effectiveProfile(base: base, snapshot: snapshot)
++        XCTAssertEqual(effective.bleQueuePacketLimit, base.bleQueuePacketLimit)
++        XCTAssertEqual(effective.bleReassemblyByteLimit, base.bleReassemblyByteLimit)
++        XCTAssertEqual(effective.outboundAttachmentCacheBytes, base.outboundAttachmentCacheBytes)
++    }
++
++    @MainActor
++    func testChaosPresetAndRestoreAutomaticPolicy() {
++        let suite = "PerformanceOverridePolicyTests.\(UUID().uuidString)"
++        guard let defaults = UserDefaults(suiteName: suite) else {
++            XCTFail("Unable to create isolated defaults")
++            return
++        }
++        defer { defaults.removePersistentDomain(forName: suite) }
++        let store = PerformanceOverrideStore(defaults: defaults)
++        let controller = PerformanceOverrideController(store: store)
++
++        controller.enableChaosPreset()
++        XCTAssertTrue(controller.isEnabled)
++        XCTAssertEqual(controller.riskCount, 5)
++        XCTAssertTrue(store.snapshot().allowPersistentAnimations)
++
++        controller.restoreAutomaticPolicy()
++        XCTAssertEqual(controller.snapshot, .automatic)
++        XCTAssertEqual(store.snapshot(), .automatic)
++    }
++}
+diff --git a/VeilLinkTests/RenderCompatibilityPolicyTests.swift b/VeilLinkTests/RenderCompatibilityPolicyTests.swift
+index 5fd7c2a..f9d4dbe 100644
+--- a/VeilLinkTests/RenderCompatibilityPolicyTests.swift
++++ b/VeilLinkTests/RenderCompatibilityPolicyTests.swift
+@@ -2,6 +2,10 @@ import XCTest
+ @testable import VeilLink
+ 
+ final class RenderCompatibilityPolicyTests: XCTestCase {
++    func testSE1OnIOS15UsesLegacyCompositor() {
++        XCTAssertTrue(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone8,4", osMajorVersion: 15))
++    }
++
+     func testIPhone7OnIOS15UsesLegacyCompositor() {
+         XCTAssertTrue(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone9,1", osMajorVersion: 15))
+         XCTAssertTrue(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone9,3", osMajorVersion: 15))
+@@ -14,4 +18,9 @@ final class RenderCompatibilityPolicyTests: XCTestCase {
+     func testNewerIPhonesDoNotUseLegacyCompositorOnIOS15() {
+         XCTAssertFalse(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone14,2", osMajorVersion: 15))
+     }
++    func testStableScrollLayoutCoversIOS15IndependentOfHardware() {
++        XCTAssertTrue(RenderCompatibilityPolicy.shouldUseStableScrollLayout(osMajorVersion: 15))
++        XCTAssertFalse(RenderCompatibilityPolicy.shouldUseStableScrollLayout(osMajorVersion: 16))
++    }
++
+ }
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index ca45c36..dab766b 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -1,4 +1,4 @@
+-# VeilLink V0.3.7-dev architecture
++# VeilLink V0.3.13-dev architecture
+ 
+ VeilLink is an offline nearby E2EE messenger for iOS 15+. Runtime communication uses CoreBluetooth; ZIPFoundation is used only for local backup packaging.
+ 
+@@ -77,7 +77,7 @@ Transport v2 preflights fragmentation before allocating packets. Protocol 4 enve
+ 
+ ## V0.2.3 session consistency
+ 
+-CoreBluetooth can report progress through multiple delegate callbacks. Central-side readiness is published only after the data characteristic exists and notification subscription succeeds; `ConnectionEventGate` then turns readiness into one logical connected/disconnected transition per transport ID, and `SessionCoordinator` independently ignores duplicate connected callbacks. A pre-authentication session is bounded to 15 seconds; successful Hello authentication cancels the deadline, while expiry removes the incomplete session and disconnects that BLE transport. Message insertion and conversation preview advancement share one SQLite transaction. Attachment file creation is rollback-safe with respect to its database row: if the row insert fails, the just-written encrypted file is deleted.
++CoreBluetooth can report progress through multiple delegate callbacks. Central-side readiness is published only after the data characteristic exists and notification subscription succeeds; `ConnectionEventGate` then turns readiness into one logical connected/disconnected transition per transport ID, and `SessionCoordinator` independently ignores duplicate connected callbacks. Pre-authentication Hello delivery is now retried on an idempotent short schedule. A weak link no longer turns one dropped Hello into a permanent disconnect; the session can reseed the handshake while the physical BLE link remains alive. Message insertion and conversation preview advancement share one SQLite transaction. Attachment file creation is rollback-safe with respect to its database row: if the row insert fails, the just-written encrypted file is deleted.
+ 
+ 
+ ## V0.3.3 visual and motion layer
+@@ -109,3 +109,31 @@ V0.3.6 keeps Protocol 4 and Schema V8 unchanged while reducing hot-path work. BL
+ ## V0.3.7 legacy compositor layer
+ 
+ The visual layer includes a pure `RenderCompatibilityPolicy` plus an iOS hardware identifier bridge. iPhone 7 / 7 Plus on iOS 15 select a reduced compositor path: persistent link/radar motion is static, ambient backgrounds avoid GeometryReader-driven curtain layers, and shared card/glass modifiers avoid the heaviest clip + duplicate overlay + shadow composition. This is presentation-only and does not alter transport, protocol, trust, crypto or persistence semantics.
++
++## V0.3.8 iOS 15 stable scroll layout
++
++The real-device failure pattern was refined from a pure compositor-load hypothesis to a ScrollView content-host layout instability: navigation/tab chrome stayed fixed while the entire scrolling content layer shifted horizontally, clipped, disappeared and later returned. Shared affected screens used nested `maxWidth`/`infinity` sizing inside a vertical ScrollView. V0.3.8 introduces `VeilStableScrollView`, which measures the viewport outside scroll content and assigns a concrete centered content width. iOS 15 builds also expose a stable-layout diagnostic label; the iPhone 7 compositor reduction from V0.3.7 remains active.
++
++
++## V0.3.9 performance overhaul
++
++The hot path is now bounded around real screen needs rather than total history size. ChatView loads the most recent 120 messages on a background queue and expands in 120-message windows on demand; full-history decryption is reserved for an explicit search. DatabaseStore caches up to 512 immutable decrypted message bodies so delivery/progress refreshes do not repeatedly perform ChaChaPoly opens. Image bubbles decrypt original bytes only once per cache miss, then ImageIO creates a <=1024 px display preview without a full-resolution decode; previews are held in a 32 MiB cost-bounded NSCache. Inbound image finalization replaces roughly one SQLite prepare/queue hop per 48 KiB chunk with one ordered statement and an incremental SHA-256 pass, then reuses that verified digest while saving. The legacy iPhone 7 compositor path also disables shard trails, per-shard shadows and spring interpolation while preserving checkpoint-driven visual progress.
++
++
++## V0.3.10 targeted device performance
++
++`DevicePerformancePolicy` maps the small, explicit deployment fleet to local-only runtime budgets without changing Protocol 4. SE1 (`iPhone8,4`) is the constrained A9 profile; iPhone 7/7 Plus (`iPhone9,x`) use a legacy A10 profile; SE2 (`iPhone12,8`) uses a balanced A13 profile; iPhone 13 Pro (`iPhone14,2`) uses the high profile; and iPad Air 4 (`iPad13,1/2`) has a deterministic performance profile while its UI repair remains deferred. The policy controls chat history windowing, immutable decrypted-body cache size, image thumbnail resolution/cache cost, outbound attachment cache, BLE queue/reassembly budgets, message refresh coalescing, transfer visual complexity and background cache trimming. Memory warnings always clear transient caches. The cache policy is strictly local and does not alter message encoding, cryptographic domains, chunk size, checkpoint semantics or peer compatibility.
++
++
++## V0.3.11 Owner Mode performance overrides
++
++`PerformanceOverrideStore` keeps a thread-safe local snapshot of explicit developer overrides, while `PerformanceOverridePolicy` derives an effective runtime profile from the existing hardware-specific base profile. Owner Mode is the only UI surface that can edit these values. The master override is disabled by default. Optional overrides can raise local preview resolution to 2048 px, expand the in-memory outbound attachment cache to at least 16 MiB, disable message-refresh debounce, force full visual complexity, and re-enable persistent animations on SE1/iPhone 7. The override layer intentionally does not modify BLE queue/reassembly limits, Protocol 4, Schema V8, encryption, chunking or peer compatibility.
++
++## V0.3.12 in-app image viewer
++
++Chat image bubbles use the normal `ImagePreviewCache` device budget. Opening a large image presents `FullScreenImageViewer`, which immediately reuses the bubble thumbnail and asynchronously decrypts the local attachment and performs a second ImageIO downsample governed by `ImageViewerPolicy`. This keeps scroll-time memory cheap while allowing explicit detail viewing. The viewer owns its larger `UIImage` only for the lifetime of the full-screen presentation and supports 1–5× interaction entirely in-process.
++
++
++## V0.3.13 BLE reliability layer
++
++BLE reliability is layered rather than expressed as a distance promise. CoreBluetooth still owns the physical radio/link-layer retries; VeilLink adds live RSSI smoothing, signal-aware burst pacing, control-over-bulk queue priority, persistent capped reconnect, stalled-queue recovery and repeated Hello delivery. Persistent messages are not failed merely because a marginal link exceeded ten accepted sends: the outbox continues until authenticated ACK/checkpoint or expiry. A newly authenticated trusted session wakes old pending rows immediately. These changes leave Protocol 4 and Schema V8 unchanged and do not alter RF transmit power.
+diff --git a/docs/CHECKPOINT_CURRENT.md b/docs/CHECKPOINT_CURRENT.md
+index 4c4469c..03fc62f 100644
+--- a/docs/CHECKPOINT_CURRENT.md
++++ b/docs/CHECKPOINT_CURRENT.md
+@@ -1,3 +1,3 @@
+-# VeilLink Current Checkpoint
++# Current checkpoint
+ 
+-V0.3.7 iPhone 7 Render Compatibility, based on GitHub main 7397c537 after the V0.3.6 runtime optimization sync and subsequent iOS 15 fixes. Protocol 4 and SQLite Schema V8 remain unchanged. This checkpoint adds an automatic lightweight SwiftUI compositor path for iPhone 7 / 7 Plus on iOS 15, eliminates persistent decorative transit animation from static identity states, and reduces clip/shadow/background off-screen composition on the affected hardware while preserving the Veil visual identity.
++V0.3.13 BLE Reliability Overhaul, cumulative from GitHub main `aadb80b02e2fc4eeab3d4032d392cd37267e82fc`. Protocol 4 and SQLite Schema V8 remain unchanged. The BLE transport now uses RSSI-smoothed adaptive packet pacing, control-packet priority, persistent capped reconnect instead of a five-attempt stop, connected-link RSSI polling, compact advertising, stalled-queue recovery, repeated idempotent Hello delivery, reconnect-triggered outbox wake-up, and application retries that continue until the persistent outbox expiry rather than failing after ten accepted sends. This improves eventual delivery on marginal links without claiming a physically guaranteed meter range.
+diff --git a/docs/CHECKPOINT_V0.3.10_TARGETED_DEVICE_PERFORMANCE.md b/docs/CHECKPOINT_V0.3.10_TARGETED_DEVICE_PERFORMANCE.md
+new file mode 100644
+index 0000000..e0a0c62
+--- /dev/null
++++ b/docs/CHECKPOINT_V0.3.10_TARGETED_DEVICE_PERFORMANCE.md
+@@ -0,0 +1,22 @@
++# V0.3.10 Targeted Device Performance
++
++VeilLink 0.3.10-dev build 16 is a device-targeted performance checkpoint. It is cumulative from GitHub main `aadb80b02e2fc4eeab3d4032d392cd37267e82fc`, so Work only needs one patch even if V0.3.8/V0.3.9 were not applied separately.
++
++## Primary deployment matrix
++
++- iPhone SE (1st generation, `iPhone8,4`): most constrained profile; 48-message initial window, 640 px previews, 10 MiB preview cache, 3 MiB outbound attachment cache, smaller BLE queue/reassembly budgets, 180 ms coalescing, minimal single-surface transfer visualization, aggressive background cache trim.
++- iPhone 7 / 7 Plus (`iPhone9,x`): legacy compact profile; 72-message initial window, 768 px previews, 16 MiB preview cache, 4 MiB outbound attachment cache, bounded BLE budgets, 140 ms coalescing, static 30-shard path without expensive persistent compositor motion.
++- iPhone SE (2nd generation, `iPhone12,8`): balanced modern profile; 120-message window, 1024 px previews, 24 MiB preview cache and full transfer visuals.
++- iPhone 13 Pro (`iPhone14,2`): high profile; 180-message window, 1280 px previews, 48 MiB preview cache, larger immutable-text cache and BLE reassembly budget, 60 ms coalescing.
++- iPad Air 4 (`iPad13,1` / `iPad13,2`): performance profile exists so memory/transport behavior is deterministic, but its known UI defects are intentionally deferred because it is not a primary deployment target.
++
++## Additional runtime changes
++
++- Decrypted message cache no longer flushes the entire cache when full; it uses a bounded FIFO eviction queue, preventing periodic decrypt storms.
++- ImagePreviewCache uses NSCache directly (thread-safe) and is sized per hardware profile.
++- Clearing a conversation fetches message IDs only instead of decrypting every message first.
++- BLE outbound queue and pre-session reassembly budgets scale down on A9/A10 devices and scale up on iPhone 13 Pro. Protocol limits themselves do not change.
++- Memory warnings clear preview, decrypted-text and outbound attachment caches. SE1/iPhone 7 additionally trim these transient caches when backgrounded to reduce jetsam risk.
++- SE1 transfer progress replaces thirty independently-composited shard cells with one image surface plus a lightweight grid/progress mask. iPhone 7 keeps the shard motif but uses the legacy static path.
++
++Protocol 4 and Schema V8 are unchanged. iPad Air 4 UI repair is explicitly outside this checkpoint.
+diff --git a/docs/CHECKPOINT_V0.3.11_GOD_MODE_PERFORMANCE_OVERRIDES.md b/docs/CHECKPOINT_V0.3.11_GOD_MODE_PERFORMANCE_OVERRIDES.md
+new file mode 100644
+index 0000000..cb3f326
+--- /dev/null
++++ b/docs/CHECKPOINT_V0.3.11_GOD_MODE_PERFORMANCE_OVERRIDES.md
+@@ -0,0 +1,5 @@
++# V0.3.11 God Mode Performance Overrides
++
++This checkpoint adds a local-only developer performance switchboard inside authenticated Owner Mode. Automatic device profiles remain the default. When explicitly armed, the owner can individually override high-definition image previews, outbound attachment cache size, message refresh coalescing, full visual effects, and persistent animations. A one-tap chaos preset enables all five; “restore sanity” returns to the automatic device policy and clears transient caches.
++
++The override layer never changes Protocol 4, Schema V8, cryptographic domains, BLE wire limits, message encoding, attachment chunk size, or peer compatibility. High-resolution preview changes only the local display thumbnail. Expanded attachment cache remains memory-only. SE1/iPhone 7 compatibility reductions stay active unless the corresponding visual override is deliberately enabled.
+diff --git a/docs/CHECKPOINT_V0.3.12_IN_APP_IMAGE_VIEWER.md b/docs/CHECKPOINT_V0.3.12_IN_APP_IMAGE_VIEWER.md
+new file mode 100644
+index 0000000..c60a06d
+--- /dev/null
++++ b/docs/CHECKPOINT_V0.3.12_IN_APP_IMAGE_VIEWER.md
+@@ -0,0 +1,9 @@
++# V0.3.12 In-App Full-Screen Image Viewer
++
++- Tap any locally available chat image to open it inside VeilLink.
++- Full-screen black viewer supports pinch zoom to 5×, double-tap 2.5×, pan while zoomed, and swipe-down dismissal at 1×.
++- Viewer starts immediately from the already decoded bubble thumbnail, then asynchronously replaces it with a larger ImageIO downsample.
++- Decode budgets: SE1 1536 px; iPhone 7/7 Plus 2048 px; SE2 2560 px; iPhone 13 Pro and iPad Air 4 3072 px.
++- Owner Mode high-definition preview override lifts the viewer decode ceiling to 4096 px.
++- Large viewer image exists in memory only while presented; encrypted attachment storage and transport bytes are unchanged.
++- No network access, Protocol 4 change, Schema migration, or attachment re-encoding is introduced.
+diff --git a/docs/CHECKPOINT_V0.3.13_BLE_RELIABILITY_OVERHAUL.md b/docs/CHECKPOINT_V0.3.13_BLE_RELIABILITY_OVERHAUL.md
+new file mode 100644
+index 0000000..676a9ec
+--- /dev/null
++++ b/docs/CHECKPOINT_V0.3.13_BLE_RELIABILITY_OVERHAUL.md
+@@ -0,0 +1,26 @@
++# V0.3.13 BLE Reliability Overhaul
++
++## Goal
++
++Make delivery recover automatically inside the practical BLE operating envelope. This is application-level eventual delivery, not a claim that radio propagation can be absolutely guaranteed: RF obstruction, 2.4 GHz interference, iOS suspension and force-termination can still remove the link.
++
++## Transport changes
++
++- `CBCentralManagerScanOptionAllowDuplicatesKey` is enabled and RSSI samples are EMA-smoothed/throttled, so the transport has a live signal estimate instead of a one-time discovery RSSI.
++- Connected central links also call `readRSSI()` every two seconds.
++- `BLELinkReliabilityPolicy` classifies strong/good/marginal/weak links and selects smaller packet bursts plus longer inter-burst yielding as RSSI degrades. SE1 and iPhone 7 use more conservative pacing than SE2/13 Pro.
++- Outbound transport queues have separate control and bulk lanes. Hello, text, attachment manifest, ACK and checkpoint traffic can advance ahead of large image fragments.
++- Reconnect no longer stops after five failures. Backoff reaches a 30-second ceiling and continues while the user still wants the peer connected. Rediscovery and Bluetooth power restoration can wake reconnect immediately.
++- Service-only advertising removes the local-name payload because discovery already filters by the 128-bit service UUID.
++- A stalled central transmit queue automatically tears down/reconnects the physical link; a stalled peripheral notification queue drops only the stale transport frame and lets the persistent application outbox/checkpoint layer retransmit it.
++
++## Session / delivery changes
++
++- The signed Hello is retransmitted on a short 1/2/4/6/8-second schedule while authentication is incomplete. Receiving the peer Hello also echoes the local Hello again, closing the asymmetric “ours was lost, theirs arrived” window.
++- A noisy link no longer marks a message failed after ten accepted BLE sends. The persistent outbox keeps retrying with capped backoff until acknowledgement/checkpoint or the existing seven-day expiry.
++- A newly authenticated trusted session wakes all unpaused pending outbound rows immediately instead of waiting for an old retry timestamp.
++- Text/control traffic uses the control-priority transport lane; attachment chunks remain bulk.
++
++## Compatibility
++
++Protocol 4, 48 KiB authenticated image chunks, cryptographic domains and SQLite Schema V8 are unchanged. This update does not increase iPhone radio transmit power and therefore does not promise a fixed number of meters.
+diff --git a/docs/CHECKPOINT_V0.3.9_PERFORMANCE_OVERHAUL.md b/docs/CHECKPOINT_V0.3.9_PERFORMANCE_OVERHAUL.md
+new file mode 100644
+index 0000000..3ca6a66
+--- /dev/null
++++ b/docs/CHECKPOINT_V0.3.9_PERFORMANCE_OVERHAUL.md
+@@ -0,0 +1,24 @@
++# V0.3.9 Performance Overhaul
++
++VeilLink 0.3.9-dev build 15 is a performance checkpoint based on GitHub main `aadb80b02e2fc4eeab3d4032d392cd37267e82fc` and includes the pending V0.3.8 iOS 15 stable-scroll correction.
++
++## Main-thread and history work
++
++- Normal ChatView refreshes use an asynchronous recent-history query rather than synchronously decrypting the entire conversation on the main thread.
++- Initial history is bounded to 120 messages; older history is expanded in 120-message windows up to 2000 for interactive browsing.
++- Full-history decryption is only requested when the user actually types a search query.
++- DatabaseStore keeps a bounded 512-entry cache of immutable decrypted message bodies to avoid repeated ChaChaPoly work on delivery/progress refreshes.
++
++## Image memory and transfer finalization
++
++- Image bubbles use ImageIO thumbnail creation capped at 1024 px rather than `UIImage(data:)` full-resolution decode.
++- A 32 MiB cost-bounded NSCache reuses display previews across SwiftUI cell reconstruction.
++- Inbound attachment finalization now reads/decrypts ordered 48 KiB chunks through one prepared SQLite statement and computes SHA-256 incrementally in the same pass.
++- The verified digest is reused when storing the final attachment, avoiding a second full-image hash.
++- Outbound encoded attachment cache ceiling is reduced from 12 MiB to 6 MiB.
++
++## iPhone 7 rendering
++
++The V0.3.7/V0.3.8 compatibility path remains. TransferShardView additionally removes trails, per-shard shadows and spring interpolation on the legacy compositor profile while preserving exact checkpoint-driven progress.
++
++Protocol 4 and Schema V8 are unchanged.
+diff --git a/docs/KNOWN_DEVICE_MATRIX.md b/docs/KNOWN_DEVICE_MATRIX.md
+new file mode 100644
+index 0000000..b4c2a45
+--- /dev/null
++++ b/docs/KNOWN_DEVICE_MATRIX.md
+@@ -0,0 +1,11 @@
++# Known device matrix
++
++Primary real-device targets for current VeilLink engineering:
++
++- iPhone SE (1st generation): primary low-end target.
++- iPhone 7: primary iOS 15 / A10 target and the strictest currently observed SwiftUI compatibility target.
++- iPhone SE (2nd generation): primary compact modern target.
++- iPhone 13 Pro: primary high-performance reference target.
++- iPad Air 4: experimental secondary target. Multiple UI defects have been observed; record and preserve compatibility, but defer UI repair until the phone path is stable.
++
++Optimization policy: do not degrade Protocol 4 interoperability by device. Hardware profiles may change local cache sizes, message windows, rendering detail, scheduling/coalescing and memory budgets only.
+diff --git a/scripts/local-ci-sim.sh b/scripts/local-ci-sim.sh
+index 5c59c47..971f20b 100755
+--- a/scripts/local-ci-sim.sh
++++ b/scripts/local-ci-sim.sh
+@@ -21,8 +21,8 @@ assert project['settings']['base']['SWIFT_VERSION'] == 5.9
+ assert 'VeilLink' in project['targets'] and 'VeilLinkTests' in project['targets']
+ with open(root/'VeilLink/Resources/Info.plist', 'rb') as fh:
+     plist = plistlib.load(fh)
+-assert plist['CFBundleShortVersionString'] == '0.3.7'
+-assert plist['CFBundleVersion'] == '13'
++assert plist['CFBundleShortVersionString'] == '0.3.13'
++assert plist['CFBundleVersion'] == '19'
+ ci = yaml.safe_load((root/'.github/workflows/ios-ci.yml').read_text(encoding='utf-8'))
+ ipa = yaml.safe_load((root/'.github/workflows/unsigned-ipa.yml').read_text(encoding='utf-8'))
+ ci_job = ci['jobs']['build-and-test']
+@@ -50,7 +50,11 @@ swiftc -typecheck \
+     VeilLink/Core/Models.swift \
+     VeilLink/Core/MessageTextFeatures.swift \
+     VeilLink/Core/RenderCompatibilityPolicy.swift \
++    VeilLink/Core/PerformanceOverrides.swift \
++    VeilLink/Core/DevicePerformanceProfile.swift \
++    VeilLink/Core/ImageViewerPolicy.swift \
+     VeilLink/Transport/ConnectionEventGate.swift \
++    VeilLink/Transport/BLELinkReliabilityPolicy.swift \
+     VeilLink/Security/PacketAbuseLimiter.swift \
+     VeilLink/Transport/BLEFramer.swift
+ pass "Linux-compatible core typecheck"
+@@ -63,9 +67,45 @@ import Foundation
+ let reply = ReplyTextCodec.encode(quoted: "old message", reply: "new message")
+ precondition(ReplyTextCodec.decode(reply)?.reply == "new message")
+ precondition(ReplyTextCodec.previewText(for: reply) == "↪︎ new message")
++precondition(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone8,4", osMajorVersion: 15))
+ precondition(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone9,1", osMajorVersion: 15))
+ precondition(!RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone9,1", osMajorVersion: 16))
+ precondition(!RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone14,2", osMajorVersion: 15))
++precondition(RenderCompatibilityPolicy.shouldUseStableScrollLayout(osMajorVersion: 15))
++precondition(!RenderCompatibilityPolicy.shouldUseStableScrollLayout(osMajorVersion: 16))
++let se1Profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone8,4", osMajorVersion: 15)
++precondition(se1Profile.label == "SE1-LOW" && se1Profile.messageWindowInitial == 48)
++let iPhone7Profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone9,1", osMajorVersion: 15)
++precondition(iPhone7Profile.label == "LEGACY-COMPACT")
++let se2Profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone12,8", osMajorVersion: 15)
++precondition(se2Profile.label == "SE2-BALANCED")
++let proProfile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone14,2", osMajorVersion: 18)
++precondition(proProfile.label == "13PRO-HIGH")
++precondition(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone8,4", previewMaxPixelSize: 640, highDefinitionOverride: false) == 1_536)
++precondition(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone9,1", previewMaxPixelSize: 768, highDefinitionOverride: false) == 2_048)
++precondition(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone12,8", previewMaxPixelSize: 1_024, highDefinitionOverride: false) == 2_560)
++precondition(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone14,2", previewMaxPixelSize: 1_280, highDefinitionOverride: false) == 3_072)
++precondition(ImageViewerPolicy.maxPixelSize(machineIdentifier: "iPhone8,4", previewMaxPixelSize: 2_048, highDefinitionOverride: true) == 4_096)
++let godSnapshot = PerformanceOverrideSnapshot(
++    isEnabled: true,
++    highDefinitionPreview: true,
++    expandedAttachmentCache: true,
++    disableRefreshCoalescing: true,
++    forceFullVisualEffects: true,
++    allowPersistentAnimations: true
++)
++let godProfile = PerformanceOverridePolicy.effectiveProfile(base: iPhone7Profile, snapshot: godSnapshot)
++precondition(godProfile.imagePreviewMaxPixelSize == 2_048)
++precondition(godProfile.outboundAttachmentCacheBytes == 16 * 1_024 * 1_024)
++precondition(godProfile.messageRefreshDebounceNanoseconds == 0)
++precondition(godProfile.transferVisualComplexity == .full)
++precondition(godProfile.bleQueueByteLimit == iPhone7Profile.bleQueueByteLimit)
++let weakLegacyLink = BLELinkReliabilityPolicy.tuning(rssi: -88, machineIdentifier: "iPhone9,1")
++let weakModernLink = BLELinkReliabilityPolicy.tuning(rssi: -88, machineIdentifier: "iPhone14,2")
++precondition(weakLegacyLink.quality == .weak)
++precondition(weakLegacyLink.packetBurstLimit <= weakModernLink.packetBurstLimit)
++precondition(BLELinkReliabilityPolicy.reconnectDelay(attempt: 100) == 30)
++precondition(BLELinkReliabilityPolicy.smoothedRSSI(previous: -70, sample: 127) == -70)
+ 
+ var gate = ConnectionEventGate()
+ let transport = UUID()
+@@ -92,7 +132,7 @@ for fragment in fragments.reversed() {
+ precondition(rebuilt == payload)
+ print("core-harness-ok")
+ SWIFT
+-swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Core/RenderCompatibilityPolicy.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
++swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Core/RenderCompatibilityPolicy.swift     VeilLink/Core/PerformanceOverrides.swift     VeilLink/Core/DevicePerformanceProfile.swift     VeilLink/Core/ImageViewerPolicy.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Transport/BLELinkReliabilityPolicy.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
+ "$HARNESS_DIR/core-harness" >/dev/null
+ pass "core executable behavior harness"
+ 
+@@ -104,6 +144,11 @@ public protocol ObservableObject: AnyObject {}
+ }
+ SWIFT
+ swiftc -emit-module -module-name Combine "$HARNESS_DIR/Combine.swift" -emit-module-path "$HARNESS_DIR/Combine.swiftmodule"
++swiftc -typecheck -I "$HARNESS_DIR" \
++    VeilLink/Core/PerformanceOverrides.swift \
++    VeilLink/Core/DevicePerformanceProfile.swift \
++    VeilLink/Core/PerformanceOverrideController.swift
++pass "performance override controller API-shape typecheck (Linux Combine stub)"
+ cat > "$HARNESS_DIR/UIKit.swift" <<'SWIFT'
+ @_exported import Foundation
+ public typealias CGFloat = Double
+@@ -161,16 +206,16 @@ settings=Path('VeilLink/UI/SettingsView.swift').read_text(encoding='utf-8')
+ adaptive=Path('VeilLink/UI/AdaptiveRootView.swift').read_text(encoding='utf-8')
+ conversation=Path('VeilLink/UI/ConversationViews.swift').read_text(encoding='utf-8')
+ assert 'RenderCompatibilityPolicy.shouldUseLegacyCompositor' in theme
+-assert 'guard active, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }' in theme
+-assert 'guard isRunning, !reduceMotion, !VeilRenderProfile.usesLegacyCompositorPath else { return }' in nearby
++assert 'guard active, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }' in theme
++assert 'guard isRunning, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }' in nearby
+ assert 'VeilLinkTrace(active: peer.trustState == .awaitingConfirmation, width: 30)' in nearby
+ assert 'VeilLinkTrace(active: true, width: 34)' not in settings
+ assert 'VeilLinkTrace(active: true, width: 34)' not in adaptive
+ assert 'VeilLinkTrace(active: true, width: 26)' not in conversation
+ assert 'VeilLinkTrace(active: true, width: 86)' not in conversation
+-print('legacy-render-ok')
++print('legacy-render-and-stable-scroll-ok')
+ PY
+-pass "iPhone 7 / iOS 15 legacy compositor guard"
++pass "SE1 / iPhone 7 / iOS 15 legacy compositor guard"
+ 
+ python3 - <<'PY'
+ import sqlite3, tempfile, os
+@@ -243,6 +288,51 @@ print('runtime-sql-opt-ok')
+ PY
+ pass "runtime optimization SQLite/index smoke"
+ 
++python3 - <<'PY2'
++from pathlib import Path
++root = Path('.')
++db = (root/'VeilLink/Storage/DatabaseStore.swift').read_text(encoding='utf-8')
++chat = (root/'VeilLink/UI/ConversationViews.swift').read_text(encoding='utf-8')
++preview = (root/'VeilLink/Media/ImagePreviewCache.swift').read_text(encoding='utf-8')
++shards = (root/'VeilLink/UI/TransferShardView.swift').read_text(encoding='utf-8')
++profile = (root/'VeilLink/Core/DevicePerformanceProfile.swift').read_text(encoding='utf-8')
++app = (root/'VeilLink/App/AppModel.swift').read_text(encoding='utf-8')
++ble = (root/'VeilLink/Transport/BLETransport.swift').read_text(encoding='utf-8')
++session = (root/'VeilLink/Security/SessionCoordinator.swift').read_text(encoding='utf-8')
++overrides = (root/'VeilLink/Core/PerformanceOverrides.swift').read_text(encoding='utf-8')
++owner = (root/'VeilLink/UI/OwnerConsoleView.swift').read_text(encoding='utf-8')
++viewer = (root/'VeilLink/UI/FullScreenImageViewer.swift').read_text(encoding='utf-8')
++viewer_policy = (root/'VeilLink/Core/ImageViewerPolicy.swift').read_text(encoding='utf-8')
++reliability = (root/'VeilLink/Transport/BLELinkReliabilityPolicy.swift').read_text(encoding='utf-8')
++assert 'fetchRecentMessages' in db and 'VeilDevicePerformance.current.decryptedBodyCacheEntries' in db
++assert 'decryptedBodyCacheOrderHead' in db and 'fetchMessageIDs' in db
++assert 'SELECT chunk_index, ciphertext FROM inbound_attachment_chunks' in db
++assert 'ImagePreviewCache.downsample' in chat and 'kCGImageSourceThumbnailMaxPixelSize' in preview
++assert 'VeilDevicePerformance.current.messageWindowInitial' in chat and 'DispatchQueue.global(qos: .userInitiated).async' in chat
++assert 'usesMinimalRendering' in shards and 'ShardGridShape' in shards
++for token in ['iPhone8,4','iPhone9,1','iPhone12,8','iPhone14,2','iPad13,1']:
++    assert token in profile
++assert 'messageRefreshDebounceNanoseconds' in app and 'handleMemoryPressure' in app
++assert 'bleQueueByteLimit' in ble and 'bleReassemblyByteLimit' in ble
++assert 'outboundAttachmentCacheBytes' in session
++assert 'PerformanceOverridePolicy' in overrides and '2_048' in overrides and '16 * 1_024 * 1_024' in overrides
++assert 'THERMAL HERESY' in owner and '把散热交给命运' in owner and '恢复理智' in owner
++assert 'allowPersistentAnimations' in owner and 'disableRefreshCoalescing' in owner
++assert 'FullScreenImageViewer' in chat and 'showsLargeImage' in chat
++assert 'MagnificationGesture()' in viewer and 'DragGesture(minimumDistance: 4)' in viewer
++assert 'ImagePreviewCache.downsample' in viewer and '4_096' in viewer_policy
++assert 'CBCentralManagerScanOptionAllowDuplicatesKey: true' in ble
++assert 'PeerOutboundQueue' in ble and 'priority: BLESendPriority' in ble
++assert 'readRSSI()' in ble and 'recoverStalledTransportQueuesIfNeeded' in ble
++assert 'attempt <= 5' not in ble and 'reconnectDelay(attempt:' in ble
++assert 'CBAdvertisementDataLocalNameKey' not in ble
++assert 'handshakeRetryScheduleNanoseconds' in session and 'wakeOutboundForPeer' in session
++assert 'maximumAcknowledgementAttempts' not in session
++assert 'packetBurstLimit' in reliability and 'interBurstDelay' in reliability
++print('targeted-perf-ok')
++PY2
++pass "V0.3.13 targeted-device + God Mode + image viewer + BLE reliability guard"
++
+ python3 - <<'PY'
+ from pathlib import Path
+ import tempfile, zipfile, shutil
