@@ -25,7 +25,6 @@ struct ConversationListView: View {
                         Text("PEER")
                     }
                     .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
-                    .tracking(1.2)
                     .foregroundColor(VeilTheme.tertiaryText)
                     Text("前往“附近”发现设备并核对六码")
                         .font(.subheadline)
