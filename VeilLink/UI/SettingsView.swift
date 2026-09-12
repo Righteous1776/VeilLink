@@ -372,6 +372,7 @@ private struct IdentityManagementSheet: View {
     init(model: AppModel) {
         self.model = model
         identity = model.identity
+        haptics = model.haptics
     }
 
     var body: some View {
