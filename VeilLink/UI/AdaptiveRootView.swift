@@ -172,7 +172,6 @@ private struct EmptyDetailView: View {
                 Text("PEER")
             }
             .font(.system(size: 9, weight: .semibold, design: .monospaced))
-            .tracking(1.4)
             .foregroundColor(VeilTheme.mutedGold)
             Text("消息只在附近设备与本地存储之间流动")
                 .font(.subheadline)
