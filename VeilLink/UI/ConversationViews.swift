@@ -1063,7 +1063,7 @@ private struct ContactDetailsSheet: View {
     }
 }
 
-struct PhotoPicker: UIViewControllerRepresentable {
+private struct PhotoPicker: UIViewControllerRepresentable {
     let onPicked: (ImportedImageFile) -> Void
     let onError: (String) -> Void
     @Environment(\.dismiss) private var dismiss
