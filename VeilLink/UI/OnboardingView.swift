@@ -27,7 +27,6 @@ struct OnboardingView: View {
                             .foregroundColor(VeilTheme.goldBright)
                     }
                     .font(.system(size: 30, weight: .semibold, design: .rounded))
-                    .tracking(0.4)
                     Text("PRIVATE  /  NEARBY  /  SERVERLESS")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .tracking(1.6)
