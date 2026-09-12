@@ -173,7 +173,7 @@ final class DatabaseStore {
         for relativePath in relativePaths {
             let url = attachmentsURL.appendingPathComponent(relativePath)
             if url.standardizedFileURL.deletingLastPathComponent() == attachmentsURL.standardizedFileURL {
-                try? fileManager.removeItem(at: url)
+                try? FileManager.default.removeItem(at: url)
             }
         }
     }
