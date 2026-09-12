@@ -45,7 +45,6 @@ struct NearbyView: View {
                             Text("…")
                         }
                         .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                        .tracking(1.1)
                         .foregroundColor(VeilTheme.mutedGold)
                         Text("等待附近的 VeilLink 设备")
                             .font(.system(.body, design: .rounded).weight(.medium))
