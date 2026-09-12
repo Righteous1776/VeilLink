@@ -83,8 +83,17 @@ struct TransferShardView: View {
         GeometryReader { geometry in
             let size = geometry.size
             ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                VeilPanelShape(cut: 16, radius: 8)
                     .fill(VeilTheme.panel)
+
+                LinearGradient(
+                    colors: mode == .sending
+                        ? [Color.clear, VeilTheme.gold.opacity(0.075)]
+                        : [VeilTheme.gold.opacity(0.075), Color.clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .allowsHitTesting(false)
 
                 if !reduceMotion && phase == .active {
                     ForEach(Array(stride(from: 0, to: columns * rows, by: 4)), id: \.self) { index in
@@ -98,11 +107,41 @@ struct TransferShardView: View {
 
                 transferOverlay
             }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(VeilPanelShape(cut: 16, radius: 8))
+            .overlay(alignment: .bottom) {
+                GeometryReader { barGeometry in
+                    Group {
+                        if phase == .failed {
+                            Capsule().fill(VeilTheme.danger)
+                        } else {
+                            Capsule().fill(VeilTheme.goldGradient)
+                        }
+                    }
+                        .frame(width: max(8, barGeometry.size.width * CGFloat(clampedProgress)), height: 2)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                        .opacity(clampedProgress < 1 || phase == .failed ? 0.92 : 0)
+                }
+                .frame(height: 2)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
+            }
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                VeilPanelShape(cut: 16, radius: 8)
                     .stroke(borderColor, lineWidth: phase == .failed ? 1.4 : 1)
             )
+            .overlay(alignment: .topLeading) {
+                HStack(spacing: 7) {
+                    Text(mode == .sending ? "TX" : "RX")
+                        .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+                        .tracking(1.0)
+                        .foregroundColor(VeilTheme.mutedGold)
+                    VeilLinkTrace(active: phase == .active && clampedProgress < 1, width: 42)
+                }
+                .padding(.leading, 11)
+                .padding(.top, 8)
+                .opacity(clampedProgress < 1 || phase == .failed ? 0.92 : 0)
+            }
+            .shadow(color: phase == .failed ? VeilTheme.danger.opacity(0.10) : VeilTheme.gold.opacity(clampedProgress < 1 ? 0.10 : 0), radius: 12, x: 0, y: 6)
             .animation(reduceMotion ? nil : .interactiveSpring(response: 0.40, dampingFraction: phase == .failed ? 0.70 : 0.82), value: progressBucket)
             .animation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.68), value: phase)
         }
@@ -201,8 +240,9 @@ struct TransferShardView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(.ultraThinMaterial)
+        .background(Color.black.opacity(0.54))
         .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
         .opacity(clampedProgress < 1 || phase == .failed ? 1 : 0)
         .allowsHitTesting(false)
     }

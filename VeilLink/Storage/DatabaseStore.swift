@@ -35,6 +35,7 @@ final class DatabaseStore {
     static let inboundAttachmentRetention: TimeInterval = 7 * 24 * 60 * 60
     static let maximumIncompleteInboundAttachments = 16
     static let maximumIncompleteInboundAttachmentsPerSender = 4
+    static let localDeletionTombstoneRetention: TimeInterval = 8 * 24 * 60 * 60
 
 
     init(keychain: KeychainStore, rootDirectory: URL? = nil) throws {
@@ -78,6 +79,7 @@ final class DatabaseStore {
         try verifyStorageKey()
         _ = try? cleanupCompletedInboundTransferMetadata()
         _ = try? cleanupStaleInboundAttachments()
+        _ = try? cleanupExpiredLocalDeletionTombstones()
     }
 
     deinit {
@@ -133,6 +135,49 @@ final class DatabaseStore {
         )
     }
 
+    func renameContact(localIdentityID: String, identityID: String, displayName: String) throws {
+        let normalized = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, normalized.lengthOfBytes(using: .utf8) <= 64 else {
+            throw DatabaseError.statementFailed("联系人备注不能为空且不能超过 64 个 UTF-8 字节。")
+        }
+        try writeBatch([
+            (
+                "UPDATE contacts SET display_name = ? WHERE local_identity_id = ? AND identity_id = ?;",
+                [.text(normalized), .text(localIdentityID), .text(identityID)]
+            ),
+            (
+                "UPDATE conversations SET title = ? WHERE local_identity_id = ? AND peer_identity_id = ?;",
+                [.text(normalized), .text(localIdentityID), .text(identityID)]
+            )
+        ])
+    }
+
+    func deleteLocalIdentityData(localIdentityID: String) throws {
+        let relativePaths = read(
+            """
+            SELECT a.relative_path
+            FROM attachments a
+            JOIN messages m ON m.id = a.message_id
+            JOIN conversations c ON c.id = m.conversation_id
+            WHERE c.local_identity_id = ?;
+            """,
+            bindings: [.text(localIdentityID)]
+        ) { text($0, 0) }
+
+        try writeBatch([
+            ("DELETE FROM conversations WHERE local_identity_id = ?;", [.text(localIdentityID)]),
+            ("DELETE FROM contacts WHERE local_identity_id = ?;", [.text(localIdentityID)]),
+            ("DELETE FROM profiles WHERE id = ?;", [.text(localIdentityID)])
+        ])
+
+        for relativePath in relativePaths {
+            let url = attachmentsURL.appendingPathComponent(relativePath)
+            if url.standardizedFileURL.deletingLastPathComponent() == attachmentsURL.standardizedFileURL {
+                try? fileManager.removeItem(at: url)
+            }
+        }
+    }
+
     func createConversation(localIdentityID: String, peerIdentityID: String, title: String) throws -> String {
         if let existing = conversationID(localIdentityID: localIdentityID, for: peerIdentityID) { return existing }
         let id = UUID().uuidString
@@ -163,27 +208,33 @@ final class DatabaseStore {
         ) { text($0, 0) }.first
     }
 
-    func saveMessage(_ message: ChatMessage) throws {
+    func saveMessage(_ message: ChatMessage, conversationPreview: String? = nil) throws {
         guard !messageExists(id: message.id) else { return }
         let protectedBody = try ChaChaPoly.seal(Data(message.body.utf8), using: storageKey).combined
-        try write(
-            """
-            INSERT INTO messages(
-                id, conversation_id, sender_identity_id, body_ciphertext,
-                sent_at, is_outgoing, delivery_state, transfer_progress
-            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?);
-            """,
-            bindings: [
-                .text(message.id), .text(message.conversationID), .text(message.senderIdentityID),
-                .blob(protectedBody), .double(message.sentAt.timeIntervalSince1970),
-                .int(message.isOutgoing ? 1 : 0), .text(message.deliveryState.rawValue),
-                message.transferProgress.map(SQLiteValue.double) ?? .null
-            ]
-        )
-        try write(
-            "UPDATE conversations SET updated_at = ?, last_message_preview = ? WHERE id = ?;",
-            bindings: [.double(message.sentAt.timeIntervalSince1970), .blob(protectedBody), .text(message.conversationID)]
-        )
+        let protectedPreview = try ChaChaPoly.seal(Data((conversationPreview ?? message.body).utf8), using: storageKey).combined
+        try writeBatch([
+            (
+                """
+                INSERT INTO messages(
+                    id, conversation_id, sender_identity_id, body_ciphertext,
+                    sent_at, is_outgoing, delivery_state, transfer_progress
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                [
+                    .text(message.id), .text(message.conversationID), .text(message.senderIdentityID),
+                    .blob(protectedBody), .double(message.sentAt.timeIntervalSince1970),
+                    .int(message.isOutgoing ? 1 : 0), .text(message.deliveryState.rawValue),
+                    message.transferProgress.map(SQLiteValue.double) ?? .null
+                ]
+            ),
+            (
+                "UPDATE conversations SET updated_at = ?, last_message_preview = ?, unread_count = unread_count + ? WHERE id = ?;",
+                [
+                    .double(message.sentAt.timeIntervalSince1970), .blob(protectedPreview),
+                    .int(message.isOutgoing ? 0 : 1), .text(message.conversationID)
+                ]
+            )
+        ])
     }
 
     func saveAttachment(messageID: String, data: Data, mimeType: String) throws -> ChatAttachment {
@@ -193,10 +244,15 @@ final class DatabaseStore {
         let protected = try ChaChaPoly.seal(data, using: storageKey).combined
         try protected.write(to: destination, options: [.atomic, .completeFileProtection])
         let hash = Data(SHA256.hash(data: data))
-        try write(
-            "INSERT INTO attachments(id, message_id, relative_path, mime_type, byte_count, sha256) VALUES(?, ?, ?, ?, ?, ?);",
-            bindings: [.text(id), .text(messageID), .text(relativePath), .text(mimeType), .int(data.count), .blob(hash)]
-        )
+        do {
+            try write(
+                "INSERT INTO attachments(id, message_id, relative_path, mime_type, byte_count, sha256) VALUES(?, ?, ?, ?, ?, ?);",
+                bindings: [.text(id), .text(messageID), .text(relativePath), .text(mimeType), .int(data.count), .blob(hash)]
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
         return ChatAttachment(id: id, mimeType: mimeType, byteCount: data.count)
     }
 
@@ -258,9 +314,13 @@ final class DatabaseStore {
     func enqueueOutbound(messageID: String, targetIdentityID: String, localIdentityID: String) throws {
         let now = Date().timeIntervalSince1970
         try write("""
-            INSERT INTO outbound_queue(message_id, local_identity_id, target_identity_id, created_at, next_attempt_at, retry_count, expires_at)
-            VALUES(?, ?, ?, ?, ?, 0, ?)
-            ON CONFLICT(message_id) DO UPDATE SET local_identity_id = excluded.local_identity_id, target_identity_id = excluded.target_identity_id, next_attempt_at = MIN(outbound_queue.next_attempt_at, excluded.next_attempt_at);
+            INSERT INTO outbound_queue(message_id, local_identity_id, target_identity_id, created_at, next_attempt_at, retry_count, expires_at, is_paused)
+            VALUES(?, ?, ?, ?, ?, 0, ?, 0)
+            ON CONFLICT(message_id) DO UPDATE SET
+                local_identity_id = excluded.local_identity_id,
+                target_identity_id = excluded.target_identity_id,
+                next_attempt_at = MIN(outbound_queue.next_attempt_at, excluded.next_attempt_at),
+                is_paused = 0;
             """, bindings: [.text(messageID), .text(localIdentityID), .text(targetIdentityID), .double(now), .double(now), .double(now + 7 * 24 * 60 * 60)])
     }
 
@@ -273,7 +333,7 @@ final class DatabaseStore {
         let now = Date().timeIntervalSince1970; let safeLimit = max(1, min(limit, 32))
         return read("""
             SELECT message_id, retry_count FROM outbound_queue
-            WHERE local_identity_id = ? AND target_identity_id = ? AND next_attempt_at <= ? AND expires_at > ?
+            WHERE local_identity_id = ? AND target_identity_id = ? AND is_paused = 0 AND next_attempt_at <= ? AND expires_at > ?
             ORDER BY created_at ASC LIMIT \(safeLimit);
             """, bindings: [.text(localIdentityID), .text(targetIdentityID), .double(now), .double(now)]) {
                 OutboundQueueItem(messageID: text($0, 0), retryCount: Int(sqlite3_column_int64($0, 1)))
@@ -285,11 +345,25 @@ final class DatabaseStore {
     }
 
     func recordAcceptedOutboundAttempt(messageID: String, targetIdentityID: String, localIdentityID: String) throws {
-        let current = outboundRetryCount(messageID: messageID, targetIdentityID: targetIdentityID, localIdentityID: localIdentityID)
-        let nextRetry = min(current + 1, 30)
-        let exponent = min(max(nextRetry - 1, 0), 4)
-        let delay = min(Double(4 * (1 << exponent)), 60)
-        try write("UPDATE outbound_queue SET retry_count = ?, next_attempt_at = ? WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;", bindings: [.int(nextRetry), .double(Date().timeIntervalSince1970 + delay), .text(messageID), .text(localIdentityID), .text(targetIdentityID)])
+        let now = Date().timeIntervalSince1970
+        // Compute the next retry/backoff in one UPDATE. The previous implementation
+        // performed a SELECT followed by UPDATE for every accepted BLE send, which
+        // is especially expensive during chunked attachment transfer.
+        try write(
+            """
+            UPDATE outbound_queue
+            SET retry_count = MIN(retry_count + 1, 30),
+                next_attempt_at = ? + CASE
+                    WHEN retry_count <= 0 THEN 4
+                    WHEN retry_count = 1 THEN 8
+                    WHEN retry_count = 2 THEN 16
+                    WHEN retry_count = 3 THEN 32
+                    ELSE 60
+                END
+            WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;
+            """,
+            bindings: [.double(now), .text(messageID), .text(localIdentityID), .text(targetIdentityID)]
+        )
     }
 
     func deferOutbound(messageID: String, targetIdentityID: String, localIdentityID: String, delay: TimeInterval = 3) throws {
@@ -326,28 +400,89 @@ final class DatabaseStore {
         }.first
     }
 
-    func acceptOutboundAttachmentCheckpoint(messageID: String, targetIdentityID: String, localIdentityID: String, nextChunk: Int, chunkCount: Int) throws {
+    @discardableResult
+    func acceptOutboundAttachmentCheckpoint(messageID: String, targetIdentityID: String, localIdentityID: String, nextChunk: Int, chunkCount: Int) throws -> Bool {
         guard let state = outboundAttachmentState(messageID: messageID, targetIdentityID: targetIdentityID, localIdentityID: localIdentityID),
               state.chunkCount == chunkCount, nextChunk >= 0, nextChunk <= chunkCount else {
             throw DatabaseError.statementFailed("附件 checkpoint 与本地发送状态不一致。")
         }
         let acceptedNextChunk = max(state.nextChunk, nextChunk)
         let now = Date().timeIntervalSince1970
-        try write(
-            "UPDATE outbound_queue SET attachment_next_chunk = ?, retry_count = 0, next_attempt_at = ? WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;",
-            bindings: [.int(acceptedNextChunk), .double(now), .text(messageID), .text(localIdentityID), .text(targetIdentityID)]
-        )
-        if shouldPersistTransferProgress(index: acceptedNextChunk, total: chunkCount) {
-            try updateTransferProgress(messageID: messageID, progress: Double(acceptedNextChunk) / Double(chunkCount))
+        let didPersistProgress = shouldPersistTransferProgress(index: acceptedNextChunk, total: chunkCount)
+        if didPersistProgress {
+            let progress = min(max(Double(acceptedNextChunk) / Double(chunkCount), 0), 1)
+            try writeBatch([
+                (
+                    "UPDATE outbound_queue SET attachment_next_chunk = ?, retry_count = 0, next_attempt_at = ? WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;",
+                    [.int(acceptedNextChunk), .double(now), .text(messageID), .text(localIdentityID), .text(targetIdentityID)]
+                ),
+                (
+                    "UPDATE messages SET transfer_progress = ? WHERE id = ?;",
+                    [.double(progress), .text(messageID)]
+                )
+            ])
+        } else {
+            try write(
+                "UPDATE outbound_queue SET attachment_next_chunk = ?, retry_count = 0, next_attempt_at = ? WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;",
+                bindings: [.int(acceptedNextChunk), .double(now), .text(messageID), .text(localIdentityID), .text(targetIdentityID)]
+            )
         }
+        return didPersistProgress
     }
 
     func restartOutbound(messageID: String, targetIdentityID: String, localIdentityID: String) throws {
         let now = Date().timeIntervalSince1970
-        try write("UPDATE outbound_queue SET retry_count = 0, next_attempt_at = ?, expires_at = ?, attachment_next_chunk = CASE WHEN attachment_chunk_count > 0 THEN -1 ELSE attachment_next_chunk END WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;", bindings: [.double(now), .double(now + 7 * 24 * 60 * 60), .text(messageID), .text(localIdentityID), .text(targetIdentityID)])
+        try write("UPDATE outbound_queue SET retry_count = 0, next_attempt_at = ?, expires_at = ?, is_paused = 0, attachment_next_chunk = CASE WHEN attachment_chunk_count > 0 THEN -1 ELSE attachment_next_chunk END WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;", bindings: [.double(now), .double(now + 7 * 24 * 60 * 60), .text(messageID), .text(localIdentityID), .text(targetIdentityID)])
         if outboundAttachmentState(messageID: messageID, targetIdentityID: targetIdentityID, localIdentityID: localIdentityID) != nil {
             try updateTransferProgress(messageID: messageID, progress: 0)
         }
+    }
+
+    func isOutboundPaused(messageID: String, targetIdentityID: String, localIdentityID: String) -> Bool {
+        read(
+            "SELECT is_paused FROM outbound_queue WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ? LIMIT 1;",
+            bindings: [.text(messageID), .text(localIdentityID), .text(targetIdentityID)]
+        ) { sqlite3_column_int($0, 0) == 1 }.first ?? false
+    }
+
+    func pauseOutbound(messageID: String, targetIdentityID: String, localIdentityID: String) throws {
+        try writeBatch([
+            (
+                "UPDATE outbound_queue SET is_paused = 1 WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;",
+                [.text(messageID), .text(localIdentityID), .text(targetIdentityID)]
+            ),
+            (
+                "UPDATE messages SET delivery_state = ?, delivery_error = NULL WHERE id = ?;",
+                [.text(ChatMessage.DeliveryState.paused.rawValue), .text(messageID)]
+            )
+        ])
+    }
+
+    func resumeOutbound(messageID: String, targetIdentityID: String, localIdentityID: String) throws {
+        let now = Date().timeIntervalSince1970
+        try writeBatch([
+            (
+                "UPDATE outbound_queue SET is_paused = 0, retry_count = 0, next_attempt_at = ?, expires_at = ? WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;",
+                [.double(now), .double(now + 7 * 24 * 60 * 60), .text(messageID), .text(localIdentityID), .text(targetIdentityID)]
+            ),
+            (
+                "UPDATE messages SET delivery_state = ?, delivery_error = NULL WHERE id = ?;",
+                [.text(ChatMessage.DeliveryState.queued.rawValue), .text(messageID)]
+            )
+        ])
+    }
+
+    func cancelOutbound(messageID: String, targetIdentityID: String, localIdentityID: String) throws {
+        try writeBatch([
+            (
+                "DELETE FROM outbound_queue WHERE message_id = ? AND local_identity_id = ? AND target_identity_id = ?;",
+                [.text(messageID), .text(localIdentityID), .text(targetIdentityID)]
+            ),
+            (
+                "UPDATE messages SET delivery_state = ?, delivery_error = ? WHERE id = ?;",
+                [.text(ChatMessage.DeliveryState.cancelled.rawValue), .text("已取消发送。"), .text(messageID)]
+            )
+        ])
     }
 
     func completeOutbound(messageID: String, targetIdentityID: String, localIdentityID: String) throws {
@@ -415,6 +550,14 @@ final class DatabaseStore {
         let nextChunk: Int
         let chunkCount: Int
         let completed: Bool
+        let didPersistProgress: Bool
+
+        init(nextChunk: Int, chunkCount: Int, completed: Bool, didPersistProgress: Bool = false) {
+            self.nextChunk = nextChunk
+            self.chunkCount = chunkCount
+            self.completed = completed
+            self.didPersistProgress = didPersistProgress
+        }
     }
 
     func beginInboundAttachment(messageID: String, byteCount: Int, mimeType: String, sha256: Data, chunkCount: Int) throws -> InboundAttachmentState {
@@ -500,14 +643,15 @@ final class DatabaseStore {
 
         let next = inboundNextChunk(messageID: messageID, chunkCount: chunkCount)
         try write("UPDATE inbound_attachment_transfers SET updated_at = ? WHERE message_id = ?;", bindings: [.double(Date().timeIntervalSince1970), .text(messageID)])
-        if shouldPersistTransferProgress(index: next, total: chunkCount) {
+        let didPersistProgress = shouldPersistTransferProgress(index: next, total: chunkCount)
+        if didPersistProgress {
             try updateTransferProgress(messageID: messageID, progress: Double(next) / Double(chunkCount))
         }
         if next == chunkCount {
             try finalizeInboundAttachment(messageID: messageID, metadata: metadata)
-            return InboundAttachmentState(nextChunk: chunkCount, chunkCount: chunkCount, completed: true)
+            return InboundAttachmentState(nextChunk: chunkCount, chunkCount: chunkCount, completed: true, didPersistProgress: true)
         }
-        return InboundAttachmentState(nextChunk: next, chunkCount: chunkCount, completed: false)
+        return InboundAttachmentState(nextChunk: next, chunkCount: chunkCount, completed: false, didPersistProgress: didPersistProgress)
     }
 
     private struct StoredAttachmentMetadata {
@@ -610,8 +754,8 @@ final class DatabaseStore {
     func fetchConversations(localIdentityID: String) -> [ConversationSummary] {
         read(
             """
-            SELECT id, title, peer_identity_id, COALESCE(last_message_preview, ''), updated_at, unread_count
-            FROM conversations WHERE local_identity_id = ? ORDER BY updated_at DESC;
+            SELECT id, title, peer_identity_id, COALESCE(last_message_preview, ''), updated_at, unread_count, is_pinned
+            FROM conversations WHERE local_identity_id = ? ORDER BY is_pinned DESC, updated_at DESC;
             """,
             bindings: [.text(localIdentityID)]
         ) { statement in
@@ -629,7 +773,8 @@ final class DatabaseStore {
                 peerIdentityID: text(statement, 2),
                 lastMessage: preview,
                 updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4)),
-                unreadCount: Int(sqlite3_column_int(statement, 5))
+                unreadCount: Int(sqlite3_column_int(statement, 5)),
+                isPinned: sqlite3_column_int(statement, 6) == 1
             )
         }
     }
@@ -641,6 +786,139 @@ final class DatabaseStore {
             FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
             WHERE m.conversation_id = ? ORDER BY m.sent_at ASC;
             """, bindings: [.text(conversationID)]) { decodedMessage($0) }
+    }
+
+
+    func setConversationPinned(conversationID: String, pinned: Bool) throws {
+        try write(
+            "UPDATE conversations SET is_pinned = ? WHERE id = ?;",
+            bindings: [.int(pinned ? 1 : 0), .text(conversationID)]
+        )
+    }
+
+    func markConversationRead(conversationID: String) throws {
+        try write(
+            "UPDATE conversations SET unread_count = 0 WHERE id = ?;",
+            bindings: [.text(conversationID)]
+        )
+    }
+
+    func markConversationUnread(conversationID: String) throws {
+        try write(
+            "UPDATE conversations SET unread_count = CASE WHEN unread_count < 1 THEN 1 ELSE unread_count END WHERE id = ?;",
+            bindings: [.text(conversationID)]
+        )
+    }
+
+    func deleteMessageLocally(messageID: String, conversationID: String) throws {
+        guard let message = fetchMessage(id: messageID), message.conversationID == conversationID else { return }
+        if !message.isOutgoing, message.attachment != nil, (message.transferProgress ?? 0) < 1 {
+            throw DatabaseError.statementFailed("正在接收的图片完成前不能直接本地删除；请等待传输完成。")
+        }
+        let attachmentPaths = read(
+            "SELECT relative_path FROM attachments WHERE message_id = ?;",
+            bindings: [.text(messageID)]
+        ) { text($0, 0) }
+        let replacement = read(
+            "SELECT body_ciphertext, sent_at FROM messages WHERE conversation_id = ? AND id <> ? ORDER BY sent_at DESC LIMIT 1;",
+            bindings: [.text(conversationID), .text(messageID)]
+        ) { statement in (data(statement, 0), sqlite3_column_double(statement, 1)) }.first
+        let replacementPreview = try replacement.map { encryptedBody, sentAt -> (Data, Double) in
+            let clear = try ChaChaPoly.open(ChaChaPoly.SealedBox(combined: encryptedBody), using: storageKey)
+            guard let body = String(data: clear, encoding: .utf8) else { throw DatabaseError.statementFailed("本地消息预览无法解密。") }
+            let preview = ReplyTextCodec.previewText(for: body)
+            return (try ChaChaPoly.seal(Data(preview.utf8), using: storageKey).combined, sentAt)
+        }
+        let emptyPreview = try ChaChaPoly.seal(Data(), using: storageKey).combined
+        var statements: [(String, [SQLiteValue])] = []
+        if !message.isOutgoing {
+            statements.append((
+                "INSERT OR REPLACE INTO local_message_tombstones(message_id, sender_identity_id, expires_at) VALUES(?, ?, ?);",
+                [.text(message.id), .text(message.senderIdentityID), .double(Date().timeIntervalSince1970 + Self.localDeletionTombstoneRetention)]
+            ))
+        }
+        statements.append(("DELETE FROM messages WHERE id = ? AND conversation_id = ?;", [.text(messageID), .text(conversationID)]))
+        if let replacementPreview {
+            statements.append((
+                "UPDATE conversations SET last_message_preview = ?, updated_at = ? WHERE id = ?;",
+                [.blob(replacementPreview.0), .double(replacementPreview.1), .text(conversationID)]
+            ))
+        } else {
+            statements.append((
+                "UPDATE conversations SET last_message_preview = ? WHERE id = ?;",
+                [.blob(emptyPreview), .text(conversationID)]
+            ))
+        }
+        try writeBatch(statements)
+        removeAttachmentFiles(relativePaths: attachmentPaths)
+    }
+
+    func hasIncompleteInboundAttachments(conversationID: String) -> Bool {
+        !read(
+            """
+            SELECT 1 FROM inbound_attachment_transfers t
+            JOIN messages m ON m.id = t.message_id
+            WHERE m.conversation_id = ? AND m.is_outgoing = 0 AND t.completed = 0
+            LIMIT 1;
+            """,
+            bindings: [.text(conversationID)]
+        ) { _ in true }.isEmpty
+    }
+
+    func clearConversationLocally(conversationID: String) throws {
+        guard !hasIncompleteInboundAttachments(conversationID: conversationID) else {
+            throw DatabaseError.statementFailed("当前仍有图片正在接收。请等待图片完成后再清空聊天记录。")
+        }
+        let attachmentPaths = read(
+            """
+            SELECT a.relative_path FROM attachments a
+            JOIN messages m ON m.id = a.message_id
+            WHERE m.conversation_id = ?;
+            """,
+            bindings: [.text(conversationID)]
+        ) { text($0, 0) }
+        let emptyPreview = try ChaChaPoly.seal(Data(), using: storageKey).combined
+        let expiresAt = Date().timeIntervalSince1970 + Self.localDeletionTombstoneRetention
+        try writeBatch([
+            (
+                "INSERT OR REPLACE INTO local_message_tombstones(message_id, sender_identity_id, expires_at) SELECT id, sender_identity_id, ? FROM messages WHERE conversation_id = ? AND is_outgoing = 0;",
+                [.double(expiresAt), .text(conversationID)]
+            ),
+            ("DELETE FROM messages WHERE conversation_id = ?;", [.text(conversationID)]),
+            (
+                "UPDATE conversations SET last_message_preview = ?, unread_count = 0, updated_at = ? WHERE id = ?;",
+                [.blob(emptyPreview), .double(Date().timeIntervalSince1970), .text(conversationID)]
+            )
+        ])
+        removeAttachmentFiles(relativePaths: attachmentPaths)
+    }
+
+    func isLocallyDeletedMessage(messageID: String, senderIdentityID: String) -> Bool {
+        let now = Date().timeIntervalSince1970
+        return !read(
+            "SELECT 1 FROM local_message_tombstones WHERE message_id = ? AND sender_identity_id = ? AND expires_at > ? LIMIT 1;",
+            bindings: [.text(messageID), .text(senderIdentityID), .double(now)]
+        ) { _ in true }.isEmpty
+    }
+
+    @discardableResult
+    func cleanupExpiredLocalDeletionTombstones() throws -> Int {
+        let now = Date().timeIntervalSince1970
+        let count = read("SELECT COUNT(*) FROM local_message_tombstones WHERE expires_at <= ?;", bindings: [.double(now)]) {
+            Int(sqlite3_column_int64($0, 0))
+        }.first ?? 0
+        if count > 0 {
+            try write("DELETE FROM local_message_tombstones WHERE expires_at <= ?;", bindings: [.double(now)])
+        }
+        return count
+    }
+
+    private func removeAttachmentFiles(relativePaths: [String]) {
+        for relativePath in relativePaths {
+            let url = attachmentsURL.appendingPathComponent(relativePath)
+            guard url.standardizedFileURL.deletingLastPathComponent() == attachmentsURL.standardizedFileURL else { continue }
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     func createConsistentSnapshot(at destinationURL: URL) throws {
@@ -852,7 +1130,8 @@ final class DatabaseStore {
                 title TEXT NOT NULL,
                 last_message_preview TEXT,
                 updated_at REAL NOT NULL,
-                unread_count INTEGER NOT NULL DEFAULT 0
+                unread_count INTEGER NOT NULL DEFAULT 0,
+                is_pinned INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS messages(
                 id TEXT PRIMARY KEY,
@@ -888,6 +1167,7 @@ final class DatabaseStore {
                 message_id TEXT PRIMARY KEY, local_identity_id TEXT NOT NULL, target_identity_id TEXT NOT NULL, created_at REAL NOT NULL, next_attempt_at REAL NOT NULL,
                 retry_count INTEGER NOT NULL DEFAULT 0, expires_at REAL NOT NULL,
                 attachment_next_chunk INTEGER NOT NULL DEFAULT -1, attachment_chunk_count INTEGER NOT NULL DEFAULT 0,
+                is_paused INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS inbound_attachment_transfers(
@@ -908,6 +1188,14 @@ final class DatabaseStore {
                 PRIMARY KEY(message_id, chunk_index),
                 FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS local_message_tombstones(
+                message_id TEXT NOT NULL,
+                sender_identity_id TEXT NOT NULL,
+                expires_at REAL NOT NULL,
+                PRIMARY KEY(message_id, sender_identity_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_local_message_tombstones_expiry
+                ON local_message_tombstones(expires_at);
             CREATE TABLE IF NOT EXISTS secure_metadata(
                 key TEXT PRIMARY KEY,
                 value BLOB NOT NULL
@@ -930,6 +1218,10 @@ final class DatabaseStore {
         try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(5, strftime('%s','now'));")
         try migrateAttachmentResumeV6()
         try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(6, strftime('%s','now'));")
+        try migrateUserTransferControlsV7()
+        try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(7, strftime('%s','now'));")
+        try migrateConversationControlsV8()
+        try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(8, strftime('%s','now'));")
     }
 
     private func migrateDeliveryLifecycleV5() throws {
@@ -961,6 +1253,30 @@ final class DatabaseStore {
             CREATE INDEX IF NOT EXISTS idx_inbound_attachment_chunks_message ON inbound_attachment_chunks(message_id, chunk_index);
             CREATE INDEX IF NOT EXISTS idx_inbound_attachment_stale_v6 ON inbound_attachment_transfers(completed, updated_at);
             """)
+    }
+
+    private func migrateUserTransferControlsV7() throws {
+        if !columnExists(table: "outbound_queue", column: "is_paused") {
+            try execute("ALTER TABLE outbound_queue ADD COLUMN is_paused INTEGER NOT NULL DEFAULT 0;")
+        }
+        try execute("CREATE INDEX IF NOT EXISTS idx_outbound_due_v7 ON outbound_queue(local_identity_id, target_identity_id, is_paused, next_attempt_at);")
+        try execute("""
+            CREATE TABLE IF NOT EXISTS local_message_tombstones(
+                message_id TEXT NOT NULL, sender_identity_id TEXT NOT NULL, expires_at REAL NOT NULL,
+                PRIMARY KEY(message_id, sender_identity_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_local_message_tombstones_expiry
+                ON local_message_tombstones(expires_at);
+            """)
+    }
+
+    private func migrateConversationControlsV8() throws {
+        if !columnExists(table: "conversations", column: "is_pinned") {
+            try execute("ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;")
+        }
+        try execute("CREATE INDEX IF NOT EXISTS idx_conversations_pinned_v8 ON conversations(local_identity_id, is_pinned, updated_at DESC);")
+        try execute("CREATE INDEX IF NOT EXISTS idx_conversations_peer_v8 ON conversations(local_identity_id, peer_identity_id, updated_at DESC);")
+        try execute("CREATE INDEX IF NOT EXISTS idx_attachments_message_v8 ON attachments(message_id);")
     }
 
     private func migrateIdentityScopeV4() throws {
@@ -1032,6 +1348,35 @@ final class DatabaseStore {
                 let message = error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(db))
                 sqlite3_free(error)
                 throw DatabaseError.statementFailed(message)
+            }
+        }
+    }
+
+    private func writeBatch(_ statements: [(String, [SQLiteValue])]) throws {
+        try queue.sync {
+            guard let db else { throw DatabaseError.openFailed("数据库尚未打开。") }
+            guard sqlite3_exec(db, "BEGIN IMMEDIATE;", nil, nil, nil) == SQLITE_OK else {
+                throw DatabaseError.statementFailed(String(cString: sqlite3_errmsg(db)))
+            }
+            do {
+                for (sql, bindings) in statements {
+                    var statement: OpaquePointer?
+                    guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK,
+                          let statement else {
+                        throw DatabaseError.statementFailed(String(cString: sqlite3_errmsg(db)))
+                    }
+                    defer { sqlite3_finalize(statement) }
+                    bind(bindings, to: statement)
+                    guard sqlite3_step(statement) == SQLITE_DONE else {
+                        throw DatabaseError.statementFailed(String(cString: sqlite3_errmsg(db)))
+                    }
+                }
+                guard sqlite3_exec(db, "COMMIT;", nil, nil, nil) == SQLITE_OK else {
+                    throw DatabaseError.statementFailed(String(cString: sqlite3_errmsg(db)))
+                }
+            } catch {
+                sqlite3_exec(db, "ROLLBACK;", nil, nil, nil)
+                throw error
             }
         }
     }

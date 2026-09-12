@@ -10,12 +10,23 @@ struct ConversationListView: View {
     var body: some View {
         Group {
             if model.conversations.isEmpty {
-                VStack(spacing: 14) {
+                VStack(spacing: 15) {
                     Spacer()
-                    Image(systemName: "bubble.left.and.exclamationmark.bubble.right")
-                        .font(.system(size: 42, weight: .light))
-                        .foregroundColor(VeilTheme.gold)
-                    Text("还没有对话").font(.headline)
+                    VeilIdentityGlyph(seed: "VeilLink/NoConversation", size: 76, active: false)
+                    Text("NO ACTIVE LINK")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .tracking(1.6)
+                        .foregroundColor(VeilTheme.mutedGold)
+                    Text("还没有对话")
+                        .font(.system(.headline, design: .rounded).weight(.semibold))
+                    HStack(spacing: 8) {
+                        Text("LOCAL")
+                        VeilLinkTrace(active: false, width: 56)
+                        Text("PEER")
+                    }
+                    .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundColor(VeilTheme.tertiaryText)
                     Text("前往“附近”发现设备并核对六码")
                         .font(.subheadline)
                         .foregroundColor(VeilTheme.secondaryText)
@@ -27,50 +38,173 @@ struct ConversationListView: View {
                 List(model.conversations) { conversation in
                     if usesNavigationLinks {
                         NavigationLink(destination: ChatView(model: model, conversation: conversation)) {
-                            ConversationRow(conversation: conversation)
+                            ConversationRow(conversation: conversation, isSelected: false)
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                _ = model.setConversationPinned(conversation.id, pinned: !conversation.isPinned)
+                            } label: {
+                                Label(conversation.isPinned ? "取消置顶" : "置顶", systemImage: conversation.isPinned ? "pin.slash.fill" : "pin.fill")
+                            }
+                            .tint(VeilTheme.gold)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button {
+                                if conversation.unreadCount > 0 {
+                                    _ = model.markConversationRead(conversation.id)
+                                } else {
+                                    _ = model.markConversationUnread(conversation.id)
+                                }
+                            } label: {
+                                Label(conversation.unreadCount > 0 ? "标为已读" : "标为未读", systemImage: conversation.unreadCount > 0 ? "envelope.open.fill" : "envelope.badge.fill")
+                            }
+                            .tint(VeilTheme.panelSoft)
+                        }
+                        .contextMenu {
+                            Button {
+                                _ = model.setConversationPinned(conversation.id, pinned: !conversation.isPinned)
+                            } label: {
+                                Label(conversation.isPinned ? "取消置顶" : "置顶", systemImage: conversation.isPinned ? "pin.slash" : "pin")
+                            }
+                            Button {
+                                if conversation.unreadCount > 0 {
+                                    _ = model.markConversationRead(conversation.id)
+                                } else {
+                                    _ = model.markConversationUnread(conversation.id)
+                                }
+                            } label: {
+                                Label(conversation.unreadCount > 0 ? "标为已读" : "标为未读", systemImage: conversation.unreadCount > 0 ? "envelope.open" : "envelope.badge")
+                            }
                         }
                     } else {
                         Button {
+                            model.haptics.selection()
                             model.selectedConversation = conversation
+                            _ = model.markConversationRead(conversation.id)
                         } label: {
-                            ConversationRow(conversation: conversation)
+                            ConversationRow(
+                                conversation: conversation,
+                                isSelected: model.selectedConversation?.id == conversation.id
+                            )
                         }
-                        .listRowBackground(model.selectedConversation?.id == conversation.id ? VeilTheme.gold.opacity(0.12) : Color.clear)
+                        .buttonStyle(VeilPressStyle())
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                _ = model.setConversationPinned(conversation.id, pinned: !conversation.isPinned)
+                            } label: {
+                                Label(conversation.isPinned ? "取消置顶" : "置顶", systemImage: conversation.isPinned ? "pin.slash.fill" : "pin.fill")
+                            }
+                            .tint(VeilTheme.gold)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button {
+                                if conversation.unreadCount > 0 {
+                                    _ = model.markConversationRead(conversation.id)
+                                } else {
+                                    _ = model.markConversationUnread(conversation.id)
+                                }
+                            } label: {
+                                Label(conversation.unreadCount > 0 ? "标为已读" : "标为未读", systemImage: conversation.unreadCount > 0 ? "envelope.open.fill" : "envelope.badge.fill")
+                            }
+                            .tint(VeilTheme.panelSoft)
+                        }
+                        .contextMenu {
+                            Button {
+                                _ = model.setConversationPinned(conversation.id, pinned: !conversation.isPinned)
+                            } label: {
+                                Label(conversation.isPinned ? "取消置顶" : "置顶", systemImage: conversation.isPinned ? "pin.slash" : "pin")
+                            }
+                            Button {
+                                if conversation.unreadCount > 0 {
+                                    _ = model.markConversationRead(conversation.id)
+                                } else {
+                                    _ = model.markConversationUnread(conversation.id)
+                                }
+                            } label: {
+                                Label(conversation.unreadCount > 0 ? "标为已读" : "标为未读", systemImage: conversation.unreadCount > 0 ? "envelope.open" : "envelope.badge")
+                            }
+                        }
                     }
                 }
                 .listStyle(.plain)
+                .listRowSeparator(.hidden)
             }
         }
         .navigationTitle("对话")
-        .background(VeilTheme.background)
+        .background(VeilAmbientBackground())
     }
 }
 
 private struct ConversationRow: View {
     let conversation: ConversationSummary
+    let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(VeilTheme.gold.opacity(0.16))
-                .frame(width: 46, height: 46)
-                .overlay(Text(String(conversation.title.prefix(1))).foregroundColor(VeilTheme.gold).fontWeight(.bold))
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Text(conversation.title).fontWeight(.semibold)
-                    Spacer()
+        HStack(spacing: 13) {
+            VeilIdentityGlyph(seed: conversation.peerIdentityID, size: 46, active: isSelected)
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Text(conversation.title)
+                        .font(.system(.body, design: .rounded).weight(.semibold))
+                        .foregroundColor(VeilTheme.text)
+                        .lineLimit(1)
+                    if conversation.isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundColor(VeilTheme.mutedGold)
+                            .accessibilityLabel("已置顶")
+                    }
+                    Spacer(minLength: 6)
+                    if conversation.unreadCount > 0 {
+                        Text(conversation.unreadCount > 99 ? "99+" : "\(conversation.unreadCount)")
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .foregroundColor(Color.black.opacity(0.88))
+                            .padding(.horizontal, 6)
+                            .frame(minWidth: 20, minHeight: 18)
+                            .background(VeilTheme.goldBright)
+                            .clipShape(Capsule())
+                            .accessibilityLabel("\(conversation.unreadCount) 条未读")
+                    }
                     Text(conversation.updatedAt, style: .time)
-                        .font(.caption2)
-                        .foregroundColor(VeilTheme.secondaryText)
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundColor(VeilTheme.tertiaryText)
                 }
-                Text(conversation.lastMessage.isEmpty ? "已建立安全会话" : conversation.lastMessage)
-                    .font(.subheadline)
-                    .foregroundColor(VeilTheme.secondaryText)
-                    .lineLimit(1)
+
+                HStack(spacing: 7) {
+                    Text("E2EE")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .tracking(0.8)
+                        .foregroundColor(VeilTheme.mutedGold)
+                    VeilLinkTrace(active: isSelected, width: 28)
+                    Text(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
+                        .font(.subheadline)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(1)
+                }
             }
         }
-        .padding(.vertical, 5)
-        .contentShape(Rectangle())
+        .padding(.horizontal, 13)
+        .padding(.vertical, 12)
+        .background(
+            VeilPanelShape(cut: 15, radius: 7)
+                .fill(isSelected ? VeilTheme.gold.opacity(0.090) : VeilTheme.elevated.opacity(0.74))
+        )
+        .overlay(
+            VeilPanelShape(cut: 15, radius: 7)
+                .stroke(isSelected ? VeilTheme.gold.opacity(0.30) : VeilTheme.hairline, lineWidth: 1)
+        )
+        .overlay(alignment: .topLeading) {
+            Rectangle()
+                .fill(isSelected ? VeilTheme.goldBright.opacity(0.72) : VeilTheme.hairline)
+                .frame(width: isSelected ? 34 : 14, height: 1)
+                .padding(.leading, 11)
+        }
+        .contentShape(VeilPanelShape(cut: 15, radius: 7))
+        .padding(.vertical, 3)
+        .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 }
 
@@ -83,25 +217,116 @@ struct ChatView: View {
     @State private var showsImageFileImporter = false
     @State private var isPreparingImage = false
     @State private var mediaStatus: String?
+    @State private var showsContactDetails = false
+    @State private var messagePendingDeletion: ChatMessage?
+    @State private var showsClearConversationConfirmation = false
+    @State private var transferPendingCancellation: ChatMessage?
+    @State private var replyingTo: ChatMessage?
+    @State private var showsSearchBar = false
+    @State private var searchQuery = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var visibleMessages: [ChatMessage] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard showsSearchBar, !query.isEmpty else { return messages }
+        return messages.filter { ConversationSearch.matches($0, query: query) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
+            if showsSearchBar {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(VeilTheme.secondaryText)
+                    TextField("搜索本地聊天记录", text: $searchQuery)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                    if !searchQuery.isEmpty {
+                        Text("\(visibleMessages.count) 条")
+                            .font(.caption2)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Button {
+                        searchQuery = ""
+                        if reduceMotion {
+                            showsSearchBar = false
+                        } else {
+                            withAnimation(.easeIn(duration: 0.16)) { showsSearchBar = false }
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("关闭搜索")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .veilGlass(cornerRadius: 15)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(messages) { message in
+                    LazyVStack(spacing: 12) {
+                        ForEach(visibleMessages) { message in
                             MessageBubble(
                                 message: message,
                                 database: model.database,
-                                onRetry: message.isOutgoing && message.deliveryState == .failed ? { retry(message) } : nil
+                                onRetry: message.isOutgoing && message.deliveryState == .failed ? { retry(message) } : nil,
+                                onPause: canPauseImage(message) ? { pauseImage(message) } : nil,
+                                onResume: canResumeImage(message) ? { resumeImage(message) } : nil,
+                                onCancel: canCancelImage(message) ? { transferPendingCancellation = message } : nil
                             )
+                            .contextMenu {
+                                if message.attachment == nil {
+                                    Button {
+                                        UIPasteboard.general.string = ReplyTextCodec.decode(message.body)?.reply ?? message.body
+                                        model.haptics.selection()
+                                    } label: {
+                                        Label("复制", systemImage: "doc.on.doc")
+                                    }
+                                }
+                                Button {
+                                    model.haptics.selection()
+                                    if reduceMotion {
+                                        replyingTo = message
+                                    } else {
+                                        withAnimation(.easeOut(duration: 0.18)) { replyingTo = message }
+                                    }
+                                } label: {
+                                    Label("引用回复", systemImage: "arrowshape.turn.up.left")
+                                }
+                                Button(role: .destructive) { messagePendingDeletion = message } label: {
+                                    Label("本地删除", systemImage: "trash")
+                                }
+                            }
+                            .transition(reduceMotion ? .opacity : .asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.985)),
+                                removal: .opacity
+                            ))
                             .id(message.id)
                         }
+                        if showsSearchBar, !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, visibleMessages.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.title2)
+                                    .foregroundColor(VeilTheme.secondaryText)
+                                Text("没有找到匹配消息")
+                                    .font(.subheadline)
+                                    .foregroundColor(VeilTheme.secondaryText)
+                            }
+                            .padding(.vertical, 36)
+                        }
                     }
-                    .padding()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 14)
+                    .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
                 }
                 .onChange(of: messages.count) { _ in
-                    if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                    if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
 
@@ -122,7 +347,45 @@ struct ChatView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 
-                HStack(alignment: .bottom, spacing: 10) {
+                if let replyingTo {
+                    HStack(spacing: 9) {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(VeilTheme.gold)
+                            .frame(width: 3, height: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("引用回复")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(VeilTheme.gold)
+                            Text(ReplyTextCodec.quoteSource(for: replyingTo))
+                                .font(.caption)
+                                .foregroundColor(VeilTheme.secondaryText)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                        Button {
+                            if reduceMotion {
+                                self.replyingTo = nil
+                            } else {
+                                withAnimation(.easeIn(duration: 0.16)) { self.replyingTo = nil }
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(VeilTheme.secondaryText)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("取消引用")
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(VeilTheme.elevated.opacity(0.92))
+                    .clipShape(VeilPanelShape(cut: 10, radius: 6))
+                    .overlay(VeilPanelShape(cut: 10, radius: 6).stroke(VeilTheme.gold.opacity(0.18), lineWidth: 1))
+                    .padding(.horizontal, 12)
+                    .padding(.top, 7)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
+                HStack(alignment: .bottom, spacing: 9) {
                     if isPreparingImage {
                         ProgressView()
                             .frame(width: 28, height: 28)
@@ -139,42 +402,96 @@ struct ChatView: View {
                                 Label("从“文件”导入", systemImage: "doc.badge.plus")
                             }
                         } label: {
-                            Image(systemName: "photo.badge.plus").font(.title3)
+                            VeilIconDisc(systemName: "plus", size: 36, highlighted: true)
+                                .contentShape(Circle())
                         }
+                        .accessibilityLabel("添加图片")
+                        .accessibilityHint("从照片图库或文件中选择图片")
                     }
                     TextField("加密消息", text: $draft)
                         .textFieldStyle(VeilTextFieldStyle())
                     Button(action: send) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 31))
-                            .foregroundColor(draft.isEmpty ? VeilTheme.secondaryText : VeilTheme.gold)
+                        ZStack {
+                            if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Circle().fill(Color.white.opacity(0.05))
+                            } else {
+                                Circle().fill(VeilTheme.goldGradient)
+                            }
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? VeilTheme.tertiaryText : Color.black.opacity(0.88))
+                        }
+                        .frame(width: 36, height: 36)
+                        .shadow(color: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .clear : VeilTheme.gold.opacity(0.22), radius: 8, x: 0, y: 3)
                     }
+                    .buttonStyle(VeilPressStyle())
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .padding(12)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
-            .background(VeilTheme.elevated)
+            .background(VeilTheme.elevated.opacity(0.95))
+            .overlay(alignment: .top) {
+                HStack(spacing: 7) {
+                    Rectangle().fill(Color.clear).frame(maxWidth: .infinity, maxHeight: 1)
+                    VeilLinkTrace(active: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, width: 72)
+                    Rectangle().fill(Color.clear).frame(maxWidth: .infinity, maxHeight: 1)
+                }
+                .offset(y: -1)
+            }
         }
-        .background(VeilTheme.background)
-        .navigationTitle(conversation.title)
+        .background(VeilAmbientBackground())
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                VeilChatIdentityTitle(
+                    title: model.conversations.first(where: { $0.id == conversation.id })?.title ?? conversation.title,
+                    peerIdentityID: conversation.peerIdentityID
+                )
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+                    Button {
+                        if reduceMotion {
+                            showsSearchBar = true
+                        } else {
+                            withAnimation(.easeOut(duration: 0.18)) { showsSearchBar = true }
+                        }
+                    } label: {
+                        Label("搜索聊天", systemImage: "magnifyingglass")
+                    }
+                    Button { showsContactDetails = true } label: {
+                        Label("联系人信息", systemImage: "person.crop.circle")
+                    }
                     Button("取消信任", role: .destructive) { model.setTrust(for: conversation.peerIdentityID, blocked: false) }
                     Button("拉黑身份", role: .destructive) { model.setTrust(for: conversation.peerIdentityID, blocked: true) }
+                    Divider()
+                    Button(role: .destructive) { showsClearConversationConfirmation = true } label: {
+                        Label("清空本地聊天记录", systemImage: "trash")
+                    }
                 } label: {
-                    Image(systemName: "shield")
+                    Image(systemName: "shield.lefthalf.filled")
+                        .foregroundColor(VeilTheme.gold)
                 }
             }
         }
-        .onAppear(perform: reload)
+        .onAppear {
+            reload()
+            model.setConversationVisible(conversation.id, visible: true)
+        }
+        .onDisappear {
+            model.setConversationVisible(conversation.id, visible: false)
+        }
         .onChange(of: model.messagesRevision) { _ in reload() }
         .sheet(isPresented: $showsPhotoPicker) {
             PhotoPicker(
                 onPicked: { imported in prepareAndSendImage(imported) },
                 onError: { model.alertMessage = $0 }
             )
+        }
+        .sheet(isPresented: $showsContactDetails) {
+            ContactDetailsSheet(model: model, conversation: conversation)
         }
         .fileImporter(
             isPresented: $showsImageFileImporter,
@@ -190,6 +507,44 @@ struct ChatView: View {
                 model.alertMessage = error.localizedDescription
             }
         }
+        .alert("本地删除消息？", isPresented: Binding(
+            get: { messagePendingDeletion != nil },
+            set: { if !$0 { messagePendingDeletion = nil } }
+        )) {
+            Button("取消", role: .cancel) { messagePendingDeletion = nil }
+            Button("删除", role: .destructive) {
+                if let message = messagePendingDeletion {
+                    _ = model.deleteMessageLocally(messageID: message.id, conversationID: conversation.id)
+                    model.haptics.warning()
+                    reload()
+                }
+                messagePendingDeletion = nil
+            }
+        } message: {
+            Text("只会删除这台设备上的记录，不会撤回对方已经收到的消息。")
+        }
+        .alert("清空本地聊天记录？", isPresented: $showsClearConversationConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("清空", role: .destructive) {
+                _ = model.clearConversationLocally(conversationID: conversation.id)
+                model.haptics.warning()
+                reload()
+            }
+        } message: {
+            Text("联系人与信任关系会保留，但本机这段对话的消息和附件会被删除。此操作不会影响对方设备。")
+        }
+        .alert("取消图片发送？", isPresented: Binding(
+            get: { transferPendingCancellation != nil },
+            set: { if !$0 { transferPendingCancellation = nil } }
+        )) {
+            Button("继续传输", role: .cancel) { transferPendingCancellation = nil }
+            Button("取消发送", role: .destructive) {
+                if let message = transferPendingCancellation { cancelImage(message) }
+                transferPendingCancellation = nil
+            }
+        } message: {
+            Text("已经发送并被对方确认的分块无法远程撤回；取消只会停止后续发送。")
+        }
     }
 
     private func reload() {
@@ -199,9 +554,17 @@ struct ChatView: View {
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        let outgoingText: String
+        if let replyingTo {
+            outgoingText = ReplyTextCodec.encode(quoted: ReplyTextCodec.quoteSource(for: replyingTo), reply: text)
+        } else {
+            outgoingText = text
+        }
         do {
-            try model.sessions.sendMessage(text, to: conversation.peerIdentityID)
+            try model.sessions.sendMessage(outgoingText, to: conversation.peerIdentityID)
+            model.haptics.send()
             draft = ""
+            replyingTo = nil
             reload()
         } catch {
             model.alertMessage = error.localizedDescription
@@ -211,10 +574,47 @@ struct ChatView: View {
     private func retry(_ message: ChatMessage) {
         do {
             try model.sessions.retryMessage(message.id, to: conversation.peerIdentityID)
+            model.haptics.impact()
             reload()
         } catch {
             model.alertMessage = error.localizedDescription
         }
+    }
+
+    private func canPauseImage(_ message: ChatMessage) -> Bool {
+        message.isOutgoing && message.attachment != nil && (message.deliveryState == .queued || message.deliveryState == .sending) && (message.transferProgress ?? 0) < 1
+    }
+
+    private func canResumeImage(_ message: ChatMessage) -> Bool {
+        message.isOutgoing && message.attachment != nil && message.deliveryState == .paused
+    }
+
+    private func canCancelImage(_ message: ChatMessage) -> Bool {
+        message.isOutgoing && message.attachment != nil && (message.deliveryState == .queued || message.deliveryState == .sending || message.deliveryState == .paused) && (message.transferProgress ?? 0) < 1
+    }
+
+    private func pauseImage(_ message: ChatMessage) {
+        do {
+            try model.sessions.pauseImageTransfer(message.id, to: conversation.peerIdentityID)
+            model.haptics.selection()
+            reload()
+        } catch { model.alertMessage = error.localizedDescription }
+    }
+
+    private func resumeImage(_ message: ChatMessage) {
+        do {
+            try model.sessions.resumeImageTransfer(message.id, to: conversation.peerIdentityID)
+            model.haptics.impact()
+            reload()
+        } catch { model.alertMessage = error.localizedDescription }
+    }
+
+    private func cancelImage(_ message: ChatMessage) {
+        do {
+            try model.sessions.cancelImageTransfer(message.id, to: conversation.peerIdentityID)
+            model.haptics.warning()
+            reload()
+        } catch { model.alertMessage = error.localizedDescription }
     }
 
     private func prepareAndSendImage(_ imported: ImportedImageFile) {
@@ -248,22 +648,50 @@ struct ChatView: View {
     }
 }
 
+private struct VeilChatIdentityTitle: View {
+    let title: String
+    let peerIdentityID: String
+
+    var body: some View {
+        HStack(spacing: 9) {
+            VeilIdentityGlyph(seed: peerIdentityID, size: 30, active: true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundColor(VeilTheme.text)
+                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text("SECURE LINK")
+                        .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+                        .tracking(0.9)
+                        .foregroundColor(VeilTheme.mutedGold)
+                    VeilLinkTrace(active: true, width: 26)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct MessageBubble: View {
     let message: ChatMessage
     let database: DatabaseStore
     let onRetry: (() -> Void)?
+    let onPause: (() -> Void)?
+    let onResume: (() -> Void)?
+    let onCancel: (() -> Void)?
 
     private var deliveryIcon: String {
-        switch message.deliveryState { case .queued: return "clock"; case .sending: return "arrow.up.circle"; case .delivered: return "checkmark.circle.fill"; case .failed: return "exclamationmark.circle.fill" }
+        switch message.deliveryState { case .queued: return "clock"; case .sending: return "arrow.up.circle"; case .paused: return "pause.circle.fill"; case .delivered: return "checkmark.circle.fill"; case .cancelled: return "xmark.circle.fill"; case .failed: return "exclamationmark.circle.fill" }
     }
 
     private var deliveryLabel: String {
-        switch message.deliveryState { case .queued: return "等待连接或发送"; case .sending: return "已发出，等待对方确认"; case .delivered: return "已送达"; case .failed: return "发送失败" }
+        switch message.deliveryState { case .queued: return "等待连接或发送"; case .sending: return "已发出，等待对方确认"; case .paused: return "已暂停"; case .delivered: return "已送达"; case .cancelled: return "已取消发送"; case .failed: return "发送失败" }
     }
 
     var body: some View {
         HStack {
-            if message.isOutgoing { Spacer(minLength: 54) }
+            if message.isOutgoing { Spacer(minLength: 46) }
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 5) {
                 if let attachment = message.attachment {
                     EncryptedImageView(
@@ -277,23 +705,88 @@ private struct MessageBubble: View {
                 } else if message.body == "[图片]", let progress = message.transferProgress {
                     TransferShardView(image: nil, progress: progress, mode: .receiving)
                         .frame(width: 190)
+                } else if let reply = ReplyTextCodec.decode(message.body) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 7) {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
+                                .frame(width: 3)
+                            Text(reply.quote)
+                                .font(.caption)
+                                .foregroundColor(message.isOutgoing ? Color.black.opacity(0.66) : VeilTheme.secondaryText)
+                                .lineLimit(2)
+                        }
+                        Text(reply.reply)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                    .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
+                    .clipShape(VeilPanelShape(cut: 11, radius: 7))
+                    .overlay(
+                        VeilPanelShape(cut: 11, radius: 7)
+                            .stroke(message.isOutgoing ? Color.white.opacity(0.12) : VeilTheme.hairline, lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                 } else {
                     Text(message.body)
+                        .font(.body)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(message.isOutgoing ? VeilTheme.gold : VeilTheme.panel)
-                        .foregroundColor(message.isOutgoing ? .black : VeilTheme.text)
-                        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+                        .padding(.vertical, 11)
+                        .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                        .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
+                        .clipShape(VeilPanelShape(cut: 11, radius: 7))
+                        .overlay(
+                            VeilPanelShape(cut: 11, radius: 7)
+                                .stroke(message.isOutgoing ? Color.white.opacity(0.12) : VeilTheme.hairline, lineWidth: 1)
+                        )
+                        .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                 }
                 if message.body == "[图片]", let progress = message.transferProgress, message.isOutgoing, progress < 1 {
                     Text("对方已确认 \(Int(progress * 100))%")
                         .font(.caption2)
                         .foregroundColor(VeilTheme.secondaryText)
                 }
+                if message.isOutgoing, message.deliveryState == .paused {
+                    Text("发送已暂停 · checkpoint 已保留")
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.mutedGold)
+                } else if message.isOutgoing, message.deliveryState == .cancelled {
+                    Text("已取消后续发送")
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                if message.isOutgoing, message.attachment != nil, (onPause != nil || onResume != nil || onCancel != nil) {
+                    HStack(spacing: 12) {
+                        if let onPause {
+                            Button(action: onPause) { Label("暂停", systemImage: "pause.fill") }
+                        }
+                        if let onResume {
+                            Button(action: onResume) { Label("继续", systemImage: "play.fill") }
+                        }
+                        if let onCancel {
+                            Button(role: .destructive, action: onCancel) { Label("取消", systemImage: "xmark") }
+                        }
+                    }
+                    .buttonStyle(VeilPressStyle())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(VeilTheme.gold)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.035))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(VeilTheme.hairline, lineWidth: 1))
+                }
                 HStack(spacing: 4) {
                     Text(message.sentAt, style: .time)
                     if message.isOutgoing {
-                        Image(systemName: deliveryIcon).accessibilityLabel(deliveryLabel)
+                        if message.deliveryState == .delivered {
+                            VeilResolveMark(resolved: true)
+                                .accessibilityLabel(deliveryLabel)
+                        } else {
+                            Image(systemName: deliveryIcon).accessibilityLabel(deliveryLabel)
+                        }
                         if message.deliveryState == .failed, let onRetry {
                             Button("重试", action: onRetry)
                                 .buttonStyle(.plain)
@@ -301,8 +794,8 @@ private struct MessageBubble: View {
                         }
                     }
                 }
-                .font(.caption2)
-                .foregroundColor(message.deliveryState == .failed ? VeilTheme.danger : VeilTheme.secondaryText)
+                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                .foregroundColor(message.deliveryState == .failed ? VeilTheme.danger : VeilTheme.tertiaryText)
                 if message.isOutgoing, message.deliveryState == .failed, let reason = message.failureReason, !reason.isEmpty {
                     Text(reason)
                         .font(.caption2)
@@ -311,7 +804,21 @@ private struct MessageBubble: View {
                         .frame(maxWidth: 260, alignment: .trailing)
                 }
             }
-            if !message.isOutgoing { Spacer(minLength: 54) }
+            if !message.isOutgoing { Spacer(minLength: 46) }
+        }
+    }
+}
+
+private struct MessageBubbleSurface: View {
+    let outgoing: Bool
+
+    var body: some View {
+        Group {
+            if outgoing {
+                VeilTheme.goldGradient
+            } else {
+                VeilTheme.incomingBubbleGradient
+            }
         }
     }
 }
@@ -338,13 +845,13 @@ private struct EncryptedImageView: View {
     var body: some View {
         Group {
             if let image {
-                if isOutgoing && (progress < 1 || deliveryState == .failed) {
+                if isOutgoing && (progress < 1 || deliveryState == .failed || deliveryState == .cancelled) {
                     TransferShardView(
                         image: image,
                         shardImages: shardImages,
                         progress: progress,
                         mode: .sending,
-                        phase: deliveryState == .failed ? .failed : .active
+                        phase: (deliveryState == .failed || deliveryState == .cancelled) ? .failed : .active
                     )
                 } else {
                     Image(uiImage: image)
@@ -392,7 +899,7 @@ private struct EncryptedImageView: View {
                     image: nil,
                     progress: progress,
                     mode: isOutgoing ? .sending : .receiving,
-                    phase: isOutgoing && deliveryState == .failed ? .failed : .active
+                    phase: isOutgoing && (deliveryState == .failed || deliveryState == .cancelled) ? .failed : .active
                 )
             }
         }
@@ -480,7 +987,83 @@ private struct ImportedImageFile {
     let shouldDeleteAfterUse: Bool
 }
 
-private struct PhotoPicker: UIViewControllerRepresentable {
+private struct ContactDetailsSheet: View {
+    @ObservedObject var model: AppModel
+    let conversation: ConversationSummary
+    @Environment(\.dismiss) private var dismiss
+    @State private var displayName: String
+
+    init(model: AppModel, conversation: ConversationSummary) {
+        self.model = model
+        self.conversation = conversation
+        _displayName = State(initialValue: conversation.title)
+    }
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 18) {
+                    VStack(spacing: 10) {
+                        VeilIdentityGlyph(seed: conversation.peerIdentityID, size: 76, active: true)
+                        Text("PEER IDENTITY")
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .tracking(1.4)
+                            .foregroundColor(VeilTheme.mutedGold)
+                        Text(conversation.title)
+                            .font(.system(.title3, design: .rounded).weight(.semibold))
+                        VeilLinkTrace(active: true, width: 86)
+                    }
+                    .padding(.top, 12)
+
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("本地备注")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(VeilTheme.secondaryText)
+                        TextField("备注名称", text: $displayName)
+                            .textFieldStyle(VeilTextFieldStyle())
+                    }
+                    .veilCard()
+
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("IDENTITY ID")
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .tracking(1.1)
+                            .foregroundColor(VeilTheme.mutedGold)
+                        Text(conversation.peerIdentityID)
+                            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                            .foregroundColor(VeilTheme.secondaryText)
+                            .textSelection(.enabled)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .veilCard(emphasized: true)
+
+                    Text("备注名称只保存在当前本地身份中，不会发送给对方，也不会改变对方的密码学身份。")
+                        .font(.footnote)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 10)
+                }
+                .frame(maxWidth: 520)
+                .padding(18)
+                .frame(maxWidth: .infinity)
+            }
+            .background(VeilAmbientBackground())
+            .navigationTitle("联系人信息")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        if model.renameContact(peerIdentityID: conversation.peerIdentityID, displayName: displayName) { dismiss() }
+                    }
+                    .disabled(displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+struct PhotoPicker: UIViewControllerRepresentable {
     let onPicked: (ImportedImageFile) -> Void
     let onError: (String) -> Void
     @Environment(\.dismiss) private var dismiss

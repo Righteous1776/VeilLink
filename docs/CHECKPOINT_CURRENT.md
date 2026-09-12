@@ -1,3 +1,3 @@
 # Current checkpoint
 
-V0.2.2 Runtime Stability: Protocol 4 media pipeline + receiver-confirmed resume + Transfer Shards motion, with bounded BLE reassembly, per-source abuse isolation, self-healing attachment completion, quantized progress persistence, batched SQLite cleanup, primary-identity Owner authorization, and bounded outbound attachment caching.
+V0.3.6 Runtime Optimization, based on V0.3.5 Haptics & Conversation Controls. Protocol 4 and SQLite Schema V8 remain unchanged. This checkpoint focuses on lower CPU/memory/SQLite/UI-refresh overhead without changing feature semantics: cheaper BLE reassembly bookkeeping, throttled stale cleanup, single-statement retry scheduling, quantized attachment UI notifications, conversation-list refresh isolation, and additional V8 lookup indexes.

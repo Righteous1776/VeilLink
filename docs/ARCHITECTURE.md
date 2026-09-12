@@ -1,4 +1,4 @@
-# VeilLink V0.2.2-dev architecture
+# VeilLink V0.3.6-dev architecture
 
 VeilLink is an offline nearby E2EE messenger for iOS 15+. Runtime communication uses CoreBluetooth; ZIPFoundation is used only for local backup packaging.
 
@@ -45,6 +45,21 @@ Application-lock brute-force state is persisted so relaunching does not reset ra
 
 Owner Mode is a diagnostic/governance surface, not a decryption backdoor. Local authorization expires after 20 minutes. Signed tokens are device-bound, expiry-bounded, and may request only allow-listed safe capabilities. Owner Mode cannot read private-message plaintext, export peer/private keys, bypass the app lock, or execute arbitrary code on another device.
 
+
+## V0.3.2 reply and local conversation search
+
+- Text replies remain Protocol 4 text messages. A readable `↪︎「quote」\nreply` envelope lets V0.3.2 render a structured quote card while older clients still display understandable text.
+- Reply quotes are normalized and capped at 160 characters; replying to an existing reply quotes only its newest reply body, avoiding runaway nesting.
+- Conversation previews store only the new reply text (`↪︎ reply`) while the encrypted message body keeps the full readable reply envelope for retransmission and remote rendering.
+- Conversation search runs only over already-decrypted in-memory messages; no plaintext FTS/search index is persisted to disk.
+- Protocol 4 remains unchanged. Schema V8 adds local conversation pinning and activates persisted unread/read state.
+
+## V0.3.1 local controls and transfer lifecycle
+
+Schema V7 adds a local-only `is_paused` flag to `outbound_queue`; Protocol 4 and all cryptographic domains remain unchanged. Pausing an outgoing image removes it from due-send selection while preserving its receiver-confirmed `attachment_next_chunk`. Resume clears the pause flag and continues from that checkpoint. Cancel removes the local outbox row and marks the local message as cancelled; it does not claim to erase chunks already authenticated and stored by the peer. Authenticated checkpoints that arrive after a local cancel/delete are ignored as late completion traffic instead of being misclassified as malformed BLE input.
+
+Local message deletion and conversation clearing are device-local operations. They cascade SQLite queue/transfer rows through foreign keys, delete referenced encrypted attachment files, and repair the conversation preview without changing peer trust. Sender-scoped tombstones are retained for eight days so an ACK-lost retransmission cannot recreate a locally deleted incoming message during the seven-day sender retry window. Incomplete inbound images are protected from deletion/clear until final integrity validation. The received-image auto-save preference is off by default and invokes PhotoKit only after the attachment has passed byte-count and SHA-256 validation.
+
 ## Remaining acceptance work
 
 - Run build + XCTest on current Xcode/iOS SDKs.
@@ -59,3 +74,34 @@ Owner Mode is a diagnostic/governance surface, not a decryption backdoor. Local 
 ## BLE transport safety limits
 
 Transport v2 preflights fragmentation before allocating packets. Protocol 4 envelopes are capped at 96 KB, so the live transport accepts at most 16,384 fragments per envelope (enough for the Bluetooth LE legacy 20-byte ATT value path) rather than exposing the raw UInt16 maximum to runtime queues. Per-peer outbound queues are capped by packet count and encoded bytes. Receive reassembly is capped at 96 KB per frame, 768 KB globally, 32 concurrent frames, and 8 incomplete frames per BLE source; buffered-byte accounting is O(1) and one source cannot consume every reassembly slot. Repeated invalid envelopes are windowed per transport and only the offending BLE link is disconnected after the threshold.
+
+## V0.2.3 session consistency
+
+CoreBluetooth can report progress through multiple delegate callbacks. Central-side readiness is published only after the data characteristic exists and notification subscription succeeds; `ConnectionEventGate` then turns readiness into one logical connected/disconnected transition per transport ID, and `SessionCoordinator` independently ignores duplicate connected callbacks. A pre-authentication session is bounded to 15 seconds; successful Hello authentication cancels the deadline, while expiry removes the incomplete session and disconnects that BLE transport. Message insertion and conversation preview advancement share one SQLite transaction. Attachment file creation is rollback-safe with respect to its database row: if the row insert fails, the just-written encrypted file is deleted.
+
+
+## V0.3.3 visual and motion layer
+
+- `Core/AppTheme.swift` owns the reusable visual tokens and presentation primitives.
+- UI motion is state-driven rather than decorative: message insertion, reply/search surfaces, button press feedback, transfer progress and active BLE scanning.
+- `accessibilityReduceMotion` disables or simplifies non-essential movement.
+- Visual changes do not enter the wire codec, session crypto, reliable delivery semantics, media checkpoint protocol or database schema.
+
+
+## V0.3.4 visual identity layer
+
+The UI derives a non-security visual glyph from each identity ID for local recognition. This representation never participates in trust decisions; SAS verification and pinned Ed25519 identity material remain authoritative. The UI uses asymmetric cut panels, broad dark veil planes, state-bound Link traces, and short Resolve animations. Motion is visual feedback only and cannot advance protocol or delivery state.
+
+
+## V0.3.5 tactile and conversation-state layer
+
+`HapticEngine` is a UI feedback boundary only: it never drives transport, trust, delivery, or cryptographic state. It is preference-backed, disabled outside the active app state, and maps interaction semantics to selection / impact / resolve / warning feedback. Delivery haptics are emitted only after an authenticated ACK/checkpoint changes an outgoing message from a non-delivered state.
+
+Schema V8 adds `is_pinned` to conversations. Pinning affects only local ordering. `unread_count` now increments atomically in the same message/conversation transaction for newly persisted inbound messages and remains unchanged for outgoing messages. Opening a visible conversation clears its unread count; users may also mark a conversation read/unread explicitly. None of these fields are transmitted to peers.
+
+Local CI simulation validates manifests, all Swift syntax, Linux-compatible core typechecking, iOS 15 API guards, migration semantics, shell scripts and IPA archive layout. Final acceptance still requires macOS XcodeGen + Xcode Simulator XCTest + unsigned iphoneos Release build.
+
+
+## V0.3.6 runtime optimization layer
+
+V0.3.6 keeps Protocol 4 and Schema V8 unchanged while reducing hot-path work. BLE reassembly now uses typed keys, per-source partial counts, and throttled stale pruning, reducing per-packet bookkeeping without changing the wire format. Attachment progress notifications are emitted only when persisted progress actually changes, conversation-list refreshes are separated from message-only refreshes, accepted outbound retry scheduling uses one SQLite UPDATE instead of SELECT+UPDATE, and V8 adds non-destructive lookup indexes for conversation peers and attachment message joins.

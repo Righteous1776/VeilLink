@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var ownerMode: OwnerModeController
     @ObservedObject var identity: IdentityManager
+    @ObservedObject var haptics: HapticEngine
     @State private var versionTapCount = 0
     @State private var showsLockSheet = false
     @State private var showsIdentityManager = false
@@ -20,6 +21,7 @@ struct SettingsView: View {
         self.model = model
         ownerMode = model.ownerMode
         identity = model.identity
+        haptics = model.haptics
     }
 
     var body: some View {
@@ -28,6 +30,8 @@ struct SettingsView: View {
                 profileCard
                 securityCard
                 storageCard
+                mediaCard
+                feedbackCard
                 bluetoothCard
                 versionFooter
             }
@@ -35,7 +39,7 @@ struct SettingsView: View {
             .padding()
             .frame(maxWidth: .infinity)
         }
-        .background(VeilTheme.background)
+        .background(VeilAmbientBackground())
         .navigationTitle("设置")
         .sheet(isPresented: $showsLockSheet) {
             LockConfigurationSheet(controller: model.appLock)
@@ -78,19 +82,36 @@ struct SettingsView: View {
     }
 
     private var profileCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("本地身份", systemImage: "person.text.rectangle")
-                .font(.headline).foregroundColor(VeilTheme.gold)
-            Text(identity.activeIdentity?.displayName ?? "未创建")
-                .font(.title3.weight(.semibold))
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 13) {
+                VeilIdentityGlyph(seed: identity.activeIdentity?.id ?? "veillink-unset", size: 54, active: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LOCAL IDENTITY")
+                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .tracking(1.25)
+                        .foregroundColor(VeilTheme.mutedGold)
+                    Text(identity.activeIdentity?.displayName ?? "未创建")
+                        .font(.system(.title3, design: .rounded).weight(.semibold))
+                    HStack(spacing: 7) {
+                        Text(String((identity.activeIdentity?.id ?? "offline").prefix(12)).uppercased())
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundColor(VeilTheme.secondaryText)
+                        VeilLinkTrace(active: true, width: 34)
+                    }
+                }
+                Spacer()
+            }
+
             Text(identity.activeIdentity?.id ?? "")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(VeilTheme.secondaryText)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(VeilTheme.tertiaryText)
                 .textSelection(.enabled)
+                .lineLimit(1)
+
             HStack {
                 Text("设备ID")
                 Spacer()
-                Text(String(identity.deviceID.prefix(8)))
+                Text(String(identity.deviceID.prefix(8)).uppercased())
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(VeilTheme.secondaryText)
             }
@@ -101,13 +122,13 @@ struct SettingsView: View {
                 icon: "person.2"
             ) { showsIdentityManager = true }
         }
-        .veilCard()
+        .veilCard(emphasized: true)
     }
 
     private var securityCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("安全", systemImage: "lock.shield")
-                .font(.headline).foregroundColor(VeilTheme.gold)
+                .font(.headline).foregroundColor(VeilTheme.goldBright)
             settingButton(
                 title: "应用锁",
                 detail: model.appLock.isEnabled ? "六位密码与生物识别已启用" : "尚未启用",
@@ -130,7 +151,7 @@ struct SettingsView: View {
     private var storageCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("数据与备份", systemImage: "externaldrive")
-                .font(.headline).foregroundColor(VeilTheme.gold)
+                .font(.headline).foregroundColor(VeilTheme.goldBright)
             settingButton(title: "导出加密ZIP", detail: "保存到文件或分享", icon: "square.and.arrow.up") {
                 showsBackupSheet = true
             }
@@ -149,10 +170,71 @@ struct SettingsView: View {
         .veilCard()
     }
 
+    private var mediaCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("图片", systemImage: "photo.on.rectangle")
+                .font(.headline).foregroundColor(VeilTheme.goldBright)
+            Toggle(isOn: $model.autoSaveReceivedImages) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("自动保存收到的图片").fontWeight(.medium)
+                    Text("完整性校验通过后自动加入系统照片；默认关闭。")
+                        .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                }
+            }
+            .tint(VeilTheme.gold)
+        }
+        .veilCard()
+    }
+
+    private var feedbackCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("触感反馈", systemImage: "waveform.path")
+                .font(.headline).foregroundColor(VeilTheme.goldBright)
+            Toggle(isOn: $haptics.isEnabled) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("震动反馈").fontWeight(.medium)
+                    Text("用于发送、送达、配对、置顶与传输控制；不会在后台主动震动。")
+                        .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                }
+            }
+            .tint(VeilTheme.gold)
+            if haptics.isEnabled {
+                Divider().background(Color.white.opacity(0.07))
+                HStack {
+                    Text("反馈强度")
+                    Spacer()
+                    Picker("反馈强度", selection: $haptics.strength) {
+                        ForEach(HapticEngine.Strength.allCases) { strength in
+                            Text(strength.title).tag(strength)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 250)
+                    .onChange(of: haptics.strength) { _ in haptics.impact() }
+                }
+                Button {
+                    haptics.resolved()
+                } label: {
+                    HStack {
+                        Image(systemName: "hand.tap")
+                        Text("测试一次触感")
+                        Spacer()
+                        Text("RESOLVE")
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundColor(VeilTheme.mutedGold)
+                    }
+                }
+                .buttonStyle(VeilPressStyle())
+            }
+        }
+        .veilCard()
+    }
+
     private var bluetoothCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("蓝牙后台", systemImage: "antenna.radiowaves.left.and.right")
-                .font(.headline).foregroundColor(VeilTheme.gold)
+                .font(.headline).foregroundColor(VeilTheme.goldBright)
             Text(model.bluetooth.statusText).fontWeight(.medium)
             Text("已启用 Central / Peripheral 状态恢复与有限自动重连。iOS仍可能降低后台扫描频率；重新打开应用后会继续处理加密发送队列。")
                 .font(.caption)
@@ -170,7 +252,7 @@ struct SettingsView: View {
 
     private var versionFooter: some View {
         VStack(spacing: 5) {
-            Text("VeilLink 0.2.2-dev · Protocol 4")
+            Text("VeilLink 0.3.6-dev · Protocol 4")
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
             Text("ZeoStudio")
@@ -281,9 +363,11 @@ struct BackupPasswordSheet: View {
 private struct IdentityManagementSheet: View {
     @ObservedObject var model: AppModel
     @ObservedObject var identity: IdentityManager
+    @ObservedObject var haptics: HapticEngine
     @Environment(\.dismiss) private var dismiss
     @State private var selectedProfile: LocalIdentity?
     @State private var showsCreate = false
+    @State private var profileToDelete: LocalIdentity?
 
     init(model: AppModel) {
         self.model = model
@@ -312,6 +396,13 @@ private struct IdentityManagementSheet: View {
                             }
                         }
                         .disabled(profile.id == identity.activeIdentity?.id)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if profile.id != identity.activeIdentity?.id {
+                                Button(role: .destructive) { profileToDelete = profile } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                            }
+                        }
                     }
                 }
                 Section {
@@ -336,6 +427,43 @@ private struct IdentityManagementSheet: View {
         .sheet(isPresented: $showsCreate) {
             NewIdentitySheet { name, password in
                 _ = model.createAdditionalProfile(name: name, password: password)
+            }
+        }
+        .sheet(item: $profileToDelete) { profile in
+            DeleteIdentitySheet(profile: profile) { password in
+                model.deleteIdentity(id: profile.id, password: password)
+            }
+        }
+    }
+}
+
+private struct DeleteIdentitySheet: View {
+    let profile: LocalIdentity
+    let onConfirm: (String) -> Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var password = ""
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    Text("删除「\(profile.displayName)」")
+                        .font(.headline)
+                    Text("将删除这个身份的本机私钥、联系人、对话、消息和附件。此操作不能撤销；如需保留，请先创建加密备份。")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+                SecureField("输入该身份密码确认", text: $password)
+            }
+            .navigationTitle("删除身份")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("删除", role: .destructive) {
+                        if onConfirm(password) { dismiss() }
+                    }
+                    .disabled(password.isEmpty)
+                }
             }
         }
     }

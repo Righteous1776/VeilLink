@@ -32,6 +32,7 @@ struct ConversationSummary: Identifiable, Hashable {
     var lastMessage: String
     var updatedAt: Date
     var unreadCount: Int
+    var isPinned: Bool
 }
 
 struct TrustedContact: Hashable {
@@ -44,7 +45,9 @@ struct ChatMessage: Identifiable, Hashable {
     enum DeliveryState: String, Codable {
         case queued
         case sending
+        case paused
         case delivered
+        case cancelled
         case failed
     }
 

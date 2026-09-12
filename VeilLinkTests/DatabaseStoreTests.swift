@@ -296,4 +296,329 @@ final class DatabaseStoreTests: XCTestCase {
         XCTAssertEqual(store.fetchMessage(id: messageID)?.transferProgress ?? -1, 2.0 / 64.0, accuracy: 0.000_001)
     }
 
+    func testSaveMessageUpdatesConversationPreviewInSameCommitPath() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-preview"
+        let peer = "peer-preview"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Preview Peer")
+        let sentAt = Date()
+        let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "atomic preview", sentAt: sentAt, isOutgoing: true, deliveryState: .queued)
+
+        try store.saveMessage(message)
+
+        let summary = try XCTUnwrap(store.fetchConversations(localIdentityID: local).first)
+        XCTAssertEqual(summary.lastMessage, "atomic preview")
+        XCTAssertEqual(summary.id, conversation)
+        XCTAssertNotNil(store.fetchMessage(id: message.id))
+    }
+
+    func testAttachmentInsertFailureRemovesEncryptedOrphanFile() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertThrowsError(try store.saveAttachment(messageID: UUID().uuidString, data: Data(repeating: 0x5A, count: 512), mimeType: "image/jpeg"))
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(at: store.attachmentsURL, includingPropertiesForKeys: nil).isEmpty)
+    }
+
+    func testContactAliasUpdatesTrustedContactAndConversationTitle() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-alias"
+        let peer = "peer-alias"
+        try store.trustPeer(localIdentityID: local, identityID: peer, displayName: "Original", publicKey: Data(repeating: 0x31, count: 32))
+        _ = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Original")
+
+        try store.renameContact(localIdentityID: local, identityID: peer, displayName: "Roommate")
+
+        XCTAssertEqual(store.trustedContact(localIdentityID: local, identityID: peer)?.displayName, "Roommate")
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.title, "Roommate")
+    }
+
+    func testDeleteLocalIdentityDataRemovesScopedRowsAndAttachmentFiles() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-delete"
+        let peer = "peer-delete"
+        try store.trustPeer(localIdentityID: local, identityID: peer, displayName: "Peer", publicKey: Data(repeating: 0x41, count: 32))
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "[图片]", sentAt: Date(), isOutgoing: true, deliveryState: .queued)
+        try store.saveMessage(message)
+        let attachment = try store.saveAttachment(messageID: message.id, data: Data(repeating: 0x52, count: 1024), mimeType: "image/jpeg")
+        XCTAssertNotNil(store.loadAttachment(id: attachment.id))
+
+        try store.deleteLocalIdentityData(localIdentityID: local)
+
+        XCTAssertTrue(store.fetchConversations(localIdentityID: local).isEmpty)
+        XCTAssertNil(store.trustedContact(localIdentityID: local, identityID: peer))
+        XCTAssertNil(store.fetchMessage(id: message.id))
+        XCTAssertNil(store.loadAttachment(id: attachment.id))
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(at: store.attachmentsURL, includingPropertiesForKeys: nil).isEmpty)
+    }
+
+    func testPausedAttachmentIsExcludedFromDueQueueAndResumeKeepsCheckpoint() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-pause"
+        let peer = "peer-pause"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Pause Peer")
+        let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "[图片]", sentAt: Date(), isOutgoing: true, deliveryState: .queued, transferProgress: 0)
+        try store.saveMessage(message)
+        try store.enqueueOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+        try store.configureOutboundAttachment(messageID: message.id, chunkCount: 5)
+        try store.acceptOutboundAttachmentCheckpoint(messageID: message.id, targetIdentityID: peer, localIdentityID: local, nextChunk: 2, chunkCount: 5)
+
+        try store.pauseOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+        XCTAssertTrue(store.isOutboundPaused(messageID: message.id, targetIdentityID: peer, localIdentityID: local))
+        XCTAssertEqual(store.fetchMessage(id: message.id)?.deliveryState, .paused)
+        XCTAssertTrue(store.dueOutboundMessageIDs(for: peer, localIdentityID: local).isEmpty)
+        XCTAssertEqual(store.outboundAttachmentState(messageID: message.id, targetIdentityID: peer, localIdentityID: local)?.nextChunk, 2)
+
+        try store.resumeOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+        XCTAssertFalse(store.isOutboundPaused(messageID: message.id, targetIdentityID: peer, localIdentityID: local))
+        XCTAssertEqual(store.fetchMessage(id: message.id)?.deliveryState, .queued)
+        XCTAssertEqual(store.dueOutboundMessageIDs(for: peer, localIdentityID: local), [message.id])
+        XCTAssertEqual(store.outboundAttachmentState(messageID: message.id, targetIdentityID: peer, localIdentityID: local)?.nextChunk, 2)
+    }
+
+    func testPausedAttachmentSurvivesDatabaseReopen() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("VeilLink-PauseReopen-\(UUID().uuidString)", isDirectory: true)
+        let service = "studio.zeo.veillink.tests.pause-reopen.\(UUID().uuidString)"
+        let keychain = KeychainStore(service: service)
+        defer { keychain.remove("storage.database.key"); try? FileManager.default.removeItem(at: root) }
+        let local = "local-pause-reopen"
+        let peer = "peer-pause-reopen"
+        var messageID = ""
+        do {
+            let store = try DatabaseStore(keychain: keychain, rootDirectory: root)
+            let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+            let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "[图片]", sentAt: Date(), isOutgoing: true, deliveryState: .queued, transferProgress: 0)
+            messageID = message.id
+            try store.saveMessage(message)
+            try store.enqueueOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+            try store.configureOutboundAttachment(messageID: message.id, chunkCount: 3)
+            try store.pauseOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+        }
+        do {
+            let reopened = try DatabaseStore(keychain: keychain, rootDirectory: root)
+            XCTAssertTrue(reopened.isOutboundPaused(messageID: messageID, targetIdentityID: peer, localIdentityID: local))
+            XCTAssertEqual(reopened.fetchMessage(id: messageID)?.deliveryState, .paused)
+            XCTAssertTrue(reopened.dueOutboundMessageIDs(for: peer, localIdentityID: local).isEmpty)
+        }
+    }
+
+    func testCancelAttachmentRemovesQueueButKeepsLocalMessageAndImage() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-cancel"
+        let peer = "peer-cancel"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Cancel Peer")
+        let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "[图片]", sentAt: Date(), isOutgoing: true, deliveryState: .queued, transferProgress: 0)
+        try store.saveMessage(message)
+        let attachment = try store.saveAttachment(messageID: message.id, data: Data(repeating: 0x66, count: 4096), mimeType: "image/jpeg")
+        try store.enqueueOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+        try store.configureOutboundAttachment(messageID: message.id, chunkCount: 2)
+
+        try store.cancelOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+
+        XCTAssertEqual(store.fetchMessage(id: message.id)?.deliveryState, .cancelled)
+        XCTAssertTrue(store.dueOutboundMessageIDs(for: peer, localIdentityID: local).isEmpty)
+        XCTAssertNil(store.outboundAttachmentState(messageID: message.id, targetIdentityID: peer, localIdentityID: local))
+        XCTAssertEqual(store.loadAttachment(id: attachment.id), Data(repeating: 0x66, count: 4096))
+    }
+
+    func testLocalMessageDeleteRepairsPreviewAndRemovesAttachmentFile() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-delete-message"
+        let peer = "peer-delete-message"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let first = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "first", sentAt: Date(timeIntervalSince1970: 100), isOutgoing: true, deliveryState: .delivered)
+        let second = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "[图片]", sentAt: Date(timeIntervalSince1970: 200), isOutgoing: true, deliveryState: .delivered, transferProgress: 1)
+        try store.saveMessage(first)
+        try store.saveMessage(second)
+        let attachment = try store.saveAttachment(messageID: second.id, data: Data(repeating: 0x77, count: 1024), mimeType: "image/jpeg")
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.lastMessage, "[图片]")
+
+        try store.deleteMessageLocally(messageID: second.id, conversationID: conversation)
+
+        XCTAssertNil(store.fetchMessage(id: second.id))
+        XCTAssertNil(store.loadAttachment(id: attachment.id))
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.lastMessage, "first")
+        XCTAssertEqual(store.fetchMessages(conversationID: conversation).map(\.id), [first.id])
+    }
+
+    func testClearConversationDeletesLocalHistoryButKeepsContactAndConversation() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-clear"
+        let peer = "peer-clear"
+        try store.trustPeer(localIdentityID: local, identityID: peer, displayName: "Peer", publicKey: Data(repeating: 0x21, count: 32))
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let text = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "text", sentAt: Date(), isOutgoing: true, deliveryState: .delivered)
+        let image = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: peer, body: "[图片]", sentAt: Date().addingTimeInterval(1), isOutgoing: false, deliveryState: .delivered, transferProgress: 1)
+        try store.saveMessage(text)
+        try store.saveMessage(image)
+        let attachment = try store.saveAttachment(messageID: image.id, data: Data(repeating: 0x22, count: 1024), mimeType: "image/png")
+
+        try store.clearConversationLocally(conversationID: conversation)
+
+        XCTAssertTrue(store.fetchMessages(conversationID: conversation).isEmpty)
+        XCTAssertNil(store.loadAttachment(id: attachment.id))
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.id, conversation)
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.lastMessage, "")
+        XCTAssertNotNil(store.trustedContact(localIdentityID: local, identityID: peer))
+    }
+
+    func testLocalDeleteCreatesSenderScopedTombstoneForIncomingMessage() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-tombstone"
+        let peer = "peer-tombstone"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: peer, body: "hello", sentAt: Date(), isOutgoing: false, deliveryState: .delivered)
+        try store.saveMessage(message)
+
+        try store.deleteMessageLocally(messageID: message.id, conversationID: conversation)
+
+        XCTAssertNil(store.fetchMessage(id: message.id))
+        XCTAssertTrue(store.isLocallyDeletedMessage(messageID: message.id, senderIdentityID: peer))
+        XCTAssertFalse(store.isLocallyDeletedMessage(messageID: message.id, senderIdentityID: "different-peer"))
+    }
+
+    func testIncompleteInboundImageBlocksLocalDeleteAndConversationClear() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-incomplete-delete"
+        let peer = "peer-incomplete-delete"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: peer, body: "[图片]", sentAt: Date(), isOutgoing: false, deliveryState: .delivered, transferProgress: 0)
+        try store.saveMessage(message)
+        _ = try store.beginInboundAttachment(messageID: message.id, byteCount: 1000, mimeType: "image/jpeg", sha256: Data(repeating: 0x33, count: 32), chunkCount: 1)
+
+        XCTAssertTrue(store.hasIncompleteInboundAttachments(conversationID: conversation))
+        XCTAssertThrowsError(try store.deleteMessageLocally(messageID: message.id, conversationID: conversation))
+        XCTAssertThrowsError(try store.clearConversationLocally(conversationID: conversation))
+        XCTAssertNotNil(store.fetchMessage(id: message.id))
+    }
+
+    func testReplyConversationPreviewStaysCompactAfterSaveAndDelete() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-reply-preview"
+        let peer = "peer-reply-preview"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let replyBody = ReplyTextCodec.encode(quoted: "很长的旧消息", reply: "新的回复")
+        let first = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: replyBody, sentAt: Date(timeIntervalSince1970: 100), isOutgoing: true, deliveryState: .delivered)
+        let second = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "后来一条", sentAt: Date(timeIntervalSince1970: 200), isOutgoing: true, deliveryState: .delivered)
+        try store.saveMessage(first, conversationPreview: ReplyTextCodec.previewText(for: replyBody))
+        try store.saveMessage(second)
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.lastMessage, "后来一条")
+
+        try store.deleteMessageLocally(messageID: second.id, conversationID: conversation)
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.lastMessage, "↪︎ 新的回复")
+    }
+
+    func testIncomingMessageIncrementsUnreadAndReadResetClearsIt() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-unread"
+        let peer = "peer-unread"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let incoming = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: peer, body: "hello", sentAt: Date(), isOutgoing: false, deliveryState: .delivered)
+        try store.saveMessage(incoming)
+
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.unreadCount, 1)
+        try store.markConversationRead(conversationID: conversation)
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.unreadCount, 0)
+    }
+
+    func testOutgoingMessageDoesNotIncrementUnreadCount() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-outgoing-unread"
+        let peer = "peer-outgoing-unread"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let outgoing = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "hello", sentAt: Date(), isOutgoing: true, deliveryState: .queued)
+        try store.saveMessage(outgoing)
+
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.unreadCount, 0)
+    }
+
+    func testPinnedConversationSortsBeforeMoreRecentUnpinnedConversation() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-pin"
+        let older = try store.createConversation(localIdentityID: local, peerIdentityID: "peer-old", title: "Old")
+        let newer = try store.createConversation(localIdentityID: local, peerIdentityID: "peer-new", title: "New")
+        let oldMessage = ChatMessage(id: UUID().uuidString, conversationID: older, senderIdentityID: local, body: "old", sentAt: Date(timeIntervalSince1970: 100), isOutgoing: true, deliveryState: .delivered)
+        let newMessage = ChatMessage(id: UUID().uuidString, conversationID: newer, senderIdentityID: local, body: "new", sentAt: Date(timeIntervalSince1970: 200), isOutgoing: true, deliveryState: .delivered)
+        try store.saveMessage(oldMessage)
+        try store.saveMessage(newMessage)
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.id, newer)
+
+        try store.setConversationPinned(conversationID: older, pinned: true)
+        let conversations = store.fetchConversations(localIdentityID: local)
+        XCTAssertEqual(conversations.first?.id, older)
+        XCTAssertTrue(conversations.first?.isPinned == true)
+    }
+
+    func testManualMarkUnreadCreatesAtLeastOneUnreadWithoutInflatingExistingCount() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-manual-unread"
+        let peer = "peer-manual-unread"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+
+        try store.markConversationUnread(conversationID: conversation)
+        try store.markConversationUnread(conversationID: conversation)
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.unreadCount, 1)
+    }
+
+    func testDuplicateIncomingMessageDoesNotDoubleIncrementUnread() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-unread-idempotent"
+        let peer = "peer-unread-idempotent"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let incoming = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: peer, body: "hello", sentAt: Date(), isOutgoing: false, deliveryState: .delivered)
+
+        try store.saveMessage(incoming)
+        try store.saveMessage(incoming)
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.unreadCount, 1)
+    }
+
+    func testPinnedConversationPersistsAcrossDatabaseReopen() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("VeilLink-PinReopen-\(UUID().uuidString)", isDirectory: true)
+        let service = "studio.zeo.veillink.tests.pin-reopen.\(UUID().uuidString)"
+        let keychain = KeychainStore(service: service)
+        defer { keychain.remove("storage.database.key"); try? FileManager.default.removeItem(at: root) }
+        let local = "local-pin-reopen"
+        var conversationID = ""
+        do {
+            let store = try DatabaseStore(keychain: keychain, rootDirectory: root)
+            conversationID = try store.createConversation(localIdentityID: local, peerIdentityID: "peer", title: "Peer")
+            try store.setConversationPinned(conversationID: conversationID, pinned: true)
+        }
+        do {
+            let reopened = try DatabaseStore(keychain: keychain, rootDirectory: root)
+            let summary = try XCTUnwrap(reopened.fetchConversations(localIdentityID: local).first)
+            XCTAssertEqual(summary.id, conversationID)
+            XCTAssertTrue(summary.isPinned)
+        }
+    }
+
+    func testAcceptedOutboundAttemptIncrementsRetryCountWithoutExtraReadPath() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-retry-opt"
+        let peer = "peer-retry-opt"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "hello", sentAt: Date(), isOutgoing: true, deliveryState: .queued)
+        try store.saveMessage(message)
+        try store.enqueueOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+
+        try store.recordAcceptedOutboundAttempt(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+        XCTAssertEqual(store.outboundRetryCount(messageID: message.id, targetIdentityID: peer, localIdentityID: local), 1)
+        try store.recordAcceptedOutboundAttempt(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+        XCTAssertEqual(store.outboundRetryCount(messageID: message.id, targetIdentityID: peer, localIdentityID: local), 2)
+    }
+
+    func testOutboundCheckpointReportsOnlyPersistedProgressStages() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-progress-opt"
+        let peer = "peer-progress-opt"
+        let conversation = try store.createConversation(localIdentityID: local, peerIdentityID: peer, title: "Peer")
+        let message = ChatMessage(id: UUID().uuidString, conversationID: conversation, senderIdentityID: local, body: "[图片]", sentAt: Date(), isOutgoing: true, deliveryState: .queued, transferProgress: 0)
+        try store.saveMessage(message)
+        try store.enqueueOutbound(messageID: message.id, targetIdentityID: peer, localIdentityID: local)
+        try store.configureOutboundAttachment(messageID: message.id, chunkCount: 64)
+
+        XCTAssertTrue(try store.acceptOutboundAttachmentCheckpoint(messageID: message.id, targetIdentityID: peer, localIdentityID: local, nextChunk: 0, chunkCount: 64))
+        XCTAssertFalse(try store.acceptOutboundAttachmentCheckpoint(messageID: message.id, targetIdentityID: peer, localIdentityID: local, nextChunk: 1, chunkCount: 64))
+        XCTAssertTrue(try store.acceptOutboundAttachmentCheckpoint(messageID: message.id, targetIdentityID: peer, localIdentityID: local, nextChunk: 2, chunkCount: 64))
+    }
+
 }

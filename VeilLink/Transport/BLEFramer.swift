@@ -70,9 +70,16 @@ struct BLEFragment {
             )
         }
     }
+
+
 }
 
 final class BLEFragmentAssembler {
+    private struct PartialKey: Hashable {
+        let source: UUID
+        let frameID: UInt64
+    }
+
     private struct Partial {
         let createdAt: Date
         let source: UUID
@@ -81,8 +88,10 @@ final class BLEFragmentAssembler {
         var byteCount: Int
     }
 
-    private var partials: [String: Partial] = [:]
+    private var partials: [PartialKey: Partial] = [:]
+    private var partialCountBySource: [UUID: Int] = [:]
     private var totalBufferedBytes = 0
+    private var nextPruneAt: TimeInterval = 0
     private let maxConcurrentMessages: Int
     private let maxConcurrentMessagesPerSource: Int
     private let maxFragmentsPerMessage: Int
@@ -110,7 +119,7 @@ final class BLEFragmentAssembler {
     }
 
     func ingest(source: UUID, packet: Data) -> Data? {
-        prune()
+        pruneIfNeeded()
         guard packet.count <= maxPacketBytes,
               let fragment = BLEFragment(data: packet),
               fragment.frameID != 0,
@@ -120,14 +129,15 @@ final class BLEFragmentAssembler {
               !(fragment.payload.isEmpty && fragment.total > 1),
               fragment.payload.count <= maxAssembledBytes else { return nil }
 
-        let key = "\(source.uuidString):\(fragment.frameID)"
+        let key = PartialKey(source: source, frameID: fragment.frameID)
         if partials[key] == nil {
             while partials.count >= maxConcurrentMessages { evictOldestPartial() }
-            while partials.values.lazy.filter({ $0.source == source }).count >= maxConcurrentMessagesPerSource {
+            while (partialCountBySource[source] ?? 0) >= maxConcurrentMessagesPerSource {
                 evictOldestPartial(from: source)
             }
         }
 
+        let isNewPartial = partials[key] == nil
         var partial = partials[key] ?? Partial(
             createdAt: Date(),
             source: source,
@@ -160,6 +170,7 @@ final class BLEFragmentAssembler {
             totalBufferedBytes += fragment.payload.count
         }
         partials[key] = partial
+        if isNewPartial { partialCountBySource[source, default: 0] += 1 }
 
         guard partial.chunks.count == Int(partial.total) else { return nil }
         var output = Data()
@@ -172,13 +183,16 @@ final class BLEFragmentAssembler {
         return output
     }
 
-    private func prune() {
-        let cutoff = Date().addingTimeInterval(-staleAfter)
+    private func pruneIfNeeded() {
+        let now = Date().timeIntervalSinceReferenceDate
+        guard now >= nextPruneAt else { return }
+        nextPruneAt = now + min(5, max(1, staleAfter / 4))
+        let cutoff = Date(timeIntervalSinceReferenceDate: now - staleAfter)
         let staleKeys = partials.compactMap { $0.value.createdAt <= cutoff ? $0.key : nil }
         staleKeys.forEach { removePartial(forKey: $0) }
     }
 
-    private func makeRoomForBufferedBytes(_ additionalBytes: Int, protecting key: String) -> Bool {
+    private func makeRoomForBufferedBytes(_ additionalBytes: Int, protecting key: PartialKey) -> Bool {
         guard additionalBytes <= maxTotalBufferedBytes else { return false }
         while totalBufferedBytes + additionalBytes > maxTotalBufferedBytes {
             guard let oldest = partials
@@ -191,9 +205,15 @@ final class BLEFragmentAssembler {
         return true
     }
 
-    private func removePartial(forKey key: String) {
+    private func removePartial(forKey key: PartialKey) {
         guard let removed = partials.removeValue(forKey: key) else { return }
         totalBufferedBytes = max(0, totalBufferedBytes - removed.byteCount)
+        let nextCount = max(0, (partialCountBySource[removed.source] ?? 1) - 1)
+        if nextCount == 0 {
+            partialCountBySource.removeValue(forKey: removed.source)
+        } else {
+            partialCountBySource[removed.source] = nextCount
+        }
     }
 
     private func evictOldestPartial() {

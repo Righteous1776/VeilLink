@@ -100,4 +100,28 @@ final class BLETransportSafetyTests: XCTestCase {
         XCTAssertNil(recoveredFirst)
     }
 
+    func testConnectionEventGateDeduplicatesCallbacksAndAllowsReconnect() {
+        var gate = ConnectionEventGate()
+        let id = UUID()
+
+        XCTAssertTrue(gate.markConnected(id))
+        XCTAssertFalse(gate.markConnected(id))
+        XCTAssertEqual(gate.count, 1)
+        XCTAssertTrue(gate.markDisconnected(id))
+        XCTAssertFalse(gate.markDisconnected(id))
+        XCTAssertTrue(gate.markConnected(id))
+    }
+
+    func testConnectionEventGateDrainsOnlyLiveConnections() {
+        var gate = ConnectionEventGate()
+        let first = UUID()
+        let second = UUID()
+        XCTAssertTrue(gate.markConnected(first))
+        XCTAssertTrue(gate.markConnected(second))
+        XCTAssertTrue(gate.markDisconnected(first))
+
+        XCTAssertEqual(Set(gate.drainConnectedIDs()), [second])
+        XCTAssertEqual(gate.count, 0)
+    }
+
 }

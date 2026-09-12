@@ -37,4 +37,33 @@ final class IdentityRecoveryTests: XCTestCase {
         XCTAssertEqual(destination.profiles.filter { $0.isPrimary }.count, 1)
     }
 
+    func testDeleteNonActiveIdentityReleasesSlotAndRemovesCredentials() throws {
+        let keychain = KeychainStore(service: "studio.zeo.veillink.tests.identity.delete.\(UUID().uuidString)")
+        let manager = IdentityManager(keychain: keychain)
+        let primary = try manager.createProfile(displayName: "Primary", password: "primary-pass-123")
+        let secondary = try manager.createProfile(displayName: "Secondary", password: "secondary-pass-123")
+        XCTAssertTrue(manager.switchProfile(to: primary.id, password: "primary-pass-123"))
+
+        let deleted = try manager.deleteProfile(id: secondary.id, password: "secondary-pass-123")
+
+        XCTAssertEqual(deleted.id, secondary.id)
+        XCTAssertEqual(manager.profiles.map(\.id), [primary.id])
+        XCTAssertFalse(manager.verifyPassword("secondary-pass-123", for: secondary.id))
+        XCTAssertEqual(manager.primaryIdentity?.id, primary.id)
+    }
+
+    func testDeletingFormerPrimaryPromotesRemainingIdentity() throws {
+        let keychain = KeychainStore(service: "studio.zeo.veillink.tests.identity.promote.\(UUID().uuidString)")
+        let manager = IdentityManager(keychain: keychain)
+        let primary = try manager.createProfile(displayName: "Primary", password: "primary-pass-123")
+        let secondary = try manager.createProfile(displayName: "Secondary", password: "secondary-pass-123")
+        XCTAssertEqual(manager.activeIdentity?.id, secondary.id)
+
+        _ = try manager.deleteProfile(id: primary.id, password: "primary-pass-123")
+
+        XCTAssertEqual(manager.profiles.count, 1)
+        XCTAssertEqual(manager.primaryIdentity?.id, secondary.id)
+        XCTAssertTrue(manager.profiles[0].isPrimary)
+    }
+
 }

@@ -29,6 +29,13 @@ and app relaunches. The transfer UI now uses checkpoint-driven shard animation: 
 local photo fragments as confirmed chunks leave, while the receiver assembles an
 encrypted shard field and reveals the real image only after integrity validation.
 
+V0.3 adds local contact aliases and identity deletion, then V0.3.1 adds device-local
+message deletion / conversation clearing, persistent pause-resume-cancel controls for
+outgoing images, and an opt-in setting to save fully verified received images to Photos.
+Protocol 4 is unchanged; the local SQLite schema is V7.
+V0.3.4 establishes VeilLink's own visual identity instead of a generic black/gold skin. Identity IDs now derive deterministic local visual glyphs; broad near-black "veil" planes create depth without bright glass effects; asymmetric cut panels replace most generic rounded cards; and motion is constrained to three meanings: Reveal, Transit, and Resolve. Conversation headers, peers, settings, lock/onboarding, transfer surfaces, and iPad navigation share the same language. Protocol 4 and Schema V7 remain unchanged.
+V0.3.6 keeps the V0.3.5 haptics and conversation controls while optimizing hot runtime paths. BLE reassembly performs less per-packet bookkeeping, attachment progress triggers fewer UI/database refreshes, message-only updates no longer force conversation-list reloads, and Outbox retry scheduling removes a SQLite read-before-write. Protocol 4 and Schema V8 remain unchanged; `scripts/local-ci-sim.sh` continues to self-audit the GitHub-equivalent steps available without macOS/Xcode.
+
 Multi-hop relay, signed Owner token generation, and full on-device BLE testing
 remain for later iterations. Their boundaries are already represented in the
 architecture.

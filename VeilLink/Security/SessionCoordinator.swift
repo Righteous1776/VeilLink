@@ -60,7 +60,10 @@ final class SessionCoordinator: ObservableObject {
 
     var transportSend: ((UUID, Data) -> TransportSendResult)?
     var transportDisconnect: ((UUID) -> Void)?
-    var onMessagesChanged: (() -> Void)?
+    var onMessagesChanged: ((Bool) -> Void)?
+    var onInboundAttachmentCompleted: ((String) -> Void)?
+    var onInboundMessageReceived: (() -> Void)?
+    var onDeliveryConfirmed: (() -> Void)?
 
     private let identity: IdentityManager
     private let database: DatabaseStore
@@ -80,6 +83,8 @@ final class SessionCoordinator: ObservableObject {
 
     private var packetAbuseLimiter = PacketAbuseLimiter()
     private var retryTimer: AnyCancellable?
+    private var handshakeTimeoutTasks: [UUID: Task<Void, Never>] = [:]
+    private let handshakeTimeoutNanoseconds: UInt64 = 15_000_000_000
 
     init(identity: IdentityManager, database: DatabaseStore) {
         self.identity = identity; self.database = database
@@ -98,8 +103,18 @@ final class SessionCoordinator: ObservableObject {
         }
     }
 
-    func connected(transportID: UUID) { do { try sendHello(to: transportID) } catch { lastError = "握手初始化失败：\(error.localizedDescription)" } }
+    func connected(transportID: UUID) {
+        guard sessions[transportID] == nil else { return }
+        do {
+            try sendHello(to: transportID)
+            scheduleHandshakeTimeout(for: transportID)
+        } catch {
+            sessions.removeValue(forKey: transportID)
+            lastError = "握手初始化失败：\(error.localizedDescription)"
+        }
+    }
     func disconnected(transportID: UUID) {
+        cancelHandshakeTimeout(for: transportID)
         sessions.removeValue(forKey: transportID)
         packetAbuseLimiter.reset(transportID)
         peerTransport = peerTransport.filter { $0.value != transportID }
@@ -108,6 +123,7 @@ final class SessionCoordinator: ObservableObject {
     }
 
     func resetForIdentityChange() {
+        cancelAllHandshakeTimeouts()
         sessions.removeAll()
         packetAbuseLimiter.resetAll()
         peerTransport.removeAll()
@@ -118,6 +134,7 @@ final class SessionCoordinator: ObservableObject {
 
     func invalidatePeer(_ peerIdentityID: String) {
         if let transportID = peerTransport.removeValue(forKey: peerIdentityID) {
+            cancelHandshakeTimeout(for: transportID)
             sessions.removeValue(forKey: transportID)
             packetAbuseLimiter.reset(transportID)
             nearbyPeers.removeAll { $0.transportID == transportID || $0.id == peerIdentityID }
@@ -157,13 +174,14 @@ final class SessionCoordinator: ObservableObject {
                 _ = try database.createConversation(localIdentityID: localIdentityID, peerIdentityID: remote.identityID, title: remote.displayName)
             }
             nearbyPeers[index].trustState = .trusted; nearbyPeers[index].pairingCode = nil
-            recordSecurityEvent("已信任 \(remote.displayName) · 身份指纹已固定"); onMessagesChanged?(); flushOutbound(for: remote.identityID)
+            recordSecurityEvent("已信任 \(remote.displayName) · 身份指纹已固定"); onMessagesChanged?(true); flushOutbound(for: remote.identityID)
         } catch { lastError = error.localizedDescription }
     }
 
     func rejectPairing(peerID: String) {
         guard let index = nearbyPeers.firstIndex(where: { $0.id == peerID }) else { return }
         let transportID = nearbyPeers[index].transportID
+        cancelHandshakeTimeout(for: transportID)
         sessions.removeValue(forKey: transportID)
         peerTransport = peerTransport.filter { $0.value != transportID }
         nearbyPeers[index].trustState = .blocked
@@ -174,7 +192,7 @@ final class SessionCoordinator: ObservableObject {
     func sendMessage(_ text: String, to peerIdentityID: String) throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else { throw NSError(domain: "VeilLink", code: 13, userInfo: [NSLocalizedDescriptionKey: "消息为空或超过 16 KB。"]) }
-        try queueContent(WireChatContent(kind: .text, text: trimmed, attachment: nil, mimeType: nil, sentAt: Date(), attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil), preview: trimmed, to: peerIdentityID)
+        try queueContent(WireChatContent(kind: .text, text: trimmed, attachment: nil, mimeType: nil, sentAt: Date(), attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil), preview: ReplyTextCodec.previewText(for: trimmed), to: peerIdentityID)
     }
 
     func sendImage(_ imageData: Data, mimeType: String, to peerIdentityID: String) throws {
@@ -200,8 +218,50 @@ final class SessionCoordinator: ObservableObject {
         }
         try database.restartOutbound(messageID: messageID, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
         try database.updateDelivery(messageID: messageID, state: .queued)
-        onMessagesChanged?()
+        onMessagesChanged?(false)
         flushOutbound(for: peerIdentityID)
+    }
+
+    func pauseImageTransfer(_ messageID: String, to peerIdentityID: String) throws {
+        guard let localIdentityID = identity.activeIdentity?.id,
+              let message = database.fetchMessage(id: messageID),
+              message.isOutgoing, message.attachment != nil,
+              message.deliveryState == .queued || message.deliveryState == .sending,
+              database.outboundAttachmentState(messageID: messageID, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID) != nil else {
+            throw NSError(domain: "VeilLink", code: 16, userInfo: [NSLocalizedDescriptionKey: "这张图片当前无法暂停。"] )
+        }
+        try database.pauseOutbound(messageID: messageID, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+        removeCachedOutboundAttachment(messageID: messageID)
+        onMessagesChanged?(false)
+    }
+
+    func resumeImageTransfer(_ messageID: String, to peerIdentityID: String) throws {
+        guard let localIdentityID = identity.activeIdentity?.id,
+              let message = database.fetchMessage(id: messageID),
+              message.isOutgoing, message.attachment != nil,
+              message.deliveryState == .paused,
+              database.outboundAttachmentState(messageID: messageID, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID) != nil else {
+            throw NSError(domain: "VeilLink", code: 17, userInfo: [NSLocalizedDescriptionKey: "这张图片当前无法继续发送。"] )
+        }
+        try database.resumeOutbound(messageID: messageID, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+        onMessagesChanged?(false)
+        flushOutbound(for: peerIdentityID)
+    }
+
+    func cancelImageTransfer(_ messageID: String, to peerIdentityID: String) throws {
+        guard let localIdentityID = identity.activeIdentity?.id,
+              let message = database.fetchMessage(id: messageID),
+              message.isOutgoing, message.attachment != nil,
+              message.deliveryState == .queued || message.deliveryState == .sending || message.deliveryState == .paused else {
+            throw NSError(domain: "VeilLink", code: 18, userInfo: [NSLocalizedDescriptionKey: "这张图片当前无法取消。"] )
+        }
+        try database.cancelOutbound(messageID: messageID, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+        removeCachedOutboundAttachment(messageID: messageID)
+        onMessagesChanged?(false)
+    }
+
+    func discardLocalMessage(_ messageID: String) {
+        removeCachedOutboundAttachment(messageID: messageID)
     }
 
     private func queueContent(_ content: WireChatContent, preview: String, to peerIdentityID: String) throws {
@@ -211,15 +271,16 @@ final class SessionCoordinator: ObservableObject {
         }
         let conversationID = try database.conversationID(localIdentityID: sender.id, for: peerIdentityID)
             ?? database.createConversation(localIdentityID: sender.id, peerIdentityID: peerIdentityID, title: trusted.displayName)
-        let message = ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: sender.id, body: preview, sentAt: content.sentAt, isOutgoing: true, deliveryState: .queued)
-        try database.saveMessage(message)
+        let storedBody = content.kind == .text ? (content.text ?? preview) : preview
+        let message = ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: sender.id, body: storedBody, sentAt: content.sentAt, isOutgoing: true, deliveryState: .queued)
+        try database.saveMessage(message, conversationPreview: preview)
         if let attachment = content.attachment, let mimeType = content.mimeType { _ = try database.saveAttachment(messageID: message.id, data: attachment, mimeType: mimeType) }
         try database.enqueueOutbound(messageID: message.id, targetIdentityID: peerIdentityID, localIdentityID: sender.id)
         if let attachment = content.attachment {
             let chunkCount = max(1, Int(ceil(Double(attachment.count) / Double(WireProtocol.attachmentChunkBytes))))
             try database.configureOutboundAttachment(messageID: message.id, chunkCount: chunkCount)
         }
-        onMessagesChanged?(); flushOutbound(for: peerIdentityID)
+        onMessagesChanged?(true); flushOutbound(for: peerIdentityID)
     }
 
     private func sendHello(to transportID: UUID) throws {
@@ -267,6 +328,7 @@ final class SessionCoordinator: ObservableObject {
         for hello in ordered { transcript.append(Data("|\(hello.protocolVersion)|\(hello.identityID)|".utf8)); transcript.append(hello.identityPublicKey); transcript.append(hello.agreementPublicKey); transcript.append(hello.nonce) }
         let keys = try CryptoEngine.deriveSessionKeys(localPrivateKey: context.localEphemeral, remotePublicKey: remote.agreementPublicKey, transcript: transcript, localIdentityID: context.localHello.identityID, remoteIdentityID: remote.identityID)
         context.remoteHello = remote; context.keys = keys; context.replayWindow = ReplayWindow(); context.nextSendSequence = 1; sessions[transportID] = context; peerTransport[remote.identityID] = transportID
+        cancelHandshakeTimeout(for: transportID)
         let trusted = database.trustedContact(localIdentityID: context.localHello.identityID, identityID: remote.identityID)
         let trustState: NearbyPeer.TrustState = trusted?.publicKey == remote.identityPublicKey ? .trusted : .awaitingConfirmation
         let peer = NearbyPeer(id: remote.identityID, transportID: transportID, displayName: remote.displayName, rssi: nearbyPeers.first(where: { $0.transportID == transportID })?.rssi ?? -100, trustState: trustState, pairingCode: trustState == .trusted ? nil : CryptoEngine.pairingCode(key: keys.rootKey, transcript: transcript), lastSeen: Date())
@@ -283,6 +345,18 @@ final class SessionCoordinator: ObservableObject {
         try validate(content)
         guard context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
 
+        if database.isLocallyDeletedMessage(messageID: payload.messageID, senderIdentityID: remote.identityID) {
+            switch content.kind {
+            case .text:
+                try sendAcknowledgement(for: payload.messageID, transportID: transportID, context: &context)
+            case .image:
+                guard let chunkCount = content.attachmentChunkCount, chunkCount > 0 else { throw CryptoEngineError.invalidCiphertext }
+                try sendAttachmentCheckpoint(messageID: payload.messageID, nextChunk: chunkCount, chunkCount: chunkCount, transportID: transportID, context: &context)
+            }
+            sessions[transportID] = context
+            return
+        }
+
         if let existing = database.fetchMessage(id: payload.messageID) {
             guard !existing.isOutgoing, existing.senderIdentityID == remote.identityID else { throw CryptoEngineError.invalidCiphertext }
             switch content.kind {
@@ -296,7 +370,9 @@ final class SessionCoordinator: ObservableObject {
                 ?? database.createConversation(localIdentityID: context.localHello.identityID, peerIdentityID: remote.identityID, title: remote.displayName)
             let progress: Double? = content.kind == .image ? 0 : nil
             let message = ChatMessage(id: payload.messageID, conversationID: conversationID, senderIdentityID: remote.identityID, body: content.kind == .image ? "[图片]" : (content.text ?? ""), sentAt: content.sentAt, isOutgoing: false, deliveryState: .delivered, transferProgress: progress)
-            try database.saveMessage(message)
+            let preview = content.kind == .text ? ReplyTextCodec.previewText(for: message.body) : message.body
+            try database.saveMessage(message, conversationPreview: preview)
+            onInboundMessageReceived?()
         }
 
         switch content.kind {
@@ -310,7 +386,7 @@ final class SessionCoordinator: ObservableObject {
             try sendAttachmentCheckpoint(messageID: payload.messageID, nextChunk: state.nextChunk, chunkCount: state.chunkCount, transportID: transportID, context: &context)
         }
         sessions[transportID] = context
-        onMessagesChanged?()
+        onMessagesChanged?(true)
     }
 
     private func handleAttachmentChunk(transportID: UUID, data: Data) throws {
@@ -325,7 +401,8 @@ final class SessionCoordinator: ObservableObject {
         let state = try database.storeInboundAttachmentChunk(messageID: payload.messageID, index: Int(chunk.index), chunkCount: Int(chunk.total), clearData: chunk.bytes)
         try sendAttachmentCheckpoint(messageID: payload.messageID, nextChunk: state.nextChunk, chunkCount: state.chunkCount, transportID: transportID, context: &context)
         sessions[transportID] = context
-        onMessagesChanged?()
+        if state.didPersistProgress || state.completed { onMessagesChanged?(false) }
+        if state.completed { onInboundAttachmentCompleted?(payload.messageID) }
     }
 
     private func handleAttachmentCheckpoint(transportID: UUID, data: Data) throws {
@@ -336,24 +413,36 @@ final class SessionCoordinator: ObservableObject {
         let clear = try CryptoEngine.decrypt(payload, key: keys.receiveKey, context: "attachment-checkpoint")
         let checkpoint = try WireCodec.decodeAttachmentCheckpoint(clear)
         guard context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
-        try database.acceptOutboundAttachmentCheckpoint(
+        guard database.outboundAttachmentState(
+            messageID: payload.messageID,
+            targetIdentityID: remote.identityID,
+            localIdentityID: context.localHello.identityID
+        ) != nil else {
+            if database.fetchMessage(id: payload.messageID) == nil || database.fetchMessage(id: payload.messageID)?.deliveryState == .cancelled {
+                sessions[transportID] = context
+                return
+            }
+            throw DatabaseError.statementFailed("附件 checkpoint 找不到对应的本地发送状态。")
+        }
+        let didPersistProgress = try database.acceptOutboundAttachmentCheckpoint(
             messageID: payload.messageID,
             targetIdentityID: remote.identityID,
             localIdentityID: context.localHello.identityID,
             nextChunk: Int(checkpoint.nextIndex),
             chunkCount: Int(checkpoint.total)
         )
+        let paused = database.isOutboundPaused(messageID: payload.messageID, targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
         if checkpoint.nextIndex == checkpoint.total {
+            let shouldNotifyDelivery = database.fetchMessage(id: payload.messageID).map { $0.isOutgoing && $0.deliveryState != .delivered } ?? false
             try database.markDelivered(messageID: payload.messageID, from: remote.identityID, localIdentityID: context.localHello.identityID)
             try database.updateTransferProgress(messageID: payload.messageID, progress: 1)
             try database.completeOutbound(messageID: payload.messageID, targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
             removeCachedOutboundAttachment(messageID: payload.messageID)
-        } else {
-            try database.updateDelivery(messageID: payload.messageID, state: .sending)
+            if shouldNotifyDelivery { onDeliveryConfirmed?() }
         }
         sessions[transportID] = context
-        onMessagesChanged?()
-        flushOutbound(for: remote.identityID)
+        if didPersistProgress || checkpoint.nextIndex == checkpoint.total { onMessagesChanged?(false) }
+        if !paused { flushOutbound(for: remote.identityID) }
     }
 
     private func handleAcknowledgement(transportID: UUID, data: Data) throws {
@@ -364,9 +453,11 @@ final class SessionCoordinator: ObservableObject {
         let ack = try decoder.decode(WireAcknowledgement.self, from: CryptoEngine.decrypt(payload, key: keys.receiveKey, context: "ack"))
         guard ack.messageID == payload.messageID, context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
         sessions[transportID] = context
+        let shouldNotifyDelivery = database.fetchMessage(id: ack.messageID).map { $0.isOutgoing && $0.deliveryState != .delivered } ?? false
         try database.markDelivered(messageID: ack.messageID, from: remote.identityID, localIdentityID: context.localHello.identityID)
         try database.completeOutbound(messageID: ack.messageID, targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
-        onMessagesChanged?(); flushOutbound(for: remote.identityID)
+        if shouldNotifyDelivery { onDeliveryConfirmed?() }
+        onMessagesChanged?(false); flushOutbound(for: remote.identityID)
     }
 
     private func sendAcknowledgement(for messageID: String, transportID: UUID, context: inout SessionContext) throws {
@@ -401,6 +492,7 @@ final class SessionCoordinator: ObservableObject {
             return
         }
 
+        var didChangeVisibleState = false
         for item in dueItems {
             if item.retryCount >= WireProtocol.maximumAcknowledgementAttempts {
                 failOutbound(messageID: item.messageID, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "多次发送后仍未收到对方确认。可手动重试。")
@@ -412,9 +504,9 @@ final class SessionCoordinator: ObservableObject {
             }
             do {
                 if let attachment = message.attachment {
-                    try sendAttachmentStep(message: message, attachment: attachment, peerIdentityID: peerIdentityID, transportID: transportID, localIdentityID: localIdentityID, keys: keys, context: &context)
+                    didChangeVisibleState = try sendAttachmentStep(message: message, attachment: attachment, peerIdentityID: peerIdentityID, transportID: transportID, localIdentityID: localIdentityID, keys: keys, context: &context) || didChangeVisibleState
                 } else {
-                    try sendTextStep(message: message, peerIdentityID: peerIdentityID, transportID: transportID, localIdentityID: localIdentityID, keys: keys, context: &context)
+                    didChangeVisibleState = try sendTextStep(message: message, peerIdentityID: peerIdentityID, transportID: transportID, localIdentityID: localIdentityID, keys: keys, context: &context) || didChangeVisibleState
                 }
             } catch {
                 lastError = "消息重发失败：\(error.localizedDescription)"
@@ -422,29 +514,29 @@ final class SessionCoordinator: ObservableObject {
             }
         }
         sessions[transportID] = context
-        onMessagesChanged?()
+        if didChangeVisibleState { onMessagesChanged?(false) }
     }
 
-    private func sendTextStep(message: ChatMessage, peerIdentityID: String, transportID: UUID, localIdentityID: String, keys: SessionKeyMaterial, context: inout SessionContext) throws {
+    private func sendTextStep(message: ChatMessage, peerIdentityID: String, transportID: UUID, localIdentityID: String, keys: SessionKeyMaterial, context: inout SessionContext) throws -> Bool {
         guard !message.body.isEmpty, message.body.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else {
             failOutbound(messageID: message.id, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "本地消息内容无效或超过当前协议限制。")
-            return
+            return false
         }
         let content = WireChatContent(kind: .text, text: message.body, attachment: nil, mimeType: nil, sentAt: message.sentAt, attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil)
         let encrypted = try CryptoEngine.encrypt(try encoder.encode(content), key: keys.sendKey, messageID: message.id, sequence: context.nextSendSequence, context: "chat")
         context.nextSendSequence += 1
         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .encryptedMessage, payload: try WireCodec.encodeEncryptedPayload(encrypted))
-        try applySendResult(transportSend?(transportID, envelope) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+        return try applySendResult(transportSend?(transportID, envelope) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
     }
 
-    private func sendAttachmentStep(message: ChatMessage, attachment: ChatAttachment, peerIdentityID: String, transportID: UUID, localIdentityID: String, keys: SessionKeyMaterial, context: inout SessionContext) throws {
+    private func sendAttachmentStep(message: ChatMessage, attachment: ChatAttachment, peerIdentityID: String, transportID: UUID, localIdentityID: String, keys: SessionKeyMaterial, context: inout SessionContext) throws -> Bool {
         guard let cached = cachedOutboundAttachment(messageID: message.id, attachment: attachment),
               cached.data.count == attachment.byteCount,
               cached.data.count <= WireProtocol.maximumImageBytes,
               cached.sha256.count == 32,
               MediaTransferPolicy.supportsImageMIMEType(attachment.mimeType) else {
             failOutbound(messageID: message.id, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "本地图片数据缺失或已损坏。")
-            return
+            return false
         }
         let data = cached.data
         let digest = cached.sha256
@@ -456,7 +548,7 @@ final class SessionCoordinator: ObservableObject {
         }
         guard let state, state.chunkCount == expectedChunkCount else {
             failOutbound(messageID: message.id, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "本地附件 checkpoint 与图片数据不一致。")
-            return
+            return false
         }
 
         let envelope: Data
@@ -478,26 +570,31 @@ final class SessionCoordinator: ObservableObject {
             try database.updateTransferProgress(messageID: message.id, progress: 1)
             try database.completeOutbound(messageID: message.id, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
             removeCachedOutboundAttachment(messageID: message.id)
-            return
+            return true
         }
         guard envelope.count <= WireProtocol.maximumEnvelopeBytes else {
             failOutbound(messageID: message.id, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "附件分块编码后超过当前协议允许的最大体积。")
-            return
+            return false
         }
-        try applySendResult(transportSend?(transportID, envelope) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+        return try applySendResult(transportSend?(transportID, envelope) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
     }
 
-    private func applySendResult(_ result: TransportSendResult, message: ChatMessage, peerIdentityID: String, localIdentityID: String) throws {
+    private func applySendResult(_ result: TransportSendResult, message: ChatMessage, peerIdentityID: String, localIdentityID: String) throws -> Bool {
         switch result {
         case .accepted:
-            try database.updateDelivery(messageID: message.id, state: .sending)
+            let didChangeVisibleState = message.deliveryState != .sending
+            if didChangeVisibleState { try database.updateDelivery(messageID: message.id, state: .sending) }
             try database.recordAcceptedOutboundAttempt(messageID: message.id, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+            return didChangeVisibleState
         case .temporarilyUnavailable:
-            try database.updateDelivery(messageID: message.id, state: .queued)
+            let didChangeVisibleState = message.deliveryState != .queued
+            if didChangeVisibleState { try database.updateDelivery(messageID: message.id, state: .queued) }
             try database.deferOutbound(messageID: message.id, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+            return didChangeVisibleState
         case .unsupportedLink:
             failOutbound(messageID: message.id, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "当前蓝牙链路无法承载这一数据块。")
             lastError = "当前蓝牙链路无法承载这一数据块。"
+            return false
         }
     }
 
@@ -505,7 +602,7 @@ final class SessionCoordinator: ObservableObject {
         removeCachedOutboundAttachment(messageID: messageID)
         try? database.updateDelivery(messageID: messageID, state: .failed, error: reason)
         try? database.completeOutbound(messageID: messageID, targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
-        onMessagesChanged?()
+        onMessagesChanged?(false)
     }
 
     private func cachedOutboundAttachment(messageID: String, attachment: ChatAttachment) -> CachedOutboundAttachment? {
@@ -552,6 +649,34 @@ final class SessionCoordinator: ObservableObject {
     }
 
 
+    private func scheduleHandshakeTimeout(for transportID: UUID) {
+        cancelHandshakeTimeout(for: transportID)
+        handshakeTimeoutTasks[transportID] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: self.handshakeTimeoutNanoseconds)
+            guard !Task.isCancelled,
+                  let context = self.sessions[transportID],
+                  context.remoteHello == nil else { return }
+            self.handshakeTimeoutTasks.removeValue(forKey: transportID)
+            self.sessions.removeValue(forKey: transportID)
+            self.packetAbuseLimiter.reset(transportID)
+            self.peerTransport = self.peerTransport.filter { $0.value != transportID }
+            self.nearbyPeers.removeAll { $0.transportID == transportID }
+            self.recordSecurityEvent("安全握手超时，已释放未完成连接")
+            self.lastError = "安全握手超时，已断开未完成连接。"
+            self.transportDisconnect?(transportID)
+        }
+    }
+
+    private func cancelHandshakeTimeout(for transportID: UUID) {
+        handshakeTimeoutTasks.removeValue(forKey: transportID)?.cancel()
+    }
+
+    private func cancelAllHandshakeTimeouts() {
+        handshakeTimeoutTasks.values.forEach { $0.cancel() }
+        handshakeTimeoutTasks.removeAll(keepingCapacity: false)
+    }
+
     private func handleInvalidPacket(transportID: UUID, reason: String) {
         let wasAuthenticated = sessions[transportID]?.remoteHello != nil
         let decision = packetAbuseLimiter.recordInvalidPacket(for: transportID)
@@ -563,6 +688,7 @@ final class SessionCoordinator: ObservableObject {
         guard decision.shouldDisconnect else { return }
 
         packetAbuseLimiter.reset(transportID)
+        cancelHandshakeTimeout(for: transportID)
         if let remoteIdentityID = sessions[transportID]?.remoteHello?.identityID,
            peerTransport[remoteIdentityID] == transportID {
             peerTransport.removeValue(forKey: remoteIdentityID)

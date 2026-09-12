@@ -62,6 +62,7 @@ final class BLETransport: NSObject, ObservableObject {
     private var wantedConnections: Set<UUID> = []
     private var reconnectAttempts: [UUID: Int] = [:]
     private var reconnectWorkItems: [UUID: DispatchWorkItem] = [:]
+    private var connectionEvents = ConnectionEventGate()
 
     private let maxFragmentsPerMessage = 16_384
     private let maxQueuedPacketsPerPeer = 16_384
@@ -109,8 +110,7 @@ final class BLETransport: NSObject, ObservableObject {
         reconnectWorkItems.values.forEach { $0.cancel() }
         reconnectWorkItems.removeAll()
 
-        let connectedIDs = Set(remoteCharacteristics.keys).union(subscribedCentrals.keys)
-        connectedIDs.forEach { onDisconnected?($0) }
+        connectionEvents.drainConnectedIDs().forEach { onDisconnected?($0) }
         remoteCharacteristics.removeAll()
         centralOutboundQueues.removeAll()
         peripheralOutboundQueues.removeAll()
@@ -127,7 +127,8 @@ final class BLETransport: NSObject, ObservableObject {
         if let peripheral = remotePeripherals[id], peripheral.state == .connected || peripheral.state == .connecting {
             centralManager.cancelPeripheralConnection(peripheral)
         }
-        if subscribedCentrals.removeValue(forKey: id) != nil { onDisconnected?(id) }
+        _ = subscribedCentrals.removeValue(forKey: id)
+        publishDisconnected(id)
     }
 
     func connect(to id: UUID) {
@@ -205,6 +206,16 @@ final class BLETransport: NSObject, ObservableObject {
             _ = queue.removeFirst()
         }
         peripheralOutboundQueues.removeValue(forKey: centralID)
+    }
+
+    private func publishConnected(_ id: UUID) {
+        guard connectionEvents.markConnected(id) else { return }
+        onConnected?(id)
+    }
+
+    private func publishDisconnected(_ id: UUID) {
+        guard connectionEvents.markDisconnected(id) else { return }
+        onDisconnected?(id)
     }
 
     private func scheduleReconnect(_ peripheral: CBPeripheral) {
@@ -307,7 +318,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         remoteCharacteristics.removeValue(forKey: peripheral.identifier)
         centralOutboundQueues.removeValue(forKey: peripheral.identifier)
-        onDisconnected?(peripheral.identifier)
+        publishDisconnected(peripheral.identifier)
         statusText = "连接失败，准备重试"
         scheduleReconnect(peripheral)
     }
@@ -315,7 +326,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         remoteCharacteristics.removeValue(forKey: peripheral.identifier)
         centralOutboundQueues.removeValue(forKey: peripheral.identifier)
-        onDisconnected?(peripheral.identifier)
+        publishDisconnected(peripheral.identifier)
         statusText = "连接已断开，等待重连"
         scheduleReconnect(peripheral)
     }
@@ -341,7 +352,8 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard error == nil else {
-            statusText = "服务发现失败"
+            statusText = "服务发现失败，准备重连"
+            centralManager.cancelPeripheralConnection(peripheral)
             return
         }
         peripheral.services?
@@ -356,12 +368,12 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
     ) {
         guard error == nil,
               let characteristic = service.characteristics?.first(where: { $0.uuid == Self.dataUUID }) else {
-            statusText = "数据通道发现失败"
+            statusText = "数据通道发现失败，准备重连"
+            centralManager.cancelPeripheralConnection(peripheral)
             return
         }
         remoteCharacteristics[peripheral.identifier] = characteristic
         peripheral.setNotifyValue(true, for: characteristic)
-        onConnected?(peripheral.identifier)
     }
 
     func peripheral(
@@ -369,8 +381,12 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
         didUpdateNotificationStateFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        guard error == nil else { return }
-        if characteristic.isNotifying { onConnected?(peripheral.identifier) }
+        guard error == nil, characteristic.isNotifying else {
+            statusText = "数据通道订阅失败，准备重连"
+            centralManager.cancelPeripheralConnection(peripheral)
+            return
+        }
+        publishConnected(peripheral.identifier)
     }
 
     func peripheral(
@@ -411,7 +427,7 @@ extension BLETransport: @preconcurrency CBPeripheralManagerDelegate {
     ) {
         guard characteristic.uuid == Self.dataUUID else { return }
         subscribedCentrals[central.identifier] = central
-        onConnected?(central.identifier)
+        publishConnected(central.identifier)
         if let localCharacteristic { drainPeripheralQueue(for: central.identifier, characteristic: localCharacteristic) }
     }
 
@@ -422,7 +438,7 @@ extension BLETransport: @preconcurrency CBPeripheralManagerDelegate {
     ) {
         subscribedCentrals.removeValue(forKey: central.identifier)
         peripheralOutboundQueues.removeValue(forKey: central.identifier)
-        onDisconnected?(central.identifier)
+        publishDisconnected(central.identifier)
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {

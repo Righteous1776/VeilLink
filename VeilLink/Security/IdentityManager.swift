@@ -8,6 +8,7 @@ enum IdentityError: LocalizedError {
     case missingIdentity
     case invalidDisplayName
     case invalidExport
+    case cannotDeleteActiveIdentity
 
     var errorDescription: String? {
         switch self {
@@ -16,6 +17,7 @@ enum IdentityError: LocalizedError {
         case .missingIdentity: return "未找到本地身份。"
         case .invalidDisplayName: return "身份名称不能为空且不能超过 64 个 UTF-8 字节。"
         case .invalidExport: return "身份备份参数无效或内容已损坏。"
+        case .cannotDeleteActiveIdentity: return "不能直接删除当前身份。请先切换到其他身份。"
         }
     }
 }
@@ -91,6 +93,32 @@ final class IdentityManager: ObservableObject {
         activeIdentity = profile
         try? keychain.set(Data(id.utf8), for: Key.activeID)
         return true
+    }
+
+
+    @discardableResult
+    func deleteProfile(id: String, password: String) throws -> LocalIdentity {
+        guard activeIdentity?.id != id else { throw IdentityError.cannotDeleteActiveIdentity }
+        guard verifyPassword(password, for: id), let profile = profiles.first(where: { $0.id == id }) else {
+            throw IdentityError.missingIdentity
+        }
+        let previousProfiles = profiles
+        let previousActive = activeIdentity
+        profiles.removeAll(where: { $0.id == id })
+        profiles = normalizedPrimaryProfiles(profiles)
+        if let activeID = previousActive?.id {
+            activeIdentity = profiles.first(where: { $0.id == activeID })
+        }
+        do {
+            try persist()
+        } catch {
+            profiles = previousProfiles
+            activeIdentity = previousActive
+            throw error
+        }
+        keychain.remove(Key.secret(id))
+        keychain.remove(Key.password(id))
+        return profile
     }
 
     func verifyPassword(_ password: String, for identityID: String) -> Bool {
