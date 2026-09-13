@@ -24,10 +24,60 @@ final class BLELinkReliabilityPolicyTests: XCTestCase {
         XCTAssertGreaterThan(legacy.interBurstDelay, modern.interBurstDelay)
     }
 
+    func testControlLaneCanOverflowABulkFilledQueueWithoutShrinkingBulkCapacity() {
+        let packetLimit = 8_192
+        let byteLimit = 640_000
+        let budget = BLELinkReliabilityPolicy.queueBudget(packetLimit: packetLimit, byteLimit: byteLimit)
+
+        XCTAssertGreaterThan(budget.controlOverflowPackets, 0)
+        XCTAssertGreaterThan(budget.controlOverflowBytes, 0)
+
+        // Legacy media behavior is preserved: bulk may still use the original full queue cap.
+        XCTAssertTrue(BLELinkReliabilityPolicy.canEnqueue(
+            priority: .bulk,
+            pendingPackets: 0,
+            pendingBytes: 0,
+            additionalPackets: packetLimit,
+            additionalBytes: byteLimit,
+            packetLimit: packetLimit,
+            byteLimit: byteLimit
+        ))
+
+        // Once bulk is full, only control traffic can use the emergency overflow lane.
+        XCTAssertFalse(BLELinkReliabilityPolicy.canEnqueue(
+            priority: .bulk,
+            pendingPackets: packetLimit,
+            pendingBytes: byteLimit,
+            additionalPackets: 1,
+            additionalBytes: 1,
+            packetLimit: packetLimit,
+            byteLimit: byteLimit
+        ))
+        XCTAssertTrue(BLELinkReliabilityPolicy.canEnqueue(
+            priority: .control,
+            pendingPackets: packetLimit,
+            pendingBytes: byteLimit,
+            additionalPackets: min(32, budget.controlOverflowPackets),
+            additionalBytes: min(8_192, budget.controlOverflowBytes),
+            packetLimit: packetLimit,
+            byteLimit: byteLimit
+        ))
+    }
+
+    func testControlTrafficTriggersFasterStallRecovery() {
+        XCTAssertLessThan(
+            BLELinkReliabilityPolicy.stallTimeout(quality: .marginal, hasControlTraffic: true),
+            BLELinkReliabilityPolicy.stallTimeout(quality: .marginal, hasControlTraffic: false)
+        )
+        XCTAssertEqual(BLELinkReliabilityPolicy.stallTimeout(quality: .good, hasControlTraffic: true), 5)
+        XCTAssertEqual(BLELinkReliabilityPolicy.stallTimeout(quality: .weak, hasControlTraffic: true), 9)
+    }
+
     func testReconnectBackoffNeverStopsAndCapsAtThirtySeconds() {
-        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 1), 0.75)
-        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 6), 20)
-        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 7), 30)
+        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 1), 0.5)
+        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 3), 2)
+        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 6), 15)
+        XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 7), 24)
         XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 100), 30)
     }
 }

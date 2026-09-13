@@ -23,6 +23,12 @@ struct BLELinkTuning: Equatable {
     let interBurstDelay: TimeInterval
 }
 
+struct BLEQueueBudget: Equatable {
+    /// Extra capacity available only to control traffic after bulk reaches its normal cap.
+    let controlOverflowPackets: Int
+    let controlOverflowBytes: Int
+}
+
 enum BLELinkReliabilityPolicy {
     static func normalizedRSSI(_ sample: Int) -> Int? {
         guard sample != 127, sample < 0, sample >= -110 else { return nil }
@@ -88,14 +94,65 @@ enum BLELinkReliabilityPolicy {
         }
     }
 
+    /// Bulk traffic keeps the device-specific historical cap so a 48 KiB image chunk can still
+    /// fit even on a legacy 20-byte ATT payload. Control traffic gets a small overflow lane above
+    /// that cap instead of stealing capacity from bulk. This prevents an already queued image
+    /// chunk from blocking handshake/ACK/game events without regressing legacy attachment support.
+    static func queueBudget(packetLimit: Int, byteLimit: Int) -> BLEQueueBudget {
+        let packetOverflow = min(1_024, max(96, packetLimit / 16))
+        let byteOverflow = min(128 * 1_024, max(24 * 1_024, byteLimit / 10))
+        return BLEQueueBudget(
+            controlOverflowPackets: packetOverflow,
+            controlOverflowBytes: byteOverflow
+        )
+    }
+
+    static func canEnqueue(
+        priority: BLESendPriority,
+        pendingPackets: Int,
+        pendingBytes: Int,
+        additionalPackets: Int,
+        additionalBytes: Int,
+        packetLimit: Int,
+        byteLimit: Int
+    ) -> Bool {
+        guard additionalPackets >= 0, additionalBytes >= 0,
+              pendingPackets >= 0, pendingBytes >= 0 else { return false }
+        let budget = queueBudget(packetLimit: packetLimit, byteLimit: byteLimit)
+        let effectivePacketLimit = priority == .control
+            ? packetLimit + budget.controlOverflowPackets
+            : packetLimit
+        let effectiveByteLimit = priority == .control
+            ? byteLimit + budget.controlOverflowBytes
+            : byteLimit
+        return pendingPackets + additionalPackets <= effectivePacketLimit
+            && pendingBytes + additionalBytes <= effectiveByteLimit
+    }
+
+    static func stallTimeout(quality: BLELinkQuality, hasControlTraffic: Bool) -> TimeInterval {
+        if hasControlTraffic {
+            switch quality {
+            case .weak: return 9
+            case .marginal: return 7
+            case .strong, .good, .unknown: return 5
+            }
+        }
+        switch quality {
+        case .weak: return 16
+        case .marginal: return 13
+        case .strong, .good, .unknown: return 10
+        }
+    }
+
     static func reconnectDelay(attempt: Int) -> TimeInterval {
         switch max(1, attempt) {
-        case 1: return 0.75
-        case 2: return 1.5
-        case 3: return 3
-        case 4: return 6
-        case 5: return 12
-        case 6: return 20
+        case 1: return 0.5
+        case 2: return 1
+        case 3: return 2
+        case 4: return 4
+        case 5: return 8
+        case 6: return 15
+        case 7: return 24
         default: return 30
         }
     }

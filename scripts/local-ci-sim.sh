@@ -21,8 +21,10 @@ assert project['settings']['base']['SWIFT_VERSION'] == 5.9
 assert 'VeilLink' in project['targets'] and 'VeilLinkTests' in project['targets']
 with open(root/'VeilLink/Resources/Info.plist', 'rb') as fh:
     plist = plistlib.load(fh)
-assert plist['CFBundleShortVersionString'] == '0.3.13'
-assert plist['CFBundleVersion'] == '19'
+current = (root/'docs/CHECKPOINT_CURRENT.md').read_text(encoding='utf-8')
+version = plist['CFBundleShortVersionString']
+assert f'V{version} ' in current
+assert int(plist['CFBundleVersion']) >= 1
 ci = yaml.safe_load((root/'.github/workflows/ios-ci.yml').read_text(encoding='utf-8'))
 ipa = yaml.safe_load((root/'.github/workflows/unsigned-ipa.yml').read_text(encoding='utf-8'))
 ci_job = ci['jobs']['build-and-test']
@@ -49,11 +51,14 @@ pass "swiftc -parse ${#SWIFT_FILES[@]} Swift files"
 swiftc -typecheck \
     VeilLink/Core/Models.swift \
     VeilLink/Core/MessageTextFeatures.swift \
+    VeilLink/Core/MiniGames.swift \
+    VeilLink/Core/TacticalGame.swift \
     VeilLink/Core/RenderCompatibilityPolicy.swift \
     VeilLink/Core/PerformanceOverrides.swift \
     VeilLink/Core/DevicePerformanceProfile.swift \
     VeilLink/Core/ImageViewerPolicy.swift \
     VeilLink/Transport/ConnectionEventGate.swift \
+    VeilLink/Transport/BLEConnectionIntentStore.swift \
     VeilLink/Transport/BLELinkReliabilityPolicy.swift \
     VeilLink/Security/PacketAbuseLimiter.swift \
     VeilLink/Transport/BLEFramer.swift
@@ -67,6 +72,84 @@ import Foundation
 let reply = ReplyTextCodec.encode(quoted: "old message", reply: "new message")
 precondition(ReplyTextCodec.decode(reply)?.reply == "new message")
 precondition(ReplyTextCodec.previewText(for: reply) == "↪︎ new message")
+let gameInvite = MiniGamePacket(game: .gomoku, command: .invite)
+let encodedGameInvite = try MiniGameCodec.encode(gameInvite)
+precondition(MiniGameCodec.decode(encodedGameInvite) == gameInvite)
+var gomoku = GomokuState()
+for column in 0..<4 {
+    precondition(gomoku.apply(index: column, actor: .host))
+    precondition(gomoku.apply(index: GomokuState.size + column, actor: .guest))
+}
+precondition(gomoku.apply(index: 4, actor: .host) && gomoku.winner == .host)
+precondition(gomoku.winningLine == [0, 1, 2, 3, 4] && !gomoku.isDraw)
+var xiangqi = XiangqiState()
+precondition(xiangqi.apply(from: 6 * XiangqiState.columns, to: 5 * XiangqiState.columns, actor: .host))
+var repeatingXiangqi = XiangqiState()
+let redHorseHome = 9 * XiangqiState.columns + 1
+let redHorseOut = 7 * XiangqiState.columns + 2
+let blackHorseHome = 1
+let blackHorseOut = 2 * XiangqiState.columns + 2
+for _ in 0..<2 {
+    precondition(repeatingXiangqi.apply(from: redHorseHome, to: redHorseOut, actor: .host))
+    precondition(repeatingXiangqi.apply(from: blackHorseHome, to: blackHorseOut, actor: .guest))
+    precondition(repeatingXiangqi.apply(from: redHorseOut, to: redHorseHome, actor: .host))
+    precondition(repeatingXiangqi.apply(from: blackHorseOut, to: blackHorseHome, actor: .guest))
+}
+precondition(repeatingXiangqi.isDraw && repeatingXiangqi.drawReason == .threefoldRepetition)
+precondition(repeatingXiangqi.currentPositionRepetitionCount == 3)
+let ludoSession = UUID().uuidString
+var ludo = LudoState()
+let legalLudo = ludo.legalPieces(sessionID: ludoSession)
+precondition(ludo.apply(pieceIndex: legalLudo.first ?? -1, actor: .host, sessionID: ludoSession))
+precondition(ludo.finishedCount(for: .host) == 0 && ludo.finishedCount(for: .guest) == 0)
+
+let tacticalSession = UUID().uuidString
+var tactical = TacticalState()
+precondition(TacticalState.hexes.count == TacticalState.rows * TacticalState.columns)
+precondition(tactical.currentPlayer == .host && tactical.ordersRemaining == TacticalState.ordersPerActivation)
+precondition(tactical.legalDestinations(from: 55, actor: .host).contains(46))
+precondition(tactical.isSupplied(unitID: "cao-command"))
+precondition(tactical.apply(from: 55, to: 46, actor: .host, sessionID: tacticalSession))
+precondition(tactical.turn == 1 && tactical.currentPlayer == .host && tactical.ordersRemaining == 1)
+precondition(tactical.apply(from: nil, to: nil, actor: .host, sessionID: tacticalSession))
+precondition(tactical.turn == 2 && tactical.currentPlayer == .guest && tactical.ordersRemaining == TacticalState.ordersPerActivation)
+
+let conversationID = UUID().uuidString
+let invite = MiniGamePacket(game: .gomoku, command: .invite, createdAt: Date(timeIntervalSince1970: 10))
+let premature = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .move, turn: 0, move: .gomoku(index: 112), createdAt: Date(timeIntervalSince1970: 11))
+let accept = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .accept, createdAt: Date(timeIntervalSince1970: 12))
+let rebuildMessages = [
+    ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(invite), sentAt: Date(timeIntervalSince1970: 10), isOutgoing: true, deliveryState: .delivered),
+    ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(premature), sentAt: Date(timeIntervalSince1970: 11), isOutgoing: true, deliveryState: .delivered),
+    ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "guest", body: try MiniGameCodec.encode(accept), sentAt: Date(timeIntervalSince1970: 12), isOutgoing: false, deliveryState: .delivered)
+]
+let rebuiltGame = MiniGameSessionBuilder.session(id: invite.sessionID, from: rebuildMessages)
+precondition(rebuiltGame?.status == .active && rebuiltGame?.moveCount == 0 && rebuiltGame?.gomoku?.value(at: 112) == 0)
+let legalMove = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .move, turn: 0, move: .gomoku(index: 112), createdAt: Date(timeIntervalSince1970: 13))
+let replayMessages = rebuildMessages + [
+    ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(legalMove), sentAt: Date(timeIntervalSince1970: 13), isOutgoing: true, deliveryState: .delivered)
+]
+let replayFrames = MiniGameSessionBuilder.replay(sessionID: invite.sessionID, from: replayMessages)
+precondition(replayFrames.last?.snapshot.moveCount == 1)
+precondition(replayFrames.last?.snapshot.gomoku?.value(at: 112) == 1)
+precondition(replayFrames.map(\.label).contains("第 1 手"))
+let duplicateLateMove = ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(legalMove), sentAt: Date(timeIntervalSince1970: 999), isOutgoing: true, deliveryState: .delivered)
+let duplicateRebuild = MiniGameSessionBuilder.session(id: invite.sessionID, from: replayMessages + [duplicateLateMove])
+precondition(duplicateRebuild?.moveCount == 1)
+precondition(duplicateRebuild?.lastActivity == Date(timeIntervalSince1970: 13))
+let syntheticWin = MiniGameSessionSnapshot(id: "win", game: .gomoku, hostIsLocal: true, status: .finished(winner: .host), invitedAt: Date(timeIntervalSince1970: 1), startedAt: Date(timeIntervalSince1970: 2), lastActivity: Date(timeIntervalSince1970: 8), gomoku: GomokuState(), xiangqi: nil, ludo: nil, endedByResignation: false)
+let syntheticLoss = MiniGameSessionSnapshot(id: "loss", game: .xiangqi, hostIsLocal: true, status: .finished(winner: .guest), invitedAt: Date(timeIntervalSince1970: 1), startedAt: Date(timeIntervalSince1970: 2), lastActivity: Date(timeIntervalSince1970: 7), gomoku: nil, xiangqi: XiangqiState(), ludo: nil, endedByResignation: false)
+let summary = MiniGameStatistics(sessions: [syntheticWin, syntheticLoss])
+precondition(summary.completed == 2 && summary.wins == 1 && summary.losses == 1 && summary.draws == 0)
+precondition(syntheticWin.duration == 6)
+
+let pendingInvite = MiniGamePacket(game: .xiangqi, command: .invite, createdAt: Date(timeIntervalSince1970: 20))
+let cancelInvite = MiniGamePacket(sessionID: pendingInvite.sessionID, game: .xiangqi, command: .resign, turn: 0, createdAt: Date(timeIntervalSince1970: 21))
+let cancelMessages = [
+    ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(pendingInvite), sentAt: Date(timeIntervalSince1970: 20), isOutgoing: true, deliveryState: .delivered),
+    ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(cancelInvite), sentAt: Date(timeIntervalSince1970: 21), isOutgoing: true, deliveryState: .delivered)
+]
+precondition(MiniGameSessionBuilder.session(id: pendingInvite.sessionID, from: cancelMessages)?.status == .cancelled)
 precondition(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone8,4", osMajorVersion: 15))
 precondition(RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone9,1", osMajorVersion: 15))
 precondition(!RenderCompatibilityPolicy.shouldUseLegacyCompositor(machineIdentifier: "iPhone9,1", osMajorVersion: 16))
@@ -104,6 +187,11 @@ let weakLegacyLink = BLELinkReliabilityPolicy.tuning(rssi: -88, machineIdentifie
 let weakModernLink = BLELinkReliabilityPolicy.tuning(rssi: -88, machineIdentifier: "iPhone14,2")
 precondition(weakLegacyLink.quality == .weak)
 precondition(weakLegacyLink.packetBurstLimit <= weakModernLink.packetBurstLimit)
+let queueBudget = BLELinkReliabilityPolicy.queueBudget(packetLimit: 8_192, byteLimit: 640_000)
+precondition(BLELinkReliabilityPolicy.canEnqueue(priority: .bulk, pendingPackets: 0, pendingBytes: 0, additionalPackets: 8_192, additionalBytes: 640_000, packetLimit: 8_192, byteLimit: 640_000))
+precondition(BLELinkReliabilityPolicy.canEnqueue(priority: .control, pendingPackets: 8_192, pendingBytes: 640_000, additionalPackets: min(32, queueBudget.controlOverflowPackets), additionalBytes: min(8_192, queueBudget.controlOverflowBytes), packetLimit: 8_192, byteLimit: 640_000))
+precondition(!BLELinkReliabilityPolicy.canEnqueue(priority: .bulk, pendingPackets: 8_192, pendingBytes: 640_000, additionalPackets: 1, additionalBytes: 1, packetLimit: 8_192, byteLimit: 640_000))
+precondition(BLELinkReliabilityPolicy.stallTimeout(quality: .good, hasControlTraffic: true) < BLELinkReliabilityPolicy.stallTimeout(quality: .good, hasControlTraffic: false))
 precondition(BLELinkReliabilityPolicy.reconnectDelay(attempt: 100) == 30)
 precondition(BLELinkReliabilityPolicy.smoothedRSSI(previous: -70, sample: 127) == -70)
 
@@ -132,7 +220,7 @@ for fragment in fragments.reversed() {
 precondition(rebuilt == payload)
 print("core-harness-ok")
 SWIFT
-swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Core/RenderCompatibilityPolicy.swift     VeilLink/Core/PerformanceOverrides.swift     VeilLink/Core/DevicePerformanceProfile.swift     VeilLink/Core/ImageViewerPolicy.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Transport/BLELinkReliabilityPolicy.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
+swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Core/MiniGames.swift     VeilLink/Core/TacticalGame.swift     VeilLink/Core/RenderCompatibilityPolicy.swift     VeilLink/Core/PerformanceOverrides.swift     VeilLink/Core/DevicePerformanceProfile.swift     VeilLink/Core/ImageViewerPolicy.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Transport/BLELinkReliabilityPolicy.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
 "$HARNESS_DIR/core-harness" >/dev/null
 pass "core executable behavior harness"
 
@@ -149,6 +237,136 @@ swiftc -typecheck -I "$HARNESS_DIR" \
     VeilLink/Core/DevicePerformanceProfile.swift \
     VeilLink/Core/PerformanceOverrideController.swift
 pass "performance override controller API-shape typecheck (Linux Combine stub)"
+
+cat > "$HARNESS_DIR/CoreBluetooth.swift" <<'SWIFT'
+import Foundation
+
+public let CBCentralManagerOptionRestoreIdentifierKey = "CBCentralManagerOptionRestoreIdentifierKey"
+public let CBPeripheralManagerOptionRestoreIdentifierKey = "CBPeripheralManagerOptionRestoreIdentifierKey"
+public let CBCentralManagerScanOptionAllowDuplicatesKey = "CBCentralManagerScanOptionAllowDuplicatesKey"
+public let CBConnectPeripheralOptionNotifyOnDisconnectionKey = "CBConnectPeripheralOptionNotifyOnDisconnectionKey"
+public let CBAdvertisementDataServiceUUIDsKey = "CBAdvertisementDataServiceUUIDsKey"
+public let CBCentralManagerRestoredStatePeripheralsKey = "CBCentralManagerRestoredStatePeripheralsKey"
+public let CBPeripheralManagerRestoredStateServicesKey = "CBPeripheralManagerRestoredStateServicesKey"
+
+public final class CBUUID: Hashable {
+    public let uuidString: String
+    public init(string: String) { self.uuidString = string }
+    public static func == (lhs: CBUUID, rhs: CBUUID) -> Bool { lhs.uuidString == rhs.uuidString }
+    public func hash(into hasher: inout Hasher) { hasher.combine(uuidString) }
+}
+
+public enum CBManagerState { case unknown, resetting, unsupported, unauthorized, poweredOff, poweredOn }
+public enum CBPeripheralState { case disconnected, connecting, connected, disconnecting }
+public enum CBCharacteristicWriteType { case withResponse, withoutResponse }
+public struct CBCharacteristicProperties: OptionSet {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let write = CBCharacteristicProperties(rawValue: 1 << 0)
+    public static let writeWithoutResponse = CBCharacteristicProperties(rawValue: 1 << 1)
+    public static let notify = CBCharacteristicProperties(rawValue: 1 << 2)
+}
+public struct CBAttributePermissions: OptionSet {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let writeable = CBAttributePermissions(rawValue: 1 << 0)
+}
+public enum CBATTError {
+    public enum Code { case success, invalidPdu, requestNotSupported }
+}
+
+public protocol CBCentralManagerDelegate: AnyObject {}
+public protocol CBPeripheralDelegate: AnyObject {}
+public protocol CBPeripheralManagerDelegate: AnyObject {}
+
+open class CBCharacteristic: NSObject {
+    public var uuid: CBUUID
+    public var value: Data?
+    public var isNotifying: Bool
+    public var properties: CBCharacteristicProperties
+    public init(uuid: CBUUID, value: Data? = nil, isNotifying: Bool = false, properties: CBCharacteristicProperties = []) {
+        self.uuid = uuid; self.value = value; self.isNotifying = isNotifying; self.properties = properties
+    }
+}
+public final class CBMutableCharacteristic: CBCharacteristic {
+    public init(type: CBUUID, properties: CBCharacteristicProperties, value: Data?, permissions: CBAttributePermissions) {
+        super.init(uuid: type, value: value, properties: properties)
+    }
+}
+open class CBService: NSObject {
+    public var uuid: CBUUID
+    public var characteristics: [CBCharacteristic]?
+    public init(uuid: CBUUID) { self.uuid = uuid }
+}
+public final class CBMutableService: CBService {
+    public init(type: CBUUID, primary: Bool) { super.init(uuid: type) }
+}
+public final class CBCentral: NSObject {
+    public let identifier: UUID
+    public var maximumUpdateValueLength: Int
+    public init(identifier: UUID = UUID(), maximumUpdateValueLength: Int = 185) {
+        self.identifier = identifier; self.maximumUpdateValueLength = maximumUpdateValueLength
+    }
+}
+public final class CBPeripheral: NSObject {
+    public let identifier: UUID
+    public var state: CBPeripheralState
+    public weak var delegate: CBPeripheralDelegate?
+    public var services: [CBService]?
+    public var canSendWriteWithoutResponse: Bool = true
+    public init(identifier: UUID = UUID(), state: CBPeripheralState = .disconnected) {
+        self.identifier = identifier; self.state = state
+    }
+    public func maximumWriteValueLength(for type: CBCharacteristicWriteType) -> Int { 185 }
+    public func writeValue(_ data: Data, for characteristic: CBCharacteristic, type: CBCharacteristicWriteType) {}
+    public func discoverServices(_ serviceUUIDs: [CBUUID]?) {}
+    public func readRSSI() {}
+    public func discoverCharacteristics(_ characteristicUUIDs: [CBUUID]?, for service: CBService) {}
+    public func setNotifyValue(_ enabled: Bool, for characteristic: CBCharacteristic) {}
+}
+public final class CBCentralManager: NSObject {
+    public weak var delegate: CBCentralManagerDelegate?
+    public var state: CBManagerState = .poweredOn
+    public init(delegate: CBCentralManagerDelegate?, queue: DispatchQueue?, options: [String: Any]? = nil) { self.delegate = delegate }
+    public func scanForPeripherals(withServices serviceUUIDs: [CBUUID]?, options: [String: Any]? = nil) {}
+    public func stopScan() {}
+    public func connect(_ peripheral: CBPeripheral, options: [String: Any]? = nil) {}
+    public func cancelPeripheralConnection(_ peripheral: CBPeripheral) {}
+    public func retrievePeripherals(withIdentifiers identifiers: [UUID]) -> [CBPeripheral] { [] }
+}
+public final class CBATTRequest: NSObject {
+    public var characteristic: CBCharacteristic
+    public var value: Data?
+    public var central: CBCentral
+    public init(characteristic: CBCharacteristic, value: Data? = nil, central: CBCentral = CBCentral()) {
+        self.characteristic = characteristic; self.value = value; self.central = central
+    }
+}
+public final class CBPeripheralManager: NSObject {
+    public weak var delegate: CBPeripheralManagerDelegate?
+    public var state: CBManagerState = .poweredOn
+    public var isAdvertising: Bool = false
+    public init(delegate: CBPeripheralManagerDelegate?, queue: DispatchQueue?, options: [String: Any]? = nil) { self.delegate = delegate }
+    public func stopAdvertising() {}
+    public func removeAllServices() {}
+    public func add(_ service: CBMutableService) {}
+    public func startAdvertising(_ advertisementData: [String: Any]?) {}
+    public func updateValue(_ value: Data, for characteristic: CBMutableCharacteristic, onSubscribedCentrals centrals: [CBCentral]?) -> Bool { true }
+    public func respond(to request: CBATTRequest, withResult result: CBATTError.Code) {}
+}
+SWIFT
+swiftc -emit-module -module-name CoreBluetooth "$HARNESS_DIR/CoreBluetooth.swift" -emit-module-path "$HARNESS_DIR/CoreBluetooth.swiftmodule"
+swiftc -typecheck -swift-version 5 -I "$HARNESS_DIR" \
+    VeilLink/Core/Models.swift \
+    VeilLink/Core/PerformanceOverrides.swift \
+    VeilLink/Core/DevicePerformanceProfile.swift \
+    VeilLink/Transport/ConnectionEventGate.swift \
+    VeilLink/Transport/BLEConnectionIntentStore.swift \
+    VeilLink/Transport/BLELinkReliabilityPolicy.swift \
+    VeilLink/Transport/BLEFramer.swift \
+    VeilLink/Transport/BLETransport.swift
+pass "BLE transport API-shape typecheck (Linux CoreBluetooth/Combine stubs)"
+
 cat > "$HARNESS_DIR/UIKit.swift" <<'SWIFT'
 @_exported import Foundation
 public typealias CGFloat = Double
@@ -329,9 +547,27 @@ assert 'CBAdvertisementDataLocalNameKey' not in ble
 assert 'handshakeRetryScheduleNanoseconds' in session and 'wakeOutboundForPeer' in session
 assert 'maximumAcknowledgementAttempts' not in session
 assert 'packetBurstLimit' in reliability and 'interBurstDelay' in reliability
+games = (root/'VeilLink/Core/MiniGames.swift').read_text(encoding='utf-8')
+game_ui = (root/'VeilLink/UI/MiniGameViews.swift').read_text(encoding='utf-8')
+tactical_ui = (root/'VeilLink/UI/TacticalGameViews.swift').read_text(encoding='utf-8')
+tactical_render = (root/'VeilLink/UI/TacticalLocalRenderCache.swift').read_text(encoding='utf-8')
+app_entry = (root/'VeilLink/App/VeilLinkApp.swift').read_text(encoding='utf-8')
+assert 'MiniGameStatistics' in games and 'MiniGameReplayFrame' in games and 'static func replay(sessionID:' in games
+assert 'threefoldRepetition' in games and 'currentPositionRepetitionCount' in games and 'consecutiveCheckCount' in games
+assert '棋局回放' in game_ui and '自动回放' in game_ui and '掷骰子' in game_ui and '当前加密会话' in game_ui
+assert '待回应' in game_ui
+# Tactical battlefield is install-local and programmatic: no image/network decoder path.
+for forbidden in ['AsyncImage', 'UIImage', 'Image(']:
+    assert forbidden not in tactical_ui, forbidden
+    assert forbidden not in tactical_render, forbidden
+assert 'TacticalLocalRenderCache.cells' in tactical_ui
+assert 'TacticalUnitCounterView' in tactical_ui
+assert 'TacticalTerrainCodeMark' in tactical_ui
+assert 'static let cells' in tactical_render and 'static let terrainSegments' in tactical_render
+assert 'TacticalLocalRenderCache.warmUp()' in app_entry
 print('targeted-perf-ok')
 PY2
-pass "V0.3.13 targeted-device + God Mode + image viewer + BLE reliability guard"
+pass "current-version targeted-device + games + replay + God Mode + image viewer + BLE reliability guard"
 
 python3 - <<'PY'
 from pathlib import Path
@@ -386,3 +622,36 @@ else
 fi
 
 printf 'LOCAL CI SIMULATION: PASS\n'
+
+python3 - <<'PY'
+import math, pathlib, re
+root = pathlib.Path('.')
+cache = (root/'VeilLink/UI/TacticalLocalRenderCache.swift').read_text(encoding='utf-8')
+views = (root/'VeilLink/UI/TacticalGameViews.swift').read_text(encoding='utf-8')
+xiangqi = (root/'VeilLink/UI/MiniGameViews.swift').read_text(encoding='utf-8')
+hex_w = 1.0 / 9.55
+hex_h = hex_w * 0.88
+rows, cols = 7, 9
+board_h = hex_h * (1.0 + 0.75 * (rows - 1))
+expected_ratio = 1.0 / board_h
+# normalized footprint bounds used by TacticalLocalRenderCache.cells
+min_x=min_y=1.0; max_x=max_y=0.0
+for row in range(rows):
+    for col in range(cols):
+        cx = hex_w * 0.52 + col * hex_w + (0.0 if row % 2 == 0 else hex_w * 0.5)
+        cy = hex_h * 0.5 + row * hex_h * 0.75
+        min_x=min(min_x,cx-hex_w/2); max_x=max(max_x,cx+hex_w/2)
+        min_y=min(min_y,cy-hex_h/2); max_y=max(max_y,cy+hex_h/2)
+assert min_x >= -1e-6 and max_x <= 1.0 + 1e-6
+assert min_y >= -1e-6 and abs(max_y-board_h) < 1e-9
+assert 'static let boardAspectRatio: CGFloat = 1.0 / (hexHeightFactor * (1.0 + 0.75 * CGFloat(TacticalState.rows - 1)))' in cache
+# Smallest supported compact battlefield: 320 pt screen minus 20 pt tactical horizontal padding.
+compact_board_width = 300.0
+compact_hex_height = compact_board_width * hex_h
+assert 23.0 <= compact_hex_height
+assert '.frame(width: 23, height: 23)' in views
+assert 'if let name = hex.name, unit == nil' in views
+assert '.frame(width: max(0, width - margin * 2 - stepX * 1.1))' in xiangqi
+print(f'game-layout-ok ratio={expected_ratio:.4f} compactHexH={compact_hex_height:.2f}')
+PY
+pass "mini-game normalized layout geometry"

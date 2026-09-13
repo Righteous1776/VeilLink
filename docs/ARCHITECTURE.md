@@ -137,3 +137,14 @@ Chat image bubbles use the normal `ImagePreviewCache` device budget. Opening a l
 ## V0.3.13 BLE reliability layer
 
 BLE reliability is layered rather than expressed as a distance promise. CoreBluetooth still owns the physical radio/link-layer retries; VeilLink adds live RSSI smoothing, signal-aware burst pacing, control-over-bulk queue priority, persistent capped reconnect, stalled-queue recovery and repeated Hello delivery. Persistent messages are not failed merely because a marginal link exceeded ten accepted sends: the outbox continues until authenticated ACK/checkpoint or expiry. A newly authenticated trusted session wakes old pending rows immediately. These changes leave Protocol 4 and Schema V8 unchanged and do not alter RF transmit power.
+
+
+## V0.5.0 tactical game layer
+
+The fourth Game Hub mode adds `TacticalState` and a SwiftUI hex-map renderer while preserving the existing VLGM1 envelope. A tactical move encodes only source/destination coordinates (or a reserved pass shape), and the receiver independently recomputes legal movement, supply, command support, deterministic combat rolls, objective scoring and terminal state. No combat result is trusted merely because it arrived over the wire. This keeps duplicate/reordered packet handling aligned with the existing mini-game reconstruction model. The 7×9 scenario is intentionally small for iPhone 7-class devices and avoids introducing a second persistence layer. Protocol 4, VLGM1 v1 and Schema V8 remain unchanged.
+
+## V0.5.1 game-link connection hardening
+
+The transport now treats control capacity as an overflow lane rather than subtracting it from the historical bulk queue budget. This distinction matters on a legacy 20-byte ATT value: a Protocol 4 48 KiB attachment chunk can consume the existing packet cap, so reserving packets by shrinking bulk would deadlock media transfer. Instead, bulk remains bounded by the original device profile and control traffic may exceed that bound only by a small fixed policy budget. Queue drains still service control before bulk. If a queue with control traffic makes no progress, its watchdog threshold is shorter than the bulk-only threshold.
+
+Central-side connection intent is persisted as CoreBluetooth peripheral identifiers only after the user requests a connection. Startup/foreground restoration uses `retrievePeripherals(withIdentifiers:)` plus ordinary scanning to resume the desired link. Explicit disconnect or transport stop removes the stored intent. CoreBluetooth restoration identifiers and the existing background modes remain enabled. This is a resilience mechanism, not a daemon guarantee: iOS can still suspend execution, force-quit can block relaunch, identifiers can become stale, and RF conditions remain outside the app's control. Protocol 4, cryptographic framing, VLGM1 and Schema V8 are unchanged.

@@ -926,7 +926,7 @@ final class DatabaseStore {
         let replacementPreview = try replacement.map { encryptedBody, sentAt -> (Data, Double) in
             let clear = try ChaChaPoly.open(ChaChaPoly.SealedBox(combined: encryptedBody), using: storageKey)
             guard let body = String(data: clear, encoding: .utf8) else { throw DatabaseError.statementFailed("本地消息预览无法解密。") }
-            let preview = ReplyTextCodec.previewText(for: body)
+            let preview = MiniGameCodec.previewText(for: body) ?? ReplyTextCodec.previewText(for: body)
             return (try ChaChaPoly.seal(Data(preview.utf8), using: storageKey).combined, sentAt)
         }
         let emptyPreview = try ChaChaPoly.seal(Data(), using: storageKey).combined

@@ -82,8 +82,41 @@ V0.3.12 adds an entirely local full-screen image viewer for verified chat attach
 
 V0.3.13 focuses on real-device reliability for SE1, iPhone 7, SE2 and iPhone 13 Pro. The transport now refreshes/smooths RSSI, paces packet bursts more conservatively as the link becomes marginal, prioritizes handshake/ACK/checkpoint/text traffic ahead of bulk image fragments, reconnects indefinitely with capped backoff while the user still wants the link, and detects stalled send queues. The secure Hello is retried idempotently and pending outbox rows are woken immediately after a trusted session re-authenticates. Messages no longer fail merely because a noisy link passed ten send attempts; the existing persistent outbox expiry is the final bound. This improves eventual delivery but does not claim a guaranteed number of meters, because iOS scheduling, obstruction and 2.4 GHz interference remain physical constraints. Protocol 4 and Schema V8 are unchanged.
 
+## V0.4.0 encrypted mini games
+
+V0.4.0 adds a two-player Game Hub inside trusted conversations. Gomoku, Chinese chess, and a lightweight two-player Ludo mode reuse the existing end-to-end encrypted message channel: invitations, acceptance, moves and resignation are compact structured chat payloads protected by the same session encryption, replay window, ACK/outbox retry path and reconnect behavior as normal messages. Game state is reconstructed from encrypted conversation history, so Protocol 4 and SQLite Schema V8 remain unchanged and no parallel game database is required.
+
+## V0.4.1 game experience overhaul
+
+V0.4.1 hardens the encrypted mini-game layer before remote release. Game reconstruction now ignores pre-accept moves, collapses duplicate/conflicting turn actions deterministically, supports cancelling pending invitations, recognizes full-board Gomoku draws, and ends Chinese chess when the side to move has no legal action while surfacing check state. The UI replaces dense button grids with real intersection-based Gomoku and Xiangqi boards, adds last-move/winning-line/legal-destination guidance, a visual two-player flight track, rules sheets, rematch, turn haptics and low-cost motion that respects reduced-motion/legacy-device budgets. Normal chats now show one live encrypted game card per session instead of either hiding invitations or flooding the transcript with move payloads. Protocol 4 and SQLite Schema V8 remain unchanged.
+
+## V0.4.2 game polish & replay
+
+V0.4.2 turns the encrypted mini-game layer into a more persistent social surface without changing the wire protocol or database. Finished games can be replayed step-by-step from the same encrypted chat events that reconstruct the live board; the Game Hub derives local win/loss/draw statistics and win streaks from completed sessions; match duration is reconstructed from invite/accept/activity timestamps; and attempting to start a second live copy of the same game now reopens the existing session. Ludo also gains a deliberate roll-then-move interaction so the turn feels like a game instead of exposing the deterministic result immediately. Protocol 4, VLGM1 packet version 1, and SQLite Schema V8 remain unchanged.
+
 ## App easter egg
 
 The creator left a hidden easter egg inside VeilLink. Its trigger and contents are intentionally undocumented—explore the app to discover it.
 
 作者在 App 里留下了一个隐藏彩蛋。这里仅确认它存在，触发方式与内容留给你在应用中发现。
+
+### V0.4.3 game fair-play hardening
+
+V0.4.3 keeps the game transport and storage model unchanged while tightening long-session behavior. Xiangqi now detects the same board position with the same side to move three times and closes the casual match as a draw, tracks consecutive checks for player-facing warnings, and avoids representing that simplified rule as full tournament perpetual-check adjudication. Replay can auto-advance through the encrypted-history-derived score, incoming invitations are visually prioritized, and reconstruction tests cover duplicated, delayed and reordered game packets. Protocol 4, VLGM1 v1 and SQLite Schema V8 remain unchanged.
+
+## V0.5.0 三国兵棋 · 官渡决战
+
+V0.5.0 adds an original two-player lightweight historical wargame to the encrypted Game Hub. `三国兵棋 · 官渡决战` uses a compact 7×9 hex battlefield, terrain movement costs, Cao/Yuan formations, two-order activations, supply tracing, command support, deterministic combat resolution and objective victory points. Tactical orders reuse the existing VLGM1 encrypted chat-event stream, so reconnect, duplicate collapse, deterministic replay, match history and statistics work without a second transport or database. The scenario is an original mobile adaptation of the general hex-and-counter wargame form; it does not reproduce a commercial map, artwork, rules text or exact unit data. Protocol 4, VLGM1 v1 and SQLite Schema V8 remain unchanged.
+
+## V0.5.1 BLE game-link hardening
+
+V0.5.1 prioritizes connection continuity while an encrypted game is active without changing Protocol 4 or the game payload format. A bounded control overflow lane lets handshake, ACK/checkpoint, text and mini-game events enter the transport even when bulk image fragments have reached the historical queue cap; bulk retains its original capacity so legacy attachment behavior is not regressed. Early reconnect attempts are faster, control-bearing queue stalls recover sooner, and user connection intent can survive an ordinary process relaunch through CoreBluetooth peripheral retrieval. Foreground re-entry re-arms discovery/reconnect health checks while background scheduling avoids aggressive false-positive recovery. The Game Hub now surfaces current BLE readiness. These measures improve eventual game-turn delivery but do not claim an impossible guaranteed RF connection under distance, obstruction, interference, force-quit, or iOS scheduling constraints.
+
+## V0.5.2 local tactical rendering
+
+The 三国兵棋 battlefield is fully install-local and code-rendered. Hex geometry, terrain marks, faction flags, and unit counters are generated from Swift/SwiftUI static blueprints that are warmed during app bootstrap. The tactical board does not depend on network assets, runtime bitmap loading, `UIImage`, or `AsyncImage`, keeping battle startup deterministic and lightweight on iPhone 7-class devices.
+
+
+## V0.5.3 game UI layout hardening
+
+V0.5.3 is a focused mini-game layout correction. The 三国兵棋 board container now derives its aspect ratio from the exact cached 7×9 hex geometry, occupied objective labels cannot spill into adjacent rows, compact attack markers stay inside SE1/iPhone 7 cells, and the Xiangqi river labels explicitly span the board width. Compact game headers use bounded single-line scaling. Protocol 4, VLGM1 v1 and SQLite Schema V8 are unchanged.

@@ -217,6 +217,8 @@ struct ChatView: View {
     @State private var isPreparingImage = false
     @State private var mediaStatus: String?
     @State private var showsContactDetails = false
+    @State private var showsMiniGames = false
+    @State private var miniGameInitialSessionID: String?
     @State private var messagePendingDeletion: ChatMessage?
     @State private var showsClearConversationConfirmation = false
     @State private var transferPendingCancellation: ChatMessage?
@@ -236,8 +238,15 @@ struct ChatView: View {
 
     private var visibleMessages: [ChatMessage] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard showsSearchBar, !query.isEmpty else { return messages }
-        return messages.filter { ConversationSearch.matches($0, query: query) }
+        if showsSearchBar, !query.isEmpty {
+            return messages.filter { MiniGameCodec.decode($0.body) == nil && ConversationSearch.matches($0, query: query) }
+        }
+        // One persistent card per game session lives at its invite position in the conversation.
+        // Move/accept/resign packets stay hidden so normal chat never becomes protocol noise.
+        return messages.filter { message in
+            guard let packet = MiniGameCodec.decode(message.body) else { return true }
+            return packet.command == .invite
+        }
     }
 
     var body: some View {
@@ -299,42 +308,57 @@ struct ChatView: View {
                             .disabled(isReloadingMessages)
                         }
                         ForEach(visibleMessages) { message in
-                            MessageBubble(
-                                message: message,
-                                database: model.database,
-                                onRetry: message.isOutgoing && message.deliveryState == .failed ? { retry(message) } : nil,
-                                onPause: canPauseImage(message) ? { pauseImage(message) } : nil,
-                                onResume: canResumeImage(message) ? { resumeImage(message) } : nil,
-                                onCancel: canCancelImage(message) ? { transferPendingCancellation = message } : nil
-                            )
-                            .contextMenu {
-                                if message.attachment == nil {
-                                    Button {
-                                        UIPasteboard.general.string = ReplyTextCodec.decode(message.body)?.reply ?? message.body
-                                        model.haptics.selection()
-                                    } label: {
-                                        Label("复制", systemImage: "doc.on.doc")
-                                    }
-                                }
-                                Button {
+                            if let packet = MiniGameCodec.decode(message.body),
+                               packet.command == .invite,
+                               let gameSession = MiniGameSessionBuilder.session(id: packet.sessionID, from: messages) {
+                                MiniGameConversationCard(session: gameSession) {
+                                    miniGameInitialSessionID = gameSession.id
+                                    showsMiniGames = true
                                     model.haptics.selection()
-                                    if usesReducedInteractionMotion {
-                                        replyingTo = message
-                                    } else {
-                                        withAnimation(.easeOut(duration: 0.18)) { replyingTo = message }
+                                }
+                                .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
+                                    insertion: .opacity.combined(with: .scale(scale: 0.985)),
+                                    removal: .opacity
+                                ))
+                                .id(message.id)
+                            } else {
+                                MessageBubble(
+                                    message: message,
+                                    database: model.database,
+                                    onRetry: message.isOutgoing && message.deliveryState == .failed ? { retry(message) } : nil,
+                                    onPause: canPauseImage(message) ? { pauseImage(message) } : nil,
+                                    onResume: canResumeImage(message) ? { resumeImage(message) } : nil,
+                                    onCancel: canCancelImage(message) ? { transferPendingCancellation = message } : nil
+                                )
+                                .contextMenu {
+                                    if message.attachment == nil {
+                                        Button {
+                                            UIPasteboard.general.string = ReplyTextCodec.decode(message.body)?.reply ?? message.body
+                                            model.haptics.selection()
+                                        } label: {
+                                            Label("复制", systemImage: "doc.on.doc")
+                                        }
                                     }
-                                } label: {
-                                    Label("引用回复", systemImage: "arrowshape.turn.up.left")
+                                    Button {
+                                        model.haptics.selection()
+                                        if usesReducedInteractionMotion {
+                                            replyingTo = message
+                                        } else {
+                                            withAnimation(.easeOut(duration: 0.18)) { replyingTo = message }
+                                        }
+                                    } label: {
+                                        Label("引用回复", systemImage: "arrowshape.turn.up.left")
+                                    }
+                                    Button(role: .destructive) { messagePendingDeletion = message } label: {
+                                        Label("本地删除", systemImage: "trash")
+                                    }
                                 }
-                                Button(role: .destructive) { messagePendingDeletion = message } label: {
-                                    Label("本地删除", systemImage: "trash")
-                                }
+                                .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
+                                    insertion: .opacity.combined(with: .scale(scale: 0.985)),
+                                    removal: .opacity
+                                ))
+                                .id(message.id)
                             }
-                            .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
-                                insertion: .opacity.combined(with: .scale(scale: 0.985)),
-                                removal: .opacity
-                            ))
-                            .id(message.id)
                         }
                         if showsSearchBar, !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, visibleMessages.isEmpty {
                             VStack(spacing: 8) {
@@ -352,8 +376,8 @@ struct ChatView: View {
                     .padding(.vertical, 14)
                     .animation(usesReducedInteractionMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
                 }
-                .onChange(of: messages.last?.id) { _ in
-                    if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                .onChange(of: visibleMessages.last?.id) { _ in
+                    if !showsSearchBar, let last = visibleMessages.last { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
 
@@ -428,12 +452,19 @@ struct ChatView: View {
                             } label: {
                                 Label("从“文件”导入", systemImage: "doc.badge.plus")
                             }
+                            Divider()
+                            Button {
+                                miniGameInitialSessionID = nil
+                                showsMiniGames = true
+                            } label: {
+                                Label("双人小游戏", systemImage: "gamecontroller")
+                            }
                         } label: {
                             VeilIconDisc(systemName: "plus", size: 36, highlighted: true)
                                 .contentShape(Circle())
                         }
-                        .accessibilityLabel("添加图片")
-                        .accessibilityHint("从照片图库或文件中选择图片")
+                        .accessibilityLabel("添加内容")
+                        .accessibilityHint("发送图片或打开双人小游戏")
                     }
                     TextField("加密消息", text: $draft)
                         .textFieldStyle(VeilTextFieldStyle())
@@ -527,6 +558,9 @@ struct ChatView: View {
         .sheet(isPresented: $showsContactDetails) {
             ContactDetailsSheet(model: model, conversation: conversation)
         }
+        .sheet(isPresented: $showsMiniGames, onDismiss: { miniGameInitialSessionID = nil }) {
+            MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
+        }
         .fileImporter(
             isPresented: $showsImageFileImporter,
             allowedContentTypes: [.image],
@@ -592,11 +626,25 @@ struct ChatView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let loadedMessages: [ChatMessage]
             let hasOlder: Bool
+            var effectiveLimit = limit
             if loadAll {
                 loadedMessages = store.fetchMessages(conversationID: conversationID)
                 hasOlder = false
             } else {
-                let page = store.fetchRecentMessages(conversationID: conversationID, limit: limit)
+                let profile = VeilDevicePerformance.current
+                var page = store.fetchRecentMessages(conversationID: conversationID, limit: effectiveLimit)
+                while page.hasOlder && effectiveLimit < profile.messageWindowMaximum {
+                    var gameSessionIDs = Set<String>()
+                    var inviteSessionIDs = Set<String>()
+                    for message in page.messages {
+                        guard let packet = MiniGameCodec.decode(message.body) else { continue }
+                        gameSessionIDs.insert(packet.sessionID)
+                        if packet.command == .invite { inviteSessionIDs.insert(packet.sessionID) }
+                    }
+                    guard !gameSessionIDs.subtracting(inviteSessionIDs).isEmpty else { break }
+                    effectiveLimit = min(profile.messageWindowMaximum, effectiveLimit + profile.messageWindowIncrement)
+                    page = store.fetchRecentMessages(conversationID: conversationID, limit: effectiveLimit)
+                }
                 loadedMessages = page.messages
                 hasOlder = page.hasOlder
             }
@@ -604,6 +652,7 @@ struct ChatView: View {
                 guard generation == messageReloadGeneration else { return }
                 messages = loadedMessages
                 hasOlderMessages = hasOlder
+                if !loadAll { messageWindowLimit = max(messageWindowLimit, effectiveLimit) }
                 isReloadingMessages = false
             }
         }

@@ -7,6 +7,7 @@ struct VeilLinkApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        TacticalLocalRenderCache.warmUp()
         VeilChrome.configure()
     }
 
@@ -17,6 +18,7 @@ struct VeilLinkApp: App {
                     RootContainer(model: model)
                         .onAppear { model.start() }
                         .onChange(of: scenePhase) { phase in
+                            model.bluetooth.setForegroundActive(phase == .active)
                             if phase != .active {
                                 model.trimCachesForBackgroundIfNeeded()
                                 model.appLock.lock()
