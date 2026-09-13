@@ -62,12 +62,13 @@ struct TacticalBoardView: View {
     }
 
     var body: some View {
+        let situation = state.situationSnapshot()
         VStack(spacing: 9) {
             battleHeader
             intelLayerBar
-            board
-            layerSummary
-            selectionPanel
+            board(situation: situation)
+            layerSummary(situation: situation)
+            selectionPanel(situation: situation)
         }
         .onChange(of: state.turn) { _ in
             selectedUnitID = nil
@@ -189,7 +190,7 @@ struct TacticalBoardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
-    private var board: some View {
+    private func board(situation: TacticalSituationSnapshot) -> some View {
         GeometryReader { proxy in
             let width = proxy.size.width
             let hexWidth = width * TacticalLocalRenderCache.hexWidthFactor
@@ -197,18 +198,15 @@ struct TacticalBoardView: View {
             let boardHeight = hexHeight * (1 + 0.75 * CGFloat(TacticalState.rows - 1))
             let selected = selectedUnit
             let destinations = legalDestinations
-            let localSupply = state.supplyNetwork(for: localFaction)
-            let friendlyThreat = state.threatenedHexes(by: localFaction)
-            let enemyThreat = state.threatenedHexes(by: localFaction.opponent)
-            let selectedCommandZone: Set<Int> = selected?.kind == .command ? state.commandZone(for: selected?.faction ?? localFaction) : []
-            let activeUnitsByPosition: [Int: TacticalUnit] = state.units.reduce(into: [:]) { result, unit in
-                if !unit.isDestroyed { result[unit.position] = unit }
-            }
+            let localSupply = situation.supplyNetwork(for: localFaction)
+            let selectedCommandZone: Set<Int> = selected?.kind == .command
+                ? situation.commandZone(for: selected?.faction ?? localFaction)
+                : []
 
             ZStack(alignment: .topLeading) {
                 ForEach(TacticalLocalRenderCache.cells) { layout in
                     let hex = TacticalState.hexes[layout.index]
-                    let unit = activeUnitsByPosition[hex.index]
+                    let unit = situation.activeUnitsByPosition[hex.index]
                     let isSelected = selected?.position == hex.index
                     let isLegal = destinations.contains(hex.index)
                     let display = TacticalLocalRenderCache.displayCenter(for: layout, flipped: localPlayer == .guest)
@@ -221,20 +219,28 @@ struct TacticalBoardView: View {
                         attackTarget: pendingAttackTarget?.position == hex.index,
                         acted: unit.map { state.actedUnitIDs.contains($0.id) } ?? false,
                         supplyReachable: intelLayer == .supply && localSupply.contains(hex.index),
-                        supplyBroken: intelLayer == .supply && unit?.faction == localFaction && unit.map { !state.isSupplied(unitID: $0.id) } == true,
-                        friendlyThreat: intelLayer == .threat && friendlyThreat.contains(hex.index),
-                        enemyThreat: intelLayer == .threat && enemyThreat.contains(hex.index),
+                        supplyBroken: intelLayer == .supply && unit?.faction == localFaction && unit.map { !situation.isSupplied($0) } == true,
+                        friendlyThreatLevel: intelLayer == .threat ? situation.threatStrength(at: hex.index, from: localFaction) : 0,
+                        enemyThreatLevel: intelLayer == .threat ? situation.threatStrength(at: hex.index, from: localFaction.opponent) : 0,
                         commandZone: selectedCommandZone.contains(hex.index),
-                        objectivePressure: intelLayer == .objectives && hex.isObjective ? state.objectivePressure(at: hex.index) : nil,
+                        objectivePressure: intelLayer == .objectives ? situation.objectivePressureByPosition[hex.index] : nil,
                         localFaction: localFaction
                     )
+                    .equatable()
                     .frame(width: hexWidth, height: hexHeight)
                     .scaleEffect(isSelected ? 1.035 : 1)
                     .zIndex(isSelected ? 3 : (pendingAttackTarget?.position == hex.index ? 2 : (isLegal ? 1 : 0)))
                     .position(x: display.x * width, y: display.y * width)
                     .onTapGesture { handleTap(hex.index) }
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(accessibilityLabel(for: hex, unit: unit, isLegal: isLegal))
+                    .accessibilityLabel(
+                        accessibilityLabel(
+                            for: hex,
+                            unit: unit,
+                            supplied: unit.map(situation.isSupplied),
+                            isLegal: isLegal
+                        )
+                    )
                 }
             }
             .frame(width: width, height: boardHeight, alignment: .topLeading)
@@ -246,12 +252,12 @@ struct TacticalBoardView: View {
         .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
     }
 
-    private var layerSummary: some View {
+    private func layerSummary(situation: TacticalSituationSnapshot) -> some View {
         HStack(spacing: 7) {
             Text(intelLayer.glyph)
                 .font(.system(size: 10, weight: .heavy, design: .serif))
                 .foregroundColor(VeilTheme.gold)
-            Text(layerSummaryText)
+            Text(layerSummaryText(situation: situation))
                 .font(.caption2.monospacedDigit())
                 .foregroundColor(VeilTheme.secondaryText)
                 .lineLimit(1)
@@ -264,33 +270,37 @@ struct TacticalBoardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
-    private var layerSummaryText: String {
+    private func layerSummaryText(situation: TacticalSituationSnapshot) -> String {
         switch intelLayer {
         case .battlefield:
             return "己方完整算子 \(state.units(for: localPlayer).count) · 点选任意算子可查看战术数据"
         case .supply:
             let friendly = state.units(for: localPlayer)
-            let supplied = friendly.filter { state.isSupplied(unitID: $0.id) }.count
+            let supplied = friendly.filter(situation.isSupplied).count
             return "己方补给 \(supplied)/\(friendly.count) · 亮区为当前可通达补给网"
         case .threat:
-            let ours = state.threatenedHexes(by: localFaction).count
-            let enemy = state.threatenedHexes(by: localFaction.opponent).count
-            return "己方威胁 \(ours) 格 · 敌方威胁 \(enemy) 格 · 重叠区风险最高"
+            let ours = situation.threatenedHexes(by: localFaction)
+            let enemy = situation.threatenedHexes(by: localFaction.opponent)
+            let overlap = ours.intersection(enemy).count
+            let massed = enemy.filter { situation.threatStrength(at: $0, from: localFaction.opponent) >= 2 }.count
+            return "己方 \(ours.count) 格 · 敌方 \(enemy.count) 格 · 交叉 \(overlap) · 集火 \(massed)"
         case .objectives:
             return TacticalState.hexes.filter(\.isObjective).map { hex in
-                let pressure = state.objectivePressure(at: hex.index)
+                let pressure = situation.objectivePressureByPosition[hex.index] ?? TacticalObjectivePressure(caoStrength: 0, yuanStrength: 0)
                 return "\(hex.name ?? "目标") \(pressure.caoStrength):\(pressure.yuanStrength)"
             }.joined(separator: " · ")
         }
     }
 
     @ViewBuilder
-    private var selectionPanel: some View {
+    private func selectionPanel(situation: TacticalSituationSnapshot) -> some View {
         if let forecast = combatForecast, let attacker = selectedUnit, let defender = pendingAttackTarget {
             combatPreview(forecast: forecast, attacker: attacker, defender: defender)
         }
 
         if let selectedUnit {
+            let supplied = situation.isSupplied(selectedUnit)
+            let supported = situation.commandZone(for: selectedUnit.faction).contains(selectedUnit.position)
             VStack(spacing: 8) {
                 HStack(spacing: 10) {
                     TacticalUnitCounterView(unit: selectedUnit, acted: state.actedUnitIDs.contains(selectedUnit.id))
@@ -313,11 +323,11 @@ struct TacticalBoardView: View {
                         }
                         HStack(spacing: 7) {
                             Text("兵力 \(selectedUnit.steps)/\(selectedUnit.kind.maxSteps)")
-                            Text(state.isSupplied(unitID: selectedUnit.id) ? "补给正常" : "补给中断")
-                            Text(state.commandZone(for: selectedUnit.faction).contains(selectedUnit.position) ? "受中军支援" : "无中军支援")
+                            Text(supplied ? "补给正常" : "补给中断")
+                            Text(supported ? "受中军支援" : "无中军支援")
                         }
                         .font(.system(size: 9.5, weight: .medium).monospacedDigit())
-                        .foregroundColor(state.isSupplied(unitID: selectedUnit.id) ? VeilTheme.secondaryText : VeilTheme.gold)
+                        .foregroundColor(supplied ? VeilTheme.secondaryText : VeilTheme.gold)
                         .lineLimit(1)
                         .minimumScaleFactor(0.62)
                     }
@@ -517,11 +527,11 @@ struct TacticalBoardView: View {
         }
     }
 
-    private func accessibilityLabel(for hex: TacticalHex, unit: TacticalUnit?, isLegal: Bool) -> String {
+    private func accessibilityLabel(for hex: TacticalHex, unit: TacticalUnit?, supplied: Bool?, isLegal: Bool) -> String {
         var parts = [hex.name ?? hex.terrain.title]
         if let unit {
             parts.append("\(unit.faction.title)\(unit.name)")
-            parts.append(state.isSupplied(unitID: unit.id) ? "补给正常" : "补给中断")
+            parts.append(supplied == true ? "补给正常" : "补给中断")
         }
         if isLegal { parts.append("可行动") }
         return parts.joined(separator: "，")
@@ -537,7 +547,7 @@ struct TacticalReplayBoardView: View {
     }
 }
 
-private struct TacticalHexTile: View {
+private struct TacticalHexTile: View, Equatable {
     let hex: TacticalHex
     let unit: TacticalUnit?
     let selected: Bool
@@ -547,8 +557,8 @@ private struct TacticalHexTile: View {
     let acted: Bool
     let supplyReachable: Bool
     let supplyBroken: Bool
-    let friendlyThreat: Bool
-    let enemyThreat: Bool
+    let friendlyThreatLevel: Int
+    let enemyThreatLevel: Int
     let commandZone: Bool
     let objectivePressure: TacticalObjectivePressure?
     let localFaction: TacticalFaction
@@ -563,14 +573,14 @@ private struct TacticalHexTile: View {
                     .fill(Color.green.opacity(0.075))
                     .padding(1.5)
             }
-            if friendlyThreat {
+            if friendlyThreatLevel > 0 {
                 TacticalCachedHexShape()
-                    .fill(VeilTheme.gold.opacity(0.055))
+                    .fill(VeilTheme.gold.opacity(min(0.12, 0.035 + Double(friendlyThreatLevel) * 0.025)))
                     .padding(1.5)
             }
-            if enemyThreat {
+            if enemyThreatLevel > 0 {
                 TacticalCachedHexShape()
-                    .fill(Color.red.opacity(friendlyThreat ? 0.10 : 0.075))
+                    .fill(Color.red.opacity(min(0.16, 0.050 + Double(enemyThreatLevel) * 0.030)))
                     .padding(1.5)
             }
             if let objectivePressure {

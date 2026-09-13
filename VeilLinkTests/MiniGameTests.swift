@@ -361,6 +361,45 @@ final class MiniGameTests: XCTestCase {
         XCTAssertEqual(state.ordersRemaining, TacticalState.ordersPerActivation)
     }
 
+    func testTacticalSituationSnapshotMatchesRuleQueries() {
+        let state = TacticalState()
+        let snapshot = state.situationSnapshot()
+
+        XCTAssertEqual(snapshot.activeUnitsByPosition.count, state.units.filter { !$0.isDestroyed }.count)
+        XCTAssertEqual(snapshot.supplyNetwork(for: .cao), state.supplyNetwork(for: .cao))
+        XCTAssertEqual(snapshot.supplyNetwork(for: .yuan), state.supplyNetwork(for: .yuan))
+        XCTAssertEqual(snapshot.threatenedHexes(by: .cao), state.threatenedHexes(by: .cao))
+        XCTAssertEqual(snapshot.threatenedHexes(by: .yuan), state.threatenedHexes(by: .yuan))
+        XCTAssertEqual(snapshot.commandZone(for: .cao), state.commandZone(for: .cao))
+        XCTAssertEqual(snapshot.commandZone(for: .yuan), state.commandZone(for: .yuan))
+        for unit in state.units where !unit.isDestroyed {
+            XCTAssertEqual(snapshot.isSupplied(unit), state.isSupplied(unitID: unit.id), unit.id)
+        }
+        for hex in TacticalState.hexes where hex.isObjective {
+            XCTAssertEqual(snapshot.objectivePressureByPosition[hex.index], state.objectivePressure(at: hex.index))
+        }
+        XCTAssertEqual(state.turn, 0)
+    }
+
+    func testTacticalCachedGeometryAndThreatStrengthRemainConsistent() {
+        let state = TacticalState()
+        for position in 0..<TacticalState.hexes.count {
+            let neighbors = TacticalState.neighbors(of: position)
+            XCTAssertEqual(neighbors.count, Set(neighbors).count)
+            for neighbor in neighbors {
+                XCTAssertTrue(TacticalState.neighbors(of: neighbor).contains(position))
+                XCTAssertEqual(TacticalState.hexDistance(position, neighbor), 1)
+            }
+            XCTAssertEqual(TacticalState.hexDistance(position, position), 0)
+        }
+
+        for faction in [TacticalFaction.cao, .yuan] {
+            let strengths = state.threatStrengths(by: faction)
+            XCTAssertEqual(Set(strengths.keys), state.threatenedHexes(by: faction))
+            XCTAssertTrue(strengths.values.allSatisfy { $0 > 0 })
+        }
+    }
+
     func testTacticalCombatForecastEnumeratesAllDiceWithoutRevealingActualRoll() {
         let attacker = TacticalUnit(id: "a", faction: .cao, kind: .infantry, name: "测试进攻", position: 30, steps: 2)
         let defender = TacticalUnit(id: "d", faction: .yuan, kind: .infantry, name: "测试防守", position: 31, steps: 2)

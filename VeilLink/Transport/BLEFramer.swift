@@ -74,12 +74,25 @@ struct BLEFragment {
     /// Produces the exact v2 wire packets without first allocating a second array of fragment
     /// payload objects. The wire format and fragmentation plan are identical to `split`.
     static func encodedPackets(_ data: Data, maximumPacketSize: Int) -> [Data] {
-        guard let plan = fragmentationPlan(payloadByteCount: data.count, maximumPacketSize: maximumPacketSize) else { return [] }
+        var packets: [Data] = []
+        guard appendEncodedPackets(data, maximumPacketSize: maximumPacketSize, to: &packets) != nil else { return [] }
+        return packets
+    }
+
+    /// Appends final wire packets directly to caller-owned storage. BLETransport uses this to
+    /// encode into its persistent priority queue, avoiding a temporary `[Data]` allocation and
+    /// a second array traversal for every encrypted envelope or attachment chunk.
+    @discardableResult
+    static func appendEncodedPackets(
+        _ data: Data,
+        maximumPacketSize: Int,
+        to packets: inout [Data]
+    ) -> (fragmentCount: Int, encodedByteCount: Int)? {
+        guard let plan = fragmentationPlan(payloadByteCount: data.count, maximumPacketSize: maximumPacketSize) else { return nil }
         let chunkSize = maximumPacketSize - headerSize
         let count = plan.fragmentCount
         let frameID = UInt64.random(in: 1...UInt64.max)
-        var packets: [Data] = []
-        packets.reserveCapacity(count)
+        packets.reserveCapacity(packets.count + count)
 
         for index in 0..<count {
             let start = min(index * chunkSize, data.count)
@@ -95,7 +108,7 @@ struct BLEFragment {
             packet.append(contentsOf: data[start..<end])
             packets.append(packet)
         }
-        return packets
+        return plan
     }
 
 

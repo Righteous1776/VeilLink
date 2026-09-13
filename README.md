@@ -137,3 +137,9 @@ Encrypted mini-games now bind their link banner to the actual conversation peer 
 ## V0.7.1 tactical situation awareness
 
 V0.7.1 deepens 三国兵棋 without changing its deterministic rules or VLGM event format. The battlefield gains local-only 战场/补给/威胁/目标 situation layers, supply-path and command-radius analysis, objective pressure, richer counter inspection, and guest-side board orientation with labels kept upright. Attacking an enemy counter now opens a compact combat forecast first: VeilLink enumerates all 36 possible d6-vs-d6 pairs under the existing terrain, supply and command modifiers, then asks for explicit confirmation before emitting the same encrypted move event used by prior versions. Historical tactical sessions therefore rebuild to the same board states and outcomes. Protocol 4, VLGM1 v1 and SQLite Schema V8 remain unchanged.
+
+## V0.7.2 tactical render and transport pipeline
+
+V0.7.2 focuses on frame stability and encrypted transfer efficiency. Every 三国兵棋 render now derives unit placement, supply, command zones, objective pressure and both factions' threat maps from one immutable situation snapshot. Cached neighbor/distance tables and equatable hex cells reduce repeated rule scans and unnecessary SwiftUI redraws, while the threat layer distinguishes overlapping fire coverage without changing combat outcomes or network events.
+
+BLE framing now appends final wire packets directly into each peer's persistent control/bulk queue. This removes a temporary packet array plus a second byte-count pass for every encrypted envelope and attachment chunk; the existing framing v2 bytes, queue backpressure, control priority and reliability policy remain intact. Protocol 4, VLGM1 v1 and SQLite Schema V8 are unchanged.

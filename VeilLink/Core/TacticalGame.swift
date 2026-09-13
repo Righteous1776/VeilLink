@@ -177,6 +177,41 @@ struct TacticalObjectivePressure: Equatable {
     }
 }
 
+/// A render-oriented tactical projection calculated once for a board refresh. Keeping these
+/// derived values together avoids repeating supply flood-fills and threat scans for every tile,
+/// accessibility label, summary line and selection panel on older devices.
+struct TacticalSituationSnapshot {
+    let activeUnitsByPosition: [Int: TacticalUnit]
+    let suppliedUnitIDs: Set<String>
+    let caoSupplyNetwork: Set<Int>
+    let yuanSupplyNetwork: Set<Int>
+    let caoThreatStrength: [Int: Int]
+    let yuanThreatStrength: [Int: Int]
+    let caoCommandZone: Set<Int>
+    let yuanCommandZone: Set<Int>
+    let objectivePressureByPosition: [Int: TacticalObjectivePressure]
+
+    func supplyNetwork(for faction: TacticalFaction) -> Set<Int> {
+        faction == .cao ? caoSupplyNetwork : yuanSupplyNetwork
+    }
+
+    func threatStrength(at position: Int, from faction: TacticalFaction) -> Int {
+        (faction == .cao ? caoThreatStrength : yuanThreatStrength)[position, default: 0]
+    }
+
+    func threatenedHexes(by faction: TacticalFaction) -> Set<Int> {
+        Set((faction == .cao ? caoThreatStrength : yuanThreatStrength).keys)
+    }
+
+    func commandZone(for faction: TacticalFaction) -> Set<Int> {
+        faction == .cao ? caoCommandZone : yuanCommandZone
+    }
+
+    func isSupplied(_ unit: TacticalUnit) -> Bool {
+        suppliedUnitIDs.contains(unit.id)
+    }
+}
+
 struct TacticalState: Equatable {
     static let rows = 7
     static let columns = 9
@@ -295,15 +330,24 @@ struct TacticalState: Equatable {
         return visited
     }
 
-    /// Threat is informational: every hex inside a surviving unit's current attack radius.
-    func threatenedHexes(by faction: TacticalFaction) -> Set<Int> {
-        var result = Set<Int>()
+    /// Number of surviving formations that can currently attack each hex. The existing public
+    /// threat set is preserved, while the strength map lets the local UI distinguish a screen
+    /// from a massed threat without changing any combat or wire rule.
+    func threatStrengths(by faction: TacticalFaction) -> [Int: Int] {
+        var result: [Int: Int] = [:]
+        result.reserveCapacity(Self.hexes.count)
         for unit in units where !unit.isDestroyed && unit.faction == faction {
-            for hex in Self.hexes where Self.hexDistance(unit.position, hex.index) <= unit.kind.attackRange {
-                if hex.index != unit.position { result.insert(hex.index) }
+            for hex in Self.hexes where hex.index != unit.position
+                && Self.hexDistance(unit.position, hex.index) <= unit.kind.attackRange {
+                result[hex.index, default: 0] += 1
             }
         }
         return result
+    }
+
+    /// Threat is informational: every hex inside a surviving unit's current attack radius.
+    func threatenedHexes(by faction: TacticalFaction) -> Set<Int> {
+        Set(threatStrengths(by: faction).keys)
     }
 
     func commandZone(for faction: TacticalFaction) -> Set<Int> {
@@ -320,6 +364,34 @@ struct TacticalState: Equatable {
             if unit.faction == .cao { cao += unit.steps } else { yuan += unit.steps }
         }
         return TacticalObjectivePressure(caoStrength: cao, yuanStrength: yuan)
+    }
+
+    func situationSnapshot() -> TacticalSituationSnapshot {
+        let livingUnits = units.filter { !$0.isDestroyed }
+        let unitsByPosition = livingUnits.reduce(into: [Int: TacticalUnit]()) { result, unit in
+            result[unit.position] = unit
+        }
+        let caoSupply = supplyNetwork(for: .cao)
+        let yuanSupply = supplyNetwork(for: .yuan)
+        let suppliedIDs = Set(livingUnits.compactMap { unit -> String? in
+            let network = unit.faction == .cao ? caoSupply : yuanSupply
+            return unit.kind == .supply || network.contains(unit.position) ? unit.id : nil
+        })
+        let pressures = Self.hexes.reduce(into: [Int: TacticalObjectivePressure]()) { result, hex in
+            guard hex.isObjective else { return }
+            result[hex.index] = objectivePressure(at: hex.index)
+        }
+        return TacticalSituationSnapshot(
+            activeUnitsByPosition: unitsByPosition,
+            suppliedUnitIDs: suppliedIDs,
+            caoSupplyNetwork: caoSupply,
+            yuanSupplyNetwork: yuanSupply,
+            caoThreatStrength: threatStrengths(by: .cao),
+            yuanThreatStrength: threatStrengths(by: .yuan),
+            caoCommandZone: commandZone(for: .cao),
+            yuanCommandZone: commandZone(for: .yuan),
+            objectivePressureByPosition: pressures
+        )
     }
 
     func combatForecast(attackerID: String, defenderID: String) -> TacticalCombatForecast? {
@@ -592,8 +664,7 @@ struct TacticalState: Equatable {
         return Int(hash % 6) + 1
     }
 
-    static func neighbors(of index: Int) -> [Int] {
-        guard hexes.indices.contains(index) else { return [] }
+    private static let neighborTable: [[Int]] = (0..<(rows * columns)).map { index in
         let row = index / columns
         let col = index % columns
         let offsetsEven = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, -1), (1, 0)]
@@ -606,7 +677,22 @@ struct TacticalState: Equatable {
         }
     }
 
+    private static let distanceTable: [[Int]] = (0..<(rows * columns)).map { origin in
+        (0..<(rows * columns)).map { destination in
+            uncachedHexDistance(origin, destination)
+        }
+    }
+
+    static func neighbors(of index: Int) -> [Int] {
+        neighborTable.indices.contains(index) ? neighborTable[index] : []
+    }
+
     static func hexDistance(_ a: Int, _ b: Int) -> Int {
+        guard distanceTable.indices.contains(a), distanceTable.indices.contains(b) else { return Int.max }
+        return distanceTable[a][b]
+    }
+
+    private static func uncachedHexDistance(_ a: Int, _ b: Int) -> Int {
         let ar = a / columns, ac = a % columns
         let br = b / columns, bc = b % columns
         func axial(row: Int, col: Int) -> (q: Int, r: Int) {

@@ -12,14 +12,19 @@ private struct OutboundPacketQueue {
     var first: Data? { head < packets.count ? packets[head] : nil }
     var isEmpty: Bool { pendingCount == 0 }
 
-    mutating func append(contentsOf newPackets: [Data]) {
-        guard !newPackets.isEmpty else { return }
+    @discardableResult
+    mutating func appendEncodedPayload(_ payload: Data, maximumPacketSize: Int) -> Bool {
         if head > 0 && (head >= 256 || head * 2 >= packets.count) {
             packets.removeFirst(head)
             head = 0
         }
-        packets.append(contentsOf: newPackets)
-        queuedBytes += newPackets.reduce(0) { $0 + $1.count }
+        guard let plan = BLEFragment.appendEncodedPackets(
+            payload,
+            maximumPacketSize: maximumPacketSize,
+            to: &packets
+        ) else { return false }
+        queuedBytes += plan.encodedByteCount
+        return true
     }
 
     @discardableResult
@@ -48,10 +53,17 @@ private struct PeerOutboundQueue {
     var hasControlTraffic: Bool { !control.isEmpty }
     var isEmpty: Bool { control.isEmpty && bulk.isEmpty }
 
-    mutating func append(contentsOf packets: [Data], priority: BLESendPriority) {
+    @discardableResult
+    mutating func appendEncodedPayload(
+        _ payload: Data,
+        maximumPacketSize: Int,
+        priority: BLESendPriority
+    ) -> Bool {
         switch priority {
-        case .control: control.append(contentsOf: packets)
-        case .bulk: bulk.append(contentsOf: packets)
+        case .control:
+            return control.appendEncodedPayload(payload, maximumPacketSize: maximumPacketSize)
+        case .bulk:
+            return bulk.appendEncodedPayload(payload, maximumPacketSize: maximumPacketSize)
         }
     }
 
@@ -289,8 +301,11 @@ final class BLETransport: NSObject, ObservableObject {
                 packetLimit: maxQueuedPacketsPerPeer,
                 byteLimit: maxQueuedBytesPerPeer
             ) else { return .temporarilyUnavailable }
-            let packets = BLEFragment.encodedPackets(data, maximumPacketSize: maximum)
-            centralOutboundQueues[transportID, default: PeerOutboundQueue()].append(contentsOf: packets, priority: priority)
+            var queue = existing ?? PeerOutboundQueue()
+            guard queue.appendEncodedPayload(data, maximumPacketSize: maximum, priority: priority) else {
+                return .unsupportedLink
+            }
+            centralOutboundQueues[transportID] = queue
             if lastQueueProgressAt[transportID] == nil { lastQueueProgressAt[transportID] = Date().timeIntervalSinceReferenceDate }
             publishLinkSnapshots()
             drainCentralQueue(peripheral: peripheral, characteristic: characteristic)
@@ -312,8 +327,11 @@ final class BLETransport: NSObject, ObservableObject {
             packetLimit: maxQueuedPacketsPerPeer,
             byteLimit: maxQueuedBytesPerPeer
         ) else { return .temporarilyUnavailable }
-        let packets = BLEFragment.encodedPackets(data, maximumPacketSize: maximum)
-        peripheralOutboundQueues[transportID, default: PeerOutboundQueue()].append(contentsOf: packets, priority: priority)
+        var queue = existing ?? PeerOutboundQueue()
+        guard queue.appendEncodedPayload(data, maximumPacketSize: maximum, priority: priority) else {
+            return .unsupportedLink
+        }
+        peripheralOutboundQueues[transportID] = queue
         if lastQueueProgressAt[transportID] == nil { lastQueueProgressAt[transportID] = Date().timeIntervalSinceReferenceDate }
         publishLinkSnapshots()
         drainPeripheralQueue(for: transportID, characteristic: localCharacteristic)

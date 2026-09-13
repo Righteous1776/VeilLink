@@ -71,6 +71,31 @@ final class CryptoEngineTests: XCTestCase {
         XCTAssertEqual(recovered, original)
     }
 
+    func testDirectQueueEncodingAppendsWithoutReplacingExistingPackets() {
+        let original = Data((0..<3_333).map { UInt8($0 % 227) })
+        let sentinel = Data([0xAA, 0xBB])
+        var packets = [sentinel]
+
+        let plan = BLEFragment.appendEncodedPackets(
+            original,
+            maximumPacketSize: 185,
+            to: &packets
+        )
+
+        XCTAssertEqual(packets.first, sentinel)
+        XCTAssertEqual(packets.count - 1, plan?.fragmentCount)
+        XCTAssertEqual(packets.dropFirst().reduce(0) { $0 + $1.count }, plan?.encodedByteCount)
+        XCTAssertTrue(packets.dropFirst().allSatisfy { $0.count <= 185 })
+
+        let assembler = BLEFragmentAssembler()
+        let source = UUID()
+        var recovered: Data?
+        for packet in packets.dropFirst() {
+            recovered = assembler.ingest(source: source, packet: packet) ?? recovered
+        }
+        XCTAssertEqual(recovered, original)
+    }
+
     func testBLEFramingRejectsPacketSizeSmallerThanHeader() {
         XCTAssertTrue(BLEFragment.split(Data([1, 2, 3]), maximumPacketSize: BLEFragment.headerSize).isEmpty)
         XCTAssertTrue(BLEFragment.encodedPackets(Data([1, 2, 3]), maximumPacketSize: BLEFragment.headerSize).isEmpty)
