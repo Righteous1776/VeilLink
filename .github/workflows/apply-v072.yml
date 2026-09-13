@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Verify and apply V0.7.2
         shell: bash
@@ -23,7 +23,10 @@ jobs:
           expected_tree="6035ce00d77d03f33b51cc3dfb984f329bf0c222"
           patch_file="VeilLink_V0.7.2_FROM_V0.7.1.patch"
 
-          test "$(git rev-parse HEAD)" = "$expected_head"
+          git merge-base --is-ancestor "$expected_head" HEAD
+          git diff --quiet "$expected_head" HEAD -- . \
+            ':(exclude)VeilLink_V0.7.2_FROM_V0.7.1.patch' \
+            ':(exclude).github/workflows/apply-v072.yml'
           printf '%s  %s\n' "$expected_patch_sha" "$patch_file" | sha256sum -c -
           git apply --check --whitespace=error-all "$patch_file"
           git apply --whitespace=error-all "$patch_file"
