@@ -1,0 +1,53 @@
+name: Apply VeilLink V0.5.3
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify baseline and patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="126fd9cfaacca70af41493eb3739ca05cd143d3b"
+          patch="VeilLink_V0.5.3_CUMULATIVE_FROM_126fd9c.patch"
+          git merge-base --is-ancestor "$base" HEAD
+          git diff --quiet "$base" HEAD -- . \
+            ":(exclude)$patch" \
+            ":(exclude).github/workflows/apply-v053.yml"
+          printf '%s  %s\n' \
+            "bf873224aa9c75663a82fbbfde42dc7bde6a88831d93360bf3012d08bb801f66" \
+            "$patch" | sha256sum --check --strict
+          git apply --check "$patch"
+
+      - name: Apply V0.5.3 cumulative patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch="VeilLink_V0.5.3_CUMULATIVE_FROM_126fd9c.patch"
+          git apply "$patch"
+          git apply --reverse --check "$patch"
+
+      - name: Commit final source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm VeilLink_V0.5.3_CUMULATIVE_FROM_126fd9c.patch
+          rm .github/workflows/apply-v053.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit \
+            -m "Release V0.5.3: game UI layout hardening" \
+            -m "Add encrypted mini-games and the Three Kingdoms tactical mode; harden BLE game-link recovery and control-traffic priority; use fully local tactical rendering; correct compact-device board geometry, markers, labels, and headers. Protocol 4, VLGM1 v1, and SQLite Schema V8 remain unchanged. Detailed release notes are recorded in README.md and docs/CHECKPOINT_V0.5.3_GAME_UI_LAYOUT_HARDENING.md."
+          git push origin HEAD:main
