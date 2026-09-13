@@ -793,7 +793,15 @@ enum MiniGameSessionBuilder {
     }
 
     static func session(id: String, from messages: [ChatMessage]) -> MiniGameSessionSnapshot? {
-        sessions(from: messages).first { $0.id == id }
+        let events: [(ChatMessage, MiniGamePacket)] = messages.compactMap { message in
+            guard let packet = MiniGameCodec.decode(message.body), packet.sessionID == id else { return nil }
+            return (message, packet)
+        }
+        return build(sessionID: id, events: events)
+    }
+
+    static func sessionsByID(from messages: [ChatMessage]) -> [String: MiniGameSessionSnapshot] {
+        Dictionary(uniqueKeysWithValues: sessions(from: messages).map { ($0.id, $0) })
     }
 
     static func replay(sessionID: String, from messages: [ChatMessage]) -> [MiniGameReplayFrame] {

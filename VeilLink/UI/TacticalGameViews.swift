@@ -8,6 +8,7 @@ struct TacticalBoardView: View {
     let onPass: () -> Void
 
     @State private var selectedUnitID: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var selectedUnit: TacticalUnit? {
         guard let selectedUnitID else { return nil }
@@ -37,18 +38,30 @@ struct TacticalBoardView: View {
                 metric("命令", "\(state.ordersRemaining)")
             }
             HStack(spacing: 7) {
-                Circle()
-                    .fill(state.currentPlayer == localPlayer ? VeilTheme.gold : VeilTheme.secondaryText.opacity(0.5))
-                    .frame(width: 7, height: 7)
+                Image(systemName: state.currentPlayer == localPlayer ? "bolt.horizontal.circle.fill" : "hourglass.circle")
+                    .font(.system(size: 12, weight: .semibold))
                 Text(state.currentPlayer == localPlayer ? "轮到你下达命令" : "等待对方行动")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(state.currentPlayer == localPlayer ? VeilTheme.gold : VeilTheme.secondaryText)
                 Spacer()
                 Text(state.lastActionText)
                     .font(.caption2)
-                    .foregroundColor(VeilTheme.tertiaryText)
                     .lineLimit(1)
             }
+            .foregroundColor(state.currentPlayer == localPlayer ? VeilTheme.gold : VeilTheme.secondaryText)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                LinearGradient(
+                    colors: [
+                        (state.currentPlayer == localPlayer ? VeilTheme.gold : VeilTheme.secondaryText).opacity(0.12),
+                        Color.white.opacity(0.018)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .clipShape(VeilPanelShape(cut: 8, radius: 5))
+            .overlay(VeilPanelShape(cut: 8, radius: 5).stroke(VeilTheme.hairline, lineWidth: 1))
         }
     }
 
@@ -100,26 +113,36 @@ struct TacticalBoardView: View {
             let hexWidth = width * TacticalLocalRenderCache.hexWidthFactor
             let hexHeight = width * TacticalLocalRenderCache.hexHeightFactor
             let boardHeight = hexHeight * (1 + 0.75 * CGFloat(TacticalState.rows - 1))
+            let selected = selectedUnit
+            let destinations = legalDestinations
+            let activeUnitsByPosition: [Int: TacticalUnit] = state.units.reduce(into: [:]) { result, unit in
+                if !unit.isDestroyed { result[unit.position] = unit }
+            }
 
             ZStack(alignment: .topLeading) {
                 ForEach(TacticalLocalRenderCache.cells) { layout in
                     let hex = TacticalState.hexes[layout.index]
+                    let unit = activeUnitsByPosition[hex.index]
+                    let isSelected = selected?.position == hex.index
+                    let isLegal = destinations.contains(hex.index)
                     TacticalHexTile(
                         hex: hex,
-                        unit: state.unit(at: hex.index),
-                        selected: selectedUnit?.position == hex.index,
-                        legal: legalDestinations.contains(hex.index),
-                        attack: selectedUnit.map { legalDestinations.contains(hex.index) && state.isAttack(from: $0.position, to: hex.index) } ?? false,
-                        acted: state.unit(at: hex.index).map { state.actedUnitIDs.contains($0.id) } ?? false
+                        unit: unit,
+                        selected: isSelected,
+                        legal: isLegal,
+                        attack: selected.map { isLegal && state.isAttack(from: $0.position, to: hex.index) } ?? false,
+                        acted: unit.map { state.actedUnitIDs.contains($0.id) } ?? false
                     )
                     .frame(width: hexWidth, height: hexHeight)
+                    .scaleEffect(isSelected ? 1.025 : 1)
+                    .zIndex(isSelected ? 2 : (isLegal ? 1 : 0))
                     .position(
                         x: layout.centerX * width,
                         y: layout.centerY * width
                     )
                     .onTapGesture { handleTap(hex.index) }
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(accessibilityLabel(for: hex))
+                    .accessibilityLabel(accessibilityLabel(for: hex, unit: unit, isLegal: isLegal))
                 }
             }
             .frame(width: width, height: boardHeight, alignment: .topLeading)
@@ -197,21 +220,29 @@ struct TacticalBoardView: View {
         guard enabled else { return }
         if let selectedUnit, legalDestinations.contains(position) {
             onMove(selectedUnit.position, position)
-            selectedUnitID = nil
+            updateSelection(nil)
             return
         }
         if let unit = state.unit(at: position), unit.faction.player == localPlayer,
            !state.actedUnitIDs.contains(unit.id) {
-            selectedUnitID = unit.id
+            updateSelection(unit.id)
         } else {
-            selectedUnitID = nil
+            updateSelection(nil)
         }
     }
 
-    private func accessibilityLabel(for hex: TacticalHex) -> String {
+    private func updateSelection(_ unitID: String?) {
+        if reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal {
+            selectedUnitID = unitID
+        } else {
+            withAnimation(.easeOut(duration: 0.16)) { selectedUnitID = unitID }
+        }
+    }
+
+    private func accessibilityLabel(for hex: TacticalHex, unit: TacticalUnit?, isLegal: Bool) -> String {
         var parts = [hex.name ?? hex.terrain.title]
-        if let unit = state.unit(at: hex.index) { parts.append("\(unit.faction.title)\(unit.name)") }
-        if legalDestinations.contains(hex.index) { parts.append("可行动") }
+        if let unit { parts.append("\(unit.faction.title)\(unit.name)") }
+        if isLegal { parts.append("可行动") }
         return parts.joined(separator: "，")
     }
 
@@ -240,6 +271,12 @@ private struct TacticalHexTile: View {
                 .fill(fillColor)
             TacticalCachedHexShape()
                 .stroke(strokeColor, lineWidth: selected ? 2.2 : (legal ? 1.6 : 0.7))
+
+            if legal {
+                TacticalCachedHexShape()
+                    .fill((attack ? Color.red : VeilTheme.gold).opacity(attack ? 0.09 : 0.055))
+                    .padding(2)
+            }
 
             TacticalTerrainCodeMark(terrain: hex.terrain)
                 .padding(7)

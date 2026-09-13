@@ -120,3 +120,9 @@ The 三国兵棋 battlefield is fully install-local and code-rendered. Hex geome
 ## V0.5.3 game UI layout hardening
 
 V0.5.3 is a focused mini-game layout correction. The 三国兵棋 board container now derives its aspect ratio from the exact cached 7×9 hex geometry, occupied objective labels cannot spill into adjacent rows, compact attack markers stay inside SE1/iPhone 7 cells, and the Xiangqi river labels explicitly span the board width. Compact game headers use bounded single-line scaling. Protocol 4, VLGM1 v1 and SQLite Schema V8 are unchanged.
+
+## V0.6.0 transport and game performance
+
+V0.6.0 improves the hot paths used by live chat and encrypted mini games without changing the wire protocol or storage schema. BLE framing now emits final wire packets directly instead of allocating an intermediate fragment graph, and send pacing combines link quality, device class, negotiated packet size and a bounded byte budget so good links can move more data per scheduling round while weak links remain conservative. Queue backpressure and the control-priority lane are unchanged.
+
+Game history is reconstructed once per asynchronous database refresh and indexed by session instead of being rebuilt repeatedly during SwiftUI body evaluation. Targeted session lookup no longer reconstructs unrelated games, tactical movement search uses an indexed queue, and the tactical board caches its active-unit and legal-destination lookup for each render pass. The board also gains a clearer turn-status rail, lightweight selection lift and legal-area tinting that respect reduced-motion and legacy-device budgets. Protocol 4, VLGM1 v1 and SQLite Schema V8 remain unchanged. Actual Bluetooth throughput still depends on ATT negotiation, radio conditions and iOS scheduling.

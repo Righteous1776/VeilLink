@@ -20,6 +20,7 @@ enum BLELinkQuality: String, Equatable {
 struct BLELinkTuning: Equatable {
     let quality: BLELinkQuality
     let packetBurstLimit: Int
+    let targetBurstBytes: Int
     let interBurstDelay: TimeInterval
 }
 
@@ -64,34 +65,48 @@ enum BLELinkReliabilityPolicy {
         case .strong:
             return BLELinkTuning(
                 quality: quality,
-                packetBurstLimit: isSE1 ? 12 : (isIPhone7 ? 16 : 32),
+                packetBurstLimit: isSE1 ? 48 : (isIPhone7 ? 64 : 96),
+                targetBurstBytes: isSE1 ? 6 * 1_024 : (isIPhone7 ? 8 * 1_024 : 16 * 1_024),
                 interBurstDelay: legacy ? 0.002 : 0
             )
         case .good:
             return BLELinkTuning(
                 quality: quality,
-                packetBurstLimit: isSE1 ? 10 : (isIPhone7 ? 12 : 24),
+                packetBurstLimit: isSE1 ? 40 : (isIPhone7 ? 56 : 80),
+                targetBurstBytes: isSE1 ? 4 * 1_024 : (isIPhone7 ? 6 * 1_024 : 12 * 1_024),
                 interBurstDelay: legacy ? 0.004 : 0.002
             )
         case .marginal:
             return BLELinkTuning(
                 quality: quality,
-                packetBurstLimit: isSE1 ? 6 : (isIPhone7 ? 8 : 12),
+                packetBurstLimit: isSE1 ? 20 : (isIPhone7 ? 28 : 40),
+                targetBurstBytes: isSE1 ? 2 * 1_024 : (isIPhone7 ? 3 * 1_024 : 6 * 1_024),
                 interBurstDelay: legacy ? 0.010 : 0.007
             )
         case .weak:
             return BLELinkTuning(
                 quality: quality,
-                packetBurstLimit: 4,
+                packetBurstLimit: legacy ? 12 : 18,
+                targetBurstBytes: legacy ? 1_024 : 2 * 1_024,
                 interBurstDelay: legacy ? 0.020 : 0.014
             )
         case .unknown:
             return BLELinkTuning(
                 quality: quality,
-                packetBurstLimit: isSE1 ? 8 : (isIPhone7 ? 10 : 16),
+                packetBurstLimit: isSE1 ? 28 : (isIPhone7 ? 40 : 64),
+                targetBurstBytes: isSE1 ? 3 * 1_024 : (isIPhone7 ? 4 * 1_024 : 8 * 1_024),
                 interBurstDelay: legacy ? 0.006 : 0.003
             )
         }
+    }
+
+    /// Converts the byte-oriented pacing budget into a packet limit for the negotiated ATT MTU.
+    /// The hard packet cap prevents a 20-byte legacy link from monopolising the transport queue,
+    /// while a wider MTU can use the full byte budget without waiting for artificial packet rounds.
+    static func effectivePacketBurstLimit(tuning: BLELinkTuning, maximumPacketSize: Int) -> Int {
+        guard maximumPacketSize > 0 else { return 1 }
+        let byteBound = max(1, tuning.targetBurstBytes / maximumPacketSize)
+        return max(1, min(tuning.packetBurstLimit, byteBound))
     }
 
     /// Bulk traffic keeps the device-specific historical cap so a 48 KiB image chunk can still

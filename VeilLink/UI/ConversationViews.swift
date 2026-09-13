@@ -211,6 +211,7 @@ struct ChatView: View {
     @ObservedObject var model: AppModel
     let conversation: ConversationSummary
     @State private var messages: [ChatMessage] = []
+    @State private var gameSessionsByID: [String: MiniGameSessionSnapshot] = [:]
     @State private var draft = ""
     @State private var showsPhotoPicker = false
     @State private var showsImageFileImporter = false
@@ -310,7 +311,7 @@ struct ChatView: View {
                         ForEach(visibleMessages) { message in
                             if let packet = MiniGameCodec.decode(message.body),
                                packet.command == .invite,
-                               let gameSession = MiniGameSessionBuilder.session(id: packet.sessionID, from: messages) {
+                               let gameSession = gameSessionsByID[packet.sessionID] {
                                 MiniGameConversationCard(session: gameSession) {
                                     miniGameInitialSessionID = gameSession.id
                                     showsMiniGames = true
@@ -648,9 +649,11 @@ struct ChatView: View {
                 loadedMessages = page.messages
                 hasOlder = page.hasOlder
             }
+            let loadedGameSessions = MiniGameSessionBuilder.sessionsByID(from: loadedMessages)
             DispatchQueue.main.async {
                 guard generation == messageReloadGeneration else { return }
                 messages = loadedMessages
+                gameSessionsByID = loadedGameSessions
                 hasOlderMessages = hasOlder
                 if !loadAll { messageWindowLimit = max(messageWindowLimit, effectiveLimit) }
                 isReloadingMessages = false

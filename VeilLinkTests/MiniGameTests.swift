@@ -55,6 +55,31 @@ final class MiniGameTests: XCTestCase {
         XCTAssertEqual(snapshot?.gomoku?.value(at: 112), 1)
         XCTAssertEqual(snapshot?.moveCount, 1)
     }
+
+    func testSessionIndexMatchesTargetedReconstruction() throws {
+        let conversationID = UUID().uuidString
+        let first = MiniGamePacket(game: .gomoku, command: .invite)
+        let second = MiniGamePacket(game: .tactical, command: .invite)
+        let normalMessage = ChatMessage(
+            id: UUID().uuidString,
+            conversationID: conversationID,
+            senderIdentityID: "host",
+            body: "ordinary encrypted chat text",
+            sentAt: Date(),
+            isOutgoing: true,
+            deliveryState: .delivered
+        )
+        let messages = [
+            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(first), sentAt: Date(), isOutgoing: true, deliveryState: .delivered),
+            normalMessage,
+            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "guest", body: try MiniGameCodec.encode(second), sentAt: Date().addingTimeInterval(1), isOutgoing: false, deliveryState: .delivered)
+        ]
+
+        let index = MiniGameSessionBuilder.sessionsByID(from: messages)
+        XCTAssertEqual(Set(index.keys), Set([first.sessionID, second.sessionID]))
+        XCTAssertEqual(index[first.sessionID], MiniGameSessionBuilder.session(id: first.sessionID, from: messages))
+        XCTAssertEqual(index[second.sessionID], MiniGameSessionBuilder.session(id: second.sessionID, from: messages))
+    }
     func testGomokuWinningLineIsRecoverableForRendering() {
         var state = GomokuState()
         for col in 0..<4 {

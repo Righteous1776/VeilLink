@@ -8,6 +8,7 @@ struct MiniGameHubView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var messages: [ChatMessage] = []
+    @State private var sessions: [MiniGameSessionSnapshot] = []
     @State private var selectedSessionID: String?
     @State private var creatingGame: MiniGameKind?
     @State private var reloadGeneration = 0
@@ -16,10 +17,6 @@ struct MiniGameHubView: View {
         self.model = model
         self.conversation = conversation
         _selectedSessionID = State(initialValue: initialSessionID)
-    }
-
-    private var sessions: [MiniGameSessionSnapshot] {
-        MiniGameSessionBuilder.sessions(from: messages)
     }
 
     private var liveSessions: [MiniGameSessionSnapshot] {
@@ -297,9 +294,11 @@ struct MiniGameHubView: View {
         let conversationID = conversation.id
         DispatchQueue.global(qos: .userInitiated).async {
             let loaded = store.fetchMessages(conversationID: conversationID)
+            let loadedSessions = MiniGameSessionBuilder.sessions(from: loaded)
             DispatchQueue.main.async {
                 guard generation == reloadGeneration else { return }
                 messages = loaded
+                sessions = loadedSessions
             }
         }
     }
@@ -503,6 +502,7 @@ struct MiniGameSessionView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var messages: [ChatMessage] = []
+    @State private var session: MiniGameSessionSnapshot?
     @State private var selectedXiangqiIndex: Int?
     @State private var isPlaying = false
 
@@ -513,10 +513,6 @@ struct MiniGameSessionView: View {
     @State private var isSending = false
     @State private var observedMoveCount = 0
     @State private var reloadGeneration = 0
-
-    private var session: MiniGameSessionSnapshot? {
-        MiniGameSessionBuilder.session(id: sessionID, from: messages)
-    }
 
     var body: some View {
         Group {
@@ -799,10 +795,11 @@ struct MiniGameSessionView: View {
         let conversationID = conversation.id
         DispatchQueue.global(qos: .userInitiated).async {
             let loaded = store.fetchMessages(conversationID: conversationID)
+            let newSession = MiniGameSessionBuilder.session(id: sessionID, from: loaded)
             DispatchQueue.main.async {
                 guard generation == reloadGeneration else { return }
                 messages = loaded
-                let newSession = MiniGameSessionBuilder.session(id: sessionID, from: loaded)
+                session = newSession
                 let newCount = newSession?.moveCount ?? 0
                 if notify, newCount > oldCount, newSession?.isLocalTurn == true {
                     model.haptics.receive()
@@ -1221,6 +1218,7 @@ private struct XiangqiBoardView: View {
                 let margin = min(width, height) * 0.055
                 let stepX = (width - margin * 2) / CGFloat(XiangqiState.columns - 1)
                 let stepY = (height - margin * 2) / CGFloat(XiangqiState.rows - 1)
+                let destinations = legalDestinations
 
                 ZStack {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -1248,7 +1246,7 @@ private struct XiangqiBoardView: View {
                         .stroke(VeilTheme.gold.opacity(0.26), style: StrokeStyle(lineWidth: 2.4, lineCap: .round, dash: [3, 4]))
                     }
 
-                    ForEach(Array(legalDestinations), id: \.self) { index in
+                    ForEach(Array(destinations), id: \.self) { index in
                         let point = xiangqiPoint(index: index, width: width, height: height, margin: margin, stepX: stepX, stepY: stepY)
                         Circle()
                             .fill(VeilTheme.gold.opacity(state.piece(at: index) == nil ? 0.58 : 0.22))

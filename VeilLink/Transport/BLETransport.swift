@@ -252,7 +252,7 @@ final class BLETransport: NSObject, ObservableObject {
                 packetLimit: maxQueuedPacketsPerPeer,
                 byteLimit: maxQueuedBytesPerPeer
             ) else { return .temporarilyUnavailable }
-            let packets = BLEFragment.split(data, maximumPacketSize: maximum).map(\.encoded)
+            let packets = BLEFragment.encodedPackets(data, maximumPacketSize: maximum)
             centralOutboundQueues[transportID, default: PeerOutboundQueue()].append(contentsOf: packets, priority: priority)
             if lastQueueProgressAt[transportID] == nil { lastQueueProgressAt[transportID] = Date().timeIntervalSinceReferenceDate }
             drainCentralQueue(peripheral: peripheral, characteristic: characteristic)
@@ -274,7 +274,7 @@ final class BLETransport: NSObject, ObservableObject {
             packetLimit: maxQueuedPacketsPerPeer,
             byteLimit: maxQueuedBytesPerPeer
         ) else { return .temporarilyUnavailable }
-        let packets = BLEFragment.split(data, maximumPacketSize: maximum).map(\.encoded)
+        let packets = BLEFragment.encodedPackets(data, maximumPacketSize: maximum)
         peripheralOutboundQueues[transportID, default: PeerOutboundQueue()].append(contentsOf: packets, priority: priority)
         if lastQueueProgressAt[transportID] == nil { lastQueueProgressAt[transportID] = Date().timeIntervalSinceReferenceDate }
         drainPeripheralQueue(for: transportID, characteristic: localCharacteristic)
@@ -286,12 +286,17 @@ final class BLETransport: NSObject, ObservableObject {
         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
         guard var queue = centralOutboundQueues[id] else { return }
         let tuning = linkTuning(for: id)
+        let maximum = peripheral.maximumWriteValueLength(for: .withoutResponse)
+        let burstLimit = BLELinkReliabilityPolicy.effectivePacketBurstLimit(
+            tuning: tuning,
+            maximumPacketSize: maximum
+        )
         var sent = 0
-        while sent < tuning.packetBurstLimit, peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
+        while sent < burstLimit, peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
             peripheral.writeValue(packet, for: characteristic, type: .withoutResponse)
             sent += 1
-            lastQueueProgressAt[id] = Date().timeIntervalSinceReferenceDate
         }
+        if sent > 0 { lastQueueProgressAt[id] = Date().timeIntervalSinceReferenceDate }
         if queue.isEmpty {
             centralOutboundQueues.removeValue(forKey: id)
             lastQueueProgressAt.removeValue(forKey: id)
@@ -311,16 +316,20 @@ final class BLETransport: NSObject, ObservableObject {
         }
         guard var queue = peripheralOutboundQueues[centralID] else { return }
         let tuning = linkTuning(for: centralID)
+        let burstLimit = BLELinkReliabilityPolicy.effectivePacketBurstLimit(
+            tuning: tuning,
+            maximumPacketSize: central.maximumUpdateValueLength
+        )
         var sent = 0
-        while sent < tuning.packetBurstLimit, let packet = queue.first {
+        while sent < burstLimit, let packet = queue.first {
             guard peripheralManager.updateValue(packet, for: characteristic, onSubscribedCentrals: [central]) else {
                 peripheralOutboundQueues[centralID] = queue
                 return
             }
             _ = queue.removeFirst()
             sent += 1
-            lastQueueProgressAt[centralID] = Date().timeIntervalSinceReferenceDate
         }
+        if sent > 0 { lastQueueProgressAt[centralID] = Date().timeIntervalSinceReferenceDate }
         if queue.isEmpty {
             peripheralOutboundQueues.removeValue(forKey: centralID)
             lastQueueProgressAt.removeValue(forKey: centralID)

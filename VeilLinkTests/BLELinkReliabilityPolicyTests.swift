@@ -21,7 +21,27 @@ final class BLELinkReliabilityPolicyTests: XCTestCase {
         let modern = BLELinkReliabilityPolicy.tuning(rssi: -79, machineIdentifier: "iPhone14,2")
         XCTAssertEqual(legacy.quality, .marginal)
         XCTAssertLessThan(legacy.packetBurstLimit, modern.packetBurstLimit)
+        XCTAssertLessThan(legacy.targetBurstBytes, modern.targetBurstBytes)
         XCTAssertGreaterThan(legacy.interBurstDelay, modern.interBurstDelay)
+    }
+
+    func testBurstLimitAdaptsToNegotiatedPacketSizeAndByteBudget() {
+        let tuning = BLELinkReliabilityPolicy.tuning(rssi: -55, machineIdentifier: "iPhone9,1")
+        let legacyMTU = BLELinkReliabilityPolicy.effectivePacketBurstLimit(tuning: tuning, maximumPacketSize: 20)
+        let wideMTU = BLELinkReliabilityPolicy.effectivePacketBurstLimit(tuning: tuning, maximumPacketSize: 185)
+
+        XCTAssertEqual(legacyMTU, tuning.packetBurstLimit)
+        XCTAssertLessThan(wideMTU, legacyMTU)
+        XCTAssertGreaterThan(wideMTU, 16)
+        XCTAssertLessThanOrEqual(wideMTU * 185, tuning.targetBurstBytes)
+        XCTAssertEqual(BLELinkReliabilityPolicy.effectivePacketBurstLimit(tuning: tuning, maximumPacketSize: 0), 1)
+    }
+
+    func testStrongLinksReceiveMoreBurstCapacityThanWeakLinks() {
+        let strong = BLELinkReliabilityPolicy.tuning(rssi: -50, machineIdentifier: "iPhone14,2")
+        let weak = BLELinkReliabilityPolicy.tuning(rssi: -95, machineIdentifier: "iPhone14,2")
+        XCTAssertGreaterThan(strong.packetBurstLimit, weak.packetBurstLimit)
+        XCTAssertGreaterThan(strong.targetBurstBytes, weak.targetBurstBytes)
     }
 
     func testControlLaneCanOverflowABulkFilledQueueWithoutShrinkingBulkCapacity() {

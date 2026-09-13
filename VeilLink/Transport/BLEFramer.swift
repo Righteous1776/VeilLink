@@ -71,6 +71,33 @@ struct BLEFragment {
         }
     }
 
+    /// Produces the exact v2 wire packets without first allocating a second array of fragment
+    /// payload objects. The wire format and fragmentation plan are identical to `split`.
+    static func encodedPackets(_ data: Data, maximumPacketSize: Int) -> [Data] {
+        guard let plan = fragmentationPlan(payloadByteCount: data.count, maximumPacketSize: maximumPacketSize) else { return [] }
+        let chunkSize = maximumPacketSize - headerSize
+        let count = plan.fragmentCount
+        let frameID = UInt64.random(in: 1...UInt64.max)
+        var packets: [Data] = []
+        packets.reserveCapacity(count)
+
+        for index in 0..<count {
+            let start = min(index * chunkSize, data.count)
+            let end = min(start + chunkSize, data.count)
+            var packet = Data(capacity: headerSize + end - start)
+            packet.append(contentsOf: [0x56, 0x02])
+            var bigFrameID = frameID.bigEndian
+            var bigIndex = UInt16(index).bigEndian
+            var bigTotal = UInt16(count).bigEndian
+            withUnsafeBytes(of: &bigFrameID) { packet.append(contentsOf: $0) }
+            withUnsafeBytes(of: &bigIndex) { packet.append(contentsOf: $0) }
+            withUnsafeBytes(of: &bigTotal) { packet.append(contentsOf: $0) }
+            packet.append(contentsOf: data[start..<end])
+            packets.append(packet)
+        }
+        return packets
+    }
+
 
 }
 

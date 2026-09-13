@@ -203,9 +203,11 @@ struct TacticalState: Equatable {
         guard !sources.isEmpty else { return false }
         let blocked = Set(units.filter { !$0.isDestroyed && $0.faction != unit.faction }.map(\.position))
         var frontier = sources
+        var frontierHead = 0
         var visited = Set(sources)
-        while let current = frontier.first {
-            frontier.removeFirst()
+        while frontierHead < frontier.count {
+            let current = frontier[frontierHead]
+            frontierHead += 1
             if current == unit.position { return true }
             for next in Self.neighbors(of: current) {
                 guard !visited.contains(next),
@@ -283,10 +285,12 @@ struct TacticalState: Equatable {
         let occupied = Set(units.filter { !$0.isDestroyed }.map(\.position))
         var best: [Int: Int] = [unit.position: 0]
         var queue: [(Int, Int)] = [(unit.position, 0)]
+        var queueHead = 0
         var result = Set<Int>()
 
-        while !queue.isEmpty {
-            let (current, cost) = queue.removeFirst()
+        while queueHead < queue.count {
+            let (current, cost) = queue[queueHead]
+            queueHead += 1
             for next in Self.neighbors(of: current) {
                 guard let terrain = hex(at: next)?.terrain, let stepCost = terrain.movementCost else { continue }
                 let nextCost = cost + stepCost
