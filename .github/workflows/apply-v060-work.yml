@@ -1,0 +1,43 @@
+name: Apply V0.6.0 Work iteration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate baseline and iteration archive
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 6a03bff0a4238251e575a192e6cc845abd0e970d HEAD
+          echo "402641078fa26820b96ffa33d8e3bb8a30f0a3fcdac71293efd74e986bd989de  VeilLink_V0.6.0_WORK_ITERATION.zip" | sha256sum -c -
+          unzip -t VeilLink_V0.6.0_WORK_ITERATION.zip
+
+      - name: Apply verified V0.6.0 files
+        run: |
+          set -euo pipefail
+          unzip -o VeilLink_V0.6.0_WORK_ITERATION.zip -d .
+          test "$(git diff --name-only | wc -l)" -ge 14
+          grep -q '<string>0.6.0</string>' VeilLink/Resources/Info.plist
+          grep -q 'V0.6.0 Transport and Game Performance' docs/CHECKPOINT_CURRENT.md
+          rm VeilLink_V0.6.0_WORK_ITERATION.zip
+          rm .github/workflows/apply-v060-work.yml
+          git add -A
+          git diff --cached --check
+
+      - name: Commit final source tree
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Release V0.6.0: transport and game performance"
+          git push origin HEAD:main
