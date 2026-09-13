@@ -68,6 +68,9 @@ final class SessionCoordinator: ObservableObject {
     private let database: DatabaseStore
     private var sessions: [UUID: SessionContext] = [:]
     private var peerTransport: [String: UUID] = [:]
+    // Retain the last authenticated BLE transport mapping in memory so conversation/game UI can
+    // describe and recover the correct peer even while the secure session is reconnecting.
+    private var lastPeerTransport: [String: UUID] = [:]
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private struct CachedOutboundAttachment {
@@ -136,12 +139,14 @@ final class SessionCoordinator: ObservableObject {
         sessions.removeAll()
         packetAbuseLimiter.resetAll()
         peerTransport.removeAll()
+        lastPeerTransport.removeAll()
         nearbyPeers.removeAll()
         clearOutboundAttachmentCache()
         lastError = nil
     }
 
     func invalidatePeer(_ peerIdentityID: String) {
+        lastPeerTransport.removeValue(forKey: peerIdentityID)
         if let transportID = peerTransport.removeValue(forKey: peerIdentityID) {
             cancelHandshakeTimeout(for: transportID)
             sessions.removeValue(forKey: transportID)
@@ -174,6 +179,32 @@ final class SessionCoordinator: ObservableObject {
         }
     }
 
+    func transportID(for peerIdentityID: String) -> UUID? {
+        peerTransport[peerIdentityID] ?? lastPeerTransport[peerIdentityID]
+    }
+
+    func hasSecureSession(for peerIdentityID: String) -> Bool {
+        guard let transportID = peerTransport[peerIdentityID],
+              let context = sessions[transportID] else { return false }
+        return context.remoteHello != nil && context.keys != nil
+    }
+
+    /// Re-seeds the signed Hello on an already-known BLE transport without changing trust state.
+    /// This gives the UI a safe recovery action when the physical link survived but the secure
+    /// session was lost during backgrounding or a transient packet-loss window.
+    func recoverSecureSession(for peerIdentityID: String) {
+        guard let transportID = transportID(for: peerIdentityID) else { return }
+        if let context = sessions[transportID], context.remoteHello != nil, context.keys != nil { return }
+        do {
+            try sendHello(to: transportID)
+            cancelHandshakeTimeout(for: transportID)
+            scheduleHandshakeTimeout(for: transportID)
+            lastError = nil
+        } catch {
+            lastError = "安全会话恢复失败，等待蓝牙链路重新连接。"
+        }
+    }
+
     func confirmPairing(peerID: String) {
         guard let index = nearbyPeers.firstIndex(where: { $0.id == peerID }), let context = sessions[nearbyPeers[index].transportID], let remote = context.remoteHello else { return }
         do {
@@ -193,6 +224,7 @@ final class SessionCoordinator: ObservableObject {
         cancelHandshakeTimeout(for: transportID)
         sessions.removeValue(forKey: transportID)
         peerTransport = peerTransport.filter { $0.value != transportID }
+        lastPeerTransport.removeValue(forKey: peerID)
         nearbyPeers[index].trustState = .blocked
         nearbyPeers[index].pairingCode = nil
         transportDisconnect?(transportID)
@@ -358,7 +390,7 @@ final class SessionCoordinator: ObservableObject {
         var transcript = Data("VeilLink/Transcript/v4".utf8)
         for hello in ordered { transcript.append(Data("|\(hello.protocolVersion)|\(hello.identityID)|".utf8)); transcript.append(hello.identityPublicKey); transcript.append(hello.agreementPublicKey); transcript.append(hello.nonce) }
         let keys = try CryptoEngine.deriveSessionKeys(localPrivateKey: context.localEphemeral, remotePublicKey: remote.agreementPublicKey, transcript: transcript, localIdentityID: context.localHello.identityID, remoteIdentityID: remote.identityID)
-        context.remoteHello = remote; context.keys = keys; context.replayWindow = ReplayWindow(); context.nextSendSequence = 1; sessions[transportID] = context; peerTransport[remote.identityID] = transportID
+        context.remoteHello = remote; context.keys = keys; context.replayWindow = ReplayWindow(); context.nextSendSequence = 1; sessions[transportID] = context; peerTransport[remote.identityID] = transportID; lastPeerTransport[remote.identityID] = transportID
         cancelHandshakeTimeout(for: transportID)
         let trusted = database.trustedContact(localIdentityID: context.localHello.identityID, identityID: remote.identityID)
         let trustState: NearbyPeer.TrustState = trusted?.publicKey == remote.identityPublicKey ? .trusted : .awaitingConfirmation

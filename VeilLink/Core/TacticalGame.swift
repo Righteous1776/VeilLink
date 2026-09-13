@@ -148,6 +148,35 @@ struct TacticalCombatResult: Codable, Hashable {
     }
 }
 
+/// Read-only tactical analysis derived from the existing combat rules. It never changes
+/// the deterministic outcome or adds bytes to the VLGM wire format. Percentages are exact
+/// enumerations of the 36 possible d6-vs-d6 roll pairs.
+struct TacticalCombatForecast: Equatable {
+    let attackerID: String
+    let defenderID: String
+    let attackerBaseScore: Int
+    let defenderBaseScore: Int
+    let attackerSupplyModifier: Int
+    let defenderSupplyModifier: Int
+    let terrainBonus: Int
+    let attackerCommandBonus: Int
+    let defenderCommandBonus: Int
+    let defenderLossChancePercent: Int
+    let defenderDestroyedChancePercent: Int
+    let attackerLossChancePercent: Int
+    let stalemateChancePercent: Int
+}
+
+struct TacticalObjectivePressure: Equatable {
+    let caoStrength: Int
+    let yuanStrength: Int
+
+    var leader: TacticalFaction? {
+        if caoStrength == yuanStrength { return nil }
+        return caoStrength > yuanStrength ? .cao : .yuan
+    }
+}
+
 struct TacticalState: Equatable {
     static let rows = 7
     static let columns = 9
@@ -172,6 +201,13 @@ struct TacticalState: Equatable {
         units = Self.initialUnits
     }
 
+    /// Internal fixture initializer used by deterministic analysis tests. Production games
+    /// continue to use the canonical `init()` deployment above.
+    init(units: [TacticalUnit], currentPlayer: MiniGamePlayer = .host) {
+        self.units = units
+        self.currentPlayer = currentPlayer
+    }
+
     var moveCount: Int { turn }
     var currentFaction: TacticalFaction { currentPlayer == .host ? .cao : .yuan }
 
@@ -194,6 +230,143 @@ struct TacticalState: Equatable {
 
     func hex(at index: Int) -> TacticalHex? {
         Self.hexes.indices.contains(index) ? Self.hexes[index] : nil
+    }
+
+    /// Returns one shortest currently-open supply path, including source and destination.
+    /// Enemy occupied hexes and impassable river hexes break the route.
+    func supplyPath(unitID: String) -> [Int]? {
+        guard let unit = unit(id: unitID) else { return nil }
+        let sources = supplySources(for: unit.faction)
+        guard !sources.isEmpty else { return nil }
+        if sources.contains(unit.position) { return [unit.position] }
+
+        let blocked = Set(units.filter { !$0.isDestroyed && $0.faction != unit.faction }.map(\.position))
+        var queue = sources
+        var head = 0
+        var visited = Set(sources)
+        var parent: [Int: Int] = [:]
+        while head < queue.count {
+            let current = queue[head]
+            head += 1
+            for next in Self.neighbors(of: current) {
+                guard !visited.contains(next),
+                      !blocked.contains(next),
+                      let terrain = hex(at: next)?.terrain,
+                      terrain.movementCost != nil else { continue }
+                visited.insert(next)
+                parent[next] = current
+                if next == unit.position {
+                    var path = [next]
+                    var cursor = next
+                    while let previous = parent[cursor] {
+                        path.append(previous)
+                        cursor = previous
+                        if sources.contains(cursor) { break }
+                    }
+                    return path.reversed()
+                }
+                queue.append(next)
+            }
+        }
+        return nil
+    }
+
+    /// Hexes reachable by supply from the faction's HQ or surviving supply counter.
+    /// Used only for the local situation overlay; game rules remain unchanged.
+    func supplyNetwork(for faction: TacticalFaction) -> Set<Int> {
+        let sources = supplySources(for: faction)
+        guard !sources.isEmpty else { return [] }
+        let blocked = Set(units.filter { !$0.isDestroyed && $0.faction != faction }.map(\.position))
+        var queue = sources
+        var head = 0
+        var visited = Set(sources)
+        while head < queue.count {
+            let current = queue[head]
+            head += 1
+            for next in Self.neighbors(of: current) {
+                guard !visited.contains(next),
+                      !blocked.contains(next),
+                      let terrain = hex(at: next)?.terrain,
+                      terrain.movementCost != nil else { continue }
+                visited.insert(next)
+                queue.append(next)
+            }
+        }
+        return visited
+    }
+
+    /// Threat is informational: every hex inside a surviving unit's current attack radius.
+    func threatenedHexes(by faction: TacticalFaction) -> Set<Int> {
+        var result = Set<Int>()
+        for unit in units where !unit.isDestroyed && unit.faction == faction {
+            for hex in Self.hexes where Self.hexDistance(unit.position, hex.index) <= unit.kind.attackRange {
+                if hex.index != unit.position { result.insert(hex.index) }
+            }
+        }
+        return result
+    }
+
+    func commandZone(for faction: TacticalFaction) -> Set<Int> {
+        guard let command = units.first(where: { !$0.isDestroyed && $0.faction == faction && $0.kind == .command }) else { return [] }
+        return Set([command.position] + Self.neighbors(of: command.position))
+    }
+
+    /// Strength immediately on or adjacent to an objective. Steps are used instead of raw
+    /// counter count so a reduced formation contributes less pressure to the situation view.
+    func objectivePressure(at position: Int) -> TacticalObjectivePressure {
+        var cao = 0
+        var yuan = 0
+        for unit in units where !unit.isDestroyed && Self.hexDistance(unit.position, position) <= 1 {
+            if unit.faction == .cao { cao += unit.steps } else { yuan += unit.steps }
+        }
+        return TacticalObjectivePressure(caoStrength: cao, yuanStrength: yuan)
+    }
+
+    func combatForecast(attackerID: String, defenderID: String) -> TacticalCombatForecast? {
+        guard let attacker = unit(id: attackerID),
+              let defender = unit(id: defenderID),
+              attacker.faction != defender.faction,
+              Self.hexDistance(attacker.position, defender.position) <= attacker.kind.attackRange else { return nil }
+
+        let attackSupply = isSupplied(unitID: attackerID) ? 0 : -1
+        let defenseSupply = isSupplied(unitID: defenderID) ? 0 : -1
+        let terrainBonus = hex(at: defender.position)?.terrain.defenseBonus ?? 0
+        let commandAttack = commandSupport(for: attacker.faction, around: attacker.position)
+        let commandDefense = commandSupport(for: defender.faction, around: defender.position)
+        let attackBase = attacker.kind.attack + attackSupply + commandAttack
+        let defenseBase = defender.kind.defense + defenseSupply + terrainBonus + commandDefense
+
+        var defenderLossCases = 0
+        var defenderDestroyedCases = 0
+        var attackerLossCases = 0
+        var stalemateCases = 0
+        for attackRoll in 1...6 {
+            for defenseRoll in 1...6 {
+                let margin = (attackBase + attackRoll) - (defenseBase + defenseRoll)
+                let defenderLoss = margin >= 3 ? 2 : (margin >= 1 ? 1 : 0)
+                let attackerLoss = margin <= -3 ? 1 : 0
+                if defenderLoss > 0 { defenderLossCases += 1 }
+                if defenderLoss >= defender.steps { defenderDestroyedCases += 1 }
+                if attackerLoss > 0 { attackerLossCases += 1 }
+                if defenderLoss == 0 && attackerLoss == 0 { stalemateCases += 1 }
+            }
+        }
+        func percent(_ cases: Int) -> Int { Int((Double(cases) / 36.0 * 100.0).rounded()) }
+        return TacticalCombatForecast(
+            attackerID: attackerID,
+            defenderID: defenderID,
+            attackerBaseScore: attackBase,
+            defenderBaseScore: defenseBase,
+            attackerSupplyModifier: attackSupply,
+            defenderSupplyModifier: defenseSupply,
+            terrainBonus: terrainBonus,
+            attackerCommandBonus: commandAttack,
+            defenderCommandBonus: commandDefense,
+            defenderLossChancePercent: percent(defenderLossCases),
+            defenderDestroyedChancePercent: percent(defenderDestroyedCases),
+            attackerLossChancePercent: percent(attackerLossCases),
+            stalemateChancePercent: percent(stalemateCases)
+        )
     }
 
     func isSupplied(unitID: String) -> Bool {

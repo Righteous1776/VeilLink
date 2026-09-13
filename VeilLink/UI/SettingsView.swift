@@ -7,6 +7,7 @@ struct SettingsView: View {
     @ObservedObject var ownerMode: OwnerModeController
     @ObservedObject var identity: IdentityManager
     @ObservedObject var haptics: HapticEngine
+    @ObservedObject var bluetooth: BLETransport
     @State private var versionTapCount = 0
     @State private var showsLockSheet = false
     @State private var showsIdentityManager = false
@@ -16,12 +17,14 @@ struct SettingsView: View {
     @State private var showsRestorePassword = false
     @State private var showsOwnerUnlock = false
     @State private var showsOwnerConsole = false
+    @State private var diagnosticsCopied = false
 
     init(model: AppModel) {
         self.model = model
         ownerMode = model.ownerMode
         identity = model.identity
         haptics = model.haptics
+        bluetooth = model.bluetooth
     }
 
     var body: some View {
@@ -230,12 +233,63 @@ struct SettingsView: View {
 
     private var bluetoothCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("蓝牙后台", systemImage: "antenna.radiowaves.left.and.right")
+            Label("蓝牙与链路", systemImage: "antenna.radiowaves.left.and.right")
                 .font(.headline).foregroundColor(VeilTheme.goldBright)
-            Text(model.bluetooth.statusText).fontWeight(.medium)
-            Text("已启用 Central / Peripheral 状态恢复与有限自动重连。iOS仍可能降低后台扫描频率；重新打开应用后会继续处理加密发送队列。")
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(bluetooth.statusText).fontWeight(.medium)
+                    Text("已连接 \(bluetooth.connectedPeerCount) · 已追踪 \(bluetooth.linkSnapshots.count)")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer()
+                Button {
+                    bluetooth.refreshLinks()
+                    haptics.selection()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.bordered)
+                .tint(VeilTheme.gold)
+                .accessibilityLabel("重新检查蓝牙链路")
+            }
+
+            Text("Central / Peripheral 状态恢复、控制快车道与有限自动重连均保持启用。iOS仍可能降低后台扫描频率；重新打开应用后会继续处理加密发送队列。")
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
+
+            let activeSnapshots = bluetooth.linkSnapshots.values
+                .sorted { lhs, rhs in
+                    if lhs.isConnected != rhs.isConnected { return lhs.isConnected && !rhs.isConnected }
+                    return lhs.healthScore > rhs.healthScore
+                }
+                .prefix(3)
+            if !activeSnapshots.isEmpty {
+                Divider().background(Color.white.opacity(0.07))
+                ForEach(Array(activeSnapshots)) { snapshot in
+                    HStack(spacing: 9) {
+                        Circle()
+                            .fill(snapshot.isConnected ? VeilTheme.success : (snapshot.isRecovering ? VeilTheme.gold : VeilTheme.tertiaryText))
+                            .frame(width: 7, height: 7)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(String(snapshot.id.uuidString.prefix(8))) · \(snapshot.statusTitle)")
+                                .font(.caption.weight(.semibold))
+                            Text(snapshot.compactDetail.isEmpty ? snapshot.queueSummary : snapshot.compactDetail)
+                                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                .foregroundColor(VeilTheme.tertiaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                        }
+                        Spacer()
+                        Text("H\(snapshot.healthScore)")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(VeilTheme.gold)
+                    }
+                }
+            }
+
+            Divider().background(Color.white.opacity(0.07))
             HStack {
                 Text("待发送")
                 Spacer()
@@ -243,6 +297,23 @@ struct SettingsView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(VeilTheme.secondaryText)
             }
+
+            Button {
+                UIPasteboard.general.string = bluetooth.diagnosticsReport()
+                diagnosticsCopied = true
+                haptics.resolved()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { diagnosticsCopied = false }
+            } label: {
+                HStack {
+                    Image(systemName: diagnosticsCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                    Text(diagnosticsCopied ? "已复制连接诊断" : "复制连接诊断")
+                    Spacer()
+                    Text("不含消息/密钥")
+                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .foregroundColor(VeilTheme.mutedGold)
+                }
+            }
+            .buttonStyle(VeilPressStyle())
         }
         .veilCard()
     }
@@ -370,6 +441,7 @@ private struct IdentityManagementSheet: View {
     @ObservedObject var model: AppModel
     @ObservedObject var identity: IdentityManager
     @ObservedObject var haptics: HapticEngine
+    @ObservedObject var bluetooth: BLETransport
     @Environment(\.dismiss) private var dismiss
     @State private var selectedProfile: LocalIdentity?
     @State private var showsCreate = false
@@ -379,6 +451,7 @@ private struct IdentityManagementSheet: View {
         self.model = model
         identity = model.identity
         haptics = model.haptics
+        bluetooth = model.bluetooth
     }
 
     var body: some View {

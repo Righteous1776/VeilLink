@@ -60,6 +60,7 @@ swiftc -typecheck \
     VeilLink/Transport/ConnectionEventGate.swift \
     VeilLink/Transport/BLEConnectionIntentStore.swift \
     VeilLink/Transport/BLELinkReliabilityPolicy.swift \
+    VeilLink/Transport/BLELinkSnapshot.swift \
     VeilLink/Security/PacketAbuseLimiter.swift \
     VeilLink/Transport/BLEFramer.swift
 pass "Linux-compatible core typecheck"
@@ -109,6 +110,17 @@ precondition(TacticalState.hexes.count == TacticalState.rows * TacticalState.col
 precondition(tactical.currentPlayer == .host && tactical.ordersRemaining == TacticalState.ordersPerActivation)
 precondition(tactical.legalDestinations(from: 55, actor: .host).contains(46))
 precondition(tactical.isSupplied(unitID: "cao-command"))
+precondition(tactical.supplyPath(unitID: "cao-infantry-l")?.last == 45)
+precondition(tactical.supplyNetwork(for: .cao).contains(55))
+precondition(tactical.threatenedHexes(by: .cao).contains(46))
+precondition(tactical.commandZone(for: .cao).contains(46))
+let previewAttacker = TacticalUnit(id: "preview-a", faction: .cao, kind: .infantry, name: "A", position: 30, steps: 2)
+let previewDefender = TacticalUnit(id: "preview-d", faction: .yuan, kind: .infantry, name: "D", position: 31, steps: 2)
+let previewState = TacticalState(units: [previewAttacker, previewDefender])
+let forecast = previewState.combatForecast(attackerID: "preview-a", defenderID: "preview-d")
+precondition(forecast != nil)
+precondition((forecast?.defenderLossChancePercent ?? 0) + (forecast?.attackerLossChancePercent ?? 0) + (forecast?.stalemateChancePercent ?? 0) >= 99)
+precondition(previewState.turn == 0 && previewState.lastCombat == nil)
 precondition(tactical.apply(from: 55, to: 46, actor: .host, sessionID: tacticalSession))
 precondition(tactical.turn == 1 && tactical.currentPlayer == .host && tactical.ordersRemaining == 1)
 precondition(tactical.apply(from: nil, to: nil, actor: .host, sessionID: tacticalSession))
@@ -218,9 +230,26 @@ for fragment in fragments.reversed() {
     rebuilt = assembler.ingest(source: transport, packet: fragment.encoded) ?? rebuilt
 }
 precondition(rebuilt == payload)
+let healthyLink = BLEPeerLinkSnapshot(
+    id: UUID(), isConnected: true, isWanted: true, reconnectAttempt: 0,
+    rssi: -58, quality: .strong, pendingPackets: 0, pendingBytes: 0,
+    controlPendingPackets: 0, maximumPacketSize: 185, role: .central, stalledFor: nil
+)
+let recoveringLink = BLEPeerLinkSnapshot(
+    id: UUID(), isConnected: false, isWanted: true, reconnectAttempt: 3,
+    rssi: -90, quality: .weak, pendingPackets: 20, pendingBytes: 64 * 1_024,
+    controlPendingPackets: 2, maximumPacketSize: 20, role: .unavailable, stalledFor: 8
+)
+precondition(healthyLink.healthScore > recoveringLink.healthScore)
+precondition(recoveringLink.statusTitle == "自动重连中")
+let linkReport = BLELinkDiagnosticsFormatter.report(
+    generatedAt: Date(timeIntervalSince1970: 0), isRunning: true, statusText: "ready",
+    connectedPeerCount: 1, snapshots: [healthyLink]
+)
+precondition(linkReport.contains("Privacy:"))
 print("core-harness-ok")
 SWIFT
-swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Core/MiniGames.swift     VeilLink/Core/TacticalGame.swift     VeilLink/Core/RenderCompatibilityPolicy.swift     VeilLink/Core/PerformanceOverrides.swift     VeilLink/Core/DevicePerformanceProfile.swift     VeilLink/Core/ImageViewerPolicy.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Transport/BLELinkReliabilityPolicy.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
+swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Core/MiniGames.swift     VeilLink/Core/TacticalGame.swift     VeilLink/Core/RenderCompatibilityPolicy.swift     VeilLink/Core/PerformanceOverrides.swift     VeilLink/Core/DevicePerformanceProfile.swift     VeilLink/Core/ImageViewerPolicy.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Transport/BLELinkReliabilityPolicy.swift     VeilLink/Transport/BLELinkSnapshot.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
 "$HARNESS_DIR/core-harness" >/dev/null
 pass "core executable behavior harness"
 
@@ -363,6 +392,7 @@ swiftc -typecheck -swift-version 5 -I "$HARNESS_DIR" \
     VeilLink/Transport/ConnectionEventGate.swift \
     VeilLink/Transport/BLEConnectionIntentStore.swift \
     VeilLink/Transport/BLELinkReliabilityPolicy.swift \
+    VeilLink/Transport/BLELinkSnapshot.swift \
     VeilLink/Transport/BLEFramer.swift \
     VeilLink/Transport/BLETransport.swift
 pass "BLE transport API-shape typecheck (Linux CoreBluetooth/Combine stubs)"
@@ -557,13 +587,18 @@ assert 'threefoldRepetition' in games and 'currentPositionRepetitionCount' in ga
 assert '棋局回放' in game_ui and '自动回放' in game_ui and '掷骰子' in game_ui and '当前加密会话' in game_ui
 assert '待回应' in game_ui
 # Tactical battlefield is install-local and programmatic: no image/network decoder path.
-for forbidden in ['AsyncImage', 'UIImage', 'Image(']:
+for forbidden in ['AsyncImage', 'UIImage', 'Image(\"', 'Image(decorative:', 'Image(uiImage:', 'URLSession', 'Data(contentsOf:']:
     assert forbidden not in tactical_ui, forbidden
     assert forbidden not in tactical_render, forbidden
 assert 'TacticalLocalRenderCache.cells' in tactical_ui
 assert 'TacticalUnitCounterView' in tactical_ui
 assert 'TacticalTerrainCodeMark' in tactical_ui
+assert 'TacticalIntelLayer' in tactical_ui and '交战预估' in tactical_ui and '确认交战' in tactical_ui
+assert 'supplyNetwork(for faction:' in (root/'VeilLink/Core/TacticalGame.swift').read_text(encoding='utf-8')
+assert 'threatenedHexes(by faction:' in (root/'VeilLink/Core/TacticalGame.swift').read_text(encoding='utf-8')
+assert 'combatForecast(attackerID:' in (root/'VeilLink/Core/TacticalGame.swift').read_text(encoding='utf-8')
 assert 'static let cells' in tactical_render and 'static let terrainSegments' in tactical_render
+assert 'displayCenter(for layout:' in tactical_render
 assert 'TacticalLocalRenderCache.warmUp()' in app_entry
 print('targeted-perf-ok')
 PY2
@@ -621,8 +656,6 @@ else
     info "xcodebuild/xcodegen unavailable here: true Simulator/device compilation remains a macOS/GitHub CI gate"
 fi
 
-printf 'LOCAL CI SIMULATION: PASS\n'
-
 python3 - <<'PY'
 import math, pathlib, re
 root = pathlib.Path('.')
@@ -648,10 +681,12 @@ assert 'static let boardAspectRatio: CGFloat = 1.0 / (hexHeightFactor * (1.0 + 0
 # Smallest supported compact battlefield: 320 pt screen minus 20 pt tactical horizontal padding.
 compact_board_width = 300.0
 compact_hex_height = compact_board_width * hex_h
-assert 23.0 <= compact_hex_height
-assert '.frame(width: 23, height: 23)' in views
+assert 24.0 <= compact_hex_height
+assert '.frame(width: attackTarget ? 24 : 23, height: attackTarget ? 24 : 23)' in views
 assert 'if let name = hex.name, unit == nil' in views
+assert 'displayCenter(for: layout, flipped: localPlayer == .guest)' in views
 assert '.frame(width: max(0, width - margin * 2 - stepX * 1.1))' in xiangqi
 print(f'game-layout-ok ratio={expected_ratio:.4f} compactHexH={compact_hex_height:.2f}')
 PY
 pass "mini-game normalized layout geometry"
+printf 'LOCAL CI SIMULATION: PASS\n'

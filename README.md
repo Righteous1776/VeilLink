@@ -126,3 +126,14 @@ V0.5.3 is a focused mini-game layout correction. The 三国兵棋 board containe
 V0.6.0 improves the hot paths used by live chat and encrypted mini games without changing the wire protocol or storage schema. BLE framing now emits final wire packets directly instead of allocating an intermediate fragment graph, and send pacing combines link quality, device class, negotiated packet size and a bounded byte budget so good links can move more data per scheduling round while weak links remain conservative. Queue backpressure and the control-priority lane are unchanged.
 
 Game history is reconstructed once per asynchronous database refresh and indexed by session instead of being rebuilt repeatedly during SwiftUI body evaluation. Targeted session lookup no longer reconstructs unrelated games, tactical movement search uses an indexed queue, and the tactical board caches its active-unit and legal-destination lookup for each render pass. The board also gains a clearer turn-status rail, lightweight selection lift and legal-area tinting that respect reduced-motion and legacy-device budgets. Protocol 4, VLGM1 v1 and SQLite Schema V8 remain unchanged. Actual Bluetooth throughput still depends on ATT negotiation, radio conditions and iOS scheduling.
+
+## V0.7.0 link intelligence and game continuity
+
+V0.7.0 makes live BLE state visible without changing the transport protocol. VeilLink now keeps a throttled per-peer link snapshot covering RSSI/quality, connection intent, reconnect attempts, ATT packet width and queue pressure. Nearby cards and Settings surface this state, and a privacy-safe diagnostics report can be copied without message content or cryptographic material.
+
+Encrypted mini-games now bind their link banner to the actual conversation peer instead of any connected BLE peer. The most recent authenticated transport mapping is retained in memory during reconnects, the latest local game event shows queued/sending/delivered state, and a known opponent link can be refreshed in place. Protocol 4, VLGM1 v1 and SQLite Schema V8 are unchanged.
+
+
+## V0.7.1 tactical situation awareness
+
+V0.7.1 deepens 三国兵棋 without changing its deterministic rules or VLGM event format. The battlefield gains local-only 战场/补给/威胁/目标 situation layers, supply-path and command-radius analysis, objective pressure, richer counter inspection, and guest-side board orientation with labels kept upright. Attacking an enemy counter now opens a compact combat forecast first: VeilLink enumerates all 36 possible d6-vs-d6 pairs under the existing terrain, supply and command modifiers, then asks for explicit confirmation before emitting the same encrypted move event used by prior versions. Historical tactical sessions therefore rebuild to the same board states and outcomes. Protocol 4, VLGM1 v1 and SQLite Schema V8 remain unchanged.

@@ -348,4 +348,48 @@ final class MiniGameTests: XCTestCase {
         XCTAssertNotNil(TacticalLocalRenderCache.counterStyles[.yuan])
     }
 
+    func testTacticalSituationAnalysisDoesNotMutateRules() {
+        let state = TacticalState()
+        let path = state.supplyPath(unitID: "cao-infantry-l")
+        XCTAssertEqual(path?.last, state.unit(id: "cao-infantry-l")?.position)
+        XCTAssertTrue(path?.contains(55) == true || path?.contains(54) == true)
+        XCTAssertTrue(state.supplyNetwork(for: .cao).contains(55))
+        XCTAssertTrue(state.threatenedHexes(by: .cao).contains(46))
+        XCTAssertTrue(state.commandZone(for: .cao).contains(55))
+        XCTAssertTrue(state.commandZone(for: .cao).contains(46))
+        XCTAssertEqual(state.turn, 0)
+        XCTAssertEqual(state.ordersRemaining, TacticalState.ordersPerActivation)
+    }
+
+    func testTacticalCombatForecastEnumeratesAllDiceWithoutRevealingActualRoll() {
+        let attacker = TacticalUnit(id: "a", faction: .cao, kind: .infantry, name: "测试进攻", position: 30, steps: 2)
+        let defender = TacticalUnit(id: "d", faction: .yuan, kind: .infantry, name: "测试防守", position: 31, steps: 2)
+        let state = TacticalState(units: [attacker, defender])
+        let forecast = state.combatForecast(attackerID: "a", defenderID: "d")
+        XCTAssertNotNil(forecast)
+        XCTAssertEqual(
+            (forecast?.defenderLossChancePercent ?? 0) +
+            (forecast?.attackerLossChancePercent ?? 0) +
+            (forecast?.stalemateChancePercent ?? 0),
+            100,
+            accuracy: 1
+        )
+        XCTAssertGreaterThanOrEqual(forecast?.defenderDestroyedChancePercent ?? -1, 0)
+        XCTAssertLessThanOrEqual(forecast?.defenderDestroyedChancePercent ?? 101, forecast?.defenderLossChancePercent ?? 100)
+        XCTAssertNil(state.lastCombat)
+        XCTAssertEqual(state.turn, 0)
+    }
+
+    func testTacticalGuestDisplayCenterMirrorsPositionsButKeepsGeometryInsideBoard() {
+        guard let first = TacticalLocalRenderCache.cells.first else { return XCTFail("missing cells") }
+        let normal = TacticalLocalRenderCache.displayCenter(for: first, flipped: false)
+        let mirrored = TacticalLocalRenderCache.displayCenter(for: first, flipped: true)
+        XCTAssertEqual(normal.x + mirrored.x, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(normal.y + mirrored.y, 1.0 / TacticalLocalRenderCache.boardAspectRatio, accuracy: 0.0001)
+        XCTAssertGreaterThan(mirrored.x, 0)
+        XCTAssertLessThan(mirrored.x, 1)
+        XCTAssertGreaterThan(mirrored.y, 0)
+        XCTAssertLessThan(mirrored.y, 1.0 / TacticalLocalRenderCache.boardAspectRatio)
+    }
+
 }

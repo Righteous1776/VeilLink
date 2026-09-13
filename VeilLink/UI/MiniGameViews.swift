@@ -102,7 +102,11 @@ struct MiniGameHubView: View {
                 .font(.subheadline)
                 .foregroundColor(VeilTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
-            MiniGameLinkStatusView(bluetooth: model.bluetooth)
+            MiniGameLinkStatusView(
+                bluetooth: model.bluetooth,
+                sessions: model.sessions,
+                peerIdentityID: conversation.peerIdentityID
+            )
         }
         .padding(.bottom, 2)
     }
@@ -306,31 +310,125 @@ struct MiniGameHubView: View {
 
 private struct MiniGameLinkStatusView: View {
     @ObservedObject var bluetooth: BLETransport
+    @ObservedObject var sessions: SessionCoordinator
+    let peerIdentityID: String
+    var latestGameMessage: ChatMessage? = nil
 
-    private var linkReady: Bool { bluetooth.connectedPeerCount > 0 }
-    private var isRecovering: Bool {
-        bluetooth.statusText.contains("恢复") || bluetooth.statusText.contains("重连") || bluetooth.statusText.contains("断开")
+    private var transportID: UUID? { sessions.transportID(for: peerIdentityID) }
+    private var snapshot: BLEPeerLinkSnapshot? {
+        guard let transportID else { return nil }
+        return bluetooth.linkSnapshots[transportID] ?? bluetooth.linkSnapshot(for: transportID)
+    }
+    private var secureReady: Bool { sessions.hasSecureSession(for: peerIdentityID) }
+    private var linkReady: Bool { snapshot?.isConnected == true && secureReady }
+
+    private var primaryText: String {
+        if linkReady { return "对手链路已就绪" }
+        if snapshot?.isConnected == true { return "蓝牙已连接 · 安全会话恢复中" }
+        if snapshot?.isRecovering == true { return "正在自动恢复对手链路" }
+        if transportID != nil { return "对手暂时离线" }
+        return "等待发现对手设备"
+    }
+
+    private var detailText: String? {
+        guard let snapshot else { return nil }
+        if linkReady { return snapshot.compactDetail }
+        if snapshot.pendingPackets > 0 { return "操作会保留在加密待发送队列 · \(snapshot.queueSummary)" }
+        return snapshot.rssi.map { "\($0) dBm · \(snapshot.qualityTitle)" }
     }
 
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: linkReady ? "antenna.radiowaves.left.and.right" : (isRecovering ? "arrow.triangle.2.circlepath" : "dot.radiowaves.left.and.right"))
+        HStack(spacing: 8) {
+            Image(systemName: linkReady ? "antenna.radiowaves.left.and.right" : (snapshot?.isRecovering == true ? "arrow.triangle.2.circlepath" : "dot.radiowaves.left.and.right"))
                 .font(.caption.weight(.bold))
-            Text(linkReady ? "蓝牙链路已就绪" : bluetooth.statusText)
-                .lineLimit(1)
+                .foregroundColor(linkReady ? VeilTheme.success : VeilTheme.gold)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(primaryText)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(linkReady ? VeilTheme.text : VeilTheme.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                if let detailText {
+                    Text(detailText)
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundColor(VeilTheme.tertiaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+            }
+
             Spacer(minLength: 4)
-            if linkReady {
-                Text("控制快车道")
+
+            if let latestGameMessage {
+                MiniGameDeliveryBadge(state: latestGameMessage.deliveryState)
+            } else if let snapshot, linkReady {
+                Text("H\(snapshot.healthScore)")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundColor(VeilTheme.gold)
+                    .accessibilityLabel("链路健康度 \(snapshot.healthScore)")
+            }
+
+            if !linkReady, let transportID {
+                Button {
+                    if snapshot?.isConnected == true {
+                        sessions.recoverSecureSession(for: peerIdentityID)
+                        bluetooth.refreshLinks()
+                    } else {
+                        bluetooth.recover(transportID)
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(VeilTheme.gold)
+                .accessibilityLabel("立即恢复对手蓝牙链路")
             }
         }
-        .font(.caption2.weight(.semibold))
-        .foregroundColor(linkReady ? VeilTheme.secondaryText : (isRecovering ? VeilTheme.gold : VeilTheme.tertiaryText))
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(Color.white.opacity(0.035))
-        .clipShape(Capsule())
-        .accessibilityLabel(linkReady ? "蓝牙链路已连接，游戏控制消息优先发送" : bluetooth.statusText)
+        .clipShape(VeilPanelShape(cut: 8, radius: 6))
+        .overlay(VeilPanelShape(cut: 8, radius: 6).stroke(VeilTheme.hairline, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct MiniGameDeliveryBadge: View {
+    let state: ChatMessage.DeliveryState
+
+    private var label: String {
+        switch state {
+        case .queued: return "已排队"
+        case .sending: return "发送中"
+        case .paused: return "待恢复"
+        case .delivered: return "已送达"
+        case .cancelled: return "已取消"
+        case .failed: return "失败"
+        }
+    }
+
+    private var icon: String {
+        switch state {
+        case .queued: return "clock"
+        case .sending: return "arrow.up.circle"
+        case .paused: return "pause.circle"
+        case .delivered: return "checkmark.circle.fill"
+        case .cancelled: return "minus.circle"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+            Text(label)
+        }
+        .font(.system(size: 9.5, weight: .semibold))
+        .foregroundColor(state == .failed ? VeilTheme.danger : (state == .delivered ? VeilTheme.success : VeilTheme.gold))
+        .lineLimit(1)
     }
 }
 
@@ -514,6 +612,13 @@ struct MiniGameSessionView: View {
     @State private var observedMoveCount = 0
     @State private var reloadGeneration = 0
 
+    private var latestLocalGameMessage: ChatMessage? {
+        messages.reversed().first { message in
+            guard message.isOutgoing, let packet = MiniGameCodec.decode(message.body) else { return false }
+            return packet.sessionID == sessionID
+        }
+    }
+
     var body: some View {
         Group {
             if let session {
@@ -521,6 +626,14 @@ struct MiniGameSessionView: View {
                     MiniGameStatusHeader(session: session)
                         .padding(.horizontal, 14)
                         .padding(.top, 10)
+
+                    MiniGameLinkStatusView(
+                        bluetooth: model.bluetooth,
+                        sessions: model.sessions,
+                        peerIdentityID: conversation.peerIdentityID,
+                        latestGameMessage: latestLocalGameMessage
+                    )
+                    .padding(.horizontal, 14)
 
                     switch session.status {
                     case .invited:

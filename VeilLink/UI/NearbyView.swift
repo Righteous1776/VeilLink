@@ -56,7 +56,7 @@ struct NearbyView: View {
                     .padding(.vertical, 54)
                 } else {
                     ForEach(sessions.nearbyPeers) { peer in
-                        NearbyPeerCard(model: model, peer: peer)
+                        NearbyPeerCard(model: model, bluetooth: bluetooth, peer: peer)
                     }
                 }
             }
@@ -165,7 +165,12 @@ private struct RadarStatusView: View {
 
 private struct NearbyPeerCard: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var bluetooth: BLETransport
     let peer: NearbyPeer
+
+    private var linkSnapshot: BLEPeerLinkSnapshot? {
+        bluetooth.linkSnapshots[peer.transportID] ?? bluetooth.linkSnapshot(for: peer.transportID)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -195,6 +200,44 @@ private struct NearbyPeerCard: View {
                         .fill(trustColor.opacity(0.52))
                         .frame(width: 28, height: 1)
                 }
+            }
+
+            if let linkSnapshot {
+                HStack(spacing: 8) {
+                    Image(systemName: linkSnapshot.isConnected ? "antenna.radiowaves.left.and.right" : (linkSnapshot.isRecovering ? "arrow.triangle.2.circlepath" : "wave.3.right"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(linkSnapshot.isConnected ? VeilTheme.success : VeilTheme.gold)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(linkSnapshot.statusTitle)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(VeilTheme.text)
+                        Text(linkSnapshot.compactDetail.isEmpty ? linkSnapshot.queueSummary : linkSnapshot.compactDetail)
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundColor(VeilTheme.tertiaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                    }
+                    Spacer(minLength: 6)
+                    Text("H\(linkSnapshot.healthScore)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(VeilTheme.gold)
+                    if linkSnapshot.isRecovering {
+                        Button {
+                            bluetooth.recover(peer.transportID)
+                            model.haptics.selection()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .frame(width: 28, height: 28)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(VeilTheme.gold)
+                        .accessibilityLabel("立即恢复该设备链路")
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.white.opacity(0.028))
+                .clipShape(VeilPanelShape(cut: 7, radius: 5))
             }
 
             if peer.trustState == .blocked {

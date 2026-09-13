@@ -60,6 +60,14 @@ enum TacticalLocalRenderCache {
         )
     }
 
+    /// Mirrors only cell positions, never the tile contents, so the guest sees their army at
+    /// the near edge while labels/counters remain upright. Coordinates stay normalized to board width.
+    static func displayCenter(for layout: CellLayout, flipped: Bool) -> UnitPoint {
+        guard flipped else { return UnitPoint(x: layout.centerX, y: layout.centerY) }
+        let boardHeightFactor = 1.0 / boardAspectRatio
+        return UnitPoint(x: 1.0 - layout.centerX, y: boardHeightFactor - layout.centerY)
+    }
+
     /// Tiny normalized line motifs used instead of SF Symbols or bitmap textures.
     static let terrainSegments: [TacticalTerrain: [Segment]] = [
         .plain: [
