@@ -160,11 +160,10 @@ final class AgentCameraController: NSObject, ObservableObject, AVCaptureVideoDat
                     .map { $0.identifier }
             }
             if let textRequest {
-                cachedRecognizedText = (textRequest.results ?? [])
+                let recognizedText: [String] = (textRequest.results ?? [])
                     .compactMap { $0.topCandidates(1).first?.string }
                     .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                    .prefix(4)
-                    .map(String.init)
+                cachedRecognizedText = Array(recognizedText.prefix(4))
             }
             let context = AgentVisualContext(
                 capturedAt: Date(),
