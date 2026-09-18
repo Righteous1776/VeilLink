@@ -435,7 +435,7 @@ struct SettingsView: View {
                 .foregroundColor(VeilTheme.tertiaryText)
             Text(value)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundColor(VeilTheme.primaryText)
+                .foregroundColor(VeilTheme.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
