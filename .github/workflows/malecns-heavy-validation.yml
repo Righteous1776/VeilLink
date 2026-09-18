@@ -1,0 +1,146 @@
+name: MaleCNS VFLY heavy validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-vfly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install VeilFly builder dependencies
+        run: pip install -r Tools/VeilFlyBuilder/requirements.txt
+
+      - name: Fetch pinned MaleCNS-derived reference
+        run: python3 Tools/VeilFlyBuilder/fetch_malecns.py --mode prebuilt --dest "$RUNNER_TEMP/malecns"
+
+      - name: Export and verify full VFLY1 reference
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/vfly"
+          python3 Tools/VeilFlyBuilder/export_vfly.py \
+            --data "$RUNNER_TEMP/malecns" \
+            --output "$RUNNER_TEMP/vfly/MaleCNSReference.vfly" \
+            --tier reference
+          python3 Tools/VeilFlyBuilder/verify_vfly.py \
+            "$RUNNER_TEMP/vfly/MaleCNSReference.vfly" \
+            --expect-neurons 166700 --expect-edges 25582938 \
+            --expect-tier reference --expect-dataset male-cns:v1.0
+
+      - name: Build deterministic Core and Lite graph tiers
+        run: |
+          set -euo pipefail
+          python3 Tools/VeilFlyBuilder/build_subgraph.py \
+            --input "$RUNNER_TEMP/vfly/MaleCNSReference.vfly" \
+            --tier core --hops 5 --max-nodes 48000 --min-abs-weight 0.001 \
+            --output "$RUNNER_TEMP/vfly/VeilFlyCore.vfly"
+          python3 Tools/VeilFlyBuilder/build_subgraph.py \
+            --input "$RUNNER_TEMP/vfly/MaleCNSReference.vfly" \
+            --tier lite --hops 4 --max-nodes 12000 --min-abs-weight 0.002 \
+            --output "$RUNNER_TEMP/vfly/VeilFlyLite.vfly"
+          python3 Tools/VeilFlyBuilder/verify_vfly.py "$RUNNER_TEMP/vfly/VeilFlyCore.vfly" \
+            --expect-tier core --expect-dataset male-cns:v1.0
+          python3 Tools/VeilFlyBuilder/verify_vfly.py "$RUNNER_TEMP/vfly/VeilFlyLite.vfly" \
+            --expect-tier lite --expect-dataset male-cns:v1.0
+
+      - name: Write provenance
+        run: |
+          python3 Tools/VeilFlyBuilder/provenance.py \
+            --output "$RUNNER_TEMP/vfly/PROVENANCE.json" \
+            --artifact "$RUNNER_TEMP/vfly/MaleCNSReference.vfly" \
+            --artifact "$RUNNER_TEMP/vfly/VeilFlyCore.vfly" \
+            --artifact "$RUNNER_TEMP/vfly/VeilFlyLite.vfly" \
+            --command 'fetch_malecns.py --mode prebuilt' \
+            --command 'export_vfly.py --tier reference' \
+            --command 'build_subgraph.py --tier core' \
+            --command 'build_subgraph.py --tier lite'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VeilFly-MaleCNS-v1.0-VFLY1
+          path: |
+            ${{ runner.temp }}/vfly/VeilFlyCore.vfly
+            ${{ runner.temp }}/vfly/VeilFlyCore.vfly.manifest.json
+            ${{ runner.temp }}/vfly/VeilFlyLite.vfly
+            ${{ runner.temp }}/vfly/VeilFlyLite.vfly.manifest.json
+            ${{ runner.temp }}/vfly/PROVENANCE.json
+          if-no-files-found: error
+          compression-level: 6
+
+  package-real-brain-ipa:
+    needs: build-vfly
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: VeilFly-MaleCNS-v1.0-VFLY1
+          path: ${{ runner.temp }}/vfly
+
+      - name: Inject verified Core/Lite VFLY assets
+        run: bash scripts/inject-vfly-assets.sh "$RUNNER_TEMP/vfly"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build simulator with real MaleCNS-derived assets
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project VeilLink.xcodeproj \
+            -scheme VeilLink \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Run complete unit tests
+        run: bash scripts/ci-test.sh
+
+      - name: Build unsigned iPhoneOS app with real MaleCNS-derived assets
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project VeilLink.xcodeproj \
+            -scheme VeilLink \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Verify packaged VFLY assets
+        run: |
+          set -euo pipefail
+          app="DerivedData/Build/Products/Release-iphoneos/VeilLink.app"
+          test -s "$app/VeilFlyCore.vfly"
+          test -s "$app/VeilFlyLite.vfly"
+          test ! -e "$app/MaleCNSReference.vfly"
+          test -s "$app/VeilFlyAssets.json"
+
+      - name: Package unsigned real-brain IPA
+        run: bash scripts/package-unsigned-ipa.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-unsigned-MaleCNS-v1.0
+          path: |
+            build/VeilLink-unsigned.ipa
+            VeilLink/Resources/VeilFlyAssets.json
+          if-no-files-found: error
+          compression-level: 6
