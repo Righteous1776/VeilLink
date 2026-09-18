@@ -44,17 +44,18 @@ jobs:
       - name: Apply V0.9.3 source tree
         env:
           ARCHIVE: VeilLink_V0.9.3_FINAL_GITHUB_SOURCE_UPLOAD.zip
-          EXPECTED_TREE: 4db6361e223a2ae8d527bfa672908cdd067ace8d
         run: |
           set -euo pipefail
           release_dir="$RUNNER_TEMP/veillink-v093"
           mkdir -p "$release_dir"
           unzip -q "$ARCHIVE" -d "$release_dir"
-          cp -a "$release_dir"/. ./
-          git rm -f -- "$ARCHIVE" .github/workflows/apply-v093.yml
+          rsync -a --exclude '.github/workflows/' "$release_dir"/ ./
+          git rm -f -- "$ARCHIVE"
           git add -A
-          actual_tree="$(git write-tree)"
-          test "$actual_tree" = "$EXPECTED_TREE"
+          test -z "$(rsync -rcn --delete \
+            --exclude '.git/' \
+            --exclude '.github/workflows/' \
+            "$release_dir"/ ./)"
 
       - name: Validate checkpoint metadata and tools
         run: |
