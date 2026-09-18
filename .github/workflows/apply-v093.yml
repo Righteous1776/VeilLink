@@ -61,6 +61,7 @@ jobs:
           set -euo pipefail
           bash -n scripts/*.sh
           python3 -m compileall -q Tools
+          python3 -m pip install -r Tools/VeilFlyBuilder/requirements.txt
           python3 Tools/VeilFlyBuilder/verify_vfly.py VeilLinkTests/Fixtures/MaleCNSFixture.vfly
           python3 - <<'PY'
           import plistlib
