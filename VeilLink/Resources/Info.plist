@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.7.2</string>
+	<string>0.9.3</string>
 	<key>CFBundleVersion</key>
-	<string>31</string>
+	<string>36</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
@@ -28,6 +28,12 @@
 	<string>VeilLink 使用蓝牙广播匿名服务标识，以便附近设备发现你。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>仅在你启用自动保存或主动选择时，将收到的图片保存到照片。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>灵核视频对话可在本机使用前置摄像头生成低频视觉摘要；原始视频不会上传。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>灵核可使用麦克风进行本机语音输入；不支持离线识别时不会自动改用云端。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>灵核仅在系统支持设备端识别时使用语音转文字。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

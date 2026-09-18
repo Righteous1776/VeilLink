@@ -1,0 +1,51 @@
+{
+  "id": "veillink.game-policy.ranker.v4",
+  "schema": 4,
+  "games": [
+    "gomoku",
+    "xiangqi",
+    "ludo"
+  ],
+  "excluded_games": [
+    "tactical"
+  ],
+  "source_dataset": "v090_deterministic_900.jsonl",
+  "source_dataset_sha256": "885a5ab8037a2190ac35444b2cedcdba58a0a492839211c889486346af4ab784",
+  "source_rows": 283121,
+  "source_decisions": 80385,
+  "training_decisions": 72348,
+  "validation_decisions": 8037,
+  "completed_training_epochs": 9,
+  "requested_training_epochs": 10,
+  "epoch_decisions": 36000,
+  "batch_decisions": 1024,
+  "learning_rate": 0.00065,
+  "seed": 1776,
+  "validation_loss": 0.503857540371585,
+  "validation_top1": 0.8455891501804156,
+  "validation_mrr": 0.9060191949149248,
+  "validation_macro_top1": 0.8063488761829771,
+  "validation_macro_mrr": 0.8759616113157311,
+  "per_game_validation": {
+    "gomoku": {
+      "top1": 0.847972972972973,
+      "mrr": 0.8959057331085205,
+      "decisions": 592
+    },
+    "xiangqi": {
+      "top1": 0.6772836538461539,
+      "mrr": 0.7921474438447219,
+      "decisions": 1664
+    },
+    "ludo": {
+      "top1": 0.8937900017298045,
+      "mrr": 0.9398316569939511,
+      "decisions": 5781
+    }
+  },
+  "game_balanced_sampling": true,
+  "device": "cpu-bootstrap",
+  "sha256": "221193e79f04e06f0fc8c6a6fbfaa8519e203cafd1819aa1ce6048a350dbd9a5",
+  "byte_count": 855785,
+  "note": "Largest completed local CPU bootstrap. Checkpoint saved after epoch 9 before tool timeout. Tactical/三国兵棋 excluded. Metrics are agreement with heuristic self-play teacher, not expert strength or MaleCNS."
+}

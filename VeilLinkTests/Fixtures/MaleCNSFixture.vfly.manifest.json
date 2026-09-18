@@ -1,0 +1,10 @@
+{
+  "byte_count": 1664,
+  "edge_count": 13,
+  "group_count": 14,
+  "group_member_count": 20,
+  "neuron_count": 12,
+  "path": "/mnt/data/v093_fixture/out/reference.vfly",
+  "payload_sha256": "bbd1dafe0aa44c0726c29ad926330b8f08ae1457d8e905b7de76460ebd3f2777",
+  "sha256": "fb3fc9a27fd174576c42925bacff55c810f6e1579e708120ddcbe1fda6d1b5af"
+}

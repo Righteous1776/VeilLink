@@ -10,6 +10,8 @@ fail() { printf 'FAIL  %s\n' "$1" >&2; exit 1; }
 
 command -v swiftc >/dev/null || fail "swiftc not found"
 command -v python3 >/dev/null || fail "python3 not found"
+command -v cc >/dev/null || fail "C compiler not found"
+command -v cc >/dev/null || fail "C compiler not found"
 
 python3 - <<'PY'
 import pathlib, plistlib, yaml
@@ -57,6 +59,27 @@ swiftc -typecheck \
     VeilLink/Core/PerformanceOverrides.swift \
     VeilLink/Core/DevicePerformanceProfile.swift \
     VeilLink/Core/ImageViewerPolicy.swift \
+    VeilLink/Health/VeilA9Lattice.swift \
+    VeilLink/Agent/Compute/A9ComputePlanner.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSComputeContract.swift \
+    VeilLink/Agent/Vision/AgentVisualContext.swift \
+    VeilLink/Agent/Core/AgentModels.swift \
+    VeilLink/Agent/Core/AgentRuntime.swift \
+    VeilLink/Agent/Core/AgentCapabilityProfile.swift \
+    VeilLink/Agent/Core/AgentSession.swift \
+    VeilLink/Agent/Core/AgentDiagnostics.swift \
+    VeilLink/Agent/Language/LocalTextModelManifest.swift \
+    VeilLink/Agent/Language/LocalTextModelRuntime.swift \
+    VeilLink/Agent/Language/AgentPromptAssembler.swift \
+    VeilLink/Agent/Language/AgentTokenStream.swift \
+    VeilLink/Agent/Language/MockLocalTextModelRuntime.swift \
+    VeilLink/Agent/Language/LocalTextModelCoordinator.swift \
+    VeilLink/Agent/Games/AgentGameAdapter.swift \
+    VeilLink/Agent/Games/GomokuAgentAdapter.swift \
+    VeilLink/Agent/Games/XiangqiAgentAdapter.swift \
+    VeilLink/Agent/Games/LudoAgentAdapter.swift \
+    VeilLink/Agent/Games/AgentGameRegistry.swift \
+    VeilLink/Agent/Games/TrainedGamePolicyRuntime.swift \
     VeilLink/Transport/ConnectionEventGate.swift \
     VeilLink/Transport/BLEConnectionIntentStore.swift \
     VeilLink/Transport/BLELinkReliabilityPolicy.swift \
@@ -69,6 +92,69 @@ HARNESS_DIR="$(mktemp -d)"
 trap 'rm -rf "$HARNESS_DIR"' EXIT
 cat > "$HARNESS_DIR/main.swift" <<'SWIFT'
 import Foundation
+
+precondition(SidebarSection.allCases == [.chats, .nearby, .agent, .settings])
+precondition(SidebarSection.agent.rawValue == "灵核")
+let legacyAgent = AgentCapabilityProfile.profile(devicePerformanceLabel: "LEGACY-COMPACT")
+let highAgent = AgentCapabilityProfile.profile(devicePerformanceLabel: "13PRO-HIGH")
+precondition(legacyAgent.tier == .legacyA10 && legacyAgent.unloadOnBackground)
+precondition(highAgent.tier == .high && highAgent.maxNewTokens > legacyAgent.maxNewTokens)
+var ephemeralAgentSession = AgentSession(id: "ci")
+ephemeralAgentSession.append(AgentMessage(id: "a", role: .user, text: "hello"), limit: 2)
+ephemeralAgentSession.append(AgentMessage(id: "b", role: .assistant, text: "world"), limit: 2)
+ephemeralAgentSession.append(AgentMessage(id: "c", role: .user, text: "again"), limit: 2)
+precondition(ephemeralAgentSession.messages.map(\.id) == ["b", "c"])
+precondition(!AgentTokenStream.chunks(text: "VeilLink灵核", targetCharacters: 3).isEmpty)
+precondition(AgentGameRegistry.trainingEnabledKinds == [.gomoku, .xiangqi, .ludo])
+precondition(!AgentGameRegistry.isTrainingEnabled(.tactical))
+let a9Green = VeilA9Packet(light: .green, p0: 0, p1: 0, p2: 0, p3: 0, riskBP: 0, persistenceRuns: 0, blocker: false, healthBP: 1_000, issues: [])
+precondition(VeilA9Lattice.cells.count == 144)
+precondition(VeilA9Lattice.decide(a9Green).level == .l0Observe)
+let a9P0 = VeilA9Packet(light: .red, p0: 1, p1: 0, p2: 0, p3: 0, riskBP: 4_000, persistenceRuns: 0, blocker: false, healthBP: 500, issues: [])
+precondition(VeilA9Lattice.decide(a9P0).level == .l5Emergency)
+let a9Pressure = VeilA9Input(
+    bluetoothRunning: true, connectedPeerCount: 1, trackedPeerCount: 1,
+    recoveringPeerCount: 1, weakPeerCount: 1, marginalPeerCount: 0,
+    minimumLinkHealth: 20, maximumReconnectAttempt: 6, pendingBytes: 3 * 1_024 * 1_024,
+    controlPendingPackets: 80, maximumStallMilliseconds: 25_000,
+    agentUnavailable: false, agentCooling: false, agentHasFailure: false,
+    thermalLevel: .serious, lowPowerMode: true, databaseIntegrity: .ok
+)
+let a9PressurePacket = VeilA9Classifier.makePacket(input: a9Pressure, persistenceRuns: 3)
+precondition(a9PressurePacket.light == .red && a9PressurePacket.blocker)
+let highComputeProfile = AgentCapabilityProfile.profile(devicePerformanceLabel: "13PRO-HIGH")
+let flyComputePlan = VeilA9ComputePlanner.plan(
+    decision: .initial,
+    profile: highComputeProfile,
+    focus: .maleCNSSandbox,
+    logicalProcessorCount: 6
+)
+precondition(flyComputePlan.maleCNS.tier == .core)
+precondition(flyComputePlan.maleCNS.workerCount >= 2)
+let backlogDecision = VeilA9Decision(
+    light: .yellow, level: .l2Review, reasonCode: "TEST", healthScore: 80,
+    riskPoints: 12, persistenceRuns: 3,
+    issues: [VeilA9Issue(code: "CONTROL_BACKLOG_HIGH", severity: .p1, source: "ble", detail: "test")],
+    latticeIndex: 42
+)
+let backlogPlan = VeilA9ComputePlanner.plan(
+    decision: backlogDecision,
+    profile: highComputeProfile,
+    focus: .videoChat,
+    logicalProcessorCount: 6
+)
+precondition(backlogPlan.transportReserveUnits > 0)
+precondition(backlogPlan.mode == .constrained)
+let visualContext = AgentVisualContext(capturedAt: Date(timeIntervalSince1970: 1), faceCount: 1, labels: ["person"], recognizedText: ["VeilLink"], frameWidth: 640, frameHeight: 480)
+precondition(visualContext.compactPromptDescription.contains("VeilLink"))
+let gomokuAgent = GomokuAgentAdapter(state: GomokuState(), actor: .host)
+precondition(gomokuAgent.enumerateLegalActions().count == 225)
+precondition(gomokuAgent.makeObservation().features.count == 228)
+let xiangqiAgent = XiangqiAgentAdapter(state: XiangqiState(), actor: .host)
+precondition(!xiangqiAgent.enumerateLegalActions().isEmpty)
+let ciLudoSession = "00000000-0000-0000-0000-000000000001"
+let ludoAgent = LudoAgentAdapter(state: LudoState(), actor: .host, sessionID: ciLudoSession)
+precondition(!ludoAgent.enumerateLegalActions().isEmpty)
 
 let reply = ReplyTextCodec.encode(quoted: "old message", reply: "new message")
 precondition(ReplyTextCodec.decode(reply)?.reply == "new message")
@@ -259,9 +345,281 @@ let linkReport = BLELinkDiagnosticsFormatter.report(
 precondition(linkReport.contains("Privacy:"))
 print("core-harness-ok")
 SWIFT
-swiftc     VeilLink/Core/Models.swift     VeilLink/Core/MessageTextFeatures.swift     VeilLink/Core/MiniGames.swift     VeilLink/Core/TacticalGame.swift     VeilLink/Core/RenderCompatibilityPolicy.swift     VeilLink/Core/PerformanceOverrides.swift     VeilLink/Core/DevicePerformanceProfile.swift     VeilLink/Core/ImageViewerPolicy.swift     VeilLink/Transport/ConnectionEventGate.swift     VeilLink/Transport/BLELinkReliabilityPolicy.swift     VeilLink/Transport/BLELinkSnapshot.swift     VeilLink/Security/PacketAbuseLimiter.swift     VeilLink/Transport/BLEFramer.swift     "$HARNESS_DIR/main.swift"     -o "$HARNESS_DIR/core-harness"
+swiftc \
+    VeilLink/Core/Models.swift \
+    VeilLink/Core/MessageTextFeatures.swift \
+    VeilLink/Core/MiniGames.swift \
+    VeilLink/Core/TacticalGame.swift \
+    VeilLink/Core/RenderCompatibilityPolicy.swift \
+    VeilLink/Core/PerformanceOverrides.swift \
+    VeilLink/Core/DevicePerformanceProfile.swift \
+    VeilLink/Core/ImageViewerPolicy.swift \
+    VeilLink/Health/VeilA9Lattice.swift \
+    VeilLink/Agent/Compute/A9ComputePlanner.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSComputeContract.swift \
+    VeilLink/Agent/Vision/AgentVisualContext.swift \
+    VeilLink/Agent/Core/AgentModels.swift \
+    VeilLink/Agent/Core/AgentRuntime.swift \
+    VeilLink/Agent/Core/AgentCapabilityProfile.swift \
+    VeilLink/Agent/Core/AgentSession.swift \
+    VeilLink/Agent/Core/AgentDiagnostics.swift \
+    VeilLink/Agent/Language/LocalTextModelManifest.swift \
+    VeilLink/Agent/Language/LocalTextModelRuntime.swift \
+    VeilLink/Agent/Language/AgentPromptAssembler.swift \
+    VeilLink/Agent/Language/AgentTokenStream.swift \
+    VeilLink/Agent/Language/MockLocalTextModelRuntime.swift \
+    VeilLink/Agent/Language/LocalTextModelCoordinator.swift \
+    VeilLink/Agent/Games/AgentGameAdapter.swift \
+    VeilLink/Agent/Games/GomokuAgentAdapter.swift \
+    VeilLink/Agent/Games/XiangqiAgentAdapter.swift \
+    VeilLink/Agent/Games/LudoAgentAdapter.swift \
+    VeilLink/Agent/Games/AgentGameRegistry.swift \
+    VeilLink/Transport/ConnectionEventGate.swift \
+    VeilLink/Transport/BLELinkReliabilityPolicy.swift \
+    VeilLink/Transport/BLELinkSnapshot.swift \
+    VeilLink/Security/PacketAbuseLimiter.swift \
+    VeilLink/Transport/BLEFramer.swift \
+    "$HARNESS_DIR/main.swift" -o "$HARNESS_DIR/core-harness"
 "$HARNESS_DIR/core-harness" >/dev/null
 pass "core executable behavior harness"
+
+cat > "$HARNESS_DIR/NativeBudgetStub.swift" <<'SWIFT'
+import Foundation
+
+enum MaleCNSComputeTier: String, Codable, CaseIterable, Sendable { case suspended, lite, core, reference }
+struct MaleCNSComputeBudget: Equatable, Sendable {
+    let tier: MaleCNSComputeTier
+    let workerCount: Int
+    let neuralStepBudget: Int
+    let episodeMilliseconds: Int
+    let rolloutCount: Int
+    let stateSampleStride: Int
+    static let suspended = MaleCNSComputeBudget(tier: .suspended, workerCount: 0, neuralStepBudget: 0, episodeMilliseconds: 0, rolloutCount: 0, stateSampleStride: 8)
+}
+protocol MaleCNSComputeConsumer: AnyObject {
+    func applyComputeBudget(_ budget: MaleCNSComputeBudget)
+    func trimComputeState()
+}
+SWIFT
+cat > "$HARNESS_DIR/native-main.swift" <<'SWIFT'
+import Foundation
+
+@main
+struct NativeKernelHarness {
+    static func main() throws {
+        let graph = try MaleCNSNativeGraph(
+            neuronCount: 3,
+            offsets: [0, 1, 2, 2],
+            targets: [1, 2],
+            weights: [1, 1]
+        )
+        let runtime = MaleCNSNativeKernelRuntime(graph: graph)
+        runtime.applyComputeBudget(MaleCNSComputeBudget(
+            tier: .lite, workerCount: 1, neuralStepBudget: 3,
+            episodeMilliseconds: 100, rolloutCount: 1, stateSampleStride: 1
+        ))
+        try runtime.setExternalDrive([1.1, 0, 0])
+        let firstStepCount = try runtime.stepInPlace(decay: 0, gain: 1, tonic: 0)
+        precondition(firstStepCount == 1)
+        precondition(runtime.firedSnapshot() == [0])
+        runtime.clearExternalDrive()
+        let episode = try runtime.runEpisode(requestedSteps: 99, decay: 0, gain: 1, tonic: 0)
+        precondition(episode.executedSteps == 3)
+        precondition(episode.totalSpikeCount == 2)
+        precondition(runtime.spikeCountSnapshot() == [0, 1, 1])
+        let readoutMap = try MaleCNSNativeReadoutMap(groups: [
+            MaleCNSNativeReadoutGroup(name: "motor", neuronIndices: [1, 2]),
+            MaleCNSNativeReadoutGroup(name: "terminal", neuronIndices: [2]),
+            MaleCNSNativeReadoutGroup(name: "overlap", neuronIndices: [1, 2, 2])
+        ], neuronCount: 3)
+        let readout = try runtime.readoutSnapshot(using: readoutMap)
+        precondition(readout.spikeCounts == [2, 1, 3])
+        precondition(runtime.hasPerNeuronSpikeCounts)
+
+        let compact = MaleCNSNativeKernelRuntime(graph: graph)
+        precondition(!compact.hasPerNeuronSpikeCounts)
+        compact.applyComputeBudget(MaleCNSComputeBudget(
+            tier: .lite, workerCount: 1, neuralStepBudget: 3,
+            episodeMilliseconds: 100, rolloutCount: 1, stateSampleStride: 1
+        ))
+        try compact.setExternalDrive([1.1, 0, 0])
+        let compactFirstStep = try compact.stepInPlace(decay: 0, gain: 1, tonic: 0)
+        precondition(compactFirstStep == 1)
+        compact.clearExternalDrive()
+        let compactEpisode = try compact.runEpisodeWithReadouts(
+            using: readoutMap, requestedSteps: 3, decay: 0, gain: 1, tonic: 0
+        )
+        precondition(compactEpisode.summary == episode)
+        precondition(compactEpisode.readout.spikeCounts == readout.spikeCounts)
+        precondition(!compact.hasPerNeuronSpikeCounts)
+        runtime.trimComputeState()
+        precondition(!runtime.hasPerNeuronSpikeCounts)
+
+        let pool = MaleCNSNativeRolloutPool(graph: graph, readoutMap: readoutMap)
+        pool.applyComputeBudget(MaleCNSComputeBudget(
+            tier: .core, workerCount: 2, neuralStepBudget: 3,
+            episodeMilliseconds: 100, rolloutCount: 2, stateSampleStride: 1
+        ))
+        let requests = (0..<3).map { index in
+            MaleCNSNativeRolloutRequest(
+                id: index, externalDrive: [1.1, 0, 0], requestedSteps: 3,
+                decay: 0, gain: 1, tonic: 0
+            )
+        }
+        let pooled = try pool.run(requests)
+        precondition(pooled.map(\.id) == [0, 1])
+        precondition(pooled.allSatisfy { $0.episode.readout.spikeCounts == [3, 1, 4] })
+        precondition(pooled.allSatisfy { $0.episode.summary.totalSpikeCount == 6 })
+        precondition(pool.residentWorkerCount == 2)
+        pool.applyComputeBudget(.suspended)
+        precondition(pool.residentWorkerCount == 0)
+        let suspendedResults = try pool.run(requests)
+        precondition(suspendedResults.isEmpty)
+        print("vlfly-native-wrapper-ok")
+    }
+}
+SWIFT
+cc -std=c11 -O2 -Wall -Wextra -Werror -c VeilLink/Native/VeilFlyKernel.c -o "$HARNESS_DIR/VeilFlyKernel.o"
+swiftc -swift-version 5 -O \
+    -import-objc-header VeilLink/Native/VeilLink-Bridging-Header.h \
+    "$HARNESS_DIR/NativeBudgetStub.swift" \
+    VeilLink/Agent/MaleCNS/MaleCNSNativeKernel.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSNativeRolloutPool.swift \
+    "$HARNESS_DIR/native-main.swift" \
+    "$HARNESS_DIR/VeilFlyKernel.o" \
+    -o "$HARNESS_DIR/native-kernel-harness"
+"$HARNESS_DIR/native-kernel-harness" >/dev/null
+swiftc -swift-version 5 -strict-concurrency=complete -typecheck \
+    -import-objc-header VeilLink/Native/VeilLink-Bridging-Header.h \
+    "$HARNESS_DIR/NativeBudgetStub.swift" \
+    VeilLink/Agent/MaleCNS/MaleCNSNativeKernel.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSNativeRolloutPool.swift
+pass "VeilFly native C kernel + compact readout + deterministic rollout pool"
+
+python3 - <<'PYVFLY'
+from pathlib import Path
+import hashlib, json, struct
+p=Path('VeilLinkTests/Fixtures/MaleCNSFixture.vfly')
+raw=p.read_bytes()
+fmt=struct.Struct('<8sIIIIIIIIQQQQQQQQ32s')
+assert fmt.size == 136 and len(raw) >= fmt.size
+h=fmt.unpack_from(raw)
+assert h[0] == b'VFLY1\0\0\0' and h[1] == 1 and h[2] == 136 and h[3] == 0x01020304
+assert h[5] == 12 and h[6] == 13
+payload=raw[136:]
+assert len(payload) == h[16]
+assert hashlib.sha256(payload).digest() == h[17]
+md_off, md_len = h[14], h[15]
+meta=json.loads(raw[md_off:md_off+md_len])
+assert meta['dataset_id'] == 'male-cns:v1.0'
+assert meta['group_names'][0].startswith('sensory.')
+print('vfly1-fixture-hash-ok')
+PYVFLY
+
+cat > "$HARNESS_DIR/VFLYLoaderHarness.swift" <<'SWIFT'
+import Foundation
+@main
+struct VFLYLoaderHarness {
+    static func main() throws {
+        let url = URL(fileURLWithPath: "VeilLinkTests/Fixtures/MaleCNSFixture.vfly")
+        let artifact = try VFLY1Loader.load(url: url, verifyPayloadHash: false)
+        precondition(artifact.graph.neuronCount == 12)
+        precondition(artifact.metadata.datasetID == "male-cns:v1.0")
+        precondition(artifact.group(named: "sensory.LC4.L")?.neuronIndices == [0])
+        let runtime = try MaleCNSGraphRuntime(artifact: artifact, preferredReadouts: ["readout.escape_L"])
+        runtime.applyComputeBudget(MaleCNSComputeBudget(
+            tier: .lite, workerCount: 1, neuralStepBudget: 8,
+            episodeMilliseconds: 100, rolloutCount: 1, stateSampleStride: 1
+        ))
+        let result = try runtime.run(stimulus: .looming(side: .left, strength: 1.1), requestedSteps: 8)
+        precondition(result.summary.executedSteps == 8)
+        precondition(result.readout.spikeCounts.first ?? 0 > 0)
+        print("vfly1-native-runtime-ok")
+    }
+}
+SWIFT
+swiftc -swift-version 5 -Onone -parse-as-library \
+    -import-objc-header VeilLink/Native/VeilLink-Bridging-Header.h \
+    "$HARNESS_DIR/NativeBudgetStub.swift" \
+    VeilLink/Agent/MaleCNS/MaleCNSNativeKernel.swift \
+    VeilLink/Agent/MaleCNS/VFLY1Format.swift \
+    VeilLink/Agent/MaleCNS/VFLY1Loader.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSStimulusEncoder.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSGraphRuntime.swift \
+    "$HARNESS_DIR/VFLYLoaderHarness.swift" \
+    "$HARNESS_DIR/VeilFlyKernel.o" \
+    -o "$HARNESS_DIR/vfly-loader-harness"
+"$HARNESS_DIR/vfly-loader-harness" >/dev/null
+pass "VFLY1 payload/hash fixture -> Swift loader -> native runtime"
+
+cat > "$HARNESS_DIR/Combine.swift" <<'SWIFT'
+public protocol ObservableObject: AnyObject {}
+@propertyWrapper public struct Published<Value> {
+    public var wrappedValue: Value
+    public init(wrappedValue: Value) { self.wrappedValue = wrappedValue }
+}
+SWIFT
+swiftc -emit-module -module-name Combine "$HARNESS_DIR/Combine.swift" -emit-module-path "$HARNESS_DIR/Combine.swiftmodule"
+
+
+swiftc -typecheck -swift-version 5 -strict-concurrency=complete -I "$HARNESS_DIR" \
+    -import-objc-header VeilLink/Native/VeilLink-Bridging-Header.h \
+    VeilLink/Core/PerformanceOverrides.swift \
+    VeilLink/Core/DevicePerformanceProfile.swift \
+    VeilLink/Health/VeilA9Lattice.swift \
+    VeilLink/Agent/Core/AgentCapabilityProfile.swift \
+    VeilLink/Agent/Compute/A9ComputePlanner.swift \
+    VeilLink/Agent/Compute/A9ComputeGovernor.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSComputeContract.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSNativeKernel.swift \
+    VeilLink/Agent/MaleCNS/VFLY1Format.swift \
+    VeilLink/Agent/MaleCNS/VFLY1Loader.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSStimulusEncoder.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSGraphRuntime.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSGraphManager.swift
+pass "VFLY1 graph manager tier/threading strict-concurrency typecheck"
+
+python3 -m py_compile \
+    Tools/VeilFlyBuilder/vfly_format.py \
+    Tools/VeilFlyBuilder/fetch_malecns.py \
+    Tools/VeilFlyBuilder/build_graph.py \
+    Tools/VeilFlyBuilder/export_vfly.py \
+    Tools/VeilFlyBuilder/build_subgraph.py \
+    Tools/VeilFlyBuilder/verify_vfly.py \
+    Tools/VeilFlyBuilder/provenance.py
+python3 - <<'PYVFLYCONTRACT'
+import json, pathlib
+root = pathlib.Path('.')
+lock = json.loads((root/'Tools/VeilFlyBuilder/manifests/malecns_source_lock.json').read_text())
+assert lock['schema'] == 'VeilFlySourceLock/1'
+assert lock['dataset_id'] == 'male-cns:v1.0'
+assert lock['dataset_license'] == 'CC BY 4.0'
+assert lock['primary_reference'] == 'https://github.com/alextitonis/fly.ai'
+assert lock['primary_reference_revision'] == '1dc982f62da58a29f920fdd4d645fcab4da23624'
+assert lock['reference_neurons'] == 166700
+assert lock['reference_edges'] == 25582938
+assert lock['prebuilt']['brain.npz'] == 'cc9bd1ecd00bd703a6fa648bc6ad145c93c7c1ee53debdcc9ce0d1f4305e6aca'
+assert lock['prebuilt']['weights.npz'] == 'c29919aa44069a271b1ee978abe05fa9bf6e45e4ba3e436e92b624ef1b5be40c'
+workflow=(root/'.github/workflows/malecns-heavy-validation.yml').read_text()
+for required in ['workflow_dispatch:', 'fetch_malecns.py', 'export_vfly.py', 'build_subgraph.py', 'verify_vfly.py', 'package-real-brain-ipa', 'inject-vfly-assets.sh', 'VeilLink-unsigned-MaleCNS-v1.0']:
+    assert required in workflow, required
+inject=(root/'scripts/inject-vfly-assets.sh').read_text()
+for required in ['VeilFlyCore.vfly', 'VeilFlyLite.vfly', 'male-cns:v1.0', 'payload sha256 mismatch']:
+    assert required in inject, required
+assert 'MaleCNSReference.vfly' in inject
+manager=(root/'VeilLink/Agent/MaleCNS/MaleCNSGraphManager.swift').read_text()
+runtime=(root/'VeilLink/Agent/MaleCNS/MaleCNSGraphRuntime.swift').read_text()
+assert 'allowedGraphTiers' in manager and '.reference' not in manager.split('allowedGraphTiers',1)[1].split('}',1)[0]
+assert 'Task.detached(priority: .userInitiated)' in manager and 'async throws' in manager
+assert 'executionLock' in runtime and 'desiredBudget' in runtime and 'trimRequested' in runtime
+export=(root/'Tools/VeilFlyBuilder/export_vfly.py').read_text()
+assert '--allow-unpinned' in export
+assert '166_700' in export and '25_582_938' in export
+subgraph=(root/'Tools/VeilFlyBuilder/build_subgraph.py').read_text()
+assert 'forward' in subgraph.lower() and 'reverse' in subgraph.lower()
+print('vfly-builder-source-lock-ok')
+PYVFLYCONTRACT
+pass "VFLY1 builder / MaleCNS source lock / heavy-validation workflow contract"
 
 cat > "$HARNESS_DIR/Combine.swift" <<'SWIFT'
 public protocol ObservableObject: AnyObject {}
@@ -276,6 +634,71 @@ swiftc -typecheck -I "$HARNESS_DIR" \
     VeilLink/Core/DevicePerformanceProfile.swift \
     VeilLink/Core/PerformanceOverrideController.swift
 pass "performance override controller API-shape typecheck (Linux Combine stub)"
+
+swiftc -typecheck -swift-version 5 -strict-concurrency=complete -I "$HARNESS_DIR" \
+    VeilLink/Core/PerformanceOverrides.swift \
+    VeilLink/Core/DevicePerformanceProfile.swift \
+    VeilLink/Health/VeilA9Lattice.swift \
+    VeilLink/Agent/Compute/A9ComputePlanner.swift \
+    VeilLink/Agent/Compute/A9ComputeGovernor.swift \
+    VeilLink/Agent/MaleCNS/MaleCNSComputeContract.swift \
+    VeilLink/Agent/Vision/AgentVisualContext.swift \
+    VeilLink/Agent/Core/AgentModels.swift \
+    VeilLink/Agent/Core/AgentRuntime.swift \
+    VeilLink/Agent/Core/AgentCapabilityProfile.swift \
+    VeilLink/Agent/Core/AgentSession.swift \
+    VeilLink/Agent/Core/AgentDiagnostics.swift \
+    VeilLink/Agent/Language/LocalTextModelManifest.swift \
+    VeilLink/Agent/Language/LocalTextModelRuntime.swift \
+    VeilLink/Agent/Language/AgentPromptAssembler.swift \
+    VeilLink/Agent/Language/AgentTokenStream.swift \
+    VeilLink/Agent/Language/MockLocalTextModelRuntime.swift \
+    VeilLink/Agent/Language/LocalTextModelCoordinator.swift \
+    VeilLink/Agent/Core/AgentCoordinator.swift
+pass "Agent Foundation strict-concurrency API-shape typecheck"
+
+cat > "$HARNESS_DIR/agent-main.swift" <<'SWIFT'
+import Foundation
+
+@main
+struct AgentHarness {
+    @MainActor
+    static func main() async throws {
+        let runtime = MockLocalTextModelRuntime()
+        precondition(runtime.state == .unloaded)
+        try await runtime.prepare()
+        precondition(runtime.state == .ready)
+        var text = ""
+        let request = AgentTextRequest(sessionID: "ci", messages: [], userText: "你好", maxNewTokens: 32, visualContext: nil)
+        let result = try await runtime.generate(request: request) { chunk in text += chunk }
+        precondition(text == result.text)
+        precondition(text.contains("Foundation Mock"))
+        runtime.unload()
+        precondition(runtime.state == .unloaded)
+        print("agent-runtime-ok")
+    }
+}
+SWIFT
+swiftc -parse-as-library -swift-version 5 \
+    VeilLink/Core/PerformanceOverrides.swift \
+    VeilLink/Core/DevicePerformanceProfile.swift \
+    VeilLink/Health/VeilA9Lattice.swift \
+    VeilLink/Agent/Compute/A9ComputePlanner.swift \
+    VeilLink/Agent/Vision/AgentVisualContext.swift \
+    VeilLink/Agent/Core/AgentModels.swift \
+    VeilLink/Agent/Core/AgentRuntime.swift \
+    VeilLink/Agent/Core/AgentCapabilityProfile.swift \
+    VeilLink/Agent/Core/AgentSession.swift \
+    VeilLink/Agent/Core/AgentDiagnostics.swift \
+    VeilLink/Agent/Language/LocalTextModelManifest.swift \
+    VeilLink/Agent/Language/LocalTextModelRuntime.swift \
+    VeilLink/Agent/Language/AgentPromptAssembler.swift \
+    VeilLink/Agent/Language/AgentTokenStream.swift \
+    VeilLink/Agent/Language/MockLocalTextModelRuntime.swift \
+    VeilLink/Agent/Language/LocalTextModelCoordinator.swift \
+    "$HARNESS_DIR/agent-main.swift" -o "$HARNESS_DIR/agent-harness"
+"$HARNESS_DIR/agent-harness" >/dev/null
+pass "Agent Foundation offline streaming/cancelable runtime harness"
 
 cat > "$HARNESS_DIR/CoreBluetooth.swift" <<'SWIFT'
 import Foundation
@@ -439,6 +862,7 @@ pass "haptic engine API-shape typecheck (Linux stubs)"
 
 bash -n scripts/ci-test.sh
 bash -n scripts/package-unsigned-ipa.sh
+bash -n scripts/inject-vfly-assets.sh
 bash -n scripts/local-ci-sim.sh
 pass "CI/package shell syntax"
 
@@ -455,6 +879,54 @@ if bad:
 print('ios15-ok')
 PY
 pass "iOS 15 compatibility guard"
+
+python3 - <<'PY'
+from pathlib import Path
+models=Path('VeilLink/Core/Models.swift').read_text(encoding='utf-8')
+adaptive=Path('VeilLink/UI/AdaptiveRootView.swift').read_text(encoding='utf-8')
+app_model=Path('VeilLink/App/AppModel.swift').read_text(encoding='utf-8')
+agent_swift='\n'.join(p.read_text(encoding='utf-8') for p in Path('VeilLink/Agent').rglob('*.swift'))
+assert 'case agent = "灵核"' in models
+assert models.index('case nearby') < models.index('case agent') < models.index('case settings')
+assert '.tabItem { Label("灵核"' in adaptive
+assert 'case .agent:' in adaptive and 'AgentHomeView(coordinator: model.agent, maleCNS: model.maleCNS)' in adaptive
+assert 'let agent: AgentCoordinator' in app_model
+assert 'let maleCNS: MaleCNSGraphManager' in app_model
+assert 'agent.handleMemoryPressure()' in app_model
+assert 'agent.handleBackground()' in app_model
+for forbidden in ['URLSession', 'KeychainStore', 'DatabaseStore', 'BLETransport', 'TacticalState']:
+    assert forbidden not in agent_swift, forbidden
+print('agent-foundation-boundaries-ok')
+PY
+pass "Agent root navigation / offline privacy boundaries"
+
+python3 - <<'PYA9'
+from pathlib import Path
+a9='\n'.join(p.read_text(encoding='utf-8') for p in Path('VeilLink/Health').rglob('*.swift'))
+settings=Path('VeilLink/UI/SettingsView.swift').read_text(encoding='utf-8')
+app=Path('VeilLink/App/AppModel.swift').read_text(encoding='utf-8')
+assert 'static let cells: [Cell]' in a9 and 'count: 144' in a9
+for forbidden in ['CryptoKit', 'SHA256', 'packet_sha', 'decision_sha', 'runtime_attestation', 'contract_sha256']:
+    assert forbidden not in a9, forbidden
+assert 'advisory-only' in a9.lower() or 'advisory only' in a9.lower()
+assert 'model.database.integrityCheck()' not in settings
+assert 'model.runA9StorageCheck()' in settings
+assert 'let a9Health: VeilA9HealthMonitor' in app
+compute='\n'.join(p.read_text(encoding='utf-8') for p in Path('VeilLink/Agent/Compute').rglob('*.swift'))
+native=(Path('VeilLink/Native/VeilFlyKernel.c').read_text(encoding='utf-8') + '\n' + Path('VeilLink/Agent/MaleCNS/MaleCNSNativeKernel.swift').read_text(encoding='utf-8'))
+assert 'MaleCNSComputeBudget' in compute
+assert 'transportReserveUnits' in compute
+assert 'A9 does not create physical compute' in compute
+assert 'TacticalState' not in compute
+assert 'vlfly_lif_run_f32' in native and 'vlfly_reduce_readouts_u32' in native
+assert 'stepInPlace' in native and 'runEpisode' in native and 'readoutSnapshot' in native
+c_kernel=Path('VeilLink/Native/VeilFlyKernel.c').read_text(encoding='utf-8')
+for forbidden in ['malloc(', 'calloc(', 'realloc(', 'free(']: assert forbidden not in c_kernel, forbidden
+governor=Path('VeilLink/Agent/Compute/A9ComputeGovernor.swift').read_text(encoding='utf-8')
+assert 'bindMaleCNSConsumer' in governor and 'applyComputeBudget(plan.maleCNS)' in governor
+print('a9-health-boundaries-ok')
+PYA9
+pass "A9 digest-free advisory health lattice boundaries"
 
 python3 - <<'PY'
 from pathlib import Path
@@ -663,7 +1135,84 @@ info "XCTest methods: $TESTS"
 if command -v xcodebuild >/dev/null && command -v xcodegen >/dev/null; then
     info "macOS/Xcode tools detected; run GitHub-equivalent build separately"
 else
-    info "xcodebuild/xcodegen unavailable here: true Simulator/device compilation remains a macOS/GitHub CI gate"
+
+swiftc -parse Tools/AgentTraining/SelfPlayExporter.swift >/dev/null
+python3 - <<'PYTRAIN'
+from pathlib import Path
+src = Path('Tools/AgentTraining/SelfPlayExporter.swift').read_text(encoding='utf-8')
+assert 'Only gomoku, xiangqi and ludo are training-enabled' in src
+assert 'deterministicLudoSessionID(seed:' in src
+assert 'UUID().uuidString' not in src
+assert 'case "--games"' in src
+assert 'case "--episode-offset"' in src
+print('agent-training-source-ok')
+PYTRAIN
+pass "agent self-play exporter source / tactical exclusion / deterministic Ludo seed"
+
+# Linux Swift can spend minutes compiling the full historical game engine plus the standalone
+# exporter. Keep ordinary CI fast; opt into the executable/data determinism smoke explicitly.
+if [[ "${VEILLINK_RUN_SLOW_TRAINING_SMOKE:-0}" == "1" ]]; then
+    TRAINING_DIR="$HARNESS_DIR/training"
+    mkdir -p "$TRAINING_DIR"
+    swiftc \
+        VeilLink/Core/Models.swift \
+        VeilLink/Core/TacticalGame.swift \
+        VeilLink/Core/MiniGames.swift \
+        VeilLink/Agent/Games/AgentGameAdapter.swift \
+        VeilLink/Agent/Games/GomokuAgentAdapter.swift \
+        VeilLink/Agent/Games/XiangqiAgentAdapter.swift \
+        VeilLink/Agent/Games/LudoAgentAdapter.swift \
+        VeilLink/Agent/Games/AgentGameRegistry.swift \
+        Tools/AgentTraining/SelfPlayExporter.swift \
+        -o "$TRAINING_DIR/selfplay"
+    "$TRAINING_DIR/selfplay" --output "$TRAINING_DIR/a.jsonl" --episodes 1 --seed 1776 >/dev/null
+    "$TRAINING_DIR/selfplay" --output "$TRAINING_DIR/b.jsonl" --episodes 1 --seed 1776 >/dev/null
+    cmp "$TRAINING_DIR/a.jsonl" "$TRAINING_DIR/b.jsonl"
+    python3 - "$TRAINING_DIR/a.jsonl" <<'PYTRAINROWS'
+import json, sys
+rows=[json.loads(line) for line in open(sys.argv[1], encoding='utf-8') if line.strip()]
+assert rows
+assert {row['game'] for row in rows} <= {'gomoku','xiangqi','ludo'}
+assert all(row['game'] != 'tactical' for row in rows)
+assert all(len(row['state']) == 256 and len(row['action']) == 16 for row in rows)
+print('agent-training-slow-smoke-ok')
+PYTRAINROWS
+    pass "agent self-play executable determinism smoke"
+else
+    info "slow self-play executable smoke skipped; set VEILLINK_RUN_SLOW_TRAINING_SMOKE=1 to run"
+fi
+
+python3 -m py_compile \
+    Tools/AgentTraining/train_policy.py \
+    Tools/AgentTraining/train_policy_ranker.py \
+    Tools/AgentTraining/train_language_lora.py \
+    Tools/AgentTraining/build_agent_sft_dataset.py \
+    Tools/AgentTraining/export_policy_vlpol.py
+python3 - <<'PYAGENTTRAIN'
+import json, pathlib
+pins=json.loads(pathlib.Path('Tools/AgentTraining/manifests/language_model_pins.json').read_text())
+assert {m['repo_id'] for m in pins['models']} == {'HuggingFaceTB/SmolLM2-135M-Instruct','Qwen/Qwen2.5-0.5B-Instruct'}
+assert all(len(m['primary_weight_sha256']) == 64 for m in pins['models'])
+registry=pathlib.Path('VeilLink/Agent/Games/AgentGameRegistry.swift').read_text()
+assert 'trainingEnabledKinds: [MiniGameKind] = [.gomoku, .xiangqi, .ludo]' in registry
+assert 'case .tactical' in registry
+for path in ['Tools/AgentTraining/SelfPlayExporter.swift','Tools/AgentTraining/build_agent_sft_dataset.py']:
+    text=pathlib.Path(path).read_text()
+    assert 'tactical' in text.lower()
+manifest=json.loads(pathlib.Path('VeilLink/Resources/AgentModels/game_policy_ranker_v4.manifest.json').read_text())
+blob=pathlib.Path('VeilLink/Resources/AgentModels/game_policy_ranker_v4.vlpol').read_bytes()
+import hashlib
+assert manifest['format'] == 'VLPOL1' and manifest['excluded_games'] == ['tactical']
+assert hashlib.sha256(blob).hexdigest() == manifest['sha256']
+assert len(blob) == manifest['byte_count'] and len(blob) < 1_000_000
+runtime=pathlib.Path('VeilLink/Agent/Games/TrainedGamePolicyRuntime.swift').read_text()
+assert 'case .tactical: return nil' in runtime
+assert 'adapter.enumerateLegalActions().filter(adapter.validate)' in runtime
+print('agent-training-contract-ok')
+PYAGENTTRAIN
+pass "agent training scripts / pinned model provenance"
+
+info "xcodebuild/xcodegen unavailable here: true Simulator/device compilation remains a macOS/GitHub CI gate"
 fi
 
 python3 - <<'PY'

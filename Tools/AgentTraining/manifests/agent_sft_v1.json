@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "rows": 6000,
+  "seed": 1776,
+  "sha256": "57801ecf6b94a98cbd0abbd650c56affedc6e39fd499f6bb72f1ba0b02abc6a9",
+  "byte_count": 4130303,
+  "license": "VeilLink project-generated synthetic domain data",
+  "excluded_games": [
+    "tactical"
+  ]
+}

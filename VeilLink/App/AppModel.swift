@@ -15,6 +15,9 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(autoSaveReceivedImages, forKey: Self.autoSaveReceivedImagesKey) }
     }
     private var messageRefreshTask: Task<Void, Never>?
+    private var a9RefreshTask: Task<Void, Never>?
+    private var a9PeriodicTask: Task<Void, Never>?
+    private var a9Cancellables = Set<AnyCancellable>()
     private var pendingConversationRefresh = false
     private static let autoSaveReceivedImagesKey = "media.autoSaveReceivedImages"
 
@@ -28,6 +31,10 @@ final class AppModel: ObservableObject {
     let backups: BackupManager
     let haptics: HapticEngine
     let performanceOverrides: PerformanceOverrideController
+    let a9Health: VeilA9HealthMonitor
+    let computeGovernor: VeilA9ComputeGovernor
+    let maleCNS: MaleCNSGraphManager
+    let agent: AgentCoordinator
 
     var totalUnreadCount: Int {
         conversations.reduce(0) { partial, conversation in
@@ -52,6 +59,14 @@ final class AppModel: ObservableObject {
         sessions = SessionCoordinator(identity: identity, database: database)
         backups = BackupManager(database: database, identity: identity)
         haptics = HapticEngine()
+        a9Health = VeilA9HealthMonitor()
+        computeGovernor = VeilA9ComputeGovernor(profile: .current)
+        maleCNS = MaleCNSGraphManager(profile: .current, governor: computeGovernor)
+        agent = AgentCoordinator(
+            runtime: MockLocalTextModelRuntime(),
+            capabilityProfile: .current,
+            computeGovernor: computeGovernor
+        )
         performanceOverrides.onChange = { [weak self] in
             self?.applyPerformanceOverrideChange()
         }
@@ -83,7 +98,10 @@ final class AppModel: ObservableObject {
             guard let self, self.autoSaveReceivedImages else { return }
             Task { @MainActor [weak self] in await self?.autoSaveReceivedImage(messageID: messageID) }
         }
+        configureA9HealthMonitoring()
         reloadConversations()
+        refreshA9Health()
+        startA9PeriodicSampling()
     }
 
     private func applyPerformanceOverrideChange() {
@@ -94,6 +112,99 @@ final class AppModel: ObservableObject {
         ImagePreviewCache.shared.removeAll()
         ImagePreviewCache.shared.reconfigureForCurrentProfile()
         performanceRevision &+= 1
+    }
+
+    private func configureA9HealthMonitoring() {
+        bluetooth.$linkSnapshots
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.scheduleA9Refresh() }
+            }
+            .store(in: &a9Cancellables)
+        bluetooth.$isRunning
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.scheduleA9Refresh() }
+            }
+            .store(in: &a9Cancellables)
+        agent.$runtimeState
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.scheduleA9Refresh() }
+            }
+            .store(in: &a9Cancellables)
+        agent.$diagnostics
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.scheduleA9Refresh() }
+            }
+            .store(in: &a9Cancellables)
+        a9Health.$decision
+            .sink { [weak self] decision in
+                Task { @MainActor [weak self] in self?.computeGovernor.update(decision: decision) }
+            }
+            .store(in: &a9Cancellables)
+    }
+
+    private func scheduleA9Refresh() {
+        a9RefreshTask?.cancel()
+        a9RefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            self?.refreshA9Health()
+        }
+    }
+
+    func refreshA9Health() {
+        let snapshots = Array(bluetooth.linkSnapshots.values)
+        let input = VeilA9Input(
+            bluetoothRunning: bluetooth.isRunning,
+            connectedPeerCount: snapshots.filter(\.isConnected).count,
+            trackedPeerCount: snapshots.count,
+            recoveringPeerCount: snapshots.filter(\.isRecovering).count,
+            weakPeerCount: snapshots.filter { $0.quality == .weak }.count,
+            marginalPeerCount: snapshots.filter { $0.quality == .marginal }.count,
+            minimumLinkHealth: snapshots.map(\.healthScore).min(),
+            maximumReconnectAttempt: snapshots.map(\.reconnectAttempt).max() ?? 0,
+            pendingBytes: snapshots.reduce(0) { $0 + $1.pendingBytes },
+            controlPendingPackets: snapshots.reduce(0) { $0 + $1.controlPendingPackets },
+            maximumStallMilliseconds: Int((snapshots.compactMap(\.stalledFor).max() ?? 0) * 1_000),
+            agentUnavailable: agent.runtimeState == .unavailable,
+            agentCooling: agent.runtimeState == .cooling,
+            agentHasFailure: agent.diagnostics.lastFailure != nil,
+            thermalLevel: currentA9ThermalLevel(),
+            lowPowerMode: currentA9LowPowerMode(),
+            databaseIntegrity: a9Health.databaseIntegrity
+        )
+        a9Health.evaluate(input)
+    }
+
+    func runA9StorageCheck() {
+        let result = database.integrityCheck().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        a9Health.setDatabaseIntegrity(result == "ok" ? .ok : .failed)
+        refreshA9Health()
+    }
+
+    func a9DiagnosticsReport() -> String {
+        a9Health.report() + "\n\n" + computeGovernor.report()
+    }
+
+    private func currentA9ThermalLevel() -> VeilA9ThermalLevel {
+        #if os(iOS)
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: return .nominal
+        case .fair: return .fair
+        case .serious: return .serious
+        case .critical: return .critical
+        @unknown default: return .fair
+        }
+        #else
+        return .nominal
+        #endif
+    }
+
+    private func currentA9LowPowerMode() -> Bool {
+        #if os(iOS)
+        return ProcessInfo.processInfo.isLowPowerModeEnabled
+        #else
+        return false
+        #endif
     }
 
     private func scheduleMessageRefresh(refreshConversations: Bool) {
@@ -115,15 +226,46 @@ final class AppModel: ObservableObject {
         }
     }
 
+
+    private func startA9PeriodicSampling() {
+        guard a9PeriodicTask == nil else { return }
+        a9PeriodicTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard !Task.isCancelled, let self else { break }
+                self.refreshA9Health()
+            }
+        }
+    }
+
+    func handleForegroundTransition() {
+        refreshA9Health()
+        startA9PeriodicSampling()
+    }
+
     func handleMemoryPressure() {
         database.clearTransientCaches()
         sessions.clearTransientCaches()
         ImagePreviewCache.shared.removeAll()
+        computeGovernor.trimMaleCNSConsumers()
+        maleCNS.trim()
+        agent.handleMemoryPressure()
+    }
+
+    func handleBackgroundTransition() {
+        a9PeriodicTask?.cancel()
+        a9PeriodicTask = nil
+        computeGovernor.trimMaleCNSConsumers()
+        if AgentCapabilityProfile.current.unloadOnBackground { maleCNS.unload() } else { maleCNS.trim() }
+        agent.handleBackground()
+        trimCachesForBackgroundIfNeeded()
     }
 
     func trimCachesForBackgroundIfNeeded() {
         guard VeilDevicePerformance.current.aggressiveBackgroundCacheTrim else { return }
-        handleMemoryPressure()
+        database.clearTransientCaches()
+        sessions.clearTransientCaches()
+        ImagePreviewCache.shared.removeAll()
     }
 
     func start() {

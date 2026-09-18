@@ -1,0 +1,20 @@
+{
+  "id": "veillink.game-policy.ranker.v4",
+  "format": "VLPOL1",
+  "format_version": 1,
+  "games": [
+    "gomoku",
+    "xiangqi",
+    "ludo"
+  ],
+  "excluded_games": [
+    "tactical"
+  ],
+  "state_dim": 256,
+  "action_dim": 16,
+  "source_checkpoint_sha256": "221193e79f04e06f0fc8c6a6fbfaa8519e203cafd1819aa1ce6048a350dbd9a5",
+  "sha256": "9b37decd138c98ea8ff43815d07af0076112be123d1de0b173bde59abf927bbd",
+  "byte_count": 848728,
+  "inference": "float32 Linear/GELU/LayerNorm; Dropout disabled at inference",
+  "training_metric_note": "agreement with heuristic self-play teacher, not expert strength or MaleCNS"
+}

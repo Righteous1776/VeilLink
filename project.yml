@@ -32,6 +32,7 @@ targets:
         INFOPLIST_FILE: VeilLink/Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_OBJC_BRIDGING_HEADER: VeilLink/Native/VeilLink-Bridging-Header.h
         SUPPORTS_MACCATALYST: NO
     scheme:
       testTargets:

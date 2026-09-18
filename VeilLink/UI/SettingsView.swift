@@ -8,6 +8,8 @@ struct SettingsView: View {
     @ObservedObject var identity: IdentityManager
     @ObservedObject var haptics: HapticEngine
     @ObservedObject var bluetooth: BLETransport
+    @ObservedObject var a9Health: VeilA9HealthMonitor
+    @ObservedObject var computeGovernor: VeilA9ComputeGovernor
     @State private var versionTapCount = 0
     @State private var showsLockSheet = false
     @State private var showsIdentityManager = false
@@ -25,6 +27,8 @@ struct SettingsView: View {
         identity = model.identity
         haptics = model.haptics
         bluetooth = model.bluetooth
+        a9Health = model.a9Health
+        computeGovernor = model.computeGovernor
     }
 
     var body: some View {
@@ -36,6 +40,7 @@ struct SettingsView: View {
                 mediaCard
                 feedbackCard
                 bluetoothCard
+                a9HealthCard
                 versionFooter
             }
         }
@@ -162,10 +167,24 @@ struct SettingsView: View {
             HStack {
                 Text("SQLite完整性")
                 Spacer()
-                Text(model.database.integrityCheck())
+                Text(a9Health.databaseIntegrity.title)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundColor(.green)
+                    .foregroundColor(a9DatabaseColor)
             }
+            Button {
+                model.runA9StorageCheck()
+                haptics.selection()
+            } label: {
+                HStack {
+                    Image(systemName: "checkmark.shield")
+                    Text("运行本地完整性自检")
+                    Spacer()
+                    Text("A9")
+                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .foregroundColor(VeilTheme.mutedGold)
+                }
+            }
+            .buttonStyle(VeilPressStyle())
         }
         .veilCard()
     }
@@ -318,6 +337,131 @@ struct SettingsView: View {
         .veilCard()
     }
 
+    private var a9HealthCard: some View {
+        let decision = a9Health.decision
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(a9LightColor)
+                    .frame(width: 9, height: 9)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("A9 健康晶格")
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.goldBright)
+                    Text("本地采集 · 144 状态裁决 · Advisory Only")
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer()
+                Text("\(decision.level.shortTitle) · H\(decision.healthScore)")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(a9LightColor)
+            }
+
+            HStack(spacing: 8) {
+                a9Metric(title: "状态", value: decision.light.title)
+                a9Metric(title: "风险", value: String(format: "%.0f", decision.riskPoints))
+                a9Metric(title: "持续", value: "\(decision.persistenceRuns)")
+                a9Metric(title: "CELL", value: "\(decision.latticeIndex)")
+            }
+
+
+            let compute = computeGovernor.plan
+            HStack(spacing: 8) {
+                a9Metric(title: "算力", value: compute.mode.title)
+                a9Metric(title: "FLY预算", value: compute.maleCNS.tier.rawValue.uppercased())
+                a9Metric(title: "BLE保留", value: "\(compute.transportReserveUnits)")
+                a9Metric(title: "视觉", value: "\(compute.vision.sampleIntervalMilliseconds)ms")
+            }
+
+            if decision.issues.isEmpty {
+                Text("当前没有需要裁决的异常。A9 不会主动断链、删数据或修改游戏状态。")
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
+            } else {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(Array(decision.issues.prefix(4))) { issue in
+                        HStack(alignment: .top, spacing: 7) {
+                            Text(issue.severity.rawValue)
+                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                                .foregroundColor(issue.severity == .p0 || issue.severity == .p1 ? .red : VeilTheme.gold)
+                            Text(issue.detail)
+                                .font(.caption)
+                                .foregroundColor(VeilTheme.secondaryText)
+                        }
+                    }
+                    if decision.issues.count > 4 {
+                        Text("另有 \(decision.issues.count - 4) 项 · 复制诊断可查看完整原因码")
+                            .font(.caption2)
+                            .foregroundColor(VeilTheme.tertiaryText)
+                    }
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    model.refreshA9Health()
+                    haptics.selection()
+                } label: {
+                    Label("重新采样", systemImage: "waveform.path.ecg")
+                }
+                .buttonStyle(.bordered)
+                .tint(VeilTheme.gold)
+
+                Button {
+                    UIPasteboard.general.string = model.a9DiagnosticsReport()
+                    diagnosticsCopied = true
+                    haptics.selection()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { diagnosticsCopied = false }
+                } label: {
+                    Label(diagnosticsCopied ? "已复制" : "复制 A9 诊断", systemImage: diagnosticsCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+                .tint(VeilTheme.gold)
+            }
+
+            Text("A9 继续负责算力治理；V0.9.3 已加入 VFLY1 图加载器。当前图状态：\(model.maleCNS.state.displayName)。只有经过来源哈希、VFLY 校验和设备档位检查的 Lite/Core 图才会绑定到原生 VeilFly runtime；Reference 全图不会自动在手机上载入。")
+                .font(.caption2)
+                .foregroundColor(VeilTheme.tertiaryText)
+        }
+        .veilCard()
+        .onAppear { model.refreshA9Health() }
+    }
+
+    private func a9Metric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundColor(VeilTheme.tertiaryText)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(VeilTheme.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .background(Color.white.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var a9LightColor: Color {
+        switch a9Health.decision.light {
+        case .green: return VeilTheme.success
+        case .yellow: return VeilTheme.gold
+        case .red: return .red
+        }
+    }
+
+    private var a9DatabaseColor: Color {
+        switch a9Health.databaseIntegrity {
+        case .unchecked: return VeilTheme.secondaryText
+        case .ok: return VeilTheme.success
+        case .failed: return .red
+        }
+    }
+
     private var versionFooter: some View {
         VStack(spacing: 5) {
             Text(VeilBuildInfo.display)
@@ -442,6 +586,7 @@ private struct IdentityManagementSheet: View {
     @ObservedObject var identity: IdentityManager
     @ObservedObject var haptics: HapticEngine
     @ObservedObject var bluetooth: BLETransport
+    @ObservedObject var a9Health: VeilA9HealthMonitor
     @Environment(\.dismiss) private var dismiss
     @State private var selectedProfile: LocalIdentity?
     @State private var showsCreate = false
@@ -452,6 +597,7 @@ private struct IdentityManagementSheet: View {
         identity = model.identity
         haptics = model.haptics
         bluetooth = model.bluetooth
+        a9Health = model.a9Health
     }
 
     var body: some View {

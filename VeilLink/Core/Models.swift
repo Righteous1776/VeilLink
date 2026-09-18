@@ -78,6 +78,7 @@ enum TransportSendResult {
 enum SidebarSection: String, CaseIterable, Identifiable {
     case chats = "对话"
     case nearby = "附近"
+    case agent = "灵核"
     case settings = "设置"
 
     var id: String { rawValue }
@@ -86,6 +87,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         switch self {
         case .chats: return "bubble.left.and.bubble.right"
         case .nearby: return "dot.radiowaves.left.and.right"
+        case .agent: return "sparkles"
         case .settings: return "gearshape"
         }
     }

@@ -1,0 +1,17 @@
+{
+  "id": "veillink.game-selfplay.v090.900",
+  "schema": 1,
+  "games": ["gomoku", "xiangqi", "ludo"],
+  "excluded_games": ["tactical"],
+  "episodes_per_game": 300,
+  "candidate_rows": 283121,
+  "decisions": 80385,
+  "byte_count": 224848275,
+  "sha256": "885a5ab8037a2190ac35444b2cedcdba58a0a492839211c889486346af4ab784",
+  "per_game": {
+    "gomoku": {"rows": 41447, "decisions": 5921, "episodes": 300, "sha256": "98cb326120eebd7f98028213289cc64cb4dc5f5b0ca69b9cc3051af886f72ebb"},
+    "xiangqi": {"rows": 109718, "decisions": 16646, "episodes": 300, "sha256": "fd4e71ac5dc64c311b0a3dbc4bcebf3d59c1e8abb8c64e598eac4d48914972f2"},
+    "ludo": {"rows": 131956, "decisions": 57818, "episodes": 300, "sha256": "81f0b3373227ccd3275cd79b2f499f22f708bc3eb9a5f5bfb72c5315fd0ab165"}
+  },
+  "reproducibility": "JSON sorted keys; deterministic exporter PRNG; Ludo session IDs derive from seed + episode; episode offsets prevent shard key collisions"
+}

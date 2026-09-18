@@ -19,8 +19,10 @@ struct VeilLinkApp: App {
                         .onAppear { model.start() }
                         .onChange(of: scenePhase) { phase in
                             model.bluetooth.setForegroundActive(phase == .active)
-                            if phase != .active {
-                                model.trimCachesForBackgroundIfNeeded()
+                            if phase == .active {
+                                model.handleForegroundTransition()
+                            } else {
+                                model.handleBackgroundTransition()
                                 model.appLock.lock()
                                 model.ownerMode.lock()
                             }

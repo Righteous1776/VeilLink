@@ -1,0 +1,17 @@
+{
+  "schema": "VeilFlySourceLock/1",
+  "dataset": "MaleCNS v1.0",
+  "dataset_id": "male-cns:v1.0",
+  "dataset_license": "CC BY 4.0",
+  "authoritative_site": "https://male-cns.janelia.org/",
+  "primary_reference": "https://github.com/alextitonis/fly.ai",
+  "primary_reference_revision": "1dc982f62da58a29f920fdd4d645fcab4da23624",
+  "flyai_build_blob": "b1aefb2f635ec33d8efbca771bfc5e3e04a7013f",
+  "flyai_brain_blob": "9676c811331aec31445ef61849b99946b3d2a28b",
+  "reference_neurons": 166700,
+  "reference_edges": 25582938,
+  "prebuilt": {
+    "brain.npz": "cc9bd1ecd00bd703a6fa648bc6ad145c93c7c1ee53debdcc9ce0d1f4305e6aca",
+    "weights.npz": "c29919aa44069a271b1ee978abe05fa9bf6e45e4ba3e436e92b624ef1b5be40c"
+  }
+}

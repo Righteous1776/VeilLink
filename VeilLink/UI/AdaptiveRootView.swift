@@ -37,6 +37,13 @@ private struct PhoneLayout: View {
             .tag(SidebarSection.nearby)
 
             NavigationView {
+                AgentHomeView(coordinator: model.agent, maleCNS: model.maleCNS)
+            }
+            .navigationViewStyle(StackNavigationViewStyle())
+            .tabItem { Label("灵核", systemImage: SidebarSection.agent.icon) }
+            .tag(SidebarSection.agent)
+
+            NavigationView {
                 SettingsView(model: model)
             }
             .navigationViewStyle(StackNavigationViewStyle())
@@ -119,6 +126,8 @@ private struct TabletLayout: View {
                     }
                 case .nearby:
                     NearbyView(model: model)
+                case .agent:
+                    AgentHomeView(coordinator: model.agent, maleCNS: model.maleCNS)
                 case .settings:
                     SettingsView(model: model)
                 }

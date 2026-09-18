@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "generated_for": "VeilLink V0.9.0 training campaign",
+  "models": [
+    {
+      "role": "legacy_a10_research",
+      "repo_id": "HuggingFaceTB/SmolLM2-135M-Instruct",
+      "revision": "12fd25f77366fa6b3b4b768ec3050bf629380bac",
+      "license": "apache-2.0",
+      "language_note": "Model card is English-first; do not claim adequate Chinese quality without VeilLink evaluation.",
+      "primary_weight": "model.safetensors",
+      "primary_weight_sha256": "5af571cbf074e6d21a03528d2330792e532ca608f24ac70a143f6b369968ab8c",
+      "primary_weight_bytes_approx": 269000000,
+      "shipping_status": "research-only; no model bytes committed"
+    },
+    {
+      "role": "balanced_chinese_training",
+      "repo_id": "Qwen/Qwen2.5-0.5B-Instruct",
+      "revision": "c89bee90d9f811437d9735454613c35b4a3c4dc8",
+      "license": "apache-2.0",
+      "language_note": "Primary VeilLink Chinese LoRA/QLoRA candidate; on-device viability is not yet established.",
+      "primary_weight": "model.safetensors",
+      "primary_weight_sha256": "fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe",
+      "primary_weight_bytes_approx": 988000000,
+      "shipping_status": "training candidate; no model bytes committed"
+    }
+  ]
+}
