@@ -126,14 +126,60 @@ final class MaleCNSNativeRolloutPool: MaleCNSComputeConsumer, @unchecked Sendabl
                     runtime.reset()
                     runtime.applyComputeBudget(budgetSnapshot)
                     try runtime.setExternalDrive(request.externalDrive)
-                    let episode = try runtime.runEpisodeWithReadouts(
-                        using: readoutMap,
-                        requestedSteps: request.requestedSteps,
-                        decay: request.decay,
-                        gain: request.gain,
-                        tonic: request.tonic,
-                        threshold: request.threshold
+                    defer { runtime.clearExternalDrive() }
+
+                    let requestedSteps = min(
+                        max(0, request.requestedSteps ?? budgetSnapshot.neuralStepBudget),
+                        max(0, budgetSnapshot.neuralStepBudget)
                     )
+                    let episode: MaleCNSNativeEpisodeReadoutResult
+                    if requestedSteps == 0 {
+                        episode = try runtime.runEpisodeWithReadouts(
+                            using: readoutMap,
+                            requestedSteps: 0,
+                            decay: request.decay,
+                            gain: request.gain,
+                            tonic: request.tonic,
+                            threshold: request.threshold
+                        )
+                    } else {
+                        let stimulus = try runtime.runEpisodeWithReadouts(
+                            using: readoutMap,
+                            requestedSteps: 1,
+                            decay: request.decay,
+                            gain: request.gain,
+                            tonic: request.tonic,
+                            threshold: request.threshold
+                        )
+                        runtime.clearExternalDrive()
+
+                        if requestedSteps == 1 {
+                            episode = stimulus
+                        } else {
+                            let propagation = try runtime.runEpisodeWithReadouts(
+                                using: readoutMap,
+                                requestedSteps: requestedSteps - 1,
+                                decay: request.decay,
+                                gain: request.gain,
+                                tonic: request.tonic,
+                                threshold: request.threshold
+                            )
+                            episode = MaleCNSNativeEpisodeReadoutResult(
+                                summary: MaleCNSNativeEpisodeSummary(
+                                    executedSteps: stimulus.summary.executedSteps + propagation.summary.executedSteps,
+                                    finalFiredCount: propagation.summary.finalFiredCount,
+                                    totalSpikeCount: stimulus.summary.totalSpikeCount + propagation.summary.totalSpikeCount
+                                ),
+                                readout: MaleCNSNativeReadoutSnapshot(
+                                    names: stimulus.readout.names,
+                                    spikeCounts: zip(
+                                        stimulus.readout.spikeCounts,
+                                        propagation.readout.spikeCounts
+                                    ).map { $0.0 + $0.1 }
+                                )
+                            )
+                        }
+                    }
                     accumulator.store(
                         MaleCNSNativeRolloutResult(id: request.id, episode: episode),
                         at: requestIndex
