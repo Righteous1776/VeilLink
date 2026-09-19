@@ -93,6 +93,6 @@ final class MockLocalTextModelRuntime: LocalTextModelRuntime {
             let game = $0.game.map { "；当前对局=\($0.gameTitle)，本方回合=\($0.isLocalTurn ? "是" : "否")" } ?? ""
             return " 当前已接入本机上下文：BLE连接 \($0.bluetooth.connectedPeers)/\($0.bluetooth.trackedPeers)，A9=\($0.a9HealthScore)/100\(game)。"
         } ?? ""
-        return "已在本机收到「\(clipped)」。\(visual)\(local)当前运行的是 VeilLink 的确定性测试运行时；Release 本地 AI 构建应由真实 Qwen/llama Runtime 替代。"
+        return "已在本机收到「\(clipped)」。\(visual)\(local)当前运行的是 VeilLink 的 Foundation Mock 确定性测试运行时；Release 本地 AI 构建应由真实 Qwen/llama Runtime 替代。"
     }
 }
