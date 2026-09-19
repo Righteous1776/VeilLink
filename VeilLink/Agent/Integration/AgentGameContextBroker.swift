@@ -177,8 +177,20 @@ final class AgentGameContextBroker: ObservableObject {
     ) {
         guard !candidates.isEmpty, controls.gameDecisionMode.usesMaleCNSRerank else { return }
         maleCNS.prepareFromBundle()
-        probeTask = Task<Void, Never> { @MainActor [weak self] in
-            guard let self else { return }
+        probeTask = Task { @MainActor [weak self] in
+            await self?.performMaleCNSDecisionRerank(
+                stateHash: stateHash,
+                session: session,
+                candidates: candidates
+            )
+        }
+    }
+
+    private func performMaleCNSDecisionRerank(
+        stateHash: String,
+        session: MiniGameSessionSnapshot,
+        candidates: [AgentActionCandidate]
+    ) async {
             for _ in 0..<20 {
                 guard !Task.isCancelled else { return }
                 if case .ready = self.maleCNS.state { break }
@@ -289,7 +301,6 @@ final class AgentGameContextBroker: ObservableObject {
                     )
                 }
             }
-        }
     }
 
     private static func adapter(for session: MiniGameSessionSnapshot) -> (any AgentGameAdapter)? {
