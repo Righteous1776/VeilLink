@@ -1828,7 +1828,7 @@ private struct MiniGameRulesView: View {
     }
 }
 
-private struct VeilGamePrimaryButtonStyle: ButtonStyle {
+struct VeilGamePrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline.weight(.semibold))
