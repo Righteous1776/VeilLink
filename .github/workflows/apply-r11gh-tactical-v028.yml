@@ -33,6 +33,7 @@ jobs:
           package_dir="${carrier_dir}/VeilLink_R11GH_TACTICAL_V028_B04D_INTEGRATION"
           (cd "${package_dir}" && sha256sum -c SHA256SUMS.txt)
           python3 "${package_dir}/apply_r11gh_tactical_v028.py"
+          git restore --source=HEAD --staged --worktree .github/workflows
           git diff --check
           python3 scripts/verify-tactical-v2-assets.py --repo-root .
 
@@ -40,7 +41,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git rm --force "${CARRIER_PATH}" .github/workflows/apply-r11gh-tactical-v028.yml
           git add -A
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
