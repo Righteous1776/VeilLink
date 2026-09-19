@@ -236,16 +236,15 @@ final class AgentGameContextBroker: ObservableObject {
                     ? "R8 manual experimental Core authorization is active. R7 Core residual ranker is still small-sample and only reranks baseline Top-3 legal candidates; the game engine remains authoritative."
                     : "R7 MaleCNS residual rerank is limited to baseline Top-3 legal candidates. The original game engine remains authoritative."
                 if let best = scored.first {
-                    let pairs = zip(best.2.readout.names, best.2.readout.spikeCounts)
-                        .filter { $0.1 > 0 }
-                        .sorted { lhs, rhs in lhs.1 == rhs.1 ? lhs.0 < rhs.0 : lhs.1 > rhs.1 }
-                        .prefix(4)
-                        .map { "\($0.0)=\($0.1)" }
+                    let pairs = Self.topReadoutPairs(
+                        names: best.2.readout.names,
+                        spikeCounts: best.2.readout.spikeCounts
+                    )
                     current.maleCNS = AgentMaleCNSContext(
                         stimulusLabel: "game-r7-8ch-residual score=\(String(format: "%.4f", best.1))",
                         executedSteps: best.2.summary.executedSteps,
                         totalSpikeCount: best.2.summary.totalSpikeCount,
-                        topReadouts: Array(pairs),
+                        topReadouts: pairs,
                         learnedLabel: "game-ranker-r7",
                         learnedConfidence: nil
                     )
@@ -276,17 +275,16 @@ final class AgentGameContextBroker: ObservableObject {
                 do {
                     let result = try await self.maleCNS.runProbe(stimulus.value, requestedSteps: 6)
                     guard !Task.isCancelled, var current = self.context, current.stateHash == stateHash else { return }
-                    let pairs = zip(result.readout.names, result.readout.spikeCounts)
-                        .filter { $0.1 > 0 }
-                        .sorted { lhs, rhs in lhs.1 == rhs.1 ? lhs.0 < rhs.0 : lhs.1 > rhs.1 }
-                        .prefix(4)
-                        .map { "\($0.0)=\($0.1)" }
+                    let pairs = Self.topReadoutPairs(
+                        names: result.readout.names,
+                        spikeCounts: result.readout.spikeCounts
+                    )
                     let learned = self.maleCNS.lastLearnedReadout
                     current.maleCNS = AgentMaleCNSContext(
                         stimulusLabel: stimulus.label,
                         executedSteps: result.summary.executedSteps,
                         totalSpikeCount: result.summary.totalSpikeCount,
-                        topReadouts: Array(pairs),
+                        topReadouts: pairs,
                         learnedLabel: learned?.label,
                         learnedConfidence: learned?.confidence
                     )
@@ -301,6 +299,19 @@ final class AgentGameContextBroker: ObservableObject {
                     )
                 }
             }
+    }
+
+    private static func topReadoutPairs(names: [String], spikeCounts: [UInt64]) -> [String] {
+        let pairCount = min(names.count, spikeCounts.count)
+        var entries: [(name: String, count: UInt64)] = []
+        entries.reserveCapacity(pairCount)
+        for index in 0..<pairCount where spikeCounts[index] > 0 {
+            entries.append((name: names[index], count: spikeCounts[index]))
+        }
+        entries.sort { lhs, rhs in
+            lhs.count == rhs.count ? lhs.name < rhs.name : lhs.count > rhs.count
+        }
+        return entries.prefix(4).map { "\($0.name)=\($0.count)" }
     }
 
     private static func adapter(for session: MiniGameSessionSnapshot) -> (any AgentGameAdapter)? {
