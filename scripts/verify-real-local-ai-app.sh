@@ -13,7 +13,7 @@ actual="$(shasum -a 256 "$model" | awk '{print $1}')"
 test -s "$APP_PATH/Frameworks/llama.framework/llama"
 test -s "$APP_PATH/LocalAIProvenance.json"
 otool -L "$APP_PATH/VeilLink" | grep -q 'llama.framework/llama'
-strings "$APP_PATH/VeilLink" | grep -q 'qwen3-0.6b-q4_0.gguf.v1'
+strings "$APP_PATH/VeilLink" | grep 'qwen3-0.6b-q4_0.gguf.v1' >/dev/null
 find "$APP_PATH" -type f -name 'LocalAI-THIRD-PARTY-NOTICES.txt' -print -quit | grep -q .
 
 test ! -d "$APP_PATH/_CodeSignature"
