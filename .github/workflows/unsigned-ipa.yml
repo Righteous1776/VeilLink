@@ -3,31 +3,9 @@ name: Build unsigned IPA
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   package:
-    runs-on: macos-15
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install XcodeGen
-        run: brew install xcodegen
-      - name: Generate Xcode project
-        run: xcodegen generate
-      - name: Build unsigned device app
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -project VeilLink.xcodeproj \
-            -scheme VeilLink \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath DerivedData \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-      - name: Package IPA
-        run: bash scripts/package-unsigned-ipa.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: VeilLink-unsigned
-          path: build/VeilLink-unsigned.ipa
-          if-no-files-found: error
+    uses: ./.github/workflows/malecns-heavy-validation.yml

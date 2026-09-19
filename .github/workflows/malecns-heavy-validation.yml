@@ -1,103 +1,57 @@
-name: MaleCNS VFLY heavy validation
+name: MaleCNS + Qwen dual-brain heavy validation
 
 on:
   workflow_dispatch:
+  workflow_call:
+  push:
+    branches:
+      - main
+      - 'release/**'
+    paths:
+      - 'VeilLink/**'
+      - 'VeilLinkTests/**'
+      - 'scripts/**'
+      - 'project.yml'
+      - '.github/workflows/malecns-heavy-validation.yml'
 
 permissions:
   contents: read
 
+env:
+  LLAMA_CPP_COMMIT: b29c606e28a01b1bc8c1351026a0fa6e616bf6c4
+  IOS_MIN_OS_VERSION: '15.0'
+  QWEN_MODEL_SHA256: da2572f16c06133561ce56accaa822216f2391ef4d37fba427801cd6736417d4
+  QWEN_MODEL_REVISION: a41486f827d17edd055fe6b3b0ba3f8d427c0519
+  VFLY_CORE_SHA256: cc8b71d824ecb7f20c821412b316262ecb4dd1faee148077c94825b5889d60de
+  VFLY_LITE_SHA256: 25b4947ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee
+
 jobs:
-  build-vfly:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install VeilFly builder dependencies
-        run: pip install -r Tools/VeilFlyBuilder/requirements.txt
-
-      - name: Fetch pinned MaleCNS-derived reference
-        run: python3 Tools/VeilFlyBuilder/fetch_malecns.py --mode prebuilt --dest "$RUNNER_TEMP/malecns"
-
-      - name: Export and verify full VFLY1 reference
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/vfly"
-          python3 Tools/VeilFlyBuilder/export_vfly.py \
-            --data "$RUNNER_TEMP/malecns" \
-            --output "$RUNNER_TEMP/vfly/MaleCNSReference.vfly" \
-            --tier reference
-          python3 Tools/VeilFlyBuilder/verify_vfly.py \
-            "$RUNNER_TEMP/vfly/MaleCNSReference.vfly" \
-            --expect-neurons 166700 --expect-edges 25582938 \
-            --expect-tier reference --expect-dataset male-cns:v1.0
-
-      - name: Build deterministic Core and Lite graph tiers
-        run: |
-          set -euo pipefail
-          python3 Tools/VeilFlyBuilder/build_subgraph.py \
-            --input "$RUNNER_TEMP/vfly/MaleCNSReference.vfly" \
-            --tier core --hops 5 --max-nodes 48000 --min-abs-weight 0.001 \
-            --output "$RUNNER_TEMP/vfly/VeilFlyCore.vfly"
-          python3 Tools/VeilFlyBuilder/build_subgraph.py \
-            --input "$RUNNER_TEMP/vfly/MaleCNSReference.vfly" \
-            --tier lite --hops 4 --max-nodes 12000 --min-abs-weight 0.002 \
-            --output "$RUNNER_TEMP/vfly/VeilFlyLite.vfly"
-          python3 Tools/VeilFlyBuilder/verify_vfly.py "$RUNNER_TEMP/vfly/VeilFlyCore.vfly" \
-            --expect-tier core --expect-dataset male-cns:v1.0
-          python3 Tools/VeilFlyBuilder/verify_vfly.py "$RUNNER_TEMP/vfly/VeilFlyLite.vfly" \
-            --expect-tier lite --expect-dataset male-cns:v1.0
-
-      - name: Write provenance
-        run: |
-          python3 Tools/VeilFlyBuilder/provenance.py \
-            --output "$RUNNER_TEMP/vfly/PROVENANCE.json" \
-            --artifact "$RUNNER_TEMP/vfly/MaleCNSReference.vfly" \
-            --artifact "$RUNNER_TEMP/vfly/VeilFlyCore.vfly" \
-            --artifact "$RUNNER_TEMP/vfly/VeilFlyLite.vfly" \
-            --command 'fetch_malecns.py --mode prebuilt' \
-            --command 'export_vfly.py --tier reference' \
-            --command 'build_subgraph.py --tier core' \
-            --command 'build_subgraph.py --tier lite'
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: VeilFly-MaleCNS-v1.0-VFLY1
-          path: |
-            ${{ runner.temp }}/vfly/VeilFlyCore.vfly
-            ${{ runner.temp }}/vfly/VeilFlyCore.vfly.manifest.json
-            ${{ runner.temp }}/vfly/VeilFlyLite.vfly
-            ${{ runner.temp }}/vfly/VeilFlyLite.vfly.manifest.json
-            ${{ runner.temp }}/vfly/PROVENANCE.json
-          if-no-files-found: error
-          compression-level: 6
-
-  package-real-brain-ipa:
-    needs: build-vfly
+  package-dual-brain-ipa:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 110
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: VeilFly-MaleCNS-v1.0-VFLY1
-          path: ${{ runner.temp }}/vfly
+      - name: Verify bundled real VFLY Core/Lite
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-vfly-installed.py VeilLink/Resources --json-out VFLY_BUNDLED_VERIFY.json
+          echo "$VFLY_CORE_SHA256  VeilLink/Resources/VeilFlyCore.vfly" | shasum -a 256 -c -
+          echo "$VFLY_LITE_SHA256  VeilLink/Resources/VeilFlyLite.vfly" | shasum -a 256 -c -
+          test ! -e VeilLink/Resources/MaleCNSReference.vfly
 
-      - name: Inject verified Core/Lite VFLY assets
-        run: bash scripts/inject-vfly-assets.sh "$RUNNER_TEMP/vfly"
+      - name: Install build tools
+        run: brew install xcodegen cmake
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Prepare real Qwen + llama runtime
+        run: bash scripts/prepare-real-local-ai.sh
 
-      - name: Generate Xcode project
-        run: xcodegen generate
+      - name: Generate dual-brain Xcode project
+        run: |
+          xcodegen generate --spec project.local-ai.yml
+          bash scripts/verify-local-ai-project.sh
 
-      - name: Build simulator with real MaleCNS-derived assets
+      - name: Build simulator with MaleCNS and Qwen
         run: |
           set -o pipefail
           xcodebuild \
@@ -109,10 +63,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Run complete unit tests
-        run: bash scripts/ci-test.sh
+      - name: Run complete tests including real inference smoke test
+        run: |
+          set -o pipefail
+          bash scripts/ci-test.sh 2>&1 | tee AI_TEST.log
+          grep -q 'VEILLINK_AI_METRICS_JSON=' AI_TEST.log
+          grep 'VEILLINK_AI_METRICS_JSON=' AI_TEST.log | tail -n1 | sed 's/^.*VEILLINK_AI_METRICS_JSON=//' > AI_SMOKE_METRICS.json
+          python3 -m json.tool AI_SMOKE_METRICS.json >/dev/null
 
-      - name: Build unsigned iPhoneOS app with real MaleCNS-derived assets
+      - name: Build unsigned iPhoneOS dual-brain app
         run: |
           set -o pipefail
           xcodebuild \
@@ -124,23 +83,50 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Verify packaged VFLY assets
+      - name: Verify VFLY and real local AI assets
         run: |
           set -euo pipefail
-          app="DerivedData/Build/Products/Release-iphoneos/VeilLink.app"
-          test -s "$app/VeilFlyCore.vfly"
-          test -s "$app/VeilFlyLite.vfly"
-          test ! -e "$app/MaleCNSReference.vfly"
-          test -s "$app/VeilFlyAssets.json"
+          bash scripts/verify-dual-brain-app.sh "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" DUAL_BRAIN_VFLY_VERIFY.json
 
-      - name: Package unsigned real-brain IPA
+      - name: Package unsigned dual-brain IPA
         run: bash scripts/package-unsigned-ipa.sh
+
+      - name: Write dual-brain validation report
+        run: |
+          python3 - <<'PY2'
+          import hashlib, json, os, pathlib, subprocess
+          ipa = pathlib.Path('build/VeilLink-unsigned.ipa')
+          report = {
+              'schema': 2,
+              'result': 'PASS',
+              'male_cns': 'bundled VFLY1 Core/Lite verified',
+              'vfly_core_sha256': os.environ['VFLY_CORE_SHA256'],
+              'vfly_lite_sha256': os.environ['VFLY_LITE_SHA256'],
+              'qwen_model': 'Qwen3-0.6B-Q4_0.gguf',
+              'qwen_sha256': os.environ['QWEN_MODEL_SHA256'],
+              'qwen_revision': os.environ['QWEN_MODEL_REVISION'],
+              'llama_cpp_commit': os.environ['LLAMA_CPP_COMMIT'],
+              'real_inference_smoke_test': 'PASS',
+              'smoke_metrics': json.loads(pathlib.Path('AI_SMOKE_METRICS.json').read_text()),
+              'ipa_sha256': hashlib.sha256(ipa.read_bytes()).hexdigest(),
+              'ipa_bytes': ipa.stat().st_size,
+              'git_head': subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
+          }
+          pathlib.Path('DUAL_BRAIN_VALIDATION.json').write_text(json.dumps(report, indent=2) + '\n')
+          PY2
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VeilLink-unsigned-MaleCNS-v1.0
+          name: VeilLink-unsigned-v0.9.6-DualBrain
           path: |
             build/VeilLink-unsigned.ipa
             VeilLink/Resources/VeilFlyAssets.json
+            VeilLink/Resources/VFLYInstallationVerification.json
+            VeilLink/Resources/LocalAIProvenance.json
+            VFLY_BUNDLED_VERIFY.json
+            DUAL_BRAIN_VFLY_VERIFY.json
+            DUAL_BRAIN_VALIDATION.json
+            AI_SMOKE_METRICS.json
           if-no-files-found: error
-          compression-level: 6
+          compression-level: 0
+          retention-days: 30

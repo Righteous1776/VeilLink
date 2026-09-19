@@ -1,98 +1,118 @@
-name: Publish VeilLink V0.9.7 R10 source
+name: Real Local AI heavy validation
 
 on:
   workflow_dispatch:
+  workflow_call:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+    paths:
+      - 'VeilLink/**'
+      - 'VeilLinkTests/**'
+      - 'scripts/**'
+      - 'project.yml'
+      - '.github/workflows/local-ai-heavy-validation.yml'
+  pull_request:
+    paths:
+      - 'VeilLink/**'
+      - 'VeilLinkTests/**'
+      - 'scripts/**'
+      - 'project.yml'
+      - '.github/workflows/local-ai-heavy-validation.yml'
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  LLAMA_CPP_COMMIT: b29c606e28a01b1bc8c1351026a0fa6e616bf6c4
+  IOS_MIN_OS_VERSION: '15.0'
+  QWEN_MODEL_SHA256: da2572f16c06133561ce56accaa822216f2391ef4d37fba427801cd6736417d4
+  QWEN_MODEL_REVISION: a41486f827d17edd055fe6b3b0ba3f8d427c0519
 
 jobs:
-  publish-source:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  real-local-ai:
+    runs-on: macos-15
+    timeout-minutes: 95
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Verify protected baseline and carrier-only commits
-        shell: bash
-        run: |
-          set -euo pipefail
-          base='77bc0a40fa2ee3fff9cab6552c553aa981e83a7c'
-          git merge-base --is-ancestor "$base" HEAD
-          git diff --name-only "$base..HEAD" | sort > "$RUNNER_TEMP/actual-paths"
-          cat > "$RUNNER_TEMP/allowed-paths" <<'EOF'
-          .github/workflows/local-ai-heavy-validation.yml
-          VeilLink_V0.9.7_R10_SOURCE_PAYLOAD.part-00
-          VeilLink_V0.9.7_R10_SOURCE_PAYLOAD.part-01
-          EOF
-          sort -o "$RUNNER_TEMP/allowed-paths" "$RUNNER_TEMP/allowed-paths"
-          diff -u "$RUNNER_TEMP/allowed-paths" "$RUNNER_TEMP/actual-paths"
+      - name: Install build tools
+        run: brew install xcodegen cmake
 
-      - name: Reassemble and verify source payload
-        shell: bash
-        run: |
-          set -euo pipefail
-          payload="$RUNNER_TEMP/VeilLink_V0.9.7_R10_SOURCE_PAYLOAD.zip"
-          cat VeilLink_V0.9.7_R10_SOURCE_PAYLOAD.part-00 \
-              VeilLink_V0.9.7_R10_SOURCE_PAYLOAD.part-01 > "$payload"
-          echo '44af9e5e825bb3c5b5dd4f798dd55b529076f0f1262750bf561ccbe6b1984f74  '"$payload" | sha256sum -c -
-          python3 - "$payload" <<'PY'
-          import pathlib, sys, zipfile
-          archive = pathlib.Path(sys.argv[1])
-          with zipfile.ZipFile(archive) as zf:
-              names = zf.namelist()
-              if len(names) != 102:
-                  raise SystemExit(f'unexpected payload entry count: {len(names)}')
-              for name in names:
-                  p = pathlib.PurePosixPath(name)
-                  if p.is_absolute() or '..' in p.parts:
-                      raise SystemExit(f'unsafe archive path: {name}')
-                  if name.startswith('.github/workflows/'):
-                      raise SystemExit(f'workflow path forbidden in payload: {name}')
-              zf.extractall('.')
-          PY
-          rm -f VeilLink_V0.9.7_R10_SOURCE_PAYLOAD.part-00 \
-                VeilLink_V0.9.7_R10_SOURCE_PAYLOAD.part-01
+      - name: Build pinned llama.cpp and fetch pinned Qwen model
+        run: bash scripts/prepare-real-local-ai.sh
 
-      - name: Validate V0.9.7 source and embedded assets
-        shell: bash
+      - name: Generate local-AI Xcode project
         run: |
-          set -euo pipefail
+          xcodegen generate --spec project.local-ai.yml
+          bash scripts/verify-local-ai-project.sh
+
+      - name: Build simulator with real llama runtime
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project VeilLink.xcodeproj \
+            -scheme VeilLink \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Run full tests including real Qwen inference smoke test
+        run: |
+          set -o pipefail
+          bash scripts/ci-test.sh 2>&1 | tee AI_TEST.log
+          grep -q 'VEILLINK_AI_METRICS_JSON=' AI_TEST.log
+          grep 'VEILLINK_AI_METRICS_JSON=' AI_TEST.log | tail -n1 | sed 's/^.*VEILLINK_AI_METRICS_JSON=//' > AI_SMOKE_METRICS.json
+          python3 -m json.tool AI_SMOKE_METRICS.json >/dev/null
+
+      - name: Build unsigned iPhoneOS app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project VeilLink.xcodeproj \
+            -scheme VeilLink \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Verify real local AI is inside app
+        run: bash scripts/verify-real-local-ai-app.sh
+
+      - name: Write validation report
+        run: |
           python3 - <<'PY'
-          import hashlib, json, pathlib, plistlib
-          root = pathlib.Path('.')
-          with (root / 'VeilLink/Resources/Info.plist').open('rb') as fh:
-              plist = plistlib.load(fh)
-          assert plist['CFBundleShortVersionString'] == '0.9.7'
-          assert plist['CFBundleVersion'] == '41'
-          expected = {
-              'VeilLink/Resources/VeilFlyCore.vfly': 'cc8b71d824ecb7f20c821412b316262ecb4dd1faee148077c94825b5889d60de',
-              'VeilLink/Resources/VeilFlyLite.vfly': '25b4947ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee',
-              'VeilLink/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png': '424f6241230f82e4fbc6516303500083bcfa479282931ec317e07d8c26854f95',
+          import hashlib, json, os, pathlib, subprocess
+          app = pathlib.Path('DerivedData/Build/Products/Release-iphoneos/VeilLink.app/VeilLink')
+          report = {
+              'schema': 1,
+              'result': 'PASS',
+              'llama_cpp_commit': os.environ['LLAMA_CPP_COMMIT'],
+              'ios_minimum': os.environ['IOS_MIN_OS_VERSION'],
+              'model': 'Qwen3-0.6B-Q4_0.gguf',
+              'model_sha256': os.environ['QWEN_MODEL_SHA256'],
+              'model_revision': os.environ['QWEN_MODEL_REVISION'],
+              'real_inference_smoke_test': 'PASS',
+              'smoke_metrics': json.loads(pathlib.Path('AI_SMOKE_METRICS.json').read_text()),
+              'device_app_build': 'PASS',
+              'app_executable_sha256': hashlib.sha256(app.read_bytes()).hexdigest(),
+              'release_eligible': False,
+              'release_gate': 'Final IPA must come from MaleCNS + Qwen dual-brain heavy validation',
+              'git_head': subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
           }
-          for name, digest in expected.items():
-              actual = hashlib.sha256((root / name).read_bytes()).hexdigest()
-              if actual != digest:
-                  raise SystemExit(f'SHA-256 mismatch: {name}: {actual}')
-          iconset = root / 'VeilLink/Resources/Assets.xcassets/AppIcon.appiconset'
-          spec = json.loads((iconset / 'Contents.json').read_text())
-          icons = [item['filename'] for item in spec['images'] if 'filename' in item]
-          assert len(icons) == 18 and all((iconset / name).is_file() for name in icons)
+          pathlib.Path('AI_RUNTIME_VALIDATION.json').write_text(json.dumps(report, indent=2) + '\n')
           PY
-          python3 scripts/verify-vfly-installed.py VeilLink/Resources --json-out "$RUNNER_TEMP/VFLY_VERIFY.json"
-          find scripts -maxdepth 1 -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
-          git diff --check
-          test -z "$(git diff --name-only -- .github/workflows)"
 
-      - name: Publish verified source tree
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          test -z "$(git diff --cached --name-only -- .github/workflows)"
-          git commit -m 'Release V0.9.7 R10: local AI, Game Hub and embedded AppIcon'
-          git push
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-RealLocalAI-Validation
+          path: |
+            AI_RUNTIME_VALIDATION.json
+            AI_SMOKE_METRICS.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
