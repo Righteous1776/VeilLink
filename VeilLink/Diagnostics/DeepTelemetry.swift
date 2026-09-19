@@ -361,15 +361,18 @@ final class DeepTelemetry: ObservableObject {
     }
 
     private static var activeWindow: UIWindow? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .filter { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive }
-            .flatMap(\.windows)
-            .first(where: { $0.isKeyWindow })
-            ?? UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap(\.windows)
-                .first(where: { !$0.isHidden && $0.alpha > 0 })
+        let scenes: [UIWindowScene] = UIApplication.shared.connectedScenes.compactMap {
+            $0 as? UIWindowScene
+        }
+        let foregroundScenes = scenes.filter {
+            $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive
+        }
+        let foregroundWindows = foregroundScenes.flatMap { $0.windows }
+        if let keyWindow = foregroundWindows.first(where: { $0.isKeyWindow }) {
+            return keyWindow
+        }
+        let allWindows = scenes.flatMap { $0.windows }
+        return allWindows.first(where: { !$0.isHidden && $0.alpha > 0 })
     }
 
     private static func viewControllerHierarchy(root: UIViewController?) -> String {
