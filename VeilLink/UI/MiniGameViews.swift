@@ -1840,7 +1840,7 @@ struct VeilGamePrimaryButtonStyle: ButtonStyle {
     }
 }
 
-private struct VeilGameSecondaryButtonStyle: ButtonStyle {
+struct VeilGameSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline.weight(.semibold))
