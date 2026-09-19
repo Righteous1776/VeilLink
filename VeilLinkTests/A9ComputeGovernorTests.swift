@@ -2,19 +2,28 @@ import XCTest
 @testable import VeilLink
 
 final class A9ComputeGovernorTests: XCTestCase {
-    func testGreenHighProfileGivesMaleCNSCoreBudget() {
+    func testGreenHighProfileDefaultsToLiteUntilCoreIsExplicitlyAuthorized() {
         let profile = AgentCapabilityProfile.profile(devicePerformanceLabel: "13PRO-HIGH")
-        let plan = VeilA9ComputePlanner.plan(
+        let stable = VeilA9ComputePlanner.plan(
             decision: .initial,
             profile: profile,
             focus: .maleCNSSandbox,
             logicalProcessorCount: 6
         )
-        XCTAssertEqual(plan.mode, .boost)
-        XCTAssertEqual(plan.maleCNS.tier, .core)
-        XCTAssertGreaterThanOrEqual(plan.maleCNS.workerCount, 2)
-        XCTAssertGreaterThan(plan.maleCNS.neuralStepBudget, 100)
-        XCTAssertGreaterThan(plan.maleCNSUnits, plan.languageUnits)
+        XCTAssertEqual(stable.mode, .boost)
+        XCTAssertEqual(stable.maleCNS.tier, .lite)
+        XCTAssertGreaterThan(stable.maleCNSUnits, stable.languageUnits)
+
+        let experimental = VeilA9ComputePlanner.plan(
+            decision: .initial,
+            profile: profile,
+            focus: .maleCNSSandbox,
+            logicalProcessorCount: 6,
+            allowExperimentalCore: true
+        )
+        XCTAssertEqual(experimental.maleCNS.tier, .core)
+        XCTAssertGreaterThanOrEqual(experimental.maleCNS.workerCount, 2)
+        XCTAssertGreaterThan(experimental.maleCNS.neuralStepBudget, 100)
     }
 
     func testLegacyA10KeepsMaleCNSLiteAndConservative() {
@@ -155,6 +164,9 @@ final class A9ComputeGovernorTests: XCTestCase {
 
         governor.setFocus(.maleCNSSandbox)
         XCTAssertEqual(consumer.received.last, governor.plan.maleCNS)
+        XCTAssertEqual(consumer.received.last?.tier, .lite)
+
+        governor.setExperimentalCoreEnabled(true)
         XCTAssertEqual(consumer.received.last?.tier, .core)
 
         governor.update(decision: VeilA9Decision(

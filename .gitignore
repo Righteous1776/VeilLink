@@ -15,3 +15,6 @@ Vendor/llama.xcframework/
 VeilLink/Resources/Qwen3-0.6B-Q4_0.gguf
 project.local-ai.yml
 .local-ai/
+# Python build/cache hygiene
+__pycache__/
+*.py[cod]

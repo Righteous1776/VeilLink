@@ -2,6 +2,12 @@ import Combine
 import Foundation
 
 @MainActor
+private final class AgentStreamingAccumulator {
+    var text = ""
+    var lastUIPublishNanoseconds: UInt64 = 0
+}
+
+@MainActor
 final class AgentCoordinator: ObservableObject {
     @Published private(set) var session: AgentSession
     @Published private(set) var runtimeState: AgentRuntimeState
@@ -113,29 +119,48 @@ final class AgentCoordinator: ObservableObject {
             guard let self else { return }
             let started = Date()
             self.runtimeState = .generating
-            var streamed = ""
+            let stream = AgentStreamingAccumulator()
+            let flushIntervalNanoseconds = UInt64(
+                Self.streamingFlushIntervalMilliseconds(for: self.capabilityProfile.tier)
+            ) * 1_000_000
             do {
                 let result = try await self.language.generate(request: request) { [weak self] chunk in
                     guard let self else { return }
-                    streamed += chunk
-                    self.session.updateMessage(id: assistantID, text: streamed)
+                    stream.text += chunk
+                    let now = DispatchTime.now().uptimeNanoseconds
+                    if stream.lastUIPublishNanoseconds == 0
+                        || now &- stream.lastUIPublishNanoseconds >= flushIntervalNanoseconds {
+                        self.session.updateMessage(id: assistantID, text: stream.text)
+                        stream.lastUIPublishNanoseconds = now
+                    }
                     self.runtimeState = .generating
                 }
+                self.session.updateMessage(id: assistantID, text: stream.text)
                 self.diagnostics.generationCount += 1
                 self.diagnostics.lastEstimatedTokenCount = result.estimatedTokenCount
                 self.diagnostics.lastGenerationMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
                 self.diagnostics.lastFailure = nil
             } catch is CancellationError {
                 self.diagnostics.cancellationCount += 1
-                if streamed.isEmpty { self.session.removeMessage(id: assistantID) }
+                if stream.text.isEmpty {
+                    self.session.removeMessage(id: assistantID)
+                } else {
+                    self.session.updateMessage(id: assistantID, text: stream.text)
+                }
             } catch AgentRuntimeError.cancelled {
                 self.diagnostics.cancellationCount += 1
-                if streamed.isEmpty { self.session.removeMessage(id: assistantID) }
+                if stream.text.isEmpty {
+                    self.session.removeMessage(id: assistantID)
+                } else {
+                    self.session.updateMessage(id: assistantID, text: stream.text)
+                }
             } catch {
                 self.lastError = error.localizedDescription
                 self.diagnostics.lastFailure = error.localizedDescription
-                if streamed.isEmpty {
+                if stream.text.isEmpty {
                     self.session.updateMessage(id: assistantID, text: "本地运行时暂时不可用：\(error.localizedDescription)")
+                } else {
+                    self.session.updateMessage(id: assistantID, text: stream.text)
                 }
             }
             self.generationTask = nil
@@ -235,6 +260,16 @@ final class AgentCoordinator: ObservableObject {
             profile: capabilityProfile,
             sessionMessageCount: session.messages.count
         ) + "\n\n" + computeGovernor.report()
+    }
+
+    nonisolated static func streamingFlushIntervalMilliseconds(
+        for tier: AgentComputeTier
+    ) -> Int {
+        switch tier {
+        case .legacyA10: return 50
+        case .balanced: return 35
+        case .high: return 25
+        }
     }
 
     private func syncRuntimeState() {

@@ -9,7 +9,9 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
     private let profile: AgentCapabilityProfile
     private let configuration: LlamaRuntimeConfiguration
     private var engine: LlamaInferenceEngine?
+    private let cancellationGate = LlamaCancellationGate()
     private var cancellationEpoch: UInt64 = 0
+    private var shutdownTask: Task<Void, Never>?
     private(set) var lastModelLoadMilliseconds: Int?
     private(set) var lastGenerationStats: LlamaGenerationStats?
 
@@ -20,6 +22,10 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
 
     func prepare() async throws {
         guard state == .unloaded || state == .unavailable else { return }
+        if let pendingShutdown = shutdownTask {
+            await pendingShutdown.value
+            shutdownTask = nil
+        }
         state = .loading
         DiagnosticLogStore.shared.log(
             .info,
@@ -46,7 +52,10 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
                 ]
             )
 
-            let newEngine = LlamaInferenceEngine(configuration: configuration)
+            let newEngine = LlamaInferenceEngine(
+                configuration: configuration,
+                cancellationGate: cancellationGate
+            )
             let started = Date()
             try await newEngine.load(modelURL: validation.url)
             lastModelLoadMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
@@ -169,6 +178,7 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
 
     func cancel() {
         cancellationEpoch &+= 1
+        cancellationGate.cancel()
         if state == .generating || state == .loading { state = .ready }
         DiagnosticLogStore.shared.log(.info, .agent, event: "local_ai.generate.cancel")
     }
@@ -181,11 +191,13 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
 
     func unload() {
         cancellationEpoch &+= 1
+        cancellationGate.cancel()
         let old = engine
         engine = nil
         lastGenerationStats = nil
         state = .unloaded
-        Task { await old?.shutdown() }
+        shutdownTask?.cancel()
+        shutdownTask = Task { await old?.shutdown() }
         DiagnosticLogStore.shared.log(.info, .agent, event: "local_ai.model.unload")
     }
 }

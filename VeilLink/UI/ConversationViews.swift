@@ -270,11 +270,16 @@ struct ChatView: View {
     private var visibleMessages: [ChatMessage] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if showsSearchBar, !query.isEmpty {
-            return messages.filter { MiniGameCodec.decode($0.body) == nil && ConversationSearch.matches($0, query: query) }
+            return messages.filter {
+                MiniGameCodec.decode($0.body) == nil
+                    && TacticalV2.WireCodecV2.decode($0.body) == nil
+                    && ConversationSearch.matches($0, query: query)
+            }
         }
         // One persistent card per game session lives at its invite position in the conversation.
         // Move/accept/resign packets stay hidden so normal chat never becomes protocol noise.
         return messages.filter { message in
+            if TacticalV2.WireCodecV2.decode(message.body) != nil { return false }
             guard let packet = MiniGameCodec.decode(message.body) else { return true }
             return packet.command == .invite
         }

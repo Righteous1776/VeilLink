@@ -49,6 +49,7 @@ struct VeilLinkApp: App {
 }
 
 private enum VeilChrome {
+    @MainActor
     static func configure() {
         let navigation = UINavigationBarAppearance()
         navigation.configureWithOpaqueBackground()

@@ -458,6 +458,7 @@ final class RuntimeDiagnosticsBridge {
         case .chats:
             return conversationID == nil ? "chats.list" : "chats.detail"
         case .nearby: return "nearby"
+        case .games: return "games.lobby"
         case .agent: return "agent.home"
         case .settings: return "settings"
         }

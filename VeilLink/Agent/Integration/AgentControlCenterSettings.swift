@@ -10,7 +10,7 @@ enum MaleCNSDeploymentMode: String, Codable, CaseIterable, Identifiable, Sendabl
 
     var title: String {
         switch self {
-        case .automatic: return "自动"
+        case .automatic: return "自动 Lite"
         case .forceLite: return "Lite"
         case .experimentalCore: return "Core 实验"
         }
@@ -37,7 +37,7 @@ enum AgentGameDecisionMode: String, Codable, CaseIterable, Identifiable, Sendabl
     var subtitle: String {
         switch self {
         case .automaticStable:
-            return "按设备与验证门自动选择；不会自动启用未通过部署门的 Core ranker。"
+            return "稳定档固定使用 Lite VFLY；Core 仅在本次启动中手动进入实验模式后启用。"
         case .baselineOnly:
             return "仅使用 game_policy_ranker_v4，不进行 MaleCNS 候选重排。"
         case .trainedLite:

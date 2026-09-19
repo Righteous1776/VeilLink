@@ -162,6 +162,41 @@ final class AgentGameContextBroker: ObservableObject {
         return suggestedAction
     }
 
+    func currentSuggestedAction(
+        validating session: MiniGameSessionSnapshot,
+        maximumAge: TimeInterval = 25
+    ) -> AgentSuggestedGameAction? {
+        guard let action = currentSuggestedAction(maximumAge: maximumAge),
+              let context,
+              context.sessionID == session.id,
+              let adapter = Self.adapter(for: session),
+              adapter.makeObservation().stateHash == context.stateHash,
+              Self.suggestedActionRemainsLegal(action, in: session) else {
+            return nil
+        }
+        return action
+    }
+
+    static func suggestedActionRemainsLegal(
+        _ action: AgentSuggestedGameAction,
+        in session: MiniGameSessionSnapshot
+    ) -> Bool {
+        guard session.status == .active,
+              session.isLocalTurn,
+              action.sessionID == session.id,
+              action.gameID == session.game.rawValue,
+              action.turn == session.moveCount,
+              let adapter = Self.adapter(for: session) else {
+            return false
+        }
+
+        return adapter.enumerateLegalActions()
+            .filter(adapter.validate)
+            .contains { candidate in
+                Self.move(for: candidate, game: session.game) == action.move
+            }
+    }
+
     func markSuggestedActionExecuted(_ action: AgentSuggestedGameAction) {
         guard let context else { return }
         lastExecutedStateAction = "\(context.stateHash)|\(action.actionID)"

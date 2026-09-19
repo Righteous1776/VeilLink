@@ -53,6 +53,18 @@ final class MaleCNSGraphManager: ObservableObject {
         unload()
     }
 
+    nonisolated static func candidateResourceNames(
+        for mode: MaleCNSDeploymentMode,
+        computeTier: AgentComputeTier
+    ) -> [String] {
+        switch mode {
+        case .automatic, .forceLite:
+            return ["VeilFlyLite"]
+        case .experimentalCore:
+            return computeTier == .legacyA10 ? [] : ["VeilFlyCore"]
+        }
+    }
+
     func prepareFromBundle(_ bundle: Bundle = .main) {
         guard loadTask == nil else { return }
         switch state {
@@ -60,18 +72,10 @@ final class MaleCNSGraphManager: ObservableObject {
         default: break
         }
 
-        let candidateNames: [String]
-        switch deploymentMode {
-        case .automatic:
-            switch profile.tier {
-            case .legacyA10: candidateNames = ["VeilFlyLite"]
-            case .balanced, .high: candidateNames = ["VeilFlyCore", "VeilFlyLite"]
-            }
-        case .forceLite:
-            candidateNames = ["VeilFlyLite"]
-        case .experimentalCore:
-            candidateNames = ["VeilFlyCore"]
-        }
+        let candidateNames = Self.candidateResourceNames(
+            for: deploymentMode,
+            computeTier: profile.tier
+        )
         let urls = candidateNames.compactMap { bundle.url(forResource: $0, withExtension: "vfly") }
         guard !urls.isEmpty else {
             state = .missing

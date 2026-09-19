@@ -65,6 +65,9 @@ final class AppModel: ObservableObject {
         let agentProfile = AgentCapabilityProfile.current
         computeGovernor = VeilA9ComputeGovernor(profile: agentProfile)
         agentControls = AgentControlCenterSettings()
+        computeGovernor.setExperimentalCoreEnabled(
+            agentControls.gameDecisionMode == .experimentalCore
+        )
         maleCNS = MaleCNSGraphManager(profile: agentProfile, governor: computeGovernor)
         maleCNS.setDeploymentMode(agentControls.gameDecisionMode.graphDeploymentMode)
         gameIntelligence = AgentGameContextBroker(maleCNS: maleCNS, controls: agentControls)
@@ -250,6 +253,7 @@ final class AppModel: ObservableObject {
     }
 
     func handleForegroundTransition() {
+        computeGovernor.setForegroundActive(true)
         refreshA9Health()
         startA9PeriodicSampling()
     }
@@ -264,6 +268,7 @@ final class AppModel: ObservableObject {
     }
 
     func handleBackgroundTransition() {
+        computeGovernor.setForegroundActive(false)
         a9PeriodicTask?.cancel()
         a9PeriodicTask = nil
         computeGovernor.trimMaleCNSConsumers()
@@ -535,8 +540,21 @@ final class AppModel: ObservableObject {
         guard agentControls.allowSuggestedGameMoveExecution else {
             return "AI 控制中心当前禁止执行建议着法。你仍可以查看分析或手动在棋盘操作。"
         }
-        guard let action = gameIntelligence.currentSuggestedAction() else {
+        guard let tentative = gameIntelligence.currentSuggestedAction() else {
             return "当前没有足够新鲜、经过合法动作校验的推荐着法；请回到棋局刷新后再试。"
+        }
+        guard let localIdentityID = identity.activeIdentity?.id,
+              let conversationID = database.conversationID(
+                localIdentityID: localIdentityID,
+                for: tentative.peerIdentityID
+              ),
+              let latestSession = MiniGameSessionBuilder.session(
+                id: tentative.sessionID,
+                from: database.fetchMessages(conversationID: conversationID)
+              ),
+              let action = gameIntelligence.currentSuggestedAction(validating: latestSession),
+              action == tentative else {
+            return "棋局已经变化，这条 AI 建议已失效；请回到棋局刷新后重新获取建议。"
         }
         guard let game = MiniGameKind(rawValue: action.gameID) else {
             return "当前推荐动作的游戏类型无效。"
@@ -552,7 +570,7 @@ final class AppModel: ObservableObject {
             try sessions.sendMiniGamePacket(packet, to: action.peerIdentityID)
             gameIntelligence.markSuggestedActionExecuted(action)
             haptics.send()
-            return "已执行经过原游戏引擎候选校验的建议着法：\(action.label)。动作仍通过当前 E2EE 游戏消息链路发送。"
+            return "已执行刚刚重新通过原游戏引擎校验的建议着法：\(action.label)。动作仍通过当前 E2EE 游戏消息链路发送。"
         } catch {
             haptics.error()
             return "建议着法未执行：\(error.localizedDescription)"
@@ -667,6 +685,7 @@ final class AppModel: ObservableObject {
             return
         }
         agentControls.gameDecisionMode = mode
+        computeGovernor.setExperimentalCoreEnabled(mode == .experimentalCore)
         maleCNS.setDeploymentMode(mode.graphDeploymentMode)
         maleCNS.prepareFromBundle()
         gameIntelligence.reconfigure()
@@ -682,6 +701,7 @@ final class AppModel: ObservableObject {
 
     func resetAgentControls() {
         agentControls.resetToSafeDefaults()
+        computeGovernor.setExperimentalCoreEnabled(false)
         agent.setVisualContextEnabled(agentControls.visualContextEnabled)
         maleCNS.setDeploymentMode(agentControls.gameDecisionMode.graphDeploymentMode)
         maleCNS.prepareFromBundle()

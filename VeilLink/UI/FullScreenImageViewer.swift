@@ -197,14 +197,15 @@ struct FullScreenImageViewer: View {
     private func loadLargeImage() {
         guard !isLoadingLargeImage else { return }
         isLoadingLargeImage = true
-        let store = database
-        let id = attachmentID
+        guard let data = database.loadAttachment(id: attachmentID) else {
+            isLoadingLargeImage = false
+            return
+        }
         let targetPixels = ImageViewerPolicy.currentMaxPixelSize
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let decoded: UIImage? = autoreleasepool {
-                guard let data = store.loadAttachment(id: id) else { return nil }
-                return ImagePreviewCache.downsample(data: data, maxPixelSize: targetPixels)
+            let decoded = autoreleasepool {
+                ImagePreviewCache.downsample(data: data, maxPixelSize: targetPixels)
             }
             DispatchQueue.main.async {
                 if let decoded { image = decoded }

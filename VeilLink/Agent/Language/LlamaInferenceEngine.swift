@@ -43,9 +43,14 @@ actor LlamaInferenceEngine {
     private var batch: llama_batch?
     private var backendInitialized = false
     private var invalidUTF8: [CChar] = []
+    private let cancellationGate: LlamaCancellationGate
 
-    init(configuration: LlamaRuntimeConfiguration) {
+    init(
+        configuration: LlamaRuntimeConfiguration,
+        cancellationGate: LlamaCancellationGate = LlamaCancellationGate()
+    ) {
         self.configuration = configuration
+        self.cancellationGate = cancellationGate
     }
 
     func load(modelURL: URL) throws {
@@ -106,7 +111,10 @@ actor LlamaInferenceEngine {
             throw LlamaEngineError.unavailable
         }
 
+        let cancellationGeneration = cancellationGate.snapshot()
+        await Task.yield()
         try Task.checkCancellation()
+        guard cancellationGate.isCurrent(cancellationGeneration) else { throw CancellationError() }
         llama_sampler_reset(sampler)
         llama_memory_clear(llama_get_memory(context), true)
         invalidUTF8.removeAll(keepingCapacity: true)
@@ -125,7 +133,9 @@ actor LlamaInferenceEngine {
         let started = DispatchTime.now().uptimeNanoseconds
         var cursor = 0
         while cursor < tokens.count {
+            await Task.yield()
             try Task.checkCancellation()
+            guard cancellationGate.isCurrent(cancellationGeneration) else { throw CancellationError() }
             clearBatch(&workingBatch)
             let end = min(tokens.count, cursor + configuration.batchTokens)
             for index in cursor..<end {
@@ -148,7 +158,9 @@ actor LlamaInferenceEngine {
         var firstVisibleMilliseconds: Int?
 
         for offset in 0..<safeMaxNew {
+            await Task.yield()
             try Task.checkCancellation()
+            guard cancellationGate.isCurrent(cancellationGeneration) else { throw CancellationError() }
             let token = llama_sampler_sample(sampler, context, -1)
             if llama_vocab_is_eog(vocab, token) { break }
 
@@ -174,6 +186,10 @@ actor LlamaInferenceEngine {
             let code = llama_decode(context, workingBatch)
             guard code == 0 else { throw LlamaEngineError.decodeFailed(code) }
         }
+
+        await Task.yield()
+        try Task.checkCancellation()
+        guard cancellationGate.isCurrent(cancellationGeneration) else { throw CancellationError() }
 
         let tail = filter.finish()
         if !tail.isEmpty {

@@ -294,17 +294,11 @@ struct MiniGameHubView: View {
     private func reload() {
         reloadGeneration &+= 1
         let generation = reloadGeneration
-        let store = model.database
-        let conversationID = conversation.id
-        DispatchQueue.global(qos: .userInitiated).async {
-            let loaded = store.fetchMessages(conversationID: conversationID)
-            let loadedSessions = MiniGameSessionBuilder.sessions(from: loaded)
-            DispatchQueue.main.async {
-                guard generation == reloadGeneration else { return }
-                messages = loaded
-                sessions = loadedSessions
-            }
-        }
+        let loaded = model.database.fetchMessages(conversationID: conversation.id)
+        let loadedSessions = MiniGameSessionBuilder.sessions(from: loaded)
+        guard generation == reloadGeneration else { return }
+        messages = loaded
+        sessions = loadedSessions
     }
 }
 
@@ -615,8 +609,14 @@ struct MiniGameSessionView: View {
 
     private var latestLocalGameMessage: ChatMessage? {
         messages.reversed().first { message in
-            guard message.isOutgoing, let packet = MiniGameCodec.decode(message.body) else { return false }
-            return packet.sessionID == sessionID
+            guard message.isOutgoing else { return false }
+            if let packet = MiniGameCodec.decode(message.body) {
+                return packet.sessionID == sessionID
+            }
+            if let envelope = TacticalV2.WireCodecV2.decode(message.body) {
+                return envelope.sessionID == sessionID
+            }
+            return false
         }
     }
 
@@ -810,18 +810,20 @@ struct MiniGameSessionView: View {
             }
         case .tactical:
             if let state = session.tactical {
-                TacticalBoardView(
-                    state: state,
-                    localPlayer: session.localPlayer,
-                    enabled: session.isLocalTurn && !isSending,
-                    onMove: { from, to in
+                TacticalV2LaunchGateView(
+                    model: model,
+                    conversation: conversation,
+                    session: session,
+                    messages: messages,
+                    legacyState: state,
+                    legacyEnabled: session.isLocalTurn && !isSending,
+                    onLegacyMove: { from, to in
                         send(command: .move, turn: session.moveCount, move: .tactical(from: from, to: to))
                     },
-                    onPass: {
+                    onLegacyPass: {
                         send(command: .move, turn: session.moveCount, move: .tacticalPass())
                     }
                 )
-                .padding(.horizontal, 10)
             }
         }
     }
@@ -926,28 +928,22 @@ struct MiniGameSessionView: View {
         let generation = reloadGeneration
         let oldCount = observedMoveCount
         let oldStatus = session?.status
-        let store = model.database
-        let conversationID = conversation.id
-        DispatchQueue.global(qos: .userInitiated).async {
-            let loaded = store.fetchMessages(conversationID: conversationID)
-            let newSession = MiniGameSessionBuilder.session(id: sessionID, from: loaded)
-            DispatchQueue.main.async {
-                guard generation == reloadGeneration else { return }
-                messages = loaded
-                session = newSession
-                if let newSession {
-                    model.updateAgentGameContext(newSession, conversation: conversation)
-                }
-                let newCount = newSession?.moveCount ?? 0
-                if notify, newCount > oldCount, newSession?.isLocalTurn == true {
-                    model.haptics.receive()
-                }
-                if notify, let newSession, case .finished = newSession.status {
-                    if oldStatus != newSession.status { model.haptics.resolved() }
-                }
-                observedMoveCount = newCount
-            }
+        let loaded = model.database.fetchMessages(conversationID: conversation.id)
+        let newSession = MiniGameSessionBuilder.session(id: sessionID, from: loaded)
+        guard generation == reloadGeneration else { return }
+        messages = loaded
+        session = newSession
+        if let newSession {
+            model.updateAgentGameContext(newSession, conversation: conversation)
         }
+        let newCount = newSession?.moveCount ?? 0
+        if notify, newCount > oldCount, newSession?.isLocalTurn == true {
+            model.haptics.receive()
+        }
+        if notify, let newSession, case .finished = newSession.status {
+            if oldStatus != newSession.status { model.haptics.resolved() }
+        }
+        observedMoveCount = newCount
     }
 }
 

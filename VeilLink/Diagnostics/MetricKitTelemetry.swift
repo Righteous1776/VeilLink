@@ -2,13 +2,14 @@ import Foundation
 import MetricKit
 
 final class MetricKitTelemetryReceiver: NSObject, MXMetricManagerSubscriber {
-    static let shared = MetricKitTelemetryReceiver()
-    private var started = false
+    @MainActor static let shared = MetricKitTelemetryReceiver()
+    @MainActor private var started = false
 
     private override init() {
         super.init()
     }
 
+    @MainActor
     func start() {
         guard !started else { return }
         started = true

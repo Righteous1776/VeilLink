@@ -131,8 +131,14 @@ enum VeilA9ComputePlanner {
         decision: VeilA9Decision,
         profile: AgentCapabilityProfile,
         focus: AgentComputeFocus,
-        logicalProcessorCount: Int
+        logicalProcessorCount: Int,
+        foregroundActive: Bool = true,
+        allowExperimentalCore: Bool = false
     ) -> VeilA9ComputePlan {
+        guard foregroundActive else {
+            return backgroundPlan(profile: profile, focus: focus)
+        }
+
         let mode = computeMode(for: decision)
         let deviceUnits = baseUnits(for: profile.tier)
         let safetyPermille = safetyPermille(for: decision.level)
@@ -171,7 +177,8 @@ enum VeilA9ComputePlanner {
                 units: maleUnits,
                 mode: mode,
                 profile: profile,
-                logicalProcessorCount: logicalProcessorCount
+                logicalProcessorCount: logicalProcessorCount,
+                allowExperimentalCore: allowExperimentalCore
             ),
             language: languageBudget(units: languageUnits, mode: mode, profile: profile),
             vision: visionBudget(units: visionUnits, mode: mode, profile: profile),
@@ -180,19 +187,76 @@ enum VeilA9ComputePlanner {
         )
     }
 
+    private static func backgroundPlan(
+        profile: AgentCapabilityProfile,
+        focus: AgentComputeFocus
+    ) -> VeilA9ComputePlan {
+        let gross = baseUnits(for: profile.tier)
+        return VeilA9ComputePlan(
+            mode: .preserve,
+            focus: focus,
+            latticeIndex: 0,
+            totalComputeUnits: gross,
+            transportReserveUnits: gross,
+            maleCNSUnits: 0,
+            languageUnits: 0,
+            visionUnits: 0,
+            gameUnits: 0,
+            trainingUnits: 0,
+            maleCNS: .suspended,
+            language: AgentLanguageComputeBudget(
+                maxNewTokens: min(32, profile.maxNewTokens),
+                recentMessageLimit: min(4, profile.recentMessageLimit),
+                keepWarm: false
+            ),
+            vision: AgentVisionComputeBudget(
+                enabled: false,
+                sampleIntervalMilliseconds: 2_400,
+                classificationStride: 4,
+                ocrStride: 8
+            ),
+            game: AgentGameComputeBudget(
+                plannerMilliseconds: 0,
+                searchDepth: 0,
+                rolloutCount: 0,
+                candidateBatchSize: 0
+            ),
+            training: AgentTrainingComputeBudget(
+                enabled: false,
+                cpuBudgetPercent: 0,
+                shardEpisodeLimit: 0
+            )
+        )
+    }
+
     private static func computeMode(for decision: VeilA9Decision) -> A9ComputeMode {
-        switch decision.level {
-        case .l0Observe:
-            return decision.healthScore >= 90 ? .boost : .balanced
-        case .l1Advisory:
-            return .balanced
-        case .l2Review:
-            return .constrained
-        case .l3Priority:
-            return .preserve
-        case .l4HoldRecommendation, .l5Emergency:
+        let issueCodes = Set(decision.issues.map(\.code))
+        if issueCodes.contains("THERMAL_CRITICAL") {
             return .emergency
         }
+        if issueCodes.contains("THERMAL_SERIOUS") {
+            return .preserve
+        }
+
+        let base: A9ComputeMode
+        switch decision.level {
+        case .l0Observe:
+            base = decision.healthScore >= 90 ? .boost : .balanced
+        case .l1Advisory:
+            base = .balanced
+        case .l2Review:
+            base = .constrained
+        case .l3Priority:
+            base = .preserve
+        case .l4HoldRecommendation, .l5Emergency:
+            base = .emergency
+        }
+
+        if issueCodes.contains("LOW_POWER_MODE"),
+           base == .boost || base == .balanced {
+            return .constrained
+        }
+        return base
     }
 
     private static func baseUnits(for tier: AgentComputeTier) -> Int {
@@ -281,7 +345,8 @@ enum VeilA9ComputePlanner {
         units: Int,
         mode: A9ComputeMode,
         profile: AgentCapabilityProfile,
-        logicalProcessorCount: Int
+        logicalProcessorCount: Int,
+        allowExperimentalCore: Bool
     ) -> MaleCNSComputeBudget {
         guard mode != .emergency, units >= 60 else { return .suspended }
 
@@ -293,7 +358,10 @@ enum VeilA9ComputePlanner {
         }
         let workers = max(1, min(workerCap, max(1, logicalProcessorCount - 2)))
 
-        if units >= 360 && profile.tier == .high && mode == .boost {
+        if allowExperimentalCore,
+           units >= 360,
+           profile.tier == .high,
+           mode == .boost {
             return MaleCNSComputeBudget(
                 tier: .core,
                 workerCount: workers,
@@ -303,7 +371,9 @@ enum VeilA9ComputePlanner {
                 stateSampleStride: 1
             )
         }
-        if units >= 210 && profile.tier != .legacyA10 {
+        if allowExperimentalCore,
+           units >= 210,
+           profile.tier != .legacyA10 {
             return MaleCNSComputeBudget(
                 tier: .core,
                 workerCount: workers,

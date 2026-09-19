@@ -22,7 +22,7 @@ enum MiniGameKind: String, Codable, CaseIterable, Identifiable {
         case .gomoku: return "15 × 15 · 黑方先手"
         case .xiangqi: return "标准双人棋盘 · 红方先手"
         case .ludo: return "双人四棋子 · 本地确定性骰子"
-        case .tactical: return "官渡决战 · 六角格轻量历史兵棋"
+        case .tactical: return "官渡决战 · 战役大地图 · 战争迷雾"
         }
     }
 

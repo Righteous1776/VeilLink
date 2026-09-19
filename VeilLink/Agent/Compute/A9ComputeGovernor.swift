@@ -10,6 +10,8 @@ private final class WeakMaleCNSComputeConsumer {
 final class VeilA9ComputeGovernor: ObservableObject {
     @Published private(set) var plan: VeilA9ComputePlan
     @Published private(set) var focus: AgentComputeFocus = .idle
+    @Published private(set) var foregroundActive = true
+    @Published private(set) var experimentalCoreEnabled = false
 
     let profile: AgentCapabilityProfile
     var onPlanChanged: ((VeilA9ComputePlan) -> Void)?
@@ -41,6 +43,18 @@ final class VeilA9ComputeGovernor: ObservableObject {
     func setFocus(_ focus: AgentComputeFocus) {
         guard self.focus != focus else { return }
         self.focus = focus
+        recompute()
+    }
+
+    func setForegroundActive(_ active: Bool) {
+        guard foregroundActive != active else { return }
+        foregroundActive = active
+        recompute()
+    }
+
+    func setExperimentalCoreEnabled(_ enabled: Bool) {
+        guard experimentalCoreEnabled != enabled else { return }
+        experimentalCoreEnabled = enabled
         recompute()
     }
 
@@ -77,7 +91,9 @@ final class VeilA9ComputeGovernor: ObservableObject {
             decision: decision,
             profile: profile,
             focus: focus,
-            logicalProcessorCount: logicalProcessorCount
+            logicalProcessorCount: logicalProcessorCount,
+            foregroundActive: foregroundActive,
+            allowExperimentalCore: experimentalCoreEnabled
         )
         maleCNSConsumer?.applyComputeBudget(plan.maleCNS)
         onPlanChanged?(plan)
@@ -93,6 +109,8 @@ final class VeilA9ComputeGovernor: ObservableObject {
             "VeilLink A9 Compute Governor",
             "Mode: \(plan.mode.title)",
             "Focus: \(plan.focus.title)",
+            "Foreground: \(foregroundActive ? "yes" : "no")",
+            "Experimental Core authorized: \(experimentalCoreEnabled ? "yes" : "no")",
             "Lattice cell: \(plan.latticeIndex)/143",
             "Compute units: \(plan.totalComputeUnits)",
             "Transport reserve: \(plan.transportReserveUnits)",
