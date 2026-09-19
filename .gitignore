@@ -10,3 +10,8 @@ build/
 *.cer
 Secrets.xcconfig
 upload/
+# Local AI generated build inputs
+Vendor/llama.xcframework/
+VeilLink/Resources/Qwen3-0.6B-Q4_0.gguf
+project.local-ai.yml
+.local-ai/

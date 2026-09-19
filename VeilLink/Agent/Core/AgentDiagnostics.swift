@@ -6,6 +6,8 @@ struct AgentDiagnostics: Equatable, Sendable {
     var cancellationCount = 0
     var memoryTrimCount = 0
     var unloadCount = 0
+    var toolExecutionCount = 0
+    var lastToolCommand: String?
     var lastGenerationMilliseconds: Int?
     var lastEstimatedTokenCount: Int?
     var lastFailure: String?
@@ -19,6 +21,8 @@ struct AgentDiagnostics: Equatable, Sendable {
         [
             "VeilLink Local Agent Diagnostics",
             "Runtime: \(runtimeID)",
+            "Backend: \(LocalTextModelRuntimeFactory.backendName)",
+            "Real local inference compiled: \(LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled)",
             "State: \(runtimeState.rawValue)",
             "Profile: \(profile.id)",
             "Tier: \(profile.tier.rawValue)",
@@ -28,6 +32,8 @@ struct AgentDiagnostics: Equatable, Sendable {
             "Cancellation count: \(cancellationCount)",
             "Memory trims: \(memoryTrimCount)",
             "Unloads: \(unloadCount)",
+            "Tool executions: \(toolExecutionCount)",
+            "Last tool: \(lastToolCommand ?? "-")",
             "Last duration ms: \(lastGenerationMilliseconds.map(String.init) ?? "-")",
             "Last estimated tokens: \(lastEstimatedTokenCount.map(String.init) ?? "-")",
             "Last failure: \(lastFailure ?? "-")",

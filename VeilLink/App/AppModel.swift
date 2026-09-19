@@ -33,7 +33,9 @@ final class AppModel: ObservableObject {
     let performanceOverrides: PerformanceOverrideController
     let a9Health: VeilA9HealthMonitor
     let computeGovernor: VeilA9ComputeGovernor
+    let agentControls: AgentControlCenterSettings
     let maleCNS: MaleCNSGraphManager
+    let gameIntelligence: AgentGameContextBroker
     let agent: AgentCoordinator
 
     var totalUnreadCount: Int {
@@ -60,11 +62,15 @@ final class AppModel: ObservableObject {
         backups = BackupManager(database: database, identity: identity)
         haptics = HapticEngine()
         a9Health = VeilA9HealthMonitor()
-        computeGovernor = VeilA9ComputeGovernor(profile: .current)
-        maleCNS = MaleCNSGraphManager(profile: .current, governor: computeGovernor)
+        let agentProfile = AgentCapabilityProfile.current
+        computeGovernor = VeilA9ComputeGovernor(profile: agentProfile)
+        agentControls = AgentControlCenterSettings()
+        maleCNS = MaleCNSGraphManager(profile: agentProfile, governor: computeGovernor)
+        maleCNS.setDeploymentMode(agentControls.gameDecisionMode.graphDeploymentMode)
+        gameIntelligence = AgentGameContextBroker(maleCNS: maleCNS, controls: agentControls)
         agent = AgentCoordinator(
-            runtime: MockLocalTextModelRuntime(),
-            capabilityProfile: .current,
+            runtime: LocalTextModelRuntimeFactory.make(profile: agentProfile),
+            capabilityProfile: agentProfile,
             computeGovernor: computeGovernor
         )
         performanceOverrides.onChange = { [weak self] in
@@ -98,6 +104,11 @@ final class AppModel: ObservableObject {
             guard let self, self.autoSaveReceivedImages else { return }
             Task { @MainActor [weak self] in await self?.autoSaveReceivedImage(messageID: messageID) }
         }
+        agent.bindIntegration(
+            localContextProvider: { [weak self] in self?.makeAgentLocalContext() },
+            toolExecutor: { [weak self] text in self?.executeAgentTool(text) }
+        )
+        agent.setVisualContextEnabled(agentControls.visualContextEnabled)
         configureA9HealthMonitoring()
         reloadConversations()
         refreshA9Health()
@@ -297,6 +308,7 @@ final class AppModel: ObservableObject {
             let profile = try identity.createProfile(displayName: name, password: password)
             try database.upsertProfile(profile)
             sessions.resetForIdentityChange()
+            gameIntelligence.clear()
             selectedConversation = nil
             activeConversationID = nil
             reloadConversations()
@@ -320,6 +332,7 @@ final class AppModel: ObservableObject {
         }
         if let active = identity.activeIdentity { try? database.upsertProfile(active) }
         sessions.resetForIdentityChange()
+        gameIntelligence.clear()
         selectedConversation = nil
         activeConversationID = nil
         reloadConversations()
@@ -497,13 +510,200 @@ final class AppModel: ObservableObject {
         do {
             try backups.restoreBackup(from: url, password: password)
             sessions.resetForIdentityChange()
+            gameIntelligence.clear()
             selectedConversation = nil
             activeConversationID = nil
             reloadConversations()
             alertMessage = "备份已恢复。"
         } catch {
             sessions.resetForIdentityChange()
+            gameIntelligence.clear()
             alertMessage = error.localizedDescription
         }
     }
+
+    func updateAgentGameContext(_ session: MiniGameSessionSnapshot, conversation: ConversationSummary) {
+        gameIntelligence.update(
+            session: session,
+            conversationTitle: conversation.title,
+            peerIdentityID: conversation.peerIdentityID
+        )
+    }
+
+    @discardableResult
+    func executeAgentSuggestedGameMove() -> String {
+        guard agentControls.allowSuggestedGameMoveExecution else {
+            return "AI 控制中心当前禁止执行建议着法。你仍可以查看分析或手动在棋盘操作。"
+        }
+        guard let action = gameIntelligence.currentSuggestedAction() else {
+            return "当前没有足够新鲜、经过合法动作校验的推荐着法；请回到棋局刷新后再试。"
+        }
+        guard let game = MiniGameKind(rawValue: action.gameID) else {
+            return "当前推荐动作的游戏类型无效。"
+        }
+        let packet = MiniGamePacket(
+            sessionID: action.sessionID,
+            game: game,
+            command: .move,
+            turn: action.turn,
+            move: action.move
+        )
+        do {
+            try sessions.sendMiniGamePacket(packet, to: action.peerIdentityID)
+            gameIntelligence.markSuggestedActionExecuted(action)
+            haptics.send()
+            return "已执行经过原游戏引擎候选校验的建议着法：\(action.label)。动作仍通过当前 E2EE 游戏消息链路发送。"
+        } catch {
+            haptics.error()
+            return "建议着法未执行：\(error.localizedDescription)"
+        }
+    }
+
+    private func makeAgentLocalContext() -> AgentLocalContext {
+        let snapshots = Array(bluetooth.linkSnapshots.values)
+        let selectedContext: AgentConversationContext? = selectedConversation.map { conversation in
+            let transportID = sessions.transportID(for: conversation.peerIdentityID)
+            let link = transportID.flatMap { bluetooth.linkSnapshots[$0] ?? bluetooth.linkSnapshot(for: $0) }
+            return AgentConversationContext(
+                title: conversation.title,
+                unreadCount: conversation.unreadCount,
+                secureSessionReady: sessions.hasSecureSession(for: conversation.peerIdentityID),
+                linkHealth: link?.healthScore,
+                linkQuality: link?.qualityTitle
+            )
+        }
+        return AgentLocalContext(
+            generatedAt: Date(),
+            activeIdentityName: identity.activeIdentity?.displayName,
+            selectedConversation: selectedContext,
+            bluetooth: AgentBluetoothContext(
+                running: bluetooth.isRunning,
+                trackedPeers: snapshots.count,
+                connectedPeers: snapshots.filter(\.isConnected).count,
+                recoveringPeers: snapshots.filter(\.isRecovering).count,
+                pendingBytes: snapshots.reduce(0) { $0 + $1.pendingBytes },
+                weakestHealth: snapshots.map(\.healthScore).min()
+            ),
+            a9HealthScore: a9Health.decision.healthScore,
+            a9Mode: computeGovernor.plan.mode.title,
+            databaseIntegrity: a9Health.databaseIntegrity.title,
+            maleCNSState: maleCNS.state.displayName,
+            game: gameIntelligence.context,
+            availableTools: AgentToolRouter.advertisedCommands
+        )
+    }
+
+    private func executeAgentTool(_ raw: String) -> AgentToolExecution? {
+        guard let command = AgentToolRouter.parse(raw) else { return nil }
+        switch command {
+        case .refreshBLE:
+            guard agentControls.localToolMutationsEnabled else {
+                return AgentToolExecution(command: "/ble refresh", message: "AI 控制中心已关闭本地工具动作；BLE 状态查询仍可使用。")
+            }
+            bluetooth.refreshLinks()
+            refreshA9Health()
+            let connected = bluetooth.linkSnapshots.values.filter(\.isConnected).count
+            return AgentToolExecution(
+                command: "/ble refresh",
+                message: "已在本机刷新 BLE 扫描、广播、已知连接恢复与 RSSI 采样。当前连接 \(connected) 台设备。"
+            )
+        case .databaseIntegrity:
+            guard agentControls.localToolMutationsEnabled else {
+                return AgentToolExecution(command: "/db check", message: "AI 控制中心已关闭本地工具动作；没有执行数据库完整性自检。")
+            }
+            runA9StorageCheck()
+            return AgentToolExecution(
+                command: "/db check",
+                message: "本地 SQLite 完整性检查已执行：\(a9Health.databaseIntegrity.title)。没有读取或回显聊天正文。"
+            )
+        case .a9Status:
+            return AgentToolExecution(
+                command: "/a9 status",
+                message: "A9：健康度 \(a9Health.decision.healthScore)/100，计算模式 \(computeGovernor.plan.mode.title)，数据库 \(a9Health.databaseIntegrity.title)。"
+            )
+        case .agentStatus:
+            return AgentToolExecution(
+                command: "/agent status",
+                message: "灵核运行时：\(agent.runtimeManifest?.displayName ?? LocalTextModelRuntimeFactory.backendName)，状态 \(agent.runtimeState.displayName)；MaleCNS：\(maleCNS.state.displayName)。"
+            )
+        case .gameStatus:
+            guard let game = gameIntelligence.context else {
+                return AgentToolExecution(command: "/game status", message: "当前没有已接入灵核的活动对局。")
+            }
+            return AgentToolExecution(
+                command: "/game status",
+                message: "当前对局：\(game.gameTitle)，第 \(game.turn) 回合，\(game.isLocalTurn ? "轮到你" : "等待对方")，策略模式 \(game.policyMode)。"
+            )
+        case .executeSuggestedGameMove:
+            return AgentToolExecution(command: "/game move", message: executeAgentSuggestedGameMove())
+        }
+    }
+
+    func setAgentAutoLoadLanguageModel(_ enabled: Bool) {
+        agentControls.autoLoadLanguageModel = enabled
+        if enabled { agent.activate() }
+    }
+
+    func setAgentConversationTextAccessEnabled(_ enabled: Bool) {
+        agentControls.conversationTextAccessEnabled = enabled
+    }
+
+    func setAgentVisualContextEnabled(_ enabled: Bool) {
+        agentControls.visualContextEnabled = enabled
+        agent.setVisualContextEnabled(enabled)
+    }
+
+    func setAgentLocalToolMutationsEnabled(_ enabled: Bool) {
+        agentControls.localToolMutationsEnabled = enabled
+    }
+
+    func setAgentSuggestedGameMoveExecutionEnabled(_ enabled: Bool) {
+        agentControls.allowSuggestedGameMoveExecution = enabled
+    }
+
+    func setAgentGameDecisionMode(_ mode: AgentGameDecisionMode) {
+        guard !(mode == .experimentalCore && agent.capabilityProfile.tier == .legacyA10) else {
+            alertMessage = "iPhone 7 / A10 档位禁止加载 Core VFLY。"
+            return
+        }
+        agentControls.gameDecisionMode = mode
+        maleCNS.setDeploymentMode(mode.graphDeploymentMode)
+        maleCNS.prepareFromBundle()
+        gameIntelligence.reconfigure()
+        haptics.selection()
+    }
+
+    func trimAgentMemory() {
+        agent.trimRuntimeMemory()
+        maleCNS.trim()
+        ImagePreviewCache.shared.removeAll()
+        refreshA9Health()
+    }
+
+    func resetAgentControls() {
+        agentControls.resetToSafeDefaults()
+        agent.setVisualContextEnabled(agentControls.visualContextEnabled)
+        maleCNS.setDeploymentMode(agentControls.gameDecisionMode.graphDeploymentMode)
+        maleCNS.prepareFromBundle()
+        gameIntelligence.reconfigure()
+        haptics.resolved()
+    }
+
+    func agentDiagnosticsReport() -> String {
+        [
+            agent.diagnosticsReport(),
+            "",
+            "VeilLink AI Control Center",
+            "Auto-load LLM: \(agentControls.autoLoadLanguageModel)",
+            "Conversation text access: \(agentControls.conversationTextAccessEnabled)",
+            "Visual context: \(agentControls.visualContextEnabled)",
+            "Local tool mutations: \(agentControls.localToolMutationsEnabled)",
+            "Suggested move execution: \(agentControls.allowSuggestedGameMoveExecution)",
+            "Game decision mode: \(agentControls.gameDecisionMode.rawValue)",
+            "VFLY deployment mode: \(maleCNS.deploymentMode.rawValue)",
+            "VFLY state: \(maleCNS.state.displayName)",
+            "Privacy: no message plaintext, media, keys, pairing codes or database paths in this report."
+        ].joined(separator: "\n")
+    }
+
 }

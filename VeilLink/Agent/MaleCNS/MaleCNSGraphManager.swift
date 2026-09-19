@@ -26,10 +26,13 @@ enum MaleCNSGraphManagerState: Equatable {
 final class MaleCNSGraphManager: ObservableObject {
     @Published private(set) var state: MaleCNSGraphManagerState = .unloaded
     @Published private(set) var lastProbe: MaleCNSNativeEpisodeReadoutResult?
+    @Published private(set) var lastLearnedReadout: MaleCNSLearnedReadoutResult?
+    @Published private(set) var deploymentMode: MaleCNSDeploymentMode = .automatic
 
     private let profile: AgentCapabilityProfile
     private weak var governor: VeilA9ComputeGovernor?
     private var runtime: MaleCNSGraphRuntime?
+    private var learnedReadout: MaleCNSLearnedReadoutModel?
     private var loadTask: Task<Void, Never>?
 
     init(profile: AgentCapabilityProfile, governor: VeilA9ComputeGovernor) {
@@ -44,6 +47,12 @@ final class MaleCNSGraphManager: ObservableObject {
         }
     }
 
+    func setDeploymentMode(_ mode: MaleCNSDeploymentMode) {
+        guard deploymentMode != mode else { return }
+        deploymentMode = mode
+        unload()
+    }
+
     func prepareFromBundle(_ bundle: Bundle = .main) {
         guard loadTask == nil else { return }
         switch state {
@@ -52,9 +61,16 @@ final class MaleCNSGraphManager: ObservableObject {
         }
 
         let candidateNames: [String]
-        switch profile.tier {
-        case .legacyA10: candidateNames = ["VeilFlyLite"]
-        case .balanced, .high: candidateNames = ["VeilFlyCore", "VeilFlyLite"]
+        switch deploymentMode {
+        case .automatic:
+            switch profile.tier {
+            case .legacyA10: candidateNames = ["VeilFlyLite"]
+            case .balanced, .high: candidateNames = ["VeilFlyCore", "VeilFlyLite"]
+            }
+        case .forceLite:
+            candidateNames = ["VeilFlyLite"]
+        case .experimentalCore:
+            candidateNames = ["VeilFlyCore"]
         }
         let urls = candidateNames.compactMap { bundle.url(forResource: $0, withExtension: "vfly") }
         guard !urls.isEmpty else {
@@ -71,7 +87,11 @@ final class MaleCNSGraphManager: ObservableObject {
                 let runtime = try await Task.detached(priority: .utility) {
                     try Self.loadFirstCompatibleRuntime(urls: urls, allowedTiers: allowedTiers)
                 }.value
+                let learned = try? MaleCNSLearnedReadoutModel.loadBundled(for: runtime.profile.tier)
+                if let learned { try learned.validate(profile: runtime.profile) }
                 self.runtime = runtime
+                self.learnedReadout = learned
+                self.lastLearnedReadout = nil
                 self.governor?.bindMaleCNSConsumer(runtime)
                 self.state = .ready(runtime.profile)
             } catch {
@@ -93,12 +113,29 @@ final class MaleCNSGraphManager: ObservableObject {
         }.value
         guard self.runtime === runtime else { throw CancellationError() }
         lastProbe = result
+        if let learnedReadout {
+            lastLearnedReadout = try? learnedReadout.infer(result)
+        } else {
+            lastLearnedReadout = nil
+        }
+        return result
+    }
+
+    /// Runs one R7 game-candidate rollout without publishing it as the UI probe. The runtime is
+    /// identity-checked after the detached work so a concurrent unload cannot publish stale state.
+    func runGameChannels(_ channels: [Float], requestedSteps: Int = 6) async throws -> MaleCNSNativeEpisodeReadoutResult {
+        guard let runtime else { throw VFLY1Error.invalidMetadata }
+        let result = try await Task.detached(priority: .userInitiated) {
+            try runtime.run(gameChannels: channels, requestedSteps: requestedSteps)
+        }.value
+        guard self.runtime === runtime else { throw CancellationError() }
         return result
     }
 
     func trim() {
         runtime?.trimComputeState()
         lastProbe = nil
+        lastLearnedReadout = nil
     }
 
     func unload() {
@@ -106,7 +143,9 @@ final class MaleCNSGraphManager: ObservableObject {
         governor?.bindMaleCNSConsumer(nil)
         runtime?.trimComputeState()
         runtime = nil
+        learnedReadout = nil
         lastProbe = nil
+        lastLearnedReadout = nil
         state = .unloaded
     }
 

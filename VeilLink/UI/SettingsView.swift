@@ -10,6 +10,7 @@ struct SettingsView: View {
     @ObservedObject var bluetooth: BLETransport
     @ObservedObject var a9Health: VeilA9HealthMonitor
     @ObservedObject var computeGovernor: VeilA9ComputeGovernor
+    @ObservedObject var agentControls: AgentControlCenterSettings
     @State private var versionTapCount = 0
     @State private var showsLockSheet = false
     @State private var showsIdentityManager = false
@@ -29,6 +30,7 @@ struct SettingsView: View {
         bluetooth = model.bluetooth
         a9Health = model.a9Health
         computeGovernor = model.computeGovernor
+        agentControls = model.agentControls
     }
 
     var body: some View {
@@ -38,6 +40,7 @@ struct SettingsView: View {
                 securityCard
                 storageCard
                 mediaCard
+                agentCard
                 feedbackCard
                 bluetoothCard
                 a9HealthCard
@@ -83,6 +86,47 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showsOwnerConsole) {
             OwnerConsoleView(model: model)
+        }
+        .onChange(of: showsLockSheet) { presented in
+            DeepTelemetry.shared.presentation("settings.app_lock", presented: presented)
+        }
+        .onChange(of: showsIdentityManager) { presented in
+            DeepTelemetry.shared.presentation("settings.identity_manager", presented: presented)
+        }
+        .onChange(of: showsBackupSheet) { presented in
+            DeepTelemetry.shared.presentation("settings.backup_export", presented: presented)
+        }
+        .onChange(of: showsImporter) { presented in
+            DeepTelemetry.shared.presentation("settings.backup_importer", presented: presented)
+        }
+        .onChange(of: showsRestorePassword) { presented in
+            DeepTelemetry.shared.presentation("settings.restore_password", presented: presented)
+        }
+        .onChange(of: showsOwnerUnlock) { presented in
+            DeepTelemetry.shared.presentation("owner.unlock", presented: presented)
+        }
+        .onChange(of: showsOwnerConsole) { presented in
+            DeepTelemetry.shared.presentation("owner.console", presented: presented)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .veilLinkStressUICommand)) { notification in
+            guard let command = DeviceStressCommandBus.command(from: notification) else { return }
+            switch command {
+            case .settingsOpenIdentity:
+                showsIdentityManager = true
+            case .settingsOpenAppLock:
+                showsLockSheet = true
+            case .settingsOpenBackup:
+                showsBackupSheet = true
+            case .settingsClosePresentations:
+                showsLockSheet = false
+                showsIdentityManager = false
+                showsBackupSheet = false
+                showsRestorePassword = false
+                showsImporter = false
+                restoreURL = nil
+            default:
+                break
+            }
         }
     }
 
@@ -201,6 +245,64 @@ struct SettingsView: View {
                 }
             }
             .tint(VeilTheme.gold)
+            .onChange(of: model.autoSaveReceivedImages) { value in
+                DeepTelemetry.shared.valueChange(
+                    "settings.auto_save_images",
+                    from: String(!value),
+                    to: String(value)
+                )
+            }
+        }
+        .veilCard()
+    }
+
+    private var agentCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("AI 与灵核", systemImage: "sparkles")
+                .font(.headline).foregroundColor(VeilTheme.goldBright)
+
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("语言模型")
+                        .font(.caption2).foregroundColor(VeilTheme.tertiaryText)
+                    Text(model.agent.runtimeState.displayName)
+                        .font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("MaleCNS")
+                        .font(.caption2).foregroundColor(VeilTheme.tertiaryText)
+                    Text(model.maleCNS.state.displayName)
+                        .font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("游戏策略")
+                        .font(.caption2).foregroundColor(VeilTheme.tertiaryText)
+                    Text(agentControls.gameDecisionMode.title)
+                        .font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(9)
+            .background(Color.white.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            NavigationLink(destination: AgentControlCenterView(model: model)) {
+                HStack {
+                    Image(systemName: "slider.horizontal.3")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("AI 控制中心").fontWeight(.medium)
+                        Text("模型加载、VFLY 模式、实验 Core、上下文权限与资源控制")
+                            .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(VeilTheme.tertiaryText)
+                }
+            }
+            .buttonStyle(VeilPressStyle())
         }
         .veilCard()
     }
@@ -217,6 +319,13 @@ struct SettingsView: View {
                 }
             }
             .tint(VeilTheme.gold)
+            .onChange(of: haptics.isEnabled) { value in
+                DeepTelemetry.shared.valueChange(
+                    "settings.haptics_enabled",
+                    from: String(!value),
+                    to: String(value)
+                )
+            }
             if haptics.isEnabled {
                 Divider().background(Color.white.opacity(0.07))
                 HStack {
@@ -229,7 +338,13 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(maxWidth: 250)
-                    .onChange(of: haptics.strength) { _ in haptics.impact() }
+                    .onChange(of: haptics.strength) { value in
+                        RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                            "settings.haptics_strength",
+                            metadata: ["value": String(describing: value)]
+                        )
+                        haptics.impact()
+                    }
                 }
                 Button {
                     haptics.resolved()

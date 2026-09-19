@@ -608,6 +608,7 @@ struct MiniGameSessionView: View {
     @State private var showsResignConfirmation = false
     @State private var showsRules = false
     @State private var showsReplay = false
+    @State private var showsAgentAssistant = false
     @State private var isSending = false
     @State private var observedMoveCount = 0
     @State private var reloadGeneration = 0
@@ -660,6 +661,16 @@ struct MiniGameSessionView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        if session.status == .active {
+                            Button {
+                                model.updateAgentGameContext(session, conversation: conversation)
+                                showsAgentAssistant = true
+                            } label: {
+                                Image(systemName: "sparkles")
+                            }
+                            .foregroundColor(VeilTheme.gold)
+                            .accessibilityLabel("打开灵核对局助手")
+                        }
                         Button { showsRules = true } label: {
                             Image(systemName: "questionmark.circle")
                         }
@@ -676,16 +687,27 @@ struct MiniGameSessionView: View {
                 .sheet(isPresented: $showsReplay) {
                     MiniGameReplayView(messages: messages, sessionID: session.id)
                 }
+                .sheet(isPresented: $showsAgentAssistant) {
+                    AgentGameAssistantSheet(model: model, conversation: conversation, session: session)
+                }
             } else {
                 ProgressView("读取对局…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(VeilAmbientBackground().ignoresSafeArea())
             }
         }
-        .onAppear { reload(notify: false) }
+        .onAppear {
+            model.agent.setComputeFocus(.gameDecision)
+            model.maleCNS.prepareFromBundle()
+            reload(notify: false)
+        }
         .onChange(of: model.messagesRevision) { _ in
             selectedXiangqiIndex = nil
             reload(notify: true)
+        }
+        .onDisappear {
+            model.agent.setComputeFocus(.idle)
+            model.gameIntelligence.clear(sessionID: sessionID)
         }
         .alert("确认认输？", isPresented: $showsResignConfirmation) {
             Button("继续对局", role: .cancel) {}
@@ -913,6 +935,9 @@ struct MiniGameSessionView: View {
                 guard generation == reloadGeneration else { return }
                 messages = loaded
                 session = newSession
+                if let newSession {
+                    model.updateAgentGameContext(newSession, conversation: conversation)
+                }
                 let newCount = newSession?.moveCount ?? 0
                 if notify, newCount > oldCount, newSession?.isLocalTurn == true {
                     model.haptics.receive()
@@ -1189,7 +1214,7 @@ private struct MiniGameStatusHeader: View {
     }
 }
 
-private struct GomokuBoardView: View {
+struct GomokuBoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let state: GomokuState
     let localPlayer: MiniGamePlayer
@@ -1299,7 +1324,7 @@ private struct GomokuBoardView: View {
     }
 }
 
-private struct XiangqiBoardView: View {
+struct XiangqiBoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let state: XiangqiState
     let localPlayer: MiniGamePlayer
@@ -1497,7 +1522,7 @@ private struct XiangqiBoardView: View {
     }
 }
 
-private struct LudoBoardView: View {
+struct LudoBoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let state: LudoState
     let sessionID: String

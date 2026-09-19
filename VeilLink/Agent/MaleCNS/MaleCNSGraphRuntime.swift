@@ -87,6 +87,24 @@ final class MaleCNSGraphRuntime: MaleCNSComputeConsumer, @unchecked Sendable {
         )
     }
 
+    /// Candidate-level R7 rollout over the exact same native LIF kernel. This accepts only the
+    /// fixed eight-channel encoder output; it never mutates the frozen connectivity graph.
+    func run(gameChannels: [Float], requestedSteps: Int? = nil) throws -> MaleCNSNativeEpisodeReadoutResult {
+        executionLock.lock()
+        defer { executionLock.unlock() }
+        synchronizeKernelControlState()
+        kernel.reset()
+        try kernel.setExternalDrive(try encoder.drive(gameChannels: gameChannels))
+        return try kernel.runEpisodeWithReadouts(
+            using: readoutMap,
+            requestedSteps: requestedSteps,
+            decay: Self.referenceDecay,
+            gain: Self.referenceGain,
+            tonic: Self.referenceTonic,
+            threshold: Self.referenceThreshold
+        )
+    }
+
     private func synchronizeKernelControlState() {
         stateLock.lock()
         let budget = desiredBudget

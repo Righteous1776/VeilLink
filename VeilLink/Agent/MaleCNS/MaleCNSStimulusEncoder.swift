@@ -29,6 +29,27 @@ struct MaleCNSStimulusEncoder: Sendable {
         return drive
     }
 
+    /// R7 fixed game encoder input. The channel order is part of the trained model contract.
+    /// It maps compact game features into eight named biological sensory groups while keeping
+    /// the MaleCNS connectivity frozen.
+    func drive(gameChannels: [Float]) throws -> [Float] {
+        let names = [
+            "sensory.LC4.L", "sensory.LC4.R",
+            "sensory.LPLC2.L", "sensory.LPLC2.R",
+            "sensory.LPLC1.L", "sensory.LPLC1.R",
+            "sensory.LC10a.L", "sensory.LC10a.R"
+        ]
+        guard gameChannels.count == names.count,
+              gameChannels.allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= 1.55 }) else {
+            throw MaleCNSNativeKernelError.invalidInput
+        }
+        var drive = [Float](repeating: 0, count: artifact.graph.neuronCount)
+        for (name, strength) in zip(names, gameChannels) {
+            inject(group: name, strength: strength, into: &drive)
+        }
+        return drive
+    }
+
     private func inject(group name: String, strength: Float, into drive: inout [Float]) {
         guard strength != 0, let group = artifact.group(named: name) else { return }
         for neuron in group.neuronIndices { drive[Int(neuron)] += strength }

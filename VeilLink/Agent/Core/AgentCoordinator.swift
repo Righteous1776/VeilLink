@@ -8,6 +8,7 @@ final class AgentCoordinator: ObservableObject {
     @Published private(set) var diagnostics = AgentDiagnostics()
     @Published private(set) var lastError: String?
     @Published private(set) var visualContext: AgentVisualContext?
+    @Published private(set) var visualContextEnabled = true
     @Published private(set) var computePlan: VeilA9ComputePlan
 
     let capabilityProfile: AgentCapabilityProfile
@@ -15,13 +16,15 @@ final class AgentCoordinator: ObservableObject {
     private let computeGovernor: VeilA9ComputeGovernor
     private var generationTask: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
+    private var localContextProvider: (() -> AgentLocalContext?)?
+    private var toolExecutor: ((String) -> AgentToolExecution?)?
 
     init(
         runtime: LocalTextModelRuntime? = nil,
         capabilityProfile: AgentCapabilityProfile = .current,
         computeGovernor: VeilA9ComputeGovernor? = nil
     ) {
-        let selectedRuntime = runtime ?? MockLocalTextModelRuntime()
+        let selectedRuntime = runtime ?? LocalTextModelRuntimeFactory.make(profile: capabilityProfile)
         let governor = computeGovernor ?? VeilA9ComputeGovernor(profile: capabilityProfile)
         self.capabilityProfile = capabilityProfile
         self.computeGovernor = governor
@@ -32,6 +35,14 @@ final class AgentCoordinator: ObservableObject {
         governor.onPlanChanged = { [weak self] plan in
             self?.computePlan = plan
         }
+    }
+
+    func bindIntegration(
+        localContextProvider: @escaping () -> AgentLocalContext?,
+        toolExecutor: @escaping (String) -> AgentToolExecution?
+    ) {
+        self.localContextProvider = localContextProvider
+        self.toolExecutor = toolExecutor
     }
 
     var runtimeManifest: LocalTextModelManifest? { language.manifest }
@@ -74,11 +85,24 @@ final class AgentCoordinator: ObservableObject {
 
         let user = AgentMessage(role: .user, text: text)
         session.append(user, limit: capabilityProfile.transcriptLimit)
+
+        if let execution = toolExecutor?(text) {
+            session.append(
+                AgentMessage(role: .assistant, text: execution.message),
+                limit: capabilityProfile.transcriptLimit
+            )
+            diagnostics.toolExecutionCount += 1
+            diagnostics.lastToolCommand = execution.command
+            diagnostics.lastFailure = nil
+            return
+        }
+
         let request = AgentPromptAssembler.makeRequest(
             session: session,
             userText: text,
             profile: capabilityProfile,
             visualContext: visualContext,
+            localContext: localContextProvider?(),
             computeBudget: computePlan.language
         )
         let assistantID = UUID().uuidString
@@ -131,12 +155,31 @@ final class AgentCoordinator: ObservableObject {
     }
 
 
+    func setVisualContextEnabled(_ enabled: Bool) {
+        visualContextEnabled = enabled
+        if !enabled { visualContext = nil }
+    }
+
     func updateVisualContext(_ context: AgentVisualContext?) {
-        visualContext = context
+        visualContext = visualContextEnabled ? context : nil
     }
 
     func clearVisualContext() {
         visualContext = nil
+    }
+
+    func trimRuntimeMemory() {
+        language.trimMemory()
+        diagnostics.memoryTrimCount += 1
+        syncRuntimeState()
+    }
+
+    func unloadRuntime() {
+        stopGeneration()
+        language.unload()
+        diagnostics.unloadCount += 1
+        visualContext = nil
+        syncRuntimeState()
     }
 
     func newSession() {
@@ -202,7 +245,7 @@ final class AgentCoordinator: ObservableObject {
         AgentSession(messages: [
             AgentMessage(
                 role: .assistant,
-                text: "灵核在本机待命。当前是 Agent Foundation：已经具备离线运行时、流式输出与取消接口；真实本地模型将在下一阶段接入。"
+                text: "灵核在本机待命。当前运行时：\(LocalTextModelRuntimeFactory.backendName)。VeilLink 的 Release 本地 AI 构建必须通过真实离线推理验证。"
             )
         ])
     }

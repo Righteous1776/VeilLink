@@ -1,0 +1,195 @@
+{
+  "id": "veillink.malecns.game-ranker.v1.core",
+  "schema": 1,
+  "graph_tier": "core",
+  "graph_sha256": "cc8b71d824ecb7f20c821412b316262ecb4dd1faee148077c94825b5889d60de",
+  "graph_neurons": 48000,
+  "graph_edges": 5609106,
+  "connectivity_frozen": true,
+  "trainable": "candidate_ranker_only",
+  "encoder": "fixed task summaries -> 8 biological sensory channels",
+  "games": [
+    "gomoku",
+    "xiangqi",
+    "ludo"
+  ],
+  "excluded_games": [
+    "tactical"
+  ],
+  "episodes_per_game": 1,
+  "decisions": 255,
+  "candidate_rows": 972,
+  "train_decisions": 205,
+  "validation_decisions": 50,
+  "generation_wall_seconds": 0.657,
+  "vfly_simulation_wall_seconds": 18.853,
+  "rollout_steps": 6,
+  "random_validation": {
+    "top1": 0.4588095238095237,
+    "mrr": 0.6455561224489794,
+    "macro_top1": 0.31399782135076254,
+    "macro_mrr": 0.517964130096483,
+    "per_game": {
+      "gomoku": {
+        "top1": 0.14285714285714285,
+        "mrr": 0.3704081632653061,
+        "decisions": 4
+      },
+      "xiangqi": {
+        "top1": 0.21825396825396823,
+        "mrr": 0.4291950113378684,
+        "decisions": 12
+      },
+      "ludo": {
+        "top1": 0.5808823529411765,
+        "mrr": 0.7542892156862744,
+        "decisions": 34
+      }
+    }
+  },
+  "stimulus_only_validation": {
+    "top1": 0.9,
+    "mrr": 0.9306666666666666,
+    "macro_top1": 0.9150326797385621,
+    "macro_mrr": 0.9396514161220044,
+    "per_game": {
+      "gomoku": {
+        "top1": 1.0,
+        "mrr": 1.0,
+        "decisions": 4
+      },
+      "xiangqi": {
+        "top1": 0.8333333333333334,
+        "mrr": 0.8777777777777779,
+        "decisions": 12
+      },
+      "ludo": {
+        "top1": 0.9117647058823529,
+        "mrr": 0.9411764705882353,
+        "decisions": 34
+      }
+    }
+  },
+  "vfly_readout_validation": {
+    "top1": 0.72,
+    "mrr": 0.8383333333333333,
+    "macro_top1": 0.6258169934640523,
+    "macro_mrr": 0.7870370370370369,
+    "per_game": {
+      "gomoku": {
+        "top1": 0.5,
+        "mrr": 0.7083333333333333,
+        "decisions": 4
+      },
+      "xiangqi": {
+        "top1": 0.5833333333333334,
+        "mrr": 0.7777777777777777,
+        "decisions": 12
+      },
+      "ludo": {
+        "top1": 0.7941176470588235,
+        "mrr": 0.875,
+        "decisions": 34
+      }
+    }
+  },
+  "vfly_readout_train": {
+    "top1": 0.6439024390243903,
+    "mrr": 0.7795586527293844,
+    "macro_top1": 0.5546497584541062,
+    "macro_mrr": 0.7125897762486636,
+    "per_game": {
+      "gomoku": {
+        "top1": 0.5625,
+        "mrr": 0.7135416666666667,
+        "decisions": 16
+      },
+      "xiangqi": {
+        "top1": 0.3333333333333333,
+        "mrr": 0.553454715219421,
+        "decisions": 51
+      },
+      "ludo": {
+        "top1": 0.7681159420289855,
+        "mrr": 0.8707729468599034,
+        "decisions": 138
+      }
+    }
+  },
+  "hybrid_validation": {
+    "top1": 0.92,
+    "mrr": 0.9466666666666668,
+    "macro_top1": 0.9428104575163397,
+    "macro_mrr": 0.9618736383442266,
+    "per_game": {
+      "gomoku": {
+        "top1": 1.0,
+        "mrr": 1.0,
+        "decisions": 4
+      },
+      "xiangqi": {
+        "top1": 0.9166666666666666,
+        "mrr": 0.9444444444444443,
+        "decisions": 12
+      },
+      "ludo": {
+        "top1": 0.9117647058823529,
+        "mrr": 0.9411764705882353,
+        "decisions": 34
+      }
+    }
+  },
+  "hybrid_train": {
+    "top1": 0.8292682926829268,
+    "mrr": 0.8935423925667829,
+    "macro_top1": 0.7654340721795965,
+    "macro_mrr": 0.8490250206362737,
+    "per_game": {
+      "gomoku": {
+        "top1": 0.8125,
+        "mrr": 0.875,
+        "decisions": 16
+      },
+      "xiangqi": {
+        "top1": 0.5490196078431373,
+        "mrr": 0.7077030812324929,
+        "decisions": 51
+      },
+      "ludo": {
+        "top1": 0.9347826086956522,
+        "mrr": 0.9643719806763283,
+        "decisions": 138
+      }
+    }
+  },
+  "vfly_delta_macro_top1": 0.02777777777777768,
+  "input_features": [
+    "stimulus.0",
+    "stimulus.1",
+    "stimulus.2",
+    "stimulus.3",
+    "stimulus.4",
+    "stimulus.5",
+    "stimulus.6",
+    "stimulus.7",
+    "readout.descending_all",
+    "readout.backward_L",
+    "readout.backward_R",
+    "readout.escape_L",
+    "readout.escape_R",
+    "readout.forward_L",
+    "readout.forward_R",
+    "readout.kick_R",
+    "readout.punch_L",
+    "readout.steer_L",
+    "readout.steer_R",
+    "log_total_spikes",
+    "log_final_fired",
+    "steps_norm"
+  ],
+  "note": "R7 prototype. Final deployed candidate ranker uses stimulus + real VFLY readout residual features. Teacher is the repository-style deterministic heuristic self-play policy, not an expert engine. Scores measure teacher agreement. Connectome remains frozen.",
+  "model_sha256": "3b620baa72125083d2c2cfafe62606b94ea99f9407f76db217837e1395f1a38e",
+  "model_byte_count": 59167,
+  "deployment_eligible": false,
+  "deployment_note": "Core R7 calibration only: 50 validation decisions; guarded experimental asset."
+}

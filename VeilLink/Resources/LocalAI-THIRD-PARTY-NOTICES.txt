@@ -1,0 +1,16 @@
+VeilLink Local AI third-party notices
+
+Qwen3-0.6B
+Upstream: Qwen/Qwen3-0.6B and ggml-org/Qwen3-0.6B-GGUF
+Model revision: a41486f827d17edd055fe6b3b0ba3f8d427c0519
+Quantization: Q4_0
+License: Apache License 2.0
+Model SHA-256: da2572f16c06133561ce56accaa822216f2391ef4d37fba427801cd6736417d4
+
+llama.cpp
+Upstream: ggml-org/llama.cpp
+Release: v0.4.1
+Commit: b29c606e28a01b1bc8c1351026a0fa6e616bf6c4
+License: MIT
+
+VeilLink does not use a remote inference API for this runtime. The GGUF weights and llama.cpp inference runtime are packaged for on-device execution in the Real Local AI build.

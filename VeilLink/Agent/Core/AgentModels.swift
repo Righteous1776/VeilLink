@@ -45,6 +45,23 @@ struct AgentTextRequest: Equatable, Sendable {
     let userText: String
     let maxNewTokens: Int
     let visualContext: AgentVisualContext?
+    let localContext: AgentLocalContext?
+
+    init(
+        sessionID: String,
+        messages: [AgentMessage],
+        userText: String,
+        maxNewTokens: Int,
+        visualContext: AgentVisualContext?,
+        localContext: AgentLocalContext? = nil
+    ) {
+        self.sessionID = sessionID
+        self.messages = messages
+        self.userText = userText
+        self.maxNewTokens = maxNewTokens
+        self.visualContext = visualContext
+        self.localContext = localContext
+    }
 }
 
 struct AgentTextResult: Equatable, Sendable {

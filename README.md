@@ -165,3 +165,13 @@ V0.9.2 repurposes the spare deterministic capacity of the A9 144-state lattice f
 ## V0.9.3 MaleCNS VFLY1 foundation
 
 V0.9.3 connects the A9-governed VeilFly native engine to a versioned MaleCNS-derived graph carrier. Build-host tooling converts the pinned MaleCNS v1.0 / fly.ai reference into `VFLY1`, verifies counts and source hashes, and can derive deterministic graph-guided Core/Lite tiers. iOS now has a SHA-verified VFLY1 loader, stable sensory/readout group ports, a deterministic stimulus encoder, and lazy bundle loading that prefers Lite on legacy devices and Core on stronger devices. Raw Feather/NPZ data is never parsed inside the app. The current ChatGPT container cannot download the 260 MB/1+ GB upstream assets, so full-real-graph execution remains a heavy Work/build-host gate rather than a fabricated claim. Protocol 4, VLGM1 v1 and SQLite Schema V8 are unchanged.
+
+## V0.9.4–V0.9.6 diagnostics and real local AI
+
+These cumulative checkpoints add privacy-safe deep telemetry, repeatable device burn-in diagnostics, embedded SHA-verified VeilFly Core/Lite graphs, the pinned local Qwen/llama.cpp build path, learned MaleCNS readouts, legal-action game reranking and an explicit AI Control Center. Automatic context excludes chat plaintext and secrets; conversation text enters only through an explicit local assistant action. Mutating tools and suggested game moves remain permission-gated, and every game action is still enumerated and validated by the original game engine before execution.
+
+## V0.9.7 Game Hub, local opponents and embedded icon
+
+V0.9.7 promotes **游戏** to a first-class tab between **附近** and **灵核**. The standalone lobby supports offline single-player Gomoku, Xiangqi and Ludo against the bounded local policy, plus the existing nearby E2EE game flow. MaleCNS may rerank only legal candidates when its verified runtime is available; otherwise play falls back to the deterministic baseline policy. 三国兵棋 remains nearby-player only until a dedicated tactical policy passes its own release gate.
+
+Build 41 also embeds the creator-provided VeilLink artwork as a complete RGB/no-alpha iPhone, iPad and App Store icon catalog. The hidden App easter egg remains present and intentionally undocumented. Protocol 4, VLGM1 v1 and SQLite Schema V8 remain unchanged.

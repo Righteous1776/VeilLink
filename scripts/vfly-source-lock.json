@@ -1,0 +1,25 @@
+{
+  "schema": "VeilFlySourceLock/1",
+  "dataset_id": "male-cns:v1.0",
+  "dataset_license": "CC BY 4.0",
+  "prebuilt_release": "https://github.com/alextitonis/fly.ai/releases/tag/brain-v1",
+  "prebuilt_files": {
+    "brain.npz": {
+      "byte_count": 53396978,
+      "sha256": "cc9bd1ecd00bd703a6fa648bc6ad145c93c7c1ee53debdcc9ce0d1f4305e6aca"
+    },
+    "weights.npz": {
+      "byte_count": 205331565,
+      "sha256": "c29919aa44069a271b1ee978abe05fa9bf6e45e4ba3e436e92b624ef1b5be40c"
+    }
+  },
+  "reference_counts": {
+    "neurons": 166700,
+    "edges": 25582938
+  },
+  "subgraph_policy": {
+    "core": {"hops": 5, "max_nodes": 48000, "min_abs_weight": 0.001},
+    "lite": {"hops": 4, "max_nodes": 12000, "min_abs_weight": 0.002}
+  },
+  "primary_reference_revision": "1dc982f62da58a29f920fdd4d645fcab4da23624"
+}

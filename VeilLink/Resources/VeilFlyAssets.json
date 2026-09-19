@@ -1,0 +1,28 @@
+{
+  "assets": [
+    {
+      "byte_count": 45360268,
+      "dataset_id": "male-cns:v1.0",
+      "edge_count": 5609106,
+      "filename": "VeilFlyCore.vfly",
+      "graph_id": "malecns-v1.0-flyai-reference-core",
+      "neuron_count": 48000,
+      "sha256": "cc8b71d824ecb7f20c821412b316262ecb4dd1faee148077c94825b5889d60de",
+      "tier": "core"
+    },
+    {
+      "byte_count": 9517364,
+      "dataset_id": "male-cns:v1.0",
+      "edge_count": 1174385,
+      "filename": "VeilFlyLite.vfly",
+      "graph_id": "malecns-v1.0-flyai-reference-lite",
+      "neuron_count": 12000,
+      "sha256": "25b4947ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee",
+      "tier": "lite"
+    }
+  ],
+  "dataset_id": "male-cns:v1.0",
+  "reference_sha256": "7f8dfe5f0bcee2f7cb72cbbf0bb16dda0841485d95b5225ff34aed09aafdd6f4",
+  "schema": "VeilFlyBundleAssets/1",
+  "source": "user-supplied pinned brain.npz + weights.npz"
+}

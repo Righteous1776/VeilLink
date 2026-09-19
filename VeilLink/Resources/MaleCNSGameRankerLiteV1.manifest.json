@@ -1,0 +1,194 @@
+{
+  "id": "veillink.malecns.game-ranker.v1.lite",
+  "schema": 1,
+  "graph_tier": "lite",
+  "graph_sha256": "25b4947ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee",
+  "graph_neurons": 12000,
+  "graph_edges": 1174385,
+  "connectivity_frozen": true,
+  "trainable": "candidate_ranker_only",
+  "encoder": "fixed task summaries -> 8 biological sensory channels",
+  "games": [
+    "gomoku",
+    "xiangqi",
+    "ludo"
+  ],
+  "excluded_games": [
+    "tactical"
+  ],
+  "episodes_per_game": 6,
+  "decisions": 1653,
+  "candidate_rows": 5746,
+  "train_decisions": 1324,
+  "validation_decisions": 329,
+  "generation_wall_seconds": 4.037,
+  "vfly_simulation_wall_seconds": 19.914,
+  "rollout_steps": 6,
+  "random_validation": {
+    "top1": 0.47257200752641493,
+    "mrr": 0.6627700928395683,
+    "macro_top1": 0.3025716783888695,
+    "macro_mrr": 0.5128224395084914,
+    "per_game": {
+      "gomoku": {
+        "top1": 0.14285714285714282,
+        "mrr": 0.37040816326530623,
+        "decisions": 23
+      },
+      "xiangqi": {
+        "top1": 0.1705782312925169,
+        "mrr": 0.3983734207968904,
+        "decisions": 70
+      },
+      "ludo": {
+        "top1": 0.5942796610169488,
+        "mrr": 0.7696857344632777,
+        "decisions": 236
+      }
+    }
+  },
+  "stimulus_only_validation": {
+    "top1": 0.8237082066869301,
+    "mrr": 0.8864090316977855,
+    "macro_top1": 0.7713373337544303,
+    "macro_mrr": 0.8419222700133848,
+    "per_game": {
+      "gomoku": {
+        "top1": 0.9130434782608695,
+        "mrr": 0.9279503105590061,
+        "decisions": 23
+      },
+      "xiangqi": {
+        "top1": 0.4857142857142857,
+        "mrr": 0.6433673469387755,
+        "decisions": 70
+      },
+      "ludo": {
+        "top1": 0.9152542372881356,
+        "mrr": 0.954449152542373,
+        "decisions": 236
+      }
+    }
+  },
+  "vfly_readout_validation": {
+    "top1": 0.6352583586626139,
+    "mrr": 0.7681285280069479,
+    "macro_top1": 0.5389304137277607,
+    "macro_mrr": 0.6918532777886396,
+    "per_game": {
+      "gomoku": {
+        "top1": 0.5652173913043478,
+        "mrr": 0.7199792960662527,
+        "decisions": 23
+      },
+      "xiangqi": {
+        "top1": 0.3142857142857143,
+        "mrr": 0.5045918367346939,
+        "decisions": 70
+      },
+      "ludo": {
+        "top1": 0.7372881355932204,
+        "mrr": 0.850988700564972,
+        "decisions": 236
+      }
+    }
+  },
+  "vfly_readout_train": {
+    "top1": 0.6435045317220544,
+    "mrr": 0.7810962451445842,
+    "macro_top1": 0.5257032348804501,
+    "macro_mrr": 0.7011100676205787,
+    "per_game": {
+      "gomoku": {
+        "top1": 0.5,
+        "mrr": 0.6974950396825398,
+        "decisions": 96
+      },
+      "xiangqi": {
+        "top1": 0.325,
+        "mrr": 0.5471853741496598,
+        "decisions": 280
+      },
+      "ludo": {
+        "top1": 0.7521097046413502,
+        "mrr": 0.8586497890295365,
+        "decisions": 948
+      }
+    }
+  },
+  "hybrid_validation": {
+    "top1": 0.8267477203647416,
+    "mrr": 0.8866116659429731,
+    "macro_top1": 0.776099238516335,
+    "macro_mrr": 0.8424714172084947,
+    "per_game": {
+      "gomoku": {
+        "top1": 0.9130434782608695,
+        "mrr": 0.9289855072463769,
+        "decisions": 23
+      },
+      "xiangqi": {
+        "top1": 0.5,
+        "mrr": 0.6439795918367346,
+        "decisions": 70
+      },
+      "ludo": {
+        "top1": 0.9152542372881356,
+        "mrr": 0.954449152542373,
+        "decisions": 236
+      }
+    }
+  },
+  "hybrid_train": {
+    "top1": 0.8429003021148036,
+    "mrr": 0.9004387857862175,
+    "macro_top1": 0.7824115933293149,
+    "macro_mrr": 0.8578512317374208,
+    "per_game": {
+      "gomoku": {
+        "top1": 0.8958333333333334,
+        "mrr": 0.9286458333333334,
+        "decisions": 96
+      },
+      "xiangqi": {
+        "top1": 0.5178571428571429,
+        "mrr": 0.6831462585034015,
+        "decisions": 280
+      },
+      "ludo": {
+        "top1": 0.9335443037974683,
+        "mrr": 0.9617616033755276,
+        "decisions": 948
+      }
+    }
+  },
+  "vfly_delta_macro_top1": 0.004761904761904745,
+  "input_features": [
+    "stimulus.0",
+    "stimulus.1",
+    "stimulus.2",
+    "stimulus.3",
+    "stimulus.4",
+    "stimulus.5",
+    "stimulus.6",
+    "stimulus.7",
+    "readout.descending_all",
+    "readout.backward_L",
+    "readout.backward_R",
+    "readout.escape_L",
+    "readout.escape_R",
+    "readout.forward_L",
+    "readout.forward_R",
+    "readout.kick_R",
+    "readout.steer_L",
+    "readout.steer_R",
+    "log_total_spikes",
+    "log_final_fired",
+    "steps_norm"
+  ],
+  "note": "R7 prototype. Final deployed candidate ranker uses stimulus + real VFLY readout residual features. Teacher is the repository-style deterministic heuristic self-play policy, not an expert engine. Scores measure teacher agreement. Connectome remains frozen.",
+  "model_sha256": "e0308da2165cb605d203500e3f027c87daa91648be8ad67e3ad249fbcf1875e6",
+  "model_byte_count": 58118,
+  "deployment_eligible": true,
+  "deployment_note": "Lite R7 validated on 329 decisions."
+}

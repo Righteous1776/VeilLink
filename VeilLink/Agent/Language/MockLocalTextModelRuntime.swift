@@ -1,12 +1,12 @@
 import Foundation
 
-/// Phase-1 deterministic local runtime. It exists to prove the UI/runtime/lifecycle contract only.
-/// It is intentionally not presented as an LLM and performs no network access.
+/// Deterministic fixture used by fast CI or as an explicit fallback when the real llama module
+/// is not compiled. It never pretends to be a language model and performs no network access.
 @MainActor
 final class MockLocalTextModelRuntime: LocalTextModelRuntime {
     private(set) var state: AgentRuntimeState = .unloaded
     let manifest: LocalTextModelManifest? = LocalTextModelManifest(
-        id: "veillink.foundation.mock.v1",
+        id: "veillink.foundation.mock.v2",
         displayName: "Foundation Mock",
         upstream: "VeilLink internal deterministic fixture",
         license: "Project internal test runtime",
@@ -41,7 +41,11 @@ final class MockLocalTextModelRuntime: LocalTextModelRuntime {
 
         state = .generating
         let epoch = cancellationEpoch
-        let response = Self.foundationResponse(to: input, visualContext: request.visualContext)
+        let response = Self.foundationResponse(
+            to: input,
+            visualContext: request.visualContext,
+            localContext: request.localContext
+        )
         let chunks = AgentTokenStream.chunks(text: response, targetCharacters: 4)
         var rendered = ""
         var emitted = 0
@@ -71,19 +75,24 @@ final class MockLocalTextModelRuntime: LocalTextModelRuntime {
         if state == .generating || state == .loading { state = .ready }
     }
 
-    func trimMemory() {
-        // No heavy cache exists in the Phase-1 fixture. This method is deliberately real so the
-        // same lifecycle path can later trim KV/model caches without changing AppModel/UI code.
-    }
+    func trimMemory() {}
 
     func unload() {
         cancellationEpoch &+= 1
         state = .unloaded
     }
 
-    private static func foundationResponse(to input: String, visualContext: AgentVisualContext?) -> String {
+    private static func foundationResponse(
+        to input: String,
+        visualContext: AgentVisualContext?,
+        localContext: AgentLocalContext?
+    ) -> String {
         let clipped = String(input.prefix(72))
         let visual = visualContext.map { " 当前摄像头摘要：\($0.compactPromptDescription)。" } ?? ""
-        return "已在本机收到「\(clipped)」。\(visual)当前运行的是 VeilLink 本地基础运行时（Foundation Mock）；视频链路已经能把低频本地视觉摘要并入同一请求，但真正的本地文本/视觉模型仍需由训练与推理后端替换。"
+        let local = localContext.map {
+            let game = $0.game.map { "；当前对局=\($0.gameTitle)，本方回合=\($0.isLocalTurn ? "是" : "否")" } ?? ""
+            return " 当前已接入本机上下文：BLE连接 \($0.bluetooth.connectedPeers)/\($0.bluetooth.trackedPeers)，A9=\($0.a9HealthScore)/100\(game)。"
+        } ?? ""
+        return "已在本机收到「\(clipped)」。\(visual)\(local)当前运行的是 VeilLink 的确定性测试运行时；Release 本地 AI 构建应由真实 Qwen/llama Runtime 替代。"
     }
 }

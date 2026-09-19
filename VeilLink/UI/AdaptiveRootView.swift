@@ -23,6 +23,7 @@ private struct PhoneLayout: View {
         TabView(selection: $model.selectedSection) {
             NavigationView {
                 ConversationListView(model: model, usesNavigationLinks: true)
+                    .telemetryScreen("chats.list")
             }
             .navigationViewStyle(StackNavigationViewStyle())
             .tabItem { Label("对话", systemImage: SidebarSection.chats.icon) }
@@ -31,13 +32,23 @@ private struct PhoneLayout: View {
 
             NavigationView {
                 NearbyView(model: model)
+                    .telemetryScreen("nearby")
             }
             .navigationViewStyle(StackNavigationViewStyle())
             .tabItem { Label("附近", systemImage: SidebarSection.nearby.icon) }
             .tag(SidebarSection.nearby)
 
             NavigationView {
-                AgentHomeView(coordinator: model.agent, maleCNS: model.maleCNS)
+                GameLobbyView(model: model)
+                    .telemetryScreen("games.lobby")
+            }
+            .navigationViewStyle(StackNavigationViewStyle())
+            .tabItem { Label("游戏", systemImage: SidebarSection.games.icon) }
+            .tag(SidebarSection.games)
+
+            NavigationView {
+                AgentHomeView(model: model)
+                    .telemetryScreen("agent.home")
             }
             .navigationViewStyle(StackNavigationViewStyle())
             .tabItem { Label("灵核", systemImage: SidebarSection.agent.icon) }
@@ -45,12 +56,19 @@ private struct PhoneLayout: View {
 
             NavigationView {
                 SettingsView(model: model)
+                    .telemetryScreen("settings")
             }
             .navigationViewStyle(StackNavigationViewStyle())
             .tabItem { Label("设置", systemImage: SidebarSection.settings.icon) }
             .tag(SidebarSection.settings)
         }
         .accentColor(VeilTheme.gold)
+        .onChange(of: model.selectedSection) { section in
+            RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                "navigation.tab",
+                metadata: ["section": section.rawValue]
+            )
+        }
     }
 }
 
@@ -64,6 +82,10 @@ private struct TabletLayout: View {
                 VStack(spacing: 6) {
                     ForEach(SidebarSection.allCases) { section in
                         Button {
+                            RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                                "navigation.sidebar",
+                                metadata: ["section": section.rawValue]
+                            )
                             model.selectedSection = section
                         } label: {
                             HStack(spacing: 12) {
@@ -121,15 +143,23 @@ private struct TabletLayout: View {
                 case .chats:
                     if let conversation = model.selectedConversation {
                         ChatView(model: model, conversation: conversation)
+                            .telemetryScreen("chats.detail", metadata: ["conversation_id": conversation.id])
                     } else {
                         EmptyDetailView()
+                            .telemetryScreen("chats.empty")
                     }
                 case .nearby:
                     NearbyView(model: model)
+                        .telemetryScreen("nearby")
+                case .games:
+                    GameLobbyView(model: model)
+                        .telemetryScreen("games.lobby")
                 case .agent:
-                    AgentHomeView(coordinator: model.agent, maleCNS: model.maleCNS)
+                    AgentHomeView(model: model)
+                        .telemetryScreen("agent.home")
                 case .settings:
                     SettingsView(model: model)
+                        .telemetryScreen("settings")
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

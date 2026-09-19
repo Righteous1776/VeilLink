@@ -27,7 +27,7 @@ struct AgentStatusView: View {
                     HStack(spacing: 7) {
                         Text("灵核")
                             .font(.system(.headline, design: .rounded).weight(.semibold))
-                        Text("LOCAL")
+                        Text(LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled ? "REAL LOCAL" : "LOCAL FIXTURE")
                             .font(.system(size: 8, weight: .bold, design: .monospaced))
                             .tracking(0.9)
                             .foregroundColor(VeilTheme.gold)
@@ -52,7 +52,12 @@ struct AgentStatusView: View {
 
             HStack(spacing: 8) {
                 AgentStatusChip(title: "RUNTIME", value: coordinator.runtimeManifest?.displayName ?? "未载入")
+                AgentStatusChip(title: "ENGINE", value: LocalTextModelRuntimeFactory.backendName)
+            }
+
+            HStack(spacing: 8) {
                 AgentStatusChip(title: "PROFILE", value: coordinator.capabilityProfile.tier.rawValue)
+                AgentStatusChip(title: "MODE", value: LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled ? "GGUF" : "FIXTURE")
             }
 
             HStack(spacing: 8) {

@@ -16,8 +16,15 @@ struct VeilLinkApp: App {
             Group {
                 if let model = bootstrap.model {
                     RootContainer(model: model)
-                        .onAppear { model.start() }
+                        .onAppear {
+                            RuntimeDiagnosticsBridge.shared.attach(to: model)
+                            DeviceStressTestController.shared.attach(model: model)
+                            RuntimeDiagnosticsBridge.shared.recordLifecycle("root.appear")
+                            model.start()
+                        }
                         .onChange(of: scenePhase) { phase in
+                            RuntimeDiagnosticsBridge.shared.recordLifecycle("scene.\(String(describing: phase))")
+                            DeviceStressTestController.shared.handleSceneActive(phase == .active)
                             model.bluetooth.setForegroundActive(phase == .active)
                             if phase == .active {
                                 model.handleForegroundTransition()
@@ -28,6 +35,8 @@ struct VeilLinkApp: App {
                             }
                         }
                         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                            RuntimeDiagnosticsBridge.shared.recordMemoryPressure()
+                            DeviceStressTestController.shared.noteMemoryWarning()
                             model.handleMemoryPressure()
                         }
                 } else {
@@ -78,12 +87,16 @@ private final class AppBootstrap: ObservableObject {
     let errorMessage: String
 
     init() {
+        let diagnostics = RuntimeDiagnosticsBridge.shared
+        diagnostics.recordStartupBegin()
         do {
             model = try AppModel()
             errorMessage = ""
+            diagnostics.recordStartupSuccess()
         } catch {
             model = nil
             errorMessage = error.localizedDescription
+            diagnostics.recordStartupFailure(error)
         }
     }
 }
@@ -119,12 +132,14 @@ private struct RootContainer: View {
     @ObservedObject var model: AppModel
     @ObservedObject var identity: IdentityManager
     @ObservedObject var appLock: AppLockController
+    @ObservedObject var stressTest: DeviceStressTestController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: AppModel) {
         self.model = model
         identity = model.identity
         appLock = model.appLock
+        stressTest = DeviceStressTestController.shared
     }
 
     var body: some View {
@@ -132,13 +147,22 @@ private struct RootContainer: View {
             VeilAmbientBackground()
             if identity.activeIdentity == nil {
                 OnboardingView(model: model)
+                    .telemetryScreen("onboarding")
                     .transition(.opacity)
             } else if appLock.isLocked {
                 LockScreenView(controller: appLock, haptics: model.haptics)
+                    .telemetryScreen("lock")
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.992)))
             } else {
                 AdaptiveRootView(model: model)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 1.006)))
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if stressTest.isRunning {
+                DeviceStressTestHUD(controller: stressTest)
+                    .padding(.top, 8)
+                    .padding(.trailing, 8)
             }
         }
         .animation(reduceMotion ? nil : VeilMotion.reveal, value: appLock.isLocked)
@@ -147,7 +171,10 @@ private struct RootContainer: View {
             get: { model.alertMessage != nil },
             set: { if !$0 { model.alertMessage = nil } }
         )) {
-            Button("确定", role: .cancel) { model.alertMessage = nil }
+            Button("确定", role: .cancel) {
+                RuntimeDiagnosticsBridge.shared.recordSemanticAction("alert.dismiss")
+                model.alertMessage = nil
+            }
         } message: {
             Text(model.alertMessage ?? "")
         }

@@ -6,6 +6,7 @@ enum AgentPromptAssembler {
         userText: String,
         profile: AgentCapabilityProfile,
         visualContext: AgentVisualContext? = nil,
+        localContext: AgentLocalContext? = nil,
         computeBudget: AgentLanguageComputeBudget? = nil
     ) -> AgentTextRequest {
         let cleaned = userText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -14,7 +15,8 @@ enum AgentPromptAssembler {
             messages: session.recentMessages(limit: computeBudget?.recentMessageLimit ?? profile.recentMessageLimit),
             userText: cleaned,
             maxNewTokens: computeBudget?.maxNewTokens ?? profile.maxNewTokens,
-            visualContext: visualContext
+            visualContext: visualContext,
+            localContext: localContext
         )
     }
 }
