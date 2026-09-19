@@ -3,23 +3,6 @@ name: Real Local AI heavy validation
 on:
   workflow_dispatch:
   workflow_call:
-  push:
-    branches:
-      - main
-      - 'feature/**'
-    paths:
-      - 'VeilLink/**'
-      - 'VeilLinkTests/**'
-      - 'scripts/**'
-      - 'project.yml'
-      - '.github/workflows/local-ai-heavy-validation.yml'
-  pull_request:
-    paths:
-      - 'VeilLink/**'
-      - 'VeilLinkTests/**'
-      - 'scripts/**'
-      - 'project.yml'
-      - '.github/workflows/local-ai-heavy-validation.yml'
 
 permissions:
   contents: read
@@ -31,57 +14,69 @@ env:
   QWEN_MODEL_REVISION: a41486f827d17edd055fe6b3b0ba3f8d427c0519
 
 jobs:
+  preflight:
+    uses: ./.github/workflows/ios-ci.yml
+
   real-local-ai:
+    needs: preflight
     runs-on: macos-15
     timeout-minutes: 95
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare evidence directory
+        run: |
+          mkdir -p ci-artifacts
+          {
+            echo "HEAD=$(git rev-parse HEAD)"
+            xcodebuild -version
+            sw_vers
+            df -h .
+          } 2>&1 | tee ci-artifacts/environment.log
+
       - name: Install build tools
-        run: brew install xcodegen cmake
+        run: brew install xcodegen cmake 2>&1 | tee ci-artifacts/install-build-tools.log
 
       - name: Build pinned llama.cpp and fetch pinned Qwen model
-        run: bash scripts/prepare-real-local-ai.sh
+        run: |
+          set -o pipefail
+          bash scripts/prepare-real-local-ai.sh 2>&1 | tee ci-artifacts/prepare-real-local-ai.log
 
       - name: Generate local-AI Xcode project
         run: |
-          xcodegen generate --spec project.local-ai.yml
-          bash scripts/verify-local-ai-project.sh
+          set -o pipefail
+          {
+            xcodegen generate --spec project.local-ai.yml
+            bash scripts/verify-local-ai-project.sh
+          } 2>&1 | tee ci-artifacts/local-ai-project.log
+          cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.local-ai.pbxproj
 
       - name: Build simulator with real llama runtime
         run: |
           set -o pipefail
-          xcodebuild \
-            -project VeilLink.xcodeproj \
-            -scheme VeilLink \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+          rm -rf ci-artifacts/AI-SimulatorBuild.xcresult
+          xcodebuild             -project VeilLink.xcodeproj             -scheme VeilLink             -configuration Debug             -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             -resultBundlePath ci-artifacts/AI-SimulatorBuild.xcresult             CODE_SIGNING_ALLOWED=NO             build 2>&1 | tee ci-artifacts/ai-simulator-build.log
 
       - name: Run full tests including real Qwen inference smoke test
         run: |
           set -o pipefail
-          bash scripts/ci-test.sh 2>&1 | tee AI_TEST.log
-          grep -q 'VEILLINK_AI_METRICS_JSON=' AI_TEST.log
-          grep 'VEILLINK_AI_METRICS_JSON=' AI_TEST.log | tail -n1 | sed 's/^.*VEILLINK_AI_METRICS_JSON=//' > AI_SMOKE_METRICS.json
+          rm -rf TestResults.xcresult
+          bash scripts/ci-test.sh 2>&1 | tee ci-artifacts/AI_TEST.log
+          grep -q 'VEILLINK_AI_METRICS_JSON=' ci-artifacts/AI_TEST.log
+          grep 'VEILLINK_AI_METRICS_JSON=' ci-artifacts/AI_TEST.log | tail -n1 | sed 's/^.*VEILLINK_AI_METRICS_JSON=//' > AI_SMOKE_METRICS.json
           python3 -m json.tool AI_SMOKE_METRICS.json >/dev/null
+          cp AI_SMOKE_METRICS.json ci-artifacts/
 
       - name: Build unsigned iPhoneOS app
         run: |
           set -o pipefail
-          xcodebuild \
-            -project VeilLink.xcodeproj \
-            -scheme VeilLink \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath DerivedData \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+          rm -rf DerivedData ci-artifacts/AI-DeviceBuild.xcresult
+          xcodebuild             -project VeilLink.xcodeproj             -scheme VeilLink             -configuration Release             -sdk iphoneos             -derivedDataPath DerivedData             -resultBundlePath ci-artifacts/AI-DeviceBuild.xcresult             CODE_SIGNING_ALLOWED=NO             build 2>&1 | tee ci-artifacts/ai-device-build.log
 
       - name: Verify real local AI is inside app
-        run: bash scripts/verify-real-local-ai-app.sh
+        run: |
+          set -o pipefail
+          bash scripts/verify-real-local-ai-app.sh 2>&1 | tee ci-artifacts/verify-real-local-ai-app.log
 
       - name: Write validation report
         run: |
@@ -106,13 +101,40 @@ jobs:
           }
           pathlib.Path('AI_RUNTIME_VALIDATION.json').write_text(json.dumps(report, indent=2) + '\n')
           PY
+          cp AI_RUNTIME_VALIDATION.json ci-artifacts/
 
-      - uses: actions/upload-artifact@v4
+      - name: Collect heavy-validation evidence
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ -d TestResults.xcresult ]; then
+            ditto TestResults.xcresult ci-artifacts/TestResults.xcresult
+          fi
+          for f in AI_RUNTIME_VALIDATION.json AI_SMOKE_METRICS.json VeilLink/Resources/LocalAIProvenance.json; do
+            if [ -f "$f" ]; then cp "$f" ci-artifacts/; fi
+          done
+          python3 scripts/ci-collect-evidence.py             --workflow "Real Local AI heavy validation"             --phase "real-local-ai"             --status "$JOB_STATUS"             --artifact-dir ci-artifacts             --output ci-artifacts/CI_EVIDENCE.json
+
+      - name: Upload heavy-validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-RealLocalAI-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-artifacts
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload successful runtime validation
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
           name: VeilLink-RealLocalAI-Validation
           path: |
             AI_RUNTIME_VALIDATION.json
             AI_SMOKE_METRICS.json
+            VeilLink/Resources/LocalAIProvenance.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 30

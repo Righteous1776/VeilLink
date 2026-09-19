@@ -3,16 +3,6 @@ name: MaleCNS + Qwen dual-brain heavy validation
 on:
   workflow_dispatch:
   workflow_call:
-  push:
-    branches:
-      - main
-      - 'release/**'
-    paths:
-      - 'VeilLink/**'
-      - 'VeilLinkTests/**'
-      - 'scripts/**'
-      - 'project.yml'
-      - '.github/workflows/malecns-heavy-validation.yml'
 
 permissions:
   contents: read
@@ -26,80 +16,156 @@ env:
   VFLY_LITE_SHA256: 25b4947ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee
 
 jobs:
+  preflight:
+    uses: ./.github/workflows/ios-ci.yml
+
   package-dual-brain-ipa:
+    needs: preflight
     runs-on: macos-15
     timeout-minutes: 110
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify bundled real VFLY Core/Lite
+      - name: Prepare evidence directory
+        run: |
+          mkdir -p ci-artifacts
+          {
+            echo "HEAD=$(git rev-parse HEAD)"
+            xcodebuild -version
+            sw_vers
+            df -h .
+          } 2>&1 | tee ci-artifacts/environment.log
+
+      - name: Verify bundled VFLY and R7 rankers
         run: |
           set -euo pipefail
-          python3 scripts/verify-vfly-installed.py VeilLink/Resources --json-out VFLY_BUNDLED_VERIFY.json
-          echo "$VFLY_CORE_SHA256  VeilLink/Resources/VeilFlyCore.vfly" | shasum -a 256 -c -
-          echo "$VFLY_LITE_SHA256  VeilLink/Resources/VeilFlyLite.vfly" | shasum -a 256 -c -
-          test ! -e VeilLink/Resources/MaleCNSReference.vfly
+          {
+            python3 scripts/verify-vfly-installed.py \
+              VeilLink/Resources \
+              --json-out VFLY_BUNDLED_VERIFY.json
+            python3 scripts/verify-malecns-ranker-assets.py \
+              --resources VeilLink/Resources \
+              --json-out R7_RANKER_BUNDLED_VERIFY.json
+            echo "$VFLY_CORE_SHA256  VeilLink/Resources/VeilFlyCore.vfly" | shasum -a 256 -c -
+            echo "$VFLY_LITE_SHA256  VeilLink/Resources/VeilFlyLite.vfly" | shasum -a 256 -c -
+            test ! -e VeilLink/Resources/MaleCNSReference.vfly
+          } 2>&1 | tee ci-artifacts/dual-brain-source-assets.log
+          cp VFLY_BUNDLED_VERIFY.json R7_RANKER_BUNDLED_VERIFY.json ci-artifacts/
 
       - name: Install build tools
-        run: brew install xcodegen cmake
+        run: |
+          set -o pipefail
+          brew install xcodegen cmake 2>&1 | tee ci-artifacts/install-build-tools.log
 
-      - name: Prepare real Qwen + llama runtime
-        run: bash scripts/prepare-real-local-ai.sh
+      - name: Prepare real Qwen and llama runtime
+        run: |
+          set -o pipefail
+          bash scripts/prepare-real-local-ai.sh 2>&1 | tee ci-artifacts/prepare-real-local-ai.log
 
       - name: Generate dual-brain Xcode project
         run: |
-          xcodegen generate --spec project.local-ai.yml
-          bash scripts/verify-local-ai-project.sh
+          set -o pipefail
+          {
+            xcodegen generate --spec project.local-ai.yml
+            bash scripts/verify-local-ai-project.sh
+          } 2>&1 | tee ci-artifacts/dual-brain-project.log
+          cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.local-ai.pbxproj
 
       - name: Build simulator with MaleCNS and Qwen
         run: |
           set -o pipefail
+          rm -rf ci-artifacts/DualBrain-SimulatorBuild.xcresult
           xcodebuild \
             -project VeilLink.xcodeproj \
             -scheme VeilLink \
             -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
+            -resultBundlePath ci-artifacts/DualBrain-SimulatorBuild.xcresult \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            build 2>&1 | tee ci-artifacts/dual-brain-simulator-build.log
 
-      - name: Run complete tests including real inference smoke test
+      - name: Run complete tests including real inference lifecycle
         run: |
           set -o pipefail
-          bash scripts/ci-test.sh 2>&1 | tee AI_TEST.log
-          grep -q 'VEILLINK_AI_METRICS_JSON=' AI_TEST.log
-          grep 'VEILLINK_AI_METRICS_JSON=' AI_TEST.log | tail -n1 | sed 's/^.*VEILLINK_AI_METRICS_JSON=//' > AI_SMOKE_METRICS.json
+          rm -rf TestResults.xcresult
+          bash scripts/ci-test.sh 2>&1 | tee ci-artifacts/AI_TEST.log
+          grep -q 'VEILLINK_AI_METRICS_JSON=' ci-artifacts/AI_TEST.log
+          grep -q 'VEILLINK_AI_LIFECYCLE_JSON=' ci-artifacts/AI_TEST.log
+          grep 'VEILLINK_AI_METRICS_JSON=' ci-artifacts/AI_TEST.log \
+            | tail -n1 \
+            | sed 's/^.*VEILLINK_AI_METRICS_JSON=//' > AI_SMOKE_METRICS.json
+          grep 'VEILLINK_AI_LIFECYCLE_JSON=' ci-artifacts/AI_TEST.log \
+            | tail -n1 \
+            | sed 's/^.*VEILLINK_AI_LIFECYCLE_JSON=//' > AI_LIFECYCLE_METRICS.json
           python3 -m json.tool AI_SMOKE_METRICS.json >/dev/null
+          python3 -m json.tool AI_LIFECYCLE_METRICS.json >/dev/null
+          cp AI_SMOKE_METRICS.json AI_LIFECYCLE_METRICS.json ci-artifacts/
 
       - name: Build unsigned iPhoneOS dual-brain app
         run: |
           set -o pipefail
+          rm -rf DerivedData ci-artifacts/DualBrain-DeviceBuild.xcresult
           xcodebuild \
             -project VeilLink.xcodeproj \
             -scheme VeilLink \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath DerivedData \
+            -resultBundlePath ci-artifacts/DualBrain-DeviceBuild.xcresult \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            build 2>&1 | tee ci-artifacts/dual-brain-device-build.log
 
-      - name: Verify VFLY and real local AI assets
+      - name: Verify built dual-brain app
         run: |
           set -euo pipefail
-          bash scripts/verify-dual-brain-app.sh "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" DUAL_BRAIN_VFLY_VERIFY.json
+          bash scripts/verify-dual-brain-app.sh \
+            "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
+            DUAL_BRAIN_VFLY_VERIFY.json \
+            DUAL_BRAIN_RANKER_VERIFY.json 2>&1 \
+            | tee ci-artifacts/verify-dual-brain-app.log
+          cp DUAL_BRAIN_VFLY_VERIFY.json DUAL_BRAIN_RANKER_VERIFY.json ci-artifacts/
 
-      - name: Package unsigned dual-brain IPA
-        run: bash scripts/package-unsigned-ipa.sh
+      - name: Package unsigned IPA from clean Payload
+        run: |
+          set -o pipefail
+          bash scripts/package-unsigned-ipa.sh 2>&1 | tee ci-artifacts/package-unsigned-ipa.log
+
+      - name: Verify final Release carrier
+        run: |
+          set -o pipefail
+          python3 scripts/verify-release-carrier.py \
+            --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
+            --ipa "build/VeilLink-unsigned.ipa" \
+            --manifest RELEASE_MANIFEST.json \
+            --provenance RELEASE_PROVENANCE.json \
+            --sums RELEASE_SHA256SUMS.txt 2>&1 \
+            | tee ci-artifacts/release-carrier-gate.log
+          cp \
+            RELEASE_MANIFEST.json \
+            RELEASE_PROVENANCE.json \
+            RELEASE_SHA256SUMS.txt \
+            ci-artifacts/
 
       - name: Write dual-brain validation report
         run: |
-          python3 - <<'PY2'
-          import hashlib, json, os, pathlib, subprocess
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+
           ipa = pathlib.Path('build/VeilLink-unsigned.ipa')
+          release = json.loads(pathlib.Path('RELEASE_MANIFEST.json').read_text())
+          lifecycle = json.loads(pathlib.Path('AI_LIFECYCLE_METRICS.json').read_text())
           report = {
-              'schema': 2,
+              'schema': 3,
               'result': 'PASS',
-              'male_cns': 'bundled VFLY1 Core/Lite verified',
+              'release_eligible': bool(release.get('release_eligible')),
+              'unsigned_ipa': True,
+              'male_cns': 'VFLY1 Core/Lite + R7 rankers verified',
               'vfly_core_sha256': os.environ['VFLY_CORE_SHA256'],
               'vfly_lite_sha256': os.environ['VFLY_LITE_SHA256'],
               'qwen_model': 'Qwen3-0.6B-Q4_0.gguf',
@@ -107,26 +173,87 @@ jobs:
               'qwen_revision': os.environ['QWEN_MODEL_REVISION'],
               'llama_cpp_commit': os.environ['LLAMA_CPP_COMMIT'],
               'real_inference_smoke_test': 'PASS',
+              'real_inference_lifecycle': lifecycle,
               'smoke_metrics': json.loads(pathlib.Path('AI_SMOKE_METRICS.json').read_text()),
               'ipa_sha256': hashlib.sha256(ipa.read_bytes()).hexdigest(),
               'ipa_bytes': ipa.stat().st_size,
-              'git_head': subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
+              'release_manifest_sha256': hashlib.sha256(
+                  pathlib.Path('RELEASE_MANIFEST.json').read_bytes()
+              ).hexdigest(),
+              'git_head': subprocess.check_output(
+                  ['git', 'rev-parse', 'HEAD'],
+                  text=True
+              ).strip(),
           }
-          pathlib.Path('DUAL_BRAIN_VALIDATION.json').write_text(json.dumps(report, indent=2) + '\n')
-          PY2
+          pathlib.Path('DUAL_BRAIN_VALIDATION.json').write_text(
+              json.dumps(report, indent=2) + '\n'
+          )
+          PY
+          cp DUAL_BRAIN_VALIDATION.json ci-artifacts/
 
-      - uses: actions/upload-artifact@v4
+      - name: Collect dual-brain evidence
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ -d TestResults.xcresult ]; then
+            ditto TestResults.xcresult ci-artifacts/TestResults.xcresult
+          fi
+          for f in \
+            VFLY_BUNDLED_VERIFY.json \
+            R7_RANKER_BUNDLED_VERIFY.json \
+            DUAL_BRAIN_VFLY_VERIFY.json \
+            DUAL_BRAIN_RANKER_VERIFY.json \
+            DUAL_BRAIN_VALIDATION.json \
+            AI_SMOKE_METRICS.json \
+            AI_LIFECYCLE_METRICS.json \
+            RELEASE_MANIFEST.json \
+            RELEASE_PROVENANCE.json \
+            RELEASE_SHA256SUMS.txt \
+            VeilLink/Resources/VeilFlyAssets.json \
+            VeilLink/Resources/VFLYInstallationVerification.json \
+            VeilLink/Resources/LocalAIProvenance.json; do
+            if [ -f "$f" ]; then
+              cp "$f" ci-artifacts/
+            fi
+          done
+          python3 scripts/ci-collect-evidence.py \
+            --workflow "MaleCNS + Qwen dual-brain heavy validation" \
+            --phase "dual-brain-release" \
+            --status "$JOB_STATUS" \
+            --artifact-dir ci-artifacts \
+            --output ci-artifacts/CI_EVIDENCE.json
+
+      - name: Upload dual-brain evidence
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: VeilLink-unsigned-v0.9.6-DualBrain
+          name: VeilLink-DualBrain-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-artifacts
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload Release-eligible unsigned IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-unsigned-v0.9.7-b41-DualBrain-TacticalV2
           path: |
             build/VeilLink-unsigned.ipa
+            RELEASE_MANIFEST.json
+            RELEASE_PROVENANCE.json
+            RELEASE_SHA256SUMS.txt
+            DUAL_BRAIN_VALIDATION.json
+            AI_SMOKE_METRICS.json
+            AI_LIFECYCLE_METRICS.json
+            VFLY_BUNDLED_VERIFY.json
+            R7_RANKER_BUNDLED_VERIFY.json
+            DUAL_BRAIN_VFLY_VERIFY.json
+            DUAL_BRAIN_RANKER_VERIFY.json
             VeilLink/Resources/VeilFlyAssets.json
             VeilLink/Resources/VFLYInstallationVerification.json
             VeilLink/Resources/LocalAIProvenance.json
-            VFLY_BUNDLED_VERIFY.json
-            DUAL_BRAIN_VFLY_VERIFY.json
-            DUAL_BRAIN_VALIDATION.json
-            AI_SMOKE_METRICS.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 30

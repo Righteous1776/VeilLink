@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
@@ -13,32 +17,58 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare evidence directory
+        run: |
+          mkdir -p ci-artifacts
+          {
+            echo "HEAD=$(git rev-parse HEAD)"
+            xcodebuild -version
+            sw_vers
+            echo "RUNNER_ARCH=${RUNNER_ARCH:-unknown}"
+            df -h .
+          } 2>&1 | tee ci-artifacts/environment.log
+
+      - name: Static standard preflight
+        run: |
+          set -o pipefail
+          python3 scripts/ci-standard-preflight.py 2>&1 | tee ci-artifacts/static-preflight.log
+
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: brew install xcodegen 2>&1 | tee ci-artifacts/install-xcodegen.log
 
       - name: Generate Xcode project
-        run: xcodegen generate
+        run: |
+          set -o pipefail
+          xcodegen generate 2>&1 | tee ci-artifacts/xcodegen.log
+          cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.pbxproj
 
       - name: Build for iOS Simulator
         run: |
           set -o pipefail
-          xcodebuild \
-            -project VeilLink.xcodeproj \
-            -scheme VeilLink \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+          rm -rf ci-artifacts/BuildResults.xcresult
+          xcodebuild             -project VeilLink.xcodeproj             -scheme VeilLink             -configuration Debug             -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             -resultBundlePath ci-artifacts/BuildResults.xcresult             CODE_SIGNING_ALLOWED=NO             build 2>&1 | tee ci-artifacts/ios-simulator-build.log
 
       - name: Run unit tests
-        run: bash scripts/ci-test.sh
+        run: |
+          set -o pipefail
+          rm -rf TestResults.xcresult
+          bash scripts/ci-test.sh 2>&1 | tee ci-artifacts/unit-tests.log
 
-      - name: Upload test result bundle
+      - name: Collect CI evidence
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ -d TestResults.xcresult ]; then
+            ditto TestResults.xcresult ci-artifacts/TestResults.xcresult
+          fi
+          python3 scripts/ci-collect-evidence.py             --workflow "iOS CI"             --phase "standard-preflight"             --status "$JOB_STATUS"             --artifact-dir ci-artifacts             --output ci-artifacts/CI_EVIDENCE.json
+
+      - name: Upload CI evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VeilLink-TestResults
-          path: TestResults.xcresult
-          if-no-files-found: ignore
-          retention-days: 7
+          name: VeilLink-iOS-CI-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-artifacts
+          if-no-files-found: error
+          retention-days: 14
