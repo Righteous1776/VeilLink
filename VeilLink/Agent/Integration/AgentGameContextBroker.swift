@@ -177,7 +177,7 @@ final class AgentGameContextBroker: ObservableObject {
     ) {
         guard !candidates.isEmpty, controls.gameDecisionMode.usesMaleCNSRerank else { return }
         maleCNS.prepareFromBundle()
-        probeTask = Task { @MainActor [weak self] in
+        probeTask = Task<Void, Never> { @MainActor [weak self] in
             guard let self else { return }
             for _ in 0..<20 {
                 guard !Task.isCancelled else { return }
