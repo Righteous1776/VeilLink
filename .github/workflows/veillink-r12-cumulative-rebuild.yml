@@ -13,8 +13,8 @@ concurrency:
 env:
   BASELINE_SHA: af35b160fcc9b97d3c82963f1dea8ee6dbdb5773
   STAGING_BRANCH: r12-cumulative-validation
-  CARRIER_REPO_PATH: .github/workflows/VeilLink_V01010_R12_CUMULATIVE_FROM_af35b160.zip
-  CARRIER_SHA256: 0d725d398177c8047efb524eb1477dff440db9f4926f1e70e2920fde5e4344ee
+  CARRIER_REPO_PATH: .github/workflows/VeilLink_V01010_R12_CUMULATIVE_FROM_af35b160_R1A_FIX1.zip
+  CARRIER_SHA256: f99a48f551aa033ce81e27f8b9f2881174534118471e41f9761beb668c0ad69f
 
 jobs:
   rebuild:
@@ -40,7 +40,7 @@ jobs:
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/r12-bundle"
           unzip -q "${RUNNER_TEMP}/r12-carrier/cumulative.zip" -d "${RUNNER_TEMP}/r12-bundle"
-          bundle="${RUNNER_TEMP}/r12-bundle/VeilLink_V01010_R12_CUMULATIVE_FROM_af35b160"
+          bundle="${RUNNER_TEMP}/r12-bundle/VeilLink_V01010_R12_CUMULATIVE_FROM_af35b160_R1A_FIX1"
 
           git checkout --detach "${BASELINE_SHA}"
           git reset --hard "${BASELINE_SHA}"
