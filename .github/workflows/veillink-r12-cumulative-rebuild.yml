@@ -1,0 +1,127 @@
+name: Rebuild cumulative R12 from af35b160
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: veillink-r12-cumulative-rebuild
+  cancel-in-progress: false
+
+env:
+  BASELINE_SHA: af35b160fcc9b97d3c82963f1dea8ee6dbdb5773
+  STAGING_BRANCH: r12-cumulative-validation
+  CARRIER_REPO_PATH: .github/workflows/VeilLink_V01010_R12_CUMULATIVE_FROM_af35b160.zip
+  CARRIER_SHA256: 0d725d398177c8047efb524eb1477dff440db9f4926f1e70e2920fde5e4344ee
+  EVIDENCE_DIR: ${{ runner.temp }}/r12-evidence
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Preserve and verify cumulative carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/r12-carrier"
+          cp "${CARRIER_REPO_PATH}" "${RUNNER_TEMP}/r12-carrier/cumulative.zip"
+          echo "${CARRIER_SHA256}  ${RUNNER_TEMP}/r12-carrier/cumulative.zip" | sha256sum -c -
+          git merge-base --is-ancestor a7b1112bcdd82aec79c430edc9ff5966204496d8 HEAD
+
+      - name: Rebuild R1A through R12 from exact baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/r12-bundle"
+          unzip -q "${RUNNER_TEMP}/r12-carrier/cumulative.zip" -d "${RUNNER_TEMP}/r12-bundle"
+          bundle="${RUNNER_TEMP}/r12-bundle/VeilLink_V01010_R12_CUMULATIVE_FROM_af35b160"
+
+          git checkout --detach "${BASELINE_SHA}"
+          git reset --hard "${BASELINE_SHA}"
+          git clean -fdx
+          test "$(git rev-parse HEAD)" = "${BASELINE_SHA}"
+          test -z "$(git status --porcelain)"
+          mkdir -p "${EVIDENCE_DIR}"
+
+          python3 "${bundle}/verify_cumulative_bundle.py" 2>&1 | tee "${EVIDENCE_DIR}/cumulative-bundle-verify.log"
+          python3 "${bundle}/apply_cumulative_r12.py" 2>&1 | tee "${EVIDENCE_DIR}/cumulative-apply.log"
+          grep -q 'VEILLINK_R12_CUMULATIVE_PASS' "${EVIDENCE_DIR}/cumulative-apply.log"
+          git diff --check
+          python3 scripts/verify-runtime-maintenance-r12.py 2>&1 | tee "${EVIDENCE_DIR}/r12-final-verifier.log"
+
+      - name: Audit cumulative R12 source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee "${EVIDENCE_DIR}/r12-source-audit.log"
+          from pathlib import Path
+          import plistlib
+
+          root = Path('.')
+          with (root / 'VeilLink/Resources/Info.plist').open('rb') as handle:
+              info = plistlib.load(handle)
+          assert str(info['CFBundleShortVersionString']) == '0.10.10'
+          assert str(info['CFBundleVersion']) == '52'
+
+          required = [
+              'VeilLink/Core/RuntimeMaintenanceTuning.swift',
+              'VeilLink/Voice/WalkieTalkieAudioController.swift',
+              'VeilLinkTests/RuntimeMaintenanceOptimizationR12Tests.swift',
+              'scripts/verify-runtime-maintenance-r12.py',
+              'docs/history/maintenance/V0109_R11_R12_BASE/manifest.json',
+          ]
+          for rel in required:
+              assert (root / rel).is_file(), rel
+
+          source = '\n'.join(
+              path.read_text(encoding='utf-8', errors='ignore')
+              for path in (root / 'VeilLink').rglob('*.swift')
+          )
+          for token in [
+              'VeilTalk', 'ControlPlane', 'AutoTune',
+              'VeilPTT', 'JitterBuffer', 'RuntimeMaintenanceTuning'
+          ]:
+              assert token.lower() in source.lower(), token
+
+          session = (root / 'VeilLink/Security/SessionCoordinator.swift').read_text()
+          assert 'static let version = 4' in session
+          print('VERSION=0.10.10')
+          print('BUILD=52')
+          print('WIRE_PROTOCOL=4')
+          print('R12_SOURCE_AUDIT_PASS')
+          PY
+
+          test -n "$(find docs/history -type f -name manifest.json -print -quit)"
+          rg -i 'MaleCNS|VFLY|Qwen|llama' docs Tools scripts > "${EVIDENCE_DIR}/experimental-history-presence.txt"
+          rg -i 'Xiangqi|Gomoku|Ludo' VeilLink VeilLinkTests > "${EVIDENCE_DIR}/native-bot-presence.txt"
+          git status --short | tee "${EVIDENCE_DIR}/git-status-before-commit.txt"
+          git diff --stat | tee "${EVIDENCE_DIR}/r12-diff-stat.txt"
+
+      - name: Commit isolated cumulative baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Release V0.10.10 build 52 cumulative R12 baseline"
+          git rev-parse HEAD | tee "${EVIDENCE_DIR}/r12-staging-commit.txt"
+          git status --short | tee "${EVIDENCE_DIR}/git-status-after-commit.txt"
+          test -z "$(git status --porcelain)"
+          git push origin "HEAD:refs/heads/${STAGING_BRANCH}"
+
+      - name: Upload cumulative rebuild evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-R12-Cumulative-Rebuild-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/r12-evidence
+          if-no-files-found: warn
+          retention-days: 30
