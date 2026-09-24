@@ -1,0 +1,52 @@
+name: Apply VeilLink V0.10.10 R12
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: veillink-v01010-r12-main
+  cancel-in-progress: false
+
+env:
+  CARRIER_PATH: .github/workflows/VeilLink_V01010_RUNTIME_MAINTENANCE_R12_FROM_R11.zip
+  CARRIER_SHA256: 1e57b63c293785e88d47d7bb2cf951d4ab6b46c4e1fc15cdf1847a4764cf4d96
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify carrier and apply guarded R12 update
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${CARRIER_SHA256}  ${CARRIER_PATH}" | sha256sum -c -
+          package_root="${RUNNER_TEMP}/veillink-r12"
+          mkdir -p "${package_root}"
+          unzip -q "${CARRIER_PATH}" -d "${package_root}"
+          package_dir="${package_root}/VeilLink_V01010_RUNTIME_MAINTENANCE_R12"
+          (
+            cd "${package_dir}"
+            sha256sum -c SHA256SUMS.txt
+          )
+          python3 "${package_dir}/apply_v01010_runtime_maintenance_r12.py"
+          git restore --source=HEAD --staged --worktree .github/workflows
+          git diff --check
+          python3 scripts/verify-runtime-maintenance-r12.py
+
+      - name: Commit verified R12 maintenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Release V0.10.10 build 52 R12 runtime maintenance"
+          git push origin HEAD:main
