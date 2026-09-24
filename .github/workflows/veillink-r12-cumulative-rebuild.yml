@@ -110,6 +110,13 @@ jobs:
         run: |
           set -euo pipefail
           evidence="${RUNNER_TEMP}/r12-evidence"
+          # GITHUB_TOKEN cannot create workflow files. Preserve the exact generated
+          # workflow in the evidence artifact; it will be added to the validated
+          # branch through the authenticated GitHub browser after this push.
+          if test -f .github/workflows/core-release.yml; then
+            mkdir -p "${evidence}/preserved-workflows"
+            mv .github/workflows/core-release.yml "${evidence}/preserved-workflows/core-release.yml"
+          fi
           git add -A
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
