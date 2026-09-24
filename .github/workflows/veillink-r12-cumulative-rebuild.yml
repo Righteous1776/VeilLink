@@ -15,7 +15,6 @@ env:
   STAGING_BRANCH: r12-cumulative-validation
   CARRIER_REPO_PATH: .github/workflows/VeilLink_V01010_R12_CUMULATIVE_FROM_af35b160.zip
   CARRIER_SHA256: 0d725d398177c8047efb524eb1477dff440db9f4926f1e70e2920fde5e4344ee
-  EVIDENCE_DIR: ${{ runner.temp }}/r12-evidence
 
 jobs:
   rebuild:
@@ -48,19 +47,21 @@ jobs:
           git clean -fdx
           test "$(git rev-parse HEAD)" = "${BASELINE_SHA}"
           test -z "$(git status --porcelain)"
-          mkdir -p "${EVIDENCE_DIR}"
+          evidence="${RUNNER_TEMP}/r12-evidence"
+          mkdir -p "${evidence}"
 
-          python3 "${bundle}/verify_cumulative_bundle.py" 2>&1 | tee "${EVIDENCE_DIR}/cumulative-bundle-verify.log"
-          python3 "${bundle}/apply_cumulative_r12.py" 2>&1 | tee "${EVIDENCE_DIR}/cumulative-apply.log"
-          grep -q 'VEILLINK_R12_CUMULATIVE_PASS' "${EVIDENCE_DIR}/cumulative-apply.log"
+          python3 "${bundle}/verify_cumulative_bundle.py" 2>&1 | tee "${evidence}/cumulative-bundle-verify.log"
+          python3 "${bundle}/apply_cumulative_r12.py" 2>&1 | tee "${evidence}/cumulative-apply.log"
+          grep -q 'VEILLINK_R12_CUMULATIVE_PASS' "${evidence}/cumulative-apply.log"
           git diff --check
-          python3 scripts/verify-runtime-maintenance-r12.py 2>&1 | tee "${EVIDENCE_DIR}/r12-final-verifier.log"
+          python3 scripts/verify-runtime-maintenance-r12.py 2>&1 | tee "${evidence}/r12-final-verifier.log"
 
       - name: Audit cumulative R12 source contract
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY' | tee "${EVIDENCE_DIR}/r12-source-audit.log"
+          evidence="${RUNNER_TEMP}/r12-evidence"
+          python3 - <<'PY' | tee "${evidence}/r12-source-audit.log"
           from pathlib import Path
           import plistlib
 
@@ -99,21 +100,22 @@ jobs:
           PY
 
           test -n "$(find docs/history -type f -name manifest.json -print -quit)"
-          rg -i 'MaleCNS|VFLY|Qwen|llama' docs Tools scripts > "${EVIDENCE_DIR}/experimental-history-presence.txt"
-          rg -i 'Xiangqi|Gomoku|Ludo' VeilLink VeilLinkTests > "${EVIDENCE_DIR}/native-bot-presence.txt"
-          git status --short | tee "${EVIDENCE_DIR}/git-status-before-commit.txt"
-          git diff --stat | tee "${EVIDENCE_DIR}/r12-diff-stat.txt"
+          rg -i 'MaleCNS|VFLY|Qwen|llama' docs Tools scripts > "${evidence}/experimental-history-presence.txt"
+          rg -i 'Xiangqi|Gomoku|Ludo' VeilLink VeilLinkTests > "${evidence}/native-bot-presence.txt"
+          git status --short | tee "${evidence}/git-status-before-commit.txt"
+          git diff --stat | tee "${evidence}/r12-diff-stat.txt"
 
       - name: Commit isolated cumulative baseline
         shell: bash
         run: |
           set -euo pipefail
+          evidence="${RUNNER_TEMP}/r12-evidence"
           git add -A
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Release V0.10.10 build 52 cumulative R12 baseline"
-          git rev-parse HEAD | tee "${EVIDENCE_DIR}/r12-staging-commit.txt"
-          git status --short | tee "${EVIDENCE_DIR}/git-status-after-commit.txt"
+          git rev-parse HEAD | tee "${evidence}/r12-staging-commit.txt"
+          git status --short | tee "${evidence}/git-status-after-commit.txt"
           test -z "$(git status --porcelain)"
           git push origin "HEAD:refs/heads/${STAGING_BRANCH}"
 
