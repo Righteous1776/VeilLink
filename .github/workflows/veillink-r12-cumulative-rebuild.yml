@@ -100,8 +100,8 @@ jobs:
           PY
 
           test -n "$(find docs/history -type f -name manifest.json -print -quit)"
-          rg -i 'MaleCNS|VFLY|Qwen|llama' docs Tools scripts > "${evidence}/experimental-history-presence.txt"
-          rg -i 'Xiangqi|Gomoku|Ludo' VeilLink VeilLinkTests > "${evidence}/native-bot-presence.txt"
+          grep -RInEI 'MaleCNS|VFLY|Qwen|llama' docs Tools scripts > "${evidence}/experimental-history-presence.txt"
+          grep -RInEI 'Xiangqi|Gomoku|Ludo' VeilLink VeilLinkTests > "${evidence}/native-bot-presence.txt"
           git status --short | tee "${evidence}/git-status-before-commit.txt"
           git diff --stat | tee "${evidence}/r12-diff-stat.txt"
 
