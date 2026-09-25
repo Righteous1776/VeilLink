@@ -217,6 +217,46 @@ final class SessionCoordinator: ObservableObject {
         try queueContent(WireChatContent(kind: .text, text: trimmed, attachment: nil, mimeType: nil, sentAt: Date(), attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil), preview: ReplyTextCodec.previewText(for: trimmed), to: peerIdentityID)
     }
 
+    func sendMiniGamePacket(_ packet: MiniGamePacket, to peerIdentityID: String) throws {
+        let encoded = try MiniGameCodec.encode(packet)
+        guard encoded.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else {
+            throw NSError(domain: "VeilLink", code: 23, userInfo: [NSLocalizedDescriptionKey: "小游戏操作数据超过当前消息上限。"])
+        }
+        try queueContent(
+            WireChatContent(kind: .text, text: encoded, attachment: nil, mimeType: nil, sentAt: packet.createdAt, attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil),
+            preview: MiniGameCodec.previewText(for: packet),
+            to: peerIdentityID
+        )
+    }
+
+    func sendTacticalV2Envelope(
+        _ envelope: TacticalV2.WireEnvelopeV2,
+        to peerIdentityID: String
+    ) throws {
+        let encoded = try TacticalV2.WireCodecV2.encode(envelope)
+        guard encoded.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else {
+            throw NSError(
+                domain: "VeilLink",
+                code: 24,
+                userInfo: [NSLocalizedDescriptionKey: "兵棋 V2 操作数据超过当前消息上限。"]
+            )
+        }
+        try queueContent(
+            WireChatContent(
+                kind: .text,
+                text: encoded,
+                attachment: nil,
+                mimeType: nil,
+                sentAt: envelope.createdAt,
+                attachmentByteCount: nil,
+                attachmentSHA256: nil,
+                attachmentChunkCount: nil
+            ),
+            preview: TacticalV2.WireCodecV2.previewText(for: envelope),
+            to: peerIdentityID
+        )
+    }
+
     func sendImage(_ imageData: Data, mimeType: String, to peerIdentityID: String) throws {
         guard imageData.count <= WireProtocol.maximumImageBytes else { throw NSError(domain: "VeilLink", code: 12, userInfo: [NSLocalizedDescriptionKey: "图片处理后仍超过 3 MB。"] ) }
         guard MediaTransferPolicy.supportsImageMIMEType(mimeType) else { throw NSError(domain: "VeilLink", code: 14, userInfo: [NSLocalizedDescriptionKey: "当前传输层不支持这种图片编码。"] ) }
