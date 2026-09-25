@@ -60,7 +60,7 @@ final class AgentControlAndLocalGameTests: XCTestCase {
 
         XCTAssertFalse(controller.isAIThinking)
         XCTAssertEqual(controller.gomoku.currentPlayer, .host)
-        XCTAssertEqual(controller.lastDecisionMode, "规则 Bot")
+        XCTAssertEqual(controller.lastDecisionMode, "五子棋 Bot")
 
         let aiStoneCount = (0..<(GomokuState.size * GomokuState.size))
             .filter { controller.gomoku.value(at: $0) == 2 }

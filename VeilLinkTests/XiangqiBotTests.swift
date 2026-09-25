@@ -10,8 +10,9 @@ final class XiangqiBotTests: XCTestCase {
     func testBotAlwaysReturnsRuleEngineLegalMove() {
         var state = XiangqiState()
 
-        // Hand the move to black using a known legal red cannon move.
-        XCTAssertTrue(state.apply(from: 64, to: 61, actor: .host))
+        // Verified legal red cannon move:
+        // 64 = row 7, col 1 -> 55 = row 6, col 1.
+        XCTAssertTrue(state.apply(from: 64, to: 55, actor: .host))
 
         let result = XiangqiBot.chooseMove(
             in: state,
@@ -33,7 +34,7 @@ final class XiangqiBotTests: XCTestCase {
 
     func testSearchIsDeterministicWhenDepthCompletes() {
         var state = XiangqiState()
-        XCTAssertTrue(state.apply(from: 64, to: 61, actor: .host))
+        XCTAssertTrue(state.apply(from: 64, to: 55, actor: .host))
 
         let a = XiangqiBot.chooseMove(in: state, for: .guest, budget: .deterministicTest)
         let b = XiangqiBot.chooseMove(in: state, for: .guest, budget: .deterministicTest)
