@@ -698,7 +698,6 @@ struct MiniGameSessionView: View {
         }
         .onAppear {
             model.agent.setComputeFocus(.gameDecision)
-            model.maleCNS.prepareFromBundle()
             reload(notify: false)
         }
         .onChange(of: model.messagesRevision) { _ in
