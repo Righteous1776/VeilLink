@@ -2,19 +2,19 @@ name: VeilLink iOS-primary release
 
 on:
   push:
-    branches: [main, r12-cumulative-validation]
+    branches: [r12-cumulative-validation]
   workflow_dispatch:
     inputs:
       build_android:
         description: 'Attempt Android APK after iOS IPA succeeds'
         required: false
-        default: true
+        default: false
         type: boolean
   workflow_call:
     inputs:
       build_android:
         required: false
-        default: true
+        default: false
         type: boolean
 
 concurrency:
@@ -32,7 +32,8 @@ jobs:
   # Secondary/best-effort platform. Failure must not invalidate an already produced IPA.
   android-release:
     needs: ios-release
-    if: ${{ needs.ios-release.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.build_android) }}
+    # Android source/protocol architecture is preserved, but APK builds are frozen.
+    if: ${{ false }}
     continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 25
