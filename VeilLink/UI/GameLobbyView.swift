@@ -2,12 +2,10 @@ import SwiftUI
 
 struct GameLobbyView: View {
     @ObservedObject var model: AppModel
-    @ObservedObject private var controls: AgentControlCenterSettings
     @State private var nearbyConversation: ConversationSummary?
 
     init(model: AppModel) {
         self.model = model
-        controls = model.agentControls
     }
 
     var body: some View {
@@ -51,8 +49,8 @@ struct GameLobbyView: View {
             }
 
             HStack(spacing: 8) {
-                lobbyMetric("AI", controls.gameDecisionMode.title)
-                lobbyMetric("VFLY", model.maleCNS.state.displayName)
+                lobbyMetric("单机", "规则 Bot")
+                lobbyMetric("模型", "不内置")
                 lobbyMetric("联网", "不需要")
             }
         }
@@ -61,17 +59,17 @@ struct GameLobbyView: View {
 
     private var singlePlayerSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("单机 · 人机对战", subtitle: "规则、策略和 MaleCNS 全部在本机运行")
+            sectionTitle("单机 · 本地电脑", subtitle: "传统游戏搜索与规则算法，不依赖神经模型")
             NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
-                gameRow(.gomoku, detail: "你执黑先手 · 基础策略 + 可选 MaleCNS 重排", enabled: true)
+                gameRow(.gomoku, detail: "你执黑先手 · 威胁识别 + 候选搜索 + 规则校验", enabled: true)
             }.buttonStyle(VeilPressStyle())
             NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
-                gameRow(.xiangqi, detail: "你执红先手 · 合法着法由原规则引擎裁决", enabled: true)
+                gameRow(.xiangqi, detail: "你执红先手 · Alpha-Beta + 局面评估 + 规则校验", enabled: true)
             }.buttonStyle(VeilPressStyle())
             NavigationLink(destination: LocalAIGameView(model: model, game: .ludo)) {
-                gameRow(.ludo, detail: "确定性骰子 · AI 自动完成自己的回合", enabled: true)
+                gameRow(.ludo, detail: "确定性骰子 · 规则评分 Bot 自动完成回合", enabled: true)
             }.buttonStyle(VeilPressStyle())
-            gameRow(.tactical, detail: "三国兵棋 AI 尚未训练 · 当前只开放附近真人对战", enabled: false)
+            gameRow(.tactical, detail: "TacticalBot 尚未完成 · 当前只开放附近真人对战", enabled: false)
         }
     }
 
@@ -145,7 +143,7 @@ struct GameLobbyView: View {
                     .lineLimit(2)
             }
             Spacer()
-            Text(enabled ? "人机" : "待训练")
+            Text(enabled ? "BOT" : "待开发")
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundColor(enabled ? VeilTheme.gold : VeilTheme.tertiaryText)
             if enabled {
@@ -179,11 +177,7 @@ struct LocalAIGameView: View {
     init(model: AppModel, game: MiniGameKind) {
         self.model = model
         self.game = game
-        _controller = StateObject(wrappedValue: LocalAIGameController(
-            game: game,
-            maleCNS: model.maleCNS,
-            controls: model.agentControls
-        ))
+        _controller = StateObject(wrappedValue: LocalAIGameController(game: game))
     }
 
     var body: some View {
@@ -210,7 +204,6 @@ struct LocalAIGameView: View {
         }
         .onAppear {
             model.agent.setComputeFocus(.gameDecision)
-            model.maleCNS.prepareFromBundle()
         }
         .onDisappear {
             controller.cancelAI()
@@ -225,7 +218,7 @@ struct LocalAIGameView: View {
                     Text(controller.statusText)
                         .font(.headline)
                         .foregroundColor(controller.canHumanAct ? VeilTheme.goldBright : VeilTheme.text)
-                    Text("你 vs 灵核 AI · 完全本地")
+                    Text("你 vs 本地电脑 · 完全离线")
                         .font(.caption)
                         .foregroundColor(VeilTheme.secondaryText)
                 }
@@ -233,8 +226,8 @@ struct LocalAIGameView: View {
                 if controller.isAIThinking { ProgressView().controlSize(.small) }
             }
             HStack(spacing: 8) {
-                statusMetric("决策", controller.lastDecisionMode)
-                statusMetric("VFLY", model.maleCNS.state.displayName)
+                statusMetric("引擎", controller.lastDecisionMode)
+                statusMetric("联网", "不需要")
                 statusMetric("耗时", controller.lastDecisionMilliseconds.map { "\($0)ms" } ?? "--")
             }
         }
@@ -275,7 +268,7 @@ struct LocalAIGameView: View {
         case .tactical:
             VStack(spacing: 12) {
                 Image(systemName: "map.fill").font(.system(size: 42)).foregroundColor(VeilTheme.gold)
-                Text("三国兵棋的人机策略仍在专项训练中")
+                Text("三国兵棋的 TacticalBot 仍在专项开发中")
                     .font(.headline)
                 Text("目前可以从游戏大厅的“附近对战”继续真人官渡对局。")
                     .font(.caption).foregroundColor(VeilTheme.secondaryText)

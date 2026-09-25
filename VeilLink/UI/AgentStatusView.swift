@@ -2,7 +2,6 @@ import SwiftUI
 
 struct AgentStatusView: View {
     @ObservedObject var coordinator: AgentCoordinator
-    @ObservedObject var maleCNS: MaleCNSGraphManager
 
     private var stateColor: Color {
         switch coordinator.runtimeState {
@@ -27,12 +26,12 @@ struct AgentStatusView: View {
                     HStack(spacing: 7) {
                         Text("灵核")
                             .font(.system(.headline, design: .rounded).weight(.semibold))
-                        Text(LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled ? "REAL LOCAL" : "LOCAL FIXTURE")
+                        Text(LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled ? "EXPERIMENTAL AI" : "CORE LOCAL")
                             .font(.system(size: 8, weight: .bold, design: .monospaced))
                             .tracking(0.9)
                             .foregroundColor(VeilTheme.gold)
                     }
-                    Text("本机运行 · 无云端依赖")
+                    Text("本机运行 · Core 零模型依赖")
                         .font(.caption)
                         .foregroundColor(VeilTheme.secondaryText)
                 }
@@ -57,15 +56,12 @@ struct AgentStatusView: View {
 
             HStack(spacing: 8) {
                 AgentStatusChip(title: "PROFILE", value: coordinator.capabilityProfile.tier.rawValue)
-                AgentStatusChip(title: "MODE", value: LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled ? "GGUF" : "FIXTURE")
+                AgentStatusChip(title: "GAME", value: "Native Bot")
             }
 
             HStack(spacing: 8) {
                 AgentStatusChip(title: "A9", value: coordinator.computePlan.mode.title)
-                AgentStatusChip(
-                    title: "FLY",
-                    value: coordinator.computePlan.maleCNS.tier.rawValue + "·" + maleCNS.state.displayName
-                )
+                AgentStatusChip(title: "MODEL", value: LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled ? "GGUF" : "NONE")
             }
         }
         .padding(14)

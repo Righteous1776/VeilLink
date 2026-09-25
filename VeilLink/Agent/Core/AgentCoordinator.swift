@@ -53,7 +53,6 @@ final class AgentCoordinator: ObservableObject {
 
     var runtimeManifest: LocalTextModelManifest? { language.manifest }
     var isGenerating: Bool { runtimeState == .generating }
-    var isMaleCNSRuntimeBound: Bool { computeGovernor.hasBoundMaleCNSConsumer }
 
     func activate() {
         guard language.state == .unloaded || language.state == .unavailable else {
@@ -245,10 +244,6 @@ final class AgentCoordinator: ObservableObject {
         computeGovernor.setFocus(focus)
     }
 
-    func attachMaleCNSComputeConsumer(_ consumer: (any MaleCNSComputeConsumer)?) {
-        computeGovernor.bindMaleCNSConsumer(consumer)
-    }
-
     func computeDiagnosticsReport() -> String {
         computeGovernor.report()
     }
@@ -280,7 +275,7 @@ final class AgentCoordinator: ObservableObject {
         AgentSession(messages: [
             AgentMessage(
                 role: .assistant,
-                text: "灵核在本机待命。当前运行时：\(LocalTextModelRuntimeFactory.backendName)。VeilLink 的 Release 本地 AI 构建必须通过真实离线推理验证。"
+                text: "灵核在本机待命。当前运行时：\(LocalTextModelRuntimeFactory.backendName)。Core 版使用零模型本地对话规则；实验 AI 版可单独启用 llama/Qwen。"
             )
         ])
     }

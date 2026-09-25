@@ -44,7 +44,7 @@ enum MiniGameCommand: String, Codable {
     case resign
 }
 
-struct MiniGameMove: Codable, Hashable {
+struct MiniGameMove: Codable, Hashable, Sendable {
     let from: Int?
     let to: Int?
     let piece: Int?
@@ -140,7 +140,7 @@ enum MiniGameCodec {
     }
 }
 
-enum MiniGamePlayer: String, Codable, Hashable {
+enum MiniGamePlayer: String, Codable, Hashable, Sendable {
     case host
     case guest
 
@@ -157,7 +157,7 @@ enum MiniGameSessionStatus: Equatable {
     case finished(winner: MiniGamePlayer?)
 }
 
-struct GomokuState: Equatable {
+struct GomokuState: Equatable, Sendable {
     static let size = 15
     private(set) var board: [Int8] = Array(repeating: 0, count: size * size)
     private(set) var currentPlayer: MiniGamePlayer = .host
@@ -235,14 +235,14 @@ struct GomokuState: Equatable {
     }
 }
 
-enum XiangqiSide: String, Codable, Hashable {
+enum XiangqiSide: String, Codable, Hashable, Sendable {
     case red
     case black
 
     var opponent: XiangqiSide { self == .red ? .black : .red }
 }
 
-enum XiangqiPieceKind: String, Codable, Hashable {
+enum XiangqiPieceKind: String, Codable, Hashable, Sendable {
     case general
     case advisor
     case elephant
@@ -252,7 +252,7 @@ enum XiangqiPieceKind: String, Codable, Hashable {
     case soldier
 }
 
-struct XiangqiPiece: Codable, Hashable {
+struct XiangqiPiece: Codable, Hashable, Sendable {
     let side: XiangqiSide
     let kind: XiangqiPieceKind
 
@@ -276,11 +276,11 @@ struct XiangqiPiece: Codable, Hashable {
     }
 }
 
-enum XiangqiDrawReason: String, Equatable {
+enum XiangqiDrawReason: String, Equatable, Sendable {
     case threefoldRepetition
 }
 
-struct XiangqiState: Equatable {
+struct XiangqiState: Equatable, Sendable {
     static let rows = 10
     static let columns = 9
 
@@ -532,7 +532,7 @@ struct XiangqiState: Equatable {
     }
 }
 
-struct LudoState: Equatable {
+struct LudoState: Equatable, Sendable {
     static let pieceCount = 4
     static let trackLength = 52
     static let finishProgress = 57

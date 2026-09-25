@@ -6,6 +6,8 @@ enum WireKind: UInt8 {
     case acknowledgement = 3
     case attachmentChunk = 4
     case attachmentCheckpoint = 5
+    case pttControl = 6
+    case pttAudio = 7
 }
 
 struct WireEnvelope {

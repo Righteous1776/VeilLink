@@ -6,7 +6,6 @@ import UniformTypeIdentifiers
 struct ConversationListView: View {
     @ObservedObject var model: AppModel
     let usesNavigationLinks: Bool
-    @State private var stressConversation: ConversationSummary?
 
     var body: some View {
         Group {
@@ -132,34 +131,6 @@ struct ConversationListView: View {
         }
         .navigationTitle("对话")
         .background(VeilAmbientBackground())
-        .background(
-            Group {
-                if usesNavigationLinks, let conversation = stressConversation {
-                    NavigationLink(
-                        destination: ChatView(model: model, conversation: conversation),
-                        isActive: Binding(
-                            get: { stressConversation != nil },
-                            set: { active in if !active { stressConversation = nil } }
-                        )
-                    ) {
-                        EmptyView()
-                    }
-                    .hidden()
-                }
-            }
-        )
-        .onReceive(NotificationCenter.default.publisher(for: .veilLinkStressUICommand)) { notification in
-            guard usesNavigationLinks,
-                  let command = DeviceStressCommandBus.command(from: notification) else { return }
-            switch command {
-            case .chatOpenFirstConversation:
-                stressConversation = model.conversations.first
-            case .chatCloseConversation:
-                stressConversation = nil
-            default:
-                break
-            }
-        }
     }
 }
 
@@ -240,16 +211,14 @@ struct ChatView: View {
     @ObservedObject var model: AppModel
     let conversation: ConversationSummary
     @State private var messages: [ChatMessage] = []
-    @State private var gameSessionsByID: [String: MiniGameSessionSnapshot] = [:]
     @State private var draft = ""
+    @State private var composerMode: VeilChatComposerMode = .text
+    @StateObject private var voiceRecorder = VeilVoiceMessageRecorder()
     @State private var showsPhotoPicker = false
     @State private var showsImageFileImporter = false
     @State private var isPreparingImage = false
     @State private var mediaStatus: String?
     @State private var showsContactDetails = false
-    @State private var showsAgentAssistant = false
-    @State private var showsMiniGames = false
-    @State private var miniGameInitialSessionID: String?
     @State private var messagePendingDeletion: ChatMessage?
     @State private var showsClearConversationConfirmation = false
     @State private var transferPendingCancellation: ChatMessage?
@@ -269,20 +238,8 @@ struct ChatView: View {
 
     private var visibleMessages: [ChatMessage] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        if showsSearchBar, !query.isEmpty {
-            return messages.filter {
-                MiniGameCodec.decode($0.body) == nil
-                    && TacticalV2.WireCodecV2.decode($0.body) == nil
-                    && ConversationSearch.matches($0, query: query)
-            }
-        }
-        // One persistent card per game session lives at its invite position in the conversation.
-        // Move/accept/resign packets stay hidden so normal chat never becomes protocol noise.
-        return messages.filter { message in
-            if TacticalV2.WireCodecV2.decode(message.body) != nil { return false }
-            guard let packet = MiniGameCodec.decode(message.body) else { return true }
-            return packet.command == .invite
-        }
+        guard showsSearchBar, !query.isEmpty else { return messages }
+        return messages.filter { ConversationSearch.matches($0, query: query) }
     }
 
     var body: some View {
@@ -344,57 +301,42 @@ struct ChatView: View {
                             .disabled(isReloadingMessages)
                         }
                         ForEach(visibleMessages) { message in
-                            if let packet = MiniGameCodec.decode(message.body),
-                               packet.command == .invite,
-                               let gameSession = gameSessionsByID[packet.sessionID] {
-                                MiniGameConversationCard(session: gameSession) {
-                                    miniGameInitialSessionID = gameSession.id
-                                    showsMiniGames = true
-                                    model.haptics.selection()
-                                }
-                                .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
-                                    insertion: .opacity.combined(with: .scale(scale: 0.985)),
-                                    removal: .opacity
-                                ))
-                                .id(message.id)
-                            } else {
-                                MessageBubble(
-                                    message: message,
-                                    database: model.database,
-                                    onRetry: message.isOutgoing && message.deliveryState == .failed ? { retry(message) } : nil,
-                                    onPause: canPauseImage(message) ? { pauseImage(message) } : nil,
-                                    onResume: canResumeImage(message) ? { resumeImage(message) } : nil,
-                                    onCancel: canCancelImage(message) ? { transferPendingCancellation = message } : nil
-                                )
-                                .contextMenu {
-                                    if message.attachment == nil {
-                                        Button {
-                                            UIPasteboard.general.string = ReplyTextCodec.decode(message.body)?.reply ?? message.body
-                                            model.haptics.selection()
-                                        } label: {
-                                            Label("复制", systemImage: "doc.on.doc")
-                                        }
-                                    }
+                            MessageBubble(
+                                message: message,
+                                database: model.database,
+                                onRetry: message.isOutgoing && message.deliveryState == .failed ? { retry(message) } : nil,
+                                onPause: canPauseImage(message) ? { pauseImage(message) } : nil,
+                                onResume: canResumeImage(message) ? { resumeImage(message) } : nil,
+                                onCancel: canCancelImage(message) ? { transferPendingCancellation = message } : nil
+                            )
+                            .contextMenu {
+                                if message.attachment == nil {
                                     Button {
+                                        UIPasteboard.general.string = ReplyTextCodec.decode(message.body)?.reply ?? message.body
                                         model.haptics.selection()
-                                        if usesReducedInteractionMotion {
-                                            replyingTo = message
-                                        } else {
-                                            withAnimation(.easeOut(duration: 0.18)) { replyingTo = message }
-                                        }
                                     } label: {
-                                        Label("引用回复", systemImage: "arrowshape.turn.up.left")
-                                    }
-                                    Button(role: .destructive) { messagePendingDeletion = message } label: {
-                                        Label("本地删除", systemImage: "trash")
+                                        Label("复制", systemImage: "doc.on.doc")
                                     }
                                 }
-                                .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
-                                    insertion: .opacity.combined(with: .scale(scale: 0.985)),
-                                    removal: .opacity
-                                ))
-                                .id(message.id)
+                                Button {
+                                    model.haptics.selection()
+                                    if usesReducedInteractionMotion {
+                                        replyingTo = message
+                                    } else {
+                                        withAnimation(.easeOut(duration: 0.18)) { replyingTo = message }
+                                    }
+                                } label: {
+                                    Label("引用回复", systemImage: "arrowshape.turn.up.left")
+                                }
+                                Button(role: .destructive) { messagePendingDeletion = message } label: {
+                                    Label("本地删除", systemImage: "trash")
+                                }
                             }
+                            .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.985)),
+                                removal: .opacity
+                            ))
+                            .id(message.id)
                         }
                         if showsSearchBar, !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, visibleMessages.isEmpty {
                             VStack(spacing: 8) {
@@ -412,8 +354,8 @@ struct ChatView: View {
                     .padding(.vertical, 14)
                     .animation(usesReducedInteractionMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
                 }
-                .onChange(of: visibleMessages.last?.id) { _ in
-                    if !showsSearchBar, let last = visibleMessages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                .onChange(of: messages.last?.id) { _ in
+                    if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
 
@@ -488,38 +430,43 @@ struct ChatView: View {
                             } label: {
                                 Label("从“文件”导入", systemImage: "doc.badge.plus")
                             }
-                            Divider()
-                            Button {
-                                miniGameInitialSessionID = nil
-                                showsMiniGames = true
-                            } label: {
-                                Label("双人小游戏", systemImage: "gamecontroller")
-                            }
                         } label: {
                             VeilIconDisc(systemName: "plus", size: 36, highlighted: true)
                                 .contentShape(Circle())
                         }
-                        .accessibilityLabel("添加内容")
-                        .accessibilityHint("发送图片或打开双人小游戏")
+                        .accessibilityLabel("添加图片")
+                        .accessibilityHint("从照片图库或文件中选择图片")
                     }
-                    TextField("加密消息", text: $draft)
-                        .textFieldStyle(VeilTextFieldStyle())
-                    Button(action: send) {
-                        ZStack {
-                            if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Circle().fill(Color.white.opacity(0.05))
-                            } else {
-                                Circle().fill(VeilTheme.goldGradient)
-                            }
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundColor(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? VeilTheme.tertiaryText : Color.black.opacity(0.88))
-                        }
-                        .frame(width: 36, height: 36)
-                        .shadow(color: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .clear : VeilTheme.gold.opacity(0.22), radius: 8, x: 0, y: 3)
+                    Button {
+                        composerMode = composerMode == .text ? .voice : .text
+                        if composerMode == .text { voiceRecorder.cancel() }
+                        model.haptics.selection()
+                    } label: {
+                        VeilIconDisc(systemName: composerMode == .text ? "mic.fill" : "keyboard", size: 36, highlighted: composerMode == .voice)
                     }
                     .buttonStyle(VeilPressStyle())
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityLabel(composerMode == .text ? "切换到语音" : "切换到文字")
+                    if composerMode == .voice {
+                        VeilHoldToTalkComposer(recorder: voiceRecorder) { recording in
+                            sendVoice(recording)
+                        }
+                    } else {
+                        TextField("加密消息", text: $draft)
+                            .textFieldStyle(VeilTextFieldStyle())
+                        Button(action: send) {
+                            ZStack {
+                                if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Circle().fill(Color.white.opacity(0.05)) }
+                                else { Circle().fill(VeilTheme.goldGradient) }
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? VeilTheme.tertiaryText : Color.black.opacity(0.88))
+                            }
+                            .frame(width: 36, height: 36)
+                            .shadow(color: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .clear : VeilTheme.gold.opacity(0.22), radius: 8, x: 0, y: 3)
+                        }
+                        .buttonStyle(VeilPressStyle())
+                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -555,9 +502,6 @@ struct ChatView: View {
                     } label: {
                         Label("搜索聊天", systemImage: "magnifyingglass")
                     }
-                    Button { showsAgentAssistant = true } label: {
-                        Label("灵核助手", systemImage: "sparkles")
-                    }
                     Button { showsContactDetails = true } label: {
                         Label("联系人信息", systemImage: "person.crop.circle")
                     }
@@ -574,7 +518,6 @@ struct ChatView: View {
             }
         }
         .onAppear {
-            model.selectedConversation = model.conversations.first(where: { $0.id == conversation.id }) ?? conversation
             reload()
             model.setConversationVisible(conversation.id, visible: true)
         }
@@ -597,12 +540,6 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showsContactDetails) {
             ContactDetailsSheet(model: model, conversation: conversation)
-        }
-        .sheet(isPresented: $showsAgentAssistant) {
-            AgentConversationAssistantSheet(model: model, conversation: conversation, messages: messages)
-        }
-        .sheet(isPresented: $showsMiniGames, onDismiss: { miniGameInitialSessionID = nil }) {
-            MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
         }
         .fileImporter(
             isPresented: $showsImageFileImporter,
@@ -658,47 +595,30 @@ struct ChatView: View {
         }
     }
 
-    private func reload(loadAll: Bool = false) {
+    private func reload(loadAll: Bool = false, showLoading: Bool = false) {
         messageReloadGeneration &+= 1
         let generation = messageReloadGeneration
         let store = model.database
         let conversationID = conversation.id
         let limit = messageWindowLimit
-        isReloadingMessages = true
+        if showLoading { isReloadingMessages = true }
 
         DispatchQueue.global(qos: .userInitiated).async {
             let loadedMessages: [ChatMessage]
             let hasOlder: Bool
-            var effectiveLimit = limit
             if loadAll {
                 loadedMessages = store.fetchMessages(conversationID: conversationID)
                 hasOlder = false
             } else {
-                let profile = VeilDevicePerformance.current
-                var page = store.fetchRecentMessages(conversationID: conversationID, limit: effectiveLimit)
-                while page.hasOlder && effectiveLimit < profile.messageWindowMaximum {
-                    var gameSessionIDs = Set<String>()
-                    var inviteSessionIDs = Set<String>()
-                    for message in page.messages {
-                        guard let packet = MiniGameCodec.decode(message.body) else { continue }
-                        gameSessionIDs.insert(packet.sessionID)
-                        if packet.command == .invite { inviteSessionIDs.insert(packet.sessionID) }
-                    }
-                    guard !gameSessionIDs.subtracting(inviteSessionIDs).isEmpty else { break }
-                    effectiveLimit = min(profile.messageWindowMaximum, effectiveLimit + profile.messageWindowIncrement)
-                    page = store.fetchRecentMessages(conversationID: conversationID, limit: effectiveLimit)
-                }
+                let page = store.fetchRecentMessages(conversationID: conversationID, limit: limit)
                 loadedMessages = page.messages
                 hasOlder = page.hasOlder
             }
-            let loadedGameSessions = MiniGameSessionBuilder.sessionsByID(from: loadedMessages)
             DispatchQueue.main.async {
                 guard generation == messageReloadGeneration else { return }
-                messages = loadedMessages
-                gameSessionsByID = loadedGameSessions
-                hasOlderMessages = hasOlder
-                if !loadAll { messageWindowLimit = max(messageWindowLimit, effectiveLimit) }
-                isReloadingMessages = false
+                if messages != loadedMessages { messages = loadedMessages }
+                if hasOlderMessages != hasOlder { hasOlderMessages = hasOlder }
+                if isReloadingMessages { isReloadingMessages = false }
             }
         }
     }
@@ -707,7 +627,7 @@ struct ChatView: View {
         guard hasOlderMessages, !isReloadingMessages else { return }
         let profile = VeilDevicePerformance.current
         messageWindowLimit = min(profile.messageWindowMaximum, messageWindowLimit + profile.messageWindowIncrement)
-        reload()
+        reload(showLoading: true)
     }
 
     private func send() {
@@ -730,6 +650,16 @@ struct ChatView: View {
         }
     }
 
+    private func sendVoice(_ recording: VeilVoiceRecording) {
+        do {
+            try model.sessions.sendVoice(recording.data, durationSeconds: recording.durationSeconds, mimeType: recording.mimeType, to: conversation.peerIdentityID)
+            model.haptics.send()
+            reload()
+        } catch {
+            model.alertMessage = error.localizedDescription
+        }
+    }
+
     private func retry(_ message: ChatMessage) {
         do {
             try model.sessions.retryMessage(message.id, to: conversation.peerIdentityID)
@@ -741,15 +671,15 @@ struct ChatView: View {
     }
 
     private func canPauseImage(_ message: ChatMessage) -> Bool {
-        message.isOutgoing && message.attachment != nil && (message.deliveryState == .queued || message.deliveryState == .sending) && (message.transferProgress ?? 0) < 1
+        message.isOutgoing && message.attachment.map { MediaTransferPolicy.supportsImageMIMEType($0.mimeType) } == true && (message.deliveryState == .queued || message.deliveryState == .sending) && (message.transferProgress ?? 0) < 1
     }
 
     private func canResumeImage(_ message: ChatMessage) -> Bool {
-        message.isOutgoing && message.attachment != nil && message.deliveryState == .paused
+        message.isOutgoing && message.attachment.map { MediaTransferPolicy.supportsImageMIMEType($0.mimeType) } == true && message.deliveryState == .paused
     }
 
     private func canCancelImage(_ message: ChatMessage) -> Bool {
-        message.isOutgoing && message.attachment != nil && (message.deliveryState == .queued || message.deliveryState == .sending || message.deliveryState == .paused) && (message.transferProgress ?? 0) < 1
+        message.isOutgoing && message.attachment.map { MediaTransferPolicy.supportsImageMIMEType($0.mimeType) } == true && (message.deliveryState == .queued || message.deliveryState == .sending || message.deliveryState == .paused) && (message.transferProgress ?? 0) < 1
     }
 
     private func pauseImage(_ message: ChatMessage) {
@@ -852,7 +782,9 @@ private struct MessageBubble: View {
         HStack {
             if message.isOutgoing { Spacer(minLength: 46) }
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 5) {
-                if let attachment = message.attachment {
+                if let attachment = message.attachment, VoiceMessageCodec.isVoiceMIMEType(attachment.mimeType) {
+                    VeilVoiceMessageBubble(message: message, attachment: attachment, database: database)
+                } else if let attachment = message.attachment {
                     EncryptedImageView(
                         attachment: attachment,
                         database: database,

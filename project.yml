@@ -22,6 +22,31 @@ targets:
     platform: iOS
     sources:
       - path: VeilLink
+        excludes:
+          - Agent/MaleCNS
+          - Agent/Games/TrainedGamePolicyRuntime.swift
+          - Agent/Games/MaleCNSGameDecisionEncoder.swift
+          - Agent/Language/LlamaInferenceEngine.swift
+          - Agent/Language/LlamaLocalTextModelRuntime.swift
+          - Agent/Language/LlamaRuntimeConfiguration.swift
+          - Agent/Language/LlamaCancellationGate.swift
+          - Agent/Language/LocalModelCatalog.swift
+          - Agent/Language/LocalModelManager.swift
+          - Resources/VeilFlyCore.vfly
+          - Resources/VeilFlyLite.vfly
+          - Resources/VeilFlyAssets.json
+          - Resources/VFLYInstallationVerification.json
+          - Resources/MaleCNSGameRankerCoreV1.json
+          - Resources/MaleCNSGameRankerCoreV1.manifest.json
+          - Resources/MaleCNSGameRankerLiteV1.json
+          - Resources/MaleCNSGameRankerLiteV1.manifest.json
+          - Resources/MaleCNSReadoutCoreV1.json
+          - Resources/MaleCNSReadoutCoreV1.manifest.json
+          - Resources/MaleCNSReadoutLiteV1.json
+          - Resources/MaleCNSReadoutLiteV1.manifest.json
+          - Resources/AgentModels/game_policy_ranker_v4.vlpol
+          - Resources/AgentModels/game_policy_ranker_v4.manifest.json
+          - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
     dependencies:
       - sdk: libsqlite3.tbd
       - package: ZIPFoundation
@@ -42,6 +67,14 @@ targets:
     platform: iOS
     sources:
       - path: VeilLinkTests
+        excludes:
+          - MaleCNSNativeKernelTests.swift
+          - MaleCNSNativeRolloutPoolTests.swift
+          - MaleCNSVFLY1Tests.swift
+          - LocalModelCatalogTests.swift
+          - RealLocalInferenceSmokeTests.swift
+          - Fixtures/MaleCNSFixture.vfly
+          - Fixtures/MaleCNSFixture.vfly.manifest.json
     dependencies:
       - target: VeilLink
     settings:

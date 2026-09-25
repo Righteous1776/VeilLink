@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var showsRestorePassword = false
     @State private var showsOwnerUnlock = false
     @State private var showsOwnerConsole = false
+    @ObservedObject private var appearance = VeilAppearanceController.shared
     @State private var diagnosticsCopied = false
 
     init(model: AppModel) {
@@ -37,6 +38,7 @@ struct SettingsView: View {
         VeilStableScrollView {
             VStack(spacing: 16) {
                 profileCard
+                appearanceCard
                 securityCard
                 storageCard
                 mediaCard
@@ -172,6 +174,53 @@ struct SettingsView: View {
             ) { showsIdentityManager = true }
         }
         .veilCard(emphasized: true)
+    }
+
+    private var appearanceCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("外观主题", systemImage: "circle.lefthalf.filled")
+                .font(.headline)
+                .foregroundColor(VeilTheme.goldBright)
+            ForEach(VeilAppearanceSelection.allCases) { choice in
+                Button {
+                    appearance.selection = choice
+                    appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
+                    haptics.selection()
+                } label: {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(choice == .veilOriginal ? VeilTheme.obsidian : VeilAppearanceController.shared.palette.metalTop)
+                            Image(systemName: choice == .veilOriginal ? "sparkles" : "dial.medium.fill")
+                                .foregroundColor(choice == appearance.selection ? VeilTheme.goldBright : VeilTheme.secondaryText)
+                        }
+                        .frame(width: 42, height: 42)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(choice.title).fontWeight(.semibold).foregroundColor(VeilTheme.text)
+                            Text(choice.subtitle).font(.caption).foregroundColor(VeilTheme.secondaryText)
+                        }
+                        Spacer()
+                        if choice == appearance.selection {
+                            Image(systemName: "checkmark.circle.fill").foregroundColor(VeilTheme.gold)
+                        }
+                    }
+                    .padding(.vertical, 3)
+                }
+                .buttonStyle(VeilPressStyle())
+                if choice != VeilAppearanceSelection.allCases.last {
+                    Divider().background(VeilTheme.hairline)
+                }
+            }
+            if appearance.selection == .instrumentAuto {
+                HStack(spacing: 7) {
+                    VeilIndicatorLamp(active: true)
+                    Text("当前：\(appearance.appearanceLabel)")
+                }
+                .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                .foregroundColor(VeilTheme.secondaryText)
+            }
+        }
+        .veilCard(emphasized: appearance.selection == .instrumentAuto)
     }
 
     private var securityCard: some View {

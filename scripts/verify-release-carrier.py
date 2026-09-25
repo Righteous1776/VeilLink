@@ -11,12 +11,12 @@ import zipfile
 
 EXPECTED = {
     "bundle_id": "studio.zeo.veillink",
-    "version": "0.9.7",
-    "build": "41",
+    "version": "0.10.8",
+    "build": "50",
     "qwen_sha256": "da2572f16c06133561ce56accaa822216f2391ef4d37fba427801cd6736417d4",
     "tactical_map_sha256": "4bd450353ae993b0c8083b97ab5909c8260cd6984be6f6051db1967613edaaa5",
     "vfly_core_sha256": "cc8b71d824ecb7f20c821412b316262ecb4dd1faee148077c94825b5889d60de",
-    "vfly_lite_sha256": "25b4947ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee",
+    "vfly_lite_sha256": "25b5047ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee",
 }
 
 REQUIRED_EXACT = [

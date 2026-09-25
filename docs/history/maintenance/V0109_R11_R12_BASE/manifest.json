@@ -1,0 +1,27 @@
+{
+  "source_version": "0.10.9",
+  "source_build": "51",
+  "purpose": "R12 pre-maintenance local preservation snapshot",
+  "files": {
+    "VeilLink/Security/SessionCoordinator.swift": {
+      "sha256": "0bf4e0e7e4b63b7996dc9c43bf5716a61efa1ee94612714ce6300d01cf5be56b",
+      "bytes": 58836
+    },
+    "VeilLink/Transport/BLETransport.swift": {
+      "sha256": "b76475ac291c8805cff876cd836a059284e89b443681c1d706bacc138f1896cf",
+      "bytes": 30415
+    },
+    "VeilLink/UI/ConversationViews.swift": {
+      "sha256": "9fb34b76e8d1e27299f0dbb486f6cad2a26c58cf083bbfa436e8f127c2085f33",
+      "bytes": 60675
+    },
+    "VeilLink/Voice/WalkieTalkieAudioController.swift": {
+      "sha256": "7ddc247eed8bdeefb7c55baed4fbadbbf1b37264b472edc1440a130efadf66af",
+      "bytes": 12277
+    },
+    "VeilLink/Resources/Info.plist": {
+      "sha256": "e64f2e738add15cc92329fa4d09ef65c98413f6ecb5f072a0bc181c5e2ebb0d5",
+      "bytes": 2248
+    }
+  }
+}

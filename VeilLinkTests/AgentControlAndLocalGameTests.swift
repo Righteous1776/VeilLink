@@ -21,10 +21,10 @@ final class AgentControlAndLocalGameTests: XCTestCase {
 
         let settings = AgentControlCenterSettings(defaults: defaults)
 
-        XCTAssertEqual(settings.gameDecisionMode, .automaticStable)
+        XCTAssertEqual(settings.gameDecisionMode, .baselineOnly)
         XCTAssertEqual(
             defaults.string(forKey: "agent.controls.gameDecisionMode"),
-            AgentGameDecisionMode.automaticStable.rawValue
+            AgentGameDecisionMode.baselineOnly.rawValue
         )
     }
 
@@ -35,7 +35,7 @@ final class AgentControlAndLocalGameTests: XCTestCase {
         let settings = AgentControlCenterSettings(defaults: defaults)
 
         XCTAssertFalse(settings.allowSuggestedGameMoveExecution)
-        XCTAssertEqual(settings.gameDecisionMode, .automaticStable)
+        XCTAssertEqual(settings.gameDecisionMode, .baselineOnly)
     }
 
     func testLocalGomokuFallsBackToBaselineAndCompletesAITurn() async throws {
@@ -45,14 +45,7 @@ final class AgentControlAndLocalGameTests: XCTestCase {
         let controls = AgentControlCenterSettings(defaults: defaults)
         controls.gameDecisionMode = .baselineOnly
 
-        let profile = AgentCapabilityProfile.profile(devicePerformanceLabel: "LEGACY-COMPACT")
-        let governor = VeilA9ComputeGovernor(profile: profile, logicalProcessorCount: 2)
-        let maleCNS = MaleCNSGraphManager(profile: profile, governor: governor)
-        let controller = LocalAIGameController(
-            game: .gomoku,
-            maleCNS: maleCNS,
-            controls: controls
-        )
+        let controller = LocalAIGameController(game: .gomoku)
 
         XCTAssertTrue(controller.canHumanAct)
         controller.humanGomokuMove(112)
@@ -67,7 +60,7 @@ final class AgentControlAndLocalGameTests: XCTestCase {
 
         XCTAssertFalse(controller.isAIThinking)
         XCTAssertEqual(controller.gomoku.currentPlayer, .host)
-        XCTAssertEqual(controller.lastDecisionMode, "基础策略")
+        XCTAssertEqual(controller.lastDecisionMode, "规则 Bot")
 
         let aiStoneCount = (0..<(GomokuState.size * GomokuState.size))
             .filter { controller.gomoku.value(at: $0) == 2 }
@@ -82,14 +75,7 @@ final class AgentControlAndLocalGameTests: XCTestCase {
         let controls = AgentControlCenterSettings(defaults: defaults)
         controls.gameDecisionMode = .baselineOnly
 
-        let profile = AgentCapabilityProfile.profile(devicePerformanceLabel: "LEGACY-COMPACT")
-        let governor = VeilA9ComputeGovernor(profile: profile, logicalProcessorCount: 2)
-        let maleCNS = MaleCNSGraphManager(profile: profile, governor: governor)
-        let controller = LocalAIGameController(
-            game: .gomoku,
-            maleCNS: maleCNS,
-            controls: controls
-        )
+        let controller = LocalAIGameController(game: .gomoku)
 
         let oldSessionID = controller.sessionID
         controller.humanGomokuMove(112)

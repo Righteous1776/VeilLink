@@ -10,7 +10,7 @@ enum LocalTextModelRuntimeFactory {
         #if canImport(llama)
         return LlamaLocalTextModelRuntime(profile: profile)
         #else
-        return MockLocalTextModelRuntime()
+        return VeilTalkLiteRuntime()
         #endif
     }
 
@@ -18,7 +18,7 @@ enum LocalTextModelRuntimeFactory {
         #if canImport(llama)
         return "llama.cpp"
         #else
-        return "foundation-mock"
+        return "VeilTalk Lite"
         #endif
     }
 

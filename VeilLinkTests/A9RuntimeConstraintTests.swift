@@ -141,26 +141,11 @@ final class A9RuntimeConstraintTests: XCTestCase {
         )
     }
 
-    func testAutomaticGraphResourceIsLiteEvenOnHighTier() {
-        XCTAssertEqual(
-            MaleCNSGraphManager.candidateResourceNames(
-                for: .automatic,
-                computeTier: .high
-            ),
-            ["VeilFlyLite"]
-        )
-        XCTAssertEqual(
-            MaleCNSGraphManager.candidateResourceNames(
-                for: .experimentalCore,
-                computeTier: .high
-            ),
-            ["VeilFlyCore"]
-        )
-        XCTAssertTrue(
-            MaleCNSGraphManager.candidateResourceNames(
-                for: .experimentalCore,
-                computeTier: .legacyA10
-            ).isEmpty
-        )
+    @MainActor
+    func testCoreGovernorClampsExperimentalRuntimeOff() {
+        let profile = AgentCapabilityProfile.profile(devicePerformanceLabel: "13PRO-HIGH")
+        let governor = VeilA9ComputeGovernor(profile: profile, logicalProcessorCount: 6)
+        governor.setExperimentalCoreEnabled(true)
+        XCTAssertFalse(governor.experimentalCoreEnabled)
     }
 }

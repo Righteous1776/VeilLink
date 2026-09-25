@@ -7,6 +7,7 @@ private enum WireProtocol {
     static let maximumEnvelopeBytes = 96_000
     static let maximumTextBytes = 16_384
     static let maximumImageBytes = MediaTransferPolicy.maximumImageBytes
+    static let maximumVoiceBytes = VoiceMessageCodec.maximumBytes
     static let attachmentChunkBytes = 48 * 1_024
     static let maximumDisplayNameBytes = 128
 }
@@ -14,7 +15,7 @@ private enum WireProtocol {
 private struct WireAcknowledgement: Codable { let messageID: String }
 
 private struct WireChatContent: Codable {
-    enum Kind: String, Codable { case text, image }
+    enum Kind: String, Codable { case text, image, voice }
     let kind: Kind
     let text: String?
     let attachment: Data?
@@ -63,14 +64,13 @@ final class SessionCoordinator: ObservableObject {
     var onInboundAttachmentCompleted: ((String) -> Void)?
     var onInboundMessageReceived: (() -> Void)?
     var onDeliveryConfirmed: (() -> Void)?
+    var onPTTControl: ((VeilPTTIncomingControl) -> Void)?
+    var onPTTAudioFrame: ((VeilPTTIncomingAudio) -> Void)?
 
     private let identity: IdentityManager
     private let database: DatabaseStore
     private var sessions: [UUID: SessionContext] = [:]
     private var peerTransport: [String: UUID] = [:]
-    // Retain the last authenticated BLE transport mapping in memory so conversation/game UI can
-    // describe and recover the correct peer even while the secure session is reconnecting.
-    private var lastPeerTransport: [String: UUID] = [:]
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private struct CachedOutboundAttachment {
@@ -84,7 +84,9 @@ final class SessionCoordinator: ObservableObject {
     private var maximumOutboundAttachmentCacheBytes: Int { VeilDevicePerformance.current.outboundAttachmentCacheBytes }
 
     private var packetAbuseLimiter = PacketAbuseLimiter()
-    private var retryTimer: AnyCancellable?
+    private var retryTask: Task<Void, Never>?
+    private var retryTaskGeneration: UInt64 = 0
+    private let maintenanceTuning = VeilRuntimeMaintenanceTuning.resolved(performanceLabel: VeilDevicePerformance.current.label)
     private var handshakeTimeoutTasks: [UUID: Task<Void, Never>] = [:]
     private let handshakeRetryScheduleNanoseconds: [UInt64] = [
         1_000_000_000,
@@ -95,10 +97,8 @@ final class SessionCoordinator: ObservableObject {
     ]
 
     init(identity: IdentityManager, database: DatabaseStore) {
-        self.identity = identity; self.database = database
-        retryTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect().sink { [weak self] _ in
-            Task { @MainActor in self?.retryDueOutbound() }
-        }
+        self.identity = identity
+        self.database = database
     }
 
     func discovered(transportID: UUID, rssi: Int) {
@@ -131,22 +131,28 @@ final class SessionCoordinator: ObservableObject {
         packetAbuseLimiter.reset(transportID)
         peerTransport = peerTransport.filter { $0.value != transportID }
         nearbyPeers.removeAll { $0.transportID == transportID }
-        if peerTransport.isEmpty { clearOutboundAttachmentCache() }
+        if peerTransport.isEmpty {
+            clearOutboundAttachmentCache()
+            retryTaskGeneration &+= 1
+            retryTask?.cancel()
+            retryTask = nil
+        }
     }
 
     func resetForIdentityChange() {
         cancelAllHandshakeTimeouts()
+        retryTaskGeneration &+= 1
+        retryTask?.cancel()
+        retryTask = nil
         sessions.removeAll()
         packetAbuseLimiter.resetAll()
         peerTransport.removeAll()
-        lastPeerTransport.removeAll()
         nearbyPeers.removeAll()
         clearOutboundAttachmentCache()
         lastError = nil
     }
 
     func invalidatePeer(_ peerIdentityID: String) {
-        lastPeerTransport.removeValue(forKey: peerIdentityID)
         if let transportID = peerTransport.removeValue(forKey: peerIdentityID) {
             cancelHandshakeTimeout(for: transportID)
             sessions.removeValue(forKey: transportID)
@@ -172,36 +178,12 @@ final class SessionCoordinator: ObservableObject {
             case .acknowledgement: try handleAcknowledgement(transportID: transportID, data: envelope.payload)
             case .attachmentChunk: try handleAttachmentChunk(transportID: transportID, data: envelope.payload)
             case .attachmentCheckpoint: try handleAttachmentCheckpoint(transportID: transportID, data: envelope.payload)
+            case .pttControl: try handlePTTControl(transportID: transportID, data: envelope.payload)
+            case .pttAudio: try handlePTTAudio(transportID: transportID, data: envelope.payload)
             }
             packetAbuseLimiter.reset(transportID)
         } catch {
             handleInvalidPacket(transportID: transportID, reason: "无法验证的数据包")
-        }
-    }
-
-    func transportID(for peerIdentityID: String) -> UUID? {
-        peerTransport[peerIdentityID] ?? lastPeerTransport[peerIdentityID]
-    }
-
-    func hasSecureSession(for peerIdentityID: String) -> Bool {
-        guard let transportID = peerTransport[peerIdentityID],
-              let context = sessions[transportID] else { return false }
-        return context.remoteHello != nil && context.keys != nil
-    }
-
-    /// Re-seeds the signed Hello on an already-known BLE transport without changing trust state.
-    /// This gives the UI a safe recovery action when the physical link survived but the secure
-    /// session was lost during backgrounding or a transient packet-loss window.
-    func recoverSecureSession(for peerIdentityID: String) {
-        guard let transportID = transportID(for: peerIdentityID) else { return }
-        if let context = sessions[transportID], context.remoteHello != nil, context.keys != nil { return }
-        do {
-            try sendHello(to: transportID)
-            cancelHandshakeTimeout(for: transportID)
-            scheduleHandshakeTimeout(for: transportID)
-            lastError = nil
-        } catch {
-            lastError = "安全会话恢复失败，等待蓝牙链路重新连接。"
         }
     }
 
@@ -224,7 +206,6 @@ final class SessionCoordinator: ObservableObject {
         cancelHandshakeTimeout(for: transportID)
         sessions.removeValue(forKey: transportID)
         peerTransport = peerTransport.filter { $0.value != transportID }
-        lastPeerTransport.removeValue(forKey: peerID)
         nearbyPeers[index].trustState = .blocked
         nearbyPeers[index].pairingCode = nil
         transportDisconnect?(transportID)
@@ -236,50 +217,24 @@ final class SessionCoordinator: ObservableObject {
         try queueContent(WireChatContent(kind: .text, text: trimmed, attachment: nil, mimeType: nil, sentAt: Date(), attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil), preview: ReplyTextCodec.previewText(for: trimmed), to: peerIdentityID)
     }
 
-    func sendMiniGamePacket(_ packet: MiniGamePacket, to peerIdentityID: String) throws {
-        let encoded = try MiniGameCodec.encode(packet)
-        guard encoded.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else {
-            throw NSError(domain: "VeilLink", code: 23, userInfo: [NSLocalizedDescriptionKey: "小游戏操作数据超过当前消息上限。"] )
-        }
-        try queueContent(
-            WireChatContent(kind: .text, text: encoded, attachment: nil, mimeType: nil, sentAt: packet.createdAt, attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil),
-            preview: MiniGameCodec.previewText(for: packet),
-            to: peerIdentityID
-        )
-    }
-
-    func sendTacticalV2Envelope(
-        _ envelope: TacticalV2.WireEnvelopeV2,
-        to peerIdentityID: String
-    ) throws {
-        let encoded = try TacticalV2.WireCodecV2.encode(envelope)
-        guard encoded.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else {
-            throw NSError(
-                domain: "VeilLink",
-                code: 24,
-                userInfo: [NSLocalizedDescriptionKey: "兵棋 V2 操作数据超过当前消息上限。"]
-            )
-        }
-        try queueContent(
-            WireChatContent(
-                kind: .text,
-                text: encoded,
-                attachment: nil,
-                mimeType: nil,
-                sentAt: envelope.createdAt,
-                attachmentByteCount: nil,
-                attachmentSHA256: nil,
-                attachmentChunkCount: nil
-            ),
-            preview: TacticalV2.WireCodecV2.previewText(for: envelope),
-            to: peerIdentityID
-        )
-    }
-
     func sendImage(_ imageData: Data, mimeType: String, to peerIdentityID: String) throws {
         guard imageData.count <= WireProtocol.maximumImageBytes else { throw NSError(domain: "VeilLink", code: 12, userInfo: [NSLocalizedDescriptionKey: "图片处理后仍超过 3 MB。"] ) }
         guard MediaTransferPolicy.supportsImageMIMEType(mimeType) else { throw NSError(domain: "VeilLink", code: 14, userInfo: [NSLocalizedDescriptionKey: "当前传输层不支持这种图片编码。"] ) }
         try queueContent(WireChatContent(kind: .image, text: nil, attachment: imageData, mimeType: mimeType, sentAt: Date(), attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil), preview: "[图片]", to: peerIdentityID)
+    }
+
+    func sendVoice(_ voiceData: Data, durationSeconds: Double, mimeType: String = "audio/mp4", to peerIdentityID: String) throws {
+        guard voiceData.count > 0, voiceData.count <= WireProtocol.maximumVoiceBytes,
+              durationSeconds >= 0.35, durationSeconds <= VoiceMessageCodec.maximumDurationSeconds,
+              VoiceMessageCodec.isVoiceMIMEType(mimeType) else {
+            throw NSError(domain: "VeilLink", code: 24, userInfo: [NSLocalizedDescriptionKey: "语音为空、过长或编码不受支持。"])
+        }
+        let metadata = VoiceMessageCodec.encode(durationSeconds: durationSeconds)
+        try queueContent(
+            WireChatContent(kind: .voice, text: metadata, attachment: voiceData, mimeType: mimeType, sentAt: Date(), attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil),
+            preview: VoiceMessageCodec.preview(durationSeconds: durationSeconds),
+            to: peerIdentityID
+        )
     }
 
     func retryMessage(_ messageID: String, to peerIdentityID: String) throws {
@@ -352,7 +307,11 @@ final class SessionCoordinator: ObservableObject {
         }
         let conversationID = try database.conversationID(localIdentityID: sender.id, for: peerIdentityID)
             ?? database.createConversation(localIdentityID: sender.id, peerIdentityID: peerIdentityID, title: trusted.displayName)
-        let storedBody = content.kind == .text ? (content.text ?? preview) : preview
+        let storedBody: String
+        switch content.kind {
+        case .text, .voice: storedBody = content.text ?? preview
+        case .image: storedBody = preview
+        }
         let message = ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: sender.id, body: storedBody, sentAt: content.sentAt, isOutgoing: true, deliveryState: .queued)
         try database.saveMessage(message, conversationPreview: preview)
         if let attachment = content.attachment, let mimeType = content.mimeType { _ = try database.saveAttachment(messageID: message.id, data: attachment, mimeType: mimeType) }
@@ -418,7 +377,7 @@ final class SessionCoordinator: ObservableObject {
         var transcript = Data("VeilLink/Transcript/v4".utf8)
         for hello in ordered { transcript.append(Data("|\(hello.protocolVersion)|\(hello.identityID)|".utf8)); transcript.append(hello.identityPublicKey); transcript.append(hello.agreementPublicKey); transcript.append(hello.nonce) }
         let keys = try CryptoEngine.deriveSessionKeys(localPrivateKey: context.localEphemeral, remotePublicKey: remote.agreementPublicKey, transcript: transcript, localIdentityID: context.localHello.identityID, remoteIdentityID: remote.identityID)
-        context.remoteHello = remote; context.keys = keys; context.replayWindow = ReplayWindow(); context.nextSendSequence = 1; sessions[transportID] = context; peerTransport[remote.identityID] = transportID; lastPeerTransport[remote.identityID] = transportID
+        context.remoteHello = remote; context.keys = keys; context.replayWindow = ReplayWindow(); context.nextSendSequence = 1; sessions[transportID] = context; peerTransport[remote.identityID] = transportID
         cancelHandshakeTimeout(for: transportID)
         let trusted = database.trustedContact(localIdentityID: context.localHello.identityID, identityID: remote.identityID)
         let trustState: NearbyPeer.TrustState = trusted?.publicKey == remote.identityPublicKey ? .trusted : .awaitingConfirmation
@@ -443,7 +402,7 @@ final class SessionCoordinator: ObservableObject {
             switch content.kind {
             case .text:
                 try sendAcknowledgement(for: payload.messageID, transportID: transportID, context: &context)
-            case .image:
+            case .image, .voice:
                 guard let chunkCount = content.attachmentChunkCount, chunkCount > 0 else { throw CryptoEngineError.invalidCiphertext }
                 try sendAttachmentCheckpoint(messageID: payload.messageID, nextChunk: chunkCount, chunkCount: chunkCount, transportID: transportID, context: &context)
             }
@@ -458,13 +417,26 @@ final class SessionCoordinator: ObservableObject {
                 guard existing.body == content.text else { throw CryptoEngineError.invalidCiphertext }
             case .image:
                 guard existing.body == "[图片]" else { throw CryptoEngineError.invalidCiphertext }
+            case .voice:
+                guard existing.body == content.text, VoiceMessageCodec.decode(existing.body) != nil else { throw CryptoEngineError.invalidCiphertext }
             }
         } else {
             let conversationID = try database.conversationID(localIdentityID: context.localHello.identityID, for: remote.identityID)
                 ?? database.createConversation(localIdentityID: context.localHello.identityID, peerIdentityID: remote.identityID, title: remote.displayName)
-            let progress: Double? = content.kind == .image ? 0 : nil
-            let message = ChatMessage(id: payload.messageID, conversationID: conversationID, senderIdentityID: remote.identityID, body: content.kind == .image ? "[图片]" : (content.text ?? ""), sentAt: content.sentAt, isOutgoing: false, deliveryState: .delivered, transferProgress: progress)
-            let preview = content.kind == .text ? (MiniGameCodec.previewText(for: message.body) ?? ReplyTextCodec.previewText(for: message.body)) : message.body
+            let progress: Double? = (content.kind == .image || content.kind == .voice) ? 0 : nil
+            let body: String
+            switch content.kind {
+            case .text: body = content.text ?? ""
+            case .image: body = "[图片]"
+            case .voice: body = content.text ?? ""
+            }
+            let message = ChatMessage(id: payload.messageID, conversationID: conversationID, senderIdentityID: remote.identityID, body: body, sentAt: content.sentAt, isOutgoing: false, deliveryState: .delivered, transferProgress: progress)
+            let preview: String
+            switch content.kind {
+            case .text: preview = MiniGameCodec.previewText(for: message.body) ?? ReplyTextCodec.previewText(for: message.body)
+            case .image: preview = "[图片]"
+            case .voice: preview = VoiceMessageCodec.decode(message.body).map { VoiceMessageCodec.preview(durationSeconds: $0.durationSeconds) } ?? "[语音]"
+            }
             try database.saveMessage(message, conversationPreview: preview)
             onInboundMessageReceived?()
         }
@@ -472,7 +444,7 @@ final class SessionCoordinator: ObservableObject {
         switch content.kind {
         case .text:
             try sendAcknowledgement(for: payload.messageID, transportID: transportID, context: &context)
-        case .image:
+        case .image, .voice:
             guard let byteCount = content.attachmentByteCount,
                   let digest = content.attachmentSHA256,
                   let chunkCount = content.attachmentChunkCount else { throw CryptoEngineError.invalidCiphertext }
@@ -512,7 +484,8 @@ final class SessionCoordinator: ObservableObject {
             targetIdentityID: remote.identityID,
             localIdentityID: context.localHello.identityID
         ) != nil else {
-            if database.fetchMessage(id: payload.messageID) == nil || database.fetchMessage(id: payload.messageID)?.deliveryState == .cancelled {
+            let existingMessage = database.fetchMessage(id: payload.messageID)
+            if existingMessage == nil || existingMessage?.deliveryState == .cancelled {
                 sessions[transportID] = context
                 return
             }
@@ -527,7 +500,8 @@ final class SessionCoordinator: ObservableObject {
         )
         let paused = database.isOutboundPaused(messageID: payload.messageID, targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
         if checkpoint.nextIndex == checkpoint.total {
-            let shouldNotifyDelivery = database.fetchMessage(id: payload.messageID).map { $0.isOutgoing && $0.deliveryState != .delivered } ?? false
+            let completedMessage = database.fetchMessage(id: payload.messageID)
+            let shouldNotifyDelivery = completedMessage.map { $0.isOutgoing && $0.deliveryState != .delivered } ?? false
             try database.markDelivered(messageID: payload.messageID, from: remote.identityID, localIdentityID: context.localHello.identityID)
             try database.updateTransferProgress(messageID: payload.messageID, progress: 1)
             try database.completeOutbound(messageID: payload.messageID, targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
@@ -537,6 +511,7 @@ final class SessionCoordinator: ObservableObject {
         sessions[transportID] = context
         if didPersistProgress || checkpoint.nextIndex == checkpoint.total { onMessagesChanged?(false) }
         if !paused { flushOutbound(for: remote.identityID) }
+        stopRetryLoopIfIdle()
     }
 
     private func handleAcknowledgement(transportID: UUID, data: Data) throws {
@@ -551,7 +526,9 @@ final class SessionCoordinator: ObservableObject {
         try database.markDelivered(messageID: ack.messageID, from: remote.identityID, localIdentityID: context.localHello.identityID)
         try database.completeOutbound(messageID: ack.messageID, targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
         if shouldNotifyDelivery { onDeliveryConfirmed?() }
-        onMessagesChanged?(false); flushOutbound(for: remote.identityID)
+        onMessagesChanged?(false)
+        flushOutbound(for: remote.identityID)
+        stopRetryLoopIfIdle()
     }
 
     private func sendAcknowledgement(for messageID: String, transportID: UUID, context: inout SessionContext) throws {
@@ -583,6 +560,7 @@ final class SessionCoordinator: ObservableObject {
         let dueItems = database.dueOutboundItems(for: peerIdentityID, localIdentityID: localIdentityID, limit: 8)
         guard !dueItems.isEmpty else {
             sessions[transportID] = context
+            stopRetryLoopIfIdle()
             return
         }
 
@@ -609,6 +587,7 @@ final class SessionCoordinator: ObservableObject {
         }
         sessions[transportID] = context
         if didChangeVisibleState { onMessagesChanged?(false) }
+        ensureRetryLoopIfNeeded()
     }
 
     private func sendTextStep(message: ChatMessage, peerIdentityID: String, transportID: UUID, localIdentityID: String, keys: SessionKeyMaterial, context: inout SessionContext) throws -> Bool {
@@ -624,12 +603,15 @@ final class SessionCoordinator: ObservableObject {
     }
 
     private func sendAttachmentStep(message: ChatMessage, attachment: ChatAttachment, peerIdentityID: String, transportID: UUID, localIdentityID: String, keys: SessionKeyMaterial, context: inout SessionContext) throws -> Bool {
+        let isVoice = VoiceMessageCodec.isVoiceMIMEType(attachment.mimeType)
+        let maximumBytes = isVoice ? WireProtocol.maximumVoiceBytes : WireProtocol.maximumImageBytes
+        let supportedType = isVoice || MediaTransferPolicy.supportsImageMIMEType(attachment.mimeType)
         guard let cached = cachedOutboundAttachment(messageID: message.id, attachment: attachment),
               cached.data.count == attachment.byteCount,
-              cached.data.count <= WireProtocol.maximumImageBytes,
+              cached.data.count <= maximumBytes,
               cached.sha256.count == 32,
-              MediaTransferPolicy.supportsImageMIMEType(attachment.mimeType) else {
-            failOutbound(messageID: message.id, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "本地图片数据缺失或已损坏。")
+              supportedType else {
+            failOutbound(messageID: message.id, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID, reason: "本地附件数据缺失、损坏或编码不受支持。")
             return false
         }
         let data = cached.data
@@ -649,7 +631,7 @@ final class SessionCoordinator: ObservableObject {
         let priority: BLESendPriority
         if state.nextChunk < 0 {
             priority = .control
-            let manifest = WireChatContent(kind: .image, text: nil, attachment: nil, mimeType: attachment.mimeType, sentAt: message.sentAt, attachmentByteCount: data.count, attachmentSHA256: digest, attachmentChunkCount: expectedChunkCount)
+            let manifest = WireChatContent(kind: isVoice ? .voice : .image, text: isVoice ? message.body : nil, attachment: nil, mimeType: attachment.mimeType, sentAt: message.sentAt, attachmentByteCount: data.count, attachmentSHA256: digest, attachmentChunkCount: expectedChunkCount)
             let encrypted = try CryptoEngine.encrypt(try encoder.encode(manifest), key: keys.sendKey, messageID: message.id, sequence: context.nextSendSequence, context: "chat")
             context.nextSendSequence += 1
             envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .encryptedMessage, payload: try WireCodec.encodeEncryptedPayload(encrypted))
@@ -817,7 +799,125 @@ final class SessionCoordinator: ObservableObject {
         transportDisconnect?(transportID)
     }
 
-    private func retryDueOutbound() { try? database.expireOutboundMessages(); for peerIdentityID in Set(peerTransport.keys) { flushOutbound(for: peerIdentityID) } }
+    private func retryDueOutbound() {
+        try? database.expireOutboundMessages()
+        for peerIdentityID in peerTransport.keys {
+            flushOutbound(for: peerIdentityID)
+        }
+    }
+
+    private func ensureRetryLoopIfNeeded() {
+        guard retryTask == nil,
+              !peerTransport.isEmpty,
+              let localIdentityID = identity.activeIdentity?.id,
+              database.pendingOutboundCount(localIdentityID: localIdentityID) > 0 else { return }
+        let interval = maintenanceTuning.outboundRetryIntervalNanoseconds
+        retryTaskGeneration &+= 1
+        let generation = retryTaskGeneration
+        retryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: interval)
+                guard !Task.isCancelled,
+                      !self.peerTransport.isEmpty,
+                      let localIdentityID = self.identity.activeIdentity?.id,
+                      self.database.pendingOutboundCount(localIdentityID: localIdentityID) > 0 else { break }
+                self.retryDueOutbound()
+            }
+            if self.retryTaskGeneration == generation { self.retryTask = nil }
+        }
+    }
+
+    private func stopRetryLoopIfIdle() {
+        guard let localIdentityID = identity.activeIdentity?.id else {
+            retryTaskGeneration &+= 1
+            retryTask?.cancel()
+            retryTask = nil
+            return
+        }
+        if peerTransport.isEmpty || database.pendingOutboundCount(localIdentityID: localIdentityID) == 0 {
+            retryTaskGeneration &+= 1
+            retryTask?.cancel()
+            retryTask = nil
+        }
+    }
+
+
+    func sendPTTControl(_ packet: VeilPTTControlPacket, to peerIdentityIDs: [String]) {
+        guard let clear = try? VeilPTTCodec.encodeControl(packet) else { return }
+        for peerIdentityID in Set(peerIdentityIDs) {
+            guard let transportID = peerTransport[peerIdentityID], var context = sessions[transportID],
+                  let remote = context.remoteHello, let keys = context.keys,
+                  remote.identityID == peerIdentityID,
+                  database.trustedContact(localIdentityID: context.localHello.identityID, identityID: peerIdentityID)?.publicKey == remote.identityPublicKey else { continue }
+            do {
+                let encrypted = try CryptoEngine.encrypt(clear, key: keys.sendKey, messageID: packet.talkID, sequence: context.nextSendSequence, context: "ptt-control")
+                context.nextSendSequence += 1
+                let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .pttControl, payload: try WireCodec.encodeEncryptedPayload(encrypted))
+                if envelope.count <= WireProtocol.maximumEnvelopeBytes { _ = transportSend?(transportID, envelope, .control) }
+                sessions[transportID] = context
+            } catch { continue }
+        }
+    }
+
+    @discardableResult
+    func sendPTTAudioFrame(_ frame: VeilPTTAudioFrame, to peerIdentityIDs: [String]) -> VeilPTTSendReport {
+        var report = VeilPTTSendReport()
+        guard let clear = try? VeilPTTCodec.encodeAudio(frame) else { return report }
+        for peerIdentityID in Set(peerIdentityIDs) {
+            report.requested += 1
+            guard let transportID = peerTransport[peerIdentityID], var context = sessions[transportID],
+                  let remote = context.remoteHello, let keys = context.keys,
+                  remote.identityID == peerIdentityID,
+                  database.trustedContact(localIdentityID: context.localHello.identityID, identityID: peerIdentityID)?.publicKey == remote.identityPublicKey else {
+                report.unavailable += 1
+                continue
+            }
+            do {
+                let encrypted = try CryptoEngine.encrypt(clear, key: keys.sendKey, messageID: frame.talkID, sequence: context.nextSendSequence, context: "ptt-audio")
+                context.nextSendSequence += 1
+                let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .pttAudio, payload: try WireCodec.encodeEncryptedPayload(encrypted))
+                guard envelope.count <= WireProtocol.maximumEnvelopeBytes else {
+                    report.unsupported += 1
+                    sessions[transportID] = context
+                    continue
+                }
+                switch transportSend?(transportID, envelope, .realtime) ?? .temporarilyUnavailable {
+                case .accepted: report.accepted += 1
+                case .temporarilyUnavailable: report.unavailable += 1
+                case .unsupportedLink: report.unsupported += 1
+                }
+                sessions[transportID] = context
+            } catch {
+                report.unavailable += 1
+            }
+        }
+        return report
+    }
+
+    private func handlePTTControl(transportID: UUID, data: Data) throws {
+        guard var context = sessions[transportID], let remote = context.remoteHello, let keys = context.keys,
+              database.trustedContact(localIdentityID: context.localHello.identityID, identityID: remote.identityID)?.publicKey == remote.identityPublicKey else { throw CryptoEngineError.invalidCiphertext }
+        let payload = try WireCodec.decodeEncryptedPayload(data)
+        guard context.replayWindow.isPotentiallyFresh(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+        let clear = try CryptoEngine.decrypt(payload, key: keys.receiveKey, context: "ptt-control")
+        let packet = try VeilPTTCodec.decodeControl(clear)
+        guard packet.talkID == payload.messageID, context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+        sessions[transportID] = context
+        onPTTControl?(VeilPTTIncomingControl(peerIdentityID: remote.identityID, packet: packet))
+    }
+
+    private func handlePTTAudio(transportID: UUID, data: Data) throws {
+        guard var context = sessions[transportID], let remote = context.remoteHello, let keys = context.keys,
+              database.trustedContact(localIdentityID: context.localHello.identityID, identityID: remote.identityID)?.publicKey == remote.identityPublicKey else { throw CryptoEngineError.invalidCiphertext }
+        let payload = try WireCodec.decodeEncryptedPayload(data)
+        guard context.replayWindow.isPotentiallyFresh(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+        let clear = try CryptoEngine.decrypt(payload, key: keys.receiveKey, context: "ptt-audio")
+        let frame = try VeilPTTCodec.decodeAudio(clear)
+        guard frame.talkID == payload.messageID, context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+        sessions[transportID] = context
+        onPTTAudioFrame?(VeilPTTIncomingAudio(peerIdentityID: remote.identityID, frame: frame))
+    }
 
     private func validate(_ content: WireChatContent) throws {
         guard abs(content.sentAt.timeIntervalSinceNow) <= 30 * 24 * 60 * 60 else { throw CryptoEngineError.invalidCiphertext }
@@ -830,6 +930,14 @@ final class SessionCoordinator: ObservableObject {
             guard content.text == nil, content.attachment == nil,
                   let mimeType = content.mimeType, MediaTransferPolicy.supportsImageMIMEType(mimeType),
                   let byteCount = content.attachmentByteCount, byteCount > 0, byteCount <= WireProtocol.maximumImageBytes,
+                  let digest = content.attachmentSHA256, digest.count == 32,
+                  let chunkCount = content.attachmentChunkCount, chunkCount > 0, chunkCount <= Int(UInt16.max),
+                  chunkCount == max(1, Int(ceil(Double(byteCount) / Double(WireProtocol.attachmentChunkBytes)))) else { throw CryptoEngineError.invalidCiphertext }
+        case .voice:
+            guard content.attachment == nil,
+                  let metadata = content.text, VoiceMessageCodec.decode(metadata) != nil,
+                  let mimeType = content.mimeType, VoiceMessageCodec.isVoiceMIMEType(mimeType),
+                  let byteCount = content.attachmentByteCount, byteCount > 0, byteCount <= WireProtocol.maximumVoiceBytes,
                   let digest = content.attachmentSHA256, digest.count == 32,
                   let chunkCount = content.attachmentChunkCount, chunkCount > 0, chunkCount <= Int(UInt16.max),
                   chunkCount == max(1, Int(ceil(Double(byteCount) / Double(WireProtocol.attachmentChunkBytes)))) else { throw CryptoEngineError.invalidCiphertext }

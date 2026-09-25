@@ -7,50 +7,29 @@ import Foundation
 /// identity is represented by deterministic local glyphs, warm metal only appears around trust
 /// and action, and motion has three meanings only: Reveal, Transit and Resolve.
 enum VeilTheme {
-    static let background = Color(red: 0.012, green: 0.013, blue: 0.017)
-    static let backgroundLift = Color(red: 0.026, green: 0.027, blue: 0.034)
-    static let elevated = Color(red: 0.045, green: 0.046, blue: 0.056)
-    static let panel = Color(red: 0.070, green: 0.069, blue: 0.080)
-    static let panelSoft = Color(red: 0.095, green: 0.091, blue: 0.102)
-    static let obsidian = Color(red: 0.020, green: 0.021, blue: 0.026)
-    static let veil = Color(red: 0.032, green: 0.030, blue: 0.038)
-
-    static let gold = Color(red: 0.86, green: 0.64, blue: 0.24)
-    static let goldBright = Color(red: 0.98, green: 0.82, blue: 0.46)
-    static let goldDeep = Color(red: 0.48, green: 0.31, blue: 0.09)
-    static let mutedGold = Color(red: 0.52, green: 0.40, blue: 0.21)
-    static let paleMetal = Color(red: 0.78, green: 0.75, blue: 0.68)
-
-    static let text = Color.white.opacity(0.96)
-    static let secondaryText = Color.white.opacity(0.57)
-    static let tertiaryText = Color.white.opacity(0.32)
-    static let hairline = Color.white.opacity(0.072)
-    static let danger = Color(red: 0.91, green: 0.28, blue: 0.28)
-    static let success = Color(red: 0.35, green: 0.80, blue: 0.55)
-
-    static let goldGradient = LinearGradient(
-        colors: [goldBright, gold, goldDeep],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    static let metalGradient = LinearGradient(
-        colors: [Color.white.opacity(0.72), paleMetal, gold.opacity(0.78), goldDeep],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    static let surfaceGradient = LinearGradient(
-        colors: [Color.white.opacity(0.040), Color.white.opacity(0.010)],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    static let incomingBubbleGradient = LinearGradient(
-        colors: [panelSoft, panel, obsidian],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    private static var p: VeilThemePalette { VeilAppearanceController.shared.palette }
+    static var background: Color { p.background }
+    static var backgroundLift: Color { p.backgroundLift }
+    static var elevated: Color { p.elevated }
+    static var panel: Color { p.panel }
+    static var panelSoft: Color { p.panelSoft }
+    static var obsidian: Color { p.obsidian }
+    static var veil: Color { p.veil }
+    static var gold: Color { p.gold }
+    static var goldBright: Color { p.goldBright }
+    static var goldDeep: Color { p.goldDeep }
+    static var mutedGold: Color { p.mutedGold }
+    static var paleMetal: Color { p.paleMetal }
+    static var text: Color { p.text }
+    static var secondaryText: Color { p.secondaryText }
+    static var tertiaryText: Color { p.tertiaryText }
+    static var hairline: Color { p.hairline }
+    static var danger: Color { p.danger }
+    static var success: Color { p.success }
+    static var goldGradient: LinearGradient { LinearGradient(colors: [goldBright, gold, goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing) }
+    static var metalGradient: LinearGradient { LinearGradient(colors: [Color.white.opacity(0.72), paleMetal, gold.opacity(0.78), goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing) }
+    static var surfaceGradient: LinearGradient { LinearGradient(colors: [Color.white.opacity(0.040), Color.white.opacity(0.010)], startPoint: .topLeading, endPoint: .bottomTrailing) }
+    static var incomingBubbleGradient: LinearGradient { LinearGradient(colors: [panelSoft, panel, obsidian], startPoint: .topLeading, endPoint: .bottomTrailing) }
 }
 
 
@@ -137,6 +116,9 @@ struct VeilPanelShape: Shape {
     var radius: CGFloat = 8
 
     func path(in rect: CGRect) -> Path {
+        if VeilAppearanceController.shared.isInstrument {
+            return RoundedRectangle(cornerRadius: max(12, radius * 1.8), style: .continuous).path(in: rect)
+        }
         let c = min(cut, min(rect.width, rect.height) * 0.28)
         let r = min(radius, c * 0.7)
         var p = Path()
@@ -172,6 +154,9 @@ private struct VeilCurtainShape: Shape {
 struct VeilAmbientBackground: View {
     var body: some View {
         Group {
+            if VeilAppearanceController.shared.isInstrument {
+                VeilInstrumentBackground()
+            } else
             if VeilRenderProfile.usesLegacyCompositorPath {
                 // Keep the legacy background strictly within its parent's bounds. On iOS 15,
                 // an ignoresSafeArea background attached to ScrollView can participate in the
@@ -286,7 +271,11 @@ struct VeilCardModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if VeilRenderProfile.usesLegacyCompositorPath {
+        if VeilAppearanceController.shared.isInstrument {
+            content
+                .padding(16)
+                .background(VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: emphasized ? 22 : 18, style: .continuous), emphasized: emphasized))
+        } else if VeilRenderProfile.usesLegacyCompositorPath {
             // Preserve the cut-panel identity, but avoid clip + duplicate-shape + large shadow
             // off-screen rendering inside ScrollView/Sheet on iPhone 7.
             content
@@ -371,8 +360,9 @@ struct VeilPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion && VeilRenderProfile.allowsExpensiveVisualEffects ? 0.968 : 1)
-            .opacity(configuration.isPressed ? 0.80 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion && VeilRenderProfile.allowsExpensiveVisualEffects ? (VeilAppearanceController.shared.isInstrument ? 0.985 : 0.968) : 1)
+            .offset(y: VeilAppearanceController.shared.isInstrument && configuration.isPressed ? 2 : 0)
+            .opacity(configuration.isPressed ? (VeilAppearanceController.shared.isInstrument ? 0.94 : 0.80) : 1)
             .animation((reduceMotion || !VeilRenderProfile.allowsExpensiveVisualEffects) ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

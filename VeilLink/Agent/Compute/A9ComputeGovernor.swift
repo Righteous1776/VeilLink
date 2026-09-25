@@ -1,11 +1,10 @@
 import Combine
 import Foundation
 
-private final class WeakMaleCNSComputeConsumer {
-    weak var value: MaleCNSComputeConsumer?
-    init(_ value: MaleCNSComputeConsumer) { self.value = value }
-}
-
+/// Core compute governor. R4 intentionally contains no runtime binding to MaleCNS.
+/// The historical neural budget fields remain in VeilA9ComputePlan for backward-compatible
+/// diagnostics and for the separately generated Experimental AI project, but Core never
+/// allocates a runtime consumer from this class.
 @MainActor
 final class VeilA9ComputeGovernor: ObservableObject {
     @Published private(set) var plan: VeilA9ComputePlan
@@ -15,11 +14,9 @@ final class VeilA9ComputeGovernor: ObservableObject {
 
     let profile: AgentCapabilityProfile
     var onPlanChanged: ((VeilA9ComputePlan) -> Void)?
-    var hasBoundMaleCNSConsumer: Bool { maleCNSConsumer != nil }
+
     private var decision: VeilA9Decision = .initial
     private let logicalProcessorCount: Int
-    private weak var maleCNSConsumer: (any MaleCNSComputeConsumer)?
-    private var maleCNSConsumers: [WeakMaleCNSComputeConsumer] = []
 
     init(
         profile: AgentCapabilityProfile = .current,
@@ -31,7 +28,8 @@ final class VeilA9ComputeGovernor: ObservableObject {
             decision: .initial,
             profile: profile,
             focus: .idle,
-            logicalProcessorCount: max(1, logicalProcessorCount)
+            logicalProcessorCount: max(1, logicalProcessorCount),
+            allowExperimentalCore: false
         )
     }
 
@@ -52,38 +50,11 @@ final class VeilA9ComputeGovernor: ObservableObject {
         recompute()
     }
 
+    /// Kept as a migration-safe API. Core always clamps this to false.
     func setExperimentalCoreEnabled(_ enabled: Bool) {
-        guard experimentalCoreEnabled != enabled else { return }
-        experimentalCoreEnabled = enabled
+        guard experimentalCoreEnabled != false || enabled else { return }
+        experimentalCoreEnabled = false
         recompute()
-    }
-
-    /// Attaches the current MaleCNS runtime to A9 scheduling. The consumer receives the current
-    /// budget immediately and every later lattice/focus update. A weak reference keeps runtime
-    /// lifecycle ownership outside the governor.
-    func bindMaleCNSConsumer(_ consumer: (any MaleCNSComputeConsumer)?) {
-        maleCNSConsumer = consumer
-        consumer?.applyComputeBudget(plan.maleCNS)
-    }
-
-    /// Registers a MaleCNS runtime for live A9 budget updates. The governor keeps only a weak
-    /// reference so loading/unloading a graph never depends on the UI or governor lifetime.
-    func registerMaleCNSConsumer(_ consumer: MaleCNSComputeConsumer) {
-        maleCNSConsumers.removeAll { $0.value == nil }
-        guard !maleCNSConsumers.contains(where: { $0.value === consumer }) else {
-            consumer.applyComputeBudget(plan.maleCNS)
-            return
-        }
-        maleCNSConsumers.append(WeakMaleCNSComputeConsumer(consumer))
-        consumer.applyComputeBudget(plan.maleCNS)
-    }
-
-    func trimMaleCNSConsumers() {
-        maleCNSConsumers.removeAll { wrapper in
-            guard let consumer = wrapper.value else { return true }
-            consumer.trimComputeState()
-            return false
-        }
     }
 
     private func recompute() {
@@ -93,15 +64,9 @@ final class VeilA9ComputeGovernor: ObservableObject {
             focus: focus,
             logicalProcessorCount: logicalProcessorCount,
             foregroundActive: foregroundActive,
-            allowExperimentalCore: experimentalCoreEnabled
+            allowExperimentalCore: false
         )
-        maleCNSConsumer?.applyComputeBudget(plan.maleCNS)
         onPlanChanged?(plan)
-        maleCNSConsumers.removeAll { wrapper in
-            guard let consumer = wrapper.value else { return true }
-            consumer.applyComputeBudget(plan.maleCNS)
-            return false
-        }
     }
 
     func report() -> String {
@@ -110,12 +75,10 @@ final class VeilA9ComputeGovernor: ObservableObject {
             "Mode: \(plan.mode.title)",
             "Focus: \(plan.focus.title)",
             "Foreground: \(foregroundActive ? "yes" : "no")",
-            "Experimental Core authorized: \(experimentalCoreEnabled ? "yes" : "no")",
+            "Experimental neural runtime: excluded from Core target",
             "Lattice cell: \(plan.latticeIndex)/143",
             "Compute units: \(plan.totalComputeUnits)",
             "Transport reserve: \(plan.transportReserveUnits)",
-            "MaleCNS units: \(plan.maleCNSUnits) · \(plan.maleCNS.tier.rawValue) · workers \(plan.maleCNS.workerCount) · steps \(plan.maleCNS.neuralStepBudget)",
-            "MaleCNS runtime bound: \(hasBoundMaleCNSConsumer ? "yes" : "no")",
             "Language units: \(plan.languageUnits) · max tokens \(plan.language.maxNewTokens)",
             "Vision units: \(plan.visionUnits) · interval \(plan.vision.sampleIntervalMilliseconds) ms",
             "Game units: \(plan.gameUnits) · depth \(plan.game.searchDepth) · rollouts \(plan.game.rolloutCount)",

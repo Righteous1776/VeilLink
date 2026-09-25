@@ -1,0 +1,171 @@
+import SwiftUI
+
+struct VeilToolCenterView: View {
+    @ObservedObject var model: AppModel
+    @State private var query = ""
+
+    private var matchesWalkie: Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return q.isEmpty || "对讲机 walkie talkie ptt 语音".contains(q)
+    }
+
+    var body: some View {
+        VeilStableScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass").foregroundColor(VeilTheme.secondaryText)
+                    TextField("搜索工具", text: $query)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 46)
+                .background(RoundedRectangle(cornerRadius: 14).fill(VeilAppearanceController.shared.palette.recess.opacity(0.74)))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(VeilTheme.hairline, lineWidth: 1))
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("TOOLS")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .tracking(1.3)
+                            .foregroundColor(VeilTheme.mutedGold)
+                        Text("工具中心").font(.title2.bold()).foregroundColor(VeilTheme.text)
+                    }
+                    Spacer()
+                    Text(VeilAppearanceController.shared.appearanceLabel)
+                        .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                        .foregroundColor(VeilTheme.tertiaryText)
+                }
+
+                if matchesWalkie {
+                    NavigationLink(destination: VeilWalkieTalkiePrototypeView(model: model)) {
+                        HStack(spacing: 16) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(LinearGradient(colors: [VeilTheme.panelSoft, VeilTheme.panel], startPoint: .top, endPoint: .bottom))
+                                VStack(spacing: 6) {
+                                    VeilSpeakerGrille(columns: 6, rows: 4)
+                                    HStack(spacing: 6) {
+                                        VeilIndicatorLamp(active: true)
+                                        Text("PTT").font(.system(size: 8, weight: .bold, design: .monospaced))
+                                    }
+                                }
+                            }
+                            .frame(width: 80, height: 80)
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("对讲机").font(.headline).foregroundColor(VeilTheme.text)
+                                Text("附近蓝牙 · 半双工 PTT · 拟物化工具")
+                                    .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                                Text("UI PROTOTYPE")
+                                    .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+                                    .tracking(1)
+                                    .foregroundColor(VeilTheme.mutedGold)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundColor(VeilTheme.tertiaryText)
+                        }
+                        .padding(14)
+                    }
+                    .buttonStyle(VeilPressStyle())
+                    .background(VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: 20, style: .continuous), emphasized: true))
+                }
+
+                Text("这里以后只注册真正存在的工具。工具通过统一 registry 加入，不把功能硬编码到首页。")
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(.horizontal, 14)
+        .background(VeilAmbientBackground())
+        .navigationTitle("工具")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct VeilWalkieTalkiePrototypeView: View {
+    @ObservedObject var model: AppModel
+    @State private var transmitting = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 22) {
+                VStack(spacing: 18) {
+                    HStack(alignment: .top) {
+                        VeilLCDDisplay(title: "CHANNEL", value: transmitting ? "TX 01" : "READY 01")
+                        Spacer()
+                        VStack(spacing: 8) {
+                            VeilIndicatorLamp(active: transmitting)
+                            Text(transmitting ? "TX" : "STBY")
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                .foregroundColor(VeilTheme.secondaryText)
+                        }
+                    }
+
+                    HStack(spacing: 22) {
+                        VeilSpeakerGrille(columns: 8, rows: 9)
+                        Spacer()
+                        VeilInstrumentKnob(value: 0.63).frame(width: 112, height: 112)
+                    }
+
+                    Text(transmitting ? "正在发射" : "按住说话")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .tracking(1.1)
+                        .foregroundColor(VeilTheme.secondaryText)
+
+                    Text("PTT")
+                        .font(.system(size: 24, weight: .black, design: .rounded))
+                        .frame(maxWidth: .infinity, minHeight: 86)
+                        .foregroundColor(.white)
+                        .background(
+                            RoundedRectangle(cornerRadius: 22)
+                                .fill(LinearGradient(
+                                    colors: transmitting
+                                        ? [VeilTheme.danger, Color(red: 0.42, green: 0.02, blue: 0.02)]
+                                        : [VeilTheme.goldBright, VeilTheme.goldDeep],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ))
+                        )
+                        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.white.opacity(0.22), lineWidth: 1))
+                        .offset(y: transmitting ? 3 : 0)
+                        .shadow(color: Color.black.opacity(transmitting ? 0.14 : 0.48), radius: transmitting ? 2 : 8, x: 0, y: transmitting ? 1 : 6)
+                        .contentShape(RoundedRectangle(cornerRadius: 22))
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { _ in
+                                    if !transmitting {
+                                        transmitting = true
+                                        model.haptics.impact()
+                                    }
+                                }
+                                .onEnded { _ in
+                                    transmitting = false
+                                    model.haptics.resolved()
+                                }
+                        )
+                        .animation(.interactiveSpring(response: 0.19, dampingFraction: 0.76), value: transmitting)
+
+                    HStack(spacing: 10) {
+                        Label("附近", systemImage: "dot.radiowaves.left.and.right")
+                        Spacer()
+                        Text("UI 骨架 · 尚未启用音频链路")
+                    }
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
+                }
+                .padding(20)
+                .background(VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: 28, style: .continuous), emphasized: true))
+
+                Text("这一页先确定拟物比例、按键手感和信息层级；下一轮再把 PTT 接到真实录音/蓝牙音频分片。")
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
+            }
+            .padding(18)
+        }
+        .background(VeilAmbientBackground())
+        .navigationTitle("对讲机")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

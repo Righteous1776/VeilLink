@@ -12,7 +12,7 @@ struct AgentHomeView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            AgentStatusView(coordinator: model.agent, maleCNS: model.maleCNS)
+            AgentStatusView(coordinator: model.agent)
             AgentControlSummaryView(model: model, controls: controls)
             AgentQuickToolsView(model: model)
             AgentChatView(coordinator: model.agent)
@@ -62,9 +62,16 @@ struct AgentHomeView: View {
         .sheet(isPresented: $showDiagnostics) {
             AgentDiagnosticsView(coordinator: model.agent)
         }
+        .sheet(isPresented: Binding(
+            get: { model.exportedDiagnosticsURL != nil },
+            set: { if !$0 { model.exportedDiagnosticsURL = nil } }
+        )) {
+            if let url = model.exportedDiagnosticsURL {
+                ShareSheet(items: [url])
+            }
+        }
         .onAppear {
             model.agent.setComputeFocus(.languageChat)
-            model.maleCNS.prepareFromBundle()
             if controls.autoLoadLanguageModel { model.agent.activate() }
         }
         .onDisappear { model.agent.setComputeFocus(.idle) }
@@ -99,10 +106,10 @@ private struct AgentControlSummaryView: View {
                                 .foregroundColor(VeilTheme.gold)
                         }
                     }
-                    Text("\(controls.gameDecisionMode.title) · \(controls.autoLoadLanguageModel ? "LLM 自动" : "LLM 手动")")
+                    Text("Native Bot · \(controls.autoLoadLanguageModel ? "VeilTalk 自动" : "VeilTalk 手动")")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(VeilTheme.text)
-                    Text("VFLY \(model.maleCNS.state.displayName) · 工具\(controls.localToolMutationsEnabled ? "允许" : "只读")")
+                    Text("Core 零模型 · 工具\(controls.localToolMutationsEnabled ? "允许" : "只读")")
                         .font(.caption2)
                         .foregroundColor(VeilTheme.secondaryText)
                         .lineLimit(1)

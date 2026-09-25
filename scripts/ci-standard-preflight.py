@@ -62,9 +62,9 @@ def check_plist():
     info = RES / "Info.plist"
     with info.open("rb") as f:
         plist = plistlib.load(f)
-    if plist.get("CFBundleShortVersionString") != "0.9.7":
+    if plist.get("CFBundleShortVersionString") != "0.10.8":
         fail("unexpected CFBundleShortVersionString")
-    if plist.get("CFBundleVersion") != "41":
+    if plist.get("CFBundleVersion") != "50":
         fail("unexpected CFBundleVersion")
     modes = set(plist.get("UIBackgroundModes", []))
     if not {"bluetooth-central", "bluetooth-peripheral"} <= modes:
@@ -133,6 +133,20 @@ def check_malecns_manifests():
     ])
     print("MaleCNS manifests: PASS")
 
+def check_core_project_exclusions():
+    project = (ROOT / "project.yml").read_text(encoding="utf-8")
+    required = [
+        "Resources/VeilFlyCore.vfly",
+        "Resources/VeilFlyLite.vfly",
+        "Resources/AgentModels/game_policy_ranker_v4.vlpol",
+        "Resources/MaleCNSGameRankerCoreV1.json",
+        "Resources/MaleCNSGameRankerLiteV1.json",
+    ]
+    missing = [item for item in required if item not in project]
+    if missing:
+        fail("Core project does not exclude heavy resources: " + ", ".join(missing))
+    print("Core project exclusions: PASS")
+
 def check_repo_hygiene():
     tracked = subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True).splitlines()
     bad = [p for p in tracked if "/__pycache__/" in p or p.endswith(".pyc")]
@@ -160,9 +174,16 @@ def check_json():
 
 def check_script_syntax():
     required = [
-        ROOT / "scripts" / "verify-release-carrier.py",
+        ROOT / "scripts" / "verify-core-release.py",
+        ROOT / "scripts" / "verify-core-source-isolation.py",
+        ROOT / "scripts" / "verify-local-control-plane.py",
+        ROOT / "scripts" / "verify-control-plane-v2.py",
+        ROOT / "scripts" / "verify-autoregulation-r7.py",
+        ROOT / "scripts" / "verify-maintenance-r8.py",
+        ROOT / "scripts" / "verify-ui-theme-r9.py",
+        ROOT / "scripts" / "maintenance-health-report.py",
+        ROOT / "scripts" / "upgrade-transaction.py",
         ROOT / "scripts" / "package-unsigned-ipa.sh",
-        ROOT / "scripts" / "verify-dual-brain-app.sh",
     ]
     for required_path in required:
         if not required_path.is_file():
@@ -183,8 +204,8 @@ def check_swift_syntax():
 
 def check_tests():
     tests = sorted((ROOT / "VeilLinkTests").glob("*.swift"))
-    if len(tests) < 39:
-        fail(f"expected at least 39 test source files, got {len(tests)}")
+    if len(tests) < 40:
+        fail(f"expected at least 40 test source files, got {len(tests)}")
     required = {
         "AgentNavigationTests.swift",
         "AgentIntegrationTests.swift",
@@ -196,6 +217,19 @@ def check_tests():
         "AgentGameExecutionValidationTests.swift",
         "A9RuntimeConstraintTests.swift",
         "TacticalV2Tests.swift",
+        "XiangqiBotTests.swift",
+        "GomokuBotTests.swift",
+        "LudoBotTests.swift",
+        "VeilTalkLiteRuntimeTests.swift",
+        "NativeGameBrokerTests.swift",
+        "CoreSourceIsolationTests.swift",
+        "VeilAppControlPlaneTests.swift",
+        "VeilAppControlPlaneV2Tests.swift",
+        "VeilAppControlPlaneV3Tests.swift",
+        "VeilAutoRegulationTests.swift",
+        "VeilMaintenanceInvariantTests.swift",
+        "VeilAppearanceThemeTests.swift",
+        "VoiceAndPTTTests.swift",
     }
     missing = sorted(required - {p.name for p in tests})
     if missing:
@@ -203,12 +237,18 @@ def check_tests():
     print(f"Test inventory: PASS ({len(tests)} files)")
 
 def main():
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-core-source-isolation.py")], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-local-control-plane.py")], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-control-plane-v2.py")], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-autoregulation-r7.py")], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-maintenance-r8.py")], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-ui-theme-r9.py")], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-voice-ptt-r10.py")], cwd=ROOT)
     check_repo_hygiene()
     check_plist()
     check_appicon()
+    check_core_project_exclusions()
     check_json()
-    check_vfly()
-    check_malecns_manifests()
     check_tests()
     check_script_syntax()
     check_swift_syntax()

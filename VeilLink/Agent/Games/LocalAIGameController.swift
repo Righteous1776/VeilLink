@@ -23,17 +23,11 @@ final class LocalAIGameController: ObservableObject {
     let aiPlayer: MiniGamePlayer = .guest
     @Published private(set) var sessionID: String
 
-    private let maleCNS: MaleCNSGraphManager
-    private let controls: AgentControlCenterSettings
     private var aiTask: Task<Void, Never>?
-    private var policy: TrainedGamePolicyRuntime?
 
-    init(game: MiniGameKind, maleCNS: MaleCNSGraphManager, controls: AgentControlCenterSettings) {
+    init(game: MiniGameKind) {
         self.game = game
-        self.maleCNS = maleCNS
-        self.controls = controls
         sessionID = UUID().uuidString
-        policy = try? TrainedGamePolicyRuntime.loadBundled()
     }
 
     var canHumanAct: Bool {
@@ -49,11 +43,11 @@ final class LocalAIGameController: ObservableObject {
     var statusText: String {
         switch outcome {
         case .humanWon: return "你赢了"
-        case .aiWon: return "灵核 AI 获胜"
+        case .aiWon: return "本地电脑获胜"
         case .draw: return "和局"
         case .playing:
-            if isAIThinking { return "灵核 AI 正在计算…" }
-            return canHumanAct ? "轮到你" : "等待 AI"
+            if isAIThinking { return "本地电脑正在计算…" }
+            return canHumanAct ? "轮到你" : "等待电脑"
         }
     }
 
@@ -65,7 +59,7 @@ final class LocalAIGameController: ObservableObject {
         sessionID = UUID().uuidString
         outcome = .playing
         isAIThinking = false
-        lastDecisionMode = "基础策略"
+        lastDecisionMode = "规则 Bot"
         lastDecisionMilliseconds = nil
     }
 
@@ -148,53 +142,87 @@ final class LocalAIGameController: ObservableObject {
     }
 
     private func selectAIMove() async -> AgentActionCandidate? {
-        guard let adapter = aiAdapter() else { return nil }
-        let legal = adapter.enumerateLegalActions().filter(adapter.validate)
-        guard !legal.isEmpty else { return nil }
+        switch game {
+        case .gomoku:
+            let snapshot = gomoku
+            let budget = GomokuBotBudget.standard(
+                profileLabel: VeilDevicePerformance.current.label
+            )
+            let result = await Task.detached(priority: .userInitiated) {
+                GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget)
+            }.value
+            guard let result else { return nil }
 
-        var baseline = legal
-        if let policy,
-           let ranked = try? policy.rankedLegalActions(adapter: adapter),
-           !ranked.isEmpty {
-            let byID = Dictionary(uniqueKeysWithValues: legal.map { ($0.actionID, $0) })
-            baseline = ranked.compactMap { byID[$0.actionID] }
-            if baseline.count < legal.count {
-                let seen = Set(baseline.map(\.actionID))
-                baseline.append(contentsOf: legal.filter { !seen.contains($0.actionID) })
-            }
-        }
+            var ruleGate = gomoku
+            guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
+            lastDecisionMode = "五子棋 Bot"
+            return AgentActionCandidate(
+                actionID: "gomoku:\(result.index)",
+                encodedAction: AgentGameEncoding.encodeInts([result.index]),
+                metadata: [
+                    "index": String(result.index),
+                    "score": String(result.score),
+                    "nodes": String(result.nodes)
+                ],
+                features: []
+            )
 
-        guard controls.gameDecisionMode.usesMaleCNSRerank,
-              case .ready(let profile) = maleCNS.state,
-              let snapshot = syntheticAISnapshot(),
-              let ranker = try? MaleCNSGameRankerModel.loadBundled(
-                for: profile.tier,
-                allowExperimental: controls.gameDecisionMode.allowsExperimentalRanker
-              ),
-              (try? ranker.validate(profile: profile)) != nil else {
-            lastDecisionMode = "基础策略"
-            return baseline.first
-        }
+        case .xiangqi:
+            let snapshot = xiangqi
+            let budget = XiangqiBotBudget.standard(
+                profileLabel: VeilDevicePerformance.current.label
+            )
+            let result = await Task.detached(priority: .userInitiated) {
+                XiangqiBot.chooseMove(in: snapshot, for: .guest, budget: budget)
+            }.value
+            guard let result else { return nil }
 
-        let candidates = Array(baseline.prefix(3))
-        var scored: [(AgentActionCandidate, Float)] = []
-        for candidate in candidates {
-            guard !Task.isCancelled,
-                  let task = MaleCNSGameDecisionEncoder.taskVector(session: snapshot, candidate: candidate),
-                  let channels = MaleCNSGameDecisionEncoder.channels(task: task, game: game),
-                  let episode = try? await maleCNS.runGameChannels(channels, requestedSteps: 6),
-                  let result = try? ranker.score(game: game, stimulus: channels, episode: episode) else { continue }
-            scored.append((candidate, result.score))
+            var ruleGate = xiangqi
+            guard ruleGate.apply(from: result.from, to: result.to, actor: .guest) else { return nil }
+            lastDecisionMode = result.completedDepth > 0
+                ? "象棋 Bot D\(result.completedDepth)"
+                : "象棋 Bot 快速着"
+            return AgentActionCandidate(
+                actionID: "xiangqi:\(result.from):\(result.to)",
+                encodedAction: AgentGameEncoding.encodeInts([result.from, result.to]),
+                metadata: [
+                    "from": String(result.from),
+                    "to": String(result.to),
+                    "score": String(result.score),
+                    "depth": String(result.completedDepth),
+                    "nodes": String(result.nodes)
+                ],
+                features: []
+            )
+
+        case .ludo:
+            let snapshot = ludo
+            let currentSessionID = sessionID
+            let result = await Task.detached(priority: .userInitiated) {
+                LudoBot.chooseMove(in: snapshot, for: .guest, sessionID: currentSessionID)
+            }.value
+            guard let result else { return nil }
+
+            var ruleGate = ludo
+            guard ruleGate.apply(
+                pieceIndex: result.pieceIndex,
+                actor: .guest,
+                sessionID: sessionID
+            ) else { return nil }
+            lastDecisionMode = "飞行棋 Bot"
+            return AgentActionCandidate(
+                actionID: "ludo:\(result.pieceIndex)",
+                encodedAction: AgentGameEncoding.encodeInts([result.pieceIndex]),
+                metadata: [
+                    "piece": String(result.pieceIndex),
+                    "score": String(result.score)
+                ],
+                features: []
+            )
+
+        case .tactical:
+            return nil
         }
-        guard let best = scored.max(by: { lhs, rhs in
-            if lhs.1 == rhs.1 { return lhs.0.actionID > rhs.0.actionID }
-            return lhs.1 < rhs.1
-        }) else {
-            lastDecisionMode = "基础策略"
-            return baseline.first
-        }
-        lastDecisionMode = profile.tier == .core ? "MaleCNS Core · Top‑3" : "MaleCNS Lite · Top‑3"
-        return best.0
     }
 
     private func aiAdapter() -> (any AgentGameAdapter)? {

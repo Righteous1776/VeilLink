@@ -7,6 +7,15 @@ final class AppModel: ObservableObject {
     @Published var selectedConversation: ConversationSummary?
     @Published var selectedSection: SidebarSection = .chats
     @Published var exportedBackupURL: URL?
+    @Published var exportedDiagnosticsURL: URL?
+    @Published private(set) var autoRegulationSummary = "尚未评估"
+    @Published private(set) var autoRegulationLastActionAt: Date?
+    private var autoRegulationLastEvaluationAt: Date?
+    private var autoRegulationLastMaintenanceAt: Date?
+    private var autoRegulationLastBLERepairAt: Date?
+    private var autoRegulationLastLoggedFingerprint: String?
+    private var autoRegulationManualHoldUntil: Date?
+    private var autoRegulationApplying = false
     @Published var alertMessage: String?
     @Published private(set) var messagesRevision = 0
     @Published private(set) var activeConversationID: String?
@@ -34,7 +43,6 @@ final class AppModel: ObservableObject {
     let a9Health: VeilA9HealthMonitor
     let computeGovernor: VeilA9ComputeGovernor
     let agentControls: AgentControlCenterSettings
-    let maleCNS: MaleCNSGraphManager
     let gameIntelligence: AgentGameContextBroker
     let agent: AgentCoordinator
 
@@ -65,12 +73,8 @@ final class AppModel: ObservableObject {
         let agentProfile = AgentCapabilityProfile.current
         computeGovernor = VeilA9ComputeGovernor(profile: agentProfile)
         agentControls = AgentControlCenterSettings()
-        computeGovernor.setExperimentalCoreEnabled(
-            agentControls.gameDecisionMode == .experimentalCore
-        )
-        maleCNS = MaleCNSGraphManager(profile: agentProfile, governor: computeGovernor)
-        maleCNS.setDeploymentMode(agentControls.gameDecisionMode.graphDeploymentMode)
-        gameIntelligence = AgentGameContextBroker(maleCNS: maleCNS, controls: agentControls)
+        computeGovernor.setExperimentalCoreEnabled(false)
+        gameIntelligence = AgentGameContextBroker()
         agent = AgentCoordinator(
             runtime: LocalTextModelRuntimeFactory.make(profile: agentProfile),
             capabilityProfile: agentProfile,
@@ -241,13 +245,22 @@ final class AppModel: ObservableObject {
     }
 
 
+    private var a9PeriodicSamplingNanoseconds: UInt64 {
+        switch agent.capabilityProfile.tier {
+        case .legacyA10: return 8_000_000_000
+        case .balanced: return 6_000_000_000
+        case .high: return 4_000_000_000
+        }
+    }
+
     private func startA9PeriodicSampling() {
         guard a9PeriodicTask == nil else { return }
         a9PeriodicTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                try? await Task.sleep(nanoseconds: a9PeriodicSamplingNanoseconds)
                 guard !Task.isCancelled, let self else { break }
                 self.refreshA9Health()
+                self.evaluateAutoRegulation()
             }
         }
     }
@@ -262,8 +275,6 @@ final class AppModel: ObservableObject {
         database.clearTransientCaches()
         sessions.clearTransientCaches()
         ImagePreviewCache.shared.removeAll()
-        computeGovernor.trimMaleCNSConsumers()
-        maleCNS.trim()
         agent.handleMemoryPressure()
     }
 
@@ -271,8 +282,6 @@ final class AppModel: ObservableObject {
         computeGovernor.setForegroundActive(false)
         a9PeriodicTask?.cancel()
         a9PeriodicTask = nil
-        computeGovernor.trimMaleCNSConsumers()
-        if AgentCapabilityProfile.current.unloadOnBackground { maleCNS.unload() } else { maleCNS.trim() }
         agent.handleBackground()
         trimCachesForBackgroundIfNeeded()
     }
@@ -605,56 +614,365 @@ final class AppModel: ObservableObject {
             a9HealthScore: a9Health.decision.healthScore,
             a9Mode: computeGovernor.plan.mode.title,
             databaseIntegrity: a9Health.databaseIntegrity.title,
-            maleCNSState: maleCNS.state.displayName,
+            maleCNSState: "core-disabled",
             game: gameIntelligence.context,
-            availableTools: AgentToolRouter.advertisedCommands
+            availableTools: VeilAppControlParser.advertisedCommands
         )
     }
 
     private func executeAgentTool(_ raw: String) -> AgentToolExecution? {
-        guard let command = AgentToolRouter.parse(raw) else { return nil }
+        guard let command = VeilAppControlParser.parse(raw) else { return nil }
+        let result = executeAppControl(command, source: .agentRequest)
+        return AgentToolExecution(command: result.commandID, message: result.message)
+    }
+
+    @discardableResult
+    func executeAppControl(_ command: VeilAppControlCommand) -> VeilAppControlResult {
+        executeAppControl(command, source: .directUser)
+    }
+
+    @discardableResult
+    func executeAppControl(_ command: VeilAppControlCommand, source: VeilAppControlSource) -> VeilAppControlResult {
+        let permissions = VeilAppControlPermissions(
+            localMutationsEnabled: agentControls.localToolMutationsEnabled,
+            diagnosticsExportEnabled: agentControls.allowDiagnosticsExport,
+            suggestedMoveExecutionEnabled: agentControls.allowSuggestedGameMoveExecution,
+            autoRegulationMode: agentControls.autoRegulationMode
+        )
+        let decision = VeilAppControlPolicy.authorize(command, permissions: permissions, source: source)
+        guard decision.allowed else {
+            let result = VeilAppControlResult.denied(
+                command,
+                reason: decision.reason ?? "当前控制策略拒绝了该操作。"
+            )
+            logAppControl(command: command, result: result, access: decision.access)
+            return result
+        }
+
+        let result: VeilAppControlResult
         switch command {
+        case .controlHelp:
+            result = VeilAppControlResult(
+                commandID: command.id,
+                success: true,
+                didMutate: false,
+                message: "Control Plane V3 已启用。除 V2 的全 App 状态与调度外，新增 AutoTune 自动诊断/安全自调节。自动执行仅允许资源焦点、缓存释放和 BLE 刷新三类可逆动作。"
+            )
+
+        case .overviewStatus:
+            let snapshots = Array(bluetooth.linkSnapshots.values)
+            let connected = snapshots.filter(\.isConnected).count
+            let pendingBytes = snapshots.reduce(0) { $0 + $1.pendingBytes }
+            result = VeilAppControlResult(
+                commandID: command.id,
+                success: true,
+                didMutate: false,
+                message: "VeilLink：页面 \(selectedSection.rawValue)，BLE \(bluetooth.isRunning ? "运行中" : "已停止")，连接 \(connected)/\(snapshots.count)，待发 \(ByteCountFormatter.string(fromByteCount: Int64(pendingBytes), countStyle: .file))，A9 \(a9Health.decision.healthScore)/100，数据库 \(a9Health.databaseIntegrity.title)，灵核 \(agent.runtimeState.displayName)。"
+            )
+
+        case .transportStatus:
+            let snapshots = Array(bluetooth.linkSnapshots.values)
+            let connected = snapshots.filter(\.isConnected).count
+            let recovering = snapshots.filter(\.isRecovering).count
+            let pendingBytes = snapshots.reduce(0) { $0 + $1.pendingBytes }
+            let controlPending = snapshots.reduce(0) { $0 + $1.controlPendingPackets }
+            let weakest = snapshots.map(\.healthScore).min()
+            result = VeilAppControlResult(
+                commandID: command.id,
+                success: true,
+                didMutate: false,
+                message: "BLE 传输：\(bluetooth.statusText)，已连接 \(connected)，恢复中 \(recovering)，待发 \(ByteCountFormatter.string(fromByteCount: Int64(pendingBytes), countStyle: .file))，控制包积压 \(controlPending)，最弱链路 \(weakest.map { "\($0)/100" } ?? "--")。"
+            )
+
+        case .mediaStatus:
+            let profile = VeilDevicePerformance.current
+            result = VeilAppControlResult(
+                commandID: command.id,
+                success: true,
+                didMutate: false,
+                message: "媒体策略：目标图片约 \(ByteCountFormatter.string(fromByteCount: Int64(MediaTransferPolicy.targetImageBytes), countStyle: .file))，单图上限 \(ByteCountFormatter.string(fromByteCount: Int64(MediaTransferPolicy.maximumImageBytes), countStyle: .file))，预览最长边 \(profile.imagePreviewMaxPixelSize)px，发送附件缓存 \(ByteCountFormatter.string(fromByteCount: Int64(profile.outboundAttachmentCacheBytes), countStyle: .file))，收到图片自动保存 \(autoSaveReceivedImages ? "开" : "关")。"
+            )
+
+        case .performanceStatus:
+            result = VeilAppControlResult(
+                commandID: command.id,
+                success: true,
+                didMutate: false,
+                message: "性能：\(VeilDevicePerformance.diagnosticLabel)，A9 \(computeGovernor.plan.mode.title)，焦点 \(computeGovernor.plan.focus.title)，手动性能覆盖 \(performanceOverrides.isEnabled ? "开启(风险项 \(performanceOverrides.riskCount))" : "关闭")。"
+            )
+
+        case .diagnosticsStatus:
+            let store = DiagnosticLogStore.shared
+            result = VeilAppControlResult(
+                commandID: command.id,
+                success: true,
+                didMutate: false,
+                message: "诊断：内存索引 \(store.recentEntries.count) 条，磁盘 \(store.diskUsageText)，保留上限 \(store.retentionText)。诊断导出 \(agentControls.allowDiagnosticsExport ? "已授权" : "未授权")。"
+            )
+
+        case .autoRegulationStatus:
+            let hold = max(0, Int(autoRegulationManualHoldUntil?.timeIntervalSinceNow ?? 0))
+            result = VeilAppControlResult(
+                commandID: command.id,
+                success: true,
+                didMutate: false,
+                message: "AutoTune：\(agentControls.autoRegulationMode.title)。最近判断：\(autoRegulationSummary)\(hold > 0 ? "；人工焦点保护剩余约 \(hold)s" : "")。"
+            )
+
         case .refreshBLE:
-            guard agentControls.localToolMutationsEnabled else {
-                return AgentToolExecution(command: "/ble refresh", message: "AI 控制中心已关闭本地工具动作；BLE 状态查询仍可使用。")
-            }
             bluetooth.refreshLinks()
             refreshA9Health()
             let connected = bluetooth.linkSnapshots.values.filter(\.isConnected).count
-            return AgentToolExecution(
-                command: "/ble refresh",
-                message: "已在本机刷新 BLE 扫描、广播、已知连接恢复与 RSSI 采样。当前连接 \(connected) 台设备。"
-            )
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "已刷新 VeilLink BLE 扫描、广播、连接恢复与 RSSI 采样。当前连接 \(connected) 台设备。")
+
+        case .startBLE:
+            guard identity.activeIdentity != nil else {
+                result = VeilAppControlResult(commandID: command.id, success: false, didMutate: false, message: "当前没有活动身份，无法启动 VeilLink BLE 通信。")
+                break
+            }
+            start()
+            refreshA9Health()
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "已启动 VeilLink 的 BLE 通信服务；没有修改 iOS 系统蓝牙开关。")
+
+        case .stopBLE:
+            bluetooth.stop()
+            refreshA9Health()
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "已停止 VeilLink 的 BLE 通信服务；没有修改系统蓝牙设置。")
+
         case .databaseIntegrity:
-            guard agentControls.localToolMutationsEnabled else {
-                return AgentToolExecution(command: "/db check", message: "AI 控制中心已关闭本地工具动作；没有执行数据库完整性自检。")
-            }
             runA9StorageCheck()
-            return AgentToolExecution(
-                command: "/db check",
-                message: "本地 SQLite 完整性检查已执行：\(a9Health.databaseIntegrity.title)。没有读取或回显聊天正文。"
-            )
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "本地 SQLite 完整性检查已执行：\(a9Health.databaseIntegrity.title)。没有读取或回显聊天正文。")
+
         case .a9Status:
-            return AgentToolExecution(
-                command: "/a9 status",
-                message: "A9：健康度 \(a9Health.decision.healthScore)/100，计算模式 \(computeGovernor.plan.mode.title)，数据库 \(a9Health.databaseIntegrity.title)。"
-            )
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: "A9：健康度 \(a9Health.decision.healthScore)/100，计算模式 \(computeGovernor.plan.mode.title)，焦点 \(computeGovernor.plan.focus.title)，数据库 \(a9Health.databaseIntegrity.title)。")
+
         case .agentStatus:
-            return AgentToolExecution(
-                command: "/agent status",
-                message: "灵核运行时：\(agent.runtimeManifest?.displayName ?? LocalTextModelRuntimeFactory.backendName)，状态 \(agent.runtimeState.displayName)；MaleCNS：\(maleCNS.state.displayName)。"
-            )
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: "灵核运行时：\(agent.runtimeManifest?.displayName ?? LocalTextModelRuntimeFactory.backendName)，状态 \(agent.runtimeState.displayName)；游戏引擎 Native Bot；Control Plane V3 / AutoTune \(agentControls.autoRegulationMode.title)。")
+
         case .gameStatus:
-            guard let game = gameIntelligence.context else {
-                return AgentToolExecution(command: "/game status", message: "当前没有已接入灵核的活动对局。")
+            if let game = gameIntelligence.context {
+                result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: "当前对局：\(game.gameTitle)，第 \(game.turn) 回合，\(game.isLocalTurn ? "轮到你" : "等待对方")，策略模式 \(game.policyMode)。")
+            } else {
+                result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: "当前没有已接入灵核的活动对局。")
             }
-            return AgentToolExecution(
-                command: "/game status",
-                message: "当前对局：\(game.gameTitle)，第 \(game.turn) 回合，\(game.isLocalTurn ? "轮到你" : "等待对方")，策略模式 \(game.policyMode)。"
-            )
+
         case .executeSuggestedGameMove:
-            return AgentToolExecution(command: "/game move", message: executeAgentSuggestedGameMove())
+            let message = executeAgentSuggestedGameMove()
+            let executed = message.hasPrefix("已执行")
+            result = VeilAppControlResult(commandID: command.id, success: executed, didMutate: executed, message: message)
+
+        case .trimCaches:
+            database.clearTransientCaches()
+            sessions.clearTransientCaches()
+            ImagePreviewCache.shared.removeAll()
+            agent.trimRuntimeMemory()
+            refreshA9Health()
+            performanceRevision &+= 1
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "已清理数据库/会话临时缓存、图片预览缓存，并压缩本地对话运行时内存。聊天记录和密钥没有删除。")
+
+        case .restoreAutomaticPerformance:
+            performanceOverrides.restoreAutomaticPolicy()
+            agent.trimRuntimeMemory()
+            ImagePreviewCache.shared.removeAll()
+            computeGovernor.setFocus(.idle)
+            refreshA9Health()
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "已恢复 VeilLink 自动性能策略并回到自动调度。不会修改 iOS 系统低电量模式。")
+
+        case .activateAgentRuntime:
+            agent.activate()
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "已请求启动本地灵核运行时。Core 默认 VeilTalk Lite，不需要模型权重。")
+
+        case .unloadAgentRuntime:
+            agent.unloadRuntime()
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "已卸载本地对话运行时状态；聊天数据库、Experimental AI 历史文件和控制平面均未删除。")
+
+        case .setVisualContext(let enabled):
+            setAgentVisualContextEnabled(enabled)
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: enabled ? "已允许视觉摘要进入本地 Agent 上下文。" : "已关闭视觉摘要进入本地 Agent 上下文。")
+
+        case .setAutoSaveReceivedImages(let enabled):
+            autoSaveReceivedImages = enabled
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: enabled ? "已开启收到图片自动保存到相册。" : "已关闭收到图片自动保存到相册。")
+
+        case .setResourceFocus(let focus):
+            switch focus {
+            case .automatic:
+                computeGovernor.setFocus(.idle)
+            case .communications:
+                computeGovernor.setFocus(.mediaTransfer)
+            case .agent:
+                computeGovernor.setFocus(.languageChat)
+                if source != .automaticRegulator, agentControls.autoLoadLanguageModel { agent.activate() }
+            case .game:
+                computeGovernor.setFocus(.gameDecision)
+            }
+            if source != .automaticRegulator {
+                autoRegulationManualHoldUntil = Date().addingTimeInterval(90)
+            }
+            refreshA9Health()
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "已切换为“\(focus.title)”临时资源焦点。\(source == .automaticRegulator ? "由 AutoTune 安全调度触发。" : "已进入 90 秒人工焦点保护。")")
+
+        case .setAutoRegulationMode(let mode):
+            agentControls.autoRegulationMode = mode
+            if mode == .off {
+                autoRegulationSummary = "自动调控已关闭。"
+            }
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "AutoTune 已切换为“\(mode.title)”。安全自动模式只允许焦点调度、清理临时缓存和刷新 BLE。")
+
+        case .runAutoRegulationOnce:
+            let beforeMutation = autoRegulationLastActionAt
+            let summary = evaluateAutoRegulation(force: true)
+            let didMutate = autoRegulationLastActionAt != beforeMutation
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: didMutate, message: summary)
+
+        case .exportDiagnostics:
+            do {
+                let url = try RuntimeDiagnosticsBridge.shared.exportBundle(for: self, reason: "agent.control.export", extraFiles: [:])
+                exportedDiagnosticsURL = url
+                selectedSection = .agent
+                result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "诊断包已在本机生成，分享面板将打开。包内可能包含设备、App 与 BLE 链路技术标识；不会故意记录聊天正文、私钥/会话密钥、配对码或原始 AI 提示词。")
+            } catch {
+                result = VeilAppControlResult(commandID: command.id, success: false, didMutate: false, message: "诊断包生成失败：\(error.localizedDescription)")
+            }
+
+        case .navigate(let destination):
+            switch destination {
+            case .chats: selectedSection = .chats
+            case .nearby: selectedSection = .nearby
+            case .games: selectedSection = .games
+            case .agent: selectedSection = .agent
+            case .settings: selectedSection = .settings
+            }
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "已切换到“\(destination.title)”页面。")
         }
+
+        logAppControl(command: command, result: result, access: decision.access, source: source)
+        return result
+    }
+
+    private func logAppControl(
+        command: VeilAppControlCommand,
+        result: VeilAppControlResult,
+        access: VeilAppControlAccess,
+        source: VeilAppControlSource
+    ) {
+        DiagnosticLogStore.shared.log(
+            result.success ? .info : .warning,
+            .agent,
+            event: source == .automaticRegulator ? "agent.autotune.execute" : "agent.control.execute",
+            message: result.message,
+            metadata: [
+                "command": command.id,
+                "access": access.rawValue,
+                "source": source.rawValue,
+                "success": result.success ? "true" : "false",
+                "mutated": result.didMutate ? "true" : "false"
+            ]
+        )
+    }
+
+    @discardableResult
+    func evaluateAutoRegulation(force: Bool = false) -> String {
+        guard !autoRegulationApplying else { return autoRegulationSummary }
+        let mode = agentControls.autoRegulationMode
+        let now = Date()
+        if !force, let last = autoRegulationLastEvaluationAt, now.timeIntervalSince(last) < 3.5 {
+            return autoRegulationSummary
+        }
+        autoRegulationLastEvaluationAt = now
+
+        let snapshots = Array(bluetooth.linkSnapshots.values)
+        let snapshot = VeilAutoRegulationSnapshot(
+            mode: mode,
+            thermal: currentAutoThermalLevel(),
+            lowPowerMode: currentA9LowPowerMode(),
+            a9HealthScore: a9Health.decision.healthScore,
+            pendingBytes: snapshots.reduce(0) { $0 + $1.pendingBytes },
+            controlPendingPackets: snapshots.reduce(0) { $0 + $1.controlPendingPackets },
+            maximumStallMilliseconds: Int((snapshots.compactMap(\.stalledFor).max() ?? 0) * 1_000),
+            recoveringPeerCount: snapshots.filter(\.isRecovering).count,
+            connectedPeerCount: snapshots.filter(\.isConnected).count,
+            currentFocus: currentResourceFocus(),
+            visibleDestination: currentControlDestination(),
+            agentGenerating: agent.isGenerating,
+            gameActive: gameIntelligence.hasCurrentGame,
+            manualFocusHoldActive: (autoRegulationManualHoldUntil?.timeIntervalSince(now) ?? 0) > 0,
+            secondsSinceLastMutation: autoRegulationLastActionAt.map { now.timeIntervalSince($0) },
+            secondsSinceLastMaintenance: autoRegulationLastMaintenanceAt.map { now.timeIntervalSince($0) },
+            secondsSinceLastBLERepair: autoRegulationLastBLERepairAt.map { now.timeIntervalSince($0) }
+        )
+        let plan = VeilAutoRegulationPolicy.evaluate(snapshot)
+        autoRegulationSummary = plan.summary
+
+        let actionIDs = plan.actions.map { $0.controlCommand.id }.joined(separator: ",")
+        let logFingerprint = "\(mode.rawValue)|\(plan.severity.rawValue)|\(plan.summary)|\(actionIDs)"
+        if autoRegulationLastLoggedFingerprint != logFingerprint {
+            DiagnosticLogStore.shared.log(
+                plan.severity == .protection ? .warning : .debug,
+                .performance,
+                event: "agent.autotune.evaluate",
+                message: plan.summary,
+                metadata: [
+                    "mode": mode.rawValue,
+                    "severity": plan.severity.rawValue,
+                    "actions": actionIDs
+                ]
+            )
+            autoRegulationLastLoggedFingerprint = logFingerprint
+        }
+
+        guard mode == .safeAutomatic, !plan.actions.isEmpty else { return plan.summary }
+        autoRegulationApplying = true
+        defer { autoRegulationApplying = false }
+        var applied: [String] = []
+        for action in plan.actions {
+            let result = executeAppControl(action.controlCommand, source: .automaticRegulator)
+            guard result.success else { continue }
+            applied.append(result.commandID)
+            autoRegulationLastActionAt = now
+            switch action {
+            case .trimCaches: autoRegulationLastMaintenanceAt = now
+            case .refreshBLE: autoRegulationLastBLERepairAt = now
+            case .setFocus: break
+            }
+        }
+        if !applied.isEmpty {
+            autoRegulationSummary = plan.summary + " 已执行：" + applied.joined(separator: "、")
+        }
+        return autoRegulationSummary
+    }
+
+    private func currentResourceFocus() -> VeilAppResourceFocus {
+        switch computeGovernor.plan.focus {
+        case .mediaTransfer: return .communications
+        case .languageChat, .videoChat: return .agent
+        case .gameDecision: return .game
+        default: return .automatic
+        }
+    }
+
+    private func currentControlDestination() -> VeilAppDestination {
+        switch selectedSection {
+        case .chats: return .chats
+        case .nearby: return .nearby
+        case .games: return .games
+        case .agent: return .agent
+        case .settings: return .settings
+        }
+    }
+
+    private func currentAutoThermalLevel() -> VeilAutoThermalLevel {
+        #if os(iOS)
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: return .nominal
+        case .fair: return .fair
+        case .serious: return .serious
+        case .critical: return .critical
+        @unknown default: return .fair
+        }
+        #else
+        return .nominal
+        #endif
     }
 
     func setAgentAutoLoadLanguageModel(_ enabled: Bool) {
@@ -680,21 +998,17 @@ final class AppModel: ObservableObject {
     }
 
     func setAgentGameDecisionMode(_ mode: AgentGameDecisionMode) {
-        guard !(mode == .experimentalCore && agent.capabilityProfile.tier == .legacyA10) else {
-            alertMessage = "iPhone 7 / A10 档位禁止加载 Core VFLY。"
-            return
-        }
-        agentControls.gameDecisionMode = mode
-        computeGovernor.setExperimentalCoreEnabled(mode == .experimentalCore)
-        maleCNS.setDeploymentMode(mode.graphDeploymentMode)
-        maleCNS.prepareFromBundle()
+        agentControls.gameDecisionMode = .baselineOnly
+        computeGovernor.setExperimentalCoreEnabled(false)
         gameIntelligence.reconfigure()
+        if mode != .baselineOnly {
+            alertMessage = "Core 版已固定使用原生规则 Bot；神经游戏策略不再参与默认运行时。"
+        }
         haptics.selection()
     }
 
     func trimAgentMemory() {
         agent.trimRuntimeMemory()
-        maleCNS.trim()
         ImagePreviewCache.shared.removeAll()
         refreshA9Health()
     }
@@ -703,8 +1017,6 @@ final class AppModel: ObservableObject {
         agentControls.resetToSafeDefaults()
         computeGovernor.setExperimentalCoreEnabled(false)
         agent.setVisualContextEnabled(agentControls.visualContextEnabled)
-        maleCNS.setDeploymentMode(agentControls.gameDecisionMode.graphDeploymentMode)
-        maleCNS.prepareFromBundle()
         gameIntelligence.reconfigure()
         haptics.resolved()
     }
@@ -719,9 +1031,8 @@ final class AppModel: ObservableObject {
             "Visual context: \(agentControls.visualContextEnabled)",
             "Local tool mutations: \(agentControls.localToolMutationsEnabled)",
             "Suggested move execution: \(agentControls.allowSuggestedGameMoveExecution)",
-            "Game decision mode: \(agentControls.gameDecisionMode.rawValue)",
-            "VFLY deployment mode: \(maleCNS.deploymentMode.rawValue)",
-            "VFLY state: \(maleCNS.state.displayName)",
+            "Game decision mode: native-bot",
+            "Neural game runtime: disabled in Core",
             "Privacy: no message plaintext, media, keys, pairing codes or database paths in this report."
         ].joined(separator: "\n")
     }

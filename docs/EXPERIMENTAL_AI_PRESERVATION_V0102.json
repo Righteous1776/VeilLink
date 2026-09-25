@@ -1,0 +1,233 @@
+{
+  "schema": 1,
+  "checkpoint": "VeilLink V0.10.2 LEAN_RUNTIME R4",
+  "policy": "preserve-in-place; excluded from Core target; no destructive migration",
+  "generated_at_utc": "2026-09-25T03:57:38.584970+00:00",
+  "files": [
+    {
+      "path": "Tools/AgentTraining/GPU_CAMPAIGN.md",
+      "bytes": 2044,
+      "sha256": "3cb9c15034866b500619962891345c7b2545d94d7bc211c8f25a4b94974afe6e"
+    },
+    {
+      "path": "Tools/AgentTraining/README.md",
+      "bytes": 2127,
+      "sha256": "5eaf1a0b761bc9570d61460098bf7c1c3b8c2a0dedf02832ffdf1a9b660ab3bb"
+    },
+    {
+      "path": "Tools/AgentTraining/SelfPlayExporter.swift",
+      "bytes": 11919,
+      "sha256": "2b527ab8d7868c49789e1bc92c6e319dbb88e90d696cf79b9d97f8c6eefa7403"
+    },
+    {
+      "path": "Tools/AgentTraining/build_agent_sft_dataset.py",
+      "bytes": 5133,
+      "sha256": "4042314c46c6f23bc7df196f04d711e909e900cf5279748ffebd5bee456491c9"
+    },
+    {
+      "path": "Tools/AgentTraining/export_policy_vlpol.py",
+      "bytes": 2363,
+      "sha256": "597cad237d5bdcd1a2d1d7b7510126ea91bd6155a17192db617b5c9b5b0cf66d"
+    },
+    {
+      "path": "Tools/AgentTraining/manifests/agent_sft_v1.json",
+      "bytes": 261,
+      "sha256": "4437451dacebb1c977eda237c419d52bc87f485a78896a506cc4f70b43106c14"
+    },
+    {
+      "path": "Tools/AgentTraining/manifests/game_dataset_v090_900.json",
+      "bytes": 941,
+      "sha256": "58ee15f2a7575872a85acfcf717edf8fb3175cc8954ffad2d87ef08a39f42a03"
+    },
+    {
+      "path": "Tools/AgentTraining/manifests/game_policy_ranker_v4.json",
+      "bytes": 1566,
+      "sha256": "e2352ed87d5da9702d0474ba73d92ea91ad819bb33a278ffdb8c1b22516ca838"
+    },
+    {
+      "path": "Tools/AgentTraining/manifests/language_model_pins.json",
+      "bytes": 1249,
+      "sha256": "5410690dfb0796bb39d395df94376f02c5364f5b28b75724633517051211bc17"
+    },
+    {
+      "path": "Tools/AgentTraining/requirements-gpu.txt",
+      "bytes": 90,
+      "sha256": "856465719f6eef44e5a06d6828648d8c13864d8f8221e52eadb40bd523a9934d"
+    },
+    {
+      "path": "Tools/AgentTraining/train_language_lora.py",
+      "bytes": 3899,
+      "sha256": "87543fc803b23a46634b4c1fbf0aef379ea9088663f69cb794277be02645bce6"
+    },
+    {
+      "path": "Tools/AgentTraining/train_policy.py",
+      "bytes": 6653,
+      "sha256": "af27e28a07d8913b49165df5e439b6db4fe9fe365c1d30f01b947a457146e517"
+    },
+    {
+      "path": "Tools/AgentTraining/train_policy_ranker.py",
+      "bytes": 10754,
+      "sha256": "517a5f849717375ba4d91dec9ba4c8cfb8f8479c0dd8877f3bedcdc57aec46b6"
+    },
+    {
+      "path": "Tools/VeilFlyBuilder/README.md",
+      "bytes": 2106,
+      "sha256": "9d4e63275f33ed053d196c069913fd57f81cc0204bbb8e46edabdcacf683824b"
+    },
+    {
+      "path": "Tools/VeilFlyBuilder/build_graph.py",
+      "bytes": 5015,
+      "sha256": "5fed4e4a41c55301008bae787bdada35f69361b323bab3ac7581f2bdae81b497"
+    },
+    {
+      "path": "Tools/VeilFlyBuilder/build_subgraph.py",
+      "bytes": 7048,
+      "sha256": "c854a08e25af26e3ab9c8f6add16991f896cae845159655dd18cd867d823be6b"
+    },
+    {
+      "path": "Tools/VeilFlyBuilder/export_vfly.py",
+      "bytes": 4791,
+      "sha256": "1113940f643982735c0e1e8cbee65d2278bb67dc742d1b19efdedd280875bfff"
+    },
+    {
+      "path": "Tools/VeilFlyBuilder/fetch_malecns.py",
+      "bytes": 2152,
+      "sha256": "59708ffade44b4c34d6301c7e66194155972ba0be9b740db98be40c9d8522cca"
+    },
+    {
+      "path": "Tools/VeilFlyBuilder/manifests/malecns_source_lock.json",
+      "bytes": 717,
+      "sha256": "5bbc28ffb6a3ae3aaa6a8af9f4aadf19dca12e224929cc6eb483883a50d3c5eb"
+    },
+    {
+      "path": "Tools/VeilFlyBuilder/provenance.py",
+      "bytes": 1267,
+      "sha256": "3a1ac5474970a30c4fae49ae81959c09122cda11a42220bda19380e86aaf7869"
+    },
+    {
+      "path": "Tools/VeilFlyBuilder/requirements.txt",
+      "bytes": 38,
+      "sha256": "f92f8add27b4cd1f269144fe79d21d5f27aa5d15e08e743ea994fa9597758638"
+    },
+    {
+      "path": "Tools/VeilFlyBuilder/verify_vfly.py",
+      "bytes": 1499,
+      "sha256": "c8bd944f62de673be1e791e7dab6c70486193c012ec7e17b0fef9978b33c42a7"
+    },
+    {
+      "path": "Tools/VeilFlyBuilder/vfly_format.py",
+      "bytes": 7513,
+      "sha256": "7260a4d3cb21c8d35cb6c1a2f3775d91ed795f6156bfd25420181aa1e65253f0"
+    },
+    {
+      "path": "VeilLink/Agent/Games/MaleCNSGameDecisionEncoder.swift",
+      "bytes": 5275,
+      "sha256": "a8b44b75f2610dbebf9b4fcea26794756bef4c30a4aa8bc2ef176ef9db1b79a7"
+    },
+    {
+      "path": "VeilLink/Agent/Games/TrainedGamePolicyRuntime.swift",
+      "bytes": 12906,
+      "sha256": "edd1a8f81b47b9a454f9dd3518a51cc27c1b6d0588a6a4f91c35aba82246b174"
+    },
+    {
+      "path": "VeilLink/Agent/Language/LlamaCancellationGate.swift",
+      "bytes": 534,
+      "sha256": "f0fd403c4a415a4f551b579e66f32c7a5b13887e708514b98ce49ae39cc5528b"
+    },
+    {
+      "path": "VeilLink/Agent/Language/LlamaInferenceEngine.swift",
+      "bytes": 14242,
+      "sha256": "235aa73eaa9b3b5727a615a528815c38de6f6872067cfddaf515764bb7adeff6"
+    },
+    {
+      "path": "VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift",
+      "bytes": 8024,
+      "sha256": "31cd9a173b90123f9d50710e9d4dfba595704a7aba90724109e9d2848d307a45"
+    },
+    {
+      "path": "VeilLink/Agent/Language/LlamaRuntimeConfiguration.swift",
+      "bytes": 1523,
+      "sha256": "1db29e342fb82c9cc1b16d9d7170a5b6730889095e063c17468b0f8ed181d28d"
+    },
+    {
+      "path": "VeilLink/Agent/Language/LocalModelCatalog.swift",
+      "bytes": 1555,
+      "sha256": "f45749b2c7f70e7566d7d6e94016b1511f91a7ca06a1cd7bbe854cd3b019ff4f"
+    },
+    {
+      "path": "VeilLink/Agent/Language/LocalModelManager.swift",
+      "bytes": 4001,
+      "sha256": "f9bc3f5e252104179551b171b4143dcde97ebc0cddc7e432b47fd1ff13ea8f3e"
+    },
+    {
+      "path": "VeilLink/Agent/MaleCNS/MaleCNSComputeContract.swift",
+      "bytes": 599,
+      "sha256": "5cf2cc0c4bba5f78edb6d29ebacbff825405713ebed30dba5ddad0478f817944"
+    },
+    {
+      "path": "VeilLink/Agent/MaleCNS/MaleCNSGameRanker.swift",
+      "bytes": 7941,
+      "sha256": "e6a11736708bad7014c2021df0f587d96d154b36d0414386d3f868ba7453070f"
+    },
+    {
+      "path": "VeilLink/Agent/MaleCNS/MaleCNSGraphManager.swift",
+      "bytes": 6714,
+      "sha256": "fc9f6e06d8ebd3a65752ee219e1696d2a6b6c50fa73f0519b07faaa9f83d34eb"
+    },
+    {
+      "path": "VeilLink/Agent/MaleCNS/MaleCNSGraphRuntime.swift",
+      "bytes": 4735,
+      "sha256": "26ad0a8f6e0eac594da3792ccac4d37d9858c59065414fe2815d548f802e0b9f"
+    },
+    {
+      "path": "VeilLink/Agent/MaleCNS/MaleCNSLearnedReadout.swift",
+      "bytes": 6036,
+      "sha256": "c3f3e207e853d649d4bc3fc63e1e6afd764943b197c9609559ce0d417c9a749d"
+    },
+    {
+      "path": "VeilLink/Agent/MaleCNS/MaleCNSNativeKernel.swift",
+      "bytes": 25435,
+      "sha256": "bba63a49e4e66a04fa40484bf804c309facf04ed5ad03a55abe1cd68ecd985ec"
+    },
+    {
+      "path": "VeilLink/Agent/MaleCNS/MaleCNSNativeRolloutPool.swift",
+      "bytes": 9015,
+      "sha256": "b7fac8d84c4f8b5cec1549c063205f991c97000f2df257b9dd9cfc70294a48b4"
+    },
+    {
+      "path": "VeilLink/Agent/MaleCNS/MaleCNSStimulusEncoder.swift",
+      "bytes": 2576,
+      "sha256": "5509b967bc8aafe5e051875164d540d8bc5dc5280cffbfd30218744b1988a6e4"
+    },
+    {
+      "path": "VeilLink/Agent/MaleCNS/VFLY1Format.swift",
+      "bytes": 6209,
+      "sha256": "20ff48e8c731dba1a6ef80cee06909c40ee6c250f3cce7579990e77b4353142b"
+    },
+    {
+      "path": "VeilLink/Agent/MaleCNS/VFLY1Loader.swift",
+      "bytes": 5485,
+      "sha256": "a5b28693b6bbcaf2b7f4ef7ff51be822dc7b955f2e70ae5caed776e06afba5a5"
+    },
+    {
+      "path": "VeilLink/Resources/AgentModels/game_policy_ranker_v4.manifest.json",
+      "bytes": 615,
+      "sha256": "e4f762c7ac3d98afec7bba18fefe8300211f3410fe1d58d739f045f622aba4f0"
+    },
+    {
+      "path": "VeilLink/Resources/AgentModels/game_policy_ranker_v4.vlpol",
+      "bytes": 848728,
+      "sha256": "9b37decd138c98ea8ff43815d07af0076112be123d1de0b173bde59abf927bbd"
+    },
+    {
+      "path": "VeilLink/Resources/VeilFlyCore.vfly",
+      "bytes": 45360268,
+      "sha256": "cc8b71d824ecb7f20c821412b316262ecb4dd1faee148077c94825b5889d60de"
+    },
+    {
+      "path": "VeilLink/Resources/VeilFlyLite.vfly",
+      "bytes": 9517364,
+      "sha256": "25b4947ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee"
+    }
+  ]
+}

@@ -2,7 +2,9 @@ import SwiftUI
 
 struct AdaptiveRootView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject private var appearance = VeilAppearanceController.shared
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Group {
@@ -13,6 +15,8 @@ struct AdaptiveRootView: View {
             }
         }
         .background(VeilAmbientBackground())
+        .onAppear { appearance.update(colorScheme: colorScheme) }
+        .onChange(of: colorScheme) { appearance.update(colorScheme: $0) }
     }
 }
 

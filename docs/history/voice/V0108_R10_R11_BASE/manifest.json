@@ -1,0 +1,43 @@
+{
+  "source_version": "0.10.8",
+  "source_build": "50",
+  "purpose": "R11 pre-upgrade local preservation snapshot",
+  "files": {
+    "VeilLink/Voice/PTTWire.swift": {
+      "sha256": "65d361474c18e8efa34c6b2a115a74e15590e9d06b21c4ded3f5bee7cc152a81",
+      "bytes": 3915
+    },
+    "VeilLink/Voice/WalkieTalkieAudioController.swift": {
+      "sha256": "406529b586aadc917e59abd8e4b903cdc4aa083749058a3a98664e999e657288",
+      "bytes": 8390
+    },
+    "VeilLink/Voice/VoiceMessageAudioController.swift": {
+      "sha256": "5e349c20f75554be683b585c544fd23299fcc1b36d91ef778c160563e9920f47",
+      "bytes": 6108
+    },
+    "VeilLink/Voice/VoiceMessageViews.swift": {
+      "sha256": "fa83c04966147283afc35034c51c45a263267b756ed299a72e96f10145cb2def",
+      "bytes": 5354
+    },
+    "VeilLink/UI/ToolCenterView.swift": {
+      "sha256": "a46a530feaf0eccb4fa0d5142e2344035cc75b7e23f41eb787e154150281b67e",
+      "bytes": 10096
+    },
+    "VeilLink/Security/SessionCoordinator.swift": {
+      "sha256": "1ee94ed88fcafa80a26ea9221533cd39a6177f067324f3deb773990a5a04e32d",
+      "bytes": 58172
+    },
+    "VeilLink/Transport/BLELinkReliabilityPolicy.swift": {
+      "sha256": "cc808457a6e3690a03192496a6ff9c86958dd17a0c4d6b470c6fe1e5909dab70",
+      "bytes": 3224
+    },
+    "VeilLink/Transport/BLETransport.swift": {
+      "sha256": "58d0878831266de6493078fcbdf350f4b98e174f680cdbbe82ce5422f90a25dd",
+      "bytes": 29720
+    },
+    "VeilLink/Resources/Info.plist": {
+      "sha256": "5cf3434987e25e63dfff75f25b818a60a1353c00a5e9507b9aad5c7973554f8f",
+      "bytes": 2248
+    }
+  }
+}
