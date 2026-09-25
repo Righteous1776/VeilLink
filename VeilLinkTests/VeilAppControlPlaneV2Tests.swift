@@ -5,7 +5,8 @@ final class VeilAppControlPlaneV2Tests: XCTestCase {
     private let locked = VeilAppControlPermissions(
         localMutationsEnabled: false,
         diagnosticsExportEnabled: false,
-        suggestedMoveExecutionEnabled: false
+        suggestedMoveExecutionEnabled: false,
+        autoRegulationMode: .off
     )
 
     func testStructuredStatusSurfaceIsReadOnly() {
@@ -26,7 +27,8 @@ final class VeilAppControlPlaneV2Tests: XCTestCase {
         let allowed = VeilAppControlPermissions(
             localMutationsEnabled: true,
             diagnosticsExportEnabled: false,
-            suggestedMoveExecutionEnabled: false
+            suggestedMoveExecutionEnabled: false,
+            autoRegulationMode: .off
         )
         XCTAssertTrue(
             VeilAppControlPolicy.authorize(.setResourceFocus(.communications), permissions: allowed).allowed
@@ -37,7 +39,8 @@ final class VeilAppControlPlaneV2Tests: XCTestCase {
         let localOnly = VeilAppControlPermissions(
             localMutationsEnabled: true,
             diagnosticsExportEnabled: false,
-            suggestedMoveExecutionEnabled: false
+            suggestedMoveExecutionEnabled: false,
+            autoRegulationMode: .off
         )
         let denied = VeilAppControlPolicy.authorize(.exportDiagnostics, permissions: localOnly)
         XCTAssertFalse(denied.allowed)
@@ -46,7 +49,8 @@ final class VeilAppControlPlaneV2Tests: XCTestCase {
         let exportAllowed = VeilAppControlPermissions(
             localMutationsEnabled: true,
             diagnosticsExportEnabled: true,
-            suggestedMoveExecutionEnabled: false
+            suggestedMoveExecutionEnabled: false,
+            autoRegulationMode: .off
         )
         XCTAssertTrue(VeilAppControlPolicy.authorize(.exportDiagnostics, permissions: exportAllowed).allowed)
     }

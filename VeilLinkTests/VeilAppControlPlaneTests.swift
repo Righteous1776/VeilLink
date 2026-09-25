@@ -20,7 +20,9 @@ final class VeilAppControlPlaneTests: XCTestCase {
     func testReadOnlyAndNavigationRemainAvailableWhenMutationsAreDisabled() {
         let permissions = VeilAppControlPermissions(
             localMutationsEnabled: false,
-            suggestedMoveExecutionEnabled: false
+            diagnosticsExportEnabled: false,
+            suggestedMoveExecutionEnabled: false,
+            autoRegulationMode: .off
         )
         XCTAssertTrue(VeilAppControlPolicy.authorize(.overviewStatus, permissions: permissions).allowed)
         XCTAssertTrue(VeilAppControlPolicy.authorize(.navigate(.settings), permissions: permissions).allowed)
@@ -32,7 +34,9 @@ final class VeilAppControlPlaneTests: XCTestCase {
     func testGameExecutionUsesItsOwnExplicitPermission() {
         let permissions = VeilAppControlPermissions(
             localMutationsEnabled: false,
-            suggestedMoveExecutionEnabled: true
+            diagnosticsExportEnabled: false,
+            suggestedMoveExecutionEnabled: true,
+            autoRegulationMode: .off
         )
         XCTAssertTrue(
             VeilAppControlPolicy.authorize(.executeSuggestedGameMove, permissions: permissions).allowed

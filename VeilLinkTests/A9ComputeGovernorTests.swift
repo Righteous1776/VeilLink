@@ -123,57 +123,49 @@ final class A9ComputeGovernorTests: XCTestCase {
             XCTAssertLessThanOrEqual(plan.optionalComputeUnits + plan.transportReserveUnits, plan.totalComputeUnits)
         }
     }
-    @MainActor
-    func testGovernorPushesLiveBudgetIntoMaleCNSConsumer() {
-        final class Probe: MaleCNSComputeConsumer {
-            var budgets: [MaleCNSComputeBudget] = []
-            var trimCount = 0
-            func applyComputeBudget(_ budget: MaleCNSComputeBudget) { budgets.append(budget) }
-            func trimComputeState() { trimCount += 1 }
-        }
 
+    @MainActor
+    func testGovernorKeepsExperimentalMaleCNSRuntimeExcludedFromCore() {
         let governor = VeilA9ComputeGovernor(
             profile: AgentCapabilityProfile.profile(devicePerformanceLabel: "13PRO-HIGH"),
             logicalProcessorCount: 6
         )
-        let probe = Probe()
-        governor.registerMaleCNSConsumer(probe)
-        XCTAssertEqual(probe.budgets.last, governor.plan.maleCNS)
+
+        XCTAssertFalse(governor.experimentalCoreEnabled)
+        XCTAssertNotEqual(governor.plan.maleCNS.tier, .core)
 
         governor.setFocus(.maleCNSSandbox)
-        XCTAssertEqual(probe.budgets.last, governor.plan.maleCNS)
-        XCTAssertGreaterThanOrEqual(probe.budgets.count, 2)
+        XCTAssertEqual(governor.focus, .maleCNSSandbox)
+        XCTAssertNotEqual(governor.plan.maleCNS.tier, .core)
 
-        governor.trimMaleCNSConsumers()
-        XCTAssertEqual(probe.trimCount, 1)
+        governor.setExperimentalCoreEnabled(true)
+        XCTAssertFalse(governor.experimentalCoreEnabled)
+        XCTAssertNotEqual(governor.plan.maleCNS.tier, .core)
+        XCTAssertTrue(governor.report().contains("excluded from Core target"))
     }
 
     @MainActor
-    func testGovernorPushesBudgetsIntoBoundMaleCNSRuntime() {
-        final class Consumer: MaleCNSComputeConsumer {
-            var received: [MaleCNSComputeBudget] = []
-            func applyComputeBudget(_ budget: MaleCNSComputeBudget) { received.append(budget) }
-            func trimComputeState() {}
-        }
-
+    func testGovernorRecomputesAndSuspendsOptionalNeuralBudgetInEmergency() {
         let profile = AgentCapabilityProfile.profile(devicePerformanceLabel: "13PRO-HIGH")
         let governor = VeilA9ComputeGovernor(profile: profile, logicalProcessorCount: 6)
-        let consumer = Consumer()
-        governor.bindMaleCNSConsumer(consumer)
-        XCTAssertEqual(consumer.received.last, governor.plan.maleCNS)
 
-        governor.setFocus(.maleCNSSandbox)
-        XCTAssertEqual(consumer.received.last, governor.plan.maleCNS)
-        XCTAssertEqual(consumer.received.last?.tier, .lite)
-
-        governor.setExperimentalCoreEnabled(true)
-        XCTAssertEqual(consumer.received.last?.tier, .core)
+        governor.setFocus(.languageChat)
+        XCTAssertEqual(governor.focus, .languageChat)
+        XCTAssertEqual(governor.plan.focus, .languageChat)
 
         governor.update(decision: VeilA9Decision(
-            light: .red, level: .l5Emergency, reasonCode: "P0_HARD_BREAK",
-            healthScore: 30, riskPoints: 40, persistenceRuns: 1, issues: [], latticeIndex: 143
+            light: .red,
+            level: .l5Emergency,
+            reasonCode: "P0_HARD_BREAK",
+            healthScore: 30,
+            riskPoints: 40,
+            persistenceRuns: 1,
+            issues: [],
+            latticeIndex: 143
         ))
-        XCTAssertEqual(consumer.received.last?.tier, .suspended)
-    }
 
+        XCTAssertEqual(governor.plan.mode, .emergency)
+        XCTAssertEqual(governor.plan.maleCNS.tier, .suspended)
+        XCTAssertFalse(governor.plan.training.enabled)
+    }
 }
