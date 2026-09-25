@@ -34,10 +34,19 @@ struct VeilBackgroundContinuitySettingsView: View {
                     .tint(VeilTheme.gold)
                     .disabled(!continuity.supportsLiveActivity)
 
-                    Toggle("LAN P2P Boost", isOn: $model.lanTurbo.peerToPeerBoostEnabled)
+                    Toggle("LAN P2P Boost", isOn: Binding(
+                        get: { model.lanTurbo.peerToPeerBoostEnabled },
+                        set: { value in
+                            model.lanTurbo.peerToPeerBoostEnabled = value
+                            model.lanTurbo.refresh()
+                        }
+                    ))
                         .tint(VeilTheme.gold)
 
-                    Toggle("允许 Mesh 中继", isOn: $model.meshRouter.relayEnabled)
+                    Toggle("允许 Mesh 中继", isOn: Binding(
+                        get: { model.meshRouter.relayEnabled },
+                        set: { model.meshRouter.relayEnabled = $0 }
+                    ))
                         .tint(VeilTheme.gold)
 
                     Divider().background(VeilTheme.hairline)
