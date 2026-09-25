@@ -645,7 +645,7 @@ final class AppModel: ObservableObject {
                 command,
                 reason: decision.reason ?? "当前控制策略拒绝了该操作。"
             )
-            logAppControl(command: command, result: result, access: decision.access)
+            logAppControl(command: command, result: result, access: decision.access, source: source)
             return result
         }
 
