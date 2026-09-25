@@ -358,7 +358,7 @@ enum VeilRemotePairQRCodeCodec {
     static func encode(_ qr: VeilRemotePairQRCode) throws -> String {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
-        return prefix + try encoder.encode(qr).base64URLEncodedString()
+        return prefix + (try encoder.encode(qr)).base64URLEncodedString()
     }
 
     static func decode(_ text: String, now: Date = Date()) throws -> VeilRemotePairQRCode {
