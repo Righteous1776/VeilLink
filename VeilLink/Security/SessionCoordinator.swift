@@ -187,6 +187,16 @@ final class SessionCoordinator: ObservableObject {
         }
     }
 
+    func transportID(for peerIdentityID: String) -> UUID? {
+        peerTransport[peerIdentityID]
+    }
+
+    func hasSecureSession(for peerIdentityID: String) -> Bool {
+        guard let transportID = peerTransport[peerIdentityID],
+              let context = sessions[transportID] else { return false }
+        return context.remoteHello != nil && context.keys != nil
+    }
+
     func confirmPairing(peerID: String) {
         guard let index = nearbyPeers.firstIndex(where: { $0.id == peerID }), let context = sessions[nearbyPeers[index].transportID], let remote = context.remoteHello else { return }
         do {
