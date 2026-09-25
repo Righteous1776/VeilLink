@@ -321,7 +321,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("MaleCNS")
                         .font(.caption2).foregroundColor(VeilTheme.tertiaryText)
-                    Text(model.maleCNS.state.displayName)
+                    Text("历史隔离")
                         .font(.caption.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -584,7 +584,7 @@ struct SettingsView: View {
                 .tint(VeilTheme.gold)
             }
 
-            Text("A9 继续负责算力治理；V0.9.3 已加入 VFLY1 图加载器。当前图状态：\(model.maleCNS.state.displayName)。只有经过来源哈希、VFLY 校验和设备档位检查的 Lite/Core 图才会绑定到原生 VeilFly runtime；Reference 全图不会自动在手机上载入。")
+            Text("A9 继续负责算力治理；MaleCNS、VFLY、Qwen 与 llama 实验历史仍保存在仓库中，但未进入 Core 默认发行包。")
                 .font(.caption2)
                 .foregroundColor(VeilTheme.tertiaryText)
         }
