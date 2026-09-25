@@ -130,6 +130,17 @@ struct ConversationListView: View {
             }
         }
         .navigationTitle("对话")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                NavigationLink(destination: VeilToolCenterView(model: model)) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .bold))
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(VeilPressStyle())
+                .accessibilityLabel("打开工具中心")
+            }
+        }
         .background(VeilAmbientBackground())
     }
 }
