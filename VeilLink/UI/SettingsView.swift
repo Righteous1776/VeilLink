@@ -11,6 +11,7 @@ struct SettingsView: View {
     @ObservedObject var a9Health: VeilA9HealthMonitor
     @ObservedObject var computeGovernor: VeilA9ComputeGovernor
     @ObservedObject var agentControls: AgentControlCenterSettings
+    @ObservedObject var internetRelay: InternetRelayTransport
     @State private var versionTapCount = 0
     @State private var showsLockSheet = false
     @State private var showsIdentityManager = false
@@ -21,6 +22,7 @@ struct SettingsView: View {
     @State private var showsOwnerUnlock = false
     @State private var showsOwnerConsole = false
     @ObservedObject private var appearance = VeilAppearanceController.shared
+    @ObservedObject private var backgroundContinuity = VeilBackgroundContinuityCenter.shared
     @State private var diagnosticsCopied = false
 
     init(model: AppModel) {
@@ -32,21 +34,24 @@ struct SettingsView: View {
         a9Health = model.a9Health
         computeGovernor = model.computeGovernor
         agentControls = model.agentControls
+        internetRelay = model.internetRelay
     }
 
     var body: some View {
         VeilStableScrollView {
             VStack(spacing: 16) {
-                profileCard
-                appearanceCard
-                securityCard
-                storageCard
-                mediaCard
-                agentCard
-                feedbackCard
-                bluetoothCard
-                a9HealthCard
-                versionFooter
+                profileCard.veilStaggeredEntrance(index: 0)
+                appearanceCard.veilStaggeredEntrance(index: 1)
+                securityCard.veilStaggeredEntrance(index: 2)
+                storageCard.veilStaggeredEntrance(index: 3)
+                mediaCard.veilStaggeredEntrance(index: 4)
+                agentCard.veilStaggeredEntrance(index: 5)
+                feedbackCard.veilStaggeredEntrance(index: 6)
+                bluetoothCard.veilStaggeredEntrance(index: 7)
+                backgroundContinuityCard.veilStaggeredEntrance(index: 8)
+                internetRelayCard.veilStaggeredEntrance(index: 9)
+                a9HealthCard.veilStaggeredEntrance(index: 10)
+                versionFooter.veilStaggeredEntrance(index: 11)
             }
         }
         .background(VeilAmbientBackground())
@@ -207,6 +212,7 @@ struct SettingsView: View {
                     .padding(.vertical, 3)
                 }
                 .buttonStyle(VeilPressStyle())
+                .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 14, highlightColor: VeilTheme.goldBright)
                 if choice != VeilAppearanceSelection.allCases.last {
                     Divider().background(VeilTheme.hairline)
                 }
@@ -221,6 +227,7 @@ struct SettingsView: View {
             }
         }
         .veilCard(emphasized: appearance.selection == .instrumentAuto)
+        .veilDynamicGlow(active: appearance.selection == .instrumentAuto, emphasized: true)
     }
 
     private var securityCard: some View {
@@ -286,14 +293,15 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Label("图片", systemImage: "photo.on.rectangle")
                 .font(.headline).foregroundColor(VeilTheme.goldBright)
-            Toggle(isOn: $model.autoSaveReceivedImages) {
+            HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("自动保存收到的图片").fontWeight(.medium)
                     Text("完整性校验通过后自动加入系统照片；默认关闭。")
                         .font(.caption).foregroundColor(VeilTheme.secondaryText)
                 }
+                Spacer(minLength: 10)
+                VeilRockerSwitch(isOn: $model.autoSaveReceivedImages, onLabel: "存", offLabel: "停")
             }
-            .tint(VeilTheme.gold)
             .onChange(of: model.autoSaveReceivedImages) { value in
                 DeepTelemetry.shared.valueChange(
                     "settings.auto_save_images",
@@ -499,6 +507,66 @@ struct SettingsView: View {
             .buttonStyle(VeilPressStyle())
         }
         .veilCard()
+    }
+
+    private var backgroundContinuityCard: some View {
+        NavigationLink(destination: VeilBackgroundContinuitySettingsView(model: model)) {
+            HStack(spacing: 12) {
+                Image(systemName: "wave.3.right.circle.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("后台连续性")
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.text)
+                    Text(backgroundContinuity.statusText)
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(2)
+                }
+                Spacer()
+                if backgroundContinuity.liveActivityActive {
+                    Text("LIVE")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                        .foregroundColor(VeilTheme.goldBright)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+        }
+        .buttonStyle(VeilPressStyle())
+        .veilCard(emphasized: backgroundContinuity.continuityEnabled)
+    }
+
+    private var internetRelayCard: some View {
+        NavigationLink(destination: VeilInternetRelaySettingsView(relay: internetRelay, model: model)) {
+            HStack(spacing: 12) {
+                Image(systemName: "network.badge.shield.half.filled")
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("国内 / 国际远程中继")
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.text)
+                    Text(internetRelay.statusText)
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(2)
+                }
+                Spacer()
+                if internetRelay.connectedPeerCount > 0 {
+                    Text("\(internetRelay.connectedPeerCount) LINK")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                        .foregroundColor(VeilTheme.success)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+        }
+        .buttonStyle(VeilPressStyle())
+        .veilCard(emphasized: internetRelay.connectedPeerCount > 0)
     }
 
     private var a9HealthCard: some View {

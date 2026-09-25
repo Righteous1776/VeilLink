@@ -359,11 +359,19 @@ struct VeilPressStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
         configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion && VeilRenderProfile.allowsExpensiveVisualEffects ? (VeilAppearanceController.shared.isInstrument ? 0.985 : 0.968) : 1)
-            .offset(y: VeilAppearanceController.shared.isInstrument && configuration.isPressed ? 2 : 0)
-            .opacity(configuration.isPressed ? (VeilAppearanceController.shared.isInstrument ? 0.94 : 0.80) : 1)
-            .animation((reduceMotion || !VeilRenderProfile.allowsExpensiveVisualEffects) ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+            .scaleEffect(pressed && !reduceMotion ? VeilMotionPolicy.pressScale : 1)
+            .offset(y: pressed ? (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4) : 0)
+            .brightness(pressed ? -0.035 : 0)
+            .opacity(pressed ? 0.96 : 1)
+            .shadow(
+                color: Color.black.opacity(pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12)),
+                radius: pressed ? 2 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3),
+                x: 0,
+                y: pressed ? 1 : (VeilMotionPolicy.allowsFullSpatialEffects ? 4 : 2)
+            )
+            .animation(reduceMotion ? nil : VeilMotionPolicy.spring, value: pressed)
     }
 }
 

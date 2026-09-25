@@ -3,6 +3,7 @@ import UIKit
 
 @main
 struct VeilLinkApp: App {
+    @UIApplicationDelegateAdaptor(VeilBackgroundAppDelegate.self) private var backgroundDelegate
     @StateObject private var bootstrap = AppBootstrap()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -20,23 +21,34 @@ struct VeilLinkApp: App {
                             RuntimeDiagnosticsBridge.shared.attach(to: model)
                             DeviceStressTestController.shared.attach(model: model)
                             RuntimeDiagnosticsBridge.shared.recordLifecycle("root.appear")
+                            VeilBackgroundContinuityCenter.shared.attach(to: model)
                             model.start()
                         }
                         .onChange(of: scenePhase) { phase in
                             RuntimeDiagnosticsBridge.shared.recordLifecycle("scene.\(String(describing: phase))")
                             DeviceStressTestController.shared.handleSceneActive(phase == .active)
                             model.bluetooth.setForegroundActive(phase == .active)
-                            if phase == .active {
+                            switch phase {
+                            case .active:
                                 model.handleForegroundTransition()
-                            } else {
+                                VeilBackgroundContinuityCenter.shared.becameActive(model: model)
+                            case .inactive:
+                                // Start/refresh the visible continuity surface while the app is
+                                // still eligible to create a Live Activity. Do not lock/reset yet.
+                                VeilBackgroundContinuityCenter.shared.prepareForBackgroundTransition(model: model)
+                            case .background:
+                                VeilBackgroundContinuityCenter.shared.enteredBackground(model: model)
                                 model.handleBackgroundTransition()
                                 model.appLock.lock()
                                 model.ownerMode.lock()
+                            @unknown default:
+                                break
                             }
                         }
                         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                             RuntimeDiagnosticsBridge.shared.recordMemoryPressure()
                             DeviceStressTestController.shared.noteMemoryWarning()
+                            VeilBackgroundContinuityCenter.shared.handleMemoryPressure()
                             model.handleMemoryPressure()
                         }
                 } else {

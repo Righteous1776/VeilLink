@@ -50,9 +50,10 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
     private var lastMeterPublishAt = Date.distantPast
     private var lastJitterPublishAt = Date.distantPast
     private let maintenanceTuning = VeilRuntimeMaintenanceTuning.resolved(performanceLabel: VeilDevicePerformance.current.label)
-    private let frameBytes = 640 // 80 ms @ 8 kHz, G.711 µ-law
+    private let frameBytes = 320 // 40 ms @ 8 kHz, G.711 µ-law; fits typical 512 B ATT payloads
     private let playbackFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 8_000, channels: 1, interleaved: false)
-    private let silenceFrame = Data(repeating: 0xFF, count: 640)
+    private let silenceFrame = Data(repeating: 0xFF, count: 320)
+    private let playbackGain: Float = 1.85
 
     init() {
         let tuning = VeilRealtimeAudioTuning.resolved(performanceLabel: VeilDevicePerformance.current.label)
@@ -287,7 +288,10 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
               let buffer = AVAudioPCMBuffer(pcmFormat: playbackFormat, frameCapacity: AVAudioFrameCount(bytes.count)),
               let channel = buffer.floatChannelData?[0] else { return }
         buffer.frameLength = AVAudioFrameCount(bytes.count)
-        for (i, byte) in bytes.enumerated() { channel[i] = Float(VeilMuLaw.decode(byte)) / Float(Int16.max) }
+        for (i, byte) in bytes.enumerated() {
+            let decoded = Float(VeilMuLaw.decode(byte)) / Float(Int16.max)
+            channel[i] = max(-1, min(1, decoded * playbackGain))
+        }
         if !playbackEngine.isRunning || !playerNode.isPlaying { preparePlaybackIfNeeded() }
         playerNode.scheduleBuffer(buffer)
     }

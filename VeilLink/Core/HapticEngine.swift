@@ -44,6 +44,12 @@ final class HapticEngine: ObservableObject {
     }
 
     private let defaults: UserDefaults
+    private let selectionGenerator = UISelectionFeedbackGenerator()
+    private let notificationGenerator = UINotificationFeedbackGenerator()
+    private let softImpactGenerator = UIImpactFeedbackGenerator(style: .soft)
+    private let lightImpactGenerator = UIImpactFeedbackGenerator(style: .light)
+    private let mediumImpactGenerator = UIImpactFeedbackGenerator(style: .medium)
+    private let rigidImpactGenerator = UIImpactFeedbackGenerator(style: .rigid)
     private static let enabledKey = "feedback.haptics.enabled"
     private static let strengthKey = "feedback.haptics.strength"
 
@@ -59,14 +65,13 @@ final class HapticEngine: ObservableObject {
 
     func selection() {
         guard canPlay else { return }
-        let generator = UISelectionFeedbackGenerator()
-        generator.prepare()
-        generator.selectionChanged()
+        selectionGenerator.prepare()
+        selectionGenerator.selectionChanged()
     }
 
     func impact() {
         guard canPlay else { return }
-        let generator = UIImpactFeedbackGenerator(style: strength.impactStyle)
+        let generator = impactGenerator(for: strength.impactStyle)
         generator.prepare()
         generator.impactOccurred(intensity: strength.intensity)
     }
@@ -77,9 +82,8 @@ final class HapticEngine: ObservableObject {
 
     func receive() {
         guard canPlay else { return }
-        let generator = UIImpactFeedbackGenerator(style: .soft)
-        generator.prepare()
-        generator.impactOccurred(intensity: min(strength.intensity, 0.72))
+        softImpactGenerator.prepare()
+        softImpactGenerator.impactOccurred(intensity: min(strength.intensity, 0.72))
     }
 
     func resolved() {
@@ -90,23 +94,32 @@ final class HapticEngine: ObservableObject {
         case .balanced: style = .light
         case .strong: style = .rigid
         }
-        let generator = UIImpactFeedbackGenerator(style: style)
+        let generator = impactGenerator(for: style)
         generator.prepare()
         generator.impactOccurred(intensity: min(1.0, strength.intensity + 0.08))
     }
 
     func warning() {
         guard canPlay else { return }
-        let generator = UINotificationFeedbackGenerator()
-        generator.prepare()
-        generator.notificationOccurred(.warning)
+        notificationGenerator.prepare()
+        notificationGenerator.notificationOccurred(.warning)
     }
 
     func error() {
         guard canPlay else { return }
-        let generator = UINotificationFeedbackGenerator()
-        generator.prepare()
-        generator.notificationOccurred(.error)
+        notificationGenerator.prepare()
+        notificationGenerator.notificationOccurred(.error)
+    }
+
+    private func impactGenerator(for style: UIImpactFeedbackGenerator.FeedbackStyle) -> UIImpactFeedbackGenerator {
+        switch style {
+        case .soft: return softImpactGenerator
+        case .light: return lightImpactGenerator
+        case .medium: return mediumImpactGenerator
+        case .rigid: return rigidImpactGenerator
+        case .heavy: return rigidImpactGenerator
+        @unknown default: return lightImpactGenerator
+        }
     }
 
     private var canPlay: Bool {

@@ -216,6 +216,20 @@ final class DatabaseStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.beginInboundAttachment(messageID: webpID, byteCount: 500_000, mimeType: "image/webp", sha256: digest, chunkCount: 11))
     }
 
+    func testInboundAttachmentAcceptsVoiceMimeAndEnforcesVoiceBudget() throws {
+        let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
+        let conversation = try store.createConversation(localIdentityID: "receiver-voice", peerIdentityID: "sender-voice", title: "Voice")
+        let digest = Data(repeating: 9, count: 32)
+
+        let voiceID = UUID().uuidString
+        try store.saveMessage(ChatMessage(id: voiceID, conversationID: conversation, senderIdentityID: "sender-voice", body: VoiceMessageCodec.encode(durationSeconds: 1), sentAt: Date(), isOutgoing: false, deliveryState: .delivered, transferProgress: 0))
+        XCTAssertNoThrow(try store.beginInboundAttachment(messageID: voiceID, byteCount: 96_000, mimeType: "audio/mp4", sha256: digest, chunkCount: 2))
+
+        let oversizedID = UUID().uuidString
+        try store.saveMessage(ChatMessage(id: oversizedID, conversationID: conversation, senderIdentityID: "sender-voice", body: VoiceMessageCodec.encode(durationSeconds: 1), sentAt: Date(), isOutgoing: false, deliveryState: .delivered, transferProgress: 0))
+        XCTAssertThrowsError(try store.beginInboundAttachment(messageID: oversizedID, byteCount: VoiceMessageCodec.maximumBytes + 1, mimeType: "audio/mp4", sha256: digest, chunkCount: 2))
+    }
+
     func testInboundAttachmentDuplicateChunkIsIdempotentButConflictIsRejected() throws {
         let (store, root) = try makeStore(); defer { try? FileManager.default.removeItem(at: root) }
         let messageID = UUID().uuidString

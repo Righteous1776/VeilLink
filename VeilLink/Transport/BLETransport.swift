@@ -107,12 +107,16 @@ final class BLETransport: NSObject, ObservableObject {
     private let performanceProfile: DevicePerformanceProfile
     private let maintenanceTuning: VeilRuntimeMaintenanceTuning
     private let assembler: BLEFragmentAssembler
+    private let connectionIntentStore: BLEConnectionIntentStore
 
     private var maxQueuedPacketsPerPeer: Int { performanceProfile.bleQueuePacketLimit }
     private var maxQueuedBytesPerPeer: Int { performanceProfile.bleQueueByteLimit }
 
     override init() {
         let profile = VeilDevicePerformance.current
+        let intentStore = BLEConnectionIntentStore()
+        connectionIntentStore = intentStore
+        wantedConnections = intentStore.load()
         performanceProfile = profile
         maintenanceTuning = VeilRuntimeMaintenanceTuning.resolved(performanceLabel: profile.label)
         // Protocol 4 envelopes remain capped at 96 KB. The total in-flight reassembly budget is
@@ -142,6 +146,7 @@ final class BLETransport: NSObject, ObservableObject {
         startRSSIPolling()
         beginScanningIfPossible()
         beginAdvertisingIfPossible()
+        restoreWantedPeripheralsIfPossible()
         publishLinkSnapshots(force: true)
     }
 
@@ -165,14 +170,17 @@ final class BLETransport: NSObject, ObservableObject {
         publishLinkSnapshots(force: true)
     }
 
-    func stop() {
+    func stop(preserveConnectionIntent: Bool = false) {
         isRunning = false
         centralManager.stopScan()
         peripheralManager.stopAdvertising()
         for peripheral in remotePeripherals.values where peripheral.state == .connected || peripheral.state == .connecting {
             centralManager.cancelPeripheralConnection(peripheral)
         }
-        wantedConnections.removeAll()
+        if !preserveConnectionIntent {
+            wantedConnections.removeAll()
+            connectionIntentStore.clear()
+        }
         reconnectAttempts.removeAll()
         reconnectWorkItems.values.forEach { $0.cancel() }
         reconnectWorkItems.removeAll()
@@ -193,7 +201,9 @@ final class BLETransport: NSObject, ObservableObject {
     }
 
     func disconnect(_ id: UUID) {
-        wantedConnections.remove(id)
+        if wantedConnections.remove(id) != nil {
+            connectionIntentStore.save(wantedConnections)
+        }
         tearDownTransportState(for: id)
         if let peripheral = remotePeripherals[id], peripheral.state == .connected || peripheral.state == .connecting {
             centralManager.cancelPeripheralConnection(peripheral)
@@ -206,7 +216,9 @@ final class BLETransport: NSObject, ObservableObject {
     /// Drops the current link while preserving the user's intent to stay connected.
     /// Used by the security/session watchdog when a connection becomes stale.
     func recover(_ id: UUID) {
-        wantedConnections.insert(id)
+        if wantedConnections.insert(id).inserted {
+            connectionIntentStore.save(wantedConnections)
+        }
         tearDownTransportState(for: id, keepReconnectAttempt: true)
         if let peripheral = remotePeripherals[id] {
             if peripheral.state == .connected || peripheral.state == .connecting {
@@ -231,7 +243,9 @@ final class BLETransport: NSObject, ObservableObject {
     }
 
     func connect(to id: UUID) {
-        wantedConnections.insert(id)
+        if wantedConnections.insert(id).inserted {
+            connectionIntentStore.save(wantedConnections)
+        }
         reconnectAttempts[id] = 0
         reconnectWorkItems.removeValue(forKey: id)?.cancel()
         guard isRunning,
@@ -498,6 +512,32 @@ final class BLETransport: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
+    /// Rehydrates the persisted "I want to stay connected to this peripheral" state.
+    /// Explicit disconnect/pause clears the store; process relaunch and diagnostic churn do not.
+    private func restoreWantedPeripheralsIfPossible() {
+        guard isRunning,
+              centralManager.state == .poweredOn,
+              !wantedConnections.isEmpty else { return }
+        let restored = centralManager.retrievePeripherals(withIdentifiers: Array(wantedConnections))
+        for peripheral in restored {
+            let id = peripheral.identifier
+            remotePeripherals[id] = peripheral
+            peripheral.delegate = self
+            switch peripheral.state {
+            case .disconnected:
+                scheduleReconnect(peripheral, immediate: true)
+            case .connected:
+                if remoteCharacteristics[id] == nil {
+                    peripheral.discoverServices([Self.serviceUUID])
+                }
+                peripheral.readRSSI()
+            default:
+                break
+            }
+        }
+        publishLinkSnapshots()
+    }
+
     private func beginScanningIfPossible() {
         guard isRunning, centralManager.state == .poweredOn else { return }
         centralManager.scanForPeripherals(
@@ -613,9 +653,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
         switch central.state {
         case .poweredOn:
             beginScanningIfPossible()
-            for peripheral in remotePeripherals.values where wantedConnections.contains(peripheral.identifier) && peripheral.state == .disconnected {
-                scheduleReconnect(peripheral, immediate: true)
-            }
+            restoreWantedPeripheralsIfPossible()
         case .poweredOff: statusText = "蓝牙已关闭"
         case .unauthorized: statusText = "没有蓝牙权限"
         case .unsupported: statusText = "此设备不支持低功耗蓝牙"
@@ -666,14 +704,18 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
         guard let restored = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] else { return }
+        var didChangeIntent = false
         for peripheral in restored {
             remotePeripherals[peripheral.identifier] = peripheral
             peripheral.delegate = self
             if peripheral.state == .connected {
-                wantedConnections.insert(peripheral.identifier)
+                if wantedConnections.insert(peripheral.identifier).inserted {
+                    didChangeIntent = true
+                }
                 peripheral.discoverServices([Self.serviceUUID])
             }
         }
+        if didChangeIntent { connectionIntentStore.save(wantedConnections) }
     }
 }
 

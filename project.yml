@@ -50,6 +50,8 @@ targets:
     dependencies:
       - sdk: libsqlite3.tbd
       - package: ZIPFoundation
+      - target: VeilBackgroundWidget
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink
@@ -62,6 +64,23 @@ targets:
     scheme:
       testTargets:
         - VeilLinkTests
+  VeilBackgroundWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.1"
+    sources:
+      - path: VeilBackgroundWidget
+      - path: VeilLink/Background/VeilBackgroundActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink.backgroundwidget
+        PRODUCT_NAME: VeilBackgroundWidget
+        INFOPLIST_FILE: VeilBackgroundWidget/Info.plist
+        IPHONEOS_DEPLOYMENT_TARGET: 16.1
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        SUPPORTS_MACCATALYST: NO
+
   VeilLinkTests:
     type: bundle.unit-test
     platform: iOS

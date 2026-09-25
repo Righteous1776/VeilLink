@@ -6,7 +6,7 @@ checks={
  'VeilLink/Voice/VoiceMessageCodec.swift':['VLVOICE1:','maximumDurationSeconds'],
  'VeilLink/Voice/VoiceMessageAudioController.swift':['AVAudioRecorder','kAudioFormatMPEG4AAC'],
  'VeilLink/Voice/PTTWire.swift':['VeilMuLaw','encodeAudio','decodeAudio'],
- 'VeilLink/Voice/WalkieTalkieAudioController.swift':['frameBytes = 640','8_000','beginTransmit'],
+ 'VeilLink/Voice/WalkieTalkieAudioController.swift':['frameBytes = 320','8_000','beginTransmit'],
  'VeilLink/UI/ToolCenterView.swift':['LIVE AUDIO','VeilWalkieTalkieView','开放给附近已信任设备'],
  'VeilLink/Security/SessionCoordinator.swift':['case .pttControl','sendVoice(','sendPTTAudioFrame','case .voice:'],
  'VeilLink/UI/ConversationViews.swift':['VeilHoldToTalkComposer','sendVoice(_ recording:','VeilVoiceMessageBubble'],

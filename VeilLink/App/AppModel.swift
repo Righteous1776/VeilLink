@@ -36,7 +36,13 @@ final class AppModel: ObservableObject {
     let appLock: AppLockController
     let ownerMode: OwnerModeController
     let bluetooth: BLETransport
+    let lanTurbo: LANTransport
     let sessions: SessionCoordinator
+    let meshRouter: VeilMeshOverlayRouter
+    let community: VeilCommunityStore
+    let relayCapabilities: VeilRelayCapabilityStore
+    let internetRelay: InternetRelayTransport
+    let remotePairing: VeilRemotePairingCoordinator
     let backups: BackupManager
     let haptics: HapticEngine
     let performanceOverrides: PerformanceOverrideController
@@ -66,7 +72,13 @@ final class AppModel: ObservableObject {
         ownerMode = OwnerModeController()
         performanceOverrides = PerformanceOverrideController()
         bluetooth = BLETransport()
+        lanTurbo = LANTransport()
+        relayCapabilities = VeilRelayCapabilityStore(keychain: keychain, identity: identity)
+        internetRelay = InternetRelayTransport(identity: identity, database: database, capabilities: relayCapabilities)
+        remotePairing = VeilRemotePairingCoordinator(identity: identity, database: database, capabilities: relayCapabilities)
         sessions = SessionCoordinator(identity: identity, database: database)
+        meshRouter = VeilMeshOverlayRouter()
+        community = VeilCommunityStore(keychain: keychain, identity: identity)
         backups = BackupManager(database: database, identity: identity)
         haptics = HapticEngine()
         a9Health = VeilA9HealthMonitor()
@@ -94,10 +106,77 @@ final class AppModel: ObservableObject {
             sessions?.disconnected(transportID: id)
         }
         bluetooth.onReceive = { [weak sessions] id, data in sessions?.receive(transportID: id, data: data) }
-        sessions.transportSend = { [weak bluetooth] id, data, priority in
-            bluetooth?.send(data, to: id, priority: priority) ?? .temporarilyUnavailable
+        lanTurbo.onConnected = { [weak sessions] id in
+            sessions?.connected(transportID: id, kind: .lan)
         }
-        sessions.transportDisconnect = { [weak bluetooth] id in bluetooth?.disconnect(id) }
+        lanTurbo.onDisconnected = { [weak sessions] id in
+            sessions?.disconnected(transportID: id)
+        }
+        lanTurbo.onReceive = { [weak sessions] id, data in
+            sessions?.receive(transportID: id, data: data)
+        }
+        internetRelay.onConnected = { [weak sessions] id in
+            sessions?.connected(transportID: id, kind: .internet)
+        }
+        internetRelay.onDisconnected = { [weak sessions] id in
+            sessions?.disconnected(transportID: id)
+        }
+        internetRelay.onReceive = { [weak sessions] id, data in
+            sessions?.receive(transportID: id, data: data)
+        }
+        sessions.transportSend = { [weak bluetooth, weak lanTurbo, weak internetRelay] id, data, priority in
+            if lanTurbo?.containsTransport(id) == true {
+                return lanTurbo?.send(data, to: id, priority: priority) ?? .temporarilyUnavailable
+            }
+            if internetRelay?.containsTransport(id) == true {
+                return internetRelay?.send(data, to: id, priority: priority) ?? .temporarilyUnavailable
+            }
+            return bluetooth?.send(data, to: id, priority: priority) ?? .temporarilyUnavailable
+        }
+        sessions.transportDisconnect = { [weak bluetooth, weak lanTurbo, weak internetRelay] id in
+            if lanTurbo?.containsTransport(id) == true { lanTurbo?.disconnect(id) }
+            else if internetRelay?.containsTransport(id) == true { internetRelay?.disconnect(id) }
+            else { bluetooth?.disconnect(id) }
+        }
+        sessions.relayProvisionSecretProvider = { [weak relayCapabilities] peerIdentityID in
+            relayCapabilities?.provisioningSecretIfOwner(for: peerIdentityID)
+        }
+        sessions.onRelayProvisionReceived = { [weak self, weak relayCapabilities] remoteIdentityID, packet in
+            guard relayCapabilities?.install(packet, from: remoteIdentityID) == true, let self else { return }
+            let known = Set(self.conversations.map(\.peerIdentityID) + [remoteIdentityID])
+            self.internetRelay.start(peerIdentityIDs: Array(known))
+        }
+        remotePairing.onPairingCommitted = { [weak self] remoteIdentityID in
+            guard let self else { return }
+            self.reloadConversations()
+            let known = Set(self.conversations.map(\.peerIdentityID) + [remoteIdentityID])
+            self.internetRelay.start(peerIdentityIDs: Array(known))
+            self.internetRelay.refreshNow()
+            self.messagesRevision &+= 1
+        }
+        sessions.onTrustEstablished = { [weak self, weak lanTurbo, weak meshRouter] in
+            lanTurbo?.refresh()
+            meshRouter?.replayRecent()
+            guard let self else { return }
+            let nearbyTrusted = self.sessions.nearbyPeers.filter { $0.trustState == .trusted }.map(\.id)
+            let known = Set(self.conversations.map(\.peerIdentityID) + nearbyTrusted)
+            self.internetRelay.start(peerIdentityIDs: Array(known))
+        }
+        sessions.onMeshPayload = { [weak meshRouter] ingress, data in
+            meshRouter?.receive(data, from: ingress)
+        }
+        meshRouter.neighborProvider = { [weak sessions] in
+            sessions?.secureTransportIDs() ?? []
+        }
+        meshRouter.sendToNeighbor = { [weak sessions] transportID, data in
+            sessions?.sendMeshPayload(data, to: transportID) ?? .temporarilyUnavailable
+        }
+        meshRouter.onLocalPacket = { [weak community] packet in
+            community?.receive(packet)
+        }
+        community.onOutboundMeshPacket = { [weak meshRouter] packet in
+            meshRouter?.broadcast(packet)
+        }
         sessions.onMessagesChanged = { [weak self] refreshConversations in
             self?.scheduleMessageRefresh(refreshConversations: refreshConversations)
         }
@@ -267,6 +346,8 @@ final class AppModel: ObservableObject {
 
     func handleForegroundTransition() {
         computeGovernor.setForegroundActive(true)
+        internetRelay.setForegroundActive(true)
+        internetRelay.refreshNow()
         refreshA9Health()
         startA9PeriodicSampling()
     }
@@ -280,6 +361,7 @@ final class AppModel: ObservableObject {
 
     func handleBackgroundTransition() {
         computeGovernor.setForegroundActive(false)
+        internetRelay.setForegroundActive(false)
         a9PeriodicTask?.cancel()
         a9PeriodicTask = nil
         agent.handleBackground()
@@ -297,6 +379,8 @@ final class AppModel: ObservableObject {
         guard identity.activeIdentity != nil else { return }
         _ = try? database.cleanupStaleInboundAttachments()
         bluetooth.start()
+        lanTurbo.start()
+        internetRelay.start(peerIdentityIDs: conversations.map(\.peerIdentityID))
     }
 
     func createInitialProfile(name: String, password: String, pin: String) -> Bool {
@@ -317,7 +401,11 @@ final class AppModel: ObservableObject {
 
     func createAdditionalProfile(name: String, password: String) -> Bool {
         let wasRunning = bluetooth.isRunning
+        let wasLANRunning = lanTurbo.isRunning
         bluetooth.stop()
+        lanTurbo.stop()
+        internetRelay.stop(reason: "身份切换中")
+        remotePairing.resetForIdentityChange()
         do {
             let profile = try identity.createProfile(displayName: name, password: password)
             try database.upsertProfile(profile)
@@ -327,9 +415,13 @@ final class AppModel: ObservableObject {
             activeConversationID = nil
             reloadConversations()
             if wasRunning { bluetooth.start() }
+            if wasLANRunning { lanTurbo.start() }
+            internetRelay.start(peerIdentityIDs: conversations.map(\.peerIdentityID))
             return true
         } catch {
             if wasRunning { bluetooth.start() }
+            if wasLANRunning { lanTurbo.start() }
+            internetRelay.start(peerIdentityIDs: conversations.map(\.peerIdentityID))
             alertMessage = error.localizedDescription
             return false
         }
@@ -338,9 +430,15 @@ final class AppModel: ObservableObject {
     func switchIdentity(to id: String, password: String) -> Bool {
         guard identity.activeIdentity?.id != id else { return true }
         let wasRunning = bluetooth.isRunning
+        let wasLANRunning = lanTurbo.isRunning
         bluetooth.stop()
+        lanTurbo.stop()
+        internetRelay.stop(reason: "身份切换中")
+        remotePairing.resetForIdentityChange()
         guard identity.switchProfile(to: id, password: password) else {
             if wasRunning { bluetooth.start() }
+            if wasLANRunning { lanTurbo.start() }
+            internetRelay.start(peerIdentityIDs: conversations.map(\.peerIdentityID))
             alertMessage = "身份密码不正确。"
             return false
         }
@@ -351,6 +449,8 @@ final class AppModel: ObservableObject {
         activeConversationID = nil
         reloadConversations()
         if wasRunning { bluetooth.start() }
+        if wasLANRunning { lanTurbo.start() }
+        internetRelay.start(peerIdentityIDs: conversations.map(\.peerIdentityID))
         return true
     }
 
@@ -517,6 +617,9 @@ final class AppModel: ObservableObject {
         let accessed = url.startAccessingSecurityScopedResource()
         let wasRunning = bluetooth.isRunning
         bluetooth.stop()
+        lanTurbo.stop()
+        internetRelay.stop(reason: "正在恢复备份")
+        remotePairing.resetForIdentityChange()
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
             if wasRunning || identity.activeIdentity != nil { start() }

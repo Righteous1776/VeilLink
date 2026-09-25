@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.VeilLink" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#090A0D</item>
+        <item name="android:statusBarColor">#090A0D</item>
+        <item name="android:colorAccent">#E5B85A</item>
+    </style>
+</resources>

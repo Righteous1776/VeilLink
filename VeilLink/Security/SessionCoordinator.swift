@@ -52,6 +52,12 @@ private struct SessionContext {
     var nextSendSequence: UInt64 = 1
 }
 
+enum VeilSessionTransportKind: Int, Sendable {
+    case ble = 0
+    case lan = 1
+    case internet = 2
+}
+
 @MainActor
 final class SessionCoordinator: ObservableObject {
     @Published private(set) var nearbyPeers: [NearbyPeer] = []
@@ -66,11 +72,18 @@ final class SessionCoordinator: ObservableObject {
     var onDeliveryConfirmed: (() -> Void)?
     var onPTTControl: ((VeilPTTIncomingControl) -> Void)?
     var onPTTAudioFrame: ((VeilPTTIncomingAudio) -> Void)?
+    var onTrustEstablished: (() -> Void)?
+    var onMeshPayload: ((UUID, Data) -> Void)?
+    var relayProvisionSecretProvider: ((String) -> Data?)?
+    var onRelayProvisionReceived: ((String, VeilRelayProvisionPacket) -> Void)?
 
     private let identity: IdentityManager
     private let database: DatabaseStore
     private var sessions: [UUID: SessionContext] = [:]
     private var peerTransport: [String: UUID] = [:]
+    private var peerTransports: [String: Set<UUID>] = [:]
+    private var transportKinds: [UUID: VeilSessionTransportKind] = [:]
+    private var lastNearbyPeerPublishAt: [UUID: TimeInterval] = [:]
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private struct CachedOutboundAttachment {
@@ -103,10 +116,18 @@ final class SessionCoordinator: ObservableObject {
 
     func discovered(transportID: UUID, rssi: Int) {
         pruneNearbyPeers()
+        let now = Date()
+        let nowReference = now.timeIntervalSinceReferenceDate
         if let index = nearbyPeers.firstIndex(where: { $0.transportID == transportID }) {
-            nearbyPeers[index].rssi = rssi; nearbyPeers[index].lastSeen = Date()
+            let elapsed = nowReference - (lastNearbyPeerPublishAt[transportID] ?? 0)
+            let meaningfulRSSIChange = abs(nearbyPeers[index].rssi - rssi) >= 4
+            guard meaningfulRSSIChange || elapsed >= 1.0 else { return }
+            nearbyPeers[index].rssi = rssi
+            nearbyPeers[index].lastSeen = now
+            lastNearbyPeerPublishAt[transportID] = nowReference
         } else {
-            nearbyPeers.append(NearbyPeer(id: transportID.uuidString, transportID: transportID, displayName: "未认证设备", rssi: rssi, trustState: .discovered, pairingCode: nil, lastSeen: Date()))
+            nearbyPeers.append(NearbyPeer(id: transportID.uuidString, transportID: transportID, displayName: "未认证设备", rssi: rssi, trustState: .discovered, pairingCode: nil, lastSeen: now))
+            lastNearbyPeerPublishAt[transportID] = nowReference
             if nearbyPeers.count > 100 { nearbyPeers.sort { $0.lastSeen > $1.lastSeen }; nearbyPeers = Array(nearbyPeers.prefix(100)) }
         }
     }
@@ -115,22 +136,46 @@ final class SessionCoordinator: ObservableObject {
         clearOutboundAttachmentCache()
     }
 
-    func connected(transportID: UUID) {
+    func connected(transportID: UUID, kind: VeilSessionTransportKind = .ble) {
+        transportKinds[transportID] = kind
         guard sessions[transportID] == nil else { return }
         do {
             try sendHello(to: transportID)
             scheduleHandshakeTimeout(for: transportID)
         } catch {
             sessions.removeValue(forKey: transportID)
+            transportKinds.removeValue(forKey: transportID)
             lastError = "握手初始化失败：\(error.localizedDescription)"
         }
     }
     func disconnected(transportID: UUID) {
+        let remoteIdentityID = sessions[transportID]?.remoteHello?.identityID
         cancelHandshakeTimeout(for: transportID)
         sessions.removeValue(forKey: transportID)
         packetAbuseLimiter.reset(transportID)
-        peerTransport = peerTransport.filter { $0.value != transportID }
-        nearbyPeers.removeAll { $0.transportID == transportID }
+        transportKinds.removeValue(forKey: transportID)
+        lastNearbyPeerPublishAt.removeValue(forKey: transportID)
+
+        var affected = removeTransportFromPeerBindings(transportID)
+        if let remoteIdentityID, !affected.contains(remoteIdentityID) { affected.append(remoteIdentityID) }
+        nearbyPeers.removeAll { $0.transportID == transportID && $0.id != remoteIdentityID }
+
+        for peerIdentityID in affected {
+            refreshPreferredTransport(for: peerIdentityID)
+            if let preferred = peerTransport[peerIdentityID] {
+                if let index = nearbyPeers.firstIndex(where: { $0.id == peerIdentityID }) {
+                    nearbyPeers[index].transportID = preferred
+                    nearbyPeers[index].lastSeen = Date()
+                }
+                if let localIdentityID = identity.activeIdentity?.id {
+                    try? database.wakeOutboundForPeer(targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+                }
+                flushOutbound(for: peerIdentityID)
+            } else {
+                nearbyPeers.removeAll { $0.id == peerIdentityID }
+            }
+        }
+
         if peerTransport.isEmpty {
             clearOutboundAttachmentCache()
             retryTaskGeneration &+= 1
@@ -147,20 +192,25 @@ final class SessionCoordinator: ObservableObject {
         sessions.removeAll()
         packetAbuseLimiter.resetAll()
         peerTransport.removeAll()
+        peerTransports.removeAll()
+        transportKinds.removeAll()
         nearbyPeers.removeAll()
+        lastNearbyPeerPublishAt.removeAll()
         clearOutboundAttachmentCache()
         lastError = nil
     }
 
     func invalidatePeer(_ peerIdentityID: String) {
-        if let transportID = peerTransport.removeValue(forKey: peerIdentityID) {
+        var transportIDs = peerTransports.removeValue(forKey: peerIdentityID) ?? []
+        if let preferred = peerTransport.removeValue(forKey: peerIdentityID) { transportIDs.insert(preferred) }
+        nearbyPeers.removeAll { $0.id == peerIdentityID || transportIDs.contains($0.transportID) }
+        for transportID in transportIDs {
             cancelHandshakeTimeout(for: transportID)
             sessions.removeValue(forKey: transportID)
             packetAbuseLimiter.reset(transportID)
-            nearbyPeers.removeAll { $0.transportID == transportID || $0.id == peerIdentityID }
+            transportKinds.removeValue(forKey: transportID)
+            lastNearbyPeerPublishAt.removeValue(forKey: transportID)
             transportDisconnect?(transportID)
-        } else {
-            nearbyPeers.removeAll { $0.id == peerIdentityID }
         }
     }
 
@@ -180,10 +230,23 @@ final class SessionCoordinator: ObservableObject {
             case .attachmentCheckpoint: try handleAttachmentCheckpoint(transportID: transportID, data: envelope.payload)
             case .pttControl: try handlePTTControl(transportID: transportID, data: envelope.payload)
             case .pttAudio: try handlePTTAudio(transportID: transportID, data: envelope.payload)
+            case .meshOverlay: try handleMeshOverlay(transportID: transportID, data: envelope.payload)
+            case .relayProvision: try handleRelayProvision(transportID: transportID, data: envelope.payload)
             }
             packetAbuseLimiter.reset(transportID)
         } catch {
             handleInvalidPacket(transportID: transportID, reason: "无法验证的数据包")
+        }
+    }
+
+    func secureTransportIDs() -> [UUID] {
+        sessions.compactMap { transportID, context in
+            guard transportKinds[transportID] != .internet,
+                  let remote = context.remoteHello, context.keys != nil,
+                  database.trustedContact(localIdentityID: context.localHello.identityID, identityID: remote.identityID)?.publicKey == remote.identityPublicKey else {
+                return nil
+            }
+            return transportID
         }
     }
 
@@ -192,14 +255,14 @@ final class SessionCoordinator: ObservableObject {
     }
 
     func hasSecureSession(for peerIdentityID: String) -> Bool {
-        guard let transportID = peerTransport[peerIdentityID],
-              let context = sessions[transportID] else { return false }
-        return context.remoteHello != nil && context.keys != nil
+        guard let transportID = peerTransport[peerIdentityID] else { return false }
+        return isSecureSessionTransport(transportID, for: peerIdentityID)
     }
 
     func recoverSecureSession(for peerIdentityID: String) {
+        refreshPreferredTransport(for: peerIdentityID)
         guard let transportID = peerTransport[peerIdentityID] else {
-            lastError = "未找到可用于恢复安全会话的蓝牙链路。"
+            lastError = "未找到可用于恢复安全会话的可用链路。"
             return
         }
         cancelHandshakeTimeout(for: transportID)
@@ -223,7 +286,11 @@ final class SessionCoordinator: ObservableObject {
                 _ = try database.createConversation(localIdentityID: localIdentityID, peerIdentityID: remote.identityID, title: remote.displayName)
             }
             nearbyPeers[index].trustState = .trusted; nearbyPeers[index].pairingCode = nil
-            recordSecurityEvent("已信任 \(remote.displayName) · 身份指纹已固定"); onMessagesChanged?(true); flushOutbound(for: remote.identityID)
+            recordSecurityEvent("已信任 \(remote.displayName) · 身份指纹已固定")
+            try? sendRelayProvisionIfNeeded(peerIdentityID: remote.identityID, transportID: nearbyPeers[index].transportID)
+            onTrustEstablished?()
+            onMessagesChanged?(true)
+            flushOutbound(for: remote.identityID)
         } catch { lastError = error.localizedDescription }
     }
 
@@ -232,6 +299,8 @@ final class SessionCoordinator: ObservableObject {
         let transportID = nearbyPeers[index].transportID
         cancelHandshakeTimeout(for: transportID)
         sessions.removeValue(forKey: transportID)
+        transportKinds.removeValue(forKey: transportID)
+        _ = removeTransportFromPeerBindings(transportID)
         peerTransport = peerTransport.filter { $0.value != transportID }
         nearbyPeers[index].trustState = .blocked
         nearbyPeers[index].pairingCode = nil
@@ -245,6 +314,9 @@ final class SessionCoordinator: ObservableObject {
     }
 
     func sendMiniGamePacket(_ packet: MiniGamePacket, to peerIdentityID: String) throws {
+        guard hasSecureSession(for: peerIdentityID) else {
+            throw NSError(domain: "VeilLink", code: 25, userInfo: [NSLocalizedDescriptionKey: "对手安全链路尚未就绪，小游戏操作未发送。"])
+        }
         let encoded = try MiniGameCodec.encode(packet)
         guard encoded.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else {
             throw NSError(domain: "VeilLink", code: 23, userInfo: [NSLocalizedDescriptionKey: "小游戏操作数据超过当前消息上限。"])
@@ -431,6 +503,8 @@ final class SessionCoordinator: ObservableObject {
             nearbyPeers.removeAll { $0.transportID == transportID || $0.id == remote.identityID }
             nearbyPeers.append(NearbyPeer(id: remote.identityID, transportID: transportID, displayName: remote.displayName, rssi: -100, trustState: .blocked, pairingCode: nil, lastSeen: Date()))
             sessions.removeValue(forKey: transportID)
+            transportKinds.removeValue(forKey: transportID)
+            _ = removeTransportFromPeerBindings(transportID)
             peerTransport.removeValue(forKey: remote.identityID)
             recordSecurityEvent("已阻止黑名单身份 \(remote.displayName)")
             transportDisconnect?(transportID)
@@ -444,14 +518,45 @@ final class SessionCoordinator: ObservableObject {
         var transcript = Data("VeilLink/Transcript/v4".utf8)
         for hello in ordered { transcript.append(Data("|\(hello.protocolVersion)|\(hello.identityID)|".utf8)); transcript.append(hello.identityPublicKey); transcript.append(hello.agreementPublicKey); transcript.append(hello.nonce) }
         let keys = try CryptoEngine.deriveSessionKeys(localPrivateKey: context.localEphemeral, remotePublicKey: remote.agreementPublicKey, transcript: transcript, localIdentityID: context.localHello.identityID, remoteIdentityID: remote.identityID)
-        context.remoteHello = remote; context.keys = keys; context.replayWindow = ReplayWindow(); context.nextSendSequence = 1; sessions[transportID] = context; peerTransport[remote.identityID] = transportID
+        context.remoteHello = remote
+        context.keys = keys
+        context.replayWindow = ReplayWindow()
+        context.nextSendSequence = 1
+        sessions[transportID] = context
         cancelHandshakeTimeout(for: transportID)
+
         let trusted = database.trustedContact(localIdentityID: context.localHello.identityID, identityID: remote.identityID)
+        if transportKinds[transportID] != .ble, trusted?.publicKey != remote.identityPublicKey {
+            // LAN Turbo and Internet Relay are upgrade paths for identities already trusted through
+            // the proximity flow. Neither a shared Wi-Fi nor a public relay may create first trust.
+            let rejectedKind = transportKinds[transportID] == .internet ? "Internet Relay" : "LAN Turbo"
+            sessions.removeValue(forKey: transportID)
+            packetAbuseLimiter.reset(transportID)
+            transportKinds.removeValue(forKey: transportID)
+            recordSecurityEvent("已忽略未通过近距配对的 \(rejectedKind) 身份")
+            transportDisconnect?(transportID)
+            return
+        }
+
+        peerTransports[remote.identityID, default: []].insert(transportID)
+        refreshPreferredTransport(for: remote.identityID)
         let trustState: NearbyPeer.TrustState = trusted?.publicKey == remote.identityPublicKey ? .trusted : .awaitingConfirmation
-        let peer = NearbyPeer(id: remote.identityID, transportID: transportID, displayName: remote.displayName, rssi: nearbyPeers.first(where: { $0.transportID == transportID })?.rssi ?? -100, trustState: trustState, pairingCode: trustState == .trusted ? nil : CryptoEngine.pairingCode(key: keys.rootKey, transcript: transcript), lastSeen: Date())
-        nearbyPeers.removeAll { $0.transportID == transportID || $0.id == remote.identityID }; nearbyPeers.append(peer)
+        let previousPeer = nearbyPeers.first(where: { $0.id == remote.identityID })
+        let displayedTransportID = peerTransport[remote.identityID] ?? transportID
+        let peer = NearbyPeer(
+            id: remote.identityID,
+            transportID: displayedTransportID,
+            displayName: remote.displayName,
+            rssi: previousPeer?.rssi ?? nearbyPeers.first(where: { $0.transportID == transportID })?.rssi ?? -100,
+            trustState: trustState,
+            pairingCode: trustState == .trusted ? nil : CryptoEngine.pairingCode(key: keys.rootKey, transcript: transcript),
+            lastSeen: Date()
+        )
+        nearbyPeers.removeAll { $0.transportID == transportID || $0.id == remote.identityID }
+        nearbyPeers.append(peer)
         if trustState == .trusted {
             try? database.wakeOutboundForPeer(targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
+            try? sendRelayProvisionIfNeeded(peerIdentityID: remote.identityID, transportID: transportID)
             flushOutbound(for: remote.identityID)
         }
     }
@@ -819,8 +924,19 @@ final class SessionCoordinator: ObservableObject {
             self.handshakeTimeoutTasks.removeValue(forKey: transportID)
             self.sessions.removeValue(forKey: transportID)
             self.packetAbuseLimiter.reset(transportID)
-            self.peerTransport = self.peerTransport.filter { $0.value != transportID }
-            self.recordSecurityEvent("安全握手持续丢包，已在现有链路上重新发起")
+            _ = self.removeTransportFromPeerBindings(transportID)
+
+            if self.transportKinds[transportID] == .lan || self.transportKinds[transportID] == .internet {
+                let isInternet = self.transportKinds[transportID] == .internet
+                self.transportKinds.removeValue(forKey: transportID)
+                self.nearbyPeers.removeAll { $0.transportID == transportID }
+                self.recordSecurityEvent(isInternet ? "Internet Relay 安全握手超时，已关闭该远程链路" : "LAN Turbo 安全握手超时，已关闭该高速链路")
+                self.lastError = isInternet ? "远程中继握手超时；本地链路仍可继续使用。" : "LAN Turbo 握手超时，消息将继续使用可用的近距链路。"
+                self.transportDisconnect?(transportID)
+                return
+            }
+
+            self.recordSecurityEvent("安全握手持续丢包，已在现有 BLE 链路上重新发起")
             self.lastError = "蓝牙链路较弱，正在重新建立安全会话。"
             // The physical BLE link may still be alive (especially when this device is the
             // peripheral). Re-seed the secure handshake in place instead of permanently dropping
@@ -845,6 +961,7 @@ final class SessionCoordinator: ObservableObject {
 
     private func handleInvalidPacket(transportID: UUID, reason: String) {
         let wasAuthenticated = sessions[transportID]?.remoteHello != nil
+        let kind = transportKinds[transportID] ?? .ble
         let decision = packetAbuseLimiter.recordInvalidPacket(for: transportID)
 
         if decision.isFirstInWindow {
@@ -853,16 +970,13 @@ final class SessionCoordinator: ObservableObject {
         }
         guard decision.shouldDisconnect else { return }
 
-        packetAbuseLimiter.reset(transportID)
-        cancelHandshakeTimeout(for: transportID)
-        if let remoteIdentityID = sessions[transportID]?.remoteHello?.identityID,
-           peerTransport[remoteIdentityID] == transportID {
-            peerTransport.removeValue(forKey: remoteIdentityID)
+        disconnected(transportID: transportID)
+        switch kind {
+        case .lan: recordSecurityEvent("持续无效数据达到阈值，已断开该 LAN Turbo 链路")
+        case .internet: recordSecurityEvent("持续无效数据达到阈值，已断开该 Internet Relay 链路")
+        case .ble: recordSecurityEvent("持续无效数据达到阈值，已断开该 BLE 链路")
         }
-        sessions.removeValue(forKey: transportID)
-        nearbyPeers.removeAll { $0.transportID == transportID }
-        recordSecurityEvent("持续无效数据达到阈值，已断开该 BLE 链路")
-        if wasAuthenticated { lastError = "检测到连续无效数据，已安全断开该设备。" }
+        if wasAuthenticated { lastError = "检测到连续无效数据，已安全断开该设备链路。" }
         transportDisconnect?(transportID)
     }
 
@@ -909,6 +1023,88 @@ final class SessionCoordinator: ObservableObject {
         }
     }
 
+
+    private func sendRelayProvisionIfNeeded(peerIdentityID: String, transportID: UUID) throws {
+        guard var context = sessions[transportID], let remote = context.remoteHello, let keys = context.keys,
+              context.localHello.identityID < remote.identityID,
+              remote.identityID == peerIdentityID,
+              let secret = relayProvisionSecretProvider?(peerIdentityID), secret.count == 32 else { return }
+        let packet = VeilRelayProvisionPacket(
+            version: 1, ownerIdentityID: context.localHello.identityID,
+            peerIdentityID: remote.identityID, secret: secret, createdAt: Date()
+        )
+        let encrypted = try CryptoEngine.encrypt(
+            try encoder.encode(packet), key: keys.sendKey, messageID: UUID().uuidString,
+            sequence: context.nextSendSequence, context: "relay-provision"
+        )
+        context.nextSendSequence += 1
+        sessions[transportID] = context
+        let envelope = try WireCodec.encodeEnvelope(
+            version: UInt8(WireProtocol.version), kind: .relayProvision,
+            payload: try WireCodec.encodeEncryptedPayload(encrypted)
+        )
+        guard envelope.count <= WireProtocol.maximumEnvelopeBytes else { throw CryptoEngineError.invalidCiphertext }
+        _ = transportSend?(transportID, envelope, .control)
+    }
+
+    private func handleRelayProvision(transportID: UUID, data: Data) throws {
+        guard var context = sessions[transportID], let remote = context.remoteHello, let keys = context.keys,
+              database.trustedContact(localIdentityID: context.localHello.identityID, identityID: remote.identityID)?.publicKey == remote.identityPublicKey else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        let payload = try WireCodec.decodeEncryptedPayload(data)
+        guard context.replayWindow.isPotentiallyFresh(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+        let clear = try CryptoEngine.decrypt(payload, key: keys.receiveKey, context: "relay-provision")
+        let packet = try decoder.decode(VeilRelayProvisionPacket.self, from: clear)
+        guard packet.version == 1, packet.secret.count == 32,
+              packet.ownerIdentityID == min(context.localHello.identityID, remote.identityID),
+              packet.ownerIdentityID == remote.identityID,
+              packet.peerIdentityID == max(context.localHello.identityID, remote.identityID),
+              context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+        sessions[transportID] = context
+        onRelayProvisionReceived?(remote.identityID, packet)
+    }
+
+    @discardableResult
+    func sendMeshPayload(_ clear: Data, to transportID: UUID) -> TransportSendResult {
+        guard !clear.isEmpty, clear.count <= VeilMeshCodec.maximumEncodedBytes,
+              var context = sessions[transportID],
+              let remote = context.remoteHello, let keys = context.keys,
+              database.trustedContact(localIdentityID: context.localHello.identityID, identityID: remote.identityID)?.publicKey == remote.identityPublicKey else {
+            return .temporarilyUnavailable
+        }
+        do {
+            let encrypted = try CryptoEngine.encrypt(
+                clear, key: keys.sendKey, messageID: UUID().uuidString,
+                sequence: context.nextSendSequence, context: "mesh-overlay"
+            )
+            context.nextSendSequence += 1
+            let envelope = try WireCodec.encodeEnvelope(
+                version: UInt8(WireProtocol.version), kind: .meshOverlay,
+                payload: try WireCodec.encodeEncryptedPayload(encrypted)
+            )
+            guard envelope.count <= WireProtocol.maximumEnvelopeBytes else { return .unsupportedLink }
+            sessions[transportID] = context
+            return transportSend?(transportID, envelope, .bulk) ?? .temporarilyUnavailable
+        } catch {
+            return .temporarilyUnavailable
+        }
+    }
+
+    private func handleMeshOverlay(transportID: UUID, data: Data) throws {
+        guard var context = sessions[transportID], let remote = context.remoteHello, let keys = context.keys,
+              database.trustedContact(localIdentityID: context.localHello.identityID, identityID: remote.identityID)?.publicKey == remote.identityPublicKey else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        let payload = try WireCodec.decodeEncryptedPayload(data)
+        guard context.replayWindow.isPotentiallyFresh(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+        let clear = try CryptoEngine.decrypt(payload, key: keys.receiveKey, context: "mesh-overlay")
+        guard clear.count <= VeilMeshCodec.maximumEncodedBytes, context.replayWindow.accept(payload.sequence) else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        sessions[transportID] = context
+        onMeshPayload?(transportID, clear)
+    }
 
     func sendPTTControl(_ packet: VeilPTTControlPacket, to peerIdentityIDs: [String]) {
         guard let clear = try? VeilPTTCodec.encodeControl(packet) else { return }
@@ -1011,6 +1207,52 @@ final class SessionCoordinator: ObservableObject {
         }
     }
 
-    private func pruneNearbyPeers() { let cutoff = Date().addingTimeInterval(-10 * 60); nearbyPeers.removeAll { $0.trustState == .discovered && $0.lastSeen < cutoff } }
+    private func transportRank(_ transportID: UUID) -> Int {
+        switch transportKinds[transportID] ?? .ble {
+        case .internet: return 5
+        case .ble: return 10
+        case .lan: return 20
+        }
+    }
+
+    private func isSecureSessionTransport(_ transportID: UUID, for peerIdentityID: String) -> Bool {
+        guard let context = sessions[transportID],
+              context.remoteHello?.identityID == peerIdentityID,
+              context.keys != nil else { return false }
+        return true
+    }
+
+    private func refreshPreferredTransport(for peerIdentityID: String) {
+        let candidates = (peerTransports[peerIdentityID] ?? []).filter {
+            isSecureSessionTransport($0, for: peerIdentityID)
+        }
+        let preferred = candidates.sorted { lhs, rhs in
+            let lhsRank = transportRank(lhs)
+            let rhsRank = transportRank(rhs)
+            if lhsRank != rhsRank { return lhsRank > rhsRank }
+            return lhs.uuidString < rhs.uuidString
+        }.first
+        if let preferred { peerTransport[peerIdentityID] = preferred }
+        else { peerTransport.removeValue(forKey: peerIdentityID) }
+    }
+
+    private func removeTransportFromPeerBindings(_ transportID: UUID) -> [String] {
+        var affected: [String] = []
+        for peerIdentityID in Array(peerTransports.keys) {
+            guard var transportIDs = peerTransports[peerIdentityID], transportIDs.remove(transportID) != nil else { continue }
+            affected.append(peerIdentityID)
+            if transportIDs.isEmpty { peerTransports.removeValue(forKey: peerIdentityID) }
+            else { peerTransports[peerIdentityID] = transportIDs }
+        }
+        peerTransport = peerTransport.filter { $0.value != transportID }
+        return affected
+    }
+
+    private func pruneNearbyPeers() {
+        let cutoff = Date().addingTimeInterval(-10 * 60)
+        let expired = Set(nearbyPeers.filter { $0.trustState == .discovered && $0.lastSeen < cutoff }.map(\.transportID))
+        nearbyPeers.removeAll { expired.contains($0.transportID) }
+        for id in expired { lastNearbyPeerPublishAt.removeValue(forKey: id) }
+    }
     private func recordSecurityEvent(_ text: String) { securityEvents.insert("\(text) · \(Date().formatted())", at: 0); if securityEvents.count > 100 { securityEvents.removeLast(securityEvents.count - 100) } }
 }

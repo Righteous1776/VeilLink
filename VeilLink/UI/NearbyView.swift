@@ -3,12 +3,14 @@ import SwiftUI
 struct NearbyView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var bluetooth: BLETransport
+    @ObservedObject var lanTurbo: LANTransport
     @ObservedObject var sessions: SessionCoordinator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: AppModel) {
         self.model = model
         bluetooth = model.bluetooth
+        lanTurbo = model.lanTurbo
         sessions = model.sessions
     }
 
@@ -35,6 +37,37 @@ struct NearbyView: View {
                     Spacer(minLength: 0)
                 }
                 .veilCard(emphasized: bluetooth.isRunning)
+                .veilSpatialPress(maximumTilt: 3.2, cornerRadius: 18, highlightColor: VeilTheme.goldBright)
+                .veilDynamicGlow(active: bluetooth.isRunning, emphasized: true)
+                .veilStaggeredEntrance(index: 0)
+
+                HStack(spacing: 12) {
+                    VeilIconDisc(systemName: "wifi", size: 38, highlighted: lanTurbo.connectedPeerCount > 0)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("LAN TURBO")
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .tracking(1.0)
+                            .foregroundColor(VeilTheme.mutedGold)
+                        Text(lanTurbo.statusText)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(VeilTheme.text)
+                        Text("同一 Wi-Fi / 热点直连 · E2EE 保持不变")
+                            .font(.caption2)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("\(lanTurbo.connectedPeerCount) LINK")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(lanTurbo.connectedPeerCount > 0 ? VeilTheme.success : VeilTheme.tertiaryText)
+                        Text("\(lanTurbo.discoveredServiceCount) FOUND")
+                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                            .foregroundColor(VeilTheme.tertiaryText)
+                    }
+                }
+                .veilCard(emphasized: lanTurbo.connectedPeerCount > 0)
+                .veilSpatialPress(maximumTilt: 2.4, cornerRadius: 18, highlightColor: VeilTheme.goldBright)
+                .veilStaggeredEntrance(index: 1)
 
                 if sessions.nearbyPeers.isEmpty {
                     VStack(spacing: 13) {
@@ -54,9 +87,13 @@ struct NearbyView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 54)
+                    .veilStaggeredEntrance(index: 2)
                 } else {
                     ForEach(sessions.nearbyPeers) { peer in
-                        NearbyPeerCard(model: model, bluetooth: bluetooth, peer: peer)
+                        NearbyPeerCard(model: model, bluetooth: bluetooth, lanTurbo: lanTurbo, peer: peer)
+                            .veilStaggeredEntrance(
+                                index: (sessions.nearbyPeers.firstIndex(where: { $0.id == peer.id }) ?? 0) + 2
+                            )
                     }
                 }
             }
@@ -166,7 +203,12 @@ private struct RadarStatusView: View {
 private struct NearbyPeerCard: View {
     @ObservedObject var model: AppModel
     @ObservedObject var bluetooth: BLETransport
+    @ObservedObject var lanTurbo: LANTransport
     let peer: NearbyPeer
+
+    private var lanSnapshot: LANTurboLinkSnapshot? {
+        lanTurbo.linkSnapshots[peer.transportID]
+    }
 
     private var linkSnapshot: BLEPeerLinkSnapshot? {
         bluetooth.linkSnapshots[peer.transportID] ?? bluetooth.linkSnapshot(for: peer.transportID)
@@ -200,6 +242,30 @@ private struct NearbyPeerCard: View {
                         .fill(trustColor.opacity(0.52))
                         .frame(width: 28, height: 1)
                 }
+            }
+
+            if let lanSnapshot, lanSnapshot.isReady {
+                HStack(spacing: 8) {
+                    Image(systemName: "wifi")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(VeilTheme.success)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("LAN Turbo 高速链路")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(VeilTheme.text)
+                        Text("同一局域网 · 待发 \(lanSnapshot.pendingFrames) 帧")
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundColor(VeilTheme.tertiaryText)
+                    }
+                    Spacer()
+                    Text("FAST")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(VeilTheme.goldBright)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(VeilTheme.success.opacity(0.045))
+                .clipShape(VeilPanelShape(cut: 7, radius: 5))
             }
 
             if let linkSnapshot {
@@ -305,6 +371,7 @@ private struct NearbyPeerCard: View {
     }
 
     private var signalDescription: String {
+        if lanSnapshot?.isReady == true { return "LAN Turbo · 同一局域网" }
         switch peer.rssi {
         case -55...0: return "信号很强 · \(peer.rssi) dBm"
         case -72..<(-55): return "信号良好 · \(peer.rssi) dBm"

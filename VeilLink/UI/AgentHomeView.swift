@@ -13,9 +13,13 @@ struct AgentHomeView: View {
     var body: some View {
         VStack(spacing: 10) {
             AgentStatusView(coordinator: model.agent)
+                .veilStaggeredEntrance(index: 0)
             AgentControlSummaryView(model: model, controls: controls)
+                .veilStaggeredEntrance(index: 1)
             AgentQuickToolsView(model: model)
+                .veilStaggeredEntrance(index: 2)
             AgentChatView(coordinator: model.agent)
+                .veilStaggeredEntrance(index: 3)
         }
         .padding(.horizontal, 12)
         .padding(.top, 10)
@@ -125,6 +129,7 @@ private struct AgentControlSummaryView: View {
             .overlay(VeilPanelShape(cut: 10, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
         }
         .buttonStyle(.plain)
+        .veilSpatialPress(maximumTilt: 3.8, cornerRadius: 10, highlightColor: VeilTheme.goldBright)
     }
 }
 
@@ -176,6 +181,7 @@ private struct AgentQuickToolsView: View {
             .overlay(Capsule().stroke(VeilTheme.hairline, lineWidth: 1))
         }
         .buttonStyle(.plain)
+        .veilSpatialPress(maximumTilt: 3.0, cornerRadius: 15, highlightColor: VeilTheme.goldBright)
     }
 }
 

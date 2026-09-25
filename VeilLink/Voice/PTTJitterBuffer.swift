@@ -33,21 +33,21 @@ struct VeilRealtimeAudioTuning: Equatable, Sendable {
         let legacy = label.contains("LEGACY") || label.contains("SE1")
         if legacy {
             return VeilRealtimeAudioTuning(
-                targetJitterFrames: 3,
-                maximumJitterFrames: 8,
+                targetJitterFrames: 2,
+                maximumJitterFrames: 6,
                 missingFramePatienceTicks: 1,
-                preferredIOBufferDuration: 0.04,
-                captureBufferFrames: 1_920,
+                preferredIOBufferDuration: 0.02,
+                captureBufferFrames: 960,
                 meterPublishInterval: 0.12,
-                playbackProgressInterval: 0.16
+                playbackProgressInterval: 0.12
             )
         }
         return VeilRealtimeAudioTuning(
-            targetJitterFrames: 2,
-            maximumJitterFrames: 10,
+            targetJitterFrames: 1,
+            maximumJitterFrames: 6,
             missingFramePatienceTicks: 1,
-            preferredIOBufferDuration: 0.02,
-            captureBufferFrames: 960,
+            preferredIOBufferDuration: 0.012,
+            captureBufferFrames: 480,
             meterPublishInterval: 0.08,
             playbackProgressInterval: 0.08
         )
@@ -75,7 +75,7 @@ struct VeilPTTJitterBuffer {
     private(set) var concealedFrames = 0
     private(set) var overflowDrops = 0
 
-    init(frameBytes: Int = 640, targetDepth: Int = 2, maximumBufferedFrames: Int = 10, missingFramePatienceTicks: Int = 1) {
+    init(frameBytes: Int = 320, targetDepth: Int = 2, maximumBufferedFrames: Int = 8, missingFramePatienceTicks: Int = 1) {
         self.frameBytes = max(1, frameBytes)
         self.targetDepth = max(1, targetDepth)
         self.maximumBufferedFrames = max(self.targetDepth, maximumBufferedFrames)

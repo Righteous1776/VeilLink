@@ -30,16 +30,17 @@ struct VeilInstrumentPlate<S: Shape>: View {
             .overlay(shape.stroke(Color.white.opacity(VeilAppearanceController.shared.systemIsDark ? 0.07 : 0.55), lineWidth: 0.8))
             .overlay(shape.stroke(Color.black.opacity(0.24), lineWidth: emphasized ? 1.3 : 0.7).padding(1))
             .shadow(
-                color: Color.black.opacity(VeilRenderProfile.allowsExpensiveVisualEffects ? (VeilAppearanceController.shared.systemIsDark ? 0.46 : 0.26) : 0),
-                radius: emphasized ? 12 : 7,
+                color: Color.black.opacity(VeilMotionPolicy.allowsFullSpatialEffects ? (VeilAppearanceController.shared.systemIsDark ? 0.46 : 0.26) : 0),
+                radius: VeilMotionPolicy.allowsFullSpatialEffects ? (emphasized ? 12 : 7) : 0,
                 x: 0,
-                y: emphasized ? 8 : 4
+                y: VeilMotionPolicy.allowsFullSpatialEffects ? (emphasized ? 8 : 4) : 0
             )
     }
 }
 
 struct VeilPhysicalButtonStyle: ButtonStyle {
     var accent = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         let palette = VeilAppearanceController.shared.palette
@@ -59,8 +60,13 @@ struct VeilPhysicalButtonStyle: ButtonStyle {
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.black.opacity(0.32), lineWidth: 1).padding(2))
             .offset(y: configuration.isPressed ? 2.5 : 0)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .shadow(color: Color.black.opacity(configuration.isPressed ? 0.14 : 0.44), radius: configuration.isPressed ? 2 : 6, x: 0, y: configuration.isPressed ? 1 : 5)
-            .animation(.interactiveSpring(response: 0.20, dampingFraction: 0.77), value: configuration.isPressed)
+            .shadow(
+                color: Color.black.opacity(VeilMotionPolicy.allowsFullSpatialEffects ? (configuration.isPressed ? 0.14 : 0.44) : 0),
+                radius: VeilMotionPolicy.allowsFullSpatialEffects ? (configuration.isPressed ? 2 : 6) : 0,
+                x: 0,
+                y: VeilMotionPolicy.allowsFullSpatialEffects ? (configuration.isPressed ? 1 : 5) : 0
+            )
+            .animation(reduceMotion ? nil : VeilMotionPolicy.spring, value: configuration.isPressed)
     }
 }
 
@@ -74,7 +80,10 @@ struct VeilIndicatorLamp: View {
             .fill(active ? c : Color.black.opacity(0.30))
             .frame(width: 8, height: 8)
             .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 0.6))
-            .shadow(color: active ? c.opacity(0.75) : .clear, radius: 5)
+            .shadow(
+                color: active && VeilMotionPolicy.allowsFullSpatialEffects ? c.opacity(0.75) : .clear,
+                radius: VeilMotionPolicy.allowsFullSpatialEffects ? 5 : 0
+            )
     }
 }
 
@@ -143,7 +152,12 @@ struct VeilInstrumentKnob: View {
                 .offset(y: -21)
                 .rotationEffect(.degrees(-135 + value * 270))
         }
-        .shadow(color: Color.black.opacity(0.45), radius: 8, x: 0, y: 6)
+        .shadow(
+            color: Color.black.opacity(VeilMotionPolicy.allowsFullSpatialEffects ? 0.45 : 0),
+            radius: VeilMotionPolicy.allowsFullSpatialEffects ? 8 : 0,
+            x: 0,
+            y: VeilMotionPolicy.allowsFullSpatialEffects ? 6 : 0
+        )
         .accessibilityHidden(true)
     }
 }

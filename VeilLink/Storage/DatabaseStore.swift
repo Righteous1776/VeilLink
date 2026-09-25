@@ -585,8 +585,11 @@ final class DatabaseStore {
     }
 
     func beginInboundAttachment(messageID: String, byteCount: Int, mimeType: String, sha256: Data, chunkCount: Int) throws -> InboundAttachmentState {
-        guard byteCount > 0, byteCount <= MediaTransferPolicy.maximumImageBytes,
-              MediaTransferPolicy.supportsImageMIMEType(mimeType), sha256.count == 32,
+        let isVoice = VoiceMessageCodec.isVoiceMIMEType(mimeType)
+        let isImage = MediaTransferPolicy.supportsImageMIMEType(mimeType)
+        let maximumBytes = isVoice ? VoiceMessageCodec.maximumBytes : MediaTransferPolicy.maximumImageBytes
+        guard byteCount > 0, byteCount <= maximumBytes,
+              (isVoice || isImage), sha256.count == 32,
               chunkCount > 0, chunkCount <= Int(UInt16.max) else {
             throw DatabaseError.statementFailed("收到的附件 Manifest 无效。")
         }

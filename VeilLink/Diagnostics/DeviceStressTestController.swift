@@ -181,6 +181,7 @@ final class DeviceStressTestController: ObservableObject {
     private var baselineSection: SidebarSection = .chats
     private var baselineConversation: ConversationSummary?
     private var baselineBLERunning = false
+    private var baselineWantedLinkIDs: Set<UUID> = []
     private var recoveredCheckpoint = false
 
     private let store = DiagnosticLogStore.shared
@@ -215,6 +216,7 @@ final class DeviceStressTestController: ObservableObject {
         baselineSection = model.selectedSection
         baselineConversation = model.selectedConversation
         baselineBLERunning = model.bluetooth.isRunning
+        baselineWantedLinkIDs = Set(model.bluetooth.linkSnapshots.values.filter(\.isWanted).map(\.id))
         sessionID = String(UUID().uuidString.prefix(12)).uppercased()
         currentCycle = 0
         currentStep = "preflight"
@@ -385,8 +387,8 @@ final class DeviceStressTestController: ObservableObject {
         if configuration.exerciseBLEChurn {
             await step("ble.churn.flip", cycle: cycle, configuration: configuration, delayMultiplier: 2.0) {
                 if model.bluetooth.isRunning {
-                    model.bluetooth.stop()
-                    return .passed("transport stopped")
+                    model.bluetooth.stop(preserveConnectionIntent: true)
+                    return .passed("transport stopped with connection intent preserved")
                 } else {
                     model.bluetooth.start()
                     return .passed("transport started")
@@ -397,6 +399,14 @@ final class DeviceStressTestController: ObservableObject {
                     model.bluetooth.start()
                 } else if !self.baselineBLERunning, model.bluetooth.isRunning {
                     model.bluetooth.stop()
+                }
+                if self.baselineBLERunning {
+                    let restoredWanted = Set(model.bluetooth.linkSnapshots.values.filter(\.isWanted).map(\.id))
+                    guard self.baselineWantedLinkIDs.isSubset(of: restoredWanted) else {
+                        throw NSError(domain: "VeilLinkStress", code: 51, userInfo: [
+                            NSLocalizedDescriptionKey: "BLE churn 丢失了用户连接意图。"
+                        ])
+                    }
                 }
                 return .passed("transport baseline restored")
             }

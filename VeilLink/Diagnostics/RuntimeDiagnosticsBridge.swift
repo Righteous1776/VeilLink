@@ -90,12 +90,14 @@ final class RuntimeDiagnosticsBridge {
             .store(in: &cancellables)
 
         model.bluetooth.$linkSnapshots
+            .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
             .sink { snapshots in
                 Task { @MainActor in self.recordLinkSnapshots(snapshots) }
             }
             .store(in: &cancellables)
 
         model.sessions.$nearbyPeers
+            .throttle(for: .milliseconds(750), scheduler: RunLoop.main, latest: true)
             .sink { peers in
                 Task { @MainActor in
                     self.store.log(

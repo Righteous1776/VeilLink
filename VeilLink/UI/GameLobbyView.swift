@@ -11,9 +11,9 @@ struct GameLobbyView: View {
     var body: some View {
         VeilStableScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                hero
-                singlePlayerSection
-                nearbySection
+                hero.veilStaggeredEntrance(index: 0)
+                singlePlayerSection.veilStaggeredEntrance(index: 1)
+                nearbySection.veilStaggeredEntrance(index: 2)
             }
         }
         .background(VeilAmbientBackground())
@@ -55,6 +55,8 @@ struct GameLobbyView: View {
             }
         }
         .veilCard(emphasized: true)
+        .veilSpatialPress(maximumTilt: 3.8, cornerRadius: 20, highlightColor: VeilTheme.goldBright)
+        .veilDynamicGlow(active: true, emphasized: true)
     }
 
     private var singlePlayerSection: some View {
@@ -62,13 +64,19 @@ struct GameLobbyView: View {
             sectionTitle("单机 · 本地电脑", subtitle: "传统游戏搜索与规则算法，不依赖神经模型")
             NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
                 gameRow(.gomoku, detail: "你执黑先手 · 威胁识别 + 候选搜索 + 规则校验", enabled: true)
-            }.buttonStyle(VeilPressStyle())
+            }
+            .buttonStyle(VeilPressStyle())
+            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
                 gameRow(.xiangqi, detail: "你执红先手 · Alpha-Beta + 局面评估 + 规则校验", enabled: true)
-            }.buttonStyle(VeilPressStyle())
+            }
+            .buttonStyle(VeilPressStyle())
+            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .ludo)) {
                 gameRow(.ludo, detail: "确定性骰子 · 规则评分 Bot 自动完成回合", enabled: true)
-            }.buttonStyle(VeilPressStyle())
+            }
+            .buttonStyle(VeilPressStyle())
+            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             gameRow(.tactical, detail: "TacticalBot 尚未完成 · 当前只开放附近真人对战", enabled: false)
         }
     }
@@ -113,6 +121,7 @@ struct GameLobbyView: View {
                         .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
                     }
                     .buttonStyle(VeilPressStyle())
+                    .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
                 }
             }
         }

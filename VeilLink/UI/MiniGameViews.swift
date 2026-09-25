@@ -277,6 +277,11 @@ struct MiniGameHubView: View {
 
     private func createGame(_ game: MiniGameKind) {
         guard creatingGame == nil else { return }
+        guard ensureRealtimeLink() else {
+            model.alertMessage = "对手安全链路尚未就绪。正在尝试恢复连接，请在链路就绪后再发起对局。"
+            model.haptics.warning()
+            return
+        }
         creatingGame = game
         let packet = MiniGamePacket(game: game, command: .invite)
         do {
@@ -289,6 +294,20 @@ struct MiniGameHubView: View {
             model.haptics.error()
         }
         creatingGame = nil
+    }
+
+    private func ensureRealtimeLink() -> Bool {
+        if model.sessions.hasSecureSession(for: conversation.peerIdentityID) { return true }
+        if let transportID = model.sessions.transportID(for: conversation.peerIdentityID) {
+            if model.bluetooth.linkSnapshots[transportID]?.isConnected == true {
+                model.sessions.recoverSecureSession(for: conversation.peerIdentityID)
+            } else {
+                model.bluetooth.recover(transportID)
+            }
+        } else {
+            model.bluetooth.refreshLinks()
+        }
+        return false
     }
 
     private func reload() {
@@ -893,6 +912,11 @@ struct MiniGameSessionView: View {
 
     private func send(command: MiniGameCommand, turn: Int, move: MiniGameMove?) {
         guard !isSending, let session else { return }
+        guard ensureRealtimeLink() else {
+            model.alertMessage = "对手安全链路已断开。正在尝试恢复连接；本次棋步没有假装发送。"
+            model.haptics.warning()
+            return
+        }
         isSending = true
         let packet = MiniGamePacket(sessionID: session.id, game: session.game, command: command, turn: turn, move: move)
         do {
@@ -909,6 +933,11 @@ struct MiniGameSessionView: View {
 
     private func rematch(_ game: MiniGameKind) {
         guard !isSending else { return }
+        guard ensureRealtimeLink() else {
+            model.alertMessage = "对手安全链路尚未就绪。连接恢复后再发起下一局。"
+            model.haptics.warning()
+            return
+        }
         isSending = true
         let packet = MiniGamePacket(game: game, command: .invite)
         do {
@@ -920,6 +949,20 @@ struct MiniGameSessionView: View {
             model.haptics.error()
         }
         isSending = false
+    }
+
+    private func ensureRealtimeLink() -> Bool {
+        if model.sessions.hasSecureSession(for: conversation.peerIdentityID) { return true }
+        if let transportID = model.sessions.transportID(for: conversation.peerIdentityID) {
+            if model.bluetooth.linkSnapshots[transportID]?.isConnected == true {
+                model.sessions.recoverSecureSession(for: conversation.peerIdentityID)
+            } else {
+                model.bluetooth.recover(transportID)
+            }
+        } else {
+            model.bluetooth.refreshLinks()
+        }
+        return false
     }
 
     private func reload(notify: Bool) {

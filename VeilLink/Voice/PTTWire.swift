@@ -8,7 +8,7 @@ struct VeilPTTControlPacket: Codable, Equatable, Sendable {
     let sampleRate: Int
     let frameDurationMilliseconds: Int
 
-    init(talkID: String, kind: VeilPTTControlKind, sampleRate: Int = 8_000, frameDurationMilliseconds: Int = 80) {
+    init(talkID: String, kind: VeilPTTControlKind, sampleRate: Int = 8_000, frameDurationMilliseconds: Int = 40) {
         self.talkID = talkID
         self.kind = kind
         self.sampleRate = sampleRate

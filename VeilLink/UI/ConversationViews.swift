@@ -131,7 +131,15 @@ struct ConversationListView: View {
         }
         .navigationTitle("对话")
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                NavigationLink(destination: VeilCommunityHomeView(model: model)) {
+                    Image(systemName: "person.3.sequence.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(VeilPressStyle())
+                .accessibilityLabel("打开群组与频道")
+
                 NavigationLink(destination: VeilToolCenterView(model: model)) {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .bold))
@@ -323,7 +331,11 @@ struct ChatView: View {
                             .contextMenu {
                                 if message.attachment == nil {
                                     Button {
-                                        UIPasteboard.general.string = ReplyTextCodec.decode(message.body)?.reply ?? message.body
+                                        let copyText = MiniGameCodec.previewText(for: message.body)
+                                            ?? VoiceMessageCodec.decode(message.body).map { VoiceMessageCodec.preview(durationSeconds: $0.durationSeconds) }
+                                            ?? ReplyTextCodec.decode(message.body)?.reply
+                                            ?? message.body
+                                        UIPasteboard.general.string = copyText
                                         model.haptics.selection()
                                     } label: {
                                         Label("复制", systemImage: "doc.on.doc")
@@ -807,6 +819,33 @@ private struct MessageBubble: View {
                 } else if message.body == "[图片]", let progress = message.transferProgress {
                     TransferShardView(image: nil, progress: progress, mode: .receiving)
                         .frame(width: 190)
+                } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
+                    Text(gamePreview)
+                        .font(.body.weight(.medium))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                        .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
+                        .clipShape(VeilPanelShape(cut: 11, radius: 7))
+                } else if let voiceMetadata = VoiceMessageCodec.decode(message.body) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("[语音] \(voiceMetadata.compactDuration)")
+                            .font(.body.weight(.medium))
+                        if let progress = message.transferProgress, progress < 1 {
+                            Text("正在接收 · \(Int(progress * 100))%")
+                                .font(.caption2)
+                                .foregroundColor(VeilTheme.secondaryText)
+                        } else {
+                            Text(message.isOutgoing ? "等待发送" : "等待音频数据")
+                                .font(.caption2)
+                                .foregroundColor(VeilTheme.secondaryText)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                    .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
+                    .clipShape(VeilPanelShape(cut: 11, radius: 7))
                 } else if let reply = ReplyTextCodec.decode(message.body) {
                     VStack(alignment: .leading, spacing: 7) {
                         HStack(spacing: 7) {
