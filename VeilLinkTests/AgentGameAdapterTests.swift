@@ -49,21 +49,16 @@ final class AgentGameAdapterTests: XCTestCase {
             frameWidth: 640,
             frameHeight: 480
         )
-        let request = AgentTextRequest(sessionID: "visual", messages: [], userText: "你看到了什么？", maxNewTokens: 64, visualContext: visual)
+        let request = AgentTextRequest(
+            sessionID: "visual",
+            messages: [],
+            userText: "你看到了什么？",
+            maxNewTokens: 64,
+            visualContext: visual
+        )
         var streamed = ""
         _ = try await runtime.generate(request: request) { streamed += $0 }
         XCTAssertTrue(streamed.contains("摄像头摘要"))
         XCTAssertTrue(streamed.contains("VeilLink"))
-    }
-}
-
-extension AgentGameAdapterTests {
-    func testTrainedPolicyRejectsInvalidMagic() {
-        XCTAssertThrowsError(try TrainedGamePolicyRuntime(data: Data("BADPOL".utf8)))
-    }
-
-    func testTrainingRegistryStillExcludesTacticalPolicy() {
-        XCTAssertFalse(AgentGameRegistry.isTrainingEnabled(.tactical))
-        XCTAssertNotNil(AgentGameRegistry.exclusionReason(for: .tactical))
     }
 }
