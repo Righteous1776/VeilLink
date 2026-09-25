@@ -62,9 +62,9 @@ def check_plist():
     info = RES / "Info.plist"
     with info.open("rb") as f:
         plist = plistlib.load(f)
-    if plist.get("CFBundleShortVersionString") != "0.10.8":
+    if plist.get("CFBundleShortVersionString") != "0.10.10":
         fail("unexpected CFBundleShortVersionString")
-    if plist.get("CFBundleVersion") != "50":
+    if plist.get("CFBundleVersion") != "52":
         fail("unexpected CFBundleVersion")
     modes = set(plist.get("UIBackgroundModes", []))
     if not {"bluetooth-central", "bluetooth-peripheral"} <= modes:
@@ -244,6 +244,7 @@ def main():
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-maintenance-r8.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-ui-theme-r9.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-voice-ptt-r10.py")], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-runtime-maintenance-r12.py")], cwd=ROOT)
     check_repo_hygiene()
     check_plist()
     check_appicon()

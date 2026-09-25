@@ -12,8 +12,8 @@ def read(rel):
     return p.read_text(encoding='utf-8')
 
 info=read('VeilLink/Resources/Info.plist')
-if not re.search(r'<key>CFBundleShortVersionString</key>\s*<string>0\.10\.7</string>',info): fail('version != 0.10.8')
-if not re.search(r'<key>CFBundleVersion</key>\s*<string>49</string>',info): fail('build != 49')
+if not re.search(r'<key>CFBundleShortVersionString</key>\s*<string>0\.10\.10</string>',info): fail('version != 0.10.10')
+if not re.search(r'<key>CFBundleVersion</key>\s*<string>52</string>',info): fail('build != 52')
 plane=read('VeilLink/Agent/Integration/VeilAppControlPlane.swift')
 for n in ['guard permissions.localMutationsEnabled else', 'guard permissions.diagnosticsExportEnabled else', 'case .setResourceFocus, .trimCaches, .refreshBLE']:
     if n not in plane: fail(f'control invariant missing: {n}')

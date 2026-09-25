@@ -11,8 +11,8 @@ import zipfile
 
 EXPECTED = {
     "bundle_id": "studio.zeo.veillink",
-    "version": "0.10.8",
-    "build": "50",
+    "version": "0.10.10",
+    "build": "52",
     "qwen_sha256": "da2572f16c06133561ce56accaa822216f2391ef4d37fba427801cd6736417d4",
     "tactical_map_sha256": "4bd450353ae993b0c8083b97ab5909c8260cd6984be6f6051db1967613edaaa5",
     "vfly_core_sha256": "cc8b71d824ecb7f20c821412b316262ecb4dd1faee148077c94825b5889d60de",

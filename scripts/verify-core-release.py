@@ -88,10 +88,10 @@ def verify_app(app):
     info = plistlib.loads((app / "Info.plist").read_bytes())
     if info.get("CFBundleIdentifier") != "studio.zeo.veillink":
         fail("bundle identifier mismatch")
-    if info.get("CFBundleShortVersionString") != "0.10.8":
-        fail("expected version 0.10.6")
-    if str(info.get("CFBundleVersion")) != "50":
-        fail("expected build 42")
+    if info.get("CFBundleShortVersionString") != "0.10.10":
+        fail("expected version 0.10.10")
+    if str(info.get("CFBundleVersion")) != "52":
+        fail("expected build 52")
 
     linked = subprocess.check_output(["otool", "-L", str(app / "VeilLink")], text=True)
     if "llama.framework" in linked:
@@ -107,8 +107,8 @@ def verify_app(app):
 
     return {
         "bundle_id": "studio.zeo.veillink",
-        "version": "0.10.6",
-        "build": "48",
+        "version": "0.10.10",
+        "build": "52",
         "payload_bytes": app_bytes,
         "payload_budget_bytes": MAX_APP_BYTES,
         "executable_sha256": sha256_file(app / "VeilLink"),
