@@ -403,7 +403,8 @@ final class VeilRemotePairingCoordinator: ObservableObject {
     private func pollOffer(_ offer: inout OfferContext, serverReceiptCutoff: Date? = nil) async {
         let packets = await pullAll(qr: offer.qr, direction: .toInitiator)
         for (region, stored) in packets {
-            defer { Task { @MainActor [weak self] in await self?.ack(stored.packetID, qr: offer.qr, region: region, direction: .toInitiator) } }
+            let acknowledgementQR = offer.qr
+            defer { Task { @MainActor [weak self] in await self?.ack(stored.packetID, qr: acknowledgementQR, region: region, direction: .toInitiator) } }
             do {
                 let packet = try VeilRemotePairCrypto.openRelayPacket(stored.body, qr: offer.qr, region: region, direction: .toInitiator)
                 guard remember(packet.logicalPacketID) else { continue }
@@ -514,7 +515,8 @@ final class VeilRemotePairingCoordinator: ObservableObject {
     private func pollResponse(_ response: inout ResponseContext) async {
         let packets = await pullAll(qr: response.qr, direction: .toResponder)
         for (region, stored) in packets {
-            defer { Task { @MainActor [weak self] in await self?.ack(stored.packetID, qr: response.qr, region: region, direction: .toResponder) } }
+            let acknowledgementQR = response.qr
+            defer { Task { @MainActor [weak self] in await self?.ack(stored.packetID, qr: acknowledgementQR, region: region, direction: .toResponder) } }
             do {
                 let packet = try VeilRemotePairCrypto.openRelayPacket(stored.body, qr: response.qr, region: region, direction: .toResponder)
                 guard remember(packet.logicalPacketID), packet.claimID == response.claimID else { continue }
