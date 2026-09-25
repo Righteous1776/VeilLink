@@ -197,6 +197,23 @@ final class SessionCoordinator: ObservableObject {
         return context.remoteHello != nil && context.keys != nil
     }
 
+    func recoverSecureSession(for peerIdentityID: String) {
+        guard let transportID = peerTransport[peerIdentityID] else {
+            lastError = "未找到可用于恢复安全会话的蓝牙链路。"
+            return
+        }
+        cancelHandshakeTimeout(for: transportID)
+        sessions.removeValue(forKey: transportID)
+        packetAbuseLimiter.reset(transportID)
+        do {
+            try sendHello(to: transportID)
+            scheduleHandshakeTimeout(for: transportID)
+            recordSecurityEvent("已重新发起安全会话握手")
+        } catch {
+            lastError = "安全会话恢复失败：\(error.localizedDescription)"
+        }
+    }
+
     func confirmPairing(peerID: String) {
         guard let index = nearbyPeers.firstIndex(where: { $0.id == peerID }), let context = sessions[nearbyPeers[index].transportID], let remote = context.remoteHello else { return }
         do {
