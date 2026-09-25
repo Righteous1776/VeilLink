@@ -442,13 +442,8 @@ final class DeviceStressTestController: ObservableObject {
             if configuration.exercisePresentations {
                 await presentationStep("ui.agent.diagnostics_sheet", open: .agentOpenDiagnostics, close: .agentCloseDiagnostics, cycle: cycle, configuration: configuration)
             }
-            await step("malecns.prepare", cycle: cycle, configuration: configuration, delayMultiplier: 1.5) {
-                model.maleCNS.prepareFromBundle()
-                return .passed("MaleCNS prepare requested: \(model.maleCNS.state.displayName)")
-            }
-            await step("malecns.trim", cycle: cycle, configuration: configuration) {
-                model.maleCNS.trim()
-                return .passed("MaleCNS transient compute state trimmed")
+            await step("malecns.core-isolation", cycle: cycle, configuration: configuration) {
+                return .passed("MaleCNS experimental runtime is intentionally excluded from Core")
             }
         }
 
