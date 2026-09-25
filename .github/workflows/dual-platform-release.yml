@@ -1,0 +1,108 @@
+name: VeilLink iOS-primary release
+
+on:
+  push:
+    branches: [main, r12-cumulative-validation]
+  workflow_dispatch:
+    inputs:
+      build_android:
+        description: 'Attempt Android APK after iOS IPA succeeds'
+        required: false
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      build_android:
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: veil-ios-primary-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Primary release path. Android never starts until the IPA path is fully successful.
+  ios-release:
+    uses: ./.github/workflows/core-release.yml
+
+  # Secondary/best-effort platform. Failure must not invalidate an already produced IPA.
+  android-release:
+    needs: ios-release
+    if: ${{ needs.ios-release.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.build_android) }}
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+      - name: Android environment
+        run: |
+          mkdir -p ci-artifacts/android
+          {
+            echo "HEAD=$(git rev-parse HEAD)"
+            java -version
+            gradle --version
+          } 2>&1 | tee ci-artifacts/android/environment.log
+      - name: Protocol and crypto unit tests
+        run: |
+          set -o pipefail
+          gradle -p android :protocol-core:testDebugUnitTest :app:testDebugUnitTest 2>&1 | tee ci-artifacts/android/tests.log
+      - name: Build debug APK
+        run: |
+          set -o pipefail
+          gradle -p android :app:assembleDebug 2>&1 | tee ci-artifacts/android/build-debug.log
+      - name: Build unsigned release APK
+        run: |
+          set -o pipefail
+          gradle -p android :app:assembleRelease 2>&1 | tee ci-artifacts/android/build-release.log
+      - name: Hash APKs
+        run: |
+          sha256sum android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/release/app-release-unsigned.apk | tee ci-artifacts/android/SHA256SUMS.txt
+      - name: Upload Android evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-Android-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-artifacts/android
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Upload APKs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-Android-APK-v0.10.10-b52
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+            ci-artifacts/android/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  # The repository release verdict is intentionally iOS-primary.
+  # Android status is informational/best-effort and must never revoke the IPA artifact.
+  ios-primary-gate:
+    needs: [ios-release, android-release]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require iOS only
+        env:
+          IOS: ${{ needs.ios-release.result }}
+          ANDROID: ${{ needs.android-release.result }}
+        run: |
+          echo "iOS=$IOS Android=$ANDROID"
+          test "$IOS" = success
+          if [ "$ANDROID" != success ]; then
+            echo "Android is optional/best-effort for this release; preserving successful iOS artifact."
+          fi

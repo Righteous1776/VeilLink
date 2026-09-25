@@ -1,0 +1,76 @@
+name: Publish VeilLink R13+ and start iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: veillink-r13plus-publisher
+  cancel-in-progress: false
+
+env:
+  TARGET_BRANCH: r12-cumulative-validation
+  EXPECTED_HEAD: 7d04c9a666b3eaef385dc02f41338c57dd8d369d
+  CARRIER_PATH: .github/workflows/VeilLink_R13Plus_MATERIALIZED_OVERLAY.zip
+  CARRIER_SHA256: f5665155c77af683484c1b0643acb4f8a9f673e385c02967ef2e4dbc90117a56
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out validation branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+          path: repo
+
+      - name: Check out publisher carrier
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          sparse-checkout: .github/workflows
+          path: publisher
+
+      - name: Verify baseline and materialize cumulative R13+
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C repo rev-parse HEAD)" = "${EXPECTED_HEAD}"
+          echo "${CARRIER_SHA256}  publisher/${CARRIER_PATH}" | sha256sum -c -
+          unzip -q -o "publisher/${CARRIER_PATH}" -d repo
+          test -z "$(find repo -name '*.rej' -print -quit)"
+          git -C repo diff --check
+          (
+            cd repo
+            python3 scripts/verify-runtime-maintenance-r12.py
+            python3 scripts/verify-core-source-isolation.py
+            python3 scripts/verify-voice-ptt-r10.py
+            python3 scripts/verify-voice-ptt-r11.py
+          )
+
+      - name: Commit cumulative R13+ source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd repo
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Materialize cumulative R13+ iOS-primary baseline"
+          git push origin "HEAD:${TARGET_BRANCH}"
+
+      - name: Start iOS-primary unsigned IPA build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/dual-platform-release.yml/dispatches" \
+            -f ref="${TARGET_BRANCH}" \
+            -f 'inputs[build_android]=false'
+          echo "IOS_PRIMARY_IPA_DISPATCHED branch=${TARGET_BRANCH}"
