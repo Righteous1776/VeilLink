@@ -8,4 +8,4 @@ permissions:
 
 jobs:
   package:
-    uses: ./.github/workflows/malecns-heavy-validation.yml
+    uses: ./.github/workflows/core-release.yml

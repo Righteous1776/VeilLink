@@ -1,0 +1,111 @@
+name: Core unsigned release
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    uses: ./.github/workflows/ios-ci.yml
+
+  core-release:
+    needs: preflight
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare evidence
+        run: |
+          mkdir -p ci-artifacts
+          {
+            echo "HEAD=$(git rev-parse HEAD)"
+            xcodebuild -version
+            sw_vers
+            du -sh VeilLink/Resources
+          } 2>&1 | tee ci-artifacts/environment.log
+
+      - name: Install XcodeGen
+        run: |
+          set -o pipefail
+          brew install xcodegen 2>&1 | tee ci-artifacts/install-xcodegen.log
+
+      - name: Generate Core Xcode project
+        run: |
+          set -o pipefail
+          xcodegen generate --spec project.yml 2>&1 | tee ci-artifacts/xcodegen-core.log
+          cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.core.pbxproj
+
+      - name: Build unsigned Core iPhoneOS app
+        run: |
+          set -o pipefail
+          rm -rf DerivedData ci-artifacts/Core-DeviceBuild.xcresult
+          xcodebuild \
+            -project VeilLink.xcodeproj \
+            -scheme VeilLink \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath DerivedData \
+            -resultBundlePath ci-artifacts/Core-DeviceBuild.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee ci-artifacts/core-device-build.log
+
+      - name: Package unsigned Core IPA
+        run: |
+          set -o pipefail
+          bash scripts/package-unsigned-ipa.sh 2>&1 | tee ci-artifacts/package-core-ipa.log
+
+      - name: Verify Core carrier and size budget
+        run: |
+          set -o pipefail
+          python3 scripts/verify-core-release.py \
+            --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
+            --ipa "build/VeilLink-unsigned.ipa" \
+            --manifest CORE_RELEASE_MANIFEST.json \
+            --provenance CORE_RELEASE_PROVENANCE.json \
+            --sums CORE_RELEASE_SHA256SUMS.txt 2>&1 \
+            | tee ci-artifacts/core-release-gate.log
+          cp \
+            CORE_RELEASE_MANIFEST.json \
+            CORE_RELEASE_PROVENANCE.json \
+            CORE_RELEASE_SHA256SUMS.txt \
+            ci-artifacts/
+
+      - name: Collect evidence
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          python3 scripts/ci-collect-evidence.py \
+            --workflow "Core unsigned release" \
+            --phase "core-release" \
+            --status "$JOB_STATUS" \
+            --artifact-dir ci-artifacts \
+            --output ci-artifacts/CI_EVIDENCE.json
+
+      - name: Upload Core evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-Core-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-artifacts
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Core unsigned IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-Core-unsigned-v0.10.10-b52
+          path: |
+            build/VeilLink-unsigned.ipa
+            CORE_RELEASE_MANIFEST.json
+            CORE_RELEASE_PROVENANCE.json
+            CORE_RELEASE_SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

@@ -1,4 +1,4 @@
-name: MaleCNS + Qwen dual-brain heavy validation
+name: Experimental AI heavy validation
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ env:
   QWEN_MODEL_SHA256: da2572f16c06133561ce56accaa822216f2391ef4d37fba427801cd6736417d4
   QWEN_MODEL_REVISION: a41486f827d17edd055fe6b3b0ba3f8d427c0519
   VFLY_CORE_SHA256: cc8b71d824ecb7f20c821412b316262ecb4dd1faee148077c94825b5889d60de
-  VFLY_LITE_SHA256: 25b4947ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee
+  VFLY_LITE_SHA256: 25b5047ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee
 
 jobs:
   preflight:
@@ -238,7 +238,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: VeilLink-unsigned-v0.9.7-b41-DualBrain-TacticalV2
+          name: VeilLink-AI-Experimental-unsigned-v0.10.10-b52
           path: |
             build/VeilLink-unsigned.ipa
             RELEASE_MANIFEST.json
