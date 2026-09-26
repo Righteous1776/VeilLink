@@ -15,7 +15,7 @@ final class LANDataPlanePolicyTests: XCTestCase {
 
     func testReconnectBackoffIsBoundedAndMonotonic() {
         let delays = (0..<8).map { LANDataPlanePolicy.reconnectDelay(attempt: $0) }
-        XCTAssertEqual(delays.first, 0.35, accuracy: 0.001)
+        XCTAssertEqual(delays.first ?? 99, 0.35, accuracy: 0.001)
         XCTAssertLessThanOrEqual(delays.last ?? 99, 5.0)
         for pair in zip(delays, delays.dropFirst()) { XCTAssertLessThanOrEqual(pair.0, pair.1) }
     }
