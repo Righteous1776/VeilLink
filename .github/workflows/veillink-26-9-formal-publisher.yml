@@ -46,6 +46,13 @@ jobs:
           python3 release-input/release26_9_work/APPLY_CURRENT_VEILLINK_26_9.py repo
           test -z "$(find repo -name '*.rej' -print -quit)"
           git -C repo diff --check
+          # GitHub's Actions token may not update workflow files. Those three
+          # reviewed files are promoted immediately afterwards via the
+          # authenticated browser, while this job publishes the source tree.
+          git -C repo restore --source=HEAD -- \
+            .github/workflows/core-release.yml \
+            .github/workflows/unsigned-ipa-direct.yml \
+            .github/workflows/dual-platform-release.yml
 
       - name: Verify formal release identity and frozen contracts
         shell: bash
@@ -68,15 +75,3 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Release VeilLink 26.9 Stable build 53"
           git push origin "HEAD:${TARGET_BRANCH}"
-
-      - name: Start iOS-primary release build
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api --method POST \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/dual-platform-release.yml/dispatches" \
-            -f ref="${TARGET_BRANCH}" \
-            -f 'inputs[build_android]=false'
-          echo "VEILLINK_26_9_IOS_RELEASE_DISPATCHED branch=${TARGET_BRANCH}"
