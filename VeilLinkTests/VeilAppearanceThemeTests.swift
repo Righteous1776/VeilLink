@@ -2,10 +2,11 @@ import XCTest
 @testable import VeilLink
 
 final class VeilAppearanceThemeTests: XCTestCase {
-    func testThemeCatalogKeepsOriginalAndInstrumentAuto() {
-        XCTAssertEqual(VeilAppearanceSelection.allCases, [.veilOriginal, .instrumentAuto])
+    func testThemeCatalogKeepsOriginalAppleSoftAndInstrumentAuto() {
+        XCTAssertEqual(VeilAppearanceSelection.allCases, [.veilOriginal, .appleSoft, .instrumentAuto])
         XCTAssertEqual(VeilAppearanceSelection.veilOriginal.title, "Veil 原生")
-        XCTAssertEqual(VeilAppearanceSelection.instrumentAuto.title, "仪器 · 自动")
+        XCTAssertEqual(VeilAppearanceSelection.appleSoft.title, "Apple Soft")
+        XCTAssertEqual(VeilAppearanceSelection.instrumentAuto.title, "拟物仪器")
     }
 
     func testInstrumentDayAndNightPalettesRemainDistinct() {
