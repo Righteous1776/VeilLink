@@ -15,7 +15,7 @@ env:
   TARGET_BRANCH: r12-cumulative-validation
   EXPECTED_HEAD: 14955c9143f202ac1f19a37d78d88735da8bb0cb
   CARRIER_PATH: .github/workflows/VeilLink_26.9_FORMAL_RELEASE_LOCAL_FINAL_FROM_14955c91.zip
-  CARRIER_SHA256: 48ba2ccc9954134cec052d555ef30b09e34cd44e106f68b55e58fb8f18a6fd0c
+  CARRIER_SHA256: eb0748382e3af9adfa23ff8d28644dcbf3b6b3d39ed46e0577935d630817b1c9
 
 jobs:
   publish:
@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'MARKETING_VERSION: "26.9"' repo/project.yml
-          grep -q 'CURRENT_PROJECT_VERSION: 53' repo/project.yml
+          grep -q 'CURRENT_PROJECT_VERSION: "53"' repo/project.yml
           cd repo
           python3 scripts/verify-runtime-maintenance-r12.py
           python3 scripts/verify-core-source-isolation.py
