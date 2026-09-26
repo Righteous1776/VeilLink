@@ -1,0 +1,82 @@
+name: Publish VeilLink 26.9 Stable and start iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: veillink-26-9-formal-publisher
+  cancel-in-progress: false
+
+env:
+  TARGET_BRANCH: r12-cumulative-validation
+  EXPECTED_HEAD: 14955c9143f202ac1f19a37d78d88735da8bb0cb
+  CARRIER_PATH: .github/workflows/VeilLink_26.9_FORMAL_RELEASE_LOCAL_FINAL_FROM_14955c91.zip
+  CARRIER_SHA256: 48ba2ccc9954134cec052d555ef30b09e34cd44e106f68b55e58fb8f18a6fd0c
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out validated iOS baseline
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+          path: repo
+
+      - name: Check out formal release carrier
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          sparse-checkout: .github/workflows
+          path: publisher
+
+      - name: Verify carrier and apply VeilLink 26.9
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C repo rev-parse HEAD)" = "${EXPECTED_HEAD}"
+          echo "${CARRIER_SHA256}  publisher/${CARRIER_PATH}" | sha256sum -c -
+          mkdir release-input
+          unzip -q "publisher/${CARRIER_PATH}" -d release-input
+          python3 release-input/release26_9_work/APPLY_CURRENT_VEILLINK_26_9.py repo
+          test -z "$(find repo -name '*.rej' -print -quit)"
+          git -C repo diff --check
+
+      - name: Verify formal release identity and frozen contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'MARKETING_VERSION: "26.9"' repo/project.yml
+          grep -q 'CURRENT_PROJECT_VERSION: 53' repo/project.yml
+          cd repo
+          python3 scripts/verify-runtime-maintenance-r12.py
+          python3 scripts/verify-core-source-isolation.py
+          python3 scripts/verify-voice-ptt-r10.py
+
+      - name: Commit VeilLink 26.9 Stable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd repo
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Release VeilLink 26.9 Stable build 53"
+          git push origin "HEAD:${TARGET_BRANCH}"
+
+      - name: Start iOS-primary release build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/dual-platform-release.yml/dispatches" \
+            -f ref="${TARGET_BRANCH}" \
+            -f 'inputs[build_android]=false'
+          echo "VEILLINK_26_9_IOS_RELEASE_DISPATCHED branch=${TARGET_BRANCH}"
