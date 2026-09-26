@@ -12,8 +12,10 @@ def read(rel):
     return p.read_text(encoding='utf-8')
 
 info=read('VeilLink/Resources/Info.plist')
-if not re.search(r'<key>CFBundleShortVersionString</key>\s*<string>0\.10\.10</string>',info): fail('version != 0.10.10')
-if not re.search(r'<key>CFBundleVersion</key>\s*<string>52</string>',info): fail('build != 52')
+if not re.search(r'<key>CFBundleShortVersionString</key>\s*<string>\$\(MARKETING_VERSION\)</string>',info): fail('version must inherit MARKETING_VERSION')
+if not re.search(r'<key>CFBundleVersion</key>\s*<string>\$\(CURRENT_PROJECT_VERSION\)</string>',info): fail('build must inherit CURRENT_PROJECT_VERSION')
+project=read('project.yml')
+if 'MARKETING_VERSION: "26.9"' not in project or 'CURRENT_PROJECT_VERSION: "53"' not in project: fail('formal release identity missing')
 plane=read('VeilLink/Agent/Integration/VeilAppControlPlane.swift')
 for n in ['guard permissions.localMutationsEnabled else', 'guard permissions.diagnosticsExportEnabled else', 'case .setResourceFocus, .trimCaches, .refreshBLE']:
     if n not in plane: fail(f'control invariant missing: {n}')

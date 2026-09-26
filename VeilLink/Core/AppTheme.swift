@@ -26,9 +26,21 @@ enum VeilTheme {
     static var hairline: Color { p.hairline }
     static var danger: Color { p.danger }
     static var success: Color { p.success }
-    static var goldGradient: LinearGradient { LinearGradient(colors: [goldBright, gold, goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing) }
-    static var metalGradient: LinearGradient { LinearGradient(colors: [Color.white.opacity(0.72), paleMetal, gold.opacity(0.78), goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing) }
-    static var surfaceGradient: LinearGradient { LinearGradient(colors: [Color.white.opacity(0.040), Color.white.opacity(0.010)], startPoint: .topLeading, endPoint: .bottomTrailing) }
+    static var goldGradient: LinearGradient {
+        VeilAppearanceController.shared.isAppleSoft
+            ? LinearGradient(colors: [goldBright, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
+            : LinearGradient(colors: [goldBright, gold, goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+    static var metalGradient: LinearGradient {
+        VeilAppearanceController.shared.isAppleSoft
+            ? LinearGradient(colors: [panelSoft, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
+            : LinearGradient(colors: [Color.white.opacity(0.72), paleMetal, gold.opacity(0.78), goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+    static var surfaceGradient: LinearGradient {
+        VeilAppearanceController.shared.isAppleSoft
+            ? LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.015)], startPoint: .top, endPoint: .bottom)
+            : LinearGradient(colors: [Color.white.opacity(0.040), Color.white.opacity(0.010)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
     static var incomingBubbleGradient: LinearGradient { LinearGradient(colors: [panelSoft, panel, obsidian], startPoint: .topLeading, endPoint: .bottomTrailing) }
 }
 
@@ -116,6 +128,9 @@ struct VeilPanelShape: Shape {
     var radius: CGFloat = 8
 
     func path(in rect: CGRect) -> Path {
+        if VeilAppearanceController.shared.isAppleSoft {
+            return RoundedRectangle(cornerRadius: max(18, radius * 2.4), style: .continuous).path(in: rect)
+        }
         if VeilAppearanceController.shared.isInstrument {
             return RoundedRectangle(cornerRadius: max(12, radius * 1.8), style: .continuous).path(in: rect)
         }
@@ -154,15 +169,16 @@ private struct VeilCurtainShape: Shape {
 struct VeilAmbientBackground: View {
     var body: some View {
         Group {
-            if VeilAppearanceController.shared.isInstrument {
+            if VeilAppearanceController.shared.isAppleSoft {
+                VeilAppleSoftBackground()
+            } else if VeilAppearanceController.shared.isInstrument {
                 VeilInstrumentBackground()
-            } else
-            if VeilRenderProfile.usesLegacyCompositorPath {
+            } else if VeilRenderProfile.usesLegacyCompositorPath {
                 // Keep the legacy background strictly within its parent's bounds. On iOS 15,
                 // an ignoresSafeArea background attached to ScrollView can participate in the
                 // same content-host invalidation we are trying to avoid.
                 LinearGradient(
-                    colors: [VeilTheme.backgroundLift, VeilTheme.background, Color.black],
+                    colors: [VeilTheme.backgroundLift, VeilTheme.background, VeilAppearanceController.shared.isDarkAppearance ? Color.black : VeilTheme.background],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -170,7 +186,7 @@ struct VeilAmbientBackground: View {
                 GeometryReader { geometry in
                     ZStack {
                         LinearGradient(
-                            colors: [VeilTheme.backgroundLift, VeilTheme.background, Color.black],
+                            colors: [VeilTheme.backgroundLift, VeilTheme.background, VeilAppearanceController.shared.isDarkAppearance ? Color.black : VeilTheme.background],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -271,7 +287,11 @@ struct VeilCardModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if VeilAppearanceController.shared.isInstrument {
+        if VeilAppearanceController.shared.isAppleSoft {
+            content
+                .padding(16)
+                .background(VeilAppleSoftSurface(cornerRadius: emphasized ? 28 : 23, emphasized: emphasized))
+        } else if VeilAppearanceController.shared.isInstrument {
             content
                 .padding(16)
                 .background(VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: emphasized ? 22 : 18, style: .continuous), emphasized: emphasized))
@@ -324,34 +344,8 @@ struct VeilCardModifier: ViewModifier {
 struct VeilGlassModifier: ViewModifier {
     let cornerRadius: CGFloat
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if VeilRenderProfile.usesLegacyCompositorPath {
-            content
-                .background(VeilTheme.elevated.opacity(0.96))
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(VeilTheme.hairline, lineWidth: 1)
-                )
-        } else {
-            content
-                .background(VeilTheme.elevated.opacity(0.90))
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(VeilTheme.hairline, lineWidth: 1)
-                )
-                .overlay(alignment: .top) {
-                    LinearGradient(
-                        colors: [Color.clear, Color.white.opacity(0.11), Color.clear],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(height: 1)
-                    .padding(.horizontal, 18)
-                }
-                .shadow(color: Color.black.opacity(0.18), radius: 10, x: 0, y: 5)
-        }
+        content.modifier(VeilPlatformGlassSurfaceModifier(cornerRadius: cornerRadius, interactive: false))
     }
 }
 
@@ -360,18 +354,19 @@ struct VeilPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
+        let appleSoft = VeilAppearanceController.shared.isAppleSoft
         configuration.label
-            .scaleEffect(pressed && !reduceMotion ? VeilMotionPolicy.pressScale : 1)
-            .offset(y: pressed ? (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4) : 0)
-            .brightness(pressed ? -0.035 : 0)
-            .opacity(pressed ? 0.96 : 1)
+            .scaleEffect(pressed && !reduceMotion ? (appleSoft ? 0.982 : VeilMotionPolicy.pressScale) : 1)
+            .offset(y: pressed ? (appleSoft ? 0.8 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4)) : 0)
+            .brightness(pressed ? (appleSoft ? -0.018 : -0.035) : 0)
+            .opacity(pressed ? (appleSoft ? 0.90 : 0.96) : 1)
             .shadow(
-                color: Color.black.opacity(pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12)),
-                radius: pressed ? 2 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3),
+                color: Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12))),
+                radius: pressed ? 2 : (appleSoft ? 5 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3)),
                 x: 0,
-                y: pressed ? 1 : (VeilMotionPolicy.allowsFullSpatialEffects ? 4 : 2)
+                y: pressed ? 1 : (appleSoft ? 3 : (VeilMotionPolicy.allowsFullSpatialEffects ? 4 : 2))
             )
-            .animation(reduceMotion ? nil : VeilMotionPolicy.spring, value: pressed)
+            .animation(reduceMotion ? nil : (appleSoft ? .easeOut(duration: 0.13) : VeilMotionPolicy.spring), value: pressed)
     }
 }
 
@@ -520,24 +515,40 @@ struct VeilIconDisc: View {
     var size: CGFloat = 34
     var highlighted = false
 
+    @ViewBuilder
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(highlighted ? VeilTheme.gold.opacity(0.14) : Color.white.opacity(0.038))
-            Circle()
-                .stroke(highlighted ? VeilTheme.gold.opacity(0.30) : VeilTheme.hairline, lineWidth: 1)
-            if highlighted {
+        if VeilAppearanceController.shared.isAppleSoft {
+            ZStack {
                 Circle()
-                    .trim(from: 0.04, to: 0.42)
-                    .stroke(VeilTheme.goldBright.opacity(0.70), lineWidth: 1)
-                    .rotationEffect(.degrees(-30))
-                    .padding(2)
+                    .fill(highlighted ? VeilTheme.gold.opacity(0.12) : VeilTheme.panelSoft)
+                    .shadow(color: Color.black.opacity(0.10), radius: 6, x: 0, y: 3)
+                    .shadow(color: Color.white.opacity(0.60), radius: 5, x: -3, y: -3)
+                Circle()
+                    .stroke(highlighted ? VeilTheme.gold.opacity(0.24) : VeilTheme.hairline, lineWidth: 0.8)
+                Image(systemName: systemName)
+                    .font(.system(size: size * 0.42, weight: .semibold))
+                    .foregroundColor(highlighted ? VeilTheme.goldBright : VeilTheme.secondaryText)
             }
-            Image(systemName: systemName)
-                .font(.system(size: size * 0.43, weight: .semibold))
-                .foregroundColor(highlighted ? VeilTheme.goldBright : VeilTheme.secondaryText)
+            .frame(width: size, height: size)
+        } else {
+            ZStack {
+                Circle()
+                    .fill(highlighted ? VeilTheme.gold.opacity(0.14) : Color.white.opacity(0.038))
+                Circle()
+                    .stroke(highlighted ? VeilTheme.gold.opacity(0.30) : VeilTheme.hairline, lineWidth: 1)
+                if highlighted {
+                    Circle()
+                        .trim(from: 0.04, to: 0.42)
+                        .stroke(VeilTheme.goldBright.opacity(0.70), lineWidth: 1)
+                        .rotationEffect(.degrees(-30))
+                        .padding(2)
+                }
+                Image(systemName: systemName)
+                    .font(.system(size: size * 0.43, weight: .semibold))
+                    .foregroundColor(highlighted ? VeilTheme.goldBright : VeilTheme.secondaryText)
+            }
+            .frame(width: size, height: size)
         }
-        .frame(width: size, height: size)
     }
 }
 

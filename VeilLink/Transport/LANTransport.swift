@@ -23,6 +23,17 @@ enum LANFrameError: Error, Equatable {
     case invalidLength
 }
 
+enum LANDataPlanePolicy {
+    // Four 48 KiB chunks per acknowledgement window gives the TCP path a real
+    // pipeline without inflating iPhone 7 memory or changing Wire Protocol v4.
+    static let attachmentBurstWindow = 4
+
+    static func reconnectDelay(attempt: Int) -> TimeInterval {
+        let schedule: [TimeInterval] = [0.35, 0.80, 1.50, 3.0, 5.0]
+        return schedule[min(max(attempt, 0), schedule.count - 1)]
+    }
+}
+
 enum LANFrameCodec {
     static let maximumPayloadBytes = 96_000
     static let headerBytes = 4
@@ -164,6 +175,9 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
     @Published private(set) var discoveredServiceCount = 0
     @Published private(set) var connectedPeerCount = 0
     @Published private(set) var linkSnapshots: [UUID: LANTurboLinkSnapshot] = [:]
+    @Published private(set) var totalPayloadBytesSent: UInt64 = 0
+    @Published private(set) var totalPayloadBytesReceived: UInt64 = 0
+    @Published private(set) var lastDataPlaneActivityAt: Date?
     @Published var peerToPeerBoostEnabled = true
 
     var onConnected: ((UUID) -> Void)?
@@ -176,6 +190,11 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
     private var browser: NWBrowser?
     private var links: [UUID: LANLink] = [:]
     private var endpointToLink: [String: UUID] = [:]
+    private var discoveredEndpoints: [String: NWEndpoint] = [:]
+    private var reconnectAttempts: [String: Int] = [:]
+    private var reconnectWorkItems: [String: DispatchWorkItem] = [:]
+    private var sentPayloadBytes: UInt64 = 0
+    private var receivedPayloadBytes: UInt64 = 0
     private var running = false
 
     private var maximumQueuedFrames: Int {
@@ -214,6 +233,18 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
 
     func containsTransport(_ id: UUID) -> Bool {
         queue.sync { links[id] != nil }
+    }
+
+    func isReadyTransport(_ id: UUID) -> Bool {
+        queue.sync { links[id]?.isReady == true }
+    }
+
+    var dataPlaneSummary: String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .binary
+        let sent = formatter.string(fromByteCount: Int64(clamping: totalPayloadBytesSent))
+        let received = formatter.string(fromByteCount: Int64(clamping: totalPayloadBytesReceived))
+        return "TX \(sent) · RX \(received)"
     }
 
     @discardableResult
@@ -292,6 +323,10 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
         for link in links.values { link.connection.cancel() }
         links.removeAll()
         endpointToLink.removeAll()
+        discoveredEndpoints.removeAll()
+        reconnectAttempts.removeAll()
+        for item in reconnectWorkItems.values { item.cancel() }
+        reconnectWorkItems.removeAll()
         publishMain { [weak self] in
             guard let self else { return }
             self.discoveredServiceCount = 0
@@ -337,13 +372,44 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
         guard running else { return }
         let endpoints = results.map(\.endpoint).filter { !isOwnService($0) }
         publishMain { [weak self] in self?.discoveredServiceCount = endpoints.count }
-        for endpoint in endpoints {
-            guard shouldInitiateConnection(to: endpoint) else { continue }
-            let key = endpointKey(endpoint)
-            guard endpointToLink[key] == nil else { continue }
-            let connection = NWConnection(to: endpoint, using: makeParameters())
-            registerLocked(connection: connection, role: .outgoing, endpointKey: key)
+
+        var next: [String: NWEndpoint] = [:]
+        for endpoint in endpoints where shouldInitiateConnection(to: endpoint) {
+            next[endpointKey(endpoint)] = endpoint
         }
+        let removed = Set(discoveredEndpoints.keys).subtracting(next.keys)
+        for key in removed {
+            reconnectWorkItems.removeValue(forKey: key)?.cancel()
+            reconnectAttempts.removeValue(forKey: key)
+        }
+        discoveredEndpoints = next
+        for (key, endpoint) in next where endpointToLink[key] == nil {
+            connectToDiscoveredEndpointLocked(endpoint, key: key)
+        }
+    }
+
+    private func connectToDiscoveredEndpointLocked(_ endpoint: NWEndpoint, key: String) {
+        guard running, endpointToLink[key] == nil else { return }
+        reconnectWorkItems.removeValue(forKey: key)?.cancel()
+        let connection = NWConnection(to: endpoint, using: makeParameters())
+        registerLocked(connection: connection, role: .outgoing, endpointKey: key)
+    }
+
+    private func scheduleReconnectLocked(endpointKey key: String) {
+        guard running, endpointToLink[key] == nil, let endpoint = discoveredEndpoints[key] else { return }
+        reconnectWorkItems.removeValue(forKey: key)?.cancel()
+        let attempt = reconnectAttempts[key, default: 0]
+        reconnectAttempts[key] = min(attempt + 1, 32)
+        let delay = LANDataPlanePolicy.reconnectDelay(attempt: attempt)
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.reconnectWorkItems.removeValue(forKey: key)
+            guard self.running, self.endpointToLink[key] == nil,
+                  let latestEndpoint = self.discoveredEndpoints[key] else { return }
+            self.connectToDiscoveredEndpointLocked(latestEndpoint, key: key)
+        }
+        reconnectWorkItems[key] = item
+        queue.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
     private func registerLocked(connection: NWConnection, role: LANTurboRole, endpointKey: String) {
@@ -368,6 +434,10 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
         case .ready:
             guard !link.isReady else { return }
             link.isReady = true
+            if link.role == .outgoing {
+                reconnectAttempts.removeValue(forKey: link.endpointKey)
+                reconnectWorkItems.removeValue(forKey: link.endpointKey)?.cancel()
+            }
             receiveNextLocked(link)
             publishSnapshotsLocked()
             publishMain { [weak self] in
@@ -390,6 +460,7 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
                 do {
                     let frames = try current.decoder.append(data)
                     for frame in frames {
+                        self.recordDataPlaneLocked(received: frame.count)
                         self.publishMain { [weak self] in self?.onReceive?(link.id, frame) }
                     }
                 } catch {
@@ -422,6 +493,7 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
                     self.removeLinkLocked(link.id)
                     return
                 }
+                self.recordDataPlaneLocked(sent: max(0, sentBytes - LANFrameCodec.headerBytes))
                 self.drainLocked(current)
                 self.publishSnapshotsLocked()
             })
@@ -431,12 +503,28 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
     private func removeLinkLocked(_ id: UUID) {
         guard let link = links.removeValue(forKey: id) else { return }
         if endpointToLink[link.endpointKey] == id { endpointToLink.removeValue(forKey: link.endpointKey) }
+        if link.role == .outgoing { scheduleReconnectLocked(endpointKey: link.endpointKey) }
         publishSnapshotsLocked()
         publishMain { [weak self] in
             guard let self else { return }
             self.connectedPeerCount = self.linkSnapshots.values.filter(\.isReady).count
             self.statusText = self.connectedPeerCount > 0 ? "LAN Turbo 已连接" : "LAN Turbo 已就绪 · 等待同网设备"
             self.onDisconnected?(id)
+        }
+    }
+
+    private func recordDataPlaneLocked(sent: Int = 0, received: Int = 0) {
+        if sent > 0 { sentPayloadBytes &+= UInt64(sent) }
+        if received > 0 { receivedPayloadBytes &+= UInt64(received) }
+        guard sent > 0 || received > 0 else { return }
+        let sentTotal = sentPayloadBytes
+        let receivedTotal = receivedPayloadBytes
+        let now = Date()
+        publishMain { [weak self] in
+            guard let self else { return }
+            self.totalPayloadBytesSent = sentTotal
+            self.totalPayloadBytesReceived = receivedTotal
+            self.lastDataPlaneActivityAt = now
         }
     }
 
@@ -508,6 +596,9 @@ final class LANTransport: ObservableObject {
     @Published private(set) var discoveredServiceCount = 0
     @Published private(set) var connectedPeerCount = 0
     @Published private(set) var linkSnapshots: [UUID: LANTurboLinkSnapshot] = [:]
+    @Published private(set) var totalPayloadBytesSent: UInt64 = 0
+    @Published private(set) var totalPayloadBytesReceived: UInt64 = 0
+    @Published private(set) var lastDataPlaneActivityAt: Date?
     @Published var peerToPeerBoostEnabled = true
     var onConnected: ((UUID) -> Void)?
     var onDisconnected: ((UUID) -> Void)?
@@ -516,6 +607,8 @@ final class LANTransport: ObservableObject {
     func stop() {}
     func refresh() {}
     func containsTransport(_ id: UUID) -> Bool { false }
+    func isReadyTransport(_ id: UUID) -> Bool { false }
+    var dataPlaneSummary: String { "TX 0 bytes · RX 0 bytes" }
     func send(_ payload: Data, to transportID: UUID, priority: BLESendPriority) -> TransportSendResult { .temporarilyUnavailable }
     func disconnect(_ id: UUID) {}
 }

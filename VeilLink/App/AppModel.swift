@@ -31,6 +31,7 @@ final class AppModel: ObservableObject {
     private static let autoSaveReceivedImagesKey = "media.autoSaveReceivedImages"
 
     let keychain: KeychainStore
+    let legalConsent: VeilLegalConsentController
     let database: DatabaseStore
     let identity: IdentityManager
     let appLock: AppLockController
@@ -58,10 +59,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    init() throws {
+    init(keychain: KeychainStore = KeychainStore(), legalConsent: VeilLegalConsentController? = nil) throws {
         autoSaveReceivedImages = UserDefaults.standard.bool(forKey: Self.autoSaveReceivedImagesKey)
-        let keychain = KeychainStore()
         self.keychain = keychain
+        self.legalConsent = legalConsent ?? VeilLegalConsentController(keychain: keychain)
         database = try DatabaseStore(keychain: keychain)
         identity = IdentityManager(keychain: keychain)
         for profile in identity.profiles { try? database.upsertProfile(profile) }
@@ -345,6 +346,7 @@ final class AppModel: ObservableObject {
     }
 
     func handleForegroundTransition() {
+        guard legalConsent.isSatisfied else { return }
         computeGovernor.setForegroundActive(true)
         internetRelay.setForegroundActive(true)
         internetRelay.refreshNow()
@@ -375,12 +377,66 @@ final class AppModel: ObservableObject {
         ImagePreviewCache.shared.removeAll()
     }
 
+    private struct TransportResumePlan {
+        let bluetoothWasRunning: Bool
+        let lanWasRunning: Bool
+    }
+
+    private var knownPeerIdentityIDs: [String] {
+        Array(Set(conversations.map(\.peerIdentityID))).sorted()
+    }
+
+    @discardableResult
+    private func suspendCommunicationStack(reason: String, resetRemotePairing: Bool = true) -> TransportResumePlan {
+        let plan = TransportResumePlan(
+            bluetoothWasRunning: bluetooth.isRunning,
+            lanWasRunning: lanTurbo.isRunning
+        )
+        bluetooth.stop()
+        lanTurbo.stop()
+        internetRelay.stop(reason: reason)
+        if resetRemotePairing { remotePairing.resetForIdentityChange() }
+        return plan
+    }
+
+    private func resumeCommunicationStack(_ plan: TransportResumePlan? = nil, forcePrimaryTransports: Bool = false) {
+        guard legalConsent.isSatisfied, identity.activeIdentity != nil else { return }
+        if forcePrimaryTransports || plan?.bluetoothWasRunning == true { bluetooth.start() }
+        if forcePrimaryTransports || plan?.lanWasRunning == true { lanTurbo.start() }
+        internetRelay.start(peerIdentityIDs: knownPeerIdentityIDs)
+    }
+
+    private func resetIdentityScopedRuntimeState() {
+        sessions.resetForIdentityChange()
+        gameIntelligence.clear()
+        selectedConversation = nil
+        activeConversationID = nil
+        reloadConversations()
+    }
+
     func start() {
-        guard identity.activeIdentity != nil else { return }
+        guard legalConsent.isSatisfied, identity.activeIdentity != nil else { return }
         _ = try? database.cleanupStaleInboundAttachments()
-        bluetooth.start()
-        lanTurbo.start()
-        internetRelay.start(peerIdentityIDs: conversations.map(\.peerIdentityID))
+        resumeCommunicationStack(forcePrimaryTransports: true)
+    }
+
+    func activateAfterLegalAcceptance() {
+        guard legalConsent.isSatisfied else { return }
+        handleForegroundTransition()
+        start()
+    }
+
+    func sealForLegalWithdrawal() {
+        _ = suspendCommunicationStack(reason: "已撤回当前版本使用授权")
+        sessions.clearTransientCaches()
+        database.clearTransientCaches()
+        ImagePreviewCache.shared.removeAll()
+        a9PeriodicTask?.cancel()
+        a9PeriodicTask = nil
+        computeGovernor.setForegroundActive(false)
+        agent.handleBackground()
+        appLock.lock()
+        ownerMode.lock()
     }
 
     func createInitialProfile(name: String, password: String, pin: String) -> Bool {
@@ -400,28 +456,15 @@ final class AppModel: ObservableObject {
     }
 
     func createAdditionalProfile(name: String, password: String) -> Bool {
-        let wasRunning = bluetooth.isRunning
-        let wasLANRunning = lanTurbo.isRunning
-        bluetooth.stop()
-        lanTurbo.stop()
-        internetRelay.stop(reason: "身份切换中")
-        remotePairing.resetForIdentityChange()
+        let resumePlan = suspendCommunicationStack(reason: "身份切换中")
         do {
             let profile = try identity.createProfile(displayName: name, password: password)
             try database.upsertProfile(profile)
-            sessions.resetForIdentityChange()
-            gameIntelligence.clear()
-            selectedConversation = nil
-            activeConversationID = nil
-            reloadConversations()
-            if wasRunning { bluetooth.start() }
-            if wasLANRunning { lanTurbo.start() }
-            internetRelay.start(peerIdentityIDs: conversations.map(\.peerIdentityID))
+            resetIdentityScopedRuntimeState()
+            resumeCommunicationStack(resumePlan)
             return true
         } catch {
-            if wasRunning { bluetooth.start() }
-            if wasLANRunning { lanTurbo.start() }
-            internetRelay.start(peerIdentityIDs: conversations.map(\.peerIdentityID))
+            resumeCommunicationStack(resumePlan)
             alertMessage = error.localizedDescription
             return false
         }
@@ -429,28 +472,15 @@ final class AppModel: ObservableObject {
 
     func switchIdentity(to id: String, password: String) -> Bool {
         guard identity.activeIdentity?.id != id else { return true }
-        let wasRunning = bluetooth.isRunning
-        let wasLANRunning = lanTurbo.isRunning
-        bluetooth.stop()
-        lanTurbo.stop()
-        internetRelay.stop(reason: "身份切换中")
-        remotePairing.resetForIdentityChange()
+        let resumePlan = suspendCommunicationStack(reason: "身份切换中")
         guard identity.switchProfile(to: id, password: password) else {
-            if wasRunning { bluetooth.start() }
-            if wasLANRunning { lanTurbo.start() }
-            internetRelay.start(peerIdentityIDs: conversations.map(\.peerIdentityID))
+            resumeCommunicationStack(resumePlan)
             alertMessage = "身份密码不正确。"
             return false
         }
         if let active = identity.activeIdentity { try? database.upsertProfile(active) }
-        sessions.resetForIdentityChange()
-        gameIntelligence.clear()
-        selectedConversation = nil
-        activeConversationID = nil
-        reloadConversations()
-        if wasRunning { bluetooth.start() }
-        if wasLANRunning { lanTurbo.start() }
-        internetRelay.start(peerIdentityIDs: conversations.map(\.peerIdentityID))
+        resetIdentityScopedRuntimeState()
+        resumeCommunicationStack(resumePlan)
         return true
     }
 
@@ -615,22 +645,14 @@ final class AppModel: ObservableObject {
 
     func restoreBackup(url: URL, password: String) {
         let accessed = url.startAccessingSecurityScopedResource()
-        let wasRunning = bluetooth.isRunning
-        bluetooth.stop()
-        lanTurbo.stop()
-        internetRelay.stop(reason: "正在恢复备份")
-        remotePairing.resetForIdentityChange()
+        _ = suspendCommunicationStack(reason: "正在恢复备份")
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
-            if wasRunning || identity.activeIdentity != nil { start() }
+            if identity.activeIdentity != nil { start() }
         }
         do {
             try backups.restoreBackup(from: url, password: password)
-            sessions.resetForIdentityChange()
-            gameIntelligence.clear()
-            selectedConversation = nil
-            activeConversationID = nil
-            reloadConversations()
+            resetIdentityScopedRuntimeState()
             alertMessage = "备份已恢复。"
         } catch {
             sessions.resetForIdentityChange()

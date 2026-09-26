@@ -62,10 +62,18 @@ def check_plist():
     info = RES / "Info.plist"
     with info.open("rb") as f:
         plist = plistlib.load(f)
-    if plist.get("CFBundleShortVersionString") != "0.10.10":
-        fail("unexpected CFBundleShortVersionString")
-    if plist.get("CFBundleVersion") != "52":
-        fail("unexpected CFBundleVersion")
+    if plist.get("CFBundleShortVersionString") != "$(MARKETING_VERSION)":
+        fail("app Info.plist must inherit MARKETING_VERSION from project.yml")
+    if plist.get("CFBundleVersion") != "$(CURRENT_PROJECT_VERSION)":
+        fail("app Info.plist must inherit CURRENT_PROJECT_VERSION from project.yml")
+    widget_info = ROOT / "VeilBackgroundWidget" / "Info.plist"
+    with widget_info.open("rb") as f:
+        widget = plistlib.load(f)
+    if widget.get("CFBundleShortVersionString") != "$(MARKETING_VERSION)" or widget.get("CFBundleVersion") != "$(CURRENT_PROJECT_VERSION)":
+        fail("widget release identity must inherit the app build settings")
+    project = (ROOT / "project.yml").read_text(encoding="utf-8")
+    if 'MARKETING_VERSION: "26.9"' not in project or 'CURRENT_PROJECT_VERSION: "53"' not in project:
+        fail("VeilLink 26.9 / Build 53 release identity missing from project.yml")
     modes = set(plist.get("UIBackgroundModes", []))
     if not {"bluetooth-central", "bluetooth-peripheral"} <= modes:
         fail("Bluetooth background modes missing")

@@ -8,15 +8,25 @@ struct AdaptiveRootView: View {
 
     var body: some View {
         Group {
-            if horizontalSizeClass == .regular {
+            if appearance.isAppleSoft {
+                VeilAppleSoftRootView(model: model)
+            } else if horizontalSizeClass == .regular {
                 TabletLayout(model: model)
             } else {
                 PhoneLayout(model: model)
             }
         }
         .background(VeilAmbientBackground())
-        .onAppear { appearance.update(colorScheme: colorScheme) }
-        .onChange(of: colorScheme) { appearance.update(colorScheme: $0) }
+        .onAppear {
+            appearance.update(colorScheme: colorScheme)
+            VeilChrome.configure()
+        }
+        .onChange(of: colorScheme) {
+            appearance.update(colorScheme: $0)
+            VeilChrome.configure()
+        }
+        .onChange(of: appearance.selection) { _ in VeilChrome.configure() }
+        .onChange(of: appearance.colorMode) { _ in VeilChrome.configure() }
     }
 }
 

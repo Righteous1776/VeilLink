@@ -56,6 +56,24 @@ enum VeilSessionTransportKind: Int, Sendable {
     case ble = 0
     case lan = 1
     case internet = 2
+
+    var diagnosticLabel: String {
+        switch self {
+        case .ble: return "BLE"
+        case .lan: return "LAN"
+        case .internet: return "RELAY"
+        }
+    }
+}
+
+enum VeilTransportRoutePolicy {
+    static func rank(_ kind: VeilSessionTransportKind) -> Int {
+        switch kind {
+        case .internet: return 5
+        case .ble: return 10
+        case .lan: return 20
+        }
+    }
 }
 
 @MainActor
@@ -252,6 +270,26 @@ final class SessionCoordinator: ObservableObject {
 
     func transportID(for peerIdentityID: String) -> UUID? {
         peerTransport[peerIdentityID]
+    }
+
+    func transportID(for peerIdentityID: String, kind: VeilSessionTransportKind) -> UUID? {
+        let candidates = (peerTransports[peerIdentityID] ?? []).filter {
+            transportKinds[$0] == kind && isSecureSessionTransport($0, for: peerIdentityID)
+        }
+        return candidates.sorted { $0.uuidString < $1.uuidString }.first
+    }
+
+    func preferredTransportKind(for peerIdentityID: String) -> VeilSessionTransportKind? {
+        guard let id = peerTransport[peerIdentityID] else { return nil }
+        return transportKinds[id]
+    }
+
+    func secureLANPeerCount() -> Int {
+        peerTransports.reduce(into: 0) { count, entry in
+            if entry.value.contains(where: { transportKinds[$0] == .lan && isSecureSessionTransport($0, for: entry.key) }) {
+                count += 1
+            }
+        }
     }
 
     func hasSecureSession(for peerIdentityID: String) -> Bool {
@@ -637,7 +675,11 @@ final class SessionCoordinator: ObservableObject {
         guard chunk.bytes.count <= WireProtocol.attachmentChunkBytes,
               context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
         let state = try database.storeInboundAttachmentChunk(messageID: payload.messageID, index: Int(chunk.index), chunkCount: Int(chunk.total), clearData: chunk.bytes)
-        try sendAttachmentCheckpoint(messageID: payload.messageID, nextChunk: state.nextChunk, chunkCount: state.chunkCount, transportID: transportID, context: &context)
+        let isLAN = transportKinds[transportID] == .lan
+        let shouldCheckpoint = !isLAN || state.completed || state.nextChunk == 0 || state.nextChunk % LANDataPlanePolicy.attachmentBurstWindow == 0
+        if shouldCheckpoint {
+            try sendAttachmentCheckpoint(messageID: payload.messageID, nextChunk: state.nextChunk, chunkCount: state.chunkCount, transportID: transportID, context: &context)
+        }
         sessions[transportID] = context
         if state.didPersistProgress || state.completed { onMessagesChanged?(false) }
         if state.completed { onInboundAttachmentCompleted?(payload.messageID) }
@@ -799,6 +841,21 @@ final class SessionCoordinator: ObservableObject {
             return false
         }
 
+        if state.nextChunk >= 0,
+           state.nextChunk < state.chunkCount,
+           transportKinds[transportID] == .lan {
+            return try sendLANAttachmentBurst(
+                message: message,
+                data: data,
+                state: state,
+                peerIdentityID: peerIdentityID,
+                transportID: transportID,
+                localIdentityID: localIdentityID,
+                keys: keys,
+                context: &context
+            )
+        }
+
         let envelope: Data
         let priority: BLESendPriority
         if state.nextChunk < 0 {
@@ -828,6 +885,66 @@ final class SessionCoordinator: ObservableObject {
             return false
         }
         return try applySendResult(transportSend?(transportID, envelope, priority) ?? .temporarilyUnavailable, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+    }
+
+    private func sendLANAttachmentBurst(
+        message: ChatMessage,
+        data: Data,
+        state: DatabaseStore.OutboundAttachmentState,
+        peerIdentityID: String,
+        transportID: UUID,
+        localIdentityID: String,
+        keys: SessionKeyMaterial,
+        context: inout SessionContext
+    ) throws -> Bool {
+        let upperChunk = min(state.chunkCount, state.nextChunk + LANDataPlanePolicy.attachmentBurstWindow)
+        var accepted = 0
+        var terminalResult: TransportSendResult = .temporarilyUnavailable
+
+        sendLoop: for chunkIndex in state.nextChunk..<upperChunk {
+            let lower = chunkIndex * WireProtocol.attachmentChunkBytes
+            let upper = min(lower + WireProtocol.attachmentChunkBytes, data.count)
+            guard lower < upper else { throw CryptoEngineError.invalidCiphertext }
+            let clearChunk = try WireCodec.encodeAttachmentChunk(
+                WireAttachmentChunk(index: UInt16(chunkIndex), total: UInt16(state.chunkCount), bytes: Data(data[lower..<upper]))
+            )
+            let encrypted = try CryptoEngine.encrypt(
+                clearChunk,
+                key: keys.sendKey,
+                messageID: message.id,
+                sequence: context.nextSendSequence,
+                context: "attachment-chunk"
+            )
+            context.nextSendSequence += 1
+            let envelope = try WireCodec.encodeEnvelope(
+                version: UInt8(WireProtocol.version),
+                kind: .attachmentChunk,
+                payload: try WireCodec.encodeEncryptedPayload(encrypted)
+            )
+            guard envelope.count <= WireProtocol.maximumEnvelopeBytes else { throw CryptoEngineError.invalidCiphertext }
+            let result = transportSend?(transportID, envelope, .bulk) ?? .temporarilyUnavailable
+            terminalResult = result
+            switch result {
+            case .accepted:
+                accepted += 1
+            case .temporarilyUnavailable:
+                break sendLoop
+            case .unsupportedLink:
+                break sendLoop
+            }
+        }
+
+        if accepted > 0 {
+            let didChangeVisibleState = message.deliveryState != .sending
+            if didChangeVisibleState { try database.updateDelivery(messageID: message.id, state: .sending) }
+            try database.recordAcceptedOutboundAttempt(
+                messageID: message.id,
+                targetIdentityID: peerIdentityID,
+                localIdentityID: localIdentityID
+            )
+            return didChangeVisibleState
+        }
+        return try applySendResult(terminalResult, message: message, peerIdentityID: peerIdentityID, localIdentityID: localIdentityID)
     }
 
     private func applySendResult(_ result: TransportSendResult, message: ChatMessage, peerIdentityID: String, localIdentityID: String) throws -> Bool {
@@ -1208,11 +1325,7 @@ final class SessionCoordinator: ObservableObject {
     }
 
     private func transportRank(_ transportID: UUID) -> Int {
-        switch transportKinds[transportID] ?? .ble {
-        case .internet: return 5
-        case .ble: return 10
-        case .lan: return 20
-        }
+        VeilTransportRoutePolicy.rank(transportKinds[transportID] ?? .ble)
     }
 
     private func isSecureSessionTransport(_ transportID: UUID, for peerIdentityID: String) -> Bool {

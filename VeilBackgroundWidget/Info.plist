@@ -13,9 +13,9 @@
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.10.10</string>
+    <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
-    <string>52</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>CFBundleDisplayName</key>
     <string>VeilLink Live</string>
     <key>NSExtension</key>

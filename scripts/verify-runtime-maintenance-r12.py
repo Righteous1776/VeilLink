@@ -57,9 +57,12 @@ for needle in ['case pttControl = 6', 'case pttAudio = 7']:
         raise SystemExit(f'FAIL wire invariant: {needle}')
 
 info=(ROOT/'VeilLink/Resources/Info.plist').read_text(encoding='utf-8')
-for key,value in [('CFBundleShortVersionString','0.10.10'),('CFBundleVersion','52')]:
+for key,value in [('CFBundleShortVersionString','$(MARKETING_VERSION)'),('CFBundleVersion','$(CURRENT_PROJECT_VERSION)')]:
     if not re.search(rf'<key>{key}</key>\s*<string>{re.escape(value)}</string>',info):
         raise SystemExit(f'FAIL plist {key}')
+project=(ROOT/'project.yml').read_text(encoding='utf-8')
+if 'MARKETING_VERSION: "26.9"' not in project or 'CURRENT_PROJECT_VERSION: "53"' not in project:
+    raise SystemExit('FAIL VeilLink 26.9 / Build 53 project identity')
 if 'NSMicrophoneUsageDescription' not in info:
     raise SystemExit('FAIL microphone permission description')
 

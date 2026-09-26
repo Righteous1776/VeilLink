@@ -42,30 +42,30 @@ struct NearbyView: View {
                 .veilStaggeredEntrance(index: 0)
 
                 HStack(spacing: 12) {
-                    VeilIconDisc(systemName: "wifi", size: 38, highlighted: lanTurbo.connectedPeerCount > 0)
+                    VeilIconDisc(systemName: "wifi", size: 38, highlighted: sessions.secureLANPeerCount() > 0)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("LAN TURBO")
+                        Text("LAN TURBO · DATA PLANE")
                             .font(.system(size: 8.5, weight: .bold, design: .monospaced))
                             .tracking(1.0)
                             .foregroundColor(VeilTheme.mutedGold)
-                        Text(lanTurbo.statusText)
+                        Text(sessions.secureLANPeerCount() > 0 ? "高速安全路由正在工作" : lanTurbo.statusText)
                             .font(.caption.weight(.semibold))
                             .foregroundColor(VeilTheme.text)
-                        Text("同一 Wi-Fi / 热点直连 · E2EE 保持不变")
-                            .font(.caption2)
-                            .foregroundColor(VeilTheme.secondaryText)
+                        Text(lanTurbo.dataPlaneSummary)
+                            .font(.caption2.monospaced())
+                            .foregroundColor((lanTurbo.totalPayloadBytesSent + lanTurbo.totalPayloadBytesReceived) > 0 ? VeilTheme.success : VeilTheme.secondaryText)
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 3) {
-                        Text("\(lanTurbo.connectedPeerCount) LINK")
+                        Text("\(sessions.secureLANPeerCount()) SECURE")
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundColor(lanTurbo.connectedPeerCount > 0 ? VeilTheme.success : VeilTheme.tertiaryText)
-                        Text("\(lanTurbo.discoveredServiceCount) FOUND")
+                            .foregroundColor(sessions.secureLANPeerCount() > 0 ? VeilTheme.success : VeilTheme.tertiaryText)
+                        Text("\(lanTurbo.connectedPeerCount) TCP · \(lanTurbo.discoveredServiceCount) FOUND")
                             .font(.system(size: 8, weight: .medium, design: .monospaced))
                             .foregroundColor(VeilTheme.tertiaryText)
                     }
                 }
-                .veilCard(emphasized: lanTurbo.connectedPeerCount > 0)
+                .veilCard(emphasized: sessions.secureLANPeerCount() > 0)
                 .veilSpatialPress(maximumTilt: 2.4, cornerRadius: 18, highlightColor: VeilTheme.goldBright)
                 .veilStaggeredEntrance(index: 1)
 
@@ -90,7 +90,7 @@ struct NearbyView: View {
                     .veilStaggeredEntrance(index: 2)
                 } else {
                     ForEach(sessions.nearbyPeers) { peer in
-                        NearbyPeerCard(model: model, bluetooth: bluetooth, lanTurbo: lanTurbo, peer: peer)
+                        NearbyPeerCard(model: model, bluetooth: bluetooth, lanTurbo: lanTurbo, sessions: sessions, peer: peer)
                             .veilStaggeredEntrance(
                                 index: (sessions.nearbyPeers.firstIndex(where: { $0.id == peer.id }) ?? 0) + 2
                             )
@@ -204,14 +204,17 @@ private struct NearbyPeerCard: View {
     @ObservedObject var model: AppModel
     @ObservedObject var bluetooth: BLETransport
     @ObservedObject var lanTurbo: LANTransport
+    @ObservedObject var sessions: SessionCoordinator
     let peer: NearbyPeer
 
     private var lanSnapshot: LANTurboLinkSnapshot? {
-        lanTurbo.linkSnapshots[peer.transportID]
+        guard let id = sessions.transportID(for: peer.id, kind: .lan) else { return nil }
+        return lanTurbo.linkSnapshots[id]
     }
 
     private var linkSnapshot: BLEPeerLinkSnapshot? {
-        bluetooth.linkSnapshots[peer.transportID] ?? bluetooth.linkSnapshot(for: peer.transportID)
+        guard let id = sessions.transportID(for: peer.id, kind: .ble) else { return nil }
+        return bluetooth.linkSnapshots[id] ?? bluetooth.linkSnapshot(for: id)
     }
 
     var body: some View {
@@ -253,12 +256,14 @@ private struct NearbyPeerCard: View {
                         Text("LAN Turbo 高速链路")
                             .font(.caption.weight(.semibold))
                             .foregroundColor(VeilTheme.text)
-                        Text("同一局域网 · 待发 \(lanSnapshot.pendingFrames) 帧")
+                        Text("实际数据链路 · 待发 \(lanSnapshot.pendingFrames) 帧 · \(lanTurbo.dataPlaneSummary)")
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .foregroundColor(VeilTheme.tertiaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.68)
                     }
                     Spacer()
-                    Text("FAST")
+                    Text(sessions.preferredTransportKind(for: peer.id) == .lan ? "ACTIVE" : "READY")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .foregroundColor(VeilTheme.goldBright)
                 }

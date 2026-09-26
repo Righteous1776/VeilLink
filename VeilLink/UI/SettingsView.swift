@@ -12,6 +12,7 @@ struct SettingsView: View {
     @ObservedObject var computeGovernor: VeilA9ComputeGovernor
     @ObservedObject var agentControls: AgentControlCenterSettings
     @ObservedObject var internetRelay: InternetRelayTransport
+    @ObservedObject var legalConsent: VeilLegalConsentController
     @State private var versionTapCount = 0
     @State private var showsLockSheet = false
     @State private var showsIdentityManager = false
@@ -35,6 +36,7 @@ struct SettingsView: View {
         computeGovernor = model.computeGovernor
         agentControls = model.agentControls
         internetRelay = model.internetRelay
+        legalConsent = model.legalConsent
     }
 
     var body: some View {
@@ -43,8 +45,9 @@ struct SettingsView: View {
                 profileCard.veilStaggeredEntrance(index: 0)
                 appearanceCard.veilStaggeredEntrance(index: 1)
                 securityCard.veilStaggeredEntrance(index: 2)
-                storageCard.veilStaggeredEntrance(index: 3)
-                mediaCard.veilStaggeredEntrance(index: 4)
+                legalCard.veilStaggeredEntrance(index: 3)
+                storageCard.veilStaggeredEntrance(index: 4)
+                mediaCard.veilStaggeredEntrance(index: 5)
                 agentCard.veilStaggeredEntrance(index: 5)
                 feedbackCard.veilStaggeredEntrance(index: 6)
                 bluetoothCard.veilStaggeredEntrance(index: 7)
@@ -195,8 +198,8 @@ struct SettingsView: View {
                     HStack(spacing: 12) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 9)
-                                .fill(choice == .veilOriginal ? VeilTheme.obsidian : VeilAppearanceController.shared.palette.metalTop)
-                            Image(systemName: choice == .veilOriginal ? "sparkles" : "dial.medium.fill")
+                                .fill(choice.previewSurfaceColor)
+                            Image(systemName: choice.previewSystemImage)
                                 .foregroundColor(choice == appearance.selection ? VeilTheme.goldBright : VeilTheme.secondaryText)
                         }
                         .frame(width: 42, height: 42)
@@ -217,16 +220,69 @@ struct SettingsView: View {
                     Divider().background(VeilTheme.hairline)
                 }
             }
-            if appearance.selection == .instrumentAuto {
+            Divider().background(VeilTheme.hairline)
+            VStack(alignment: .leading, spacing: 9) {
+                Text("显示模式")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.secondaryText)
+                HStack(spacing: 8) {
+                    ForEach(VeilColorMode.allCases) { mode in
+                        Button {
+                            var transaction = Transaction()
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) {
+                                appearance.setColorMode(mode)
+                            }
+                            VeilChrome.configure()
+                            haptics.selection()
+                        } label: {
+                            VStack(spacing: 5) {
+                                Image(systemName: mode.systemImage)
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text(mode.title)
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .foregroundColor(appearance.colorMode == mode ? VeilTheme.goldBright : VeilTheme.secondaryText)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(appearance.colorMode == mode ? VeilTheme.gold.opacity(0.11) : VeilTheme.elevated.opacity(0.55))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(appearance.colorMode == mode ? VeilTheme.gold.opacity(0.28) : VeilTheme.hairline, lineWidth: 0.8)
+                            )
+                        }
+                        .buttonStyle(VeilPressStyle())
+                    }
+                }
+                Text(appearance.colorMode.subtitle)
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+
+            if appearance.selection != .veilOriginal {
                 HStack(spacing: 7) {
-                    VeilIndicatorLamp(active: true)
-                    Text("当前：\(appearance.appearanceLabel)")
+                    if appearance.selection == .instrumentAuto {
+                        VeilIndicatorLamp(active: true)
+                    } else {
+                        Image(systemName: "circle.grid.2x2.fill")
+                            .foregroundColor(VeilTheme.goldBright)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("当前：\(appearance.appearanceLabel)")
+                        if appearance.selection == .appleSoft {
+                            Text(VeilPlatformMaterialEngine.diagnosticLabel)
+                                .font(.system(size: 7.5, weight: .medium, design: .monospaced))
+                        }
+                    }
                 }
                 .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
                 .foregroundColor(VeilTheme.secondaryText)
             }
         }
-        .veilCard(emphasized: appearance.selection == .instrumentAuto)
+        .veilCard(emphasized: appearance.selection != .veilOriginal)
         .veilDynamicGlow(active: appearance.selection == .instrumentAuto, emphasized: true)
     }
 
@@ -249,6 +305,38 @@ struct SettingsView: View {
                 Spacer()
                 Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
             }
+        }
+        .veilCard()
+    }
+
+    private var legalCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("协议与授权", systemImage: "signature")
+                .font(.headline)
+                .foregroundColor(VeilTheme.goldBright)
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(legalConsent.isSatisfied ? "当前版本已签署" : "需要重新签署")
+                        .fontWeight(.semibold)
+                    Text("\(legalConsent.currentReleaseID) · \(VeilLegalConsentController.documentVersion)")
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer()
+                Image(systemName: legalConsent.isSatisfied ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                    .foregroundColor(legalConsent.isSatisfied ? VeilTheme.success : VeilTheme.gold)
+            }
+            NavigationLink(destination: LegalAgreementReviewView(model: model)) {
+                HStack {
+                    Text("查看协议、签署凭据与撤回授权")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+            }
+            .buttonStyle(VeilPressStyle())
+            Text("签署记录绑定 App 版本、Build 与协议全文 SHA-256；任一变化都会要求重新确认。系统权限仍以 iOS 设置为准。")
+                .font(.caption2)
+                .foregroundColor(VeilTheme.tertiaryText)
         }
         .veilCard()
     }

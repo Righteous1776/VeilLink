@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import plistlib
 from pathlib import Path
 import subprocess
@@ -65,7 +66,16 @@ def find_one(root, name):
         fail(f"expected exactly one {name}, got {len(matches)}")
     return matches[0]
 
-def verify_app(app):
+def expected_release_identity(project_path):
+    text = Path(project_path).read_text(encoding="utf-8")
+    version_match = re.search(r'^\s*MARKETING_VERSION:\s*["\']?([^"\'\s#]+)', text, re.MULTILINE)
+    build_match = re.search(r'^\s*CURRENT_PROJECT_VERSION:\s*["\']?([^"\'\s#]+)', text, re.MULTILINE)
+    if not version_match or not build_match:
+        fail("project.yml release identity is missing")
+    return version_match.group(1), build_match.group(1)
+
+
+def verify_app(app, expected_version, expected_build):
     for rel in ["Info.plist", "VeilLink", "Assets.car"]:
         p = app / rel
         if not p.is_file() or p.stat().st_size <= 0:
@@ -88,10 +98,12 @@ def verify_app(app):
     info = plistlib.loads((app / "Info.plist").read_bytes())
     if info.get("CFBundleIdentifier") != "studio.zeo.veillink":
         fail("bundle identifier mismatch")
-    if info.get("CFBundleShortVersionString") != "0.10.10":
-        fail("expected version 0.10.10")
-    if str(info.get("CFBundleVersion")) != "52":
-        fail("expected build 52")
+    actual_version = str(info.get("CFBundleShortVersionString", ""))
+    actual_build = str(info.get("CFBundleVersion", ""))
+    if actual_version != expected_version:
+        fail(f"expected version {expected_version}, got {actual_version}")
+    if actual_build != expected_build:
+        fail(f"expected build {expected_build}, got {actual_build}")
 
     linked = subprocess.check_output(["otool", "-L", str(app / "VeilLink")], text=True)
     if "llama.framework" in linked:
@@ -107,8 +119,8 @@ def verify_app(app):
 
     return {
         "bundle_id": "studio.zeo.veillink",
-        "version": "0.10.10",
-        "build": "52",
+        "version": actual_version,
+        "build": actual_build,
         "payload_bytes": app_bytes,
         "payload_budget_bytes": MAX_APP_BYTES,
         "executable_sha256": sha256_file(app / "VeilLink"),
@@ -174,12 +186,14 @@ def main():
     parser.add_argument("--manifest", default="CORE_RELEASE_MANIFEST.json")
     parser.add_argument("--provenance", default="CORE_RELEASE_PROVENANCE.json")
     parser.add_argument("--sums", default="CORE_RELEASE_SHA256SUMS.txt")
+    parser.add_argument("--project", default="project.yml")
     args = parser.parse_args()
 
     app = Path(args.app).resolve()
     ipa = Path(args.ipa).resolve()
 
-    app_report = verify_app(app)
+    expected_version, expected_build = expected_release_identity(args.project)
+    app_report = verify_app(app, expected_version, expected_build)
     ipa_report = verify_ipa(app, ipa)
 
     manifest = {

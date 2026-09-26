@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 
@@ -5,6 +6,7 @@ import UIKit
 struct VeilLinkApp: App {
     @UIApplicationDelegateAdaptor(VeilBackgroundAppDelegate.self) private var backgroundDelegate
     @StateObject private var bootstrap = AppBootstrap()
+    @StateObject private var appearance = VeilAppearanceController.shared
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -15,7 +17,18 @@ struct VeilLinkApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if let model = bootstrap.model {
+                if !bootstrap.onboarding.isCompleted {
+                    VeilReleaseActivationView(
+                        controller: bootstrap.onboarding,
+                        legal: bootstrap.legal
+                    ) {
+                        bootstrap.completeFirstActivation()
+                    }
+                } else if !bootstrap.legal.isSatisfied {
+                    LegalConsentGateView(controller: bootstrap.legal) {
+                        bootstrap.activateAfterLegalAcceptance()
+                    }
+                } else if let model = bootstrap.model {
                     RootContainer(model: model)
                         .onAppear {
                             RuntimeDiagnosticsBridge.shared.attach(to: model)
@@ -55,33 +68,68 @@ struct VeilLinkApp: App {
                     StartupFailureView(message: bootstrap.errorMessage)
                 }
             }
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(appearance.preferredColorScheme)
+            .onAppear {
+                appearance.synchronizeSystemAppearance()
+                VeilChrome.configure()
+            }
+            .onChange(of: appearance.colorMode) { _ in
+                appearance.synchronizeSystemAppearance()
+                VeilChrome.configure()
+            }
+            .onChange(of: appearance.selection) { _ in VeilChrome.configure() }
         }
     }
 }
 
-private enum VeilChrome {
+enum VeilChrome {
     @MainActor
     static func configure() {
+        let appearance = VeilAppearanceController.shared
+        let appleSoft = appearance.isAppleSoft
         let navigation = UINavigationBarAppearance()
-        navigation.configureWithOpaqueBackground()
-        navigation.backgroundColor = UIColor(red: 0.012, green: 0.013, blue: 0.017, alpha: 0.96)
-        navigation.shadowColor = UIColor.white.withAlphaComponent(0.045)
-        navigation.titleTextAttributes = [.foregroundColor: UIColor.white.withAlphaComponent(0.94)]
-        navigation.largeTitleTextAttributes = [.foregroundColor: UIColor.white.withAlphaComponent(0.94)]
+        if appleSoft {
+            navigation.configureWithTransparentBackground()
+            navigation.backgroundColor = .clear
+            if #available(iOS 26.0, *) {
+                // Keep system chrome unpainted so current SDKs can supply native Liquid Glass.
+            } else {
+                navigation.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+            }
+            navigation.shadowColor = .clear
+            navigation.titleTextAttributes = [.foregroundColor: UIColor.label]
+            navigation.largeTitleTextAttributes = [.foregroundColor: UIColor.label]
+        } else {
+            navigation.configureWithOpaqueBackground()
+            navigation.backgroundColor = UIColor(VeilTheme.background).withAlphaComponent(0.96)
+            navigation.shadowColor = UIColor(VeilTheme.hairline)
+            navigation.titleTextAttributes = [.foregroundColor: UIColor(VeilTheme.text)]
+            navigation.largeTitleTextAttributes = [.foregroundColor: UIColor(VeilTheme.text)]
+        }
 
         let navigationBar = UINavigationBar.appearance()
         navigationBar.standardAppearance = navigation
         navigationBar.compactAppearance = navigation
         navigationBar.scrollEdgeAppearance = navigation
-        navigationBar.tintColor = UIColor(red: 0.86, green: 0.64, blue: 0.24, alpha: 1)
+        navigationBar.tintColor = appleSoft ? .systemBlue : UIColor(VeilTheme.gold)
 
         let tab = UITabBarAppearance()
-        tab.configureWithOpaqueBackground()
-        tab.backgroundColor = UIColor(red: 0.020, green: 0.021, blue: 0.026, alpha: 0.985)
-        tab.shadowColor = UIColor.white.withAlphaComponent(0.05)
-        let selected = UIColor(red: 0.98, green: 0.82, blue: 0.46, alpha: 1)
-        let normal = UIColor.white.withAlphaComponent(0.42)
+        if appleSoft {
+            tab.configureWithTransparentBackground()
+            tab.backgroundColor = .clear
+            if #available(iOS 26.0, *) {
+                // Standard tab chrome can adopt platform Liquid Glass.
+            } else {
+                tab.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+            }
+            tab.shadowColor = .clear
+        } else {
+            tab.configureWithOpaqueBackground()
+            tab.backgroundColor = UIColor(VeilTheme.background).withAlphaComponent(0.985)
+            tab.shadowColor = UIColor(VeilTheme.hairline)
+        }
+        let selected = appleSoft ? UIColor.systemBlue : UIColor(VeilTheme.goldBright)
+        let normal = appleSoft ? UIColor.secondaryLabel : UIColor(VeilTheme.secondaryText)
         for appearance in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
             appearance.selected.iconColor = selected
             appearance.selected.titleTextAttributes = [.foregroundColor: selected]
@@ -96,14 +144,49 @@ private enum VeilChrome {
 
 @MainActor
 private final class AppBootstrap: ObservableObject {
-    let model: AppModel?
-    let errorMessage: String
+    @Published private(set) var model: AppModel?
+    @Published private(set) var errorMessage = ""
+    let legal: VeilLegalConsentController
+    let onboarding: VeilFirstRunOnboardingController
+
+    private let keychain: KeychainStore
+    private var legalCancellable: AnyCancellable?
 
     init() {
+        keychain = KeychainStore()
+        legal = VeilLegalConsentController(keychain: keychain)
+        onboarding = VeilFirstRunOnboardingController()
+        legalCancellable = legal.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+        if legal.isSatisfied && onboarding.isCompleted { initializeModel() }
+    }
+
+    func completeFirstActivation() {
+        guard legal.isSatisfied else { return }
+        onboarding.complete()
+        if model == nil {
+            initializeModel()
+        } else {
+            model?.activateAfterLegalAcceptance()
+        }
+    }
+
+    func activateAfterLegalAcceptance() {
+        guard legal.isSatisfied, onboarding.isCompleted else { return }
+        if model == nil {
+            initializeModel()
+        } else {
+            model?.activateAfterLegalAcceptance()
+        }
+    }
+
+    private func initializeModel() {
+        guard legal.isSatisfied, onboarding.isCompleted, model == nil else { return }
         let diagnostics = RuntimeDiagnosticsBridge.shared
         diagnostics.recordStartupBegin()
         do {
-            model = try AppModel()
+            model = try AppModel(keychain: keychain, legalConsent: legal)
             errorMessage = ""
             diagnostics.recordStartupSuccess()
         } catch {
@@ -145,6 +228,7 @@ private struct RootContainer: View {
     @ObservedObject var model: AppModel
     @ObservedObject var identity: IdentityManager
     @ObservedObject var appLock: AppLockController
+    @ObservedObject var legalConsent: VeilLegalConsentController
     @ObservedObject var stressTest: DeviceStressTestController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -152,13 +236,19 @@ private struct RootContainer: View {
         self.model = model
         identity = model.identity
         appLock = model.appLock
+        legalConsent = model.legalConsent
         stressTest = DeviceStressTestController.shared
     }
 
     var body: some View {
         ZStack {
             VeilAmbientBackground()
-            if identity.activeIdentity == nil {
+            if !legalConsent.isSatisfied {
+                LegalConsentGateView(controller: legalConsent) {
+                    model.activateAfterLegalAcceptance()
+                }
+                .transition(.opacity)
+            } else if identity.activeIdentity == nil {
                 OnboardingView(model: model)
                     .telemetryScreen("onboarding")
                     .transition(.opacity)

@@ -6,12 +6,12 @@ struct VeilInstrumentBackground: View {
         ZStack {
             LinearGradient(colors: [palette.backgroundLift, palette.background], startPoint: .top, endPoint: .bottomTrailing)
             LinearGradient(
-                colors: [Color.white.opacity(VeilAppearanceController.shared.systemIsDark ? 0.025 : 0.30), Color.clear],
+                colors: [Color.white.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.025 : 0.30), Color.clear],
                 startPoint: .topLeading,
                 endPoint: .center
             )
             Rectangle()
-                .fill(Color.black.opacity(VeilAppearanceController.shared.systemIsDark ? 0.11 : 0.025))
+                .fill(Color.black.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.11 : 0.025))
                 .blendMode(.multiply)
         }
         .ignoresSafeArea()
@@ -27,10 +27,10 @@ struct VeilInstrumentPlate<S: Shape>: View {
     var body: some View {
         shape
             .fill(LinearGradient(colors: [palette.metalTop, palette.metalBottom], startPoint: .topLeading, endPoint: .bottomTrailing))
-            .overlay(shape.stroke(Color.white.opacity(VeilAppearanceController.shared.systemIsDark ? 0.07 : 0.55), lineWidth: 0.8))
+            .overlay(shape.stroke(Color.white.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.07 : 0.55), lineWidth: 0.8))
             .overlay(shape.stroke(Color.black.opacity(0.24), lineWidth: emphasized ? 1.3 : 0.7).padding(1))
             .shadow(
-                color: Color.black.opacity(VeilMotionPolicy.allowsFullSpatialEffects ? (VeilAppearanceController.shared.systemIsDark ? 0.46 : 0.26) : 0),
+                color: Color.black.opacity(VeilMotionPolicy.allowsFullSpatialEffects ? (VeilAppearanceController.shared.isDarkAppearance ? 0.46 : 0.26) : 0),
                 radius: VeilMotionPolicy.allowsFullSpatialEffects ? (emphasized ? 12 : 7) : 0,
                 x: 0,
                 y: VeilMotionPolicy.allowsFullSpatialEffects ? (emphasized ? 8 : 4) : 0
@@ -97,7 +97,7 @@ struct VeilSpeakerGrille: View {
                 HStack(spacing: 4) {
                     ForEach(0..<columns, id: \.self) { _ in
                         Circle()
-                            .fill(Color.black.opacity(VeilAppearanceController.shared.systemIsDark ? 0.66 : 0.55))
+                            .fill(Color.black.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.66 : 0.55))
                             .frame(width: 3.6, height: 3.6)
                     }
                 }
@@ -122,12 +122,12 @@ struct VeilLCDDisplay: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
         }
-        .foregroundColor(VeilAppearanceController.shared.systemIsDark ? Color(red: 0.71, green: 0.82, blue: 0.74) : Color(red: 0.12, green: 0.19, blue: 0.16))
+        .foregroundColor(VeilAppearanceController.shared.isDarkAppearance ? Color(red: 0.71, green: 0.82, blue: 0.74) : Color(red: 0.12, green: 0.19, blue: 0.16))
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(VeilAppearanceController.shared.systemIsDark ? Color(red: 0.08, green: 0.10, blue: 0.09) : Color(red: 0.76, green: 0.80, blue: 0.74))
+                .fill(VeilAppearanceController.shared.isDarkAppearance ? Color(red: 0.08, green: 0.10, blue: 0.09) : Color(red: 0.76, green: 0.80, blue: 0.74))
         )
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.black.opacity(0.38), lineWidth: 1.5))
         .shadow(color: Color.black.opacity(0.38), radius: 3, x: 0, y: 2)

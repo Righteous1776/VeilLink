@@ -3,6 +3,8 @@ import SwiftUI
 struct LockScreenView: View {
     @ObservedObject var controller: AppLockController
     @ObservedObject var haptics: HapticEngine
+    @ObservedObject private var appearance = VeilAppearanceController.shared
+    @Environment(\.colorScheme) private var colorScheme
     @State private var pin = ""
     private let columns = Array(repeating: GridItem(.fixed(72), spacing: 18), count: 3)
 
@@ -67,6 +69,8 @@ struct LockScreenView: View {
             }
             .padding(24)
         }
+        .onAppear { appearance.update(colorScheme: colorScheme) }
+        .onChange(of: colorScheme) { appearance.update(colorScheme: $0) }
     }
 
     private func key(_ value: String) -> some View {
@@ -85,17 +89,32 @@ struct LockScreenView: View {
         } label: {
             Text(value)
                 .font(.system(size: 27, weight: .regular, design: .rounded))
+                .foregroundColor(VeilTheme.text)
                 .frame(width: 68, height: 68)
-                .background(VeilTheme.elevated.opacity(0.78))
-                .clipShape(VeilPanelShape(cut: 11, radius: 7))
-                .overlay(
-                    VeilPanelShape(cut: 11, radius: 7)
-                        .stroke(VeilTheme.hairline, lineWidth: 1)
-                )
-                .overlay(alignment: .topLeading) {
-                    Rectangle().fill(VeilTheme.gold.opacity(0.22)).frame(width: 13, height: 1).padding(.leading, 7)
-                }
+                .background(lockKeySurface)
         }
         .buttonStyle(VeilPressStyle())
+    }
+
+    @ViewBuilder
+    private var lockKeySurface: some View {
+        if appearance.isAppleSoft {
+            VeilAppleSoftSurface(cornerRadius: 22, emphasized: false)
+        } else if appearance.isInstrument {
+            VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: 18, style: .continuous), emphasized: false)
+        } else {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(VeilTheme.elevated.opacity(0.90))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(VeilTheme.hairline, lineWidth: 1)
+                )
+                .shadow(
+                    color: Color.black.opacity(VeilRenderProfile.usesLegacyCompositorPath ? 0.08 : 0.14),
+                    radius: VeilRenderProfile.usesLegacyCompositorPath ? 2 : 7,
+                    x: 0,
+                    y: VeilRenderProfile.usesLegacyCompositorPath ? 1 : 4
+                )
+        }
     }
 }

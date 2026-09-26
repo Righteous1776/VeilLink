@@ -18,8 +18,11 @@ for rel, needles in checks.items():
         if needle not in text:
             raise SystemExit(f'FAIL {rel}: missing {needle}')
 info = (root / 'VeilLink/Resources/Info.plist').read_text(encoding='utf-8')
-if '<string>0.10.10</string>' not in info or '<string>52</string>' not in info:
-    raise SystemExit('FAIL version')
+if '<string>$(MARKETING_VERSION)</string>' not in info or '<string>$(CURRENT_PROJECT_VERSION)</string>' not in info:
+    raise SystemExit('FAIL release identity placeholders')
+project = (root / 'project.yml').read_text(encoding='utf-8')
+if 'MARKETING_VERSION: "26.9"' not in project or 'CURRENT_PROJECT_VERSION: "53"' not in project:
+    raise SystemExit('FAIL formal release identity')
 if not (root / 'docs/history/ui/V0106_R8_ORIGINAL_THEME/manifest.sha256').is_file():
     raise SystemExit('FAIL history manifest')
 print('VEILLINK_UI_THEME_R9_PASS')
