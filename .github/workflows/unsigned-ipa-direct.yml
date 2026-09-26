@@ -70,6 +70,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee ci-artifacts/direct-core-device-build.log
 
+      - name: Read built release identity
+        id: release_identity
+        run: |
+          INFO="DerivedData/Build/Products/Release-iphoneos/VeilLink.app/Info.plist"
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO")
+          BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "VeilLink $VERSION · Build $BUILD" | tee ci-artifacts/release-identity.log
+
       - name: Package unsigned Core IPA
         run: |
           set -o pipefail
@@ -116,7 +126,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: VeilLink-Core-unsigned-v0.10.10-b52-direct
+          name: VeilLink-Core-unsigned-v${{ steps.release_identity.outputs.version }}-b${{ steps.release_identity.outputs.build }}-direct
           path: |
             build/VeilLink-unsigned.ipa
             CORE_RELEASE_MANIFEST.json
