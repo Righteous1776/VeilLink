@@ -1,0 +1,12 @@
+{
+  "schema": "A10_RESOURCE_BUDGET_V1",
+  "meaning": "Relative host budgets/recommendations; kernel has no direct OS mutation authority.",
+  "hard_reserves": [
+    "transport_reserve_pct",
+    "storage_recovery_reserve_pct"
+  ],
+  "consumer_examples": [
+    "VeilLink MaleCNS/local language/Vision/game/training",
+    "database recovery workers"
+  ]
+}

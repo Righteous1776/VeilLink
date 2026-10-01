@@ -1,8 +1,23 @@
 import Foundation
 import Security
 
-enum KeychainError: Error {
+enum KeychainError: LocalizedError {
+    case temporarilyUnavailable(OSStatus)
     case unexpectedStatus(OSStatus)
+
+    var errorDescription: String? {
+        let status: OSStatus
+        switch self {
+        case .temporarilyUnavailable(let value), .unexpectedStatus(let value): status = value
+        }
+        let detail = SecCopyErrorMessageString(status, nil) as String? ?? "OSStatus \(status)"
+        switch self {
+        case .temporarilyUnavailable:
+            return "Keychain 当前暂不可读取：\(detail)"
+        case .unexpectedStatus:
+            return "Keychain 读取失败：\(detail)"
+        }
+    }
 }
 
 final class KeychainStore {
@@ -33,7 +48,13 @@ final class KeychainStore {
         guard addStatus == errSecSuccess else { throw KeychainError.unexpectedStatus(addStatus) }
     }
 
-    func data(for key: String) -> Data? {
+    static func isTransientReadStatus(_ status: OSStatus) -> Bool {
+        status == errSecInteractionNotAllowed || status == errSecNotAvailable
+    }
+
+    /// Distinguishes "item genuinely missing" from "Keychain cannot be read right now".
+    /// Callers that protect irreplaceable state (database keys) must use this throwing API.
+    func readData(for key: String) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -43,8 +64,21 @@ final class KeychainStore {
         ]
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else { throw KeychainError.unexpectedStatus(errSecDecode) }
+            return data
+        case errSecItemNotFound:
+            return nil
+        default:
+            if Self.isTransientReadStatus(status) { throw KeychainError.temporarilyUnavailable(status) }
+            throw KeychainError.unexpectedStatus(status)
+        }
+    }
+
+    /// Compatibility accessor for non-critical preferences. Critical key material must call readData(for:).
+    func data(for key: String) -> Data? {
+        try? readData(for: key)
     }
 
     func remove(_ key: String) {

@@ -91,18 +91,16 @@ final class MiniGameTests: XCTestCase {
         XCTAssertFalse(state.isDraw)
     }
 
-    func testSessionIgnoresMoveSentBeforeInvitationWasAccepted() throws {
+    func testSessionDoesNotApplyMoveWithoutAcceptance() throws {
         let conversationID = UUID().uuidString
         let invite = MiniGamePacket(game: .gomoku, command: .invite, createdAt: Date(timeIntervalSince1970: 10))
         let premature = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .move, turn: 0, move: .gomoku(index: 112), createdAt: Date(timeIntervalSince1970: 11))
-        let accept = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .accept, createdAt: Date(timeIntervalSince1970: 12))
         let messages = [
             ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(invite), sentAt: Date(timeIntervalSince1970: 10), isOutgoing: true, deliveryState: .delivered),
-            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(premature), sentAt: Date(timeIntervalSince1970: 11), isOutgoing: true, deliveryState: .delivered),
-            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "guest", body: try MiniGameCodec.encode(accept), sentAt: Date(timeIntervalSince1970: 12), isOutgoing: false, deliveryState: .delivered)
+            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(premature), sentAt: Date(timeIntervalSince1970: 11), isOutgoing: true, deliveryState: .delivered)
         ]
         let snapshot = MiniGameSessionBuilder.session(id: invite.sessionID, from: messages)
-        XCTAssertEqual(snapshot?.status, .active)
+        XCTAssertEqual(snapshot?.status, .invited)
         XCTAssertEqual(snapshot?.moveCount, 0)
         XCTAssertEqual(snapshot?.gomoku?.value(at: 112), 0)
     }
@@ -110,12 +108,62 @@ final class MiniGameTests: XCTestCase {
     func testHostCanCancelPendingInvitationWithoutStartingGame() throws {
         let conversationID = UUID().uuidString
         let invite = MiniGamePacket(game: .xiangqi, command: .invite, createdAt: Date(timeIntervalSince1970: 20))
-        let cancel = MiniGamePacket(sessionID: invite.sessionID, game: .xiangqi, command: .resign, turn: 0, createdAt: Date(timeIntervalSince1970: 21))
+        let cancel = MiniGamePacket(sessionID: invite.sessionID, game: .xiangqi, command: .cancelInvite, turn: 0, createdAt: Date(timeIntervalSince1970: 21))
         let messages = [
             ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(invite), sentAt: Date(timeIntervalSince1970: 20), isOutgoing: true, deliveryState: .delivered),
             ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(cancel), sentAt: Date(timeIntervalSince1970: 21), isOutgoing: true, deliveryState: .delivered)
         ]
         XCTAssertEqual(MiniGameSessionBuilder.session(id: invite.sessionID, from: messages)?.status, .cancelled)
+    }
+
+    func testClockSkewDoesNotDropAcceptanceOrNextMove() throws {
+        let conversationID = UUID().uuidString
+        let invite = MiniGamePacket(game: .gomoku, command: .invite, createdAt: Date(timeIntervalSince1970: 1_000))
+        // Guest clock is far behind host clock.
+        let accept = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .accept, createdAt: Date(timeIntervalSince1970: 100))
+        // Host legitimately moves after receiving accept even though its wall clock is still "before" guest time in another scenario.
+        let move = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .move, turn: 0, move: .gomoku(index: 112), createdAt: Date(timeIntervalSince1970: 1_001))
+        let messages = [
+            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(invite), sentAt: invite.createdAt, isOutgoing: true, deliveryState: .delivered),
+            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "guest", body: try MiniGameCodec.encode(accept), sentAt: accept.createdAt, isOutgoing: false, deliveryState: .delivered),
+            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(move), sentAt: move.createdAt, isOutgoing: true, deliveryState: .delivered)
+        ]
+        let snapshot = MiniGameSessionBuilder.session(id: invite.sessionID, from: messages)
+        XCTAssertEqual(snapshot?.status, .active)
+        XCTAssertEqual(snapshot?.moveCount, 1)
+        XCTAssertEqual(snapshot?.gomoku?.value(at: 112), 1)
+    }
+
+    func testImmediateResignAfterAcceptanceIsNotMisclassifiedAsInviteCancellation() throws {
+        let conversationID = UUID().uuidString
+        let invite = MiniGamePacket(game: .gomoku, command: .invite, createdAt: Date(timeIntervalSince1970: 10))
+        let accept = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .accept, createdAt: Date(timeIntervalSince1970: 20))
+        let resign = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .resign, turn: 0, createdAt: Date(timeIntervalSince1970: 21))
+        let messages = [
+            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(invite), sentAt: invite.createdAt, isOutgoing: true, deliveryState: .delivered),
+            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "guest", body: try MiniGameCodec.encode(accept), sentAt: accept.createdAt, isOutgoing: false, deliveryState: .delivered),
+            ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(resign), sentAt: resign.createdAt, isOutgoing: true, deliveryState: .delivered)
+        ]
+        let snapshot = MiniGameSessionBuilder.session(id: invite.sessionID, from: messages)
+        XCTAssertEqual(snapshot?.status, .finished(winner: .guest))
+        XCTAssertTrue(snapshot?.endedByResignation == true)
+    }
+
+    func testInvitationExpiryAndConcurrentInviteCoalescing() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        func pending(_ id: String, offset: TimeInterval) -> MiniGameSessionSnapshot {
+            MiniGameSessionSnapshot(
+                id: id, game: .gomoku, hostIsLocal: true, status: .invited,
+                invitedAt: now.addingTimeInterval(offset), startedAt: nil, lastActivity: now.addingTimeInterval(offset),
+                gomoku: GomokuState(), xiangqi: nil, ludo: nil, endedByResignation: false
+            )
+        }
+        let old = pending(UUID().uuidString, offset: -MiniGameSessionSnapshot.invitationTimeout - 1)
+        XCTAssertTrue(old.invitationIsExpired(at: now))
+
+        let a = pending("00000000-0000-0000-0000-000000000001", offset: 0)
+        let b = pending("00000000-0000-0000-0000-000000000002", offset: 1)
+        XCTAssertEqual(MiniGameSessionBuilder.coalescedLiveSessions([b, a], now: now).map(\.id), [a.id])
     }
 
     func testLudoCaptureMetadataAndFinishedCountersStayConsistent() {

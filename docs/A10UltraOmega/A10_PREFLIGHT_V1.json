@@ -1,0 +1,10 @@
+{
+  "schema": "A10_PREFLIGHT_V1",
+  "states": [
+    "PROCEED",
+    "REVIEW",
+    "HOLD",
+    "STOP_RECOMMENDED"
+  ],
+  "hard_block_rule": "Only objective safety failure sets hard_block=true; advisory STOP_RECOMMENDED alone is not a host mutation."
+}

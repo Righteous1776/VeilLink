@@ -100,6 +100,37 @@ final class BLETransportSafetyTests: XCTestCase {
         XCTAssertNil(recoveredFirst)
     }
 
+
+    func testAssemblerResetDropsPreviousTransportEpochFragments() {
+        let source = UUID()
+        let firstMessage = Data(repeating: 0x51, count: 120)
+        let secondMessage = Data(repeating: 0x61, count: 120)
+        let first = BLEFragment.split(firstMessage, maximumPacketSize: 64)
+        let second = BLEFragment.split(secondMessage, maximumPacketSize: 64)
+        let assembler = BLEFragmentAssembler(
+            maxConcurrentMessages: 4,
+            maxConcurrentMessagesPerSource: 2,
+            maxFragmentsPerMessage: 16,
+            maxAssembledBytes: 256,
+            maxPacketBytes: 64,
+            maxTotalBufferedBytes: 512
+        )
+
+        XCTAssertNil(assembler.ingest(source: source, packet: first[0].encoded))
+        assembler.reset(source: source)
+        var oldRecovered: Data?
+        for fragment in first.dropFirst() {
+            oldRecovered = assembler.ingest(source: source, packet: fragment.encoded) ?? oldRecovered
+        }
+        XCTAssertNil(oldRecovered)
+
+        var newRecovered: Data?
+        for fragment in second {
+            newRecovered = assembler.ingest(source: source, packet: fragment.encoded) ?? newRecovered
+        }
+        XCTAssertEqual(newRecovered, secondMessage)
+    }
+
     func testConnectionEventGateDeduplicatesCallbacksAndAllowsReconnect() {
         var gate = ConnectionEventGate()
         let id = UUID()

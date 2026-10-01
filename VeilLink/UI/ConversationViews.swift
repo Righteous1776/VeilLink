@@ -14,7 +14,7 @@ struct ConversationListView: View {
                     Spacer()
                     VeilIdentityGlyph(seed: "VeilLink/NoConversation", size: 76, active: false)
                     Text("NO ACTIVE LINK")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .tracking(1.6)
                         .foregroundColor(VeilTheme.mutedGold)
                     Text("还没有对话")
@@ -24,7 +24,7 @@ struct ConversationListView: View {
                         VeilLinkTrace(active: false, width: 56)
                         Text("PEER")
                     }
-                    .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundColor(VeilTheme.tertiaryText)
                     Text("前往“附近”发现设备并核对六码")
                         .font(.subheadline)
@@ -169,14 +169,14 @@ private struct ConversationRow: View {
                         .lineLimit(1)
                     if conversation.isPinned {
                         Image(systemName: "pin.fill")
-                            .font(.system(size: 8.5, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(VeilTheme.mutedGold)
                             .accessibilityLabel("已置顶")
                     }
                     Spacer(minLength: 6)
                     if conversation.unreadCount > 0 {
                         Text(conversation.unreadCount > 99 ? "99+" : "\(conversation.unreadCount)")
-                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundColor(Color.black.opacity(0.88))
                             .padding(.horizontal, 6)
                             .frame(minWidth: 20, minHeight: 18)
@@ -191,7 +191,7 @@ private struct ConversationRow: View {
 
                 HStack(spacing: 7) {
                     Text("E2EE")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .tracking(0.8)
                         .foregroundColor(VeilTheme.mutedGold)
                     VeilLinkTrace(active: isSelected, width: 28)
@@ -257,8 +257,28 @@ struct ChatView: View {
 
     private var visibleMessages: [ChatMessage] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard showsSearchBar, !query.isEmpty else { return messages }
-        return messages.filter { ConversationSearch.matches($0, query: query) }
+        if showsSearchBar, !query.isEmpty {
+            return messages.filter {
+                MiniGameCodec.decode($0.body) == nil
+                    && TacticalV2.WireCodecV2.decode($0.body) == nil
+                    && ConversationSearch.matches($0, query: query)
+            }
+        }
+        // One persistent card per game session lives at its invite position in the conversation.
+        // Move/accept/resign packets stay hidden so normal chat never becomes protocol noise.
+        let preferredLiveIDs = Set(
+            MiniGameSessionBuilder.coalescedLiveSessions(Array(gameSessionsByID.values)).map(\.id)
+        )
+        return messages.filter { message in
+            if TacticalV2.WireCodecV2.decode(message.body) != nil { return false }
+            guard let packet = MiniGameCodec.decode(message.body) else { return true }
+            guard packet.command == .invite else { return false }
+            guard let session = gameSessionsByID[packet.sessionID] else { return true }
+            if session.status == .invited || session.status == .active {
+                return session.isInvitationExpired || preferredLiveIDs.contains(session.id)
+            }
+            return true
+        }
     }
 
     var body: some View {
@@ -320,16 +340,42 @@ struct ChatView: View {
                             .disabled(isReloadingMessages)
                         }
                         ForEach(visibleMessages) { message in
-                            MessageBubble(
-                                message: message,
-                                database: model.database,
-                                onRetry: message.isOutgoing && message.deliveryState == .failed ? { retry(message) } : nil,
-                                onPause: canPauseImage(message) ? { pauseImage(message) } : nil,
-                                onResume: canResumeImage(message) ? { resumeImage(message) } : nil,
-                                onCancel: canCancelImage(message) ? { transferPendingCancellation = message } : nil
-                            )
-                            .contextMenu {
-                                if message.attachment == nil {
+                            if let packet = MiniGameCodec.decode(message.body),
+                               packet.command == .invite,
+                               let gameSession = gameSessionsByID[packet.sessionID] {
+                                MiniGameConversationCard(
+                                    session: gameSession,
+                                    onOpen: {
+                                        miniGameInitialSessionID = gameSession.id
+                                        showsMiniGames = true
+                                        model.haptics.selection()
+                                    },
+                                    onAccept: gameSession.status == .invited && !gameSession.hostIsLocal && !gameSession.isInvitationExpired ? {
+                                        respondToGameInvite(gameSession, command: .accept)
+                                    } : nil,
+                                    onDecline: gameSession.status == .invited && !gameSession.hostIsLocal && !gameSession.isInvitationExpired ? {
+                                        respondToGameInvite(gameSession, command: .decline)
+                                    } : nil,
+                                    onRetry: message.isOutgoing && message.deliveryState == .failed ? {
+                                        retry(message)
+                                    } : nil
+                                )
+                                .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
+                                    insertion: .opacity.combined(with: .scale(scale: 0.985)),
+                                    removal: .opacity
+                                ))
+                                .id(message.id)
+                            } else {
+                                MessageBubble(
+                                    message: message,
+                                    database: model.database,
+                                    onRetry: message.isOutgoing && message.deliveryState == .failed ? { retry(message) } : nil,
+                                    onPause: canPauseImage(message) ? { pauseImage(message) } : nil,
+                                    onResume: canResumeImage(message) ? { resumeImage(message) } : nil,
+                                    onCancel: canCancelImage(message) ? { transferPendingCancellation = message } : nil
+                                )
+                                .contextMenu {
+                                    if message.attachment == nil {
                                     Button {
                                         let copyText = MiniGameCodec.previewText(for: message.body)
                                             ?? VoiceMessageCodec.decode(message.body).map { VoiceMessageCodec.preview(durationSeconds: $0.durationSeconds) }
@@ -453,12 +499,30 @@ struct ChatView: View {
                             } label: {
                                 Label("从“文件”导入", systemImage: "doc.badge.plus")
                             }
+                            Divider()
+                            Menu {
+                                ForEach(MiniGameKind.allCases) { game in
+                                    Button {
+                                        sendGameInvite(game)
+                                    } label: {
+                                        Label(game.title, systemImage: game.icon)
+                                    }
+                                }
+                            } label: {
+                                Label("发送游戏邀请", systemImage: "paperplane.fill")
+                            }
+                            Button {
+                                miniGameInitialSessionID = nil
+                                showsMiniGames = true
+                            } label: {
+                                Label("游戏大厅", systemImage: "gamecontroller")
+                            }
                         } label: {
                             VeilIconDisc(systemName: "plus", size: 36, highlighted: true)
                                 .contentShape(Circle())
                         }
-                        .accessibilityLabel("添加图片")
-                        .accessibilityHint("从照片图库或文件中选择图片")
+                        .accessibilityLabel("添加内容")
+                        .accessibilityHint("发送图片、直接发送游戏邀请或打开游戏大厅")
                     }
                     Button {
                         composerMode = composerMode == .text ? .voice : .text
@@ -653,6 +717,55 @@ struct ChatView: View {
         reload(showLoading: true)
     }
 
+    private func sendGameInvite(_ game: MiniGameKind) {
+        if let existing = MiniGameSessionBuilder
+            .coalescedLiveSessions(Array(gameSessionsByID.values))
+            .first(where: { $0.game == game }) {
+            miniGameInitialSessionID = existing.id
+            showsMiniGames = true
+            model.haptics.selection()
+            return
+        }
+
+        let packet = MiniGamePacket(game: game, command: .invite)
+        do {
+            try model.sessions.sendMiniGamePacket(packet, to: conversation.peerIdentityID)
+            RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                "game.invite.send",
+                metadata: ["game": game.rawValue, "source": "chat"]
+            )
+            model.haptics.send()
+        } catch {
+            model.alertMessage = error.localizedDescription
+            model.haptics.error()
+        }
+    }
+
+    private func respondToGameInvite(_ session: MiniGameSessionSnapshot, command: MiniGameCommand) {
+        guard session.status == .invited,
+              !session.hostIsLocal,
+              !session.isInvitationExpired,
+              command == .accept || command == .decline else { return }
+        let packet = MiniGamePacket(
+            sessionID: session.id,
+            game: session.game,
+            command: command,
+            turn: 0,
+            move: nil
+        )
+        do {
+            try model.sessions.sendMiniGamePacket(packet, to: conversation.peerIdentityID)
+            RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                command == .accept ? "game.invite.accept" : "game.invite.decline",
+                metadata: ["game": session.game.rawValue, "source": "chat"]
+            )
+            command == .accept ? model.haptics.resolved() : model.haptics.selection()
+        } catch {
+            model.alertMessage = error.localizedDescription
+            model.haptics.error()
+        }
+    }
+
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -774,7 +887,7 @@ private struct VeilChatIdentityTitle: View {
                     .lineLimit(1)
                 HStack(spacing: 5) {
                     Text("SECURE LINK")
-                        .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .tracking(0.9)
                         .foregroundColor(VeilTheme.mutedGold)
                     VeilLinkTrace(active: false, width: 26)
@@ -1180,7 +1293,7 @@ private struct ContactDetailsSheet: View {
                     VStack(spacing: 10) {
                         VeilIdentityGlyph(seed: conversation.peerIdentityID, size: 76, active: true)
                         Text("PEER IDENTITY")
-                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .tracking(1.4)
                             .foregroundColor(VeilTheme.mutedGold)
                         Text(conversation.title)
@@ -1200,7 +1313,7 @@ private struct ContactDetailsSheet: View {
 
                     VStack(alignment: .leading, spacing: 7) {
                         Text("IDENTITY ID")
-                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .tracking(1.1)
                             .foregroundColor(VeilTheme.mutedGold)
                         Text(conversation.peerIdentityID)

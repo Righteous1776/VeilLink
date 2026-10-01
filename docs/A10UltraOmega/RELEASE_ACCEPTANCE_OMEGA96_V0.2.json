@@ -1,0 +1,158 @@
+{
+  "schema": "OMEGA96_RELEASE_ACCEPTANCE_V0_2_FINAL",
+  "release": "A10 Ultra Ω — OMEGA 96 V0.2",
+  "status": "PASS_SHADOW_ACCELERATED",
+  "production_cutover": "DENY",
+  "binary_sha256": "332b60aabe72a6dfdddee05e45ff7907f6627a92356ee7f8396a84de6e6741f8",
+  "source_sha256": "75fa59e9e59de8d007f418a5ebf1f912dfa4fc461ea0b36eaf40509e7960c3bb",
+  "reproducible_build": "PASS_BYTE_IDENTICAL_TWO_REBUILDS",
+  "architecture": {
+    "tile_count": 96,
+    "worker_tiles": 64,
+    "logical_physical_separation": true,
+    "tested_host_cpu_count": 5,
+    "physical_workers_tested": [
+      1,
+      2,
+      4
+    ]
+  },
+  "formal_benchmark": {
+    "schema": "OMEGA96_BENCHMARK_V0_2_FUSED_FINAL",
+    "object_ingress_rows": 100000,
+    "frame_rows": 1000000,
+    "a10_python_reference_median_dps": 36692.23617980843,
+    "object_compact_median_dps": 1117560.7903705186,
+    "object_compact_vs_a10_reference": 30.45769096475802,
+    "a9_release_baseline_dps_contextual": 596146.3916872814,
+    "object_compact_vs_a9_numeric_contextual": 1.8746415409937662,
+    "token_tree_fabric_4worker_median_dps": 55958813.41992757,
+    "token_tree_4worker_vs_1worker": 2.4974048541833365,
+    "token_tree_vs_a9_numeric_contextual": 93.86757044951084,
+    "token_tree_vs_v01_fabric": 1563.7705099390819,
+    "fabric4_runs": 11,
+    "measurement_boundary": "Attested 32-byte Aggregate Frame -> Fused Token+Tree Fabric; host raw-object normalization excluded"
+  },
+  "evidence": {
+    "native_superbatch_differential_500k": {
+      "schema": "OMEGA96_NATIVE_SUPERBATCH_DIFFERENTIAL_V1",
+      "cases": 500000,
+      "mismatch_count": 0,
+      "result": "PASS",
+      "native_plus_materialize_s": 2.4592488440002853,
+      "reference_compare_s": 19.291473614000097,
+      "target_write_count": 0
+    },
+    "zero_copy_frame_differential_1m": {
+      "schema": "OMEGA96_ZERO_COPY_FRAME_DIFFERENTIAL_V1",
+      "cases": 1000000,
+      "mismatch_count": 0,
+      "result": "PASS",
+      "elapsed_s": 31.09571125900038,
+      "frame_abi_bytes": 32,
+      "decision_record_bytes": 38,
+      "target_write_count": 0
+    },
+    "token_lane_differential_1m": {
+      "schema": "OMEGA96_TOKEN_LANE_DIFFERENTIAL_V1",
+      "cases": 1000000,
+      "mismatch_count": 0,
+      "result": "PASS",
+      "decision_lut_sha256": "1be3dd04ee99df8d12c56035982fe1d29dcc1847997718a0e9df5903ae11d640",
+      "elapsed_s": 0.5382331190003242,
+      "target_write_count": 0
+    },
+    "token_tree_differential_1m": {
+      "schema": "OMEGA96_TOKEN_TREE_DIFFERENTIAL_V1",
+      "cases": 1000000,
+      "decision_record_mismatch": 0,
+      "input_leaf_match": true,
+      "workload_root_match": true,
+      "result_digest_match": true,
+      "tree_lane_seconds": 0.015722787999948196,
+      "tree_lane_dps": 63601951.511608176,
+      "logical_shards": 64,
+      "physical_workers": 4,
+      "target_write_count": 0,
+      "result": "PASS"
+    },
+    "token_key_exhaustive_4m": {
+      "schema": "OMEGA96_TOKEN_KEY_EXHAUSTIVE_V1",
+      "decision_lut_states": 1152,
+      "lut_mismatch": 0,
+      "cases_per_context": 1000000,
+      "context_combinations": 4,
+      "aggregate_random_cases": 4000000,
+      "random_mismatch": 0,
+      "details": [
+        {
+          "attested": true,
+          "change_window": false,
+          "cases": 1000000,
+          "mismatch": 0,
+          "token_min": 2,
+          "token_max": 1150
+        },
+        {
+          "attested": false,
+          "change_window": false,
+          "cases": 1000000,
+          "mismatch": 0,
+          "token_min": 0,
+          "token_max": 1148
+        },
+        {
+          "attested": true,
+          "change_window": true,
+          "cases": 1000000,
+          "mismatch": 0,
+          "token_min": 3,
+          "token_max": 1151
+        },
+        {
+          "attested": false,
+          "change_window": true,
+          "cases": 1000000,
+          "mismatch": 0,
+          "token_min": 1,
+          "token_max": 1149
+        }
+      ],
+      "decision_lut_sha256": "1be3dd04ee99df8d12c56035982fe1d29dcc1847997718a0e9df5903ae11d640",
+      "elapsed_s": 0.3618532199998299,
+      "target_write_count": 0,
+      "result": "PASS"
+    },
+    "fastpath_adversarial": {
+      "schema": "OMEGA96_FASTPATH_ADVERSARIAL_V1",
+      "result": "PASS",
+      "checks": {
+        "bad_length": true,
+        "bad_light": true,
+        "reserved_nonzero": true,
+        "negative_risk": true,
+        "tree_bad_length": true,
+        "tree_bad_light": true,
+        "tree_reserved_nonzero": true,
+        "tree_negative_risk": true,
+        "privacy_fallback_reject": true
+      },
+      "target_write_count": 0
+    }
+  },
+  "authority": {
+    "canonical_write": 0,
+    "target_write": 0,
+    "transport_mutation": 0,
+    "storage_mutation": 0,
+    "game_mutation": 0,
+    "agent_mutation": 0
+  },
+  "target_write_count": 0,
+  "interpretation": {
+    "object_ingress": "Includes Python signal-dictionary ingress and Fabric governance; it is the closest V0.1-style compatibility lane.",
+    "frame_hot_lane": "Starts after an attested Host Adapter emits the fixed 32-byte Aggregate Frame.",
+    "a9_comparison": "A9 V2.2 packet ingress and OMEGA Aggregate Frame contracts are not identical. Token-Tree/A9 ratio is a throughput context number, not an end-to-end speedup claim.",
+    "logical_tiles": "96 logical tiles are governance/execution identities, not 96 physical CPU cores."
+  }
+}

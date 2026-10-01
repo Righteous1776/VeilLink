@@ -44,6 +44,30 @@ enum VeilTheme {
     static var incomingBubbleGradient: LinearGradient { LinearGradient(colors: [panelSoft, panel, obsidian], startPoint: .topLeading, endPoint: .bottomTrailing) }
 }
 
+/// Centralized geometry policy for the two device families that repeatedly exposed layout bugs:
+/// iPhone 7 / iOS 15 and iPad split-window layouts. Keeping the thresholds here makes them unit
+/// testable and prevents individual screens from reintroducing ad-hoc fixed widths.
+enum VeilUILayoutPolicy {
+    static let minimumTabletTwoPaneWidth: CGFloat = 720
+
+    static func usesTabletTwoPane(horizontalSizeClassRegular: Bool, viewportWidth: CGFloat) -> Bool {
+        horizontalSizeClassRegular && viewportWidth >= minimumTabletTwoPaneWidth
+    }
+
+    static func sidebarWidth(viewportWidth: CGFloat) -> CGFloat {
+        min(330, max(250, viewportWidth * 0.30))
+    }
+
+    static func lockUsesHorizontalLayout(size: CGSize) -> Bool {
+        size.width > size.height && size.height < 560
+    }
+
+    static func lockKeySize(size: CGSize) -> CGFloat {
+        if lockUsesHorizontalLayout(size: size) { return 50 }
+        return size.height < 700 ? 60 : 68
+    }
+}
+
 
 /// Hardware/OS render capability gate. iPhone 7 / 7 Plus on iOS 15 use an older
 /// SwiftUI compositor path that can invalidate large clipped/shadowed scroll layers while

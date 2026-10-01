@@ -1,0 +1,39 @@
+{
+  "schema": "OMEGA96_M5_SPIRIT_BENCHMARK_V1",
+  "result": "PASS",
+  "backend": "OMEGA96_NATIVE_C_NEURAL_REASONER_RNN_V0.1",
+  "model_size_bytes": 142437,
+  "campaigns": [
+    {
+      "seed": 5601,
+      "count": 5000,
+      "cold_latency_ns": 2107358,
+      "warm_latency_ns": {
+        "p50": 367603.0,
+        "p95": 879537.7999999999,
+        "p99": 1256555.9999999907
+      },
+      "responses_per_second": 1910.1164465129739,
+      "process_cpu_percent_of_one_core": 99.94916664404388,
+      "max_rss_kib": 94384,
+      "output_digest": "b532def4fdeac7e194d05b953736842e629fed3a6586c40967ce7e60edd93528"
+    },
+    {
+      "seed": 5602,
+      "count": 5000,
+      "cold_latency_ns": 1840931,
+      "warm_latency_ns": {
+        "p50": 353011.0,
+        "p95": 844183.2,
+        "p99": 1062232.639999999
+      },
+      "responses_per_second": 2009.8410621506748,
+      "process_cpu_percent_of_one_core": 99.99213135165121,
+      "max_rss_kib": 94512,
+      "output_digest": "bebc9abcdf75533b6e36b2034c66fc9724558eb4b390440dc1381cf8f958a1d9"
+    }
+  ],
+  "scope": "SYNTHETIC_CONSTRAINED_LANGUAGE_HOST_MEASUREMENT",
+  "energy": "NOT_MEASURED",
+  "thermal": "NOT_MEASURED"
+}

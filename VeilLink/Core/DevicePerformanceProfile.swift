@@ -192,6 +192,18 @@ enum VeilDevicePerformance {
         )
     }
 
+    /// Keep the per-move critical path intentionally small on A9/A10-era 2 GB devices.
+    /// Performance overrides must not disable this safety gate.
+    static var prefersLightweightGameRuntime: Bool {
+        switch machineIdentifier {
+        case "iPhone8,4",
+             "iPhone9,1", "iPhone9,2", "iPhone9,3", "iPhone9,4":
+            return true
+        default:
+            return false
+        }
+    }
+
     static var diagnosticLabel: String {
         "\(current.label) · \(machineIdentifier)"
     }

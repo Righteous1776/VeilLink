@@ -124,12 +124,13 @@ final class DiagnosticLogStore: ObservableObject {
     private let rotatedFileCount = 7
     private let maxRecentEntries = 2_000
     private let maxAuxiliaryBytes = 24 * 1_024 * 1_024
-    private let flushThresholdBytes = 64 * 1_024
+    private let flushThresholdBytes = 256 * 1_024
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private var nextSequence: UInt64 = 1
     private var pendingBuffer = Data()
     private var flushTask: Task<Void, Never>?
+    private var flushesSinceDiskUsageRefresh = 0
 
     let runtimeSessionID: String
 
@@ -230,6 +231,7 @@ final class DiagnosticLogStore: ObservableObject {
         flushTask?.cancel()
         flushTask = nil
         pendingBuffer.removeAll(keepingCapacity: false)
+        flushesSinceDiskUsageRefresh = 0
         for url in allLogURLs() {
             try? fileManager.removeItem(at: url)
         }
@@ -380,7 +382,7 @@ final class DiagnosticLogStore: ObservableObject {
     private func scheduleFlush() {
         guard flushTask == nil else { return }
         flushTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled else { return }
             self?.flushPendingBuffer()
         }
@@ -389,16 +391,20 @@ final class DiagnosticLogStore: ObservableObject {
     private func flushPendingBuffer() {
         flushTask?.cancel()
         flushTask = nil
-        guard !pendingBuffer.isEmpty else {
-            refreshDiskUsage()
-            return
-        }
+        guard !pendingBuffer.isEmpty else { return }
 
         let data = pendingBuffer
         pendingBuffer.removeAll(keepingCapacity: true)
-        rotateIfNeeded(incomingBytes: data.count)
+        let rotated = rotateIfNeeded(incomingBytes: data.count)
         append(data)
-        refreshDiskUsage()
+        flushesSinceDiskUsageRefresh += 1
+        if rotated || flushesSinceDiskUsageRefresh >= 8 {
+            refreshDiskUsage()
+            flushesSinceDiskUsageRefresh = 0
+        } else {
+            diskUsageBytes = min(retentionBytes, max(0, diskUsageBytes + data.count))
+            lastRefreshAt = Date()
+        }
     }
 
     private func loadRecentEntriesFromDisk() {
@@ -447,9 +453,10 @@ final class DiagnosticLogStore: ObservableObject {
         }
     }
 
-    private func rotateIfNeeded(incomingBytes: Int) {
+    @discardableResult
+    private func rotateIfNeeded(incomingBytes: Int) -> Bool {
         let currentBytes = fileSize(currentLogURL)
-        guard currentBytes + incomingBytes > maxFileBytes else { return }
+        guard currentBytes + incomingBytes > maxFileBytes else { return false }
 
         let oldest = rotatedURL(rotatedFileCount)
         try? fileManager.removeItem(at: oldest)
@@ -470,6 +477,7 @@ final class DiagnosticLogStore: ObservableObject {
             try? fileManager.removeItem(at: destination)
             try? fileManager.moveItem(at: currentLogURL, to: destination)
         }
+        return true
     }
 
     private func refreshDiskUsage() {

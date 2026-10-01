@@ -94,6 +94,8 @@ final class SessionCoordinator: ObservableObject {
     var onMeshPayload: ((UUID, Data) -> Void)?
     var relayProvisionSecretProvider: ((String) -> Data?)?
     var onRelayProvisionReceived: ((String, VeilRelayProvisionPacket) -> Void)?
+    var onCollaborativeStressFrame: ((CollaborativeStressFrame, String) -> Void)?
+    var onCollaborativeStressBulkReceipt: ((CollaborativeStressBulkReceipt, String) -> Void)?
 
     private let identity: IdentityManager
     private let database: DatabaseStore
@@ -112,6 +114,9 @@ final class SessionCoordinator: ObservableObject {
     private var outboundAttachmentCache: [String: CachedOutboundAttachment] = [:]
     private var outboundAttachmentCacheOrder: [String] = []
     private var outboundAttachmentCacheBytes = 0
+    private var collaborativeStressInboundBulk: [String: CollaborativeStressInboundBulkAccumulator] = [:]
+    private var collaborativeStressMessageIDs: [String: TimeInterval] = [:]
+    private let collaborativeStressMessageIDTTL: TimeInterval = 10 * 60
     private var maximumOutboundAttachmentCacheBytes: Int { VeilDevicePerformance.current.outboundAttachmentCacheBytes }
 
     private var packetAbuseLimiter = PacketAbuseLimiter()
@@ -152,6 +157,7 @@ final class SessionCoordinator: ObservableObject {
 
     func clearTransientCaches() {
         clearOutboundAttachmentCache()
+        collaborativeStressInboundBulk.removeAll(keepingCapacity: false)
     }
 
     func connected(transportID: UUID, kind: VeilSessionTransportKind = .ble) {
@@ -171,6 +177,8 @@ final class SessionCoordinator: ObservableObject {
         cancelHandshakeTimeout(for: transportID)
         sessions.removeValue(forKey: transportID)
         packetAbuseLimiter.reset(transportID)
+        collaborativeStressInboundBulk.removeAll(keepingCapacity: false)
+        collaborativeStressMessageIDs.removeAll(keepingCapacity: false)
         transportKinds.removeValue(forKey: transportID)
         lastNearbyPeerPublishAt.removeValue(forKey: transportID)
 
@@ -215,6 +223,8 @@ final class SessionCoordinator: ObservableObject {
         nearbyPeers.removeAll()
         lastNearbyPeerPublishAt.removeAll()
         clearOutboundAttachmentCache()
+        collaborativeStressInboundBulk.removeAll(keepingCapacity: false)
+        collaborativeStressMessageIDs.removeAll(keepingCapacity: false)
         lastError = nil
     }
 
@@ -297,6 +307,120 @@ final class SessionCoordinator: ObservableObject {
         return isSecureSessionTransport(transportID, for: peerIdentityID)
     }
 
+    /// Diagnostics-only ephemeral E2EE lane. The peer must already be trusted and secure-ready.
+    /// Frames never enter normal message/outbox persistence.
+    func sendCollaborativeStressFrame(
+        _ frame: CollaborativeStressFrame,
+        to peerIdentityID: String
+    ) -> TransportSendResult {
+        guard let transportID = peerTransport[peerIdentityID],
+              var context = sessions[transportID],
+              let remote = context.remoteHello,
+              let keys = context.keys,
+              remote.identityID == peerIdentityID,
+              database.trustedContact(localIdentityID: context.localHello.identityID, identityID: peerIdentityID)?.publicKey == remote.identityPublicKey,
+              identity.activeIdentity?.id == context.localHello.identityID else {
+            return .temporarilyUnavailable
+        }
+        do {
+            let stressText = try CollaborativeStressCodec.encode(frame)
+            guard stressText.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else { return .unsupportedLink }
+            let content = WireChatContent(
+                kind: .text,
+                text: stressText,
+                attachment: nil,
+                mimeType: nil,
+                sentAt: Date(),
+                attachmentByteCount: nil,
+                attachmentSHA256: nil,
+                attachmentChunkCount: nil
+            )
+            let messageID = UUID().uuidString
+            let encrypted = try CryptoEngine.encrypt(
+                try encoder.encode(content),
+                key: keys.sendKey,
+                messageID: messageID,
+                sequence: context.nextSendSequence,
+                context: "chat"
+            )
+            context.nextSendSequence += 1
+            let envelope = try WireCodec.encodeEnvelope(
+                version: UInt8(WireProtocol.version),
+                kind: .encryptedMessage,
+                payload: try WireCodec.encodeEncryptedPayload(encrypted)
+            )
+            guard envelope.count <= WireProtocol.maximumEnvelopeBytes else { return .unsupportedLink }
+            let result = transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable
+            sessions[transportID] = context
+            return result
+        } catch {
+            lastError = "协同压力测试控制帧发送失败：\(error.localizedDescription)"
+            sessions[transportID] = context
+            return .temporarilyUnavailable
+        }
+    }
+
+    /// Sends diagnostics-only binary pressure through the real encrypted attachmentChunk/BLE bulk lane.
+    /// No messages/attachments/outbound_queue rows are created.
+    func sendCollaborativeStressBulkChunk(
+        sessionID: String,
+        epoch: UInt64,
+        transferID: String,
+        wireMessageID: String,
+        index: Int,
+        total: Int,
+        bytes: Data,
+        to peerIdentityID: String
+    ) -> TransportSendResult {
+        guard UUID(uuidString: sessionID) != nil,
+              epoch > 0,
+              UUID(uuidString: transferID) != nil,
+              UUID(uuidString: wireMessageID) != nil,
+              total > 0,
+              index >= 0,
+              index < total,
+              total <= Int(UInt16.max),
+              !bytes.isEmpty,
+              bytes.count <= CollaborativeStressCodec.bulkChunkBytes,
+              let transportID = peerTransport[peerIdentityID],
+              var context = sessions[transportID],
+              let remote = context.remoteHello,
+              let keys = context.keys,
+              remote.identityID == peerIdentityID,
+              database.trustedContact(localIdentityID: context.localHello.identityID, identityID: peerIdentityID)?.publicKey == remote.identityPublicKey else {
+            return .temporarilyUnavailable
+        }
+        do {
+            let clear = try WireCodec.encodeAttachmentChunk(
+                WireAttachmentChunk(index: UInt16(index), total: UInt16(total), bytes: bytes)
+            )
+            let encrypted = try CryptoEngine.encrypt(
+                clear,
+                key: keys.sendKey,
+                messageID: wireMessageID,
+                sequence: context.nextSendSequence,
+                context: "attachment-chunk"
+            )
+            context.nextSendSequence += 1
+            let envelope = try WireCodec.encodeEnvelope(
+                version: UInt8(WireProtocol.version),
+                kind: .attachmentChunk,
+                payload: try WireCodec.encodeEncryptedPayload(encrypted)
+            )
+            guard envelope.count <= WireProtocol.maximumEnvelopeBytes else { return .unsupportedLink }
+            let result = transportSend?(transportID, envelope, .bulk) ?? .temporarilyUnavailable
+            sessions[transportID] = context
+            return result
+        } catch {
+            lastError = "协同压力测试 bulk 发送失败：\(error.localizedDescription)"
+            sessions[transportID] = context
+            return .temporarilyUnavailable
+        }
+    }
+
+    /// Re-seeds the signed Hello on an already-known BLE transport without changing trust state.
+    /// This gives the UI a safe recovery action when the physical link survived but the secure
+    /// session was lost during backgrounding or a transient packet-loss window.
     func recoverSecureSession(for peerIdentityID: String) {
         refreshPreferredTransport(for: peerIdentityID)
         guard let transportID = peerTransport[peerIdentityID] else {
@@ -361,7 +485,7 @@ final class SessionCoordinator: ObservableObject {
         }
         try queueContent(
             WireChatContent(kind: .text, text: encoded, attachment: nil, mimeType: nil, sentAt: packet.createdAt, attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil),
-            preview: MiniGameCodec.previewText(for: packet),
+            preview: MiniGameCodec.outgoingPreviewText(for: packet),
             to: peerIdentityID
         )
     }
@@ -608,6 +732,24 @@ final class SessionCoordinator: ObservableObject {
         try validate(content)
         guard context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
 
+        // I11 frames share the authenticated chat cipher for backward compatibility, but any
+        // VLSTRESS1 envelope is consumed before SQLite. A malformed lab envelope is rejected,
+        // never silently stored as a normal chat message on an I11 peer.
+        if content.kind == .text, let text = content.text, text.hasPrefix(CollaborativeStressCodec.prefix) {
+            guard let stressFrame = CollaborativeStressCodec.decode(text) else { throw CryptoEngineError.invalidCiphertext }
+            try CollaborativeStressCodec.validate(stressFrame)
+            if stressFrame.kind == .bulkBegin, let wireMessageID = stressFrame.wireMessageID {
+                guard database.fetchMessage(id: wireMessageID) == nil,
+                      collaborativeStressInboundBulk.count < 8 else { throw CryptoEngineError.invalidCiphertext }
+                pruneCollaborativeStressMessageIDs()
+                collaborativeStressMessageIDs[wireMessageID] = ProcessInfo.processInfo.systemUptime + collaborativeStressMessageIDTTL
+                collaborativeStressInboundBulk[wireMessageID] = try CollaborativeStressInboundBulkAccumulator(frame: stressFrame)
+            }
+            sessions[transportID] = context
+            onCollaborativeStressFrame?(stressFrame, remote.identityID)
+            return
+        }
+
         if database.isLocallyDeletedMessage(messageID: payload.messageID, senderIdentityID: remote.identityID) {
             switch content.kind {
             case .text:
@@ -674,6 +816,31 @@ final class SessionCoordinator: ObservableObject {
         let chunk = try WireCodec.decodeAttachmentChunk(clear)
         guard chunk.bytes.count <= WireProtocol.attachmentChunkBytes,
               context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+
+        if let accumulator = collaborativeStressInboundBulk[payload.messageID] {
+            do {
+                let receipt = try accumulator.accept(index: Int(chunk.index), total: Int(chunk.total), bytes: chunk.bytes)
+                sessions[transportID] = context
+                if let receipt {
+                    collaborativeStressInboundBulk.removeValue(forKey: payload.messageID)
+                    onCollaborativeStressBulkReceipt?(receipt, remote.identityID)
+                }
+                return
+            } catch {
+                collaborativeStressInboundBulk.removeValue(forKey: payload.messageID)
+                sessions[transportID] = context
+                throw error
+            }
+        }
+        pruneCollaborativeStressMessageIDs()
+        if collaborativeStressMessageIDs[payload.messageID] != nil {
+            // Memory-pressure cleanup may intentionally discard the accumulator while encrypted
+            // chunks are still in flight. Keep a bounded TTL tombstone so late lab chunks are
+            // dropped instead of misrouting them into the production attachment database path.
+            sessions[transportID] = context
+            return
+        }
+
         let state = try database.storeInboundAttachmentChunk(messageID: payload.messageID, index: Int(chunk.index), chunkCount: Int(chunk.total), clearData: chunk.bytes)
         let isLAN = transportKinds[transportID] == .lan
         let shouldCheckpoint = !isLAN || state.completed || state.nextChunk == 0 || state.nextChunk % LANDataPlanePolicy.attachmentBurstWindow == 0
@@ -1097,6 +1264,11 @@ final class SessionCoordinator: ObservableObject {
         transportDisconnect?(transportID)
     }
 
+    private func pruneCollaborativeStressMessageIDs() {
+        let now = ProcessInfo.processInfo.systemUptime
+        collaborativeStressMessageIDs = collaborativeStressMessageIDs.filter { $0.value > now }
+    }
+
     private func retryDueOutbound() {
         try? database.expireOutboundMessages()
         for peerIdentityID in peerTransport.keys {
@@ -1298,7 +1470,6 @@ final class SessionCoordinator: ObservableObject {
         sessions[transportID] = context
         onPTTAudioFrame?(VeilPTTIncomingAudio(peerIdentityID: remote.identityID, frame: frame))
     }
-
     private func validate(_ content: WireChatContent) throws {
         guard abs(content.sentAt.timeIntervalSinceNow) <= 30 * 24 * 60 * 60 else { throw CryptoEngineError.invalidCiphertext }
         switch content.kind {

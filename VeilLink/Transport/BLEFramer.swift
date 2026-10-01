@@ -223,6 +223,20 @@ final class BLEFragmentAssembler {
         return output
     }
 
+    /// Drops incomplete transport frames for one physical peer. A reconnect/rekey must not
+    /// inherit fragments assembled under the previous BLE transport epoch.
+    func reset(source: UUID) {
+        let keys = partials.keys.filter { $0.source == source }
+        keys.forEach { removePartial(forKey: $0) }
+    }
+
+    func resetAll() {
+        partials.removeAll(keepingCapacity: false)
+        partialCountBySource.removeAll(keepingCapacity: false)
+        totalBufferedBytes = 0
+        nextPruneAt = 0
+    }
+
     private func pruneIfNeeded() {
         let now = Date().timeIntervalSinceReferenceDate
         guard now >= nextPruneAt else { return }

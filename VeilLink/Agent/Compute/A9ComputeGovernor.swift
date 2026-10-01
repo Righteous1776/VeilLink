@@ -11,6 +11,7 @@ final class VeilA9ComputeGovernor: ObservableObject {
     @Published private(set) var focus: AgentComputeFocus = .idle
     @Published private(set) var foregroundActive = true
     @Published private(set) var experimentalCoreEnabled = false
+    @Published private(set) var planFrozen = false
 
     let profile: AgentCapabilityProfile
     var onPlanChanged: ((VeilA9ComputePlan) -> Void)?
@@ -57,7 +58,44 @@ final class VeilA9ComputeGovernor: ObservableObject {
         recompute()
     }
 
+    /// I8 LAB isolation: keep the last already-committed A9 plan byte-for-byte stable while
+    /// A10 Ultra Ω is measured alone. Unfreezing immediately recomputes from the last A9 decision.
+    func setPlanFrozen(_ frozen: Bool, recomputeOnUnfreeze: Bool = true) {
+        guard planFrozen != frozen else { return }
+        planFrozen = frozen
+        if !frozen, recomputeOnUnfreeze { recompute() }
+    }
+
+    /// Attaches the current MaleCNS runtime to A9 scheduling. The consumer receives the current
+    /// budget immediately and every later lattice/focus update. A weak reference keeps runtime
+    /// lifecycle ownership outside the governor.
+    func bindMaleCNSConsumer(_ consumer: (any MaleCNSComputeConsumer)?) {
+        maleCNSConsumer = consumer
+        consumer?.applyComputeBudget(plan.maleCNS)
+    }
+
+    /// Registers a MaleCNS runtime for live A9 budget updates. The governor keeps only a weak
+    /// reference so loading/unloading a graph never depends on the UI or governor lifetime.
+    func registerMaleCNSConsumer(_ consumer: MaleCNSComputeConsumer) {
+        maleCNSConsumers.removeAll { $0.value == nil }
+        guard !maleCNSConsumers.contains(where: { $0.value === consumer }) else {
+            consumer.applyComputeBudget(plan.maleCNS)
+            return
+        }
+        maleCNSConsumers.append(WeakMaleCNSComputeConsumer(consumer))
+        consumer.applyComputeBudget(plan.maleCNS)
+    }
+
+    func trimMaleCNSConsumers() {
+        maleCNSConsumers.removeAll { wrapper in
+            guard let consumer = wrapper.value else { return true }
+            consumer.trimComputeState()
+            return false
+        }
+    }
+
     private func recompute() {
+        guard !planFrozen else { return }
         plan = VeilA9ComputePlanner.plan(
             decision: decision,
             profile: profile,
@@ -76,6 +114,7 @@ final class VeilA9ComputeGovernor: ObservableObject {
             "Focus: \(plan.focus.title)",
             "Foreground: \(foregroundActive ? "yes" : "no")",
             "Experimental neural runtime: excluded from Core target",
+            "Plan frozen: \(planFrozen ? "yes" : "no")",
             "Lattice cell: \(plan.latticeIndex)/143",
             "Compute units: \(plan.totalComputeUnits)",
             "Transport reserve: \(plan.transportReserveUnits)",

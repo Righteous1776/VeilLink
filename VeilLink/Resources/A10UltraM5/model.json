@@ -1,0 +1,18 @@
+{
+  "schema": "OMEGA96_MICRO_LANGUAGE_REASONER_MODEL_V0.2",
+  "model_id": "OMEGA96_MICRO_LANGUAGE_REASONER_M5",
+  "model_version": "0.5.0-M5",
+  "architecture": {
+    "reasoner": "BAG_TOKEN_MLP_69x64x11",
+    "language": "CONTEXT_CONDITIONED_TANH_RNN_96",
+    "decoder": "AUTOREGRESSIVE_NATIVE_C"
+  },
+  "weights_sha256_arrays": "3228384ef72a809e5725a54f4288ba0457288cb695338966eb679b82221e3e26",
+  "vocab_sha256": "fbf7edf8ffe3e1ed5d7e79baa5b118b8fc38ed646dbb684f0615349d611dec50",
+  "training_scope": "SYNTHETIC_DOMAIN_LANGUAGE_AND_REASONING",
+  "runtime_backend": "OMEGA96_NATIVE_C_NEURAL_REASONER_RNN_V0.1",
+  "mutation_authority": 0,
+  "deployment_mode": "SHADOW_ONLY",
+  "real_world_validation": "NOT_PERFORMED",
+  "model_sha256": "c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4"
+}

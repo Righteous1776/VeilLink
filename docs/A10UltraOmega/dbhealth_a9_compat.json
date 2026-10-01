@@ -1,0 +1,17 @@
+{
+  "schema": "A10_COMPILED_PROFILE_SPEC_V1",
+  "yellow_persistent_runs_for_l2": 3,
+  "red_risk_points_x100": 2800,
+  "fault_domain_isolation": {
+    "enabled": false,
+    "local_non_p0_authority_cap": 5
+  },
+  "authority_mode": "DETERMINISTIC_ADVISORY_ONLY",
+  "mutation_authority": 0,
+  "profile_id": "A10_PROFILE_DBHEALTH_A9_COMPAT",
+  "description": "Exact A9 DB Health lattice semantics under A10; fault scope forced GLOBAL by compatibility adapter.",
+  "extra_axes": {},
+  "require_attested_context": true,
+  "plane_clamps": [],
+  "legacy_alias": "DBH-LATTICE-CHIP V0.9-A9"
+}

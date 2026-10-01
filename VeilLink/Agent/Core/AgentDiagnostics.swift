@@ -7,6 +7,9 @@ struct AgentDiagnostics: Equatable, Sendable {
     var memoryTrimCount = 0
     var unloadCount = 0
     var toolExecutionCount = 0
+    var a10AttachCount = 0
+    var a10FallbackCount = 0
+    var lastA10FallbackReason: String?
     var lastToolCommand: String?
     var lastGenerationMilliseconds: Int?
     var lastEstimatedTokenCount: Int?
@@ -15,14 +18,16 @@ struct AgentDiagnostics: Equatable, Sendable {
     func report(
         runtimeState: AgentRuntimeState,
         runtimeID: String,
+        backendName: String,
+        realLocalInferenceActive: Bool,
         profile: AgentCapabilityProfile,
         sessionMessageCount: Int
     ) -> String {
         [
             "VeilLink Local Agent Diagnostics",
             "Runtime: \(runtimeID)",
-            "Backend: \(LocalTextModelRuntimeFactory.backendName)",
-            "Real local inference compiled: \(LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled)",
+            "Backend: \(backendName)",
+            "Real local inference active: \(realLocalInferenceActive)",
             "State: \(runtimeState.rawValue)",
             "Profile: \(profile.id)",
             "Tier: \(profile.tier.rawValue)",
@@ -33,6 +38,9 @@ struct AgentDiagnostics: Equatable, Sendable {
             "Memory trims: \(memoryTrimCount)",
             "Unloads: \(unloadCount)",
             "Tool executions: \(toolExecutionCount)",
+            "A10 Ultra Ω attaches: \(a10AttachCount)",
+            "A10 Ultra Ω fallbacks: \(a10FallbackCount)",
+            "Last A10 fallback: \(lastA10FallbackReason ?? "-")",
             "Last tool: \(lastToolCommand ?? "-")",
             "Last duration ms: \(lastGenerationMilliseconds.map(String.init) ?? "-")",
             "Last estimated tokens: \(lastEstimatedTokenCount.map(String.init) ?? "-")",

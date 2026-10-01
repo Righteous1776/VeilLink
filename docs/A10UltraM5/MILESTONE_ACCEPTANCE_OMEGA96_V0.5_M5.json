@@ -1,0 +1,178 @@
+{
+  "schema": "OMEGA96_MILESTONE_ACCEPTANCE_V0.5_M5",
+  "milestone": "V0.5-M5",
+  "status": "MICRO_LANGUAGE_REASONING_SHADOW_M5",
+  "result": "PASS",
+  "attachment_readiness": "SHADOW_ATTACHMENT_READY",
+  "spirit_core_takeover": "DENY_PENDING_REAL_WORLD_VALIDATION",
+  "training_scope": "DETERMINISTIC_SYNTHETIC_DOMAIN_TRAINING",
+  "real_world_validation": "NOT_PERFORMED",
+  "production_cutover": "DENY",
+  "mutation_authority": 0,
+  "model_hash": "c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4",
+  "gates": {
+    "GATE-M5-L1": {
+      "pass": true,
+      "evidence": {
+        "bce": 7.067414844641462e-05,
+        "macro_f1": 1.0,
+        "hamming_accuracy": 1.0,
+        "exact_state_set_accuracy": 1.0
+      }
+    },
+    "GATE-M5-L2": {
+      "pass": true,
+      "evidence": {
+        "loss": 0.000205520263989456,
+        "perplexity": 1.0002055413847257,
+        "teacher_token_accuracy": 1.0,
+        "greedy_exact_rate": 1.0,
+        "reasoning_token_coverage": 1.0,
+        "unknown_abstain_count": 156
+      }
+    },
+    "GATE-M5-L3": {
+      "pass": true,
+      "evidence": {
+        "bce": 0.5128461122512817,
+        "macro_f1": 0.0,
+        "hamming_accuracy": 0.7946363636363636,
+        "exact_state_set_accuracy": 0.0
+      }
+    },
+    "GATE-M5-L4": {
+      "pass": true,
+      "evidence": "same-seed parameter hashes match"
+    },
+    "GATE-M5-L5": {
+      "pass": true,
+      "evidence": {
+        "schema": "OMEGA96_M5_NATIVE_LANGUAGE_DIFFERENTIAL_V1",
+        "result": "PASS",
+        "cases": 10000,
+        "reasoner_max_abs_error": 7.748603820800781e-07,
+        "rnn_max_abs_error": 3.337860107421875e-06,
+        "tolerances": {
+          "reasoner": 2e-05,
+          "rnn": 3e-05
+        },
+        "native_abi": 1
+      }
+    },
+    "GATE-M5-L6": {
+      "pass": true,
+      "evidence": {
+        "link": {
+          "pass": true,
+          "states": [
+            "S_LINK_BAD"
+          ],
+          "text": "分析：链路退化，检查链路与丢包。建议：暂时降低发送速率，保持只读与观察。",
+          "output_digest": "2d72dd672e8be746c62fb50a20f47f9d201e0641ea4cd743b950ec587d54af06"
+        },
+        "database": {
+          "pass": true,
+          "states": [
+            "S_CORRUPTED"
+          ],
+          "text": "分析：可能损坏，执行只读完整性检查。建议：隔离副本后检查，保持只读与观察。",
+          "output_digest": "c01a9d381ab12bcd5226dca91271ee266dae1b8aff7c790fe789e3ed18dd15fa"
+        },
+        "multi": {
+          "pass": true,
+          "states": [
+            "S_QUEUE",
+            "S_THERMAL"
+          ],
+          "text": "分析：队列拥塞，检查队列积压。建议：先消化队列，保持只读与观察。分析：热压力，检查温度和负载。建议：降低算力并冷却，保持只读与观察。",
+          "output_digest": "e1954a9fafd29092c0734caee7a02bf4f84bf75eb60ba9ed0343fddc8376eb34"
+        },
+        "unknown": {
+          "pass": true,
+          "states": [
+            "S_UNKNOWN"
+          ],
+          "text": "分析：信息不足，补充观测数据。建议：请补充状态，保持只读与观察。",
+          "output_digest": "99edfe372291acf64a7d2230a630e2f322e1cf98dbe0d6e068b4877f66e35082"
+        },
+        "digest_changes": {
+          "pass": true,
+          "count": 4
+        },
+        "unknown_abstains": {
+          "pass": true
+        }
+      }
+    },
+    "GATE-M5-L7": {
+      "pass": true,
+      "evidence": {
+        "manifest_mutation_rejected": true,
+        "weight_mutation_rejected": true
+      }
+    },
+    "GATE-M5-L8": {
+      "pass": true,
+      "backend": "OMEGA96_NATIVE_C_NEURAL_REASONER_RNN_V0.1"
+    },
+    "GATE-M5-L9": {
+      "pass": true,
+      "mutation_authority": 0
+    },
+    "GATE-M5-L10": {
+      "pass": true,
+      "evidence": "OMEGA96 M4 GUARD PASS — MICRO_TRAINED_SHADOW_M4; REAL_WORLD_VALIDATION NOT PERFORMED; PRODUCTION_CUTOVER DENY"
+    },
+    "GATE-M5-L11": {
+      "pass": true,
+      "model_hash": "c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4"
+    },
+    "GATE-M5-L12": {
+      "pass": true,
+      "evidence": "honesty boundary retained"
+    },
+    "GATE-M5-L13": {
+      "pass": true,
+      "evidence": {
+        "model_size_bytes": 142437,
+        "campaigns": [
+          {
+            "seed": 5601,
+            "count": 5000,
+            "cold_latency_ns": 8099023,
+            "warm_latency_ns": {
+              "p50": 567939.0,
+              "p95": 1252431.299999999,
+              "p99": 1762890.999999998
+            },
+            "responses_per_second": 1352.5011001081648,
+            "process_cpu_percent_of_one_core": 107.42256888462846,
+            "max_rss_kib": 28364,
+            "output_digest": "b532def4fdeac7e194d05b953736842e629fed3a6586c40967ce7e60edd93528"
+          },
+          {
+            "seed": 5602,
+            "count": 5000,
+            "cold_latency_ns": 2058125,
+            "warm_latency_ns": {
+              "p50": 535797.0,
+              "p95": 1115369.0999999999,
+              "p99": 1450852.8199999991
+            },
+            "responses_per_second": 1433.6398607703788,
+            "process_cpu_percent_of_one_core": 99.9949966542315,
+            "max_rss_kib": 28620,
+            "output_digest": "bebc9abcdf75533b6e36b2034c66fc9724558eb4b390440dc1381cf8f958a1d9"
+          }
+        ]
+      }
+    }
+  },
+  "regression": {
+    "native_differential": "M5 NATIVE LANGUAGE DIFFERENTIAL PASS",
+    "spirit_runtime": "M5 SPIRIT RUNTIME PASS",
+    "model_tamper": "M5 MODEL TAMPER PASS",
+    "spirit_benchmark": "}",
+    "m4_baseline": "OMEGA96 M4 GUARD PASS — MICRO_TRAINED_SHADOW_M4; REAL_WORLD_VALIDATION NOT PERFORMED; PRODUCTION_CUTOVER DENY"
+  }
+}

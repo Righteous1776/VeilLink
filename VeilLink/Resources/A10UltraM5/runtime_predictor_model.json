@@ -1,0 +1,110 @@
+{
+  "format": "OMEGA_MICRO_MODEL_FORMAT_V0.1",
+  "model_id": "VEILLINK_RUNTIME_PREDICTOR_M4_SYNTHETIC",
+  "model_version": "0.4.0-M4",
+  "architecture": [
+    32,
+    64,
+    32,
+    8
+  ],
+  "input_shape": [
+    32
+  ],
+  "output_shape": [
+    8
+  ],
+  "layers": [
+    {
+      "type": "DENSE",
+      "input": 32,
+      "output": 64,
+      "activation": "RELU"
+    },
+    {
+      "type": "DENSE",
+      "input": 64,
+      "output": 32,
+      "activation": "RELU"
+    },
+    {
+      "type": "DENSE",
+      "input": 32,
+      "output": 8,
+      "activation": "SIGMOID"
+    }
+  ],
+  "quantization": {
+    "scheme": "AFFINE_INT8_PER_TENSOR_WEIGHTS_DYNAMIC_ACTIVATIONS",
+    "input": {
+      "scale": 0.007874015748031496,
+      "zero_point": 0
+    },
+    "accumulator": "INT32",
+    "rounding": "NEAREST",
+    "saturation": true
+  },
+  "sections": {
+    "dense1": {
+      "rows": 64,
+      "cols": 32,
+      "fp32_weight_offset": 0,
+      "fp32_weight_bytes": 8192,
+      "int8_weight_offset": 8192,
+      "int8_weight_bytes": 2048,
+      "bias_offset": 10240,
+      "bias_bytes": 256,
+      "weight_scale": 0.005565558560192585,
+      "weight_zero_point": 0
+    },
+    "dense2": {
+      "rows": 32,
+      "cols": 64,
+      "fp32_weight_offset": 10496,
+      "fp32_weight_bytes": 8192,
+      "int8_weight_offset": 18688,
+      "int8_weight_bytes": 2048,
+      "bias_offset": 20736,
+      "bias_bytes": 128,
+      "weight_scale": 0.004908599425107241,
+      "weight_zero_point": 0
+    },
+    "dense3": {
+      "rows": 8,
+      "cols": 32,
+      "fp32_weight_offset": 20864,
+      "fp32_weight_bytes": 1024,
+      "int8_weight_offset": 21888,
+      "int8_weight_bytes": 256,
+      "bias_offset": 22144,
+      "bias_bytes": 32,
+      "weight_scale": 0.003947950433939695,
+      "weight_zero_point": 0
+    }
+  },
+  "weight_sha256": "74b1f91cb90c95823c882c284f4c369f3f815f90e8d6e87e06d5038a84684204",
+  "created_at": "2026-10-01T02:30:00+08:00",
+  "runtime_min_version": "0.1.0",
+  "output_labels": [
+    "link_degradation",
+    "reconnect_required",
+    "queue_congestion",
+    "thermal_throttle",
+    "database_stall",
+    "resource_pressure",
+    "reserved_6",
+    "reserved_7"
+  ],
+  "application": "VeilLink Runtime Predictor M4",
+  "training_status": "SYNTHETIC_PRETRAINED_M4",
+  "training_data_sha256": "c159b4a7313396b4a411fe58833ee3a2caad3660689f86ef69877efcbcb3d532",
+  "training_seed": 4104,
+  "real_world_validation": "NOT_PERFORMED",
+  "mutation_authority": 0,
+  "deployment_mode": "SHADOW_ONLY",
+  "acceptance": {
+    "max_abs_error": 0.06,
+    "max_class_mismatch_rate": 0.01
+  },
+  "model_sha256": "dd3d81adb2d922dd5f1a791b09cba99d03a6e501672d898b66c31a22aa879945"
+}

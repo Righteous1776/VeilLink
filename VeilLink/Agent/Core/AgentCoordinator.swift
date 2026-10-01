@@ -16,6 +16,8 @@ final class AgentCoordinator: ObservableObject {
     @Published private(set) var visualContext: AgentVisualContext?
     @Published private(set) var visualContextEnabled = true
     @Published private(set) var computePlan: VeilA9ComputePlan
+    @Published private(set) var threeCoreSnapshot: VeilThreeCoreSnapshot
+    @Published private(set) var a10M5ShadowCognition: A10UltraM5ShadowCognitionSnapshot = .idle
 
     let capabilityProfile: AgentCapabilityProfile
     private let language: LocalTextModelCoordinator
@@ -24,6 +26,9 @@ final class AgentCoordinator: ObservableObject {
     private var preparationTask: Task<Void, Never>?
     private var localContextProvider: (() -> AgentLocalContext?)?
     private var toolExecutor: ((String) -> AgentToolExecution?)?
+    private var a10ComputeRuntime: (any A10UltraComputeRuntime)?
+    private var a10ShadowRuntime: (any A10UltraComputeRuntime)?
+    private var a10ShadowTask: Task<Void, Never>?
 
     init(
         runtime: LocalTextModelRuntime? = nil,
@@ -35,11 +40,19 @@ final class AgentCoordinator: ObservableObject {
         self.capabilityProfile = capabilityProfile
         self.computeGovernor = governor
         computePlan = governor.plan
+        threeCoreSnapshot = VeilThreeCoreSnapshot.initial(
+            languageBackend: selectedRuntime.backendName,
+            budgetMode: governor.plan.mode.rawValue
+        )
         language = LocalTextModelCoordinator(runtime: selectedRuntime)
         runtimeState = selectedRuntime.state
         session = Self.makeFreshSession()
         governor.onPlanChanged = { [weak self] plan in
-            self?.computePlan = plan
+            guard let self else { return }
+            self.computePlan = plan
+            self.a10ComputeRuntime?.applyBudget(A10UltraComputeBudget.fromA9(plan))
+            self.a10ShadowRuntime?.applyBudget(A10UltraComputeBudget.fromA9(plan))
+            self.refreshThreeCoreSnapshot()
         }
     }
 
@@ -53,6 +66,63 @@ final class AgentCoordinator: ObservableObject {
 
     var runtimeManifest: LocalTextModelManifest? { language.manifest }
     var isGenerating: Bool { runtimeState == .generating }
+
+    /// Attaches A10 Ultra Ω M5 as a non-authoritative LingCore cognition shadow.
+    /// It receives the sanitized AgentTextRequest but never replaces the visible answer or executes tools.
+    func attachA10UltraShadowRuntime(_ runtime: any A10UltraComputeRuntime) {
+        a10ShadowTask?.cancel()
+        a10ShadowRuntime?.cancel()
+        a10ShadowRuntime?.unload()
+        a10ShadowRuntime = runtime
+        runtime.applyBudget(A10UltraComputeBudget.fromA9(computePlan))
+        a10M5ShadowCognition = .idle
+        refreshThreeCoreSnapshot()
+    }
+
+    func detachA10UltraShadowRuntime() {
+        a10ShadowTask?.cancel()
+        a10ShadowTask = nil
+        a10ShadowRuntime?.cancel()
+        a10ShadowRuntime?.unload()
+        a10ShadowRuntime = nil
+        a10M5ShadowCognition = .idle
+        refreshThreeCoreSnapshot()
+    }
+
+    /// Installs the future A10 Ultra Ω compute runtime into the LingCore compute slot.
+    /// LingCore keeps session/personality/tool orchestration; the host Action Layer keeps all
+    /// mutation authority. No request is replayed automatically across runtime swaps.
+    func attachA10UltraComputeRuntime(_ runtime: any A10UltraComputeRuntime) {
+        stopGeneration()
+        a10ComputeRuntime?.cancel()
+        a10ComputeRuntime?.unload()
+        a10ComputeRuntime = runtime
+        runtime.applyBudget(A10UltraComputeBudget.fromA9(computePlan))
+        language.activateOverride(A10UltraLanguageRuntimeAdapter(runtime: runtime))
+        diagnostics.a10AttachCount += 1
+        lastError = nil
+        refreshThreeCoreSnapshot()
+        syncRuntimeState()
+    }
+
+    func detachA10UltraComputeRuntime() {
+        stopGeneration()
+        a10ComputeRuntime?.cancel()
+        a10ComputeRuntime?.unload()
+        a10ComputeRuntime = nil
+        language.restoreBaseRuntime()
+        refreshThreeCoreSnapshot()
+        syncRuntimeState()
+    }
+
+    /// Generic non-mutating compute lane for future structured reasoning/ranking/game/vision use.
+    /// Callers receive data only; they must route any real app action through the host control layer.
+    func runA10UltraComputeTask(_ request: A10UltraComputeRequest) async throws -> A10UltraComputeResponse {
+        guard let runtime = a10ComputeRuntime else {
+            throw A10UltraComputeError.unavailable("A10 Ultra Ω 计算核尚未正式插入。")
+        }
+        return try await runtime.execute(request)
+    }
 
     func activate() {
         guard language.state == .unloaded || language.state == .unavailable else {
@@ -110,6 +180,7 @@ final class AgentCoordinator: ObservableObject {
             localContext: localContextProvider?(),
             computeBudget: computePlan.language
         )
+        launchA10UltraM5Shadow(request)
         let assistantID = UUID().uuidString
         session.append(AgentMessage(id: assistantID, role: .assistant, text: ""), limit: capabilityProfile.transcriptLimit)
         lastError = nil
@@ -156,6 +227,9 @@ final class AgentCoordinator: ObservableObject {
             } catch {
                 self.lastError = error.localizedDescription
                 self.diagnostics.lastFailure = error.localizedDescription
+                if self.a10ComputeRuntime != nil {
+                    self.fallbackFromA10Compute(reason: error.localizedDescription)
+                }
                 if stream.text.isEmpty {
                     self.session.updateMessage(id: assistantID, text: "本地运行时暂时不可用：\(error.localizedDescription)")
                 } else {
@@ -168,7 +242,10 @@ final class AgentCoordinator: ObservableObject {
     }
 
     func stopGeneration() {
-        guard generationTask != nil || runtimeState == .generating || runtimeState == .loading else { return }
+        guard generationTask != nil || a10ShadowTask != nil || runtimeState == .generating || runtimeState == .loading else { return }
+        a10ShadowTask?.cancel()
+        a10ShadowTask = nil
+        a10ShadowRuntime?.cancel()
         generationTask?.cancel()
         generationTask = nil
         preparationTask?.cancel()
@@ -215,6 +292,7 @@ final class AgentCoordinator: ObservableObject {
 
     func handleMemoryPressure() {
         stopGeneration()
+        a10ShadowRuntime?.trimMemory()
         language.trimMemory()
         diagnostics.memoryTrimCount += 1
         if capabilityProfile.unloadOnMemoryPressure {
@@ -228,6 +306,7 @@ final class AgentCoordinator: ObservableObject {
 
     func handleBackground() {
         stopGeneration()
+        a10ShadowRuntime?.trimMemory()
         if capabilityProfile.unloadOnBackground {
             language.unload()
             diagnostics.unloadCount += 1
@@ -252,9 +331,17 @@ final class AgentCoordinator: ObservableObject {
         diagnostics.report(
             runtimeState: runtimeState,
             runtimeID: runtimeManifest?.id ?? "none",
+            backendName: language.backendName,
+            realLocalInferenceActive: language.isUsingOverride || LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled,
             profile: capabilityProfile,
             sessionMessageCount: session.messages.count
-        ) + "\n\n" + computeGovernor.report()
+        ) + "\n\n" + computeGovernor.report() + "\n\n" + threeCoreSnapshot.report
+            + "\n\nA10 Ultra Ω M5 Shadow Cognition"
+            + "\nResult: \(a10M5ShadowCognition.result)"
+            + "\nRuntime: \(a10M5ShadowCognition.runtimeID)"
+            + "\nOutput digest: \(a10M5ShadowCognition.outputDigest)"
+            + "\nLatency ms: \(a10M5ShadowCognition.latencyMilliseconds)"
+            + "\nMutation authority: 0"
     }
 
     nonisolated static func streamingFlushIntervalMilliseconds(
@@ -267,8 +354,90 @@ final class AgentCoordinator: ObservableObject {
         }
     }
 
+    private func launchA10UltraM5Shadow(_ request: AgentTextRequest) {
+        guard a10ComputeRuntime == nil, let runtime = a10ShadowRuntime else { return }
+        a10ShadowTask?.cancel()
+        a10ShadowTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let started = ProcessInfo.processInfo.systemUptime
+            do {
+                let result = try await runtime.generateText(request: request) { _ in }
+                guard !Task.isCancelled else { return }
+                let elapsed = max(0, Int((ProcessInfo.processInfo.systemUptime - started) * 1_000))
+                self.a10M5ShadowCognition = A10UltraM5ShadowCognitionSnapshot(
+                    evaluatedAt: Date(),
+                    runtimeID: runtime.manifest.runtimeID,
+                    outputDigest: A10UltraM5Digest.sha256(result.text),
+                    estimatedTokenCount: result.estimatedTokenCount,
+                    latencyMilliseconds: elapsed,
+                    mutationAuthority: 0,
+                    result: "PASS",
+                    failure: nil
+                )
+            } catch is CancellationError {
+                return
+            } catch A10UltraComputeError.cancelled {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.a10M5ShadowCognition = A10UltraM5ShadowCognitionSnapshot(
+                    evaluatedAt: Date(),
+                    runtimeID: runtime.manifest.runtimeID,
+                    outputDigest: "-",
+                    estimatedTokenCount: 0,
+                    latencyMilliseconds: max(0, Int((ProcessInfo.processInfo.systemUptime - started) * 1_000)),
+                    mutationAuthority: 0,
+                    result: "FAILED",
+                    failure: error.localizedDescription
+                )
+            }
+            self.a10ShadowTask = nil
+        }
+    }
+
     private func syncRuntimeState() {
         runtimeState = language.state
+        refreshThreeCoreSnapshot()
+    }
+
+    private func fallbackFromA10Compute(reason: String) {
+        a10ComputeRuntime?.cancel()
+        a10ComputeRuntime?.unload()
+        a10ComputeRuntime = nil
+        language.restoreBaseRuntime()
+        diagnostics.a10FallbackCount += 1
+        diagnostics.lastA10FallbackReason = reason
+        refreshThreeCoreSnapshot(phaseOverride: .fallback, fallbackReason: reason)
+    }
+
+    private func refreshThreeCoreSnapshot(
+        phaseOverride: VeilThreeCorePhase? = nil,
+        fallbackReason: String? = nil
+    ) {
+        let runtime = a10ComputeRuntime ?? a10ShadowRuntime
+        let phase: VeilThreeCorePhase
+        if let phaseOverride {
+            phase = phaseOverride
+        } else if runtime == nil {
+            phase = .insertionReady
+        } else if runtime?.state == .computing {
+            phase = .a10ComputeActive
+        } else {
+            phase = .a10ComputeAttached
+        }
+        threeCoreSnapshot = VeilThreeCoreSnapshot(
+            phase: phase,
+            a9Role: .governance,
+            a10Role: .compute,
+            lingCoreRole: .orchestration,
+            a10RuntimeID: runtime?.manifest.runtimeID,
+            a10RuntimeState: runtime?.state.rawValue ?? A10UltraComputeState.detached.rawValue,
+            languageBackend: language.backendName,
+            a9BudgetMode: computePlan.mode.rawValue,
+            mutationAuthorityOwner: "VEILLINK_HOST_ACTION_LAYER",
+            legacyGovernanceShadow: "RETAINED_COMPATIBILITY_HARNESS",
+            fallbackReason: fallbackReason
+        )
     }
 
     private static func makeFreshSession() -> AgentSession {

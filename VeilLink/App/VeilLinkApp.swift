@@ -87,6 +87,8 @@ enum VeilChrome {
     static func configure() {
         let appearance = VeilAppearanceController.shared
         let appleSoft = appearance.isAppleSoft
+        let background = UIColor(VeilTheme.background)
+        let elevated = UIColor(VeilTheme.elevated)
         let navigation = UINavigationBarAppearance()
         if appleSoft {
             navigation.configureWithTransparentBackground()
@@ -106,7 +108,6 @@ enum VeilChrome {
             navigation.titleTextAttributes = [.foregroundColor: UIColor(VeilTheme.text)]
             navigation.largeTitleTextAttributes = [.foregroundColor: UIColor(VeilTheme.text)]
         }
-
         let navigationBar = UINavigationBar.appearance()
         navigationBar.standardAppearance = navigation
         navigationBar.compactAppearance = navigation
@@ -139,6 +140,15 @@ enum VeilChrome {
         let tabBar = UITabBar.appearance()
         tabBar.standardAppearance = tab
         tabBar.scrollEdgeAppearance = tab
+
+        UITableView.appearance().backgroundColor = background
+        UITableView.appearance().separatorColor = UIColor.white.withAlphaComponent(0.06)
+        UITableViewCell.appearance().backgroundColor = .clear
+        UICollectionView.appearance().backgroundColor = background
+        UITextField.appearance().keyboardAppearance = .dark
+        UITextView.appearance().keyboardAppearance = .dark
+        UISearchBar.appearance().keyboardAppearance = .dark
+        UISearchBar.appearance().barTintColor = elevated
     }
 }
 

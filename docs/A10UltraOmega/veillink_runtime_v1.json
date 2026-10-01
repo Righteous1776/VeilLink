@@ -1,0 +1,34 @@
+{
+  "schema": "A10_COMPILED_PROFILE_SPEC_V1",
+  "yellow_persistent_runs_for_l2": 3,
+  "red_risk_points_x100": 2800,
+  "fault_domain_isolation": {
+    "enabled": true,
+    "local_non_p0_authority_cap": 3
+  },
+  "authority_mode": "DETERMINISTIC_ADVISORY_ONLY",
+  "mutation_authority": 0,
+  "profile_id": "A10_PROFILE_VEILLINK_RUNTIME_V1",
+  "description": "BLE/queue/Agent/iOS/SQLite health profile with resource-pressure plane.",
+  "extra_axes": {
+    "resource_pressure": [
+      "NORMAL",
+      "HIGH"
+    ]
+  },
+  "require_attested_context": false,
+  "plane_clamps": [
+    {
+      "when": {
+        "resource_pressure": "HIGH"
+      },
+      "authority_cap": 4,
+      "reason": "RESOURCE_PRESSURE_PLANE_CAP_L4"
+    }
+  ],
+  "reserved_resources": [
+    "transport",
+    "storage_recovery"
+  ],
+  "privacy": "NUMERIC_LOCAL_STATUS_ONLY"
+}

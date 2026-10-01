@@ -95,6 +95,7 @@ final class BLETransport: NSObject, ObservableObject {
     private var peripheralDrainWorkItems: [UUID: DispatchWorkItem] = [:]
     private var smoothedRSSI: [UUID: Double] = [:]
     private var lastRSSIPublishAt: [UUID: TimeInterval] = [:]
+    private var lastSeenAt: [UUID: TimeInterval] = [:]
     private var lastQueueProgressAt: [UUID: TimeInterval] = [:]
     private var rssiPollTask: Task<Void, Never>?
     private var lastRSSIMaintenanceAt: TimeInterval = 0
@@ -104,6 +105,7 @@ final class BLETransport: NSObject, ObservableObject {
     private var lastLinkSnapshotPublishAt: TimeInterval = 0
 
     private let maxFragmentsPerMessage = 16_384
+    private let passiveDiscoveryRetention: TimeInterval = 15
     private let performanceProfile: DevicePerformanceProfile
     private let maintenanceTuning: VeilRuntimeMaintenanceTuning
     private let assembler: BLEFragmentAssembler
@@ -190,6 +192,13 @@ final class BLETransport: NSObject, ObservableObject {
         peripheralDrainWorkItems.removeAll()
         rssiPollTask?.cancel()
         rssiPollTask = nil
+        assembler.resetAll()
+        remotePeripherals.removeAll(keepingCapacity: false)
+        subscribedCentrals.removeAll(keepingCapacity: false)
+        discoveredRSSI.removeAll(keepingCapacity: false)
+        smoothedRSSI.removeAll(keepingCapacity: false)
+        lastRSSIPublishAt.removeAll(keepingCapacity: false)
+        lastSeenAt.removeAll(keepingCapacity: false)
 
         connectionEvents.drainConnectedIDs().forEach { onDisconnected?($0) }
         connectedPeerCount = 0
@@ -240,6 +249,7 @@ final class BLETransport: NSObject, ObservableObject {
         peripheralOutboundQueues.removeValue(forKey: id)
         remoteCharacteristics.removeValue(forKey: id)
         lastQueueProgressAt.removeValue(forKey: id)
+        assembler.reset(source: id)
     }
 
     func connect(to id: UUID) {
@@ -261,6 +271,10 @@ final class BLETransport: NSObject, ObservableObject {
     func linkSnapshot(for id: UUID) -> BLEPeerLinkSnapshot? {
         guard knownLinkIDs().contains(id) else { return nil }
         return makeLinkSnapshot(for: id)
+    }
+
+    func transportStage(for id: UUID) -> BLETransportStage {
+        makeLinkSnapshot(for: id).transportStage
     }
 
     func diagnosticsReport() -> String {
@@ -330,9 +344,12 @@ final class BLETransport: NSObject, ObservableObject {
             lastQueueProgressAt.removeValue(forKey: id)
         } else {
             centralOutboundQueues[id] = queue
-            if peripheral.canSendWriteWithoutResponse {
-                scheduleCentralDrain(for: id, after: tuning.interBurstDelay)
-            }
+            // `peripheralIsReady` is the primary CoreBluetooth resume signal. Keep one bounded
+            // safety probe as well so a missed callback cannot strand the queue forever.
+            let retryDelay = peripheral.canSendWriteWithoutResponse
+                ? tuning.interBurstDelay
+                : max(0.15, tuning.interBurstDelay)
+            scheduleCentralDrain(for: id, after: retryDelay)
         }
     }
 
@@ -361,6 +378,129 @@ final class BLETransport: NSObject, ObservableObject {
             peripheralOutboundQueues[centralID] = queue
             schedulePeripheralDrain(for: centralID, after: tuning.interBurstDelay)
         }
+        if sent > 0 || queue.isEmpty { publishLinkSnapshots() }
+    }
+
+    private func knownLinkIDs() -> Set<UUID> {
+        let now = Date().timeIntervalSinceReferenceDate
+        pruneStaleDiscoveryState(now: now)
+
+        let recentDiscovered = Set(lastSeenAt.compactMap { entry in
+            now - entry.value <= passiveDiscoveryRetention ? entry.key : nil
+        })
+        let liveRemote = Set(remotePeripherals.compactMap { entry -> UUID? in
+            let state = entry.value.state
+            if state == .connected || state == .connecting || wantedConnections.contains(entry.key) {
+                return entry.key
+            }
+            return recentDiscovered.contains(entry.key) ? entry.key : nil
+        })
+
+        return liveRemote
+            .union(subscribedCentrals.keys)
+            .union(wantedConnections)
+            .union(centralOutboundQueues.keys)
+            .union(peripheralOutboundQueues.keys)
+            .union(recentDiscovered)
+    }
+
+    private func pruneStaleDiscoveryState(now: TimeInterval) {
+        let protectedIDs = Set(subscribedCentrals.keys)
+            .union(wantedConnections)
+            .union(centralOutboundQueues.keys)
+            .union(peripheralOutboundQueues.keys)
+
+        let staleIDs = lastSeenAt.compactMap { entry -> UUID? in
+            guard now - entry.value > passiveDiscoveryRetention,
+                  !protectedIDs.contains(entry.key) else { return nil }
+            if let peripheral = remotePeripherals[entry.key],
+               peripheral.state == .connected || peripheral.state == .connecting {
+                return nil
+            }
+            return entry.key
+        }
+
+        for id in staleIDs {
+            lastSeenAt.removeValue(forKey: id)
+            discoveredRSSI.removeValue(forKey: id)
+            smoothedRSSI.removeValue(forKey: id)
+            lastRSSIPublishAt.removeValue(forKey: id)
+            reconnectAttempts.removeValue(forKey: id)
+            if remotePeripherals[id]?.state == .disconnected {
+                remotePeripherals.removeValue(forKey: id)
+            }
+        }
+    }
+
+    private func makeLinkSnapshot(for id: UUID) -> BLEPeerLinkSnapshot {
+        let physicalCentralConnected = isRunning && remotePeripherals[id]?.state == .connected
+        let centralReady = physicalCentralConnected && remoteCharacteristics[id]?.isNotifying == true
+        let peripheralReady = isRunning && subscribedCentrals[id] != nil
+        let transportStage: BLETransportStage
+        if centralReady || peripheralReady { transportStage = .gattReady }
+        else if physicalCentralConnected { transportStage = .phyConnected }
+        else if knownLinkIDs().contains(id) { transportStage = .discovered }
+        else { transportStage = .unavailable }
+        let role: BLEPeerLinkRole
+        switch (centralReady, peripheralReady) {
+        case (true, true): role = .dual
+        case (true, false): role = .central
+        case (false, true): role = .peripheral
+        case (false, false): role = .unavailable
+        }
+        let centralQueue = centralOutboundQueues[id]
+        let peripheralQueue = peripheralOutboundQueues[id]
+        let pendingPackets = (centralQueue?.pendingCount ?? 0) + (peripheralQueue?.pendingCount ?? 0)
+        let pendingBytes = (centralQueue?.pendingBytes ?? 0) + (peripheralQueue?.pendingBytes ?? 0)
+        let controlPending = (centralQueue?.controlPendingCount ?? 0) + (peripheralQueue?.controlPendingCount ?? 0)
+        var packetSizes: [Int] = []
+        if let peripheral = remotePeripherals[id], peripheral.state == .connected {
+            packetSizes.append(peripheral.maximumWriteValueLength(for: .withoutResponse))
+        }
+        if let central = subscribedCentrals[id] { packetSizes.append(central.maximumUpdateValueLength) }
+        let rssi = smoothedRSSI[id].map { Int($0.rounded()) } ?? discoveredRSSI[id]
+        let stalledFor: TimeInterval?
+        if pendingPackets > 0, let lastProgress = lastQueueProgressAt[id] {
+            stalledFor = max(0, Date().timeIntervalSinceReferenceDate - lastProgress)
+        } else {
+            stalledFor = nil
+        }
+        return BLEPeerLinkSnapshot(
+            id: id,
+            isConnected: centralReady || peripheralReady,
+            isWanted: wantedConnections.contains(id),
+            reconnectAttempt: reconnectAttempts[id] ?? 0,
+            rssi: rssi,
+            quality: BLELinkReliabilityPolicy.quality(rssi: rssi),
+            pendingPackets: pendingPackets,
+            pendingBytes: pendingBytes,
+            controlPendingPackets: controlPending,
+            maximumPacketSize: packetSizes.max(),
+            role: role,
+            transportStage: transportStage,
+            stalledFor: stalledFor
+        )
+    }
+
+    private func publishLinkSnapshots(force: Bool = false) {
+        let now = Date().timeIntervalSinceReferenceDate
+        let minimumInterval: TimeInterval = 0.35
+        let remaining = minimumInterval - (now - lastLinkSnapshotPublishAt)
+        if !force, remaining > 0 {
+            guard linkSnapshotRefreshWorkItem == nil else { return }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.linkSnapshotRefreshWorkItem = nil
+                self.publishLinkSnapshots(force: true)
+            }
+            linkSnapshotRefreshWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + remaining, execute: work)
+            return
+        }
+        linkSnapshotRefreshWorkItem?.cancel()
+        linkSnapshotRefreshWorkItem = nil
+        lastLinkSnapshotPublishAt = now
+        linkSnapshots = Dictionary(uniqueKeysWithValues: knownLinkIDs().map { ($0, makeLinkSnapshot(for: $0)) })
     }
 
     private func linkTuning(for id: UUID) -> BLELinkTuning {
@@ -397,79 +537,23 @@ final class BLETransport: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + max(0, delay), execute: work)
     }
 
-    private func knownLinkIDs() -> Set<UUID> {
-        Set(remotePeripherals.keys)
-            .union(subscribedCentrals.keys)
-            .union(wantedConnections)
-            .union(centralOutboundQueues.keys)
-            .union(peripheralOutboundQueues.keys)
-            .union(discoveredRSSI.keys)
-    }
-
-    private func makeLinkSnapshot(for id: UUID) -> BLEPeerLinkSnapshot {
-        let centralReady = isRunning && remotePeripherals[id]?.state == .connected && remoteCharacteristics[id] != nil
+    private func hasReadyDataChannel(_ id: UUID) -> Bool {
+        let centralReady = isRunning
+            && remotePeripherals[id]?.state == .connected
+            && remoteCharacteristics[id]?.isNotifying == true
         let peripheralReady = isRunning && subscribedCentrals[id] != nil
-        let role: BLEPeerLinkRole
-        switch (centralReady, peripheralReady) {
-        case (true, true): role = .dual
-        case (true, false): role = .central
-        case (false, true): role = .peripheral
-        case (false, false): role = .unavailable
-        }
-        let centralQueue = centralOutboundQueues[id]
-        let peripheralQueue = peripheralOutboundQueues[id]
-        let pendingPackets = (centralQueue?.pendingCount ?? 0) + (peripheralQueue?.pendingCount ?? 0)
-        let pendingBytes = (centralQueue?.pendingBytes ?? 0) + (peripheralQueue?.pendingBytes ?? 0)
-        let controlPending = (centralQueue?.controlPendingCount ?? 0) + (peripheralQueue?.controlPendingCount ?? 0)
-        var packetSizes: [Int] = []
-        if let peripheral = remotePeripherals[id], peripheral.state == .connected {
-            packetSizes.append(peripheral.maximumWriteValueLength(for: .withoutResponse))
-        }
-        if let central = subscribedCentrals[id] { packetSizes.append(central.maximumUpdateValueLength) }
-        let rssi = smoothedRSSI[id].map { Int($0.rounded()) } ?? discoveredRSSI[id]
-        let stalledFor = pendingPackets > 0 ? lastQueueProgressAt[id].map {
-            max(0, Date().timeIntervalSinceReferenceDate - $0)
-        } : nil
-        return BLEPeerLinkSnapshot(
-            id: id,
-            isConnected: centralReady || peripheralReady,
-            isWanted: wantedConnections.contains(id),
-            reconnectAttempt: reconnectAttempts[id] ?? 0,
-            rssi: rssi,
-            quality: BLELinkReliabilityPolicy.quality(rssi: rssi),
-            pendingPackets: pendingPackets,
-            pendingBytes: pendingBytes,
-            controlPendingPackets: controlPending,
-            maximumPacketSize: packetSizes.max(),
-            role: role,
-            stalledFor: stalledFor
-        )
+        return centralReady || peripheralReady
     }
 
-    private func publishLinkSnapshots(force: Bool = false) {
-        let now = Date().timeIntervalSinceReferenceDate
-        let remaining = 0.35 - (now - lastLinkSnapshotPublishAt)
-        if !force, remaining > 0 {
-            guard linkSnapshotRefreshWorkItem == nil else { return }
-            let work = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                self.linkSnapshotRefreshWorkItem = nil
-                self.publishLinkSnapshots(force: true)
-            }
-            linkSnapshotRefreshWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + remaining, execute: work)
-            return
-        }
-        linkSnapshotRefreshWorkItem?.cancel()
-        linkSnapshotRefreshWorkItem = nil
-        lastLinkSnapshotPublishAt = now
-        linkSnapshots = Dictionary(uniqueKeysWithValues: knownLinkIDs().map { ($0, makeLinkSnapshot(for: $0)) })
+    private func reconcileConnectionEvent(_ id: UUID) {
+        if hasReadyDataChannel(id) { publishConnected(id) }
+        else { publishDisconnected(id) }
     }
 
     private func publishConnected(_ id: UUID) {
         let firstConnectionEvent = connectionEvents.markConnected(id)
         connectedPeerCount = connectionEvents.count
-        statusText = "加密蓝牙链路已就绪"
+        statusText = "蓝牙数据通道已就绪"
         publishLinkSnapshots(force: true)
         if firstConnectionEvent { onConnected?(id) }
     }
@@ -638,6 +722,7 @@ final class BLETransport: NSObject, ObservableObject {
         smoothedRSSI[id] = next
         let rounded = Int(next.rounded())
         let now = Date().timeIntervalSinceReferenceDate
+        lastSeenAt[id] = now
         let previousPublished = discoveredRSSI[id]
         if forcePublish || previousPublished == nil || abs((previousPublished ?? rounded) - rounded) >= 2 || now - (lastRSSIPublishAt[id] ?? 0) >= 0.75 {
             discoveredRSSI[id] = rounded
@@ -681,24 +766,43 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
         peripheral.delegate = self
         peripheral.discoverServices([Self.serviceUUID])
         peripheral.readRSSI()
-        statusText = "已建立蓝牙链路"
+        statusText = "蓝牙物理链路已连接，正在发现数据通道"
+        publishLinkSnapshots(force: true)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        centralDrainWorkItems.removeValue(forKey: peripheral.identifier)?.cancel()
-        remoteCharacteristics.removeValue(forKey: peripheral.identifier)
-        centralOutboundQueues.removeValue(forKey: peripheral.identifier)
-        publishDisconnected(peripheral.identifier)
-        statusText = "连接失败，准备重试"
+        let id = peripheral.identifier
+        centralDrainWorkItems.removeValue(forKey: id)?.cancel()
+        remoteCharacteristics.removeValue(forKey: id)
+        centralOutboundQueues.removeValue(forKey: id)
+        if peripheralOutboundQueues[id]?.isEmpty != false {
+            lastQueueProgressAt.removeValue(forKey: id)
+        }
+        reconcileConnectionEvent(id)
+        if !hasReadyDataChannel(id) {
+            assembler.reset(source: id)
+            statusText = "连接失败，准备重试"
+        } else {
+            statusText = "中央角色连接失败，备用数据通道仍可用"
+        }
         scheduleReconnect(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        centralDrainWorkItems.removeValue(forKey: peripheral.identifier)?.cancel()
-        remoteCharacteristics.removeValue(forKey: peripheral.identifier)
-        centralOutboundQueues.removeValue(forKey: peripheral.identifier)
-        publishDisconnected(peripheral.identifier)
-        statusText = "连接已断开，等待重连"
+        let id = peripheral.identifier
+        centralDrainWorkItems.removeValue(forKey: id)?.cancel()
+        remoteCharacteristics.removeValue(forKey: id)
+        centralOutboundQueues.removeValue(forKey: id)
+        if peripheralOutboundQueues[id]?.isEmpty != false {
+            lastQueueProgressAt.removeValue(forKey: id)
+        }
+        reconcileConnectionEvent(id)
+        if !hasReadyDataChannel(id) {
+            assembler.reset(source: id)
+            statusText = "连接已断开，等待重连"
+        } else {
+            statusText = "中央角色已断开，备用数据通道仍可用"
+        }
         scheduleReconnect(peripheral)
     }
 
@@ -753,6 +857,8 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
             return
         }
         remoteCharacteristics[peripheral.identifier] = characteristic
+        statusText = "蓝牙数据通道已发现，正在订阅通知"
+        publishLinkSnapshots(force: true)
         peripheral.setNotifyValue(true, for: characteristic)
     }
 
@@ -766,7 +872,9 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
             centralManager.cancelPeripheralConnection(peripheral)
             return
         }
-        publishConnected(peripheral.identifier)
+        reconnectAttempts[peripheral.identifier] = 0
+        persistWantedConnectionIntent()
+        reconcileConnectionEvent(peripheral.identifier)
     }
 
     func peripheral(
@@ -807,7 +915,7 @@ extension BLETransport: @preconcurrency CBPeripheralManagerDelegate {
     ) {
         guard characteristic.uuid == Self.dataUUID else { return }
         subscribedCentrals[central.identifier] = central
-        publishConnected(central.identifier)
+        reconcileConnectionEvent(central.identifier)
         if let localCharacteristic { drainPeripheralQueue(for: central.identifier, characteristic: localCharacteristic) }
     }
 
@@ -816,9 +924,28 @@ extension BLETransport: @preconcurrency CBPeripheralManagerDelegate {
         central: CBCentral,
         didUnsubscribeFrom characteristic: CBCharacteristic
     ) {
-        subscribedCentrals.removeValue(forKey: central.identifier)
-        peripheralOutboundQueues.removeValue(forKey: central.identifier)
-        publishDisconnected(central.identifier)
+        let id = central.identifier
+        subscribedCentrals.removeValue(forKey: id)
+        peripheralOutboundQueues.removeValue(forKey: id)
+        if centralOutboundQueues[id]?.isEmpty != false {
+            lastQueueProgressAt.removeValue(forKey: id)
+        }
+        reconcileConnectionEvent(id)
+        if !hasReadyDataChannel(id) {
+            assembler.reset(source: id)
+            statusText = "外围角色已断开，等待数据通道恢复"
+        } else {
+            statusText = "外围角色已断开，中央数据通道仍可用"
+        }
+    }
+
+    func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
+        // Apple calls this after updateValue(...) returned false because its TX queue was full.
+        // Resume every subscribed peer with pending data instead of leaving the queue stranded.
+        guard isRunning, let characteristic = localCharacteristic else { return }
+        for id in Array(peripheralOutboundQueues.keys) where subscribedCentrals[id] != nil {
+            drainPeripheralQueue(for: id, characteristic: characteristic)
+        }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {

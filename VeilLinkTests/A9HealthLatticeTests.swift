@@ -104,4 +104,31 @@ final class A9HealthLatticeTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testPersistenceUsesElapsedTimeNotCallbackVolume() {
+        let monitor = VeilA9HealthMonitor()
+        let base = Date(timeIntervalSince1970: 1_000)
+        let yellow = VeilA9Input(weakPeerCount: 1)
+
+        monitor.evaluate(yellow, now: base, uptime: 100)
+        for _ in 0..<100 {
+            monitor.evaluate(yellow, now: base.addingTimeInterval(1), uptime: 101)
+        }
+        XCTAssertEqual(monitor.decision.persistenceSeconds, 1)
+        XCTAssertEqual(monitor.decision.level, .l1Advisory)
+
+        monitor.evaluate(yellow, now: base.addingTimeInterval(31), uptime: 131)
+        XCTAssertEqual(monitor.decision.persistenceSeconds, 31)
+        XCTAssertEqual(monitor.decision.level, .l2Review)
+
+        monitor.evaluate(VeilA9Input(), now: base.addingTimeInterval(32), uptime: 132)
+        XCTAssertEqual(monitor.decision.persistenceSeconds, 0)
+        XCTAssertEqual(monitor.decision.level, .l0Observe)
+    }
+
+    func testPersistentThresholdRepresentsSeconds() {
+        XCTAssertEqual(VeilA9Lattice.persistentDurationThresholdSeconds, 30)
+        XCTAssertEqual(VeilA9Lattice.persistentRunThreshold, 30)
+    }
+
 }

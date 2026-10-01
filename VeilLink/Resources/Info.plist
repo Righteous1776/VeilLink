@@ -40,6 +40,16 @@
 	<true/>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>仅在你启用自动保存或主动选择时，将收到的图片保存到照片。</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>VeilLink 使用 Face ID 在本机解锁应用；生物识别数据由系统处理，VeilLink 不读取或保存。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>灵核视频对话可在本机使用前置摄像头生成低频视觉摘要；原始视频不会上传。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>用于发送加密语音消息、本地蓝牙对讲机与灵核的本机语音输入；不支持离线识别时不会自动改用云端。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>灵核仅在系统支持设备端识别时使用语音转文字。</string>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -72,5 +82,5 @@
 		<string>fetch</string>
 		<string>audio</string>
 	</array>
-<key>NSMicrophoneUsageDescription</key><string>用于发送加密语音消息和使用本地蓝牙对讲机。</string></dict>
+</dict>
 </plist>

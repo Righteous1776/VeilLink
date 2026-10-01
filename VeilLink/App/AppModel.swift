@@ -28,6 +28,7 @@ final class AppModel: ObservableObject {
     private var a9PeriodicTask: Task<Void, Never>?
     private var a9Cancellables = Set<AnyCancellable>()
     private var pendingConversationRefresh = false
+    private var hostForegroundActive = true
     private static let autoSaveReceivedImagesKey = "media.autoSaveReceivedImages"
 
     let keychain: KeychainStore
@@ -49,6 +50,12 @@ final class AppModel: ObservableObject {
     let performanceOverrides: PerformanceOverrideController
     let a9Health: VeilA9HealthMonitor
     let computeGovernor: VeilA9ComputeGovernor
+    let latticeKernel: VeilLatticeKernelBridge
+    let a10Ultra: A10UltraOmegaShadowCoordinator
+    let kernelRuntime: VeilKernelRuntimeSelector
+    let a10M5CognitionRuntime: A10UltraM5Runtime
+    let a10M5GovernanceRuntime: A10UltraM5Runtime
+    let a10M5Governance: A10UltraM5GovernanceAdvisor
     let agentControls: AgentControlCenterSettings
     let gameIntelligence: AgentGameContextBroker
     let agent: AgentCoordinator
@@ -85,6 +92,14 @@ final class AppModel: ObservableObject {
         a9Health = VeilA9HealthMonitor()
         let agentProfile = AgentCapabilityProfile.current
         computeGovernor = VeilA9ComputeGovernor(profile: agentProfile)
+        latticeKernel = VeilLatticeKernelBridge()
+        a10Ultra = A10UltraOmegaShadowCoordinator()
+        kernelRuntime = VeilKernelRuntimeSelector()
+        let m5CognitionRuntime = A10UltraM5Runtime()
+        let m5GovernanceRuntime = A10UltraM5Runtime()
+        a10M5CognitionRuntime = m5CognitionRuntime
+        a10M5GovernanceRuntime = m5GovernanceRuntime
+        a10M5Governance = A10UltraM5GovernanceAdvisor(runtime: m5GovernanceRuntime)
         agentControls = AgentControlCenterSettings()
         computeGovernor.setExperimentalCoreEnabled(false)
         gameIntelligence = AgentGameContextBroker()
@@ -93,6 +108,7 @@ final class AppModel: ObservableObject {
             capabilityProfile: agentProfile,
             computeGovernor: computeGovernor
         )
+        agent.attachA10UltraShadowRuntime(m5CognitionRuntime)
         performanceOverrides.onChange = { [weak self] in
             self?.applyPerformanceOverrideChange()
         }
@@ -235,7 +251,11 @@ final class AppModel: ObservableObject {
             .store(in: &a9Cancellables)
         a9Health.$decision
             .sink { [weak self] decision in
-                Task { @MainActor [weak self] in self?.computeGovernor.update(decision: decision) }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.computeGovernor.update(decision: decision)
+                    self.latticeKernel.recordComputePlan(self.computeGovernor.plan)
+                }
             }
             .store(in: &a9Cancellables)
     }
@@ -250,15 +270,18 @@ final class AppModel: ObservableObject {
     }
 
     func refreshA9Health() {
-        let snapshots = Array(bluetooth.linkSnapshots.values)
+        // A9 must reason about operational links, not every UUID passively observed by scanning.
+        let snapshots = bluetooth.linkSnapshots.values.filter(\.isA9Relevant)
+        let liveQualitySnapshots = snapshots.filter(\.contributesLinkQualityToA9)
         let input = VeilA9Input(
+            transportCoverage: .bluetoothOnly,
             bluetoothRunning: bluetooth.isRunning,
             connectedPeerCount: snapshots.filter(\.isConnected).count,
             trackedPeerCount: snapshots.count,
             recoveringPeerCount: snapshots.filter(\.isRecovering).count,
-            weakPeerCount: snapshots.filter { $0.quality == .weak }.count,
-            marginalPeerCount: snapshots.filter { $0.quality == .marginal }.count,
-            minimumLinkHealth: snapshots.map(\.healthScore).min(),
+            weakPeerCount: liveQualitySnapshots.filter { $0.quality == .weak }.count,
+            marginalPeerCount: liveQualitySnapshots.filter { $0.quality == .marginal }.count,
+            minimumLinkHealth: liveQualitySnapshots.map(\.healthScore).min(),
             maximumReconnectAttempt: snapshots.map(\.reconnectAttempt).max() ?? 0,
             pendingBytes: snapshots.reduce(0) { $0 + $1.pendingBytes },
             controlPendingPackets: snapshots.reduce(0) { $0 + $1.controlPendingPackets },
@@ -270,7 +293,97 @@ final class AppModel: ObservableObject {
             lowPowerMode: currentA9LowPowerMode(),
             databaseIntegrity: a9Health.databaseIntegrity
         )
-        a9Health.evaluate(input)
+        // I8 manual runtime selector: every mode still starts from one raw host sample.
+        // A10-only LAB is an experiment rail, not a production cutover. In that mode A9 health
+        // evaluation is skipped and the host keeps the last already-committed safe compute budget.
+        a10M5GovernanceRuntime.applyBudget(A10UltraComputeBudget.fromA9(computeGovernor.plan))
+        a10M5Governance.evaluate(
+            input: input,
+            foregroundActive: hostForegroundActive,
+            agentGenerating: agent.isGenerating,
+            gameActive: gameIntelligence.context != nil
+        )
+
+        let ultraContext = A10UltraOmegaHostContext(
+            foregroundActive: hostForegroundActive,
+            systemAvailable: true,
+            gameRuntimeState: gameIntelligence.context == nil ? "IDLE" : "ACTIVE",
+            activeProcessorCount: max(1, ProcessInfo.processInfo.activeProcessorCount),
+            physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory
+        )
+        let ultraSample = a10Ultra.makeSharedSample(input: input, hostContext: ultraContext)
+        let runtimeEnvironment = kernelRuntime.beginSample()
+
+        switch runtimeEnvironment.mode {
+        case .a9Only:
+            let a9Timing = A10UltraOmegaShadowCoordinator.timingStart()
+            a9Health.evaluate(input)
+            computeGovernor.update(decision: a9Health.decision)
+            latticeKernel.recordComputePlan(computeGovernor.plan)
+            let a9Elapsed = A10UltraOmegaShadowCoordinator.timingElapsed(from: a9Timing)
+            latticeKernel.recordA9Compatibility(input: input, decision: a9Health.decision)
+            a10Ultra.recordA9Only(
+                sample: ultraSample,
+                decision: a9Health.decision,
+                budget: computeGovernor.plan,
+                latencyNanos: a9Elapsed.wall,
+                cpuNanos: a9Elapsed.cpu,
+                runtime: runtimeEnvironment
+            )
+
+        case .dualShadow:
+            let a9Timing = A10UltraOmegaShadowCoordinator.timingStart()
+            a9Health.evaluate(input)
+            computeGovernor.update(decision: a9Health.decision)
+            latticeKernel.recordComputePlan(computeGovernor.plan)
+            let a9Elapsed = A10UltraOmegaShadowCoordinator.timingElapsed(from: a9Timing)
+            latticeKernel.recordA9Compatibility(input: input, decision: a9Health.decision)
+            a10Ultra.recordA9Primary(
+                sample: ultraSample,
+                decision: a9Health.decision,
+                budget: computeGovernor.plan,
+                latencyNanos: a9Elapsed.wall,
+                cpuNanos: a9Elapsed.cpu
+            )
+            a10Ultra.evaluateA10UltraShadow(sample: ultraSample, runtime: runtimeEnvironment)
+
+        case .a10OnlyLab:
+            let ultraHealthy = a10Ultra.evaluateA10UltraIsolated(sample: ultraSample, runtime: runtimeEnvironment)
+            let hostSafetyReason = VeilKernelHostSafetyPolicy.fallbackReason(for: input)
+            if !ultraHealthy || hostSafetyReason != nil {
+                let reason = hostSafetyReason?.rawValue ?? "ULTRA_INTERNAL_FAILURE"
+                kernelRuntime.forceA9Fallback(reason: reason)
+                a10Ultra.resetRuntimeEpoch(reason: reason)
+                computeGovernor.setPlanFrozen(false, recomputeOnUnfreeze: false)
+                // Recover A9 on the next MainActor turn, not after the ordinary 600 ms debounce.
+                Task { @MainActor [weak self] in self?.refreshA9Health() }
+            }
+        }
+    }
+
+
+    func setKernelRuntimeMode(_ mode: VeilKernelRuntimeMode) {
+        guard mode != kernelRuntime.mode else { return }
+        if mode == .a10OnlyLab {
+            // Freeze before entering LAB so no A9 plan can mutate between selection and first sample.
+            computeGovernor.setPlanFrozen(true)
+            a10Ultra.resetRuntimeEpoch(reason: "ENTER_A10_ONLY_LAB")
+            kernelRuntime.select(mode, source: "USER")
+        } else {
+            // Switch authority label first, clear Ultra persistence, then unfreeze without replaying
+            // the stale pre-LAB A9 decision. The fresh sample below supplies the next A9 plan.
+            kernelRuntime.select(mode, source: "USER")
+            a10Ultra.resetRuntimeEpoch(reason: "MODE_CHANGE_\(mode.rawValue)")
+            computeGovernor.setPlanFrozen(false, recomputeOnUnfreeze: false)
+        }
+        refreshA9Health()
+    }
+
+    func exitA10OnlyLabToA9() {
+        kernelRuntime.forceA9Fallback(reason: "USER_EXIT_LAB")
+        a10Ultra.resetRuntimeEpoch(reason: "USER_EXIT_LAB")
+        computeGovernor.setPlanFrozen(false, recomputeOnUnfreeze: false)
+        refreshA9Health()
     }
 
     func runA9StorageCheck() {
@@ -280,7 +393,12 @@ final class AppModel: ObservableObject {
     }
 
     func a9DiagnosticsReport() -> String {
-        a9Health.report() + "\n\n" + computeGovernor.report()
+        a9Health.report()
+            + "\n\n" + kernelRuntime.report()
+            + "\n\n" + latticeKernel.report()
+            + "\n\n" + a10Ultra.report()
+            + "\n\n" + a10M5Governance.report()
+            + "\n\n" + computeGovernor.report()
     }
 
     private func currentA9ThermalLevel() -> VeilA9ThermalLevel {
@@ -347,6 +465,7 @@ final class AppModel: ObservableObject {
 
     func handleForegroundTransition() {
         guard legalConsent.isSatisfied else { return }
+        hostForegroundActive = true
         computeGovernor.setForegroundActive(true)
         internetRelay.setForegroundActive(true)
         internetRelay.refreshNow()
@@ -355,6 +474,8 @@ final class AppModel: ObservableObject {
     }
 
     func handleMemoryPressure() {
+        a10M5Governance.cancel()
+        a10M5GovernanceRuntime.trimMemory()
         database.clearTransientCaches()
         sessions.clearTransientCaches()
         ImagePreviewCache.shared.removeAll()
@@ -362,6 +483,9 @@ final class AppModel: ObservableObject {
     }
 
     func handleBackgroundTransition() {
+        a10M5Governance.cancel()
+        a10M5GovernanceRuntime.trimMemory()
+        hostForegroundActive = false
         computeGovernor.setForegroundActive(false)
         internetRelay.setForegroundActive(false)
         a9PeriodicTask?.cancel()
@@ -712,7 +836,7 @@ final class AppModel: ObservableObject {
     }
 
     private func makeAgentLocalContext() -> AgentLocalContext {
-        let snapshots = Array(bluetooth.linkSnapshots.values)
+        let snapshots = bluetooth.linkSnapshots.values.filter(\.isA9Relevant)
         let selectedContext: AgentConversationContext? = selectedConversation.map { conversation in
             let transportID = sessions.transportID(for: conversation.peerIdentityID)
             let link = transportID.flatMap { bluetooth.linkSnapshots[$0] ?? bluetooth.linkSnapshot(for: $0) }

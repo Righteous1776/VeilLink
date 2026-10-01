@@ -1,0 +1,117 @@
+{
+  "arrays": {
+    "C": {
+      "bytes": 26496,
+      "count": 6624,
+      "offset": 90516,
+      "sha256": "9de974c287f7987b396d81ecd70a8e5fd979ecbde5e862a93fd2113c14d2571b",
+      "shape": [
+        69,
+        96
+      ]
+    },
+    "E": {
+      "bytes": 26496,
+      "count": 6624,
+      "offset": 0,
+      "sha256": "a425372fa454fe0b398329b47731ba09692210b6b394fa314c99a59376607510",
+      "shape": [
+        69,
+        96
+      ]
+    },
+    "O": {
+      "bytes": 26496,
+      "count": 6624,
+      "offset": 63744,
+      "sha256": "badabb03c649de527e591060d30332447e02704f46421ffe4b2bbf108bd2649c",
+      "shape": [
+        96,
+        69
+      ]
+    },
+    "RA": {
+      "bytes": 17664,
+      "count": 4416,
+      "offset": 117012,
+      "sha256": "29b468cf8d04437eddead6cc40f68b5ff839c3fcaaf46f6fd917a134bd11f92f",
+      "shape": [
+        69,
+        64
+      ]
+    },
+    "RB": {
+      "bytes": 2816,
+      "count": 704,
+      "offset": 134932,
+      "sha256": "6ffee730437e262bb2f80ba9d239d62ba470d07d1650ea5cd2d5b2e940f45b12",
+      "shape": [
+        64,
+        11
+      ]
+    },
+    "Rab": {
+      "bytes": 256,
+      "count": 64,
+      "offset": 134676,
+      "sha256": "6c63ebe45a86df2d417fda27dbe7c499a41f59ecb9272f1a2527ed627d4addff",
+      "shape": [
+        64
+      ]
+    },
+    "Rbb": {
+      "bytes": 44,
+      "count": 11,
+      "offset": 137748,
+      "sha256": "216f7136faa71a02fa949681015464a2b1dbfa9046a4787b528b88280570b442",
+      "shape": [
+        11
+      ]
+    },
+    "W": {
+      "bytes": 36864,
+      "count": 9216,
+      "offset": 26496,
+      "sha256": "e46ee45ec29fc5f796538003a452f55dd2b7a483f98710c108618a4af2e3c685",
+      "shape": [
+        96,
+        96
+      ]
+    },
+    "bh": {
+      "bytes": 384,
+      "count": 96,
+      "offset": 63360,
+      "sha256": "2fb88bfeac2f668490d39614686de47021d9f58796abdd0f250972d045ee8315",
+      "shape": [
+        96
+      ]
+    },
+    "bo": {
+      "bytes": 276,
+      "count": 69,
+      "offset": 90240,
+      "sha256": "8b86230b5abbf5336af20993ae82094aeda3d86bb03a3ca3312488782eb5e968",
+      "shape": [
+        69
+      ]
+    }
+  },
+  "chip_name": "A10 Ultra Ω",
+  "engineering_source": "OMEGA 96 V0.5-M5",
+  "flat_language_weights_sha256": "3228384ef72a809e5725a54f4288ba0457288cb695338966eb679b82221e3e26",
+  "mutation_authority": 0,
+  "native_abi": "A10_ULTRA_M5_IOS_NATIVE_V1",
+  "predictor_model_id": "VEILLINK_RUNTIME_PREDICTOR_M4_SYNTHETIC",
+  "predictor_weights_sha256": "74b1f91cb90c95823c882c284f4c369f3f815f90e8d6e87e06d5038a84684204",
+  "production_cutover": "DENY",
+  "real_world_validation": "NOT_PERFORMED",
+  "schema": "VEILLINK_A10_ULTRA_M5_IOS_ASSET_V1",
+  "source_arrays_hash": "3228384ef72a809e5725a54f4288ba0457288cb695338966eb679b82221e3e26",
+  "source_model_hash": "c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4",
+  "sqlite_predictor_model_hash": "4e34a98b952b5df84aca8562b00741062a61d1d5d5255e939fbe31139612e3bd",
+  "sqlite_predictor_model_id": "SQLITEVAULT_MICRO_ANOMALY_M4_SYNTHETIC",
+  "sqlite_predictor_weights_sha256": "549026ee043e99d11cc4e8110ac6167a084a166978761e98f6c6047929e4afb4",
+  "state": "TRAINED_COGNITION_SHADOW",
+  "vocab_sha256": "fbf7edf8ffe3e1ed5d7e79baa5b118b8fc38ed646dbb684f0615349d611dec50"
+}

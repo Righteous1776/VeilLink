@@ -1,0 +1,67 @@
+{
+  "schema": "OMEGA96_AGGREGATE_FRAME_ABI_V1",
+  "status": "SHADOW_ACCELERATED",
+  "profile_id": "A10_PROFILE_DBHEALTH_A9_COMPAT",
+  "endianness": "little",
+  "record_bytes": 32,
+  "layout": [
+    {
+      "offset": 0,
+      "type": "u8",
+      "field": "light",
+      "domain": "0=GREEN,1=YELLOW,2=RED"
+    },
+    {
+      "offset": 1,
+      "type": "u8",
+      "field": "blocker"
+    },
+    {
+      "offset": 2,
+      "type": "u16",
+      "field": "reserved",
+      "must_equal": 0
+    },
+    {
+      "offset": 4,
+      "type": "u32",
+      "field": "p0"
+    },
+    {
+      "offset": 8,
+      "type": "u32",
+      "field": "p1"
+    },
+    {
+      "offset": 12,
+      "type": "u32",
+      "field": "p2"
+    },
+    {
+      "offset": 16,
+      "type": "u32",
+      "field": "p3"
+    },
+    {
+      "offset": 20,
+      "type": "i32",
+      "field": "risk_bp"
+    },
+    {
+      "offset": 24,
+      "type": "i32",
+      "field": "health_bp"
+    },
+    {
+      "offset": 28,
+      "type": "u32",
+      "field": "persistence_runs"
+    }
+  ],
+  "producer_requirement": "ATTESTED_HOST_ADAPTER_POST_SIGNAL_NORMALIZER_AGGREGATE",
+  "raw_business_rows_allowed": false,
+  "metadata_allowed": false,
+  "mutation_authority": 0,
+  "production_cutover": "DENY_IN_V0_2",
+  "decision_token_lane": "OMEGA96_DECISION_TOKEN_ABI_V1"
+}

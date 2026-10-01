@@ -53,7 +53,34 @@ final class AgentGameContextBroker: ObservableObject {
             return
         }
 
-        let stateHash = adapter.makeObservation().stateHash
+        let observation = adapter.makeObservation()
+
+        // A9/A10-era devices keep the UI/game transaction path rule-only. The old path ran
+        // full legal-action enumeration + model ranking on MainActor after every local/remote
+        // move, which can stall or terminate iPhone 7 under SwiftUI/BLE/database pressure.
+        if VeilDevicePerformance.prefersLightweightGameRuntime {
+            context = AgentGameContext(
+                capturedAt: capturedAt,
+                sessionID: session.id,
+                gameID: session.game.rawValue,
+                gameTitle: session.game.title,
+                conversationTitle: conversationTitle,
+                peerIdentityID: peerIdentityID,
+                status: status,
+                stateHash: observation.stateHash,
+                turn: session.moveCount,
+                localPlayer: localPlayer.rawValue,
+                isLocalTurn: session.isLocalTurn,
+                policyMode: "compact-safe",
+                stateDescription: Self.stateDescription(for: session),
+                recommendations: [],
+                note: "Compact-device safe mode: move ranking and MaleCNS rerank are deferred outside the live game transaction.",
+                maleCNS: nil
+            )
+            return
+        }
+
+        let stateHash = observation.stateHash
         context = AgentGameContext(
             capturedAt: capturedAt,
             sessionID: session.id,

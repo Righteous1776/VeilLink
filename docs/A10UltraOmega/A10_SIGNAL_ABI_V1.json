@@ -1,0 +1,23 @@
+{
+  "schema": "A10_SIGNAL_ABI_V1",
+  "required": [
+    "signal_id",
+    "domain",
+    "source"
+  ],
+  "fields": {
+    "light": "GREEN|YELLOW|RED",
+    "severity": "P0|P1|P2|P3",
+    "risk_bp": "int>=0",
+    "health_bp": "int (-1 unknown, else 0..10000)",
+    "persistence_runs": "int>=0",
+    "blocker": "bool",
+    "latched": "bool",
+    "confidence_bp": "0..10000",
+    "fault_scope": "LOCAL|SHARED_PROVIDER|GLOBAL",
+    "resource_pressure": "NORMAL|HIGH|CRITICAL",
+    "lifecycle_phase": "IDLE|IMPORT|DOWNLOAD|OPEN|RECOVERY|CONFLICT|EVICT",
+    "metadata": "object optional"
+  },
+  "privacy_rule": "Signals SHOULD contain numeric/status metadata only; no plaintext messages, media, prompts, keys, or Canonical business rows."
+}
