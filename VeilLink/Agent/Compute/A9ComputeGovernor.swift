@@ -66,34 +66,6 @@ final class VeilA9ComputeGovernor: ObservableObject {
         if !frozen, recomputeOnUnfreeze { recompute() }
     }
 
-    /// Attaches the current MaleCNS runtime to A9 scheduling. The consumer receives the current
-    /// budget immediately and every later lattice/focus update. A weak reference keeps runtime
-    /// lifecycle ownership outside the governor.
-    func bindMaleCNSConsumer(_ consumer: (any MaleCNSComputeConsumer)?) {
-        maleCNSConsumer = consumer
-        consumer?.applyComputeBudget(plan.maleCNS)
-    }
-
-    /// Registers a MaleCNS runtime for live A9 budget updates. The governor keeps only a weak
-    /// reference so loading/unloading a graph never depends on the UI or governor lifetime.
-    func registerMaleCNSConsumer(_ consumer: MaleCNSComputeConsumer) {
-        maleCNSConsumers.removeAll { $0.value == nil }
-        guard !maleCNSConsumers.contains(where: { $0.value === consumer }) else {
-            consumer.applyComputeBudget(plan.maleCNS)
-            return
-        }
-        maleCNSConsumers.append(WeakMaleCNSComputeConsumer(consumer))
-        consumer.applyComputeBudget(plan.maleCNS)
-    }
-
-    func trimMaleCNSConsumers() {
-        maleCNSConsumers.removeAll { wrapper in
-            guard let consumer = wrapper.value else { return true }
-            consumer.trimComputeState()
-            return false
-        }
-    }
-
     private func recompute() {
         guard !planFrozen else { return }
         plan = VeilA9ComputePlanner.plan(
