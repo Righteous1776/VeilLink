@@ -15,6 +15,7 @@ final class LegalConsentTests: XCTestCase {
         XCTAssertTrue(VeilLegalDocuments.canonicalText.contains(VeilLegalDocuments.terms))
     }
 
+    @MainActor
     func testAcknowledgmentFieldHasStableTelemetryExclusionIdentifier() {
         XCTAssertEqual(
             VeilLegalAcknowledgmentInput.accessibilityIdentifier,
