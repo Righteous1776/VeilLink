@@ -1,8 +1,15 @@
 import CryptoKit
+import Security
 import XCTest
 @testable import VeilLink
 
 final class DatabaseStoreTests: XCTestCase {
+    func testKeychainProtectedDataStatusesAreTransientNotMissing() {
+        XCTAssertTrue(KeychainStore.isTransientReadStatus(errSecInteractionNotAllowed))
+        XCTAssertTrue(KeychainStore.isTransientReadStatus(errSecNotAvailable))
+        XCTAssertFalse(KeychainStore.isTransientReadStatus(errSecItemNotFound))
+    }
+
     private func makeStore() throws -> (DatabaseStore, URL) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("VeilLink-DBTests-\(UUID().uuidString)", isDirectory: true)
         return (try DatabaseStore(keychain: KeychainStore(service: "studio.zeo.veillink.tests.db.\(UUID().uuidString)"), rootDirectory: root), root)

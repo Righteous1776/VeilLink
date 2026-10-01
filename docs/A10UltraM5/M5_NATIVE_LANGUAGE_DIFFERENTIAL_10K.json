@@ -1,0 +1,12 @@
+{
+  "schema": "OMEGA96_M5_NATIVE_LANGUAGE_DIFFERENTIAL_V1",
+  "result": "PASS",
+  "cases": 10000,
+  "reasoner_max_abs_error": 7.748603820800781e-07,
+  "rnn_max_abs_error": 3.337860107421875e-06,
+  "tolerances": {
+    "reasoner": 2e-05,
+    "rnn": 3e-05
+  },
+  "native_abi": 1
+}

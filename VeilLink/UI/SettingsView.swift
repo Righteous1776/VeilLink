@@ -21,6 +21,8 @@ struct SettingsView: View {
     @State private var showsOwnerUnlock = false
     @State private var showsOwnerConsole = false
     @State private var diagnosticsCopied = false
+    @State private var requestedKernelMode: VeilKernelRuntimeMode?
+    @State private var showsA10OnlyLabWarning = false
 
     init(model: AppModel) {
         self.model = model
@@ -44,11 +46,21 @@ struct SettingsView: View {
                 feedbackCard
                 bluetoothCard
                 a9HealthCard
+                kernelRuntimeCard
                 versionFooter
             }
         }
         .background(VeilAmbientBackground())
         .navigationTitle("设置")
+        .alert("进入 A10 Ultra Ω 单轨实验？", isPresented: $showsA10OnlyLabWarning) {
+            Button("取消", role: .cancel) { requestedKernelMode = nil }
+            Button("进入实验", role: .destructive) {
+                model.setKernelRuntimeMode(.a10OnlyLab)
+                requestedKernelMode = nil
+            }
+        } message: {
+            Text("A9 将停止本轮健康裁决，A10 Ultra Ω 独立运行；宿主冻结进入实验前最后一份安全预算。A10 仍无 mutation authority，失败或重启会自动回 A9。这不是生产 Cutover。")
+        }
         .sheet(isPresented: $showsLockSheet) {
             LockConfigurationSheet(controller: model.appLock)
         }
@@ -136,7 +148,7 @@ struct SettingsView: View {
                 VeilIdentityGlyph(seed: identity.activeIdentity?.id ?? "veillink-unset", size: 54, active: true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("LOCAL IDENTITY")
-                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .tracking(1.25)
                         .foregroundColor(VeilTheme.mutedGold)
                     Text(identity.activeIdentity?.displayName ?? "未创建")
@@ -224,7 +236,7 @@ struct SettingsView: View {
                     Text("运行本地完整性自检")
                     Spacer()
                     Text("A9")
-                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundColor(VeilTheme.mutedGold)
                 }
             }
@@ -354,7 +366,7 @@ struct SettingsView: View {
                         Text("测试一次触感")
                         Spacer()
                         Text("RESOLVE")
-                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .tracking(0.8)
                             .foregroundColor(VeilTheme.mutedGold)
                     }
@@ -443,7 +455,7 @@ struct SettingsView: View {
                     Text(diagnosticsCopied ? "已复制连接诊断" : "复制连接诊断")
                     Spacer()
                     Text("不含消息/密钥")
-                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundColor(VeilTheme.mutedGold)
                 }
             }
@@ -498,7 +510,7 @@ struct SettingsView: View {
                     ForEach(Array(decision.issues.prefix(4))) { issue in
                         HStack(alignment: .top, spacing: 7) {
                             Text(issue.severity.rawValue)
-                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                                .font(.system(size: 10, weight: .heavy, design: .monospaced))
                                 .foregroundColor(issue.severity == .p0 || issue.severity == .p1 ? .red : VeilTheme.gold)
                             Text(issue.detail)
                                 .font(.caption)
@@ -546,7 +558,7 @@ struct SettingsView: View {
     private func a9Metric(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(VeilTheme.tertiaryText)
             Text(value)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -577,6 +589,99 @@ struct SettingsView: View {
         }
     }
 
+
+    private var kernelRuntimeCard: some View {
+        let runtime = model.kernelRuntime
+        let environment = runtime.snapshot()
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("内核运行模式", systemImage: "cpu")
+                    .font(.headline)
+                    .foregroundColor(VeilTheme.goldBright)
+                Spacer()
+                Text(environment.mode.isExperimental ? "LAB" : "CONTROLLED")
+                    .font(.caption.weight(.bold).monospaced())
+                    .foregroundColor(environment.mode.isExperimental ? VeilTheme.gold : VeilTheme.secondaryText)
+            }
+
+            Picker("内核运行模式", selection: Binding(
+                get: { runtime.mode },
+                set: { requested in
+                    if requested == .a10OnlyLab, runtime.mode != .a10OnlyLab {
+                        requestedKernelMode = requested
+                        showsA10OnlyLabWarning = true
+                    } else {
+                        model.setKernelRuntimeMode(requested)
+                    }
+                }
+            )) {
+                ForEach(VeilKernelRuntimeMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(VeilTheme.gold)
+
+            Text(runtime.mode.detail)
+                .font(.caption)
+                .foregroundColor(VeilTheme.secondaryText)
+
+            VStack(spacing: 7) {
+                HStack {
+                    Text("生产裁决")
+                    Spacer()
+                    Text(environment.productionAuthority)
+                        .font(.caption.monospaced())
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                HStack {
+                    Text("A9 / A10 Ultra Ω")
+                    Spacer()
+                    Text("\(environment.a9EvaluationEnabled ? "ON" : "OFF") / \(environment.ultraEvaluationEnabled ? "ON" : "OFF")")
+                        .font(.caption.monospaced())
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                HStack {
+                    Text("本模式样本")
+                    Spacer()
+                    Text("\(runtime.currentModeSampleCount)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                HStack {
+                    Text("环境 ID")
+                    Spacer()
+                    Text(String(environment.modeSessionID.prefix(8)).uppercased())
+                        .font(.caption.monospaced())
+                        .foregroundColor(VeilTheme.tertiaryText)
+                }
+            }
+            .font(.subheadline)
+
+            Text("A10 Ultra Ω 单轨实验不会成为生产 Cutover；黑匣子会把 kernel_mode、环境 ID、两路是否启用、延迟/CPU/RSS/温控/电量代理与 fallback 一起记录。")
+                .font(.caption)
+                .foregroundColor(VeilTheme.tertiaryText)
+
+            if runtime.mode == .a10OnlyLab {
+                Button {
+                    model.exitA10OnlyLabToA9()
+                    haptics.resolved()
+                } label: {
+                    Label("立即退出实验并回到 A9", systemImage: "arrow.uturn.backward.circle")
+                }
+                .buttonStyle(.bordered)
+                .tint(VeilTheme.gold)
+            }
+
+            if let reason = runtime.lastFallbackReason {
+                Text("最近自动回退：\(reason)")
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.gold)
+            }
+        }
+        .veilCard()
+    }
+
     private var versionFooter: some View {
         VStack(spacing: 5) {
             Text(VeilBuildInfo.display)
@@ -584,11 +689,11 @@ struct SettingsView: View {
                 .foregroundColor(VeilTheme.secondaryText)
             if VeilRenderProfile.usesStableScrollLayout {
                 Text(VeilRenderProfile.diagnosticLabel)
-                    .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(VeilTheme.tertiaryText)
             } else {
                 Text(VeilDevicePerformance.diagnosticLabel)
-                    .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(VeilTheme.tertiaryText)
             }
             Text("ZeoStudio")

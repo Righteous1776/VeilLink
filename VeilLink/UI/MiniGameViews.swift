@@ -20,12 +20,7 @@ struct MiniGameHubView: View {
     }
 
     private var liveSessions: [MiniGameSessionSnapshot] {
-        sessions.filter {
-            switch $0.status {
-            case .invited, .active: return true
-            case .declined, .cancelled, .finished: return false
-            }
-        }
+        MiniGameSessionBuilder.coalescedLiveSessions(sessions)
     }
 
     private var incomingInvitations: [MiniGameSessionSnapshot] {
@@ -38,6 +33,7 @@ struct MiniGameHubView: View {
 
     private var historySessions: [MiniGameSessionSnapshot] {
         sessions.filter {
+            if $0.isInvitationExpired { return true }
             switch $0.status {
             case .invited, .active: return false
             case .declined, .cancelled, .finished: return true
@@ -74,7 +70,7 @@ struct MiniGameHubView: View {
                 }
                 .padding(16)
             }
-            .background(VeilAmbientBackground().ignoresSafeArea())
+            .background(VeilAmbientBackground())
             .navigationTitle("双人小游戏")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -294,11 +290,17 @@ struct MiniGameHubView: View {
     private func reload() {
         reloadGeneration &+= 1
         let generation = reloadGeneration
-        let loaded = model.database.fetchMessages(conversationID: conversation.id)
-        let loadedSessions = MiniGameSessionBuilder.sessions(from: loaded)
-        guard generation == reloadGeneration else { return }
-        messages = loaded
-        sessions = loadedSessions
+        let store = model.database
+        let conversationID = conversation.id
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loaded = store.fetchMessages(conversationID: conversationID)
+            let loadedSessions = MiniGameSessionBuilder.sessions(from: loaded)
+            DispatchQueue.main.async {
+                guard generation == reloadGeneration else { return }
+                messages = loaded
+                sessions = loadedSessions
+            }
+        }
     }
 }
 
@@ -314,13 +316,14 @@ private struct MiniGameLinkStatusView: View {
         return bluetooth.linkSnapshots[transportID] ?? bluetooth.linkSnapshot(for: transportID)
     }
     private var secureReady: Bool { sessions.hasSecureSession(for: peerIdentityID) }
-    private var linkReady: Bool { snapshot?.isConnected == true && secureReady }
+    private var linkReady: Bool { snapshot?.transportStage == .gattReady && secureReady }
 
     private var primaryText: String {
-        if linkReady { return "对手链路已就绪" }
-        if snapshot?.isConnected == true { return "蓝牙已连接 · 安全会话恢复中" }
+        if linkReady { return "SECURE_SESSION_READY · 对手链路已就绪" }
+        if snapshot?.transportStage == .gattReady { return "GATT_READY · 正在建立安全会话" }
+        if snapshot?.transportStage == .phyConnected { return "PHY_CONNECTED · 正在建立数据通道" }
         if snapshot?.isRecovering == true { return "正在自动恢复对手链路" }
-        if transportID != nil { return "对手暂时离线" }
+        if transportID != nil { return "DISCOVERED · 等待连接对手" }
         return "等待发现对手设备"
     }
 
@@ -429,11 +432,15 @@ private struct MiniGameDeliveryBadge: View {
 private struct MiniGameSessionRow: View {
     let session: MiniGameSessionSnapshot
 
-    private var needsAttention: Bool { session.status == .invited && !session.hostIsLocal }
+    private var needsAttention: Bool {
+        session.status == .invited && !session.hostIsLocal && !session.isInvitationExpired
+    }
 
     private var status: String {
         switch session.status {
-        case .invited: return session.hostIsLocal ? "等待对方接受" : "邀请你加入"
+        case .invited:
+            if session.isInvitationExpired { return "邀请已过期" }
+            return session.hostIsLocal ? "等待对方接受" : "邀请你加入"
         case .active: return session.isLocalTurn ? "轮到你" : "等待对方"
         case .declined: return "已拒绝"
         case .cancelled: return "已取消"
@@ -468,7 +475,7 @@ private struct MiniGameSessionRow: View {
                         .foregroundColor(VeilTheme.text)
                     if needsAttention {
                         Text("待回应")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(Color.black.opacity(0.85))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -476,7 +483,7 @@ private struct MiniGameSessionRow: View {
                             .clipShape(Capsule())
                     } else if session.isLocalTurn {
                         Text("你的回合")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(Color.black.opacity(0.85))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -509,10 +516,33 @@ private struct MiniGameSessionRow: View {
 struct MiniGameConversationCard: View {
     let session: MiniGameSessionSnapshot
     let onOpen: () -> Void
+    let onAccept: (() -> Void)?
+    let onDecline: (() -> Void)?
+    let onRetry: (() -> Void)?
+
+    init(
+        session: MiniGameSessionSnapshot,
+        onOpen: @escaping () -> Void,
+        onAccept: (() -> Void)? = nil,
+        onDecline: (() -> Void)? = nil,
+        onRetry: (() -> Void)? = nil
+    ) {
+        self.session = session
+        self.onOpen = onOpen
+        self.onAccept = onAccept
+        self.onDecline = onDecline
+        self.onRetry = onRetry
+    }
+
+    private var isIncomingInvitation: Bool {
+        session.status == .invited && !session.hostIsLocal && !session.isInvitationExpired
+    }
 
     private var statusText: String {
         switch session.status {
-        case .invited: return session.hostIsLocal ? "已邀请对方 · 等待接受" : "邀请你加入 · 点击回应"
+        case .invited:
+            if session.isInvitationExpired { return "邀请已过期 · 可重新发起" }
+            return session.hostIsLocal ? "已邀请对方 · 等待接受" : "邀请你加入 · 可直接回应"
         case .active:
             if session.game == .xiangqi, let state = session.xiangqi, state.isCurrentPlayerInCheck {
                 let checker = state.currentPlayer.opponent
@@ -533,57 +563,81 @@ struct MiniGameConversationCard: View {
     }
 
     var body: some View {
-        Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 11) {
-                    ZStack {
-                        Circle().fill(VeilTheme.gold.opacity(0.10))
-                        Image(systemName: session.game.icon)
-                            .font(.system(size: 20, weight: .semibold))
+        VStack(alignment: .leading, spacing: 12) {
+            Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 11) {
+                        ZStack {
+                            Circle().fill(VeilTheme.gold.opacity(isIncomingInvitation ? 0.16 : 0.10))
+                            Image(systemName: session.game.icon)
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(VeilTheme.gold)
+                        }
+                        .frame(width: 42, height: 42)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(session.game.title)
+                                .font(.headline)
+                                .foregroundColor(VeilTheme.text)
+                            Text(statusText)
+                                .font(.caption)
+                                .foregroundColor(isIncomingInvitation || session.isLocalTurn ? VeilTheme.gold : VeilTheme.secondaryText)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(VeilTheme.tertiaryText)
+                    }
+
+                    HStack(spacing: 8) {
+                        Label("E2EE", systemImage: "lock.fill")
+                        Text("·")
+                        Text(session.game == .tactical ? "\(session.moveCount) 道命令" : "\(session.moveCount) 手")
+                        Text("·")
+                        Text("#\(session.id.prefix(4))")
+                        Spacer()
+                        Text(session.status == .active ? "进入棋局" : (isIncomingInvitation ? "查看详情" : "查看"))
+                            .fontWeight(.semibold)
                             .foregroundColor(VeilTheme.gold)
                     }
-                    .frame(width: 42, height: 42)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(session.game.title)
-                            .font(.headline)
-                            .foregroundColor(VeilTheme.text)
-                        Text(statusText)
-                            .font(.caption)
-                            .foregroundColor(session.isLocalTurn ? VeilTheme.gold : VeilTheme.secondaryText)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundColor(VeilTheme.tertiaryText)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundColor(VeilTheme.tertiaryText)
                 }
-
-                HStack(spacing: 8) {
-                    Label("E2EE", systemImage: "lock.fill")
-                    Text("·")
-                    Text(session.game == .tactical ? "\(session.moveCount) 道命令" : "\(session.moveCount) 手")
-                    Text("·")
-                    Text("#\(session.id.prefix(4))")
-                    Spacer()
-                    Text(session.status == .active ? "进入棋局" : "查看")
-                        .fontWeight(.semibold)
-                        .foregroundColor(VeilTheme.gold)
-                }
-                .font(.caption2.monospacedDigit())
-                .foregroundColor(VeilTheme.tertiaryText)
             }
-            .padding(14)
-            .background(VeilTheme.elevated.opacity(0.92))
-            .clipShape(VeilPanelShape(cut: 14, radius: 8))
-            .overlay(VeilPanelShape(cut: 14, radius: 8).stroke(session.isLocalTurn ? VeilTheme.gold.opacity(0.28) : VeilTheme.hairline, lineWidth: 1))
-            .overlay(alignment: .topLeading) {
-                Rectangle()
-                    .fill(session.isLocalTurn ? VeilTheme.gold : VeilTheme.hairline)
-                    .frame(width: session.isLocalTurn ? 42 : 18, height: 1)
-                    .padding(.leading, 12)
+            .buttonStyle(.plain)
+
+            if isIncomingInvitation, let onDecline, let onAccept {
+                HStack(spacing: 10) {
+                    Button("拒绝", action: onDecline)
+                        .buttonStyle(VeilGameSecondaryButtonStyle())
+                    Button("接受", action: onAccept)
+                        .buttonStyle(VeilGamePrimaryButtonStyle())
+                }
+            }
+
+            if let onRetry {
+                Button(action: onRetry) {
+                    Label("重新发送邀请", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(VeilGameSecondaryButtonStyle())
+                .foregroundColor(VeilTheme.danger)
             }
         }
-        .buttonStyle(VeilPressStyle())
-        .accessibilityLabel("\(session.game.title)，\(statusText)，点击打开棋局")
+        .padding(14)
+        .background(VeilTheme.elevated.opacity(0.92))
+        .clipShape(VeilPanelShape(cut: 14, radius: 8))
+        .overlay(
+            VeilPanelShape(cut: 14, radius: 8)
+                .stroke(isIncomingInvitation || session.isLocalTurn ? VeilTheme.gold.opacity(0.42) : VeilTheme.hairline, lineWidth: isIncomingInvitation ? 1.4 : 1)
+        )
+        .overlay(alignment: .topLeading) {
+            Rectangle()
+                .fill(isIncomingInvitation || session.isLocalTurn ? VeilTheme.gold : VeilTheme.hairline)
+                .frame(width: isIncomingInvitation || session.isLocalTurn ? 42 : 18, height: 1)
+                .padding(.leading, 12)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(session.game.title)，\(statusText)")
     }
 }
 
@@ -636,6 +690,19 @@ struct MiniGameSessionView: View {
                     )
                     .padding(.horizontal, 14)
 
+                    if let failed = latestLocalGameMessage, failed.deliveryState == .failed {
+                        Button {
+                            retryGameMessage(failed)
+                        } label: {
+                            Label("重新发送上一条游戏操作", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(VeilGameSecondaryButtonStyle())
+                        .foregroundColor(VeilTheme.danger)
+                        .padding(.horizontal, 14)
+                        .disabled(isSending)
+                    }
+
                     switch session.status {
                     case .invited:
                         invitationView(session)
@@ -656,7 +723,7 @@ struct MiniGameSessionView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .background(VeilAmbientBackground().ignoresSafeArea())
+                .background(VeilAmbientBackground())
                 .navigationTitle(session.game.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -693,7 +760,7 @@ struct MiniGameSessionView: View {
             } else {
                 ProgressView("读取对局…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(VeilAmbientBackground().ignoresSafeArea())
+                    .background(VeilAmbientBackground())
             }
         }
         .onAppear {
@@ -721,7 +788,23 @@ struct MiniGameSessionView: View {
 
     @ViewBuilder
     private func invitationView(_ session: MiniGameSessionSnapshot) -> some View {
-        if session.hostIsLocal {
+        if session.isInvitationExpired {
+            VStack(spacing: 16) {
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.system(size: 46, weight: .light))
+                    .foregroundColor(VeilTheme.secondaryText)
+                Text("邀请已过期")
+                    .font(.title3.bold())
+                    .foregroundColor(VeilTheme.text)
+                Text("这条邀请超过 30 分钟未完成响应，已退出活动对局队列。你可以返回后重新发起。")
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(VeilTheme.secondaryText)
+                Button("返回小游戏") { dismiss() }
+                    .buttonStyle(VeilGamePrimaryButtonStyle())
+            }
+            .padding(28)
+        } else if session.hostIsLocal {
             VStack(spacing: 16) {
                 Image(systemName: "hourglass")
                     .font(.system(size: 48, weight: .light))
@@ -736,7 +819,7 @@ struct MiniGameSessionView: View {
                 HStack(spacing: 10) {
                     Button("查看规则") { showsRules = true }
                         .buttonStyle(VeilGameSecondaryButtonStyle())
-                    Button("撤回邀请") { send(command: .resign, turn: 0, move: nil) }
+                    Button("撤回邀请") { send(command: .cancelInvite, turn: 0, move: nil) }
                         .buttonStyle(VeilGameSecondaryButtonStyle())
                         .disabled(isSending)
                 }
@@ -898,14 +981,42 @@ struct MiniGameSessionView: View {
         let packet = MiniGamePacket(sessionID: session.id, game: session.game, command: command, turn: turn, move: move)
         do {
             try model.sessions.sendMiniGamePacket(packet, to: conversation.peerIdentityID)
+            RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                "game.command.send",
+                metadata: ["game": session.game.rawValue, "command": command.rawValue, "turn": "\(turn)"]
+            )
             model.haptics.send()
             selectedXiangqiIndex = nil
-            reload(notify: false)
+            // queueContent() already schedules messagesRevision. Do not synchronously rebuild the
+            // whole encrypted history here and then rebuild it a second time on that revision.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                if isSending { isSending = false }
+            }
         } catch {
+            isSending = false
             model.alertMessage = error.localizedDescription
             model.haptics.error()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { isSending = false }
+    }
+
+    private func retryGameMessage(_ message: ChatMessage) {
+        guard !isSending else { return }
+        isSending = true
+        do {
+            try model.sessions.retryMessage(message.id, to: conversation.peerIdentityID)
+            RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                "game.command.retry",
+                metadata: ["session": sessionID]
+            )
+            model.haptics.impact()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                if isSending { isSending = false }
+            }
+        } catch {
+            isSending = false
+            model.alertMessage = error.localizedDescription
+            model.haptics.error()
+        }
     }
 
     private func rematch(_ game: MiniGameKind) {
@@ -928,22 +1039,29 @@ struct MiniGameSessionView: View {
         let generation = reloadGeneration
         let oldCount = observedMoveCount
         let oldStatus = session?.status
-        let loaded = model.database.fetchMessages(conversationID: conversation.id)
-        let newSession = MiniGameSessionBuilder.session(id: sessionID, from: loaded)
-        guard generation == reloadGeneration else { return }
-        messages = loaded
-        session = newSession
-        if let newSession {
-            model.updateAgentGameContext(newSession, conversation: conversation)
+        let store = model.database
+        let conversationID = conversation.id
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loaded = store.fetchMessages(conversationID: conversationID)
+            let newSession = MiniGameSessionBuilder.session(id: sessionID, from: loaded)
+            DispatchQueue.main.async {
+                guard generation == reloadGeneration else { return }
+                messages = loaded
+                session = newSession
+                isSending = false
+                if let newSession {
+                    model.updateAgentGameContext(newSession, conversation: conversation)
+                }
+                let newCount = newSession?.moveCount ?? 0
+                if notify, newCount > oldCount, newSession?.isLocalTurn == true {
+                    model.haptics.receive()
+                }
+                if notify, let newSession, case .finished = newSession.status {
+                    if oldStatus != newSession.status { model.haptics.resolved() }
+                }
+                observedMoveCount = newCount
+            }
         }
-        let newCount = newSession?.moveCount ?? 0
-        if notify, newCount > oldCount, newSession?.isLocalTurn == true {
-            model.haptics.receive()
-        }
-        if notify, let newSession, case .finished = newSession.status {
-            if oldStatus != newSession.status { model.haptics.resolved() }
-        }
-        observedMoveCount = newCount
     }
 }
 
@@ -992,7 +1110,7 @@ private struct MiniGameReplayView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .background(VeilAmbientBackground().ignoresSafeArea())
+            .background(VeilAmbientBackground())
             .navigationTitle("棋局回放")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1195,7 +1313,7 @@ private struct MiniGameStatusHeader: View {
             }
             Spacer()
             HStack(spacing: 5) {
-                Image(systemName: "lock.fill").font(.system(size: 8))
+                Image(systemName: "lock.fill").font(.system(size: 10))
                 Text("E2EE · #\(session.id.prefix(4))")
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
@@ -1603,7 +1721,7 @@ struct LudoBoardView: View {
                 .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundColor(player == localPlayer ? VeilTheme.gold : VeilTheme.text)
             Text(title)
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(VeilTheme.secondaryText)
                 .lineLimit(1)
         }
@@ -1768,7 +1886,7 @@ private struct MiniGameRulesView: View {
                 }
                 .padding(18)
             }
-            .background(VeilAmbientBackground().ignoresSafeArea())
+            .background(VeilAmbientBackground())
             .navigationTitle("规则")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

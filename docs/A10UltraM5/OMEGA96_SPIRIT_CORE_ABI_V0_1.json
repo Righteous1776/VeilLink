@@ -1,0 +1,26 @@
+{
+  "schema": "OMEGA96_SPIRIT_CORE_ABI_V0.1",
+  "operation": "omega.spirit.respond",
+  "input": {
+    "text": "non-empty UTF-8 string",
+    "domain": ["auto", "veillink", "sqlitevault"],
+    "state_features": "optional 32-element FP32 vector",
+    "attested": "boolean"
+  },
+  "output": [
+    "text", "reasoning_states", "state_probabilities", "generated_tokens",
+    "latency_ns", "backend", "model_hash", "epoch", "input_digest",
+    "output_digest", "recommendation", "mutation_authority", "attestation"
+  ],
+  "execution": {
+    "tokenization": "deterministic bounded domain encoder",
+    "state_reasoner": "trained FP32 MLP executed by portable C",
+    "language_decoder": "trained autoregressive FP32 tanh RNN executed by portable C",
+    "answer_lookup_table": false
+  },
+  "authority": {
+    "deployment_mode": "SHADOW_ONLY",
+    "mutation_authority": 0,
+    "production_cutover": "DENY"
+  }
+}

@@ -60,10 +60,39 @@ final class AgentGameContextBroker: ObservableObject {
         }
 
         let observation = adapter.makeObservation()
-        let legal = adapter.enumerateLegalActions().filter(adapter.validate)
+
+        // A9/A10-era devices keep the UI/game transaction path rule-only. The old path ran
+        // full legal-action enumeration + model ranking on MainActor after every local/remote
+        // move, which can stall or terminate iPhone 7 under SwiftUI/BLE/database pressure.
+        if VeilDevicePerformance.prefersLightweightGameRuntime {
+            context = AgentGameContext(
+                capturedAt: capturedAt,
+                sessionID: session.id,
+                gameID: session.game.rawValue,
+                gameTitle: session.game.title,
+                conversationTitle: conversationTitle,
+                peerIdentityID: peerIdentityID,
+                status: status,
+                stateHash: observation.stateHash,
+                turn: session.moveCount,
+                localPlayer: localPlayer.rawValue,
+                isLocalTurn: session.isLocalTurn,
+                policyMode: "compact-safe",
+                stateDescription: Self.stateDescription(for: session),
+                recommendations: [],
+                note: "Compact-device safe mode: move ranking and MaleCNS rerank are deferred outside the live game transaction.",
+                maleCNS: nil
+            )
+            return
+        }
+
+        // enumerateLegalActions() already returns legal candidates for the built-in adapters.
+        // Do not call validate() per candidate (which recursively re-enumerated the whole set),
+        // and do not ask rankedLegalActions() to enumerate it a second time.
+        let legal = adapter.enumerateLegalActions()
         let rankedScores: [AgentActionScore]
         if AgentGameRegistry.isTrainingEnabled(session.game), let policyRuntime {
-            rankedScores = (try? policyRuntime.rankedLegalActions(adapter: adapter)) ?? []
+            rankedScores = (try? policyRuntime.scores(observation: observation, candidates: legal)) ?? []
         } else {
             rankedScores = []
         }

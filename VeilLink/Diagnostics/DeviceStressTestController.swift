@@ -198,6 +198,7 @@ final class DeviceStressTestController: ObservableObject {
 
     func attach(model: AppModel) {
         self.model = model
+        CollaborativeStressCoordinator.shared.attach(model: model)
         recoverIncompleteCheckpointIfNeeded()
     }
 
@@ -277,11 +278,13 @@ final class DeviceStressTestController: ObservableObject {
     }
 
     func handleSceneActive(_ active: Bool) {
+        CollaborativeStressCoordinator.shared.handleSceneActive(active)
         guard isRunning, !active else { return }
         stop(reason: "app_left_foreground")
     }
 
     func noteMemoryWarning() {
+        CollaborativeStressCoordinator.shared.noteMemoryWarning()
         guard isRunning else { return }
         memoryWarningCount += 1
         log(
@@ -594,6 +597,10 @@ final class DeviceStressTestController: ObservableObject {
         DeviceStressCommandBus.post(.settingsClosePresentations)
         DeviceStressCommandBus.post(.agentCloseDiagnostics)
         DeviceStressCommandBus.post(.chatCloseConversation)
+        if CollaborativeStressCoordinator.shared.state != .idle,
+           CollaborativeStressCoordinator.shared.state != .completed {
+            CollaborativeStressCoordinator.shared.stop(reason: "burn_in_finished")
+        }
 
         model.selectedSection = baselineSection
         model.selectedConversation = baselineConversation
@@ -656,14 +663,18 @@ final class DeviceStressTestController: ObservableObject {
             let summaryData = try encoder.encode(summary)
             let stepsData = try encoder.encode(stepResults)
             let readable = makeReadableReport(summary: summary)
+            var extraFiles: [String: Data] = [
+                "stress-summary.json": summaryData,
+                "stress-steps.json": stepsData,
+                "stress-report.txt": Data(readable.utf8)
+            ]
+            if let collaborative = CollaborativeStressCoordinator.shared.snapshotData() {
+                extraFiles["stress-collaborative.json"] = collaborative
+            }
             lastExportURL = try RuntimeDiagnosticsBridge.shared.exportBundle(
                 for: model,
                 reason: "stress.auto_export",
-                extraFiles: [
-                    "stress-summary.json": summaryData,
-                    "stress-steps.json": stepsData,
-                    "stress-report.txt": Data(readable.utf8)
-                ]
+                extraFiles: extraFiles
             )
         } catch {
             log(.error, event: "stress.export.failed", metadata: ["error": error.localizedDescription])

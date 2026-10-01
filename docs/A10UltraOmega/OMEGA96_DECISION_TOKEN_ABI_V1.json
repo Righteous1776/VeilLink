@@ -1,0 +1,14 @@
+{
+  "schema": "OMEGA96_DECISION_TOKEN_ABI_V1",
+  "status": "SHADOW_ACCELERATED",
+  "profile_id": "A10_PROFILE_DBHEALTH_A9_COMPAT",
+  "token_type": "u16_little_endian",
+  "token_bytes": 2,
+  "decision_lut_entries": 1152,
+  "decision_record_bytes": 38,
+  "decision_lut_sha256": "1be3dd04ee99df8d12c56035982fe1d29dcc1847997718a0e9df5903ae11d640",
+  "semantics": "token is an immutable index into the SHA-bound A10-compatible Decision LUT; full authority/reason/clamps/confidence/lattice index/decision_sha256 are recoverable without per-item reconstruction",
+  "fabric_digest_binding": ["epoch", "logical_tile_id", "decision_lut_sha256", "token_segment"],
+  "mutation_authority": 0,
+  "production_cutover": "DENY_IN_V0_2"
+}

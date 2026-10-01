@@ -4,7 +4,9 @@ import UIKit
 struct DeviceStressTestView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var controller = DeviceStressTestController.shared
+    @ObservedObject private var collaborative = CollaborativeStressCoordinator.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedCollaborativePeerID = ""
     let onStart: () -> Void
 
     init(model: AppModel, onStart: @escaping () -> Void = {}) {
@@ -102,6 +104,63 @@ struct DeviceStressTestView: View {
                     )
                 }
 
+                Section("协同设备压力") {
+                    if let invitation = collaborative.pendingInvitation,
+                       let peer = collaborative.pendingInvitationPeerID {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("收到协同压力邀请").font(.headline)
+                            Text("设备 \(String(peer.prefix(8)).uppercased()) · CODE \(String(invitation.sessionID.prefix(6)).uppercased())")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(VeilTheme.gold)
+                            Text("只进入临时 E2EE Stress Channel；不会写入普通聊天记录。")
+                                .font(.caption2).foregroundColor(VeilTheme.secondaryText)
+                        }
+                        HStack {
+                            Button("接收邀请并开始") { collaborative.acceptPendingInvitation() }
+                                .buttonStyle(.borderedProminent).tint(VeilTheme.gold)
+                            Button("拒绝") { collaborative.declinePendingInvitation() }.buttonStyle(.bordered)
+                        }
+                    } else {
+                        Picker("协同设备", selection: $selectedCollaborativePeerID) {
+                            Text("选择设备").tag("")
+                            ForEach(model.conversations) { conversation in
+                                let secure = model.sessions.hasSecureSession(for: conversation.peerIdentityID)
+                                Text("\(conversation.title)\(secure ? " · SECURE" : " · OFFLINE")")
+                                    .tag(conversation.peerIdentityID)
+                            }
+                        }
+                        stressToggle("双向高速文字", detail: "synthetic text 走真实加密消息链路，但在 SQLite 入库前截获。", isOn: Binding(get: { collaborative.scenario.enableText }, set: { collaborative.scenario.enableText = $0 }))
+                        stressToggle("图片级 bulk", detail: "合成二进制图片负载走真实 attachmentChunk / BLE bulk 队列，不读取相册。", isOn: Binding(get: { collaborative.scenario.enableImages }, set: { collaborative.scenario.enableImages = $0 }))
+                        stressToggle("语音级 WAV/PCM bulk", detail: "本地生成 WAV/PCM 风格负载，不开启麦克风、不采集真实语音。", isOn: Binding(get: { collaborative.scenario.enableVoice }, set: { collaborative.scenario.enableVoice = $0 }))
+                        stressToggle("临时五子棋协议", detail: "用真实 MiniGameCodec + GomokuState 双机收发，不进入正式对局历史。", isOn: Binding(get: { collaborative.scenario.enableGame }, set: { collaborative.scenario.enableGame = $0 }))
+                        HStack {
+                            Text("状态"); Spacer()
+                            Text(collaborative.state.rawValue.uppercased())
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(collaborative.state == .running ? VeilTheme.success : VeilTheme.secondaryText)
+                        }
+                        if collaborative.metrics.sentFrames > 0 || collaborative.metrics.receivedFrames > 0 {
+                            Text("TX \(collaborative.metrics.sentFrames) / RX \(collaborative.metrics.receivedFrames) · drop \(collaborative.metrics.droppedFrames) · backpressure \(collaborative.metrics.temporaryUnavailableCount) · bulk ok \(collaborative.metrics.bulkTransfersVerified) · game \(collaborative.metrics.gamePacketsReceived)")
+                                .font(.caption2.monospacedDigit()).foregroundColor(VeilTheme.secondaryText)
+                        }
+                        HStack {
+                            Button("发送协同邀请") {
+                                collaborative.attach(model: model)
+                                collaborative.invite(peerIdentityID: selectedCollaborativePeerID)
+                            }
+                            .buttonStyle(.borderedProminent).tint(VeilTheme.gold)
+                            .disabled(selectedCollaborativePeerID.isEmpty || collaborative.state == .running || collaborative.state == .inviting)
+                            if collaborative.state == .running || collaborative.state == .ready || collaborative.state == .inviting {
+                                Button("停止协同", role: .destructive) { collaborative.stop(reason: "user_stop") }.buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("TEMP E2EE STRESS CHANNEL")
+                } footer: {
+                    Text("双方必须先完成普通 VeilLink 信任与 Secure Session。邀请不会自动配对，也不会自动开始；旧版本可能把兼容压力帧显示成普通测试文本，因此协同测试应使用同一 I11 构建。")
+                }
+
                 Section("安全熔断") {
                     safetyRow("温度", value: thermalText, icon: "thermometer.medium")
                     safetyRow("电量", value: batteryText, icon: "battery.50")
@@ -141,7 +200,7 @@ struct DeviceStressTestView: View {
                     .disabled(controller.isRunning)
                     .accessibilityIdentifier("owner.stress.start")
                 } footer: {
-                    Text("测试不会主动删除消息、身份或联系人，不会自动确认配对，不会发送真实聊天/附件，不会改写账号密码。BLE churn 与内存 trim 属于有意施压路径。")
+                    Text("本机 Burn-In 不发送真实聊天。协同模式只发送 synthetic 临时压力帧/二进制负载；不读取真实聊天正文、相册、麦克风、密钥或 Prompt。BLE churn 与内存 trim 属于有意施压路径。")
                 }
             }
             .navigationTitle("真机压力测试")
@@ -153,6 +212,12 @@ struct DeviceStressTestView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear {
+            collaborative.attach(model: model)
+            if selectedCollaborativePeerID.isEmpty {
+                selectedCollaborativePeerID = model.conversations.first(where: { model.sessions.hasSecureSession(for: $0.peerIdentityID) })?.peerIdentityID ?? ""
+            }
+        }
         .telemetryScreen("owner.stress.configure")
     }
 

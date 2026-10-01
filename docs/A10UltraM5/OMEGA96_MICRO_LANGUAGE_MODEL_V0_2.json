@@ -1,0 +1,20 @@
+{
+  "schema": "OMEGA96_MICRO_LANGUAGE_MODEL_FORMAT_V0.2",
+  "required_files": ["model.json", "weights.npz", "vocab.json"],
+  "required_arrays": ["E", "W", "bh", "O", "bo", "C", "RA", "Rab", "RB", "Rbb"],
+  "integrity": {
+    "array_hash": "SHA-256 over named arrays in canonical ABI order",
+    "vocabulary_hash": "SHA-256 over vocab.json bytes",
+    "model_hash": "SHA-256 over canonical manifest plus array and vocabulary hashes",
+    "load_policy": "fail closed on any mismatch"
+  },
+  "model_classes": {
+    "reasoner": "bag-token MLP with ReLU and sigmoid",
+    "language": "context-conditioned tanh RNN with autoregressive argmax decoding"
+  },
+  "constraints": {
+    "domain": ["VeilLink", "SQLiteVault"],
+    "general_language_model": false,
+    "mutation_authority": 0
+  }
+}

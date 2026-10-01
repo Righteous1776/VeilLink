@@ -7,6 +7,7 @@ enum DatabaseError: LocalizedError {
     case statementFailed(String)
     case backupFailed(String)
     case encryptionKeyMissing
+    case encryptionKeyTemporarilyUnavailable(String)
     case encryptionKeyMismatch
 
     var errorDescription: String? {
@@ -14,7 +15,9 @@ enum DatabaseError: LocalizedError {
         case .openFailed(let message), .statementFailed(let message), .backupFailed(let message):
             return message
         case .encryptionKeyMissing:
-            return "本地数据库仍存在，但其加密密钥已从 Keychain 丢失。VeilLink 已停止打开数据，避免用新密钥覆盖原状态。"
+            return "本地数据库仍存在，但 Keychain 明确报告加密密钥不存在。VeilLink 已停止打开数据，避免用新密钥覆盖原状态。"
+        case .encryptionKeyTemporarilyUnavailable(let detail):
+            return "本地数据库仍安全保留，但设备当前无法读取 Keychain 加密密钥。请先解锁设备后重新打开 VeilLink；应用不会生成新密钥或覆盖数据库。\n\(detail)"
         case .encryptionKeyMismatch:
             return "本地数据库加密密钥与现有数据不匹配。VeilLink 已停止继续读写，请使用有效备份恢复。"
         }
@@ -60,7 +63,16 @@ final class DatabaseStore {
         attachmentsURL = support.appendingPathComponent("Attachments", isDirectory: true)
 
         let databaseAlreadyExists = fileManager.fileExists(atPath: databaseURL.path)
-        if let existing = keychain.data(for: storageKeyName) {
+        let existingKeyData: Data?
+        do {
+            existingKeyData = try keychain.readData(for: storageKeyName)
+        } catch {
+            // Never collapse a protected-data / Keychain availability failure into "missing".
+            // Doing so can incorrectly diagnose permanent key loss while the device is merely locked.
+            throw DatabaseError.encryptionKeyTemporarilyUnavailable(error.localizedDescription)
+        }
+
+        if let existing = existingKeyData {
             guard existing.count == 32 else { throw DatabaseError.encryptionKeyMismatch }
             storageKeyData = existing
             storageKey = SymmetricKey(data: existing)

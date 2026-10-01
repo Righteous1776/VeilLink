@@ -7,6 +7,13 @@ enum BLEPeerLinkRole: String, Equatable {
     case unavailable = "—"
 }
 
+enum BLETransportStage: String, Equatable {
+    case discovered = "DISCOVERED"
+    case phyConnected = "PHY_CONNECTED"
+    case gattReady = "GATT_READY"
+    case unavailable = "UNAVAILABLE"
+}
+
 struct BLEPeerLinkSnapshot: Identifiable, Equatable {
     let id: UUID
     let isConnected: Bool
@@ -19,9 +26,22 @@ struct BLEPeerLinkSnapshot: Identifiable, Equatable {
     let controlPendingPackets: Int
     let maximumPacketSize: Int?
     let role: BLEPeerLinkRole
+    let transportStage: BLETransportStage
     let stalledFor: TimeInterval?
 
     var isRecovering: Bool { isWanted && !isConnected }
+
+    /// Passive scan-only peers must not lower A9 health or compute budgets. A peer becomes
+    /// operationally relevant when it is connected, explicitly wanted, or owns queued traffic.
+    var isA9Relevant: Bool {
+        isConnected || isWanted || pendingPackets > 0 || controlPendingPackets > 0
+    }
+
+    /// RSSI/health scoring is meaningful only for a live GATT data channel. Reconnecting peers
+    /// are represented by reconnect/stall signals instead of a stale RSSI health penalty.
+    var contributesLinkQualityToA9: Bool {
+        isConnected && transportStage == .gattReady
+    }
 
     var qualityTitle: String {
         switch quality {
@@ -34,9 +54,14 @@ struct BLEPeerLinkSnapshot: Identifiable, Equatable {
     }
 
     var statusTitle: String {
-        if isConnected { return "链路已就绪" }
-        if isRecovering { return reconnectAttempt > 0 ? "自动重连中" : "等待恢复" }
-        return "未连接"
+        switch transportStage {
+        case .gattReady: return "GATT_READY · 数据通道已就绪"
+        case .phyConnected: return "PHY_CONNECTED · 正在建立数据通道"
+        case .discovered:
+            if isRecovering { return reconnectAttempt > 0 ? "DISCOVERED · 自动重连中" : "DISCOVERED · 等待恢复" }
+            return "DISCOVERED"
+        case .unavailable: return "未连接"
+        }
     }
 
     /// A compact, explainable health score for UI only. It never changes transport behavior.
@@ -74,7 +99,7 @@ struct BLEPeerLinkSnapshot: Identifiable, Equatable {
     }
 
     var compactDetail: String {
-        var parts: [String] = []
+        var parts: [String] = [transportStage.rawValue]
         if let rssi { parts.append("\(rssi) dBm") }
         parts.append(qualityTitle)
         if let maximumPacketSize { parts.append("ATT \(maximumPacketSize) B") }
@@ -106,7 +131,7 @@ enum BLELinkDiagnosticsFormatter {
             let mtu = snapshot.maximumPacketSize.map(String.init) ?? "n/a"
             let stalled = snapshot.stalledFor.map { String(format: "%.1fs", $0) } ?? "n/a"
             lines.append(
-                "- \(shortID) state=\(snapshot.statusTitle) role=\(snapshot.role.rawValue) quality=\(snapshot.quality.rawValue) health=\(snapshot.healthScore) rssi=\(rssi) mtu=\(mtu) pendingPackets=\(snapshot.pendingPackets) pendingBytes=\(snapshot.pendingBytes) controlPending=\(snapshot.controlPendingPackets) reconnectAttempt=\(snapshot.reconnectAttempt) stalled=\(stalled)"
+                "- \(shortID) stage=\(snapshot.transportStage.rawValue) state=\(snapshot.statusTitle) role=\(snapshot.role.rawValue) quality=\(snapshot.quality.rawValue) health=\(snapshot.healthScore) rssi=\(rssi) mtu=\(mtu) pendingPackets=\(snapshot.pendingPackets) pendingBytes=\(snapshot.pendingBytes) controlPending=\(snapshot.controlPendingPackets) reconnectAttempt=\(snapshot.reconnectAttempt) stalled=\(stalled)"
             )
         }
         lines.append("Privacy: no message body, attachment content, identity key, session key, or pairing code is included.")

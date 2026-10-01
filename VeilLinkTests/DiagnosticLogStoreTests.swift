@@ -51,4 +51,25 @@ final class DiagnosticLogStoreTests: XCTestCase {
         XCTAssertEqual(store.recentEntries.count, 2)
         XCTAssertLessThan(store.recentEntries[0].sequence, store.recentEntries[1].sequence)
     }
+    func testStallPolicyRejectsSuspensionAndResumeGrace() {
+        XCTAssertFalse(DeepTelemetryStallPolicy.shouldReport(
+            delta: 3_600,
+            applicationActive: false,
+            nowUptime: 10_000,
+            resumeGraceUntilUptime: 0
+        ))
+        XCTAssertFalse(DeepTelemetryStallPolicy.shouldReport(
+            delta: 3_600,
+            applicationActive: true,
+            nowUptime: 10_000,
+            resumeGraceUntilUptime: 10_001
+        ))
+        XCTAssertTrue(DeepTelemetryStallPolicy.shouldReport(
+            delta: 1.6,
+            applicationActive: true,
+            nowUptime: 10_000,
+            resumeGraceUntilUptime: 9_000
+        ))
+    }
+
 }

@@ -38,7 +38,7 @@ struct GameLobbyView: View {
                 .frame(width: 58, height: 58)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("LOCAL GAME HUB")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .tracking(1.3)
                         .foregroundColor(VeilTheme.mutedGold)
                     Text("游戏大厅")
@@ -146,7 +146,7 @@ struct GameLobbyView: View {
             }
             Spacer()
             Text(enabled ? "人机" : "待训练")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(enabled ? VeilTheme.gold : VeilTheme.tertiaryText)
             if enabled {
                 Image(systemName: "chevron.right").font(.caption.bold()).foregroundColor(VeilTheme.tertiaryText)
@@ -160,8 +160,8 @@ struct GameLobbyView: View {
 
     private func lobbyMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 8, weight: .bold, design: .monospaced)).foregroundColor(VeilTheme.tertiaryText)
-            Text(value).font(.system(size: 10.5, weight: .semibold, design: .monospaced)).foregroundColor(VeilTheme.text).lineLimit(1).minimumScaleFactor(0.68)
+            Text(title).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(VeilTheme.tertiaryText)
+            Text(value).font(.system(size: 10.5, weight: .semibold, design: .monospaced)).foregroundColor(VeilTheme.text).lineLimit(1).minimumScaleFactor(0.78)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8).padding(.vertical, 7)
@@ -195,7 +195,7 @@ struct LocalAIGameView: View {
             }
             .padding(14)
         }
-        .background(VeilAmbientBackground().ignoresSafeArea())
+        .background(VeilAmbientBackground())
         .navigationTitle(game.title + " · 人机")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -305,7 +305,7 @@ struct LocalAIGameView: View {
 
     private func statusMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 8, weight: .bold, design: .monospaced)).foregroundColor(VeilTheme.tertiaryText)
+            Text(title).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(VeilTheme.tertiaryText)
             Text(value).font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundColor(VeilTheme.text).lineLimit(1).minimumScaleFactor(0.65)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

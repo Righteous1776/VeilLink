@@ -5,12 +5,21 @@ struct AdaptiveRootView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        Group {
-            if horizontalSizeClass == .regular {
-                TabletLayout(model: model)
-            } else {
-                PhoneLayout(model: model)
+        GeometryReader { proxy in
+            Group {
+                if VeilUILayoutPolicy.usesTabletTwoPane(
+                    horizontalSizeClassRegular: horizontalSizeClass == .regular,
+                    viewportWidth: proxy.size.width
+                ) {
+                    TabletLayout(
+                        model: model,
+                        sidebarWidth: VeilUILayoutPolicy.sidebarWidth(viewportWidth: proxy.size.width)
+                    )
+                } else {
+                    PhoneLayout(model: model)
+                }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .background(VeilAmbientBackground())
     }
@@ -74,6 +83,7 @@ private struct PhoneLayout: View {
 
 private struct TabletLayout: View {
     @ObservedObject var model: AppModel
+    let sidebarWidth: CGFloat
 
     var body: some View {
         HStack(spacing: 0) {
@@ -94,7 +104,7 @@ private struct TabletLayout: View {
                                 Spacer()
                                 if section == .chats, model.totalUnreadCount > 0 {
                                     Text(model.totalUnreadCount > 99 ? "99+" : "\(model.totalUnreadCount)")
-                                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                                         .foregroundColor(Color.black.opacity(0.86))
                                         .padding(.horizontal, 6)
                                         .frame(minWidth: 20, minHeight: 18)
@@ -129,7 +139,7 @@ private struct TabletLayout: View {
                     Spacer()
                 }
             }
-            .frame(width: 330)
+            .frame(width: sidebarWidth)
             .background(VeilTheme.elevated.opacity(0.94))
             .overlay(alignment: .trailing) {
                 LinearGradient(colors: [Color.clear, VeilTheme.gold.opacity(0.12), Color.clear], startPoint: .top, endPoint: .bottom)
@@ -178,12 +188,12 @@ private struct IdentityHeader: View {
                     .font(.system(.headline, design: .rounded).weight(.semibold))
                 HStack(spacing: 7) {
                     Text("LOCAL ID")
-                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .tracking(1.1)
                         .foregroundColor(VeilTheme.mutedGold)
                     VeilLinkTrace(active: false, width: 34)
                     Text(String((identity?.id ?? "offline").prefix(8)).uppercased())
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundColor(VeilTheme.secondaryText)
                 }
             }
@@ -210,7 +220,7 @@ private struct EmptyDetailView: View {
                 VeilLinkTrace(active: false, width: 52)
                 Text("PEER")
             }
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .foregroundColor(VeilTheme.mutedGold)
             Text("消息只在附近设备与本地存储之间流动")
                 .font(.subheadline)

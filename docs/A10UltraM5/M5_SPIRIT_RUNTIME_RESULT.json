@@ -1,0 +1,49 @@
+{
+  "schema": "OMEGA96_M5_SPIRIT_RUNTIME_TEST_V1",
+  "result": "PASS",
+  "backend": "OMEGA96_NATIVE_C_NEURAL_REASONER_RNN_V0.1",
+  "model_hash": "c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4",
+  "mutation_authority": 0,
+  "checks": {
+    "link": {
+      "pass": true,
+      "states": [
+        "S_LINK_BAD"
+      ],
+      "text": "分析：链路退化，检查链路与丢包。建议：暂时降低发送速率，保持只读与观察。",
+      "output_digest": "2d72dd672e8be746c62fb50a20f47f9d201e0641ea4cd743b950ec587d54af06"
+    },
+    "database": {
+      "pass": true,
+      "states": [
+        "S_CORRUPTED"
+      ],
+      "text": "分析：可能损坏，执行只读完整性检查。建议：隔离副本后检查，保持只读与观察。",
+      "output_digest": "c01a9d381ab12bcd5226dca91271ee266dae1b8aff7c790fe789e3ed18dd15fa"
+    },
+    "multi": {
+      "pass": true,
+      "states": [
+        "S_QUEUE",
+        "S_THERMAL"
+      ],
+      "text": "分析：队列拥塞，检查队列积压。建议：先消化队列，保持只读与观察。分析：热压力，检查温度和负载。建议：降低算力并冷却，保持只读与观察。",
+      "output_digest": "e1954a9fafd29092c0734caee7a02bf4f84bf75eb60ba9ed0343fddc8376eb34"
+    },
+    "unknown": {
+      "pass": true,
+      "states": [
+        "S_UNKNOWN"
+      ],
+      "text": "分析：信息不足，补充观测数据。建议：请补充状态，保持只读与观察。",
+      "output_digest": "99edfe372291acf64a7d2230a630e2f322e1cf98dbe0d6e068b4877f66e35082"
+    },
+    "digest_changes": {
+      "pass": true,
+      "count": 4
+    },
+    "unknown_abstains": {
+      "pass": true
+    }
+  }
+}

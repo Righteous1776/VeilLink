@@ -44,7 +44,7 @@ struct NearbyView: View {
                             VeilLinkTrace(active: bluetooth.isRunning, width: 68)
                             Text("…")
                         }
-                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundColor(VeilTheme.mutedGold)
                         Text("等待附近的 VeilLink 设备")
                             .font(.system(.body, design: .rounded).weight(.medium))
@@ -140,7 +140,7 @@ private struct RadarStatusView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             Text(isRunning ? "SCAN" : "IDLE")
-                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .tracking(0.8)
                 .foregroundColor(isRunning ? VeilTheme.goldBright : VeilTheme.tertiaryText)
                 .offset(x: 2, y: 2)
@@ -193,7 +193,7 @@ private struct NearbyPeerCard: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(trustLabel.uppercased())
-                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .tracking(0.8)
                         .foregroundColor(trustColor)
                     Rectangle()

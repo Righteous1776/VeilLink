@@ -3,6 +3,17 @@ import SwiftUI
 import UIKit
 import ObjectiveC.runtime
 
+enum DeepTelemetryStallPolicy {
+    static func shouldReport(
+        delta: TimeInterval,
+        applicationActive: Bool,
+        nowUptime: TimeInterval,
+        resumeGraceUntilUptime: TimeInterval
+    ) -> Bool {
+        applicationActive && nowUptime >= resumeGraceUntilUptime && delta > 1.35
+    }
+}
+
 @MainActor
 final class DeepTelemetry: ObservableObject {
     static let shared = DeepTelemetry()
@@ -32,9 +43,12 @@ final class DeepTelemetry: ObservableObject {
     private var installed = false
     private var observers: [NSObjectProtocol] = []
     private var heartbeatTimer: Timer?
-    private var lastHeartbeatAt = Date()
+    private var lastHeartbeatUptime = ProcessInfo.processInfo.systemUptime
+    private var heartbeatResumeGraceUntilUptime = ProcessInfo.processInfo.systemUptime + 2
+    private var applicationActive = UIApplication.shared.applicationState == .active
     private var heartbeatCounter = 0
-    private var lastSnapshotAt = Date.distantPast
+    private var lastSnapshotUptime: TimeInterval = 0
+    private var postInteractionSnapshotTask: Task<Void, Never>?
 
     private init() {
         let defaults = UserDefaults.standard
@@ -77,13 +91,20 @@ final class DeepTelemetry: ObservableObject {
         if let index = screenStack.lastIndex(of: normalized) {
             screenStack.remove(at: index)
         }
-        currentScreen = screenStack.last ?? "unknown"
+        // SwiftUI can deliver the previous view's onDisappear after the next tab/navigation
+        // screen has already become current. Never let that late callback rewind diagnostics.
+        if currentScreen == normalized {
+            currentScreen = screenStack.last ?? "unknown"
+        }
     }
 
     func setNavigationScreen(_ name: String, metadata: [String: String] = [:]) {
-        currentScreen = DiagnosticPrivacyFilter.sanitizeValue(name, limit: 128)
+        let normalized = DiagnosticPrivacyFilter.sanitizeValue(name, limit: 128)
+        screenStack.removeAll { $0 == normalized }
+        screenStack.append(normalized)
+        currentScreen = normalized
         store.log(.info, .navigation, event: "ui.navigation", screen: currentScreen, metadata: metadata)
-        captureUIHierarchy(reason: "navigation", force: true)
+        captureUIHierarchy(reason: "navigation", force: false)
     }
 
     func action(_ action: String, metadata: [String: String] = [:]) {
@@ -169,9 +190,10 @@ final class DeepTelemetry: ObservableObject {
 
     func captureUIHierarchy(reason: String, force: Bool = false) {
         guard postInteractionSnapshotsEnabled || force else { return }
-        let now = Date()
-        if !force, now.timeIntervalSince(lastSnapshotAt) < 0.25 { return }
-        lastSnapshotAt = now
+        let nowUptime = ProcessInfo.processInfo.systemUptime
+        let minimumInterval: TimeInterval = VeilDevicePerformance.current.transferVisualComplexity == .full ? 0.75 : 1.5
+        if !force, nowUptime - lastSnapshotUptime < minimumInterval { return }
+        lastSnapshotUptime = nowUptime
 
         guard let window = Self.activeWindow else {
             store.log(.debug, .ui, event: "ui.snapshot", screen: currentScreen, metadata: ["reason": reason, "window": "none"])
@@ -179,7 +201,8 @@ final class DeepTelemetry: ObservableObject {
         }
 
         let hierarchy = Self.viewControllerHierarchy(root: window.rootViewController)
-        let visibleViewCount = Self.visibleViewCount(in: window, limit: 2_500)
+        let viewLimit = VeilDevicePerformance.current.transferVisualComplexity == .full ? 1_200 : 700
+        let visibleViewCount = Self.visibleViewCount(in: window, limit: viewLimit)
         let metadata: [String: String] = [
             "reason": reason,
             "window": String(reflecting: type(of: window)),
@@ -210,14 +233,27 @@ final class DeepTelemetry: ObservableObject {
 
     private func schedulePostInteractionSnapshot() {
         guard postInteractionSnapshotsEnabled else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
-            self?.captureUIHierarchy(reason: "post-interaction")
+        postInteractionSnapshotTask?.cancel()
+        let delay: UInt64 = VeilDevicePerformance.current.transferVisualComplexity == .full
+            ? 250_000_000
+            : 450_000_000
+        postInteractionSnapshotTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.postInteractionSnapshotTask = nil
+            self.captureUIHierarchy(reason: "post-interaction")
         }
     }
 
     private func installNotificationObservers() {
         let center = NotificationCenter.default
 
+        observers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in DeepTelemetry.shared.setApplicationActive(true) }
+        })
+        observers.append(center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in DeepTelemetry.shared.setApplicationActive(false) }
+        })
         observers.append(center.addObserver(forName: UIApplication.userDidTakeScreenshotNotification, object: nil, queue: .main) { _ in
             Task { @MainActor in
                 DeepTelemetry.shared.store.log(.info, .ui, event: "ui.screenshot_taken", screen: DeepTelemetry.shared.currentScreen)
@@ -328,19 +364,33 @@ final class DeepTelemetry: ObservableObject {
         store.log(.debug, .input, event: "input.keyboard", screen: currentScreen, metadata: metadata)
     }
 
+    private func setApplicationActive(_ active: Bool) {
+        applicationActive = active
+        let uptime = ProcessInfo.processInfo.systemUptime
+        lastHeartbeatUptime = uptime
+        heartbeatResumeGraceUntilUptime = active ? uptime + 2 : uptime
+    }
+
     private func startHeartbeat() {
         heartbeatTimer?.invalidate()
-        lastHeartbeatAt = Date()
+        lastHeartbeatUptime = ProcessInfo.processInfo.systemUptime
         heartbeatCounter = 0
         heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             Task { @MainActor in
                 let telemetry = DeepTelemetry.shared
-                let now = Date()
-                let delta = now.timeIntervalSince(telemetry.lastHeartbeatAt)
-                telemetry.lastHeartbeatAt = now
+                let nowUptime = ProcessInfo.processInfo.systemUptime
+                let delta = max(0, nowUptime - telemetry.lastHeartbeatUptime)
+                telemetry.lastHeartbeatUptime = nowUptime
                 telemetry.heartbeatCounter += 1
 
-                if telemetry.performanceWatchEnabled, delta > 1.35 {
+                let active = telemetry.applicationActive && UIApplication.shared.applicationState == .active
+                if telemetry.performanceWatchEnabled,
+                   DeepTelemetryStallPolicy.shouldReport(
+                       delta: delta,
+                       applicationActive: active,
+                       nowUptime: nowUptime,
+                       resumeGraceUntilUptime: telemetry.heartbeatResumeGraceUntilUptime
+                   ) {
                     telemetry.store.log(
                         .warning,
                         .performance,
@@ -350,7 +400,7 @@ final class DeepTelemetry: ObservableObject {
                     )
                 }
 
-                if telemetry.heartbeatCounter % 30 == 0 {
+                if active, telemetry.heartbeatCounter % 30 == 0 {
                     telemetry.captureSystemSnapshot(reason: "periodic-30s")
                 }
             }
@@ -625,7 +675,7 @@ extension UIViewController {
                 "animated": String(animated)
             ]
         )
-        DeepTelemetry.shared.captureUIHierarchy(reason: "controller.appear", force: true)
+        DeepTelemetry.shared.captureUIHierarchy(reason: "controller.appear", force: false)
     }
 
     @objc fileprivate func vl_viewDidDisappear(_ animated: Bool) {

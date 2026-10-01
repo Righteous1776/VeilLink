@@ -75,7 +75,22 @@ enum VeilA9ThermalLevel: Int, Codable, Sendable {
     case critical = 3
 }
 
+enum VeilA9TransportCoverage: String, Codable, Sendable {
+    case none = "NONE"
+    case bluetoothOnly = "BLE_ONLY"
+    case multiTransport = "MULTI_TRANSPORT"
+
+    var title: String {
+        switch self {
+        case .none: return "未上报传输健康"
+        case .bluetoothOnly: return "仅 BLE（当前 main 未上报 LAN / Relay / Mesh）"
+        case .multiTransport: return "多传输"
+        }
+    }
+}
+
 struct VeilA9Input: Equatable, Sendable {
+    var transportCoverage: VeilA9TransportCoverage = .bluetoothOnly
     var bluetoothRunning = false
     var connectedPeerCount = 0
     var trackedPeerCount = 0
@@ -102,10 +117,13 @@ struct VeilA9Packet: Equatable, Sendable {
     let p2: Int
     let p3: Int
     let riskBP: Int
+    /// Legacy field name retained for source compatibility; I4 stores elapsed non-green seconds.
     let persistenceRuns: Int
     let blocker: Bool
     let healthBP: Int
     let issues: [VeilA9Issue]
+
+    var persistenceSeconds: Int { persistenceRuns }
 }
 
 struct VeilA9Decision: Equatable, Sendable {
@@ -114,9 +132,12 @@ struct VeilA9Decision: Equatable, Sendable {
     let reasonCode: String
     let healthScore: Int
     let riskPoints: Double
+    /// Legacy field name retained for source compatibility; I4 stores elapsed non-green seconds.
     let persistenceRuns: Int
     let issues: [VeilA9Issue]
     let latticeIndex: Int
+
+    var persistenceSeconds: Int { persistenceRuns }
 
     static let initial = VeilA9Decision(
         light: .green,
@@ -140,7 +161,9 @@ struct VeilA9Decision: Equatable, Sendable {
 ///
 /// The lattice remains advisory-only. It cannot mutate transport, storage, games or agent state.
 enum VeilA9Lattice {
-    static let persistentRunThreshold = 3
+    static let persistentDurationThresholdSeconds = 30
+    // Legacy symbol retained so old call sites/tests still compile; the value is now seconds.
+    static let persistentRunThreshold = persistentDurationThresholdSeconds
     static let redRiskThresholdBP = 2_800
 
     struct Cell: Equatable, Sendable {
@@ -253,7 +276,7 @@ enum VeilA9Lattice {
             hasP0: packet.p0 > 0,
             p1Count: packet.p1,
             blocker: packet.blocker,
-            persistent: packet.persistenceRuns >= persistentRunThreshold,
+            persistent: packet.persistenceSeconds >= persistentDurationThresholdSeconds,
             redRisk: packet.riskBP >= redRiskThresholdBP
         )
         let cell = cells[index]

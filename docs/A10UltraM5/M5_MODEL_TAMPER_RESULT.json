@@ -1,0 +1,8 @@
+{
+  "schema": "OMEGA96_M5_MODEL_TAMPER_RESULT_V1",
+  "result": "PASS",
+  "checks": {
+    "manifest_mutation_rejected": true,
+    "weight_mutation_rejected": true
+  }
+}

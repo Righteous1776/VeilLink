@@ -4,23 +4,57 @@ struct LockScreenView: View {
     @ObservedObject var controller: AppLockController
     @ObservedObject var haptics: HapticEngine
     @State private var pin = ""
-    private let columns = Array(repeating: GridItem(.fixed(72), spacing: 18), count: 3)
 
     var body: some View {
-        ZStack {
-            VeilAmbientBackground()
-            VStack(spacing: 24) {
-            Spacer()
-            VeilIdentityGlyph(seed: "VeilLink/Locked/Local", size: 78, active: true)
+        GeometryReader { proxy in
+            let horizontal = VeilUILayoutPolicy.lockUsesHorizontalLayout(size: proxy.size)
+            let keySize = VeilUILayoutPolicy.lockKeySize(size: proxy.size)
+            let gridSpacing: CGFloat = horizontal ? 9 : 16
+
+            ZStack {
+                VeilAmbientBackground()
+                ScrollView(.vertical, showsIndicators: false) {
+                    Group {
+                        if horizontal {
+                            HStack(spacing: 24) {
+                                identityBlock(compact: true)
+                                    .frame(maxWidth: .infinity)
+                                keypad(keySize: keySize, spacing: gridSpacing)
+                                    .frame(width: min(228, proxy.size.width * 0.48))
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                        } else {
+                            VStack(spacing: 20) {
+                                Spacer(minLength: 8)
+                                identityBlock(compact: false)
+                                keypad(keySize: keySize, spacing: gridSpacing)
+                                Spacer(minLength: 8)
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 18)
+                        }
+                    }
+                    .frame(minHeight: max(1, proxy.size.height - 1))
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func identityBlock(compact: Bool) -> some View {
+        VStack(spacing: compact ? 11 : 18) {
+            VeilIdentityGlyph(seed: "VeilLink/Locked/Local", size: compact ? 58 : 78, active: true)
             VStack(spacing: 4) {
                 Text("VEIL // LOCKED")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .tracking(1.5)
                     .foregroundColor(VeilTheme.mutedGold)
                 Text("输入 VeilLink 密码")
-                    .font(.system(.title3, design: .rounded).weight(.semibold))
+                    .font(.system(compact ? .headline : .title3, design: .rounded).weight(.semibold))
             }
-            HStack(spacing: 16) {
+            HStack(spacing: compact ? 11 : 16) {
                 ForEach(0..<6, id: \.self) { index in
                     Circle()
                         .fill(index < pin.count ? VeilTheme.goldBright : Color.clear)
@@ -32,44 +66,53 @@ struct LockScreenView: View {
             .frame(height: 22)
 
             if let error = controller.errorMessage {
-                Text(error).font(.footnote).foregroundColor(VeilTheme.danger)
+                Text(error)
+                    .font(.footnote)
+                    .foregroundColor(VeilTheme.danger)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach([1,2,3,4,5,6,7,8,9], id: \.self) { digit in
-                    key(String(digit))
-                }
-                Button {
-                    Task {
-                        if await controller.unlockWithBiometrics() {
-                            haptics.resolved()
-                        } else {
-                            haptics.error()
-                        }
-                    }
-                } label: {
-                    VeilIconDisc(systemName: "touchid", size: 58, highlighted: true)
-                }
-                .buttonStyle(VeilPressStyle())
-                key("0")
-                Button {
-                    if !pin.isEmpty {
-                        pin.removeLast()
-                        haptics.selection()
-                    }
-                } label: {
-                    VeilIconDisc(systemName: "delete.left", size: 58)
-                }
-                .buttonStyle(VeilPressStyle())
-            }
-            .foregroundColor(VeilTheme.text)
-            Spacer()
-            }
-            .padding(24)
         }
     }
 
-    private func key(_ value: String) -> some View {
+    private func keypad(keySize: CGFloat, spacing: CGFloat) -> some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: spacing), count: 3)
+        return LazyVGrid(columns: columns, spacing: spacing) {
+            ForEach([1,2,3,4,5,6,7,8,9], id: \.self) { digit in
+                key(String(digit), size: keySize)
+            }
+            Button {
+                Task {
+                    if await controller.unlockWithBiometrics() {
+                        haptics.resolved()
+                    } else {
+                        haptics.error()
+                    }
+                }
+            } label: {
+                VeilIconDisc(systemName: "touchid", size: max(42, keySize - 10), highlighted: true)
+            }
+            .buttonStyle(VeilPressStyle())
+            .frame(width: keySize, height: keySize)
+
+            key("0", size: keySize)
+
+            Button {
+                if !pin.isEmpty {
+                    pin.removeLast()
+                    haptics.selection()
+                }
+            } label: {
+                VeilIconDisc(systemName: "delete.left", size: max(42, keySize - 10))
+            }
+            .buttonStyle(VeilPressStyle())
+            .frame(width: keySize, height: keySize)
+        }
+        .foregroundColor(VeilTheme.text)
+        .frame(maxWidth: 270)
+    }
+
+    private func key(_ value: String, size: CGFloat) -> some View {
         Button {
             guard pin.count < 6 else { return }
             pin.append(value)
@@ -84,8 +127,8 @@ struct LockScreenView: View {
             }
         } label: {
             Text(value)
-                .font(.system(size: 27, weight: .regular, design: .rounded))
-                .frame(width: 68, height: 68)
+                .font(.system(size: size >= 60 ? 27 : 22, weight: .regular, design: .rounded))
+                .frame(width: size, height: size)
                 .background(VeilTheme.elevated.opacity(0.78))
                 .clipShape(VeilPanelShape(cut: 11, radius: 7))
                 .overlay(
@@ -93,7 +136,10 @@ struct LockScreenView: View {
                         .stroke(VeilTheme.hairline, lineWidth: 1)
                 )
                 .overlay(alignment: .topLeading) {
-                    Rectangle().fill(VeilTheme.gold.opacity(0.22)).frame(width: 13, height: 1).padding(.leading, 7)
+                    Rectangle()
+                        .fill(VeilTheme.gold.opacity(0.22))
+                        .frame(width: 13, height: 1)
+                        .padding(.leading, 7)
                 }
         }
         .buttonStyle(VeilPressStyle())

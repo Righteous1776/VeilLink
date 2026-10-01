@@ -40,6 +40,7 @@ enum MiniGameCommand: String, Codable {
     case invite
     case accept
     case decline
+    case cancelInvite
     case move
     case resign
 }
@@ -134,8 +135,20 @@ enum MiniGameCodec {
         case .invite: return "[小游戏] 邀请你玩\(packet.game.title)"
         case .accept: return "[小游戏] 已接受\(packet.game.title)对局"
         case .decline: return "[小游戏] 已拒绝\(packet.game.title)对局"
+        case .cancelInvite: return "[小游戏] \(packet.game.title) · 邀请已撤回"
         case .move: return "[小游戏] \(packet.game.title) · 对局更新"
         case .resign: return "[小游戏] \(packet.game.title) · 对局结束"
+        }
+    }
+
+    static func outgoingPreviewText(for packet: MiniGamePacket) -> String {
+        switch packet.command {
+        case .invite: return "[小游戏] 已邀请对方玩\(packet.game.title)"
+        case .accept: return "[小游戏] 你已接受\(packet.game.title)对局"
+        case .decline: return "[小游戏] 你已拒绝\(packet.game.title)对局"
+        case .cancelInvite: return "[小游戏] 你已撤回\(packet.game.title)邀请"
+        case .move: return "[小游戏] \(packet.game.title) · 你已操作"
+        case .resign: return "[小游戏] \(packet.game.title) · 你已认输"
         }
     }
 }
@@ -711,6 +724,15 @@ struct MiniGameSessionSnapshot: Identifiable, Equatable {
         return max(0, lastActivity.timeIntervalSince(startedAt))
     }
 
+    static let invitationTimeout: TimeInterval = 30 * 60
+
+    func invitationIsExpired(at now: Date = Date()) -> Bool {
+        guard status == .invited else { return false }
+        return now.timeIntervalSince(invitedAt) >= Self.invitationTimeout
+    }
+
+    var isInvitationExpired: Bool { invitationIsExpired() }
+
     var localOutcome: MiniGameOutcome? {
         guard case .finished(let winner) = status else { return nil }
         guard let winner else { return .draw }
@@ -781,6 +803,8 @@ struct MiniGameReplayFrame: Identifiable, Equatable {
 }
 
 enum MiniGameSessionBuilder {
+    static let concurrentInviteCollisionWindow: TimeInterval = 8
+
     static func sessions(from messages: [ChatMessage]) -> [MiniGameSessionSnapshot] {
         let decoded: [(ChatMessage, MiniGamePacket)] = messages.compactMap { message in
             guard let packet = MiniGameCodec.decode(message.body) else { return nil }
@@ -804,11 +828,41 @@ enum MiniGameSessionBuilder {
         Dictionary(uniqueKeysWithValues: sessions(from: messages).map { ($0.id, $0) })
     }
 
+    /// The UI exposes one live session per game. Near-simultaneous cross-invites are coalesced
+    /// deterministically instead of leaving two contradictory "waiting" sessions on the peers.
+    static func coalescedLiveSessions(
+        _ sessions: [MiniGameSessionSnapshot],
+        now: Date = Date()
+    ) -> [MiniGameSessionSnapshot] {
+        let live = sessions.filter { snapshot in
+            guard !snapshot.invitationIsExpired(at: now) else { return false }
+            switch snapshot.status {
+            case .invited, .active: return true
+            case .declined, .cancelled, .finished: return false
+            }
+        }
+
+        return live.filter { candidate in
+            let collisionGroup = sessions.filter { other in
+                guard other.game == candidate.game else { return false }
+                return abs(other.invitedAt.timeIntervalSince(candidate.invitedAt)) <= concurrentInviteCollisionWindow
+            }
+            guard collisionGroup.count > 1 else { return true }
+
+            // Once either invitation has progressed beyond pending, keep that session canonical.
+            // Otherwise both peers choose the same UUID-lexicographic winner.
+            let progressed = collisionGroup.filter { $0.status != .invited }
+            let pool = progressed.isEmpty ? collisionGroup : progressed
+            guard let canonical = pool.min(by: { $0.id < $1.id }) else { return true }
+            return candidate.id == canonical.id
+        }.sorted { $0.lastActivity > $1.lastActivity }
+    }
+
     static func replay(sessionID: String, from messages: [ChatMessage]) -> [MiniGameReplayFrame] {
         let ordered: [(ChatMessage, MiniGamePacket)] = messages.compactMap { message in
             guard let packet = MiniGameCodec.decode(message.body), packet.sessionID == sessionID else { return nil }
             return (message, packet)
-        }.sorted(by: eventOrder)
+        }.sorted(by: semanticEventOrder)
         guard !ordered.isEmpty else { return [] }
 
         var frames: [MiniGameReplayFrame] = []
@@ -824,7 +878,8 @@ enum MiniGameSessionBuilder {
             case .invite: label = "邀请对局"
             case .accept: label = "对局开始"
             case .decline: label = "邀请被拒绝"
-            case .resign: label = snapshot.status == .cancelled ? "邀请已撤回" : "认输结束"
+            case .cancelInvite: label = "邀请已撤回"
+            case .resign: label = snapshot.status == .cancelled ? "邀请已撤回（旧协议）" : "认输结束"
             case .move:
                 let unit = snapshot.game == .tactical ? "道命令" : "手"
                 if case .finished(let winner) = snapshot.status, winner == nil {
@@ -840,61 +895,90 @@ enum MiniGameSessionBuilder {
     }
 
     private static func build(sessionID: String, events: [(ChatMessage, MiniGamePacket)]) -> MiniGameSessionSnapshot? {
-        let compatible = events.filter { $0.1.version == MiniGamePacket.currentVersion }
+        let compatible = events.filter { event in
+            guard event.1.version == MiniGamePacket.currentVersion else { return false }
+            // Keep a failed invite visible so the sender can retry it from the chat card, but
+            // never let an outbound command that definitively failed/cancelled mutate the
+            // reconstructed board or terminal state. A retry flips the message back to queued.
+            if event.0.isOutgoing, event.0.deliveryState == .failed || event.0.deliveryState == .cancelled {
+                return event.1.command == .invite
+            }
+            return true
+        }
+
         let ordered = Dictionary(grouping: compatible, by: { $0.1.actionID })
             .values
             .compactMap { duplicates in duplicates.min(by: duplicatePreferenceOrder) }
-            .sorted(by: eventOrder)
+            .sorted(by: semanticEventOrder)
+
         guard let invite = ordered.first(where: { $0.1.command == .invite && $0.1.turn == 0 }) else { return nil }
         let game = invite.1.game
         let hostIsLocal = invite.0.isOutgoing
-        let invitedAt = min(invite.0.sentAt, invite.1.createdAt)
+        let invitedAt = invite.1.createdAt
         let actor: (ChatMessage) -> MiniGamePlayer = { message in
             message.isOutgoing == hostIsLocal ? .host : .guest
         }
-        let valid = ordered.filter { $0.1.game == game && !eventOrder($0, invite) }
-        let inviteActivity = max(invite.0.sentAt, invite.1.createdAt)
-        let activity: ((ChatMessage, MiniGamePacket)) -> Date = { max($0.0.sentAt, $0.1.createdAt) }
+        let valid = ordered.filter { $0.1.game == game && $0.1.actionID != invite.1.actionID }
+        let activity: ((ChatMessage, MiniGamePacket)) -> Date = { $0.1.createdAt }
 
-        let lifecycleEvent = valid.first { event in
-            let player = actor(event.0)
-            if player == .guest && (event.1.command == .accept || event.1.command == .decline) { return true }
-            if player == .host && event.1.command == .resign { return true }
-            return false
-        }
+        let guestDecisions = valid.filter { event in
+            actor(event.0) == .guest && (event.1.command == .accept || event.1.command == .decline)
+        }.sorted(by: sameSenderOrder)
+        let guestDecision = guestDecisions.first
+
+        let explicitCancellation = valid.filter { event in
+            actor(event.0) == .host && event.1.command == .cancelInvite && event.1.turn == 0
+        }.min(by: sameSenderOrder)
+
+        let legacyCancellation = valid.filter { event in
+            actor(event.0) == .host && event.1.command == .resign && event.1.turn == 0
+        }.min(by: sameSenderOrder)
 
         let initialGomoku = game == .gomoku ? GomokuState() : nil
         let initialXiangqi = game == .xiangqi ? XiangqiState() : nil
         let initialLudo = game == .ludo ? LudoState() : nil
         let initialTactical = game == .tactical ? TacticalState() : nil
 
-        guard let lifecycleEvent else {
-            return MiniGameSessionSnapshot(
-                id: sessionID, game: game, hostIsLocal: hostIsLocal, status: .invited,
-                invitedAt: invitedAt, startedAt: nil, lastActivity: inviteActivity,
-                gomoku: initialGomoku, xiangqi: initialXiangqi, ludo: initialLudo, tactical: initialTactical,
-                endedByResignation: false
-            )
-        }
-        if actor(lifecycleEvent.0) == .host && lifecycleEvent.1.command == .resign {
+        let hasGameplayMove = valid.contains { $0.1.command == .move }
+        if let explicitCancellation, !hasGameplayMove {
             return MiniGameSessionSnapshot(
                 id: sessionID, game: game, hostIsLocal: hostIsLocal, status: .cancelled,
-                invitedAt: invitedAt, startedAt: nil, lastActivity: activity(lifecycleEvent),
-                gomoku: initialGomoku, xiangqi: initialXiangqi, ludo: initialLudo, tactical: initialTactical,
-                endedByResignation: false
-            )
-        }
-        if lifecycleEvent.1.command == .decline {
-            return MiniGameSessionSnapshot(
-                id: sessionID, game: game, hostIsLocal: hostIsLocal, status: .declined,
-                invitedAt: invitedAt, startedAt: nil, lastActivity: activity(lifecycleEvent),
+                invitedAt: invitedAt, startedAt: nil, lastActivity: activity(explicitCancellation),
                 gomoku: initialGomoku, xiangqi: initialXiangqi, ludo: initialLudo, tactical: initialTactical,
                 endedByResignation: false
             )
         }
 
-        let startedAt = max(lifecycleEvent.0.sentAt, lifecycleEvent.1.createdAt)
-        let gameplayEvents = valid.filter { eventOrder(lifecycleEvent, $0) && ($0.1.command == .move || $0.1.command == .resign) }
+        if guestDecision?.1.command == .decline {
+            return MiniGameSessionSnapshot(
+                id: sessionID, game: game, hostIsLocal: hostIsLocal, status: .declined,
+                invitedAt: invitedAt, startedAt: nil, lastActivity: guestDecision.map(activity) ?? invitedAt,
+                gomoku: initialGomoku, xiangqi: initialXiangqi, ludo: initialLudo, tactical: initialTactical,
+                endedByResignation: false
+            )
+        }
+
+        guard let accepted = guestDecision, accepted.1.command == .accept else {
+            // Backward compatibility for old VLGM1 clients that used host resign(turn:0) to
+            // withdraw a still-pending invitation. Once accept exists, resign is a real resignation.
+            if let legacyCancellation {
+                return MiniGameSessionSnapshot(
+                    id: sessionID, game: game, hostIsLocal: hostIsLocal, status: .cancelled,
+                    invitedAt: invitedAt, startedAt: nil, lastActivity: activity(legacyCancellation),
+                    gomoku: initialGomoku, xiangqi: initialXiangqi, ludo: initialLudo, tactical: initialTactical,
+                    endedByResignation: false
+                )
+            }
+            return MiniGameSessionSnapshot(
+                id: sessionID, game: game, hostIsLocal: hostIsLocal, status: .invited,
+                invitedAt: invitedAt, startedAt: nil, lastActivity: invitedAt,
+                gomoku: initialGomoku, xiangqi: initialXiangqi, ludo: initialLudo, tactical: initialTactical,
+                endedByResignation: false
+            )
+        }
+
+        let startedAt = activity(accepted)
+        let gameplayEvents = valid.filter { $0.1.command == .move || $0.1.command == .resign }
         let gameplayEventsByTurn = Dictionary(grouping: gameplayEvents, by: { $0.1.turn })
         var gomoku = initialGomoku
         var xiangqi = initialXiangqi
@@ -902,11 +986,11 @@ enum MiniGameSessionBuilder {
         var tactical = initialTactical
         var resignationWinner: MiniGamePlayer?
         var usedActionIDs = Set<String>()
-        var effectiveLastActivity = activity(lifecycleEvent)
+        var effectiveLastActivity = startedAt
 
-        // Replay turn-by-turn instead of trusting arrival order. Duplicate/conflicting actions are
-        // deterministically collapsed using the packet timestamp + action ID so both peers rebuild
-        // the same board from the same encrypted history.
+        // Wire v1 has no cross-device causal sequence number. Once acceptance exists, game-rule
+        // turn validation is authoritative; cross-device wall clocks are never used to decide
+        // whether a move happened "before" or "after" acceptance.
         replayLoop: while resignationWinner == nil {
             let turn: Int
             switch game {
@@ -1011,17 +1095,48 @@ enum MiniGameSessionBuilder {
         if leftMove != rightMove {
             for (left, right) in zip(leftMove, rightMove) where left != right { return left < right }
         }
-        return lhs.0.sentAt < rhs.0.sentAt
+        return lhs.0.id < rhs.0.id
     }
 
-    private static func eventOrder(_ lhs: (ChatMessage, MiniGamePacket), _ rhs: (ChatMessage, MiniGamePacket)) -> Bool {
-        if lhs.0.sentAt != rhs.0.sentAt { return lhs.0.sentAt < rhs.0.sentAt }
+    private static func phaseRank(_ command: MiniGameCommand) -> Int {
+        switch command {
+        case .invite: return 0
+        case .accept, .decline, .cancelInvite: return 1
+        case .move, .resign: return 2
+        }
+    }
+
+    private static func commandRank(_ command: MiniGameCommand) -> Int {
+        switch command {
+        case .invite: return 0
+        case .cancelInvite: return 1
+        case .decline: return 2
+        case .accept: return 3
+        case .move: return 4
+        case .resign: return 5
+        }
+    }
+
+    private static func semanticEventOrder(_ lhs: (ChatMessage, MiniGamePacket), _ rhs: (ChatMessage, MiniGamePacket)) -> Bool {
+        let lp = phaseRank(lhs.1.command), rp = phaseRank(rhs.1.command)
+        if lp != rp { return lp < rp }
+        if lhs.1.turn != rhs.1.turn { return lhs.1.turn < rhs.1.turn }
+        let lc = commandRank(lhs.1.command), rc = commandRank(rhs.1.command)
+        if lc != rc { return lc < rc }
+        return lhs.1.actionID < rhs.1.actionID
+    }
+
+    private static func sameSenderOrder(_ lhs: (ChatMessage, MiniGamePacket), _ rhs: (ChatMessage, MiniGamePacket)) -> Bool {
         if lhs.1.createdAt != rhs.1.createdAt { return lhs.1.createdAt < rhs.1.createdAt }
         return lhs.1.actionID < rhs.1.actionID
     }
 
     private static func gameplayOrder(_ lhs: (ChatMessage, MiniGamePacket), _ rhs: (ChatMessage, MiniGamePacket)) -> Bool {
-        if lhs.1.createdAt != rhs.1.createdAt { return lhs.1.createdAt < rhs.1.createdAt }
+        // createdAt is only comparable when both candidates originate from the same device.
+        // isOutgoing equality is preserved on both peers even though its boolean value flips.
+        if lhs.0.isOutgoing == rhs.0.isOutgoing, lhs.1.createdAt != rhs.1.createdAt {
+            return lhs.1.createdAt < rhs.1.createdAt
+        }
         return lhs.1.actionID < rhs.1.actionID
     }
 }

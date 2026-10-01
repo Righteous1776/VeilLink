@@ -51,9 +51,15 @@ struct VeilLinkApp: App {
 private enum VeilChrome {
     @MainActor
     static func configure() {
+        // VeilLink 26.9 has one production appearance contract: black/gold dark UI. Native
+        // SwiftUI Form/List/Sheet surfaces must use the same contract instead of briefly falling
+        // back to a light UIKit surface during presentation on iOS 15.
+        let background = UIColor(red: 0.012, green: 0.013, blue: 0.017, alpha: 1)
+        let elevated = UIColor(red: 0.045, green: 0.046, blue: 0.056, alpha: 1)
+
         let navigation = UINavigationBarAppearance()
         navigation.configureWithOpaqueBackground()
-        navigation.backgroundColor = UIColor(red: 0.012, green: 0.013, blue: 0.017, alpha: 0.96)
+        navigation.backgroundColor = background.withAlphaComponent(0.96)
         navigation.shadowColor = UIColor.white.withAlphaComponent(0.045)
         navigation.titleTextAttributes = [.foregroundColor: UIColor.white.withAlphaComponent(0.94)]
         navigation.largeTitleTextAttributes = [.foregroundColor: UIColor.white.withAlphaComponent(0.94)]
@@ -79,6 +85,15 @@ private enum VeilChrome {
         let tabBar = UITabBar.appearance()
         tabBar.standardAppearance = tab
         tabBar.scrollEdgeAppearance = tab
+
+        UITableView.appearance().backgroundColor = background
+        UITableView.appearance().separatorColor = UIColor.white.withAlphaComponent(0.06)
+        UITableViewCell.appearance().backgroundColor = .clear
+        UICollectionView.appearance().backgroundColor = background
+        UITextField.appearance().keyboardAppearance = .dark
+        UITextView.appearance().keyboardAppearance = .dark
+        UISearchBar.appearance().keyboardAppearance = .dark
+        UISearchBar.appearance().barTintColor = elevated
     }
 }
 

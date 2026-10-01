@@ -1,0 +1,21 @@
+{
+  "schema": "A10_DECISION_ABI_V1",
+  "authority_levels": [
+    "L0_OBSERVE_ONLY",
+    "L1_ADVISORY",
+    "L2_MAINTENANCE_REVIEW",
+    "L3_PRIORITY_MAINTENANCE",
+    "L4_PRODUCTION_HOLD_RECOMMENDATION",
+    "L5_EMERGENCY_ESCALATION"
+  ],
+  "required": [
+    "profile_id",
+    "authority",
+    "disposition",
+    "reason_code",
+    "lattice_index",
+    "state_count",
+    "decision_sha256"
+  ],
+  "mutation_authority": 0
+}

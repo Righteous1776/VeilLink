@@ -1,0 +1,57 @@
+{
+  "schema": "OMEGA96_EXECUTION_PLANE_V2",
+  "component": "A10 Ultra OMEGA 96",
+  "version": "V0.2",
+  "logical_tiles": 96,
+  "logical_workers": 64,
+  "physical_execution": {
+    "engine": "OMEGA96_FUSED_TOKEN_TREE_V1",
+    "logical_to_physical_mapping": "BOUNDED_DYNAMIC",
+    "tested_cpu_count": 5,
+    "tested_physical_workers": [
+      1,
+      2,
+      4
+    ],
+    "decision_lut_states": 1152,
+    "object_ingress": "SUPPORTED",
+    "zero_copy_frame": "SUPPORTED_SHADOW_ONLY",
+    "python_reference_fallback": "REQUIRED",
+    "decision_token_lane": "OMEGA96_DECISION_TOKEN_LANE_V1",
+    "decision_token_bytes": 2,
+    "immutable_decision_lut_sha256": "1be3dd04ee99df8d12c56035982fe1d29dcc1847997718a0e9df5903ae11d640",
+    "trusted_frame_hot_lane": "SUPPORTED_SHADOW_ONLY",
+    "preferred_hot_lane": "OMEGA96_FUSED_TOKEN_TREE_V1",
+    "decision_lut_sha256": "1be3dd04ee99df8d12c56035982fe1d29dcc1847997718a0e9df5903ae11d640",
+    "fused_token_tree": "SUPPORTED_SHADOW_ONLY",
+    "single_pass_result_commitments": true,
+    "adaptive_default_policy": {
+      "small_lt_20000": 1,
+      "medium_20000_to_99999": 2,
+      "large_ge_100000": "min(4, max(1, visible_cpu_count-1))"
+    }
+  },
+  "fabric": {
+    "epoch": "REQUIRED",
+    "rage_plan_digest": "REQUIRED",
+    "vault_commit": "REQUIRED",
+    "oracle_sampling": "REQUIRED",
+    "guardian_preflight": "REQUIRED"
+  },
+  "authorities": {
+    "canonical_write": 0,
+    "target_write": 0,
+    "transport_mutation": 0,
+    "storage_mutation": 0,
+    "game_mutation": 0,
+    "agent_mutation": 0
+  },
+  "performance_policy": {
+    "logical_tiles_are_not_physical_cores": true,
+    "object_ingress_promoted_shadow": true,
+    "token_lane_promoted_shadow": true,
+    "production_cutover": false,
+    "token_tree_promoted_shadow": true
+  },
+  "formal_benchmark": "04_BENCHMARK/OMEGA96_BENCHMARK_RESULT.json"
+}

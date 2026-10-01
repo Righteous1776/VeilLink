@@ -129,7 +129,7 @@ struct TacticalBoardView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text(layer.glyph)
-                            .font(.system(size: 9, weight: .heavy, design: .serif))
+                            .font(.system(size: 10, weight: .heavy, design: .serif))
                         Text(layer.title)
                             .font(.system(size: 10, weight: .semibold))
                             .lineLimit(1)
@@ -160,7 +160,7 @@ struct TacticalBoardView: View {
                     .minimumScaleFactor(0.72)
             }
             Text(faction.title)
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundColor(VeilTheme.tertiaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -179,7 +179,7 @@ struct TacticalBoardView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(title)
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundColor(VeilTheme.tertiaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -261,7 +261,7 @@ struct TacticalBoardView: View {
                 .font(.caption2.monospacedDigit())
                 .foregroundColor(VeilTheme.secondaryText)
                 .lineLimit(1)
-                .minimumScaleFactor(0.68)
+                .minimumScaleFactor(0.78)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 9)
@@ -313,7 +313,7 @@ struct TacticalBoardView: View {
                                 .foregroundColor(VeilTheme.text)
                             if selectedUnit.faction != localFaction {
                                 Text("敌")
-                                    .font(.system(size: 8, weight: .heavy))
+                                    .font(.system(size: 10, weight: .heavy))
                                     .foregroundColor(Color.red.opacity(0.88))
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 2)
@@ -329,7 +329,7 @@ struct TacticalBoardView: View {
                         .font(.system(size: 9.5, weight: .medium).monospacedDigit())
                         .foregroundColor(supplied ? VeilTheme.secondaryText : VeilTheme.gold)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.62)
+                        .minimumScaleFactor(0.78)
                     }
                     Spacer(minLength: 4)
                     Button("关闭") { updateSelection(nil) }
@@ -455,7 +455,7 @@ struct TacticalBoardView: View {
                 .font(.caption2.weight(.bold).monospacedDigit())
                 .foregroundColor(VeilTheme.text)
             Text(title)
-                .font(.system(size: 8.5, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundColor(VeilTheme.tertiaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
@@ -478,7 +478,7 @@ struct TacticalBoardView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
             Text(title)
-                .font(.system(size: 8.5, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundColor(VeilTheme.tertiaryText)
         }
         .frame(maxWidth: .infinity)
@@ -610,13 +610,13 @@ private struct TacticalHexTile: View, Equatable {
             if let name = hex.name, unit == nil {
                 VStack(spacing: 0) {
                     Text(name)
-                        .font(.system(size: 6.5, weight: .bold))
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundColor(VeilTheme.text.opacity(0.72))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.6)
+                        .minimumScaleFactor(0.78)
                     if let objectivePressure {
                         Text("\(objectivePressure.caoStrength):\(objectivePressure.yuanStrength)")
-                            .font(.system(size: 5.3, weight: .bold).monospacedDigit())
+                            .font(.system(size: 10, weight: .bold).monospacedDigit())
                             .foregroundColor(objectivePressureColor(objectivePressure).opacity(0.88))
                     }
                 }
@@ -632,7 +632,7 @@ private struct TacticalHexTile: View, Equatable {
                     .overlay(alignment: .topTrailing) {
                         if supplyBroken {
                             Text("!")
-                                .font(.system(size: 7, weight: .black))
+                                .font(.system(size: 10, weight: .black))
                                 .foregroundColor(.white)
                                 .frame(width: 10, height: 10)
                                 .background(Color.red.opacity(0.86))

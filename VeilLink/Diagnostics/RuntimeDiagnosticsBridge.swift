@@ -106,7 +106,8 @@ final class RuntimeDiagnosticsBridge {
                         metadata: [
                             "count": String(peers.count),
                             "peers": peers.prefix(32).map {
-                                "\($0.transportID.uuidString):\($0.id):\($0.rssi):\(String(describing: $0.trustState))"
+                                let secureReady = model.sessions.hasSecureSession(for: $0.id)
+                                return "\($0.transportID.uuidString):\($0.id):\($0.rssi):\(String(describing: $0.trustState)):secure=\(secureReady)"
                             }.joined(separator: "|")
                         ]
                     )
@@ -156,9 +157,131 @@ final class RuntimeDiagnosticsBridge {
                             "level": decision.level.shortTitle,
                             "health": String(decision.healthScore),
                             "risk": String(format: "%.2f", decision.riskPoints),
+                            "persistence_seconds": String(decision.persistenceSeconds),
+                            "transport_coverage": model.a9Health.transportCoverage.rawValue,
                             "reason": decision.reasonCode,
                             "cell": String(decision.latticeIndex),
                             "issues": String(decision.issues.count)
+                        ]
+                    )
+                }
+            }
+            .store(in: &cancellables)
+
+        model.latticeKernel.$snapshot
+            .removeDuplicates()
+            .sink { snapshot in
+                Task { @MainActor in
+                    self.store.log(
+                        snapshot.unexpectedDecisionDiffs > 0 ? .warning : .info,
+                        .a9,
+                        event: "kernel.integration_state",
+                        screen: DeepTelemetry.shared.currentScreen,
+                        metadata: [
+                            "stage": snapshot.stage.rawValue,
+                            "active_profile": snapshot.activeProfileID,
+                            "candidate_profile": snapshot.candidateProfileID ?? "none",
+                            "authority": snapshot.authority.rawValue,
+                            "signal_bus": String(snapshot.signalBusVersion),
+                            "unexpected_diffs": String(snapshot.unexpectedDecisionDiffs),
+                            "compute_mode": snapshot.computeMode ?? "none"
+                        ]
+                    )
+                }
+            }
+            .store(in: &cancellables)
+
+        model.kernelRuntime.$mode
+            .sink { _ in
+                Task { @MainActor in
+                    let env = model.kernelRuntime.snapshot()
+                    self.store.log(
+                        env.mode.isExperimental ? .warning : .info,
+                        .a9,
+                        event: "kernel.runtime_mode",
+                        screen: DeepTelemetry.shared.currentScreen,
+                        metadata: [
+                            "kernel_mode": env.mode.rawValue,
+                            "mode_epoch": String(env.modeEpoch),
+                            "mode_session_id": env.modeSessionID,
+                            "selection_source": env.selectionSource,
+                            "production_authority": env.productionAuthority,
+                            "fallback_policy": env.fallbackPolicy,
+                            "a9_enabled": String(env.a9EvaluationEnabled),
+                            "ultra_enabled": String(env.ultraEvaluationEnabled),
+                            "mutation_authority": String(env.mutationAuthority),
+                            "production_cutover": env.productionCutover,
+                            "last_fallback_reason": model.kernelRuntime.lastFallbackReason ?? "none"
+                        ]
+                    )
+                }
+            }
+            .store(in: &cancellables)
+
+        model.a10Ultra.$lastRuntimeSample
+            .compactMap { $0 }
+            .sink { record in
+                Task { @MainActor in
+                    let env = record.environment
+                    self.store.log(
+                        record.fallbackEvent ? .warning : .debug,
+                        .a9,
+                        event: "kernel.runtime_sample",
+                        screen: DeepTelemetry.shared.currentScreen,
+                        metadata: [
+                            "kernel_mode": env.mode.rawValue,
+                            "mode_epoch": String(env.modeEpoch),
+                            "mode_session_id": env.modeSessionID,
+                            "mode_sample_ordinal": String(env.modeSampleOrdinal),
+                            "mode_elapsed_ms": String(max(0, Int(record.timestamp.timeIntervalSince(env.enteredAt) * 1_000))),
+                            "selection_source": env.selectionSource,
+                            "production_authority": env.productionAuthority,
+                            "fallback_policy": env.fallbackPolicy,
+                            "a9_enabled": String(env.a9EvaluationEnabled),
+                            "ultra_enabled": String(env.ultraEvaluationEnabled),
+                            "mutation_authority": String(env.mutationAuthority),
+                            "production_cutover": env.productionCutover,
+                            "device_profile": VeilDevicePerformance.diagnosticLabel,
+                            "render_profile": VeilRenderProfile.diagnosticLabel,
+                            "foreground_active": String(model.computeGovernor.foregroundActive),
+                            "compute_focus": model.computeGovernor.focus.rawValue,
+                            "a9_plan_frozen": String(model.computeGovernor.planFrozen),
+                            "sample_id": record.sampleID,
+                            "epoch": String(record.epoch),
+                            "timestamp": ISO8601DateFormatter().string(from: record.timestamp),
+                            "source_domain": record.sourceDomains.joined(separator: ","),
+                            "signal_digest": record.signalDigest,
+                            "signal_provenance": "RAW_HOST_PRE_DECISION",
+                            "a9_light": record.a9Decision?.light ?? "disabled",
+                            "a9_level": record.a9Decision.map { String($0.level) } ?? "disabled",
+                            "a9_risk_bp": record.a9Decision.map { String($0.riskBasisPoints) } ?? "disabled",
+                            "a9_budget": record.a9Budget?.mode ?? "disabled",
+                            "ultra_light": record.ultraDecision?.light ?? "disabled",
+                            "ultra_level": record.ultraDecision.map { String($0.level) } ?? "disabled",
+                            "ultra_risk_bp": record.ultraDecision.map { String($0.riskBasisPoints) } ?? "disabled",
+                            "ultra_budget": record.ultraBudget?.mode ?? "disabled",
+                            "decision_match": record.decisionMatch.map { String($0) } ?? "not_comparable",
+                            "divergence_class": record.divergenceClass,
+                            "a9_latency_us": String(record.a9LatencyNanos / 1_000),
+                            "ultra_latency_us": String(record.ultraLatencyNanos / 1_000),
+                            "a9_cpu_us": String(record.a9CPUNanos / 1_000),
+                            "ultra_cpu_us": String(record.ultraCPUNanos / 1_000),
+                            "combined_cpu_us": String((record.a9CPUNanos &+ record.ultraCPUNanos) / 1_000),
+                            "ultra_physical_slot_count": String(record.ultraPhysicalSlotCount),
+                            "rss_bytes": String(record.rssBytes),
+                            "thermal_state": String(record.thermalState),
+                            "battery_permille": String(record.batteryPermille),
+                            "energy_proxy": String(record.energyProxy),
+                            "energy_proxy_scope": env.mode == .dualShadow ? "COMBINED_A9_ULTRA" : "ACTIVE_RAIL_ONLY",
+                            "ble_state": record.bleState,
+                            "queue_depth": String(record.queueDepth),
+                            "dropped_event_count": String(record.droppedEventCount),
+                            "ultra_restart_count": String(record.ultraRestartCount),
+                            "fallback_event": String(record.fallbackEvent),
+                            "guardian_status": record.guardianStatus,
+                            "rage_status": record.rageStatus,
+                            "vault_status": record.vaultStatus,
+                            "runtime_backend": record.runtimeBackend
                         ]
                     )
                 }
@@ -171,6 +294,86 @@ final class RuntimeDiagnosticsBridge {
                     let level: DiagnosticLogLevel
                     if case .failed = state { level = .error } else { level = .info }
                     self.store.log(level, .agent, event: "malecns.state", screen: DeepTelemetry.shared.currentScreen, message: state.displayName)
+                }
+            }
+            .store(in: &cancellables)
+
+        model.agent.$threeCoreSnapshot
+            .removeDuplicates()
+            .sink { snapshot in
+                Task { @MainActor in
+                    self.store.log(
+                        snapshot.phase == .fallback ? .warning : .info,
+                        .agent,
+                        event: "agent.three_core_state",
+                        screen: DeepTelemetry.shared.currentScreen,
+                        metadata: [
+                            "phase": snapshot.phase.rawValue,
+                            "a9_role": snapshot.a9Role.rawValue,
+                            "a10_role": snapshot.a10Role.rawValue,
+                            "ling_core_role": snapshot.lingCoreRole.rawValue,
+                            "a10_runtime_id": snapshot.a10RuntimeID ?? "EMPTY_READY",
+                            "a10_runtime_state": snapshot.a10RuntimeState,
+                            "language_backend": snapshot.languageBackend,
+                            "a9_budget_mode": snapshot.a9BudgetMode,
+                            "mutation_authority": snapshot.mutationAuthorityOwner,
+                            "legacy_shadow": snapshot.legacyGovernanceShadow,
+                            "fallback_reason": snapshot.fallbackReason ?? "none"
+                        ]
+                    )
+                }
+            }
+            .store(in: &cancellables)
+
+        model.agent.$a10M5ShadowCognition
+            .removeDuplicates()
+            .sink { snapshot in
+                guard snapshot.result != "IDLE" else { return }
+                Task { @MainActor in
+                    self.store.log(
+                        snapshot.result == "FAILED" ? .warning : .debug,
+                        .agent,
+                        event: "a10.m5.cognition_shadow",
+                        screen: DeepTelemetry.shared.currentScreen,
+                        metadata: [
+                            "result": snapshot.result,
+                            "runtime_id": snapshot.runtimeID,
+                            "output_digest": snapshot.outputDigest,
+                            "estimated_tokens": String(snapshot.estimatedTokenCount),
+                            "latency_ms": String(snapshot.latencyMilliseconds),
+                            "mutation_authority": "0",
+                            "prompt_logged": "false",
+                            "output_text_logged": "false",
+                            "failure": snapshot.failure ?? "none"
+                        ]
+                    )
+                }
+            }
+            .store(in: &cancellables)
+
+        model.a10M5Governance.$snapshot
+            .removeDuplicates()
+            .sink { snapshot in
+                guard snapshot.evaluatedAt != .distantPast else { return }
+                Task { @MainActor in
+                    self.store.log(
+                        .debug,
+                        .a9,
+                        event: "a10.m5.governance_shadow",
+                        screen: DeepTelemetry.shared.currentScreen,
+                        metadata: [
+                            "states": snapshot.states.joined(separator: ","),
+                            "action_proposals": snapshot.actionProposals.joined(separator: ","),
+                            "output_digest": snapshot.outputDigest,
+                            "latency_us": String(snapshot.latencyNanoseconds / 1_000),
+                            "backend": snapshot.backend,
+                            "model_hash": snapshot.modelHash,
+                            "feature_adapter": snapshot.featureAdapter,
+                            "recommendation": snapshot.recommendation,
+                            "mutation_authority": "0",
+                            "user_plaintext_logged": "false"
+                        ]
+                    )
                 }
             }
             .store(in: &cancellables)
@@ -326,6 +529,7 @@ final class RuntimeDiagnosticsBridge {
                 String(snapshot.pendingBytes),
                 String(snapshot.controlPendingPackets),
                 String(snapshot.reconnectAttempt),
+                snapshot.transportStage.rawValue,
                 snapshot.queueSummary,
                 snapshot.compactDetail
             ].joined(separator: "|")
@@ -340,6 +544,7 @@ final class RuntimeDiagnosticsBridge {
                     "transport_id": id.uuidString,
                     "connected": String(snapshot.isConnected),
                     "recovering": String(snapshot.isRecovering),
+                    "transport_stage": snapshot.transportStage.rawValue,
                     "status": snapshot.statusTitle,
                     "quality": String(describing: snapshot.quality),
                     "health": String(snapshot.healthScore),
