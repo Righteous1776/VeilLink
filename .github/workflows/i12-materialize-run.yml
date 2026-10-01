@@ -40,7 +40,7 @@ jobs:
               "                }",
               "            }",
               "            .store(in: &a9Cancellables)",
-              "''",
+              "'''",
           ]) + '\n'
           if old not in s:
               raise SystemExit('I8 monitor anchor not found')
