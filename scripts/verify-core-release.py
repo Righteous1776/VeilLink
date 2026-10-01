@@ -12,7 +12,20 @@ import zipfile
 
 MAX_IPA_BYTES = 80 * 1024 * 1024
 MAX_APP_BYTES = 120 * 1024 * 1024
+EXPECTED_VERSION = "26.9"
+EXPECTED_BUILD = "54"
 EXPECTED_TACTICAL_MAP_SHA256 = "4bd450353ae993b0c8083b97ab5909c8260cd6984be6f6051db1967613edaaa5"
+EXPECTED_A10_M5_SOURCE_MODEL_HASH = "c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4"
+EXPECTED_A10_M5_FILES = {
+    "ios_integration_manifest.json": "b48c86cf4fc8df3a78ed88f6afc69ee6ecf622663bbb361bace3ead9206cc6f5",
+    "language_weights.bin": "3228384ef72a809e5725a54f4288ba0457288cb695338966eb679b82221e3e26",
+    "model.json": "54a779895b09a74e5996dec0dad5d47dee4750b596754bb440cb01801f05cdb2",
+    "runtime_predictor_model.json": "3b43cf41855831b2c4c059542a319907a2bd3ccd7300364cb567b85010f55b0c",
+    "runtime_predictor_weights.bin": "74b1f91cb90c95823c882c284f4c369f3f815f90e8d6e87e06d5038a84684204",
+    "sqlite_predictor_model.json": "cec8ab11b175151318b4bffcd2ded29aa3b70bacefdd68417e80d0bdb3b0170d",
+    "sqlite_predictor_weights.bin": "549026ee043e99d11cc4e8110ac6167a084a166978761e98f6c6047929e4afb4",
+    "vocab.json": "fbf7edf8ffe3e1ed5d7e79baa5b118b8fc38ed646dbb684f0615349d611dec50",
+}
 
 FORBIDDEN_NAMES = {
     "Qwen3-0.6B-Q4_0.gguf",
@@ -72,7 +85,56 @@ def expected_release_identity(project_path):
     build_match = re.search(r'^\s*CURRENT_PROJECT_VERSION:\s*["\']?([^"\'\s#]+)', text, re.MULTILINE)
     if not version_match or not build_match:
         fail("project.yml release identity is missing")
-    return version_match.group(1), build_match.group(1)
+    version = version_match.group(1)
+    build = build_match.group(1)
+    if (version, build) != (EXPECTED_VERSION, EXPECTED_BUILD):
+        fail(
+            "recovery identity regression: "
+            f"expected {EXPECTED_VERSION} ({EXPECTED_BUILD}), got {version} ({build})"
+        )
+    return version, build
+
+
+def verify_a10_m5_assets(app):
+    paths = {}
+    hashes = {}
+    for name, expected_hash in EXPECTED_A10_M5_FILES.items():
+        path = find_one(app, name)
+        actual_hash = sha256_file(path)
+        if actual_hash != expected_hash:
+            fail(f"A10 Ultra M5 asset SHA mismatch: {name}")
+        paths[name] = path
+        hashes[name] = actual_hash
+
+    try:
+        metadata = json.loads(paths["ios_integration_manifest.json"].read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        fail(f"invalid A10 Ultra M5 integration manifest: {exc}")
+
+    expected_metadata = {
+        "schema": "VEILLINK_A10_ULTRA_M5_IOS_ASSET_V1",
+        "state": "TRAINED_COGNITION_SHADOW",
+        "production_cutover": "DENY",
+        "source_model_hash": EXPECTED_A10_M5_SOURCE_MODEL_HASH,
+        "flat_language_weights_sha256": EXPECTED_A10_M5_FILES["language_weights.bin"],
+        "predictor_weights_sha256": EXPECTED_A10_M5_FILES["runtime_predictor_weights.bin"],
+        "sqlite_predictor_weights_sha256": EXPECTED_A10_M5_FILES["sqlite_predictor_weights.bin"],
+        "vocab_sha256": EXPECTED_A10_M5_FILES["vocab.json"],
+    }
+    for key, expected in expected_metadata.items():
+        if metadata.get(key) != expected:
+            fail(f"A10 Ultra M5 manifest mismatch: {key}")
+
+    return {
+        "paths": paths,
+        "report": {
+            "schema": metadata["schema"],
+            "state": metadata["state"],
+            "production_cutover": metadata["production_cutover"],
+            "source_model_hash": metadata["source_model_hash"],
+            "asset_sha256": hashes,
+        },
+    }
 
 
 def verify_app(app, expected_version, expected_build):
@@ -113,6 +175,8 @@ def verify_app(app, expected_version, expected_build):
     if sha256_file(tactical) != EXPECTED_TACTICAL_MAP_SHA256:
         fail("Tactical V2 map SHA mismatch")
 
+    a10_m5 = verify_a10_m5_assets(app)
+
     app_bytes = directory_bytes(app)
     if app_bytes > MAX_APP_BYTES:
         fail(f"Core app payload too large: {app_bytes} > {MAX_APP_BYTES}")
@@ -126,11 +190,12 @@ def verify_app(app, expected_version, expected_build):
         "executable_sha256": sha256_file(app / "VeilLink"),
         "assets_car_sha256": sha256_file(app / "Assets.car"),
         "tactical_map_sha256": EXPECTED_TACTICAL_MAP_SHA256,
+        "a10_ultra_m5": a10_m5["report"],
         "heavy_ai_resources": "ABSENT",
         "llama_framework": "ABSENT",
     }
 
-def verify_ipa(app, ipa):
+def verify_ipa(app, ipa, expected_version, expected_build):
     if not ipa.is_file():
         fail("IPA missing")
     if ipa.stat().st_size > MAX_IPA_BYTES:
@@ -151,12 +216,39 @@ def verify_ipa(app, ipa):
             if "/Frameworks/llama.framework/" in name:
                 fail("IPA contains llama.framework")
 
-        for rel in ["Info.plist", "VeilLink", "Assets.car"]:
+        for rel in ["VeilLink", "Assets.car"]:
             entry = prefix + rel
             if entry not in names:
                 fail(f"IPA missing {rel}")
             if sha256_bytes(z.read(entry)) != sha256_file(app / rel):
                 fail(f"IPA/app parity mismatch: {rel}")
+
+        try:
+            packaged_info = plistlib.loads(z.read(prefix + "Info.plist"))
+        except Exception as exc:
+            fail(f"invalid packaged Info.plist: {exc}")
+        expected_info = {
+            "CFBundleIdentifier": "studio.zeo.veillink",
+            "CFBundleShortVersionString": expected_version,
+            "CFBundleVersion": expected_build,
+            "CFBundleExecutable": "VeilLink",
+            "CFBundlePackageType": "APPL",
+        }
+        for key, expected in expected_info.items():
+            if str(packaged_info.get(key, "")) != expected:
+                fail(f"packaged Info.plist mismatch: {key}")
+        if not str(packaged_info.get("MinimumOSVersion", "15")).startswith("15"):
+            fail("packaged Info.plist minimum OS mismatch")
+
+        for resource_name, expected_hash in EXPECTED_A10_M5_FILES.items():
+            matches = [
+                name for name in names
+                if name.startswith(prefix) and name.endswith("/" + resource_name)
+            ]
+            if len(matches) != 1:
+                fail(f"expected one {resource_name} in IPA, got {len(matches)}")
+            if sha256_bytes(z.read(matches[0])) != expected_hash:
+                fail(f"IPA A10 Ultra M5 asset SHA mismatch: {resource_name}")
 
         tactical_entries = [
             n for n in names
@@ -194,7 +286,7 @@ def main():
 
     expected_version, expected_build = expected_release_identity(args.project)
     app_report = verify_app(app, expected_version, expected_build)
-    ipa_report = verify_ipa(app, ipa)
+    ipa_report = verify_ipa(app, ipa, expected_version, expected_build)
 
     manifest = {
         "schema": 1,
