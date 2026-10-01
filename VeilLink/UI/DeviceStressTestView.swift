@@ -130,7 +130,7 @@ struct DeviceStressTestView: View {
                     )
                 }
 
-                Section("协同设备压力") {
+                Section {
                     if let invitation = collaborative.pendingInvitation,
                        let peer = collaborative.pendingInvitationPeerID {
                         VStack(alignment: .leading, spacing: 5) {
