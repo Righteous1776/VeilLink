@@ -996,12 +996,6 @@ extension BLETransport: @preconcurrency CBPeripheralManagerDelegate {
         }
     }
 
-    func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
-        guard let localCharacteristic else { return }
-        for centralID in Array(peripheralOutboundQueues.keys) {
-            drainPeripheralQueue(for: centralID, characteristic: localCharacteristic)
-        }
-    }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, willRestoreState dict: [String: Any]) {
         if let services = dict[CBPeripheralManagerRestoredStateServicesKey] as? [CBMutableService],
