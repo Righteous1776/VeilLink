@@ -230,6 +230,7 @@ struct ChatView: View {
     @ObservedObject var model: AppModel
     let conversation: ConversationSummary
     @State private var messages: [ChatMessage] = []
+    @State private var gameSessionsByID: [String: MiniGameSessionSnapshot] = [:]
     @State private var draft = ""
     @State private var composerMode: VeilChatComposerMode = .text
     @StateObject private var voiceRecorder = VeilVoiceMessageRecorder()
@@ -238,6 +239,8 @@ struct ChatView: View {
     @State private var isPreparingImage = false
     @State private var mediaStatus: String?
     @State private var showsContactDetails = false
+    @State private var showsMiniGames = false
+    @State private var miniGameInitialSessionID: String?
     @State private var messagePendingDeletion: ChatMessage?
     @State private var showsClearConversationConfirmation = false
     @State private var transferPendingCancellation: ChatMessage?
@@ -629,6 +632,9 @@ struct ChatView: View {
         .sheet(isPresented: $showsContactDetails) {
             ContactDetailsSheet(model: model, conversation: conversation)
         }
+        .sheet(isPresented: $showsMiniGames, onDismiss: { miniGameInitialSessionID = nil }) {
+            MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
+        }
         .fileImporter(
             isPresented: $showsImageFileImporter,
             allowedContentTypes: [.image],
@@ -694,18 +700,35 @@ struct ChatView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let loadedMessages: [ChatMessage]
             let hasOlder: Bool
+            var effectiveLimit = limit
             if loadAll {
                 loadedMessages = store.fetchMessages(conversationID: conversationID)
                 hasOlder = false
             } else {
-                let page = store.fetchRecentMessages(conversationID: conversationID, limit: limit)
+                let profile = VeilDevicePerformance.current
+                var page = store.fetchRecentMessages(conversationID: conversationID, limit: effectiveLimit)
+                while page.hasOlder && effectiveLimit < profile.messageWindowMaximum {
+                    var gameSessionIDs = Set<String>()
+                    var inviteSessionIDs = Set<String>()
+                    for message in page.messages {
+                        guard let packet = MiniGameCodec.decode(message.body) else { continue }
+                        gameSessionIDs.insert(packet.sessionID)
+                        if packet.command == .invite { inviteSessionIDs.insert(packet.sessionID) }
+                    }
+                    guard !gameSessionIDs.subtracting(inviteSessionIDs).isEmpty else { break }
+                    effectiveLimit = min(profile.messageWindowMaximum, effectiveLimit + profile.messageWindowIncrement)
+                    page = store.fetchRecentMessages(conversationID: conversationID, limit: effectiveLimit)
+                }
                 loadedMessages = page.messages
                 hasOlder = page.hasOlder
             }
+            let loadedGameSessions = MiniGameSessionBuilder.sessionsByID(from: loadedMessages)
             DispatchQueue.main.async {
                 guard generation == messageReloadGeneration else { return }
                 if messages != loadedMessages { messages = loadedMessages }
+                gameSessionsByID = loadedGameSessions
                 if hasOlderMessages != hasOlder { hasOlderMessages = hasOlder }
+                if !loadAll { messageWindowLimit = max(messageWindowLimit, effectiveLimit) }
                 if isReloadingMessages { isReloadingMessages = false }
             }
         }

@@ -596,6 +596,10 @@ final class BLETransport: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
+    private func persistWantedConnectionIntent() {
+        connectionIntentStore.save(wantedConnections)
+    }
+
     /// Rehydrates the persisted "I want to stay connected to this peripheral" state.
     /// Explicit disconnect/pause clears the store; process relaunch and diagnostic churn do not.
     private func restoreWantedPeripheralsIfPossible() {
