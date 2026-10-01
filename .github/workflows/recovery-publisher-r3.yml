@@ -1,0 +1,50 @@
+name: Publish VeilLink 26.9 Build 54 recovery branch R3
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-recovery:
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct recovery branch from audited R3 bundle
+        run: |
+          set -euo pipefail
+          test -f VeilLink_26.9_B54_I12_RECOVERY_R3.bundle
+          git fetch origin r12-cumulative-validation
+          git bundle verify VeilLink_26.9_B54_I12_RECOVERY_R3.bundle
+          git fetch VeilLink_26.9_B54_I12_RECOVERY_R3.bundle \
+            recovery/26.9-i12:refs/remotes/recovery-bundle/26.9-i12
+          git checkout -B recovery/26.9-build54-i12 \
+            refs/remotes/recovery-bundle/26.9-i12
+
+      - name: Verify cumulative recovery invariants
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "455e550eb380ec8543b10d5e837e05217e5afc80"
+          python3 scripts/verify-recovery-lineage.py
+          python3 scripts/verify-core-source-isolation.py
+          python3 scripts/verify-local-control-plane.py
+          python3 scripts/verify-control-plane-v2.py
+          python3 scripts/verify-autoregulation-r7.py
+          python3 scripts/verify-maintenance-r8.py
+          python3 scripts/verify-ui-theme-r9.py
+          python3 scripts/verify-voice-ptt-r10.py
+          python3 scripts/verify-runtime-maintenance-r12.py
+          git diff --exit-code --name-status 4042281..HEAD --diff-filter=D
+
+      - name: Publish recovery branch
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin \
+            HEAD:refs/heads/recovery/26.9-build54-i12
