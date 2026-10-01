@@ -120,6 +120,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf .ci
           git add -A
           git diff --cached --check
           git config user.name 'github-actions[bot]'
