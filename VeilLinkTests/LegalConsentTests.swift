@@ -14,4 +14,17 @@ final class LegalConsentTests: XCTestCase {
         XCTAssertTrue(VeilLegalDocuments.canonicalText.contains(VeilLegalDocuments.permissions))
         XCTAssertTrue(VeilLegalDocuments.canonicalText.contains(VeilLegalDocuments.terms))
     }
+
+    func testAcknowledgmentFieldHasStableTelemetryExclusionIdentifier() {
+        XCTAssertEqual(
+            VeilLegalAcknowledgmentInput.accessibilityIdentifier,
+            "legal.consent.acknowledgment"
+        )
+        XCTAssertFalse(
+            DeepTelemetry.shouldCaptureTextField(
+                identifier: VeilLegalAcknowledgmentInput.accessibilityIdentifier
+            )
+        )
+        XCTAssertTrue(DeepTelemetry.shouldCaptureTextField(identifier: "chat.composer"))
+    }
 }

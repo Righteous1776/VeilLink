@@ -1,6 +1,6 @@
 # VeilLink
 
-> **Current cumulative checkpoint:** VeilLink **26.9 (Build 54)**. This line restores
+> **Current cumulative checkpoint:** VeilLink **26.9 (Build 55)**. This line restores
 > the complete 26.9 formal-release feature set and integrates the I12/A10 Ultra M5
 > overlay. See [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
 

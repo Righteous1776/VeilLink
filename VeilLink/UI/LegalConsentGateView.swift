@@ -28,42 +28,37 @@ struct LegalConsentGateView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                VeilAmbientBackground()
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        header(compact: proxy.size.height < 720)
-                        documentSelector
-                        documentCard
-                        confirmationsCard
-                        signatureCard
-                        footnote
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, presentation == .firstActivation ? 6 : 18)
-                    .padding(.bottom, max(22, proxy.safeAreaInsets.bottom + 12))
-                    .frame(maxWidth: 720)
-                    .frame(maxWidth: .infinity)
+        ZStack {
+            VeilAmbientBackground()
+            VeilStableScrollView(
+                maxContentWidth: 720,
+                horizontalPadding: 18,
+                verticalPadding: presentation == .firstActivation ? 6 : 18
+            ) {
+                VStack(alignment: .leading, spacing: 16) {
+                    header
+                    documentSelector
+                    documentCard
+                    confirmationsCard
+                    signatureCard
+                    footnote
                 }
+                .padding(.bottom, 22)
             }
         }
         .navigationBarHidden(true)
+        .telemetryScreen("legal.consent")
     }
 
-    private func header(compact: Bool) -> some View {
+    private var header: some View {
         HStack(alignment: .center, spacing: 14) {
-            if presentation == .standalone {
-                VeilActivationMorphCore(compact: true)
-                    .scaleEffect(compact ? 0.80 : 0.92)
-                    .frame(width: compact ? 92 : 108, height: compact ? 92 : 108)
-            } else {
-                VeilIconDisc(systemName: "signature", size: 48, highlighted: true)
-            }
+            // Keep the mandatory signature screen free from persistent animation. Bringing
+            // up the software keyboard must not compete with an off-screen animated render.
+            VeilIconDisc(systemName: "signature", size: 48, highlighted: true)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(presentation == .firstActivation ? "授权与协议" : "使用授权与协议签署")
-                    .font(.system(size: compact ? 25 : 29, weight: .bold, design: .rounded))
+                    .font(.system(size: 25, weight: .bold, design: .rounded))
                     .foregroundColor(VeilTheme.text)
                 Text("\(controller.currentReleaseID) · 协议 \(VeilLegalConsentController.documentVersion)")
                     .font(.system(size: 9.5, weight: .bold, design: .monospaced))
@@ -184,10 +179,11 @@ struct LegalConsentGateView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "signature")
                         .foregroundColor(VeilTheme.goldBright)
-                    TextField("请输入：\(VeilLegalConsentController.requiredAcknowledgment)", text: $acknowledgment)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                        .font(.system(size: 14, design: .rounded))
+                    VeilLegalAcknowledgmentField(
+                        text: $acknowledgment,
+                        placeholder: "请输入：\(VeilLegalConsentController.requiredAcknowledgment)"
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 28)
                 }
                 .padding(.horizontal, 13)
                 .frame(height: 48)
@@ -269,6 +265,68 @@ struct LegalConsentGateView: View {
             onAccepted()
         } else {
             errorText = "签署记录未能安全保存，请重试。"
+        }
+    }
+}
+
+enum VeilLegalAcknowledgmentInput {
+    static let accessibilityIdentifier = "legal.consent.acknowledgment"
+}
+
+/// A deliberately small UIKit-backed field for the mandatory legal gate. Its input traits are
+/// configured on the instance instead of through UIAppearance/SwiftUI environment propagation,
+/// keeping first-responder creation deterministic across iOS releases.
+private struct VeilLegalAcknowledgmentField: UIViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField(frame: .zero)
+        field.delegate = context.coordinator
+        field.addTarget(context.coordinator, action: #selector(Coordinator.textChanged(_:)), for: .editingChanged)
+        field.accessibilityIdentifier = VeilLegalAcknowledgmentInput.accessibilityIdentifier
+        field.accessibilityLabel = "签署确认语"
+        field.placeholder = placeholder
+        field.autocorrectionType = .no
+        field.autocapitalizationType = .none
+        field.spellCheckingType = .no
+        field.smartDashesType = .no
+        field.smartQuotesType = .no
+        field.smartInsertDeleteType = .no
+        field.returnKeyType = .done
+        field.clearButtonMode = .whileEditing
+        field.keyboardAppearance = .dark
+        field.textColor = UIColor(VeilTheme.text)
+        field.tintColor = UIColor(VeilTheme.goldBright)
+        field.font = UIFont.systemFont(ofSize: 14)
+        field.backgroundColor = .clear
+        return field
+    }
+
+    func updateUIView(_ field: UITextField, context: Context) {
+        field.placeholder = placeholder
+        guard field.markedTextRange == nil, field.text != text else { return }
+        field.text = text
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        private var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        @objc func textChanged(_ field: UITextField) {
+            text.wrappedValue = field.text ?? ""
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            textField.resignFirstResponder()
+            return true
         }
     }
 }

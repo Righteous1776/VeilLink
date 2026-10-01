@@ -145,9 +145,6 @@ enum VeilChrome {
         UITableView.appearance().separatorColor = UIColor.white.withAlphaComponent(0.06)
         UITableViewCell.appearance().backgroundColor = .clear
         UICollectionView.appearance().backgroundColor = background
-        UITextField.appearance().keyboardAppearance = .dark
-        UITextView.appearance().keyboardAppearance = .dark
-        UISearchBar.appearance().keyboardAppearance = .dark
         UISearchBar.appearance().barTintColor = elevated
     }
 }

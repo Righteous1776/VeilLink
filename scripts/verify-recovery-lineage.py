@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_VERSION = "26.9"
-EXPECTED_BUILD = "54"
+EXPECTED_BUILD = "55"
 MIN_TRACKED_FILES = 500
 MIN_SWIFT_FILES = 180
 MIN_TEST_FILES = 65
@@ -87,7 +87,7 @@ def check_identity():
     if f'MARKETING_VERSION: "{EXPECTED_VERSION}"' not in project:
         fail("project.yml no longer declares VeilLink 26.9")
     if f'CURRENT_PROJECT_VERSION: "{EXPECTED_BUILD}"' not in project:
-        fail("project.yml no longer declares recovery build 54")
+        fail(f"project.yml no longer declares recovery build {EXPECTED_BUILD}")
 
     with (ROOT / "VeilLink/Resources/Info.plist").open("rb") as handle:
         info = plistlib.load(handle)

@@ -180,6 +180,10 @@ final class DeepTelemetry: ObservableObject {
             || normalized == "owner.unlock"
     }
 
+    static func shouldCaptureTextField(identifier: String?) -> Bool {
+        identifier != VeilLegalAcknowledgmentInput.accessibilityIdentifier
+    }
+
     static func hasSecureInput(in root: UIView?) -> Bool {
         guard let root else { return false }
         if let field = root as? UITextField, field.isFirstResponder, field.isSecureTextEntry {
@@ -326,6 +330,9 @@ final class DeepTelemetry: ObservableObject {
 
     private func recordTextField(_ object: Any?, event: String) {
         guard let field = object as? UITextField else { return }
+        // The legal acknowledgment is evidence input, not product telemetry. More importantly,
+        // the mandatory gate must remain independent from diagnostics during first-responder setup.
+        guard Self.shouldCaptureTextField(identifier: field.accessibilityIdentifier) else { return }
         inputEvent(
             event,
             identifier: field.accessibilityIdentifier,

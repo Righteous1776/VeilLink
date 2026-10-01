@@ -1,6 +1,7 @@
 # CURRENT CHECKPOINT
 
-VeilLink **26.9 (Build 54)** is the cumulative recovery checkpoint.
+VeilLink **26.9 (Build 55)** is the cumulative recovery checkpoint. Build 55 adds the
+P0 legal-consent input-focus crash fix while preserving the complete Build 54 recovery line.
 
 The branch is based on the complete 26.9 Build 53 formal-release tree and carries
 the I12/A10 Ultra M5 overlay plus the subsequent compile and release-gate fixes.
