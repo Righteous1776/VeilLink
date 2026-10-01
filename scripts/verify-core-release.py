@@ -24,7 +24,7 @@ def main():
     if not str(info.get('MinimumOSVersion','15')).startswith('15'): fail('minimum OS mismatch')
     m = find_one(app, 'ios_integration_manifest.json')
     md = json.loads(m.read_text())
-    if md.get('model_sha256') != 'c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4': fail('M5 provenance mismatch')
+    if md.get('source_model_hash', md.get('model_sha256')) != 'c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4': fail('M5 provenance mismatch')
     with zipfile.ZipFile(ipa) as z:
         if z.testzip() is not None: fail('IPA CRC failure')
         names = z.namelist(); prefix = 'Payload/VeilLink.app/'
