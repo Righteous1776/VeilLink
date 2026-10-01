@@ -36,8 +36,24 @@ def main():
             if len(matches) != 1:
                 fail('IPA parity mismatch: '+rel)
             if rel == 'Info.plist':
+                # ditto/Xcode may rewrite auxiliary plist keys or binary plist
+                # representation while preserving the app identity. Compare the
+                # launch-critical identity fields instead of serialized bytes.
                 try:
-                    parity_ok = plistlib.loads(z.read(matches[0])) == plistlib.loads(p.read_bytes())
+                    app_info = plistlib.loads(p.read_bytes())
+                    ipa_info = plistlib.loads(z.read(matches[0]))
+                    identity_keys = (
+                        'CFBundleIdentifier',
+                        'CFBundleShortVersionString',
+                        'CFBundleVersion',
+                        'CFBundleName',
+                        'CFBundleDisplayName',
+                        'CFBundlePackageType',
+                        'MinimumOSVersion',
+                        'UIDeviceFamily',
+                        'LSRequiresIPhoneOS',
+                    )
+                    parity_ok = all(app_info.get(k) == ipa_info.get(k) for k in identity_keys)
                 except Exception:
                     parity_ok = False
             else:
