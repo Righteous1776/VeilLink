@@ -496,6 +496,7 @@ final class A10UltraOmegaShadowCoordinator: ObservableObject {
             let energyProxy = max(1, combinedCPU) * UInt64(max(1, sample.rawInput.thermalLevel.rawValue + 1))
             let record = A10UltraOmegaComparisonRecord(
                 sampleID: sample.sampleID, epoch: sample.epoch, timestamp: sample.timestamp,
+                uptime: sample.uptime,
                 sourceDomains: sample.sourceDomains, signalDigest: sample.signalDigest,
                 a9: baseline.decision, ultra: result.compatibilityDecision,
                 a9Budget: baseline.budget, ultraBudget: result.budget,
@@ -523,6 +524,7 @@ final class A10UltraOmegaShadowCoordinator: ObservableObject {
             let combinedCPU = baseline.cpu &+ ultraCPU
             let record = A10UltraOmegaComparisonRecord(
                 sampleID: sample.sampleID, epoch: sample.epoch, timestamp: sample.timestamp,
+                uptime: sample.uptime,
                 sourceDomains: sample.sourceDomains, signalDigest: sample.signalDigest,
                 a9: baseline.decision, ultra: nil, a9Budget: baseline.budget, ultraBudget: nil,
                 decisionMatch: false, divergence: .d5,
@@ -740,7 +742,7 @@ final class A10UltraOmegaShadowCoordinator: ObservableObject {
     }
 
     private static func signalDigest(input: VeilA9Input, context: A10UltraOmegaHostContext, epoch: UInt64, timestamp: Date) -> String {
-        let fields = [
+        let fields: [String] = [
             String(epoch), String(format: "%.6f", timestamp.timeIntervalSince1970), input.transportCoverage.rawValue,
             String(input.bluetoothRunning), String(input.connectedPeerCount), String(input.trackedPeerCount),
             String(input.recoveringPeerCount), String(input.weakPeerCount), String(input.marginalPeerCount),
