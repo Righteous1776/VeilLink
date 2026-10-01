@@ -290,16 +290,6 @@ final class RuntimeDiagnosticsBridge {
             }
             .store(in: &cancellables)
 
-        model.maleCNS.$state
-            .sink { state in
-                Task { @MainActor in
-                    let level: DiagnosticLogLevel
-                    if case .failed = state { level = .error } else { level = .info }
-                    self.store.log(level, .agent, event: "malecns.state", screen: DeepTelemetry.shared.currentScreen, message: state.displayName)
-                }
-            }
-            .store(in: &cancellables)
-
         model.agent.$threeCoreSnapshot
             .removeDuplicates()
             .sink { snapshot in
