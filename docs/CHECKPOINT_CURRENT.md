@@ -1,3 +1,19 @@
 # CURRENT CHECKPOINT
 
-V0.9.7 (41) Game Hub + Local AI + Embedded AppIcon, cumulatively based on the V0.9.3 GitHub baseline. VeilLink now includes privacy-safe deep telemetry and burn-in controls, bundled SHA-verified VFLY1 Core/Lite graphs, the pinned local Qwen/llama.cpp build path, learned MaleCNS readouts, explicit AI permissions, and a first-class Game Hub. Offline single-player Gomoku, Xiangqi and Ludo reuse the original legal-action engines; 三国兵棋 AI remains disabled pending a dedicated tactical policy. The complete creator-provided iPhone/iPad/App Store icon catalog is embedded in the app bundle, while the hidden App easter egg remains intentionally undocumented. Protocol 4, VLGM1 v1, E2EE and SQLite Schema V8 remain unchanged.
+VeilLink **26.9 (Build 54)** is the cumulative recovery checkpoint.
+
+The branch is based on the complete 26.9 Build 53 formal-release tree and carries
+the I12/A10 Ultra M5 overlay plus the subsequent compile and release-gate fixes.
+It retains the formal release features that were accidentally removed when the
+I12 update package was materialized over the older V0.9.7 tree, including voice/PTT,
+LAN transport, remote pairing, Tool Center, background continuity/widget support,
+legal/onboarding, relay/community code, native game bots, and the full test suite.
+
+A10 Ultra M5 remains a trained **shadow** cognition/governance path. Its compact
+iOS resources are SHA-256 pinned; `production_cutover` remains `DENY`. Raw training
+carriers (`weights.npz`, `brain.npz`) and other heavy experimental resources are
+forbidden from the Core IPA. A9 remains available as the stable primary path.
+
+Release invariants are enforced by `scripts/verify-recovery-lineage.py` and
+`scripts/verify-core-release.py`. The app and widget inherit version/build values
+from `project.yml`; no source Info.plist may hardcode V0.9.7 again.

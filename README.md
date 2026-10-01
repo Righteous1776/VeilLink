@@ -1,5 +1,9 @@
 # VeilLink
 
+> **Current cumulative checkpoint:** VeilLink **26.9 (Build 54)**. This line restores
+> the complete 26.9 formal-release feature set and integrates the I12/A10 Ultra M5
+> overlay. See [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
+
 VeilLink is a GitHub-buildable iOS 15+ prototype for nearby, serverless encrypted
 messaging over Bluetooth Low Energy. The UI is Chinese-first and adapts separately
 to compact iPhone screens and regular-width iPad layouts.

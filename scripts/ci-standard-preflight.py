@@ -184,6 +184,7 @@ def check_script_syntax():
     required = [
         ROOT / "scripts" / "verify-core-release.py",
         ROOT / "scripts" / "verify-core-source-isolation.py",
+        ROOT / "scripts" / "verify-recovery-lineage.py",
         ROOT / "scripts" / "verify-local-control-plane.py",
         ROOT / "scripts" / "verify-control-plane-v2.py",
         ROOT / "scripts" / "verify-autoregulation-r7.py",
@@ -245,6 +246,7 @@ def check_tests():
     print(f"Test inventory: PASS ({len(tests)} files)")
 
 def main():
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-recovery-lineage.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-core-source-isolation.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-local-control-plane.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-control-plane-v2.py")], cwd=ROOT)
