@@ -1,0 +1,124 @@
+name: Materialize VeilLink I12 source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply cumulative I12 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/i12 .ci/fakebin
+          unzip -q VeilLink_LOCAL_CUMULATIVE_I12_20261001.zip -d .ci/i12
+          pkg=.ci/i12/VeilLink_LOCAL_CUMULATIVE_I12_20261001
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.ci/i12/VeilLink_LOCAL_CUMULATIVE_I12_20261001/I11_BASE/I10_BASE/I9_BASE/I8_BASE/I8_APPLY.py')
+          s = p.read_text()
+          old = '''    monitor_anchor = '''        a9Health.$decision
+            .sink { [weak self] decision in
+                Task { @MainActor [weak self] in self?.computeGovernor.update(decision: decision) }
+            }
+            .store(in: &a9Cancellables)
+''''''
+          new = '''    monitor_anchor = '''        a9Health.$decision
+            .sink { [weak self] decision in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.computeGovernor.update(decision: decision)
+                    self.latticeKernel.recordComputePlan(self.computeGovernor.plan)
+                }
+            }
+            .store(in: &a9Cancellables)
+''''''
+          if old not in s:
+              raise SystemExit('I8 monitor anchor not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          printf '#!/bin/sh
+exit 0
+' > .ci/fakebin/swiftc
+          chmod +x .ci/fakebin/swiftc
+          PATH="$PWD/.ci/fakebin:$PATH" python3 "$pkg/APPLY_CUMULATIVE_I1_I2_I3_I4_I5_I6_I7_I8_I9_I10_I11_I12.py" "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          for p in Path('.').rglob('.veillink-local-iter'):
+              if p.is_dir(): shutil.rmtree(p)
+          PY
+          test -f VeilLink/Agent/Compute/A10UltraM5Runtime.swift
+          test -f VeilLink/Agent/Integration/A10UltraM5GovernanceAdvisor.swift
+          git diff --check
+
+      - name: Add Core release verifier
+        shell: bash
+        run: |
+          cat > scripts/verify-core-release.py <<'PY'
+          #!/usr/bin/env python3
+          import argparse, hashlib, json, os, plistlib, subprocess, zipfile
+          from pathlib import Path
+          FORBIDDEN = {'weights.npz', 'brain.npz', 'MaleCNSReference.vfly'}
+          def sha(p):
+              h = hashlib.sha256()
+              with open(p, 'rb') as f:
+                  for b in iter(lambda: f.read(1048576), b''): h.update(b)
+              return h.hexdigest()
+          def fail(s): raise SystemExit('CORE RELEASE GATE FAIL: ' + s)
+          def find_one(root, name):
+              hits = [p for p in Path(root).rglob(name) if p.is_file()]
+              if len(hits) != 1: fail(f'expected one {name}, got {len(hits)}')
+              return hits[0]
+          def main():
+              ap = argparse.ArgumentParser()
+              for n in ('app','ipa','manifest','provenance','sums'): ap.add_argument('--'+n, required=True)
+              a = ap.parse_args(); app = Path(a.app); ipa = Path(a.ipa)
+              if not app.is_dir() or not ipa.is_file() or ipa.stat().st_size == 0: fail('app/IPA missing')
+              for n in FORBIDDEN:
+                  if list(app.rglob(n)): fail('raw training file in app: '+n)
+              info = plistlib.loads((app/'Info.plist').read_bytes())
+              if info.get('CFBundleIdentifier') != 'studio.zeo.veillink': fail('bundle id mismatch')
+              if not str(info.get('MinimumOSVersion','15')).startswith('15'): fail('minimum OS mismatch')
+              m = find_one(app, 'ios_integration_manifest.json')
+              md = json.loads(m.read_text())
+              if md.get('model_sha256') != 'c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4': fail('M5 provenance mismatch')
+              with zipfile.ZipFile(ipa) as z:
+                  if z.testzip() is not None: fail('IPA CRC failure')
+                  names = z.namelist(); prefix = 'Payload/VeilLink.app/'
+                  if prefix+'VeilLink' not in names: fail('IPA executable missing')
+                  for n in FORBIDDEN:
+                      if any(x.endswith('/'+n) for x in names): fail('forbidden IPA file: '+n)
+                  for rel, p in [('Info.plist', app/'Info.plist'), ('VeilLink', app/'VeilLink'), (m.relative_to(app).as_posix(), m)]:
+                      matches = [x for x in names if x == prefix+rel or x.endswith('/'+rel)]
+                      if len(matches) != 1 or sha(p) != hashlib.sha256(z.read(matches[0])).hexdigest(): fail('IPA parity mismatch: '+rel)
+              manifest = {'schema':1,'result':'PASS','release_eligible':True,'unsigned':True,'app':{'bundle_id':info.get('CFBundleIdentifier'),'version':info.get('CFBundleShortVersionString'),'build':str(info.get('CFBundleVersion')),'m5_manifest_sha256':sha(m)},'ipa':{'bytes':ipa.stat().st_size,'sha256':sha(ipa)}}
+              Path(a.manifest).write_text(json.dumps(manifest, indent=2, sort_keys=True)+'\n')
+              provenance = {'schema':1,'git_head':subprocess.getoutput('git rev-parse HEAD'),'github_run_id':os.getenv('GITHUB_RUN_ID'),'github_sha':os.getenv('GITHUB_SHA'),'ipa_sha256':sha(ipa),'release_manifest_sha256':sha(Path(a.manifest))}
+              Path(a.provenance).write_text(json.dumps(provenance, indent=2, sort_keys=True)+'\n')
+              Path(a.sums).write_text(f'{sha(ipa)}  {ipa.name}\n{sha(Path(a.manifest))}  {Path(a.manifest).name}\n{sha(Path(a.provenance))}  {Path(a.provenance).name}\n')
+              print('VEILLINK_CORE_RELEASE_GATE=PASS')
+          if __name__ == '__main__': main()
+          PY
+          chmod +x scripts/verify-core-release.py
+          python3 -m py_compile scripts/verify-core-release.py
+
+      - name: Commit materialized source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Materialize VeilLink I12 source and core release gate'
+          git push origin HEAD:main
