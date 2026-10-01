@@ -32,7 +32,8 @@ def main():
         for n in FORBIDDEN:
             if any(x.endswith('/'+n) for x in names): fail('forbidden IPA file: '+n)
         for rel, p in [('Info.plist', app/'Info.plist'), ('VeilLink', app/'VeilLink'), (m.relative_to(app).as_posix(), m)]:
-            matches = [x for x in names if x == prefix+rel or x.endswith('/'+rel)]
+            # Match the app-root path exactly; nested bundles also contain Info.plist.
+            matches = [x for x in names if x == prefix+rel]
             if len(matches) != 1:
                 fail('IPA parity mismatch: '+rel)
             if rel == 'Info.plist':
