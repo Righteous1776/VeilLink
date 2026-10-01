@@ -28,7 +28,8 @@ jobs:
           s = p.read_text()
           start = s.index('    monitor_anchor = ')
           end_marker = '        .store(in: &a9Cancellables)\n'
-          end = s.index(end_marker, start) + len(end_marker)
+          store_end = s.index(end_marker, start) + len(end_marker)
+          end = s.index("'''\n", store_end) + 4
           old = s[start:end]
           new = "\n".join([
               "    monitor_anchor = '''        a9Health.$decision",
