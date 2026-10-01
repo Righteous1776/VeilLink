@@ -376,36 +376,37 @@ struct ChatView: View {
                                 )
                                 .contextMenu {
                                     if message.attachment == nil {
+                                        Button {
+                                            let copyText = MiniGameCodec.previewText(for: message.body)
+                                                ?? VoiceMessageCodec.decode(message.body).map { VoiceMessageCodec.preview(durationSeconds: $0.durationSeconds) }
+                                                ?? ReplyTextCodec.decode(message.body)?.reply
+                                                ?? message.body
+                                            UIPasteboard.general.string = copyText
+                                            model.haptics.selection()
+                                        } label: {
+                                            Label("复制", systemImage: "doc.on.doc")
+                                        }
+                                    }
                                     Button {
-                                        let copyText = MiniGameCodec.previewText(for: message.body)
-                                            ?? VoiceMessageCodec.decode(message.body).map { VoiceMessageCodec.preview(durationSeconds: $0.durationSeconds) }
-                                            ?? ReplyTextCodec.decode(message.body)?.reply
-                                            ?? message.body
-                                        UIPasteboard.general.string = copyText
                                         model.haptics.selection()
+                                        if usesReducedInteractionMotion {
+                                            replyingTo = message
+                                        } else {
+                                            withAnimation(.easeOut(duration: 0.18)) { replyingTo = message }
+                                        }
                                     } label: {
-                                        Label("复制", systemImage: "doc.on.doc")
+                                        Label("引用回复", systemImage: "arrowshape.turn.up.left")
+                                    }
+                                    Button(role: .destructive) { messagePendingDeletion = message } label: {
+                                        Label("本地删除", systemImage: "trash")
                                     }
                                 }
-                                Button {
-                                    model.haptics.selection()
-                                    if usesReducedInteractionMotion {
-                                        replyingTo = message
-                                    } else {
-                                        withAnimation(.easeOut(duration: 0.18)) { replyingTo = message }
-                                    }
-                                } label: {
-                                    Label("引用回复", systemImage: "arrowshape.turn.up.left")
-                                }
-                                Button(role: .destructive) { messagePendingDeletion = message } label: {
-                                    Label("本地删除", systemImage: "trash")
-                                }
+                                .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
+                                    insertion: .opacity.combined(with: .scale(scale: 0.985)),
+                                    removal: .opacity
+                                ))
+                                .id(message.id)
                             }
-                            .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
-                                insertion: .opacity.combined(with: .scale(scale: 0.985)),
-                                removal: .opacity
-                            ))
-                            .id(message.id)
                         }
                         if showsSearchBar, !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, visibleMessages.isEmpty {
                             VStack(spacing: 8) {
