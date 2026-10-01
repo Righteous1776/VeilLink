@@ -58,6 +58,11 @@ jobs:
           PY
           test -f VeilLink/Agent/Compute/A10UltraM5Runtime.swift
           test -f VeilLink/Agent/Integration/A10UltraM5GovernanceAdvisor.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('VeilLink/Diagnostics/CollaborativeStressCoordinator.swift')
+          p.write_text(p.read_text().rstrip() + '\n')
+          PY
           git diff --check
 
       - name: Add Core release verifier
