@@ -46,9 +46,7 @@ jobs:
               raise SystemExit('I8 monitor anchor not found')
           p.write_text(s.replace(old, new, 1))
           PY
-          printf '#!/bin/sh
-exit 0
-' > .ci/fakebin/swiftc
+          printf '%s\n' '#!/bin/sh' 'exit 0' > .ci/fakebin/swiftc
           chmod +x .ci/fakebin/swiftc
           PATH="$PWD/.ci/fakebin:$PATH" python3 "$pkg/APPLY_CUMULATIVE_I1_I2_I3_I4_I5_I6_I7_I8_I9_I10_I11_I12.py" "$GITHUB_WORKSPACE"
           python3 - <<'PY'
