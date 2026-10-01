@@ -15,7 +15,33 @@ struct DeviceStressTestView: View {
     }
 
     var body: some View {
+        configuredStressView
+    }
+
+    @ViewBuilder
+    private var configuredStressView: some View {
         NavigationView {
+            stressForm
+                .navigationTitle("真机压力测试")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("关闭") { dismiss() }
+                    }
+                }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear {
+            collaborative.attach(model: model)
+            if selectedCollaborativePeerID.isEmpty {
+                selectedCollaborativePeerID = model.conversations.first(where: { model.sessions.hasSecureSession(for: $0.peerIdentityID) })?.peerIdentityID ?? ""
+            }
+        }
+        .telemetryScreen("owner.stress.configure")
+    }
+
+    @ViewBuilder
+    private var stressForm: some View {
             Form {
                 Section {
                     Picker("测试方案", selection: $controller.configuration.preset) {
@@ -203,22 +229,6 @@ struct DeviceStressTestView: View {
                     Text("本机 Burn-In 不发送真实聊天。协同模式只发送 synthetic 临时压力帧/二进制负载；不读取真实聊天正文、相册、麦克风、密钥或 Prompt。BLE churn 与内存 trim 属于有意施压路径。")
                 }
             }
-            .navigationTitle("真机压力测试")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") { dismiss() }
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
-        .onAppear {
-            collaborative.attach(model: model)
-            if selectedCollaborativePeerID.isEmpty {
-                selectedCollaborativePeerID = model.conversations.first(where: { model.sessions.hasSecureSession(for: $0.peerIdentityID) })?.peerIdentityID ?? ""
-            }
-        }
-        .telemetryScreen("owner.stress.configure")
     }
 
     @ViewBuilder
