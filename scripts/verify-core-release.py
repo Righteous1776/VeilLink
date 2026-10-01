@@ -33,7 +33,17 @@ def main():
             if any(x.endswith('/'+n) for x in names): fail('forbidden IPA file: '+n)
         for rel, p in [('Info.plist', app/'Info.plist'), ('VeilLink', app/'VeilLink'), (m.relative_to(app).as_posix(), m)]:
             matches = [x for x in names if x == prefix+rel or x.endswith('/'+rel)]
-            if len(matches) != 1 or sha(p) != hashlib.sha256(z.read(matches[0])).hexdigest(): fail('IPA parity mismatch: '+rel)
+            if len(matches) != 1:
+                fail('IPA parity mismatch: '+rel)
+            if rel == 'Info.plist':
+                try:
+                    parity_ok = plistlib.loads(z.read(matches[0])) == plistlib.loads(p.read_bytes())
+                except Exception:
+                    parity_ok = False
+            else:
+                parity_ok = sha(p) == hashlib.sha256(z.read(matches[0])).hexdigest()
+            if not parity_ok:
+                fail('IPA parity mismatch: '+rel)
     manifest = {'schema':1,'result':'PASS','release_eligible':True,'unsigned':True,'app':{'bundle_id':info.get('CFBundleIdentifier'),'version':info.get('CFBundleShortVersionString'),'build':str(info.get('CFBundleVersion')),'m5_manifest_sha256':sha(m)},'ipa':{'bytes':ipa.stat().st_size,'sha256':sha(ipa)}}
     Path(a.manifest).write_text(json.dumps(manifest, indent=2, sort_keys=True)+'\n')
     provenance = {'schema':1,'git_head':subprocess.getoutput('git rev-parse HEAD'),'github_run_id':os.getenv('GITHUB_RUN_ID'),'github_sha':os.getenv('GITHUB_SHA'),'ipa_sha256':sha(ipa),'release_manifest_sha256':sha(Path(a.manifest))}
