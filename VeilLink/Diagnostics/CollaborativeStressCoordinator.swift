@@ -440,7 +440,7 @@ final class CollaborativeStressCoordinator: ObservableObject {
               let packet = MiniGameCodec.decode(wire),
               packet.game == .gomoku,
               packet.command == .move,
-              case .gomoku(let index)? = packet.move else {
+              let index = packet.move?.to else {
             metrics.gamePacketsRejected += 1
             return
         }
