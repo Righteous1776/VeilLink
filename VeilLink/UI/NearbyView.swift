@@ -101,7 +101,8 @@ struct NearbyView: View {
         .background(VeilAmbientBackground())
         .navigationTitle("附近设备")
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                VeilToolCenterToolbarLink(model: model)
                 Button {
                     model.haptics.selection()
                     bluetooth.isRunning ? bluetooth.stop() : bluetooth.start()

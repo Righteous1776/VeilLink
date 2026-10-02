@@ -1066,6 +1066,8 @@ game_ui = (root/'VeilLink/UI/MiniGameViews.swift').read_text(encoding='utf-8')
 tactical_ui = (root/'VeilLink/UI/TacticalGameViews.swift').read_text(encoding='utf-8')
 tactical_render = (root/'VeilLink/UI/TacticalLocalRenderCache.swift').read_text(encoding='utf-8')
 app_entry = (root/'VeilLink/App/VeilLinkApp.swift').read_text(encoding='utf-8')
+tool_center = (root/'VeilLink/UI/ToolCenterView.swift').read_text(encoding='utf-8')
+tool_engine = (root/'VeilLink/Core/VeilLocalToolEngine.swift').read_text(encoding='utf-8')
 assert 'MiniGameStatistics' in games and 'MiniGameReplayFrame' in games and 'static func replay(sessionID:' in games
 assert 'threefoldRepetition' in games and 'currentPositionRepetitionCount' in games and 'consecutiveCheckCount' in games
 assert '棋局回放' in game_ui and '自动回放' in game_ui and '掷骰子' in game_ui and '当前加密会话' in game_ui
@@ -1084,13 +1086,26 @@ assert 'combatForecast(attackerID:' in (root/'VeilLink/Core/TacticalGame.swift')
 bot = (root/'VeilLink/Agent/Games/TacticalBot.swift').read_text(encoding='utf-8')
 guide = (root/'VeilLink/UI/TacticalSoloGuideView.swift').read_text(encoding='utf-8')
 assert 'TacticalState' in bot and 'legalCommands' in bot and 'Final rule gate' in bot
+assert 'TacticalBotDifficulty' in bot and 'bestContinuationScore' in bot
 assert '新手教程' in guide and '完整规则' in guide and '第 6 步' in guide
+solo = (root/'VeilLink/Core/TacticalSoloFeatures.swift').read_text(encoding='utf-8')
+assert 'TacticalDailyChallenge' in solo and 'TacticalDebrief' in solo and '今日军令' in solo
 policy = __import__('json').loads((root/'VeilLink/Resources/TacticalBotPolicyV1.json').read_text(encoding='utf-8'))
 assert policy['schema'] == 1 and policy['trainingExamples'] == 96 and policy['trainingEpochs'] == 240
 assert len(policy['featureOrder']) == len(policy['weights']) == 12
 assert 'static let cells' in tactical_render and 'static let terrainSegments' in tactical_render
 assert 'displayCenter(for layout:' in tactical_render
 assert 'TacticalLocalRenderCache.warmUp()' in app_entry
+for label in ['安全密码', '文本指纹', '临时二维码', '链路仪表']:
+    assert label in tool_center
+assert 'SystemRandomNumberGenerator' in tool_engine and 'SHA256.hash' in tool_engine
+assert 'LazyVGrid' in tool_center and 'minimum: 138' in tool_center
+assert '180_000_000' in tool_center and 'renderTask?.cancel()' in tool_center
+assert '.ultraThinMaterial' in tool_center and 'VeilRenderProfile.allowsExpensiveVisualEffects' in tool_center
+assert 'accessibilityReduceMotion' in tool_center and 'VeilMotion.reveal' in tool_center
+assert 'VeilToolCenterToolbarLink' in (root/'VeilLink/UI/GameLobbyView.swift').read_text(encoding='utf-8')
+assert 'VeilToolCenterToolbarLink' in (root/'VeilLink/UI/NearbyView.swift').read_text(encoding='utf-8')
+assert 'VeilToolCenterToolbarLink' in (root/'VeilLink/UI/SettingsView.swift').read_text(encoding='utf-8')
 selector = (root/'VeilLink/Health/VeilKernelRuntimeSelector.swift').read_text(encoding='utf-8')
 app_model = (root/'VeilLink/App/AppModel.swift').read_text(encoding='utf-8')
 assert 'A10_ULTRA_INDEPENDENT_GOVERNANCE' in selector

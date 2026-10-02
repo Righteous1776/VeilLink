@@ -62,6 +62,11 @@ struct SettingsView: View {
         }
         .background(VeilAmbientBackground())
         .navigationTitle("设置")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                VeilToolCenterToolbarLink(model: model)
+            }
+        }
         .alert("进入 A10 Ultra Ω 单轨实验？", isPresented: $showsA10OnlyLabWarning) {
             Button("取消", role: .cancel) { requestedKernelMode = nil }
             Button("进入实验", role: .destructive) {

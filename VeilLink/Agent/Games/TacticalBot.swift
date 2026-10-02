@@ -10,6 +10,30 @@ struct TacticalBotMove: Equatable, Sendable {
     var isPass: Bool { from == nil && to == nil }
 }
 
+enum TacticalBotDifficulty: String, CaseIterable, Identifiable, Sendable {
+    case recruit
+    case commander
+    case strategist
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .recruit: return "新兵"
+        case .commander: return "都督"
+        case .strategist: return "军师"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .recruit: return "会犯可控的小失误，适合第一局"
+        case .commander: return "完整评估目标、补给与战损"
+        case .strategist: return "第一道命令会联算本阶段后续行动"
+        }
+    }
+}
+
 /// A compact, install-local policy for the original 7×9 tactical game. The policy only ranks
 /// commands produced by `TacticalState`; the selected command is applied to a copy once more
 /// before it is returned. This keeps learned preferences behind the canonical rules gate.
@@ -77,6 +101,7 @@ enum TacticalBot {
         in state: TacticalState,
         for player: MiniGamePlayer,
         sessionID: String,
+        difficulty: TacticalBotDifficulty = .commander,
         policy: Policy? = nil
     ) -> TacticalBotMove? {
         guard state.winner == nil, !state.isDraw, state.currentPlayer == player else { return nil }
@@ -85,7 +110,7 @@ enum TacticalBot {
         guard !commands.isEmpty else { return nil }
 
         let before = metrics(state, player: player)
-        var best: (command: Command, score: Double)?
+        var ranked: [(command: Command, score: Double)] = []
         for command in commands {
             var next = state
             guard next.apply(from: command.from, to: command.to, actor: player, sessionID: sessionID) else { continue }
@@ -96,17 +121,37 @@ enum TacticalBot {
                 player: player,
                 isPass: command.from == nil
             )
-            let score = zip(features, policy.weights).reduce(0.0) { $0 + $1.0 * $1.1 }
-            if let current = best {
-                if score > current.score + 0.000_001 ||
-                    (abs(score - current.score) <= 0.000_001 && isEarlier(command, than: current.command)) {
-                    best = (command, score)
-                }
-            } else {
-                best = (command, score)
+            ranked.append((command, weightedScore(features, policy: policy)))
+        }
+        ranked.sort { lhs, rhs in
+            if abs(lhs.score - rhs.score) > 0.000_001 { return lhs.score > rhs.score }
+            return isEarlier(lhs.command, than: rhs.command)
+        }
+        if difficulty == .strategist {
+            // Bound continuation search to the strongest immediate roots so older devices do not
+            // multiply every legal command by another full legal-command scan.
+            for index in 0..<min(8, ranked.count) {
+                let command = ranked[index].command
+                var next = state
+                guard next.apply(from: command.from, to: command.to, actor: player, sessionID: sessionID),
+                      next.currentPlayer == player, next.winner == nil, !next.isDraw else { continue }
+                ranked[index].score += 0.55 * bestContinuationScore(
+                    in: next,
+                    for: player,
+                    sessionID: sessionID,
+                    policy: policy
+                )
+            }
+            ranked.sort { lhs, rhs in
+                if abs(lhs.score - rhs.score) > 0.000_001 { return lhs.score > rhs.score }
+                return isEarlier(lhs.command, than: rhs.command)
             }
         }
-        guard let best else { return nil }
+        guard !ranked.isEmpty else { return nil }
+        // Recruit deliberately chooses the third-ranked legal command when possible. This gives
+        // beginners breathing room without randomness, cheating or a separate weakened ruleset.
+        let selectedIndex = difficulty == .recruit ? min(2, ranked.count - 1) : 0
+        let best = ranked[selectedIndex]
 
         // Final rule gate: a malformed or incompatible policy can never emit an illegal order.
         var validation = state
@@ -121,7 +166,7 @@ enum TacticalBot {
             to: best.command.to,
             score: best.score,
             candidates: commands.count,
-            policyID: policy.policyID
+            policyID: "\(policy.policyID)-\(difficulty.rawValue)"
         )
     }
 
@@ -163,6 +208,33 @@ enum TacticalBot {
             after.hqProgress - before.hqProgress,
             isPass ? 1 : 0
         ]
+    }
+
+    private static func bestContinuationScore(
+        in state: TacticalState,
+        for player: MiniGamePlayer,
+        sessionID: String,
+        policy: Policy
+    ) -> Double {
+        let before = metrics(state, player: player)
+        var best = -Double.greatestFiniteMagnitude
+        for command in legalCommands(in: state, for: player) {
+            var next = state
+            guard next.apply(from: command.from, to: command.to, actor: player, sessionID: sessionID) else { continue }
+            let features = featureVector(
+                before: before,
+                after: metrics(next, player: player),
+                next: next,
+                player: player,
+                isPass: command.from == nil
+            )
+            best = max(best, weightedScore(features, policy: policy))
+        }
+        return best.isFinite ? best : 0
+    }
+
+    private static func weightedScore(_ features: [Double], policy: Policy) -> Double {
+        zip(features, policy.weights).reduce(0.0) { $0 + $1.0 * $1.1 }
     }
 
     private static func metrics(_ state: TacticalState, player: MiniGamePlayer) -> PositionMetrics {

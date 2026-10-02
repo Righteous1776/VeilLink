@@ -18,6 +18,11 @@ struct GameLobbyView: View {
         }
         .background(VeilAmbientBackground())
         .navigationTitle("游戏")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                VeilToolCenterToolbarLink(model: model)
+            }
+        }
         .sheet(item: $nearbyConversation) { conversation in
             MiniGameHubView(model: model, conversation: conversation)
         }
@@ -187,6 +192,7 @@ struct LocalAIGameView: View {
     @StateObject private var controller: LocalAIGameController
     @State private var selectedXiangqiIndex: Int?
     @State private var showsTacticalGuide = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: AppModel, game: MiniGameKind) {
         self.model = model
@@ -198,6 +204,7 @@ struct LocalAIGameView: View {
         ScrollView {
             VStack(spacing: 14) {
                 statusCard
+                if game == .tactical { tacticalControlCard }
                 board
                 if controller.outcome != .playing { resultCard }
             }
@@ -318,6 +325,27 @@ struct LocalAIGameView: View {
                 .font(.system(size: 34, weight: .light))
                 .foregroundColor(VeilTheme.gold)
             Text(controller.statusText).font(.title3.bold())
+            if game == .tactical {
+                let report = controller.tacticalDebrief
+                Text(report.headline)
+                    .font(.headline)
+                    .foregroundColor(VeilTheme.goldBright)
+                Text(report.summary)
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
+                    .multilineTextAlignment(.center)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 6)], spacing: 6) {
+                    ForEach(report.medals, id: \.self) { medal in
+                        Label(medal, systemImage: "medal.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(VeilTheme.gold)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(VeilTheme.gold.opacity(0.09))
+                            .clipShape(Capsule())
+                    }
+                }
+            }
             Button("再来一局") {
                 selectedXiangqiIndex = nil
                 controller.restart()
@@ -327,6 +355,86 @@ struct LocalAIGameView: View {
         .frame(maxWidth: .infinity)
         .padding(20)
         .veilCard()
+    }
+
+    private var tacticalControlCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(controller.tacticalScenario.title)
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.goldBright)
+                    if controller.tacticalScenario == .daily {
+                        Text("\(controller.tacticalDailyChallenge.dayID) · \(controller.tacticalDailyChallenge.title)")
+                            .font(.caption2.monospaced())
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                }
+                Spacer()
+                Menu {
+                    ForEach(TacticalBotDifficulty.allCases) { difficulty in
+                        Button {
+                            if reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal {
+                                controller.setTacticalDifficulty(difficulty)
+                            } else {
+                                withAnimation(VeilMotion.resolve) { controller.setTacticalDifficulty(difficulty) }
+                            }
+                            model.haptics.selection()
+                        } label: {
+                            if difficulty == controller.tacticalDifficulty {
+                                Label(difficulty.title, systemImage: "checkmark")
+                            } else {
+                                Text(difficulty.title)
+                            }
+                        }
+                    }
+                } label: {
+                    Label(controller.tacticalDifficulty.title, systemImage: "slider.horizontal.3")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(VeilTheme.gold)
+                }
+            }
+
+            HStack(spacing: 8) {
+                ForEach(TacticalSoloScenario.allCases) { scenario in
+                    Button {
+                        if reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal {
+                            controller.setTacticalScenario(scenario)
+                        } else {
+                            withAnimation(VeilMotion.transit) { controller.setTacticalScenario(scenario) }
+                        }
+                        model.haptics.selection()
+                    } label: {
+                        Text(scenario.title)
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .frame(minHeight: 34)
+                            .background((controller.tacticalScenario == scenario ? VeilTheme.gold : Color.white).opacity(controller.tacticalScenario == scenario ? 0.12 : 0.035))
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if controller.tacticalScenario == .daily {
+                Text(controller.tacticalDailyChallenge.briefing)
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.text)
+                Label("勋章目标：\(controller.tacticalDailyChallenge.medalGoal)", systemImage: "medal")
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.mutedGold)
+            }
+
+            Label(controller.tacticalCoachText, systemImage: "lightbulb.fill")
+                .font(.caption)
+                .foregroundColor(VeilTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .id(controller.tacticalCoachText)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+        .veilCard()
+        .animation(reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal ? nil : VeilMotion.reveal, value: controller.tacticalCoachText)
     }
 
     private func statusMetric(_ title: String, _ value: String) -> some View {

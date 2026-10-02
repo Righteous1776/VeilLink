@@ -14,6 +14,9 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var xiangqi = XiangqiState()
     @Published private(set) var ludo = LudoState()
     @Published private(set) var tactical = TacticalState()
+    @Published private(set) var tacticalDifficulty: TacticalBotDifficulty = .commander
+    @Published private(set) var tacticalScenario: TacticalSoloScenario = .standard
+    @Published private(set) var tacticalDailyChallenge = TacticalDailyChallenge.challenge()
     @Published private(set) var outcome: Outcome = .playing
     @Published private(set) var isAIThinking = false
     @Published private(set) var lastDecisionMode = "基础策略"
@@ -57,7 +60,12 @@ final class LocalAIGameController: ObservableObject {
         gomoku = GomokuState()
         xiangqi = XiangqiState()
         ludo = LudoState()
-        tactical = TacticalState()
+        if tacticalScenario == .daily {
+            tacticalDailyChallenge = TacticalDailyChallenge.challenge()
+            tactical = tacticalDailyChallenge.makeState()
+        } else {
+            tactical = TacticalState()
+        }
         sessionID = UUID().uuidString
         outcome = .playing
         isAIThinking = false
@@ -103,6 +111,39 @@ final class LocalAIGameController: ObservableObject {
         guard state.apply(from: nil, to: nil, actor: humanPlayer, sessionID: sessionID) else { return }
         tactical = state
         finishOrScheduleAI()
+    }
+
+    func setTacticalDifficulty(_ difficulty: TacticalBotDifficulty) {
+        guard game == .tactical else { return }
+        tacticalDifficulty = difficulty
+    }
+
+    func setTacticalScenario(_ scenario: TacticalSoloScenario) {
+        guard game == .tactical, tacticalScenario != scenario else { return }
+        tacticalScenario = scenario
+        restart()
+    }
+
+    var tacticalCoachText: String {
+        guard game == .tactical else { return "" }
+        if tactical.currentPlayer != humanPlayer { return "军师正在观察袁军调动…" }
+        let situation = tactical.situationSnapshot()
+        let unsupplied = tactical.units(for: humanPlayer).filter { !situation.isSupplied($0) }
+        if !unsupplied.isEmpty { return "补给告急：\(unsupplied.map(\.name).joined(separator: "、")) 已断粮。" }
+        if tactical.control(at: 31) != .cao { return "建议：优先争夺中央官渡，每轮可得 2 VP。" }
+        if let command = tactical.unit(id: "cao-command"),
+           situation.threatenedHexes(by: .yuan).contains(command.position) {
+            return "中军处在袁军威胁范围内，考虑后撤或用友军屏护。"
+        }
+        return "官渡在手：守住目标，同时寻找切断袁军粮道的机会。"
+    }
+
+    var tacticalDebrief: TacticalDebrief {
+        TacticalDebrief.make(
+            state: tactical,
+            humanPlayer: humanPlayer,
+            challenge: tacticalScenario == .daily ? tacticalDailyChallenge : nil
+        )
     }
 
     func cancelAI() {
@@ -242,8 +283,14 @@ final class LocalAIGameController: ObservableObject {
         case .tactical:
             let snapshot = tactical
             let currentSessionID = sessionID
+            let difficulty = tacticalDifficulty
             let result = await Task.detached(priority: .userInitiated) {
-                TacticalBot.chooseMove(in: snapshot, for: .guest, sessionID: currentSessionID)
+                TacticalBot.chooseMove(
+                    in: snapshot,
+                    for: .guest,
+                    sessionID: currentSessionID,
+                    difficulty: difficulty
+                )
             }.value
             guard let result else { return nil }
 
@@ -254,7 +301,7 @@ final class LocalAIGameController: ObservableObject {
                 actor: .guest,
                 sessionID: sessionID
             ) else { return nil }
-            lastDecisionMode = "兵棋策略 V1"
+            lastDecisionMode = "兵棋·\(difficulty.title)"
             return AgentActionCandidate(
                 actionID: result.isPass ? "tactical:pass" : "tactical:\(result.from!):\(result.to!)",
                 encodedAction: AgentGameEncoding.encodeInts([result.from ?? -1, result.to ?? -1]),

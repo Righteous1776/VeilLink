@@ -357,6 +357,52 @@ final class MiniGameTests: XCTestCase {
         XCTAssertNotNil(TacticalBot.chooseMove(in: state, for: .host, sessionID: "host-turn"))
     }
 
+    func testTacticalBotDifficultiesRemainDeterministicAndLegal() {
+        let state = TacticalState()
+        for difficulty in TacticalBotDifficulty.allCases {
+            let first = TacticalBot.chooseMove(
+                in: state,
+                for: .host,
+                sessionID: "difficulty-test",
+                difficulty: difficulty
+            )
+            let second = TacticalBot.chooseMove(
+                in: state,
+                for: .host,
+                sessionID: "difficulty-test",
+                difficulty: difficulty
+            )
+            XCTAssertEqual(first, second)
+            var validated = state
+            XCTAssertTrue(validated.apply(
+                from: first?.from,
+                to: first?.to,
+                actor: .host,
+                sessionID: "difficulty-test"
+            ))
+            XCTAssertTrue(first?.policyID.hasSuffix(difficulty.rawValue) == true)
+        }
+    }
+
+    func testDailyTacticalVariantsHaveValidUniqueDeployments() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let start = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1))!
+        var variants = Set<Int>()
+        for offset in 0..<4 {
+            let date = calendar.date(byAdding: .day, value: offset, to: start)!
+            let challenge = TacticalDailyChallenge.challenge(on: date)
+            let state = challenge.makeState()
+            variants.insert(challenge.variant)
+            XCTAssertEqual(state.units.count, TacticalState.initialUnits.count)
+            XCTAssertEqual(Set(state.units.map(\.position)).count, state.units.count)
+            XCTAssertTrue(state.units.allSatisfy { state.hex(at: $0.position)?.terrain.movementCost != nil })
+            XCTAssertFalse(challenge.title.isEmpty)
+            XCTAssertFalse(challenge.medalGoal.isEmpty)
+        }
+        XCTAssertEqual(variants, Set(0..<4))
+    }
+
     func testTacticalTwoOrdersThenSwitchesActivation() {
         var state = TacticalState()
         let sessionID = UUID().uuidString
