@@ -1,0 +1,230 @@
+name: Publish verified historical IPA archives
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_publish:
+        description: Type PUBLISH_VERIFIED_ARCHIVES to publish all verified historical builds
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit publication confirmation
+        env:
+          CONFIRM_PUBLISH: ${{ inputs.confirm_publish }}
+        run: test "$CONFIRM_PUBLISH" = "PUBLISH_VERIFIED_ARCHIVES"
+
+  publish:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - version: 0.2.2
+            build: "3"
+            tag: v0.2.2-b3
+            source_sha: db24024c89d309001072d9f0153ba3a2ced696cb
+            run_id: "34656155980"
+            artifact: VeilLink-unsigned
+            variant: Core
+          - version: 0.3.6
+            build: "12"
+            tag: v0.3.6-b12
+            source_sha: 7397c5374e559fecdde07601b7f09646faf33bb4
+            run_id: "34668176223"
+            artifact: VeilLink-unsigned
+            variant: Core
+          - version: 0.3.7
+            build: "13"
+            tag: v0.3.7-b13
+            source_sha: aadb80b02e2fc4eeab3d4032d392cd37267e82fc
+            run_id: "34672423019"
+            artifact: VeilLink-unsigned
+            variant: Core
+          - version: 0.3.13
+            build: "19"
+            tag: v0.3.13-b19
+            source_sha: 126fd9cfaacca70af41493eb3739ca05cd143d3b
+            run_id: "34705825868"
+            artifact: VeilLink-unsigned
+            variant: Core
+          - version: 0.5.3
+            build: "27"
+            tag: v0.5.3-b27
+            source_sha: 6a03bff0a4238251e575a192e6cc845abd0e970d
+            run_id: "34728133653"
+            artifact: VeilLink-unsigned
+            variant: Core
+          - version: 0.6.0
+            build: "28"
+            tag: v0.6.0-b28
+            source_sha: ecf0a39f27eca51e5be7f176af0b318869736eef
+            run_id: "34734437093"
+            artifact: VeilLink-unsigned
+            variant: Core
+          - version: 0.7.1
+            build: "30"
+            tag: v0.7.1-b30
+            source_sha: 3175feb5d9be7bfb1ae9838bffe03d39975db508
+            run_id: "34744072718"
+            artifact: VeilLink-unsigned
+            variant: Core
+          - version: 0.7.2
+            build: "31"
+            tag: v0.7.2-b31
+            source_sha: 0d9f54160c05c6ac2d672dda6f056bf831ef546d
+            run_id: "34745370725"
+            artifact: VeilLink-unsigned
+            variant: Core
+          - version: 0.9.3
+            build: "36"
+            tag: v0.9.3-b36
+            source_sha: 77bc0a40fa2ee3fff9cab6552c553aa981e83a7c
+            run_id: "35359012862"
+            artifact: VeilLink-unsigned
+            variant: Core
+          - version: 0.9.7
+            build: "41"
+            tag: v0.9.7-b41
+            source_sha: af35b160fcc9b97d3c82963f1dea8ee6dbdb5773
+            run_id: "35425042456"
+            artifact: VeilLink-unsigned-v0.9.7-b41-DualBrain-TacticalV2
+            variant: DualBrain-TacticalV2
+          - version: 0.10.10
+            build: "52"
+            tag: v0.10.10-b52
+            source_sha: 14955c9143f202ac1f19a37d78d88735da8bb0cb
+            run_id: "36138289138"
+            artifact: VeilLink-Core-unsigned-v0.10.10-b52
+            variant: Core
+          - version: "26.9"
+            build: "53"
+            tag: v26.9-b53
+            source_sha: 4042281ede480508f9622f4dea9f7313c0d028ef
+            run_id: "36244020520"
+            artifact: VeilLink-Core-unsigned-v26.9-b53
+            variant: Core
+          - version: "26.9"
+            build: "54"
+            tag: v26.9-b54
+            source_sha: a0b023bcb08aa880a95e6d6ba4a839012f9e734a
+            run_id: "36863377941"
+            artifact: VeilLink-Core-unsigned-v26.9-b54-direct
+            variant: Core
+          - version: "26.9"
+            build: "55"
+            tag: v26.9-b55
+            source_sha: 671c2b97d33840ec2c33791f74d8207718b011e4
+            run_id: "36868107578"
+            artifact: VeilLink-Core-unsigned-v26.9-b55-direct
+            variant: Core
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ matrix.version }}
+      BUILD: ${{ matrix.build }}
+      TAG: ${{ matrix.tag }}
+      SOURCE_SHA: ${{ matrix.source_sha }}
+      RUN_ID: ${{ matrix.run_id }}
+      ARTIFACT_NAME: ${{ matrix.artifact }}
+      VARIANT: ${{ matrix.variant }}
+
+    steps:
+      - name: Download the original successful build artifact
+        run: |
+          set -euo pipefail
+          mkdir -p staging
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$ARTIFACT_NAME" \
+            --dir staging
+
+      - name: Verify packaged identity and archive integrity
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import plistlib
+          import shutil
+          import zipfile
+
+          root = pathlib.Path("staging")
+          candidates = list(root.rglob("*.ipa"))
+          if len(candidates) != 1:
+              raise SystemExit(f"expected exactly one IPA, found {len(candidates)}")
+
+          source = candidates[0]
+          expected_version = os.environ["VERSION"]
+          expected_build = os.environ["BUILD"]
+          with zipfile.ZipFile(source) as archive:
+              bad_entry = archive.testzip()
+              if bad_entry is not None:
+                  raise SystemExit(f"IPA CRC failure: {bad_entry}")
+              info_entries = [
+                  name for name in archive.namelist()
+                  if name.startswith("Payload/") and name.count("/") == 2 and name.endswith(".app/Info.plist")
+              ]
+              if len(info_entries) != 1:
+                  raise SystemExit(f"expected one app Info.plist, found {info_entries}")
+              info = plistlib.loads(archive.read(info_entries[0]))
+
+          actual_version = str(info.get("CFBundleShortVersionString", ""))
+          actual_build = str(info.get("CFBundleVersion", ""))
+          if (actual_version, actual_build) != (expected_version, expected_build):
+              raise SystemExit(
+                  f"identity mismatch: expected {expected_version} ({expected_build}), "
+                  f"got {actual_version} ({actual_build})"
+              )
+
+          output = pathlib.Path(f"VeilLink-{expected_version}-b{expected_build}-{os.environ['VARIANT']}-unsigned.ipa")
+          shutil.copyfile(source, output)
+          digest = hashlib.sha256(output.read_bytes()).hexdigest()
+          pathlib.Path(f"{output.name}.sha256").write_text(f"{digest}  {output.name}\n", encoding="utf-8")
+          print(f"VERIFIED_IPA={output}")
+          print(f"VERIFIED_SHA256={digest}")
+          PY
+
+      - name: Publish immutable historical release
+        run: |
+          set -euo pipefail
+          ipa="VeilLink-${VERSION}-b${BUILD}-${VARIANT}-unsigned.ipa"
+          sums="${ipa}.sha256"
+          notes=$(cat <<EOF
+          Archived unsigned VeilLink build reproduced from the original successful GitHub Actions artifact.
+
+          - Version: ${VERSION}
+          - Build: ${BUILD}
+          - Variant: ${VARIANT}
+          - Source commit: ${SOURCE_SHA}
+          - Original successful workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}
+
+          This IPA is unsigned. It is published for archival, testing, and user-side signing; it is not an App Store-signed package and cannot be installed directly on a stock device without signing.
+          EOF
+          )
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            existing_target=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)
+            test "$existing_target" = "$SOURCE_SHA"
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$SOURCE_SHA" \
+              --title "VeilLink ${VERSION} (Build ${BUILD})" \
+              --notes "$notes"
+          fi
+
+          gh release upload "$TAG" "$ipa" "$sums" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

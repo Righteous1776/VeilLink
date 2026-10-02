@@ -20,7 +20,11 @@ final class A9HealthLatticeTests: XCTestCase {
     func testPersistentYellowEscalatesToL2() {
         let packet = VeilA9Packet(
             light: .yellow, p0: 0, p1: 0, p2: 1, p3: 0,
-            riskBP: 400, persistenceRuns: 3, blocker: false, healthBP: 900, issues: []
+            riskBP: 400,
+            persistenceRuns: VeilA9Lattice.persistentDurationThresholdSeconds,
+            blocker: false,
+            healthBP: 900,
+            issues: []
         )
         XCTAssertEqual(VeilA9Lattice.decide(packet).level, .l2Review)
     }

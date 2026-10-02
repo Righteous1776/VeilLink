@@ -77,6 +77,11 @@ struct CollaborativeStressFrame: Codable, Equatable, Sendable {
     let success: Bool?
     let metadata: [String: String]
 
+    private static func canonicalWireDate(_ date: Date) -> Date {
+        let milliseconds = (date.timeIntervalSince1970 * 1_000).rounded()
+        return Date(timeIntervalSince1970: milliseconds / 1_000)
+    }
+
     init(
         sessionID: String,
         epoch: UInt64,
@@ -100,7 +105,9 @@ struct CollaborativeStressFrame: Codable, Equatable, Sendable {
         self.epoch = epoch
         self.ordinal = ordinal
         self.kind = kind
-        self.sentAt = sentAt
+        // The diagnostics wire format carries milliseconds. Canonicalizing at construction
+        // keeps an in-memory frame exactly equal to its encoded/decoded representation.
+        self.sentAt = Self.canonicalWireDate(sentAt)
         self.scenario = scenario
         self.payloadText = payloadText
         self.payloadKind = payloadKind

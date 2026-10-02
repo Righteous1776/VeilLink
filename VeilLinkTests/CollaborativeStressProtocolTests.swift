@@ -9,7 +9,8 @@ final class CollaborativeStressProtocolTests: XCTestCase {
             epoch: 7,
             ordinal: 1,
             kind: .textBurst,
-            payloadText: CollaborativeStressPayloadFactory.text(bytes: 1024, seed: 42)
+            payloadText: CollaborativeStressPayloadFactory.text(bytes: 1024, seed: 42),
+            sentAt: Date(timeIntervalSince1970: 1_725_000_000.123_456)
         )
         let encoded = try CollaborativeStressCodec.encode(frame)
         XCTAssertTrue(encoded.hasPrefix(CollaborativeStressCodec.prefix))
@@ -52,7 +53,8 @@ final class CollaborativeStressProtocolTests: XCTestCase {
             kind: .bulkReady,
             transferID: UUID().uuidString,
             wireMessageID: UUID().uuidString,
-            success: true
+            success: true,
+            sentAt: Date(timeIntervalSince1970: 1_725_000_000.654_321)
         )
         let encoded = try CollaborativeStressCodec.encode(ready)
         XCTAssertEqual(CollaborativeStressCodec.decode(encoded), ready)
