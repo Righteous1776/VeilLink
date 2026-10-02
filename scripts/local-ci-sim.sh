@@ -79,6 +79,7 @@ swiftc -typecheck \
     VeilLink/Agent/Games/XiangqiAgentAdapter.swift \
     VeilLink/Agent/Games/LudoAgentAdapter.swift \
     VeilLink/Agent/Games/AgentGameRegistry.swift \
+    VeilLink/Agent/Games/TacticalBot.swift \
     VeilLink/Agent/Games/TrainedGamePolicyRuntime.swift \
     VeilLink/Transport/ConnectionEventGate.swift \
     VeilLink/Transport/BLEConnectionIntentStore.swift \
@@ -107,6 +108,7 @@ precondition(ephemeralAgentSession.messages.map(\.id) == ["b", "c"])
 precondition(!AgentTokenStream.chunks(text: "VeilLink灵核", targetCharacters: 3).isEmpty)
 precondition(AgentGameRegistry.trainingEnabledKinds == [.gomoku, .xiangqi, .ludo])
 precondition(!AgentGameRegistry.isTrainingEnabled(.tactical))
+precondition(AgentGameRegistry.hasDedicatedLocalPolicy(.tactical))
 let a9Green = VeilA9Packet(light: .green, p0: 0, p1: 0, p2: 0, p3: 0, riskBP: 0, persistenceRuns: 0, blocker: false, healthBP: 1_000, issues: [])
 precondition(VeilA9Lattice.cells.count == 144)
 precondition(VeilA9Lattice.decide(a9Green).level == .l0Observe)
@@ -1079,9 +1081,22 @@ assert 'TacticalIntelLayer' in tactical_ui and '交战预估' in tactical_ui and
 assert 'supplyNetwork(for faction:' in (root/'VeilLink/Core/TacticalGame.swift').read_text(encoding='utf-8')
 assert 'threatenedHexes(by faction:' in (root/'VeilLink/Core/TacticalGame.swift').read_text(encoding='utf-8')
 assert 'combatForecast(attackerID:' in (root/'VeilLink/Core/TacticalGame.swift').read_text(encoding='utf-8')
+bot = (root/'VeilLink/Agent/Games/TacticalBot.swift').read_text(encoding='utf-8')
+guide = (root/'VeilLink/UI/TacticalSoloGuideView.swift').read_text(encoding='utf-8')
+assert 'TacticalState' in bot and 'legalCommands' in bot and 'Final rule gate' in bot
+assert '新手教程' in guide and '完整规则' in guide and '第 6 步' in guide
+policy = __import__('json').loads((root/'VeilLink/Resources/TacticalBotPolicyV1.json').read_text(encoding='utf-8'))
+assert policy['schema'] == 1 and policy['trainingExamples'] == 96 and policy['trainingEpochs'] == 240
+assert len(policy['featureOrder']) == len(policy['weights']) == 12
 assert 'static let cells' in tactical_render and 'static let terrainSegments' in tactical_render
 assert 'displayCenter(for layout:' in tactical_render
 assert 'TacticalLocalRenderCache.warmUp()' in app_entry
+selector = (root/'VeilLink/Health/VeilKernelRuntimeSelector.swift').read_text(encoding='utf-8')
+app_model = (root/'VeilLink/App/AppModel.swift').read_text(encoding='utf-8')
+assert 'A10_ULTRA_INDEPENDENT_GOVERNANCE' in selector
+assert 'GOVERNANCE_ONLY_APPROVED' in selector
+assert 'case .a10Independent' in app_model and 'updateFromA10Ultra' in app_model
+assert 'mutationAuthority: 0' in selector
 print('targeted-perf-ok')
 PY2
 pass "current-version targeted-device + games + replay + God Mode + image viewer + BLE reliability guard"
@@ -1187,7 +1202,10 @@ python3 -m py_compile \
     Tools/AgentTraining/train_policy_ranker.py \
     Tools/AgentTraining/train_language_lora.py \
     Tools/AgentTraining/build_agent_sft_dataset.py \
-    Tools/AgentTraining/export_policy_vlpol.py
+    Tools/AgentTraining/export_policy_vlpol.py \
+    Tools/AgentTraining/train_tactical_policy.py
+python3 Tools/AgentTraining/train_tactical_policy.py --output "$HARNESS_DIR/TacticalBotPolicyV1.json"
+cmp "$HARNESS_DIR/TacticalBotPolicyV1.json" VeilLink/Resources/TacticalBotPolicyV1.json
 python3 - <<'PYAGENTTRAIN'
 import json, pathlib
 pins=json.loads(pathlib.Path('Tools/AgentTraining/manifests/language_model_pins.json').read_text())
@@ -1196,6 +1214,7 @@ assert all(len(m['primary_weight_sha256']) == 64 for m in pins['models'])
 registry=pathlib.Path('VeilLink/Agent/Games/AgentGameRegistry.swift').read_text()
 assert 'trainingEnabledKinds: [MiniGameKind] = [.gomoku, .xiangqi, .ludo]' in registry
 assert 'case .tactical' in registry
+assert 'dedicatedLocalPolicyKinds: [MiniGameKind] = [.tactical]' in registry
 for path in ['Tools/AgentTraining/SelfPlayExporter.swift','Tools/AgentTraining/build_agent_sft_dataset.py']:
     text=pathlib.Path(path).read_text()
     assert 'tactical' in text.lower()

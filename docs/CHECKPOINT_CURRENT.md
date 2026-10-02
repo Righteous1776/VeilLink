@@ -10,10 +10,14 @@ I12 update package was materialized over the older V0.9.7 tree, including voice/
 LAN transport, remote pairing, Tool Center, background continuity/widget support,
 legal/onboarding, relay/community code, native game bots, and the full test suite.
 
-A10 Ultra M5 remains a trained **shadow** cognition/governance path. Its compact
-iOS resources are SHA-256 pinned; `production_cutover` remains `DENY`. Raw training
-carriers (`weights.npz`, `brain.npz`) and other heavy experimental resources are
-forbidden from the Core IPA. A9 remains available as the stable primary path.
+A10 Ultra Ω OMEGA 96 is now available as a formal, independent governance path:
+it consumes raw host health facts and may author the shared compute-budget contract,
+while transport, storage, identity, game and tool mutation authority remain host-owned.
+Runtime failure immediately falls back to A9. The separate A10 Ultra M5 inference
+assets remain a trained **shadow** path with SHA-256-pinned resources and
+`production_cutover: DENY`; no unvalidated M5 capability is promoted. Raw training
+carriers (`weights.npz`, `brain.npz`) and other heavy experimental resources remain
+forbidden from the Core IPA.
 
 Release invariants are enforced by `scripts/verify-recovery-lineage.py` and
 `scripts/verify-core-release.py`. The app and widget inherit version/build values

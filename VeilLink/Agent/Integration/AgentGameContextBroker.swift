@@ -47,7 +47,7 @@ final class AgentGameContextBroker: ObservableObject {
                 policyMode: "high-level-only",
                 stateDescription: Self.stateDescription(for: session),
                 recommendations: [],
-                note: "三国兵棋当前只提供局面摘要；TacticalBot 在后续专项迭代中接入。",
+                note: "三国兵棋提供局面摘要；单机对局由独立离线 TacticalBot 策略驱动。",
                 maleCNS: nil
             )
             return
@@ -369,7 +369,7 @@ final class AgentGameContextBroker: ObservableObject {
                 ? state.legalPieces(sessionID: session.id).map(String.init).joined(separator: ",") : ""
             return "own_progress=[\(own)]; opponent_progress=[\(opp)]; next_dice=\(state.expectedDice(sessionID: session.id)); legal_local_pieces=[\(legal)]"
         case .tactical:
-            return "tactical_turn=\(session.moveCount); native_bot=unavailable; use high-level explanation only"
+            return "tactical_turn=\(session.moveCount); native_bot=dedicated_local_policy_v1; explanation_only_in_chat"
         }
     }
 

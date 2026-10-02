@@ -2,12 +2,14 @@ import XCTest
 @testable import VeilLink
 
 final class AgentGameAdapterTests: XCTestCase {
-    func testTrainingRegistryExcludesTactical() {
+    func testTrainingRegistryRoutesTacticalToDedicatedLocalPolicy() {
         XCTAssertTrue(AgentGameRegistry.isTrainingEnabled(.gomoku))
         XCTAssertTrue(AgentGameRegistry.isTrainingEnabled(.xiangqi))
         XCTAssertTrue(AgentGameRegistry.isTrainingEnabled(.ludo))
         XCTAssertFalse(AgentGameRegistry.isTrainingEnabled(.tactical))
         XCTAssertNotNil(AgentGameRegistry.exclusionReason(for: .tactical))
+        XCTAssertTrue(AgentGameRegistry.hasDedicatedLocalPolicy(.tactical))
+        XCTAssertFalse(AgentGameRegistry.hasDedicatedLocalPolicy(.gomoku))
     }
 
     func testGomokuAdapterEnumeratesOnlyEmptySquares() {

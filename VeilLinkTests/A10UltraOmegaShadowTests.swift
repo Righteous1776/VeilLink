@@ -12,6 +12,30 @@ final class A10UltraOmegaShadowTests: XCTestCase {
         XCTAssertFalse(A10UltraOmegaRelease.nativeIOSARM64Available)
     }
 
+    func testIndependentGovernanceProducesAuthoritativeBudgetWithoutAppMutation() {
+        let defaults = UserDefaults(suiteName: "A10Independent.\(UUID().uuidString)")!
+        let selector = VeilKernelRuntimeSelector(defaults: defaults)
+        selector.select(.a10Independent)
+        let coordinator = A10UltraOmegaShadowCoordinator()
+        let sample = coordinator.makeSharedSample(
+            input: VeilA9Input(),
+            hostContext: A10UltraOmegaHostContext(
+                foregroundActive: true,
+                systemAvailable: true,
+                gameRuntimeState: "IDLE",
+                activeProcessorCount: 2,
+                physicalMemoryBytes: 2_000_000_000
+            )
+        )
+
+        let result = coordinator.evaluateA10UltraIsolated(sample: sample, runtime: selector.beginSample())
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.decision.level, 0)
+        XCTAssertEqual(result?.budget.mode, "NORMAL")
+        XCTAssertEqual(coordinator.lastRuntimeSample?.divergenceClass, "A10_INDEPENDENT_GOVERNANCE")
+        XCTAssertEqual(coordinator.lastRuntimeSample?.environment.mutationAuthority, 0)
+    }
+
     func testSharedSampleHasEpochDigestAndRawInput() {
         let coordinator = A10UltraOmegaShadowCoordinator()
         let input = VeilA9Input(weakPeerCount: 1)

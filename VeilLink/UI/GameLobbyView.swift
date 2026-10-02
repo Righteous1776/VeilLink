@@ -77,7 +77,11 @@ struct GameLobbyView: View {
             }
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
-            gameRow(.tactical, detail: "TacticalBot 尚未完成 · 当前只开放附近真人对战", enabled: false)
+            NavigationLink(destination: LocalAIGameView(model: model, game: .tactical)) {
+                gameRow(.tactical, detail: "你执曹军先行 · 离线训练策略 + 补给与目标评估", enabled: true)
+            }
+            .buttonStyle(VeilPressStyle())
+            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
         }
     }
 
@@ -182,6 +186,7 @@ struct LocalAIGameView: View {
     let game: MiniGameKind
     @StateObject private var controller: LocalAIGameController
     @State private var selectedXiangqiIndex: Int?
+    @State private var showsTacticalGuide = false
 
     init(model: AppModel, game: MiniGameKind) {
         self.model = model
@@ -202,7 +207,16 @@ struct LocalAIGameView: View {
         .navigationTitle(game.title + " · 人机")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if game == .tactical {
+                    Button {
+                        showsTacticalGuide = true
+                    } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                    .accessibilityLabel("兵棋教程与规则")
+                    .foregroundColor(VeilTheme.gold)
+                }
                 Button("重开") {
                     selectedXiangqiIndex = nil
                     controller.restart()
@@ -213,10 +227,17 @@ struct LocalAIGameView: View {
         }
         .onAppear {
             model.agent.setComputeFocus(.gameDecision)
+            if game == .tactical,
+               !UserDefaults.standard.bool(forKey: TacticalSoloGuideView.completionKey) {
+                showsTacticalGuide = true
+            }
         }
         .onDisappear {
             controller.cancelAI()
             model.agent.setComputeFocus(.idle)
+        }
+        .sheet(isPresented: $showsTacticalGuide) {
+            TacticalSoloGuideView()
         }
     }
 
@@ -275,16 +296,19 @@ struct LocalAIGameView: View {
                 model.haptics.impact()
             }
         case .tactical:
-            VStack(spacing: 12) {
-                Image(systemName: "map.fill").font(.system(size: 42)).foregroundColor(VeilTheme.gold)
-                Text("三国兵棋的 TacticalBot 仍在专项开发中")
-                    .font(.headline)
-                Text("目前可以从游戏大厅的“附近对战”继续真人官渡对局。")
-                    .font(.caption).foregroundColor(VeilTheme.secondaryText)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(30)
-            .veilCard()
+            TacticalBoardView(
+                state: controller.tactical,
+                localPlayer: .host,
+                enabled: controller.canHumanAct,
+                onMove: { from, to in
+                    controller.humanTacticalMove(from: from, to: to)
+                    model.haptics.impact()
+                },
+                onPass: {
+                    controller.humanTacticalPass()
+                    model.haptics.selection()
+                }
+            )
         }
     }
 

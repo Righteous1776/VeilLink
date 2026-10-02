@@ -13,6 +13,7 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var gomoku = GomokuState()
     @Published private(set) var xiangqi = XiangqiState()
     @Published private(set) var ludo = LudoState()
+    @Published private(set) var tactical = TacticalState()
     @Published private(set) var outcome: Outcome = .playing
     @Published private(set) var isAIThinking = false
     @Published private(set) var lastDecisionMode = "基础策略"
@@ -36,7 +37,7 @@ final class LocalAIGameController: ObservableObject {
         case .gomoku: return gomoku.currentPlayer == humanPlayer
         case .xiangqi: return xiangqi.currentPlayer == humanPlayer
         case .ludo: return ludo.currentPlayer == humanPlayer
-        case .tactical: return false
+        case .tactical: return tactical.currentPlayer == humanPlayer
         }
     }
 
@@ -56,6 +57,7 @@ final class LocalAIGameController: ObservableObject {
         gomoku = GomokuState()
         xiangqi = XiangqiState()
         ludo = LudoState()
+        tactical = TacticalState()
         sessionID = UUID().uuidString
         outcome = .playing
         isAIThinking = false
@@ -87,6 +89,22 @@ final class LocalAIGameController: ObservableObject {
         finishOrScheduleAI()
     }
 
+    func humanTacticalMove(from: Int, to: Int) {
+        guard game == .tactical, canHumanAct else { return }
+        var state = tactical
+        guard state.apply(from: from, to: to, actor: humanPlayer, sessionID: sessionID) else { return }
+        tactical = state
+        finishOrScheduleAI()
+    }
+
+    func humanTacticalPass() {
+        guard game == .tactical, canHumanAct else { return }
+        var state = tactical
+        guard state.apply(from: nil, to: nil, actor: humanPlayer, sessionID: sessionID) else { return }
+        tactical = state
+        finishOrScheduleAI()
+    }
+
     func cancelAI() {
         aiTask?.cancel(); aiTask = nil
         isAIThinking = false
@@ -109,7 +127,8 @@ final class LocalAIGameController: ObservableObject {
         case .ludo:
             if let winner = ludo.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
         case .tactical:
-            break
+            if let winner = tactical.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+            else if tactical.isDraw { outcome = .draw }
         }
     }
 
@@ -120,7 +139,7 @@ final class LocalAIGameController: ObservableObject {
         case .gomoku: current = gomoku.currentPlayer
         case .xiangqi: current = xiangqi.currentPlayer
         case .ludo: current = ludo.currentPlayer
-        case .tactical: current = nil
+        case .tactical: current = tactical.currentPlayer
         }
         guard current == aiPlayer else { return }
         aiTask?.cancel()
@@ -221,7 +240,33 @@ final class LocalAIGameController: ObservableObject {
             )
 
         case .tactical:
-            return nil
+            let snapshot = tactical
+            let currentSessionID = sessionID
+            let result = await Task.detached(priority: .userInitiated) {
+                TacticalBot.chooseMove(in: snapshot, for: .guest, sessionID: currentSessionID)
+            }.value
+            guard let result else { return nil }
+
+            var ruleGate = tactical
+            guard ruleGate.apply(
+                from: result.from,
+                to: result.to,
+                actor: .guest,
+                sessionID: sessionID
+            ) else { return nil }
+            lastDecisionMode = "兵棋策略 V1"
+            return AgentActionCandidate(
+                actionID: result.isPass ? "tactical:pass" : "tactical:\(result.from!):\(result.to!)",
+                encodedAction: AgentGameEncoding.encodeInts([result.from ?? -1, result.to ?? -1]),
+                metadata: [
+                    "from": result.from.map(String.init) ?? "pass",
+                    "to": result.to.map(String.init) ?? "pass",
+                    "score": String(format: "%.4f", result.score),
+                    "candidates": String(result.candidates),
+                    "policy": result.policyID
+                ],
+                features: []
+            )
         }
     }
 
@@ -247,7 +292,7 @@ final class LocalAIGameController: ObservableObject {
             gomoku: game == .gomoku ? gomoku : nil,
             xiangqi: game == .xiangqi ? xiangqi : nil,
             ludo: game == .ludo ? ludo : nil,
-            tactical: nil,
+            tactical: game == .tactical ? tactical : nil,
             endedByResignation: false
         )
     }
@@ -271,7 +316,11 @@ final class LocalAIGameController: ObservableObject {
             guard state.apply(pieceIndex: piece, actor: aiPlayer, sessionID: sessionID) else { return }
             ludo = state
         case .tactical:
-            break
+            let from = candidate.metadata["from"].flatMap(Int.init)
+            let to = candidate.metadata["to"].flatMap(Int.init)
+            var state = tactical
+            guard state.apply(from: from, to: to, actor: aiPlayer, sessionID: sessionID) else { return }
+            tactical = state
         }
     }
 }

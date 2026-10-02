@@ -330,6 +330,33 @@ final class MiniGameTests: XCTestCase {
         XCTAssertEqual(state.hex(at: 22)?.name, "白马")
     }
 
+    func testTacticalBotReturnsDeterministicRuleValidatedCommand() {
+        var state = TacticalState()
+        let sessionID = "tactical-bot-test-session"
+        XCTAssertTrue(state.apply(from: 55, to: 46, actor: .host, sessionID: sessionID))
+        XCTAssertTrue(state.apply(from: nil, to: nil, actor: .host, sessionID: sessionID))
+
+        let first = TacticalBot.chooseMove(in: state, for: .guest, sessionID: sessionID)
+        let second = TacticalBot.chooseMove(in: state, for: .guest, sessionID: sessionID)
+        XCTAssertEqual(first, second)
+        XCTAssertNotNil(first)
+        XCTAssertGreaterThan(TacticalBot.legalCommandCount(in: state, for: .guest), 1)
+
+        var validated = state
+        XCTAssertTrue(validated.apply(
+            from: first?.from,
+            to: first?.to,
+            actor: .guest,
+            sessionID: sessionID
+        ))
+    }
+
+    func testTacticalBotRejectsWrongSideAndFinishedTurn() {
+        let state = TacticalState()
+        XCTAssertNil(TacticalBot.chooseMove(in: state, for: .guest, sessionID: "wrong-side"))
+        XCTAssertNotNil(TacticalBot.chooseMove(in: state, for: .host, sessionID: "host-turn"))
+    }
+
     func testTacticalTwoOrdersThenSwitchesActivation() {
         var state = TacticalState()
         let sessionID = UUID().uuidString

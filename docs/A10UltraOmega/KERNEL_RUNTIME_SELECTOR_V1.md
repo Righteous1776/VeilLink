@@ -18,6 +18,14 @@ The selector exists to collect comparable black-box evidence for whether VeilLin
 - Production authority: A9_PRIMARY.
 - Purpose: compatibility/divergence and dual-rail overhead measurement.
 
+### A10_ULTRA_INDEPENDENT_GOVERNANCE
+- A9 per-sample evaluation disabled.
+- A10 Ultra Ω evaluates the raw host signal and supplies the authoritative compute-governance decision.
+- Production authority: `A10_ULTRA_GOVERNANCE`.
+- Scope: `GOVERNANCE_ONLY_APPROVED`, with `mutation_authority=0`.
+- The mode is stable and persistent. Ω runtime failure immediately falls back to `A9_ONLY`.
+- This does not promote the separately packaged M5 inference assets or claim a native iOS OMEGA binary.
+
 ### A10_ULTRA_ONLY_LAB
 - A9 health decision evaluation disabled for the sample path.
 - A10 Ultra Ω evaluation enabled directly from the raw host signal.
@@ -44,5 +52,7 @@ Every runtime sample records at minimum:
 - runtime_backend
 - mutation_authority=0
 - production_cutover=DENIED
+
+Formal independent-governance samples instead record `production_cutover=GOVERNANCE_ONLY_APPROVED`; all other modes retain `DENIED`.
 
 The mode itself is therefore part of the evidence, not an out-of-band user note.

@@ -51,6 +51,28 @@ final class VeilKernelRuntimeSelectorTests: XCTestCase {
         XCTAssertEqual(restarted.lastFallbackReason, "LAB_MODE_RESTART_FALLBACK")
     }
 
+    func testA10IndependentGovernanceIsStableAndProductionScoped() {
+        let defaults = makeDefaults()
+        let selector = VeilKernelRuntimeSelector(defaults: defaults)
+        selector.select(.a9Only)
+        selector.select(.a10Independent)
+        let env = selector.beginSample()
+        XCTAssertFalse(env.a9EvaluationEnabled)
+        XCTAssertTrue(env.ultraEvaluationEnabled)
+        XCTAssertEqual(env.productionAuthority, "A10_ULTRA_GOVERNANCE")
+        XCTAssertEqual(env.productionCutover, "GOVERNANCE_ONLY_APPROVED")
+        XCTAssertEqual(env.mutationAuthority, 0)
+        XCTAssertFalse(env.mode.isExperimental)
+
+        let restarted = VeilKernelRuntimeSelector(defaults: defaults)
+        XCTAssertEqual(restarted.mode, .a10Independent)
+    }
+
+    func testNewInstallDefaultsToA10IndependentGovernance() {
+        let selector = VeilKernelRuntimeSelector(defaults: makeDefaults())
+        XCTAssertEqual(selector.mode, .a10Independent)
+    }
+
     func testModeChangeCreatesNewEnvironmentEpochAndSession() {
         let selector = VeilKernelRuntimeSelector(defaults: makeDefaults())
         let before = selector.snapshot()

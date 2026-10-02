@@ -39,6 +39,37 @@ final class VeilA9ComputeGovernor: ObservableObject {
         recompute()
     }
 
+    /// Accepts the independently produced OMEGA governance decision while reusing the stable
+    /// compute-plan contract consumed by transport, Agent, Vision and game runtimes.
+    func updateFromA10Ultra(_ snapshot: VeilKernelDecisionSnapshot) {
+        let light: VeilA9Light
+        switch snapshot.light {
+        case VeilA9Light.red.title: light = .red
+        case VeilA9Light.yellow.title: light = .yellow
+        default: light = .green
+        }
+        let issues = snapshot.issues.compactMap { issue -> VeilA9Issue? in
+            guard let severity = VeilA9Severity(rawValue: issue.severity) else { return nil }
+            return VeilA9Issue(
+                code: issue.code,
+                severity: severity,
+                source: issue.source,
+                detail: "A10 Ultra Ω independent governance"
+            )
+        }
+        decision = VeilA9Decision(
+            light: light,
+            level: VeilA9Level(rawValue: max(0, min(5, snapshot.level))) ?? .l5Emergency,
+            reasonCode: "A10_OMEGA_\(snapshot.reasonCode)",
+            healthScore: max(0, min(100, snapshot.healthScore)),
+            riskPoints: Double(snapshot.riskBasisPoints) / 100.0,
+            persistenceRuns: max(0, snapshot.persistenceSeconds),
+            issues: issues,
+            latticeIndex: max(0, min(143, snapshot.latticeCell))
+        )
+        recompute()
+    }
+
     func setFocus(_ focus: AgentComputeFocus) {
         guard self.focus != focus else { return }
         self.focus = focus
@@ -81,7 +112,7 @@ final class VeilA9ComputeGovernor: ObservableObject {
 
     func report() -> String {
         [
-            "VeilLink A9 Compute Governor",
+            "VeilLink Compute Governor",
             "Mode: \(plan.mode.title)",
             "Focus: \(plan.focus.title)",
             "Foreground: \(foregroundActive ? "yes" : "no")",
