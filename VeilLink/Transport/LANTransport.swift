@@ -28,6 +28,49 @@ enum LANDataPlanePolicy {
     // pipeline without inflating iPhone 7 memory or changing Wire Protocol v4.
     static let attachmentBurstWindow = 4
 
+    // Large attachments must leave room for checkpoints, acknowledgements and live audio.
+    static let controlReserveFrames = 8
+    static let controlReserveBytes = 256 * 1_024
+    static let interactiveReserveFrames = 24
+    static let interactiveReserveBytes = 1 * 1_024 * 1_024
+
+    // If Network.framework reports no send progress for this long, recycle the path so the
+    // secure session can fall back to BLE and Bonjour can establish a fresh fast path.
+    static let sendStallTimeout: TimeInterval = 12
+
+    static func canEnqueue(
+        priority: BLESendPriority,
+        queuedFrames: Int,
+        queuedBytes: Int,
+        inFlightFrames: Int,
+        inFlightBytes: Int,
+        additionalBytes: Int,
+        maximumFrames: Int,
+        maximumBytes: Int
+    ) -> Bool {
+        guard additionalBytes > 0, maximumFrames > 0, maximumBytes > 0 else { return false }
+
+        let reservedFrames: Int
+        let reservedBytes: Int
+        switch priority {
+        case .control:
+            reservedFrames = 0
+            reservedBytes = 0
+        case .realtime:
+            reservedFrames = controlReserveFrames
+            reservedBytes = controlReserveBytes
+        case .bulk:
+            reservedFrames = interactiveReserveFrames
+            reservedBytes = interactiveReserveBytes
+        }
+
+        let frameBudget = max(1, maximumFrames - min(reservedFrames, maximumFrames - 1))
+        let byteBudget = max(1, maximumBytes - min(reservedBytes, maximumBytes - 1))
+        let totalFrames = queuedFrames + inFlightFrames + 1
+        let totalBytes = queuedBytes + inFlightBytes + additionalBytes
+        return totalFrames <= frameBudget && totalBytes <= byteBudget
+    }
+
     static func reconnectDelay(attempt: Int) -> TimeInterval {
         let schedule: [TimeInterval] = [0.35, 0.80, 1.50, 3.0, 5.0]
         return schedule[min(max(attempt, 0), schedule.count - 1)]
@@ -153,6 +196,8 @@ private final class LANLink {
     var isReady = false
     var inFlightSends = 0
     var inFlightBytes = 0
+    var sendProgressGeneration: UInt64 = 0
+    var sendStallWorkItem: DispatchWorkItem?
 
     init(id: UUID, connection: NWConnection, role: LANTurboRole, endpointKey: String) {
         self.id = id
@@ -252,8 +297,16 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
         queue.sync {
             guard running, let link = links[transportID], link.isReady else { return .temporarilyUnavailable }
             guard let frame = try? LANFrameCodec.encode(payload) else { return .unsupportedLink }
-            guard link.outbound.pendingCount + 1 <= maximumQueuedFrames,
-                  link.outbound.pendingBytes + frame.count <= maximumQueuedBytes else {
+            guard LANDataPlanePolicy.canEnqueue(
+                priority: priority,
+                queuedFrames: link.outbound.pendingCount,
+                queuedBytes: link.outbound.pendingBytes,
+                inFlightFrames: link.inFlightSends,
+                inFlightBytes: link.inFlightBytes,
+                additionalBytes: frame.count,
+                maximumFrames: maximumQueuedFrames,
+                maximumBytes: maximumQueuedBytes
+            ) else {
                 return .temporarilyUnavailable
             }
             link.outbound.append(frame, priority: priority)
@@ -320,7 +373,10 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
         listener?.cancel()
         listener = nil
         let ids = Array(links.keys)
-        for link in links.values { link.connection.cancel() }
+        for link in links.values {
+            link.sendStallWorkItem?.cancel()
+            link.connection.cancel()
+        }
         links.removeAll()
         endpointToLink.removeAll()
         discoveredEndpoints.removeAll()
@@ -486,6 +542,8 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
             let sentBytes = frame.count
             link.connection.send(content: frame, completion: .contentProcessed { [weak self] error in
                 guard let self, let current = self.links[link.id], current === link else { return }
+                current.sendStallWorkItem?.cancel()
+                current.sendStallWorkItem = nil
                 current.inFlightSends = max(0, current.inFlightSends - 1)
                 current.inFlightBytes = max(0, current.inFlightBytes - sentBytes)
                 if error != nil {
@@ -498,10 +556,30 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
                 self.publishSnapshotsLocked()
             })
         }
+        armSendStallWatchdogLocked(link)
+    }
+
+    private func armSendStallWatchdogLocked(_ link: LANLink) {
+        guard link.inFlightSends > 0, link.sendStallWorkItem == nil else { return }
+        link.sendProgressGeneration &+= 1
+        let generation = link.sendProgressGeneration
+
+        let item = DispatchWorkItem { [weak self, weak link] in
+            guard let self, let link,
+                  let current = self.links[link.id], current === link,
+                  current.sendProgressGeneration == generation,
+                  current.inFlightSends > 0 else { return }
+            current.connection.cancel()
+            self.removeLinkLocked(current.id)
+        }
+        link.sendStallWorkItem = item
+        queue.asyncAfter(deadline: .now() + LANDataPlanePolicy.sendStallTimeout, execute: item)
     }
 
     private func removeLinkLocked(_ id: UUID) {
         guard let link = links.removeValue(forKey: id) else { return }
+        link.sendStallWorkItem?.cancel()
+        link.sendStallWorkItem = nil
         if endpointToLink[link.endpointKey] == id { endpointToLink.removeValue(forKey: link.endpointKey) }
         if link.role == .outgoing { scheduleReconnectLocked(endpointKey: link.endpointKey) }
         publishSnapshotsLocked()
