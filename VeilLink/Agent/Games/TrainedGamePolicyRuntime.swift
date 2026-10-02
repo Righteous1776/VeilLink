@@ -163,7 +163,7 @@ struct TrainedGamePolicyRuntime: Sendable {
         case .gomoku: return 0
         case .xiangqi: return 1
         case .ludo: return 2
-        case .tactical: return nil
+        case .tactical, .artillery, .lightTrail, .magneticHockey: return nil
         }
     }
 

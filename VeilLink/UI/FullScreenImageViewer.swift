@@ -10,6 +10,7 @@ struct FullScreenImageViewer: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     @State private var image: UIImage
     @State private var isLoadingLargeImage = false
@@ -150,10 +151,10 @@ struct FullScreenImageViewer: View {
                 if primarilyVertical && value.translation.height > 120 {
                     dismiss()
                 } else {
-                    if reduceMotion {
+                    if motionReduced {
                         dismissDrag = 0
                     } else {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) { dismissDrag = 0 }
+                        withAnimation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion)) { dismissDrag = 0 }
                     }
                 }
             }
@@ -170,7 +171,7 @@ struct FullScreenImageViewer: View {
                 committedOffset = .zero
                 dismissDrag = 0
             }
-            if reduceMotion { change() } else { withAnimation(.easeOut(duration: 0.20), change) }
+            if motionReduced { change() } else { withAnimation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion), change) }
         }
     }
 
@@ -182,8 +183,8 @@ struct FullScreenImageViewer: View {
             committedOffset = .zero
             dismissDrag = 0
         }
-        if animated && !reduceMotion {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.88), change)
+        if animated && !motionReduced {
+            withAnimation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), change)
         } else {
             change()
         }
@@ -191,7 +192,7 @@ struct FullScreenImageViewer: View {
 
     private func toggleControls() {
         let change = { controlsVisible.toggle() }
-        if reduceMotion { change() } else { withAnimation(.easeOut(duration: 0.16), change) }
+        if motionReduced { change() } else { withAnimation(VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion), change) }
     }
 
     private func loadLargeImage() {

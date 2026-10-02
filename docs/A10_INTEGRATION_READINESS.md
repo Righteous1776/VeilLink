@@ -1,5 +1,7 @@
 # VeilLink A10 Integration Readiness — I6
 
+> Historical I6 snapshot. This is not the current runtime status. See `CHECKPOINT_CURRENT.md` and `A10UltraOmega/FORMAL_INDEPENDENT_GOVERNANCE_V1.md` for the current A10 Ultra Ω governance-only approval and M5 shadow boundary.
+
 ## 状态
 `A10_INTEGRATION_READY` / **A10 对接准备 · 个性化适配阶段**。
 

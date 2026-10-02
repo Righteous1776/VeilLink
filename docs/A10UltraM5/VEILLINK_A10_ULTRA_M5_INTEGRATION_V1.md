@@ -29,7 +29,7 @@ The original Linux/Python host is not embedded in the app. VeilLink carries:
 - a portable C implementation of M5 reasoner, M5 RNN step, and the source-compatible INT8 dynamic-activation M4 predictor path;
 - Swift tokenizer/domain/router/render/provenance glue.
 
-Local-host differential evidence in `I12_NATIVE_DIFFERENTIAL.json` compares this new portable C layer with the pristine A10 Ultra Ω native operators for 10,000 random cases per operator, covering M5 Reasoner, M5 RNN, VeilLink M4 INT8 and SQLite M4 INT8. `I12_SPIRIT_SEMANTIC_DIFFERENTIAL.json` additionally validates 2,000 randomized end-to-end Spirit responses (domain routing + state merge + generation + rendering) with zero mismatches.
+The repository-retained `M5_NATIVE_LANGUAGE_DIFFERENTIAL_10K.json` records 10,000 local-host cases for the M5 reasoner/RNN path, with maximum absolute errors below its declared tolerances. It does not provide retained evidence for a 10,000-case M4 comparison or a 2,000-case end-to-end Spirit differential, so those claims are not used as promotion evidence.
 
 ## Governance boundary
 

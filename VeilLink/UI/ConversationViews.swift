@@ -255,7 +255,7 @@ struct ChatView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var usesReducedInteractionMotion: Bool {
-        reduceMotion || VeilDevicePerformance.current.transferVisualComplexity != .full
+        VeilMotionPolicy.quality(reduceMotionRequested: reduceMotion) != .high
     }
 
     private var visibleMessages: [ChatMessage] {
@@ -1119,7 +1119,7 @@ private struct EncryptedImageView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var usesReducedImageMotion: Bool {
-        reduceMotion || VeilDevicePerformance.current.transferVisualComplexity != .full
+        VeilMotionPolicy.quality(reduceMotionRequested: reduceMotion) != .high
     }
 
     private var progress: Double {
@@ -1282,7 +1282,7 @@ private struct EncryptedImageView: View {
                 revealCompletedImage = true
                 completionPulse = true
             } else {
-                withAnimation(.spring(response: 0.30, dampingFraction: 0.84)) {
+                withAnimation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion)) {
                     revealCompletedImage = true
                 }
                 withAnimation(.easeOut(duration: 0.58)) {

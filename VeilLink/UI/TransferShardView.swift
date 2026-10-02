@@ -76,10 +76,11 @@ struct TransferShardView: View {
 
     private var usesMinimalRendering: Bool {
         VeilDevicePerformance.current.transferVisualComplexity == .minimal
+            && VeilMotionPolicy.quality(reduceMotionRequested: reduceMotion) != .high
     }
 
     private var usesLowCostRendering: Bool {
-        reduceMotion || (VeilRenderProfile.usesLegacyCompositorPath && !VeilPerformanceOverrides.forceFullVisualEffects) || VeilDevicePerformance.current.transferVisualComplexity != .full
+        VeilMotionPolicy.quality(reduceMotionRequested: reduceMotion) != .high
     }
 
     private var visualProgress: Double {

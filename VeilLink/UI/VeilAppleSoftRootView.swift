@@ -63,6 +63,7 @@ private struct VeilAppleSoftPhoneRoot: View {
 private struct VeilAppleSoftDock: View {
     @ObservedObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     var body: some View {
         VeilPlatformGlassCluster(spacing: 9) {
@@ -71,7 +72,7 @@ private struct VeilAppleSoftDock: View {
                     let selected = model.selectedSection == section
                     Button {
                         model.haptics.selection()
-                        withAnimation(reduceMotion ? nil : .interactiveSpring(response: 0.30, dampingFraction: 0.82, blendDuration: 0.06)) {
+                        withAnimation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion)) {
                             model.selectedSection = section
                         }
                     } label: {
@@ -83,7 +84,7 @@ private struct VeilAppleSoftDock: View {
                                 Image(systemName: section.icon)
                                     .font(.system(size: 15, weight: selected ? .semibold : .medium))
                                     .foregroundColor(selected ? VeilTheme.goldBright : VeilTheme.secondaryText)
-                                    .scaleEffect(selected && !reduceMotion ? 1.04 : 1)
+                                    .scaleEffect(selected && !motionReduced ? 1.04 : 1)
                             }
                             Text(section.rawValue)
                                 .font(.system(size: 9.5, weight: selected ? .semibold : .medium, design: .rounded))
@@ -119,9 +120,9 @@ private struct VeilAppleDockPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.965 : 1)
+            .scaleEffect(configuration.isPressed && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? 0.965 : 1)
             .opacity(configuration.isPressed ? 0.78 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: configuration.isPressed)
     }
 }
 

@@ -78,6 +78,36 @@ final class PerformanceOverrideStore: @unchecked Sendable {
 }
 
 enum PerformanceOverridePolicy {
+    enum TransientMotionQuality: Equatable {
+        case reduced
+        case efficient
+        case high
+    }
+
+    /// Resolve transient UI motion in one place. Low-power hardware keeps a cheap,
+    /// short animation instead of losing all state continuity. Accessibility Reduce
+    /// Motion remains authoritative unless the owner explicitly arms the God-mode
+    /// full-visual override.
+    static func transientMotionQuality(
+        reduceMotionEnabled: Bool,
+        visualComplexity: TransferVisualComplexity,
+        snapshot: PerformanceOverrideSnapshot
+    ) -> TransientMotionQuality {
+        if snapshot.isEnabled && snapshot.forceFullVisualEffects { return .high }
+        if reduceMotionEnabled { return .reduced }
+        return visualComplexity == .full ? .high : .efficient
+    }
+
+    static func allowsPersistentMotion(
+        baseAllows: Bool,
+        usesLegacyCompositor: Bool,
+        runtimeConstrained: Bool,
+        snapshot: PerformanceOverrideSnapshot
+    ) -> Bool {
+        if snapshot.isEnabled { return snapshot.allowPersistentAnimations }
+        return baseAllows && !usesLegacyCompositor && !runtimeConstrained
+    }
+
     static func effectiveProfile(
         base: DevicePerformanceProfile,
         snapshot: PerformanceOverrideSnapshot

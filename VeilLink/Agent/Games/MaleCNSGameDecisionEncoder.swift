@@ -68,7 +68,7 @@ enum MaleCNSGameDecisionEncoder {
                 after == LudoState.finishProgress ? 1 : 0, 1
             ]
 
-        case .tactical:
+        case .tactical, .artillery, .lightTrail, .magneticHockey:
             return nil
         }
     }
@@ -80,7 +80,7 @@ enum MaleCNSGameDecisionEncoder {
         case .gomoku: gameIndex = 0
         case .xiangqi: gameIndex = 1
         case .ludo: gameIndex = 2
-        case .tactical: return nil
+        case .tactical, .artillery, .lightTrail, .magneticHockey: return nil
         }
         let phase = (gameIndex + 1) * 0.37
         let offsets: [Float] = [0.05, -0.03, 0.04, -0.02, 0.03, -0.04, 0.02, -0.01]

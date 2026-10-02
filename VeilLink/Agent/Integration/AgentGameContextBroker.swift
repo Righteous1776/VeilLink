@@ -32,6 +32,15 @@ final class AgentGameContextBroker: ObservableObject {
         let localPlayer = session.localPlayer
 
         guard let adapter = Self.adapter(for: session) else {
+            let note: String
+            switch session.game {
+            case .tactical:
+                note = "三国兵棋提供局面摘要；单机对局由独立离线 TacticalBot 策略驱动。"
+            case .artillery, .lightTrail, .magneticHockey:
+                note = "2D 游戏提供只读局面摘要；Agent 不注入动作，单机对局由专用离线规则 Bot 驱动。"
+            case .gomoku, .xiangqi, .ludo:
+                note = "当前局面暂不可编码；Agent 不注入或执行动作。"
+            }
             context = AgentGameContext(
                 capturedAt: capturedAt,
                 sessionID: session.id,
@@ -40,14 +49,14 @@ final class AgentGameContextBroker: ObservableObject {
                 conversationTitle: conversationTitle,
                 peerIdentityID: peerIdentityID,
                 status: status,
-                stateHash: "tactical:\(session.id):\(session.moveCount):\(status)",
+                stateHash: "\(session.game.rawValue):\(session.id):\(session.moveCount):\(status)",
                 turn: session.moveCount,
                 localPlayer: localPlayer.rawValue,
                 isLocalTurn: session.isLocalTurn,
                 policyMode: "high-level-only",
                 stateDescription: Self.stateDescription(for: session),
                 recommendations: [],
-                note: "三国兵棋提供局面摘要；单机对局由独立离线 TacticalBot 策略驱动。",
+                note: note,
                 maleCNS: nil
             )
             return
@@ -262,7 +271,7 @@ final class AgentGameContextBroker: ObservableObject {
                 )
             }
 
-        case .tactical:
+        case .tactical, .artillery, .lightTrail, .magneticHockey:
             break
         }
         _ = conversationTitle
@@ -320,7 +329,7 @@ final class AgentGameContextBroker: ObservableObject {
         case .ludo:
             guard let state = session.ludo else { return nil }
             return LudoAgentAdapter(state: state, actor: session.localPlayer, sessionID: session.id)
-        case .tactical:
+        case .tactical, .artillery, .lightTrail, .magneticHockey:
             return nil
         }
     }
@@ -370,6 +379,30 @@ final class AgentGameContextBroker: ObservableObject {
             return "own_progress=[\(own)]; opponent_progress=[\(opp)]; next_dice=\(state.expectedDice(sessionID: session.id)); legal_local_pieces=[\(legal)]"
         case .tactical:
             return "tactical_turn=\(session.moveCount); native_bot=dedicated_local_policy_v1; explanation_only_in_chat"
+        case .artillery:
+            guard let state = session.artillery else { return "artillery_state=missing" }
+            let ownHealth = state.health(for: session.localPlayer)
+            let opponentHealth = state.health(for: session.localPlayer.opponent)
+            let wind = ArtilleryState.wind(sessionID: session.id, turn: state.turn)
+            let lastShot = state.lastShot.map {
+                "angle=\($0.angle),power=\($0.power),damage=\($0.damage)"
+            } ?? "none"
+            return "own_health=\(ownHealth); opponent_health=\(opponentHealth); wind=\(wind); turn=\(state.turn); last_shot=\(lastShot)"
+        case .lightTrail:
+            guard let state = session.lightTrail else { return "light_trail_state=missing" }
+            let local = session.localPlayer
+            let obstacles = LightTrailState.obstacleLanes(sessionID: session.id, round: state.round)
+                .sorted().map(String.init).joined(separator: ",")
+            let energyLane = LightTrailState.energyLane(sessionID: session.id, round: state.round)
+            return "lane=\(state.lane(for: local)); shield=\(state.shield(for: local)); energy=\(state.energy(for: local)); round=\(state.round); obstacles=[\(obstacles)]; energy_lane=\(energyLane)"
+        case .magneticHockey:
+            guard let state = session.magneticHockey else { return "magnetic_hockey_state=missing" }
+            let local = session.localPlayer
+            let polarity = MagneticHockeyState.fieldPolarity(sessionID: session.id, turn: state.turn)
+            let lastShot = state.lastShot.map {
+                "angle=\($0.move.angle),power=\($0.move.power),bounces=\($0.wallBounces)"
+            } ?? "none"
+            return "own_score=\(state.score(for: local)); opponent_score=\(state.score(for: local.opponent)); puck=(\(state.puckPosition.x),\(state.puckPosition.y)); polarity=\(polarity); turn=\(state.turn); last_shot=\(lastShot)"
         }
     }
 
@@ -388,7 +421,7 @@ final class AgentGameContextBroker: ObservableObject {
             if let piece = candidate.metadata["piece"].flatMap(Int.init) {
                 return piece < 0 ? "无合法棋子，跳过" : "移动第 \(piece + 1) 枚棋子"
             }
-        case .tactical:
+        case .tactical, .artillery, .lightTrail, .magneticHockey:
             break
         }
         return candidate.actionID
@@ -406,7 +439,7 @@ final class AgentGameContextBroker: ObservableObject {
         case .ludo:
             guard let piece = candidate.metadata["piece"].flatMap(Int.init) else { return nil }
             return .ludo(piece: piece)
-        case .tactical:
+        case .tactical, .artillery, .lightTrail, .magneticHockey:
             return nil
         }
     }

@@ -66,7 +66,7 @@ struct VeilPhysicalButtonStyle: ButtonStyle {
                 x: 0,
                 y: VeilMotionPolicy.allowsFullSpatialEffects ? (configuration.isPressed ? 1 : 5) : 0
             )
-            .animation(reduceMotion ? nil : VeilMotionPolicy.spring, value: configuration.isPressed)
+            .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: configuration.isPressed)
     }
 }
 

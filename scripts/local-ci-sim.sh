@@ -53,6 +53,8 @@ pass "swiftc -parse ${#SWIFT_FILES[@]} Swift files"
 swiftc -typecheck \
     VeilLink/Core/Models.swift \
     VeilLink/Core/MessageTextFeatures.swift \
+    VeilLink/Core/ArcadeGames.swift \
+    VeilLink/Core/MagneticHockeyGame.swift \
     VeilLink/Core/MiniGames.swift \
     VeilLink/Core/TacticalGame.swift \
     VeilLink/Core/RenderCompatibilityPolicy.swift \
@@ -109,6 +111,9 @@ precondition(!AgentTokenStream.chunks(text: "VeilLink灵核", targetCharacters: 
 precondition(AgentGameRegistry.trainingEnabledKinds == [.gomoku, .xiangqi, .ludo])
 precondition(!AgentGameRegistry.isTrainingEnabled(.tactical))
 precondition(AgentGameRegistry.hasDedicatedLocalPolicy(.tactical))
+precondition(AgentGameRegistry.hasDedicatedLocalPolicy(.artillery))
+precondition(AgentGameRegistry.hasDedicatedLocalPolicy(.lightTrail))
+precondition(AgentGameRegistry.hasDedicatedLocalPolicy(.magneticHockey))
 let a9Green = VeilA9Packet(light: .green, p0: 0, p1: 0, p2: 0, p3: 0, riskBP: 0, persistenceRuns: 0, blocker: false, healthBP: 1_000, issues: [])
 precondition(VeilA9Lattice.cells.count == 144)
 precondition(VeilA9Lattice.decide(a9Green).level == .l0Observe)
@@ -218,6 +223,21 @@ precondition(tactical.apply(from: 55, to: 46, actor: .host, sessionID: tacticalS
 precondition(tactical.turn == 1 && tactical.currentPlayer == .host && tactical.ordersRemaining == 1)
 precondition(tactical.apply(from: nil, to: nil, actor: .host, sessionID: tacticalSession))
 precondition(tactical.turn == 2 && tactical.currentPlayer == .guest && tactical.ordersRemaining == TacticalState.ordersPerActivation)
+
+let arcadeSession = "00000000-0000-0000-0000-000000000002"
+var artillery = ArtilleryState()
+let artilleryBotShot = ArtilleryBot.chooseShot(in: artillery, actor: .host, sessionID: arcadeSession)
+precondition(artilleryBotShot != nil)
+precondition(artillery.apply(angle: artilleryBotShot!.angle, power: artilleryBotShot!.power, actor: .host, sessionID: arcadeSession))
+precondition(artillery.turn == 1 && artillery.currentPlayer == .guest)
+var lightTrail = LightTrailState()
+let trailShift = LightTrailBot.chooseShift(in: lightTrail, actor: .host, sessionID: arcadeSession)
+precondition(trailShift != nil)
+precondition(lightTrail.apply(shift: trailShift!, actor: .host, sessionID: arcadeSession))
+precondition(lightTrail.turn == 1 && lightTrail.currentPlayer == .guest)
+var magneticHockey = MagneticHockeyState()
+precondition(magneticHockey.apply(angle: 0, power: 100, actor: .host, sessionID: arcadeSession))
+precondition(magneticHockey.hostScore == 1 && magneticHockey.currentPlayer == .guest)
 
 let conversationID = UUID().uuidString
 let invite = MiniGamePacket(game: .gomoku, command: .invite, createdAt: Date(timeIntervalSince1970: 10))
@@ -350,6 +370,8 @@ SWIFT
 swiftc \
     VeilLink/Core/Models.swift \
     VeilLink/Core/MessageTextFeatures.swift \
+    VeilLink/Core/ArcadeGames.swift \
+    VeilLink/Core/MagneticHockeyGame.swift \
     VeilLink/Core/MiniGames.swift \
     VeilLink/Core/TacticalGame.swift \
     VeilLink/Core/RenderCompatibilityPolicy.swift \
@@ -938,8 +960,8 @@ settings=Path('VeilLink/UI/SettingsView.swift').read_text(encoding='utf-8')
 adaptive=Path('VeilLink/UI/AdaptiveRootView.swift').read_text(encoding='utf-8')
 conversation=Path('VeilLink/UI/ConversationViews.swift').read_text(encoding='utf-8')
 assert 'RenderCompatibilityPolicy.shouldUseLegacyCompositor' in theme
-assert 'guard active, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }' in theme
-assert 'guard isRunning, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }' in nearby
+assert 'guard active, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }' in theme
+assert 'guard isRunning, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }' in nearby
 assert 'VeilLinkTrace(active: peer.trustState == .awaitingConfirmation, width: 30)' in nearby
 assert 'VeilLinkTrace(active: true, width: 34)' not in settings
 assert 'VeilLinkTrace(active: true, width: 34)' not in adaptive
@@ -1096,13 +1118,15 @@ assert len(policy['featureOrder']) == len(policy['weights']) == 12
 assert 'static let cells' in tactical_render and 'static let terrainSegments' in tactical_render
 assert 'displayCenter(for layout:' in tactical_render
 assert 'TacticalLocalRenderCache.warmUp()' in app_entry
-for label in ['安全密码', '文本指纹', '临时二维码', '链路仪表']:
+for label in ['安全密码', '文本指纹', '临时二维码', '链路仪表', 'JSON 工坊', 'Base64', 'URL 编码', '时间戳', 'UUID 批量', '文本清理', '颜色实验室', '随机决策', '摩斯电码']:
     assert label in tool_center
 assert 'SystemRandomNumberGenerator' in tool_engine and 'SHA256.hash' in tool_engine
 assert 'LazyVGrid' in tool_center and 'minimum: 138' in tool_center
 assert '180_000_000' in tool_center and 'renderTask?.cancel()' in tool_center
 assert '.ultraThinMaterial' in tool_center and 'VeilRenderProfile.allowsExpensiveVisualEffects' in tool_center
-assert 'accessibilityReduceMotion' in tool_center and 'VeilMotion.reveal' in tool_center
+assert 'accessibilityReduceMotion' in tool_center and 'VeilMotionPolicy.animation(.reveal' in tool_center
+assert 'veilToolTextByteLimit = 128 * 1_024' in tool_center
+assert '.localOnly: true' in tool_center and '.expirationDate:' in tool_center
 assert 'VeilToolCenterToolbarLink' in (root/'VeilLink/UI/GameLobbyView.swift').read_text(encoding='utf-8')
 assert 'VeilToolCenterToolbarLink' in (root/'VeilLink/UI/NearbyView.swift').read_text(encoding='utf-8')
 assert 'VeilToolCenterToolbarLink' in (root/'VeilLink/UI/SettingsView.swift').read_text(encoding='utf-8')
@@ -1187,6 +1211,8 @@ if [[ "${VEILLINK_RUN_SLOW_TRAINING_SMOKE:-0}" == "1" ]]; then
     swiftc \
         VeilLink/Core/Models.swift \
         VeilLink/Core/TacticalGame.swift \
+        VeilLink/Core/ArcadeGames.swift \
+        VeilLink/Core/MagneticHockeyGame.swift \
         VeilLink/Core/MiniGames.swift \
         VeilLink/Agent/Games/AgentGameAdapter.swift \
         VeilLink/Agent/Games/GomokuAgentAdapter.swift \

@@ -121,10 +121,10 @@ struct TacticalBoardView: View {
         HStack(spacing: 6) {
             ForEach(TacticalIntelLayer.allCases) { layer in
                 Button {
-                    if reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal {
-                        intelLayer = layer
+                    if let animation = VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion) {
+                        withAnimation(animation) { intelLayer = layer }
                     } else {
-                        withAnimation(.easeOut(duration: 0.14)) { intelLayer = layer }
+                        intelLayer = layer
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -520,10 +520,10 @@ struct TacticalBoardView: View {
 
     private func updateSelection(_ unitID: String?) {
         pendingAttackTargetID = nil
-        if reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal {
-            selectedUnitID = unitID
+        if let animation = VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion) {
+            withAnimation(animation) { selectedUnitID = unitID }
         } else {
-            withAnimation(.easeOut(duration: 0.16)) { selectedUnitID = unitID }
+            selectedUnitID = unitID
         }
     }
 

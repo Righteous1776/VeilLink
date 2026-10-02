@@ -57,6 +57,7 @@ struct OwnerConsoleView: View {
     @ObservedObject var telemetry: DeepTelemetry
     @ObservedObject var stressTest: DeviceStressTestController
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scanProgress: Double = 0
     @State private var diagnosticExportURL: URL?
     @State private var stressExportURL: URL?
@@ -195,7 +196,7 @@ struct OwnerConsoleView: View {
                     .foregroundColor(VeilTheme.goldBright)
             }
 
-            HStack(spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
                 telemetryMetric("磁盘", diagnostics.diskUsageText)
                 telemetryMetric("上限", diagnostics.retentionText)
                 telemetryMetric("会话", diagnostics.runtimeSessionID)
@@ -273,7 +274,7 @@ struct OwnerConsoleView: View {
 
             Divider().background(Color.white.opacity(0.08))
 
-            HStack(spacing: 10) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
                 Button("立即抓取状态") {
                     RuntimeDiagnosticsBridge.shared.recordSemanticAction("owner.telemetry.capture_now")
                     RuntimeDiagnosticsBridge.shared.captureIncidentSnapshot(for: model, reason: "owner.manual_snapshot")
@@ -281,6 +282,7 @@ struct OwnerConsoleView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(VeilTheme.gold)
+                .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("owner.telemetry.capture_now")
 
                 Button("导出黑匣子") {
@@ -295,6 +297,7 @@ struct OwnerConsoleView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(VeilTheme.gold)
+                .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("owner.telemetry.export")
             }
 
@@ -316,10 +319,10 @@ struct OwnerConsoleView: View {
     private func telemetryMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(.caption2, design: .monospaced).weight(.bold))
                 .foregroundColor(VeilTheme.tertiaryText)
             Text(value)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(.caption2, design: .monospaced).weight(.semibold))
                 .foregroundColor(VeilTheme.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
@@ -328,6 +331,7 @@ struct OwnerConsoleView: View {
         .padding(8)
         .background(Color.white.opacity(0.035))
         .clipShape(VeilPanelShape(cut: 6, radius: 4))
+        .accessibilityElement(children: .combine)
     }
 
 
@@ -349,7 +353,7 @@ struct OwnerConsoleView: View {
             }
 
             if stressTest.isRunning {
-                HStack(spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
                     telemetryMetric("循环", String(stressTest.currentCycle))
                     telemetryMetric("步骤", String(stressTest.completedSteps))
                     telemetryMetric("失败", String(stressTest.failedSteps))
@@ -359,7 +363,7 @@ struct OwnerConsoleView: View {
                     .foregroundColor(VeilTheme.secondaryText)
                     .lineLimit(1)
 
-                HStack(spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
                     Button(stressTest.isPaused ? "继续" : "暂停") {
                         stressTest.togglePause()
                     }
@@ -398,7 +402,7 @@ struct OwnerConsoleView: View {
 
             if let summary = stressTest.lastSummary {
                 Divider().background(Color.white.opacity(0.08))
-                HStack(spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
                     telemetryMetric("结果", summary.stopReason)
                     telemetryMetric("P/S/F", "\(summary.passedSteps)/\(summary.skippedSteps)/\(summary.failedSteps)")
                     telemetryMetric("轮数", String(summary.completedCycles))
@@ -496,7 +500,7 @@ struct OwnerConsoleView: View {
             )
             godToggle(
                 "完整动态效果",
-                subtitle: "强制使用 Full motion / 30 碎片完整效果；SE1 与 iPhone 7 也不例外。",
+                subtitle: "强制使用高质量弹簧与 30 碎片完整效果；这是显式本地覆盖，SE1、iPhone 7 与 Reduce Motion 请求也不例外。",
                 isOn: $performanceOverrides.forceFullVisualEffects,
                 enabled: performanceOverrides.isEnabled && canAnimate
             )
@@ -507,7 +511,27 @@ struct OwnerConsoleView: View {
                 enabled: performanceOverrides.isEnabled && canAnimate
             )
 
-            HStack(spacing: 10) {
+            if performanceOverrides.isEnabled && performanceOverrides.forceFullVisualEffects {
+                HStack(spacing: 8) {
+                    Image(systemName: "flame.fill")
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("散热申诉：已驳回")
+                            .font(.caption.weight(.bold))
+                        Text(performanceOverrides.allowPersistentAnimations
+                             ? "像素已获准无限加班，GPU 的律师正在路上。"
+                             : "高质量瞬态动画已强制执行；永动机暂未获保释。")
+                            .font(.caption2)
+                    }
+                    Spacer()
+                }
+                .foregroundColor(VeilTheme.danger)
+                .padding(10)
+                .background(VeilTheme.danger.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
                 Button("把散热交给命运") {
                     RuntimeDiagnosticsBridge.shared.recordSemanticAction("owner.performance.chaos_preset")
                     model.haptics.warning()
@@ -515,6 +539,7 @@ struct OwnerConsoleView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(VeilTheme.danger)
+                .frame(maxWidth: .infinity)
                 .disabled(!canTune || !canAnimate)
 
                 Button("恢复理智") {
@@ -525,6 +550,7 @@ struct OwnerConsoleView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(VeilTheme.gold)
+                .frame(maxWidth: .infinity)
             }
 
             Text("本面板只覆盖本机性能策略。Protocol 4、Schema V8、密钥与消息内容规则不会因此改变。高风险选项会持久化，直到你手动恢复自动策略。")
@@ -565,10 +591,17 @@ struct OwnerConsoleView: View {
     private var easterEggCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("UNIVERSE DECRYPTION").font(.system(.subheadline, design: .monospaced)).foregroundColor(VeilTheme.gold)
-            ProgressView(value: scanProgress).tint(VeilTheme.gold)
+            ProgressView(value: scanProgress)
+                .tint(VeilTheme.gold)
+                .accessibilityLabel("宇宙解密进度")
+                .accessibilityValue("\(Int(scanProgress * 100))%")
             Button("尝试解密宇宙") {
                 RuntimeDiagnosticsBridge.shared.recordSemanticAction("owner.easter_egg.universe")
-                withAnimation(.easeInOut(duration: 1.8)) { scanProgress = 1 }
+                if let animation = VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion) {
+                    withAnimation(animation) { scanProgress = 1 }
+                } else {
+                    scanProgress = 1
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                     model.alertMessage = "权限不足：宇宙启用了端到端加密。"
                     scanProgress = 0
@@ -584,14 +617,19 @@ struct OwnerConsoleView: View {
         let enabled = ownerMode.isAuthorized(for: capability)
         return Label(title, systemImage: enabled ? "checkmark.circle" : "minus.circle")
             .foregroundColor(enabled ? VeilTheme.text : VeilTheme.secondaryText)
+            .accessibilityValue(enabled ? "已授权" : "未授权")
     }
 
     private func consoleRow(_ name: String, value: String) -> some View {
         HStack {
             Text(name)
             Spacer()
-            Text(value).foregroundColor(.green).lineLimit(1)
+            Text(value)
+                .foregroundColor(.green)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
         }
         .font(.system(.caption, design: .monospaced))
+        .accessibilityElement(children: .combine)
     }
 }

@@ -53,7 +53,7 @@ struct GameLobbyView: View {
                 Spacer()
             }
 
-            HStack(spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
                 lobbyMetric("单机", "规则 Bot")
                 lobbyMetric("模型", "不内置")
                 lobbyMetric("联网", "不需要")
@@ -66,7 +66,22 @@ struct GameLobbyView: View {
 
     private var singlePlayerSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("单机 · 本地电脑", subtitle: "传统游戏搜索与规则算法，不依赖神经模型")
+            sectionTitle("单机 · 本地电脑", subtitle: "棋盘策略 + 2D 物理与赛道玩法，全部离线运行")
+            NavigationLink(destination: LocalAIGameView(model: model, game: .artillery)) {
+                gameRow(.artillery, detail: "可视化弹道 · 确定性风力 · 本地参数搜索 Bot", enabled: true)
+            }
+            .buttonStyle(VeilPressStyle())
+            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+            NavigationLink(destination: LocalAIGameView(model: model, game: .lightTrail)) {
+                gameRow(.lightTrail, detail: "动态赛道 · 闪避与能量 · 本地预判 Bot", enabled: true)
+            }
+            .buttonStyle(VeilPressStyle())
+            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+            NavigationLink(destination: LocalAIGameView(model: model, game: .magneticHockey)) {
+                gameRow(.magneticHockey, detail: "固定步物理 · 磁场偏转 · 三球决胜", enabled: true)
+            }
+            .buttonStyle(VeilPressStyle())
+            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
                 gameRow(.gomoku, detail: "你执黑先手 · 威胁识别 + 候选搜索 + 规则校验", enabled: true)
             }
@@ -115,7 +130,7 @@ struct GameLobbyView: View {
                                 Text(conversation.title)
                                     .font(.headline)
                                     .foregroundColor(VeilTheme.text)
-                                Text("五子棋 · 象棋 · 飞行棋 · 三国兵棋")
+                                Text("炮战 · 光轨 · 磁轨冰球 · 棋类 · 兵棋")
                                     .font(.caption)
                                     .foregroundColor(VeilTheme.secondaryText)
                             }
@@ -172,17 +187,20 @@ struct GameLobbyView: View {
         .background(VeilTheme.elevated.opacity(enabled ? 0.86 : 0.52))
         .clipShape(VeilPanelShape(cut: 12, radius: 7))
         .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(enabled ? "可以开始人机对局" : "尚未开放")
     }
 
     private func lobbyMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(VeilTheme.tertiaryText)
-            Text(value).font(.system(size: 10.5, weight: .semibold, design: .monospaced)).foregroundColor(VeilTheme.text).lineLimit(1).minimumScaleFactor(0.78)
+            Text(title).font(.system(.caption2, design: .monospaced).weight(.bold)).foregroundColor(VeilTheme.tertiaryText)
+            Text(value).font(.system(.caption2, design: .monospaced).weight(.semibold)).foregroundColor(VeilTheme.text).lineLimit(1).minimumScaleFactor(0.78)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8).padding(.vertical, 7)
         .background(Color.white.opacity(0.035))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -260,9 +278,13 @@ struct LocalAIGameView: View {
                         .foregroundColor(VeilTheme.secondaryText)
                 }
                 Spacer()
-                if controller.isAIThinking { ProgressView().controlSize(.small) }
+                if controller.isAIThinking {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("本地电脑正在思考")
+                }
             }
-            HStack(spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
                 statusMetric("引擎", controller.lastDecisionMode)
                 statusMetric("联网", "不需要")
                 statusMetric("耗时", controller.lastDecisionMilliseconds.map { "\($0)ms" } ?? "--")
@@ -316,6 +338,36 @@ struct LocalAIGameView: View {
                     model.haptics.selection()
                 }
             )
+        case .artillery:
+            ArtilleryGameView(
+                state: controller.artillery,
+                sessionID: controller.sessionID,
+                localPlayer: .host,
+                enabled: controller.canHumanAct
+            ) { angle, power in
+                controller.humanArtilleryShot(angle: angle, power: power)
+                model.haptics.impact()
+            }
+        case .lightTrail:
+            LightTrailGameView(
+                state: controller.lightTrail,
+                sessionID: controller.sessionID,
+                localPlayer: .host,
+                enabled: controller.canHumanAct
+            ) { shift in
+                controller.humanLightTrailShift(shift)
+                model.haptics.selection()
+            }
+        case .magneticHockey:
+            MagneticHockeyGameView(
+                state: controller.magneticHockey,
+                sessionID: controller.sessionID,
+                localPlayer: .host,
+                enabled: controller.canHumanAct
+            ) { angle, power in
+                controller.humanMagneticHockeyShot(angle: angle, power: power)
+                model.haptics.impact()
+            }
         }
     }
 
@@ -337,7 +389,7 @@ struct LocalAIGameView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 6)], spacing: 6) {
                     ForEach(report.medals, id: \.self) { medal in
                         Label(medal, systemImage: "medal.fill")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.caption2.weight(.bold))
                             .foregroundColor(VeilTheme.gold)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
@@ -374,10 +426,10 @@ struct LocalAIGameView: View {
                 Menu {
                     ForEach(TacticalBotDifficulty.allCases) { difficulty in
                         Button {
-                            if reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal {
-                                controller.setTacticalDifficulty(difficulty)
+                            if let animation = VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion) {
+                                withAnimation(animation) { controller.setTacticalDifficulty(difficulty) }
                             } else {
-                                withAnimation(VeilMotion.resolve) { controller.setTacticalDifficulty(difficulty) }
+                                controller.setTacticalDifficulty(difficulty)
                             }
                             model.haptics.selection()
                         } label: {
@@ -398,10 +450,10 @@ struct LocalAIGameView: View {
             HStack(spacing: 8) {
                 ForEach(TacticalSoloScenario.allCases) { scenario in
                     Button {
-                        if reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal {
-                            controller.setTacticalScenario(scenario)
+                        if let animation = VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion) {
+                            withAnimation(animation) { controller.setTacticalScenario(scenario) }
                         } else {
-                            withAnimation(VeilMotion.transit) { controller.setTacticalScenario(scenario) }
+                            controller.setTacticalScenario(scenario)
                         }
                         model.haptics.selection()
                     } label: {
@@ -414,6 +466,8 @@ struct LocalAIGameView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityValue(controller.tacticalScenario == scenario ? "已选择" : "未选择")
+                    .accessibilityAddTraits(controller.tacticalScenario == scenario ? .isSelected : [])
                 }
             }
 
@@ -434,17 +488,18 @@ struct LocalAIGameView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
         }
         .veilCard()
-        .animation(reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal ? nil : VeilMotion.reveal, value: controller.tacticalCoachText)
+        .animation(VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion), value: controller.tacticalCoachText)
     }
 
     private func statusMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(VeilTheme.tertiaryText)
-            Text(value).font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundColor(VeilTheme.text).lineLimit(1).minimumScaleFactor(0.65)
+            Text(title).font(.system(.caption2, design: .monospaced).weight(.bold)).foregroundColor(VeilTheme.tertiaryText)
+            Text(value).font(.system(.caption2, design: .monospaced).weight(.semibold)).foregroundColor(VeilTheme.text).lineLimit(1).minimumScaleFactor(0.65)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8).padding(.vertical, 7)
         .background(Color.white.opacity(0.035))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }

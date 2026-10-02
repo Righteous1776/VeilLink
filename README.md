@@ -53,8 +53,10 @@ architecture.
    package dependency, and compiles against an iOS simulator SDK.
 5. Run **Build unsigned IPA** to receive `VeilLink-unsigned.ipa` as an artifact.
 
-The unsigned IPA verifies device compilation but cannot be installed directly on a
-normal iPhone. Installation requires an Apple-issued development/distribution
+The unsigned IPA proves that the specific CI run compiled and packaged an unsigned
+`iphoneos` build; it does not prove installability, real-device runtime behavior or
+BLE/LAN radio performance. It cannot be installed directly on a normal iPhone.
+Installation requires an Apple-issued development/distribution
 certificate and matching provisioning profile. Never commit certificate, profile,
 or private-key files to GitHub; the repository ignores their common extensions.
 
@@ -174,6 +176,8 @@ V0.9.3 connects the A9-governed VeilFly native engine to a versioned MaleCNS-der
 
 These cumulative checkpoints add privacy-safe deep telemetry, repeatable device burn-in diagnostics, embedded SHA-verified VeilFly Core/Lite graphs, the pinned local Qwen/llama.cpp build path, learned MaleCNS readouts, legal-action game reranking and an explicit AI Control Center. Automatic context excludes chat plaintext and secrets; conversation text enters only through an explicit local assistant action. Mutating tools and suggested game moves remain permission-gated, and every game action is still enumerated and validated by the original game engine before execution.
 
+This paragraph records the historical/experimental AI carrier. The default Core target deliberately excludes MaleCNS/Llama runtime sources and their heavy VFLY/ranker assets; those paths require the repository's separate experimental build and validation gates.
+
 ## V0.9.7 Game Hub, local opponents and embedded icon
 
 V0.9.7 promotes **游戏** to a first-class tab between **附近** and **灵核**. The standalone lobby supports offline single-player Gomoku, Xiangqi and Ludo against the bounded local policy, plus the existing nearby E2EE game flow. MaleCNS may rerank only legal candidates when its verified runtime is available; otherwise play falls back to the deterministic baseline policy. 三国兵棋 remains nearby-player only until a dedicated tactical policy passes its own release gate.
@@ -186,6 +190,10 @@ The original 7×9 官渡决战 game now has an offline single-player path: the p
 
 A10 Ultra Ω also gains a formal `A10_ULTRA_INDEPENDENT_GOVERNANCE` mode. OMEGA 96 may independently classify raw host health and author the bounded compute-governance contract, with automatic A9 fallback on runtime failure. Its app mutation authority remains zero. This governance-only approval does not promote the separately verified M5 inference assets, which remain shadow-only with production cutover denied. See `docs/A10UltraOmega/FORMAL_INDEPENDENT_GOVERNANCE_V1.md`.
 
-The Tool Center now includes four install-local utilities alongside E2EE PTT: a cryptographically secure password generator, SHA-256 text fingerprint and UTF-8 metrics, temporary text QR generation, and a live LAN Turbo/BLE link dashboard. Tool inputs are not uploaded or placed into diagnostics; network refresh is limited to VeilLink's own Bonjour/BLE discovery and never performs a port scan.
+The Tool Center now includes thirteen local utilities alongside E2EE PTT: secure passwords, SHA-256/text metrics, temporary QR, LAN/BLE status, JSON formatting, Base64 and URL codecs, Unix/ISO-8601 conversion, batch UUIDs, text cleanup, HEX/RGB conversion, secure random choice/dice and Morse conversion. Tool inputs are not uploaded or placed into diagnostics; network refresh is limited to VeilLink's own Bonjour/BLE discovery and never performs a port scan.
 
 Feature growth is kept compact through a shared cross-entry Tool Center, an adaptive lazy grid, bounded text, debounced/cancelable QR rendering and capped tactical continuation search. Chats, Games, Nearby and Settings all link to the same utility surface without adding another crowded root tab. See `docs/COMPACT_FEATURE_FABRIC_V1.md`.
+
+The Game Hub also adds three code-rendered 2D arcade games in both offline and nearby E2EE modes. **弧光炮战** deterministically rebuilds wind, terrain collision and damage; **光轨突围** synchronizes lane choices against a session-seeded obstacle/energy course; **磁轨冰球** uses fixed-step friction, rebounds and a turn-seeded magnetic field. All three share the same validated rule state between local Bot and encrypted multiplayer, require no runtime assets or new dependency, and remain replayable after reconnect. See `docs/ARCADE_2D_GAMES_V1.md`.
+
+Transient animation now uses one three-tier policy instead of disabling every transition on compact devices: accessibility reduction removes spatial motion, legacy hardware keeps low-cost continuity, and capable devices receive the full spring treatment. Owner Mode keeps its intentionally mischievous God-mode console; the explicit full-visual override can force high-quality transient motion across device and Reduce Motion guards, while persistent loops remain separately armed.

@@ -12,6 +12,7 @@ struct LegalConsentGateView: View {
     let onAccepted: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
     @State private var selectedDocument = 0
     @State private var acknowledgment = ""
     @State private var confirmsPermissions = false
@@ -239,7 +240,7 @@ struct LegalConsentGateView: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(VeilTheme.goldBright)
                         .opacity(isOn.wrappedValue ? 1 : 0)
-                        .scaleEffect(isOn.wrappedValue || reduceMotion ? 1 : 0.88)
+                        .scaleEffect(isOn.wrappedValue || motionReduced ? 1 : 0.88)
                 }
                 .frame(width: 25, height: 25)
                 Text(title)
@@ -251,7 +252,7 @@ struct LegalConsentGateView: View {
             }
         }
         .buttonStyle(VeilPressStyle())
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isOn.wrappedValue)
+        .animation(VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion), value: isOn.wrappedValue)
     }
 
     private func sign() {

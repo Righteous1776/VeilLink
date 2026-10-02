@@ -22,3 +22,9 @@ forbidden from the Core IPA.
 Release invariants are enforced by `scripts/verify-recovery-lineage.py` and
 `scripts/verify-core-release.py`. The app and widget inherit version/build values
 from `project.yml`; no source Info.plist may hardcode V0.9.7 again.
+
+The current development line additionally carries Tactical Solo V1, the compact
+local Tool Center expansion, LAN Turbo hardening, centralized adaptive/God-mode
+motion quality, and three deterministic 2D games (弧光炮战、光轨突围、磁轨冰球) that share their
+rule state across local Bot and nearby encrypted multiplayer. These additions do
+not change Protocol 4, VLGM1 v1 or SQLite Schema V8.
