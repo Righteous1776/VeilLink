@@ -34,6 +34,10 @@ Do not manually start product CI.
 
 Every Inbox PR is checked by the lightweight **Agent Inbox Gate** on `ubuntu-latest`.
 
+The gate has two branch classes:
+- `agent-drop/*` for agent submissions;
+- `admin/*` for Integration Governor governance changes. Admin branches may not write agent submission payloads.
+
 The gate rejects:
 - branches not named `agent-drop/*`;
 - PR titles not starting with `[AGENT-DROP]`;
