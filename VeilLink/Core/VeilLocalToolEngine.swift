@@ -1,3 +1,4 @@
+import CoreFoundation
 import CryptoKit
 import Foundation
 
@@ -63,6 +64,19 @@ struct VeilRGBColor: Equatable, Sendable {
     let red: Int
     let green: Int
     let blue: Int
+}
+
+struct VeilHSLColor: Equatable, Sendable {
+    let hue: Int
+    let saturation: Int
+    let lightness: Int
+}
+
+struct VeilJSONStructure: Equatable, Sendable {
+    let rootType: String
+    let nodeCount: Int
+    let maxDepth: Int
+    let keyCount: Int
 }
 
 enum VeilLocalToolEngine {
@@ -160,6 +174,18 @@ enum VeilLocalToolEngine {
         try serializeJSONObject(jsonObject(text), options: [.sortedKeys])
     }
 
+    static func jsonStructure(_ text: String) throws -> VeilJSONStructure {
+        let root = try jsonObject(text)
+        let summary = inspectJSON(root, depth: 1)
+        return VeilJSONStructure(
+            rootType: jsonTypeName(root),
+            nodeCount: summary.nodes,
+            maxDepth: summary.maxDepth,
+            keyCount: summary.keys
+        )
+    }
+
+
     static func base64EncodeUTF8(_ text: String) -> String {
         Data(text.utf8).base64EncodedString()
     }
@@ -175,6 +201,33 @@ enum VeilLocalToolEngine {
         }
         return text
     }
+
+    static func base64URLEncodeUTF8(_ text: String, padded: Bool = false) -> String {
+        var encoded = Data(text.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+        if !padded {
+            encoded.removeAll { $0 == "=" }
+        }
+        return encoded
+    }
+
+    static func base64URLDecodeUTF8(_ encoded: String) throws -> String {
+        var compact = encoded.filter { !$0.isWhitespace }
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        if compact.isEmpty { return "" }
+        let remainder = compact.count % 4
+        if remainder == 1 {
+            throw VeilLocalToolError.invalidBase64
+        }
+        if remainder > 0 {
+            compact += String(repeating: "=", count: 4 - remainder)
+        }
+        return try base64DecodeUTF8(compact)
+    }
+
 
     static func urlPercentEncode(_ text: String) -> String {
         text.addingPercentEncoding(withAllowedCharacters: urlComponentAllowed) ?? ""
@@ -274,6 +327,38 @@ enum VeilLocalToolEngine {
         return String(format: "#%02X%02X%02X", red, green, blue)
     }
 
+    static func hsl(rgb: VeilRGBColor) -> VeilHSLColor {
+        let r = Double(rgb.red) / 255.0
+        let g = Double(rgb.green) / 255.0
+        let b = Double(rgb.blue) / 255.0
+        let maximum = max(r, g, b)
+        let minimum = min(r, g, b)
+        let delta = maximum - minimum
+        let lightness = (maximum + minimum) / 2.0
+
+        var hue = 0.0
+        var saturation = 0.0
+
+        if delta > 0 {
+            saturation = delta / (1.0 - abs(2.0 * lightness - 1.0))
+            if maximum == r {
+                hue = 60.0 * ((g - b) / delta).truncatingRemainder(dividingBy: 6.0)
+            } else if maximum == g {
+                hue = 60.0 * (((b - r) / delta) + 2.0)
+            } else {
+                hue = 60.0 * (((r - g) / delta) + 4.0)
+            }
+            if hue < 0 { hue += 360.0 }
+        }
+
+        return VeilHSLColor(
+            hue: Int(hue.rounded()),
+            saturation: Int((saturation * 100.0).rounded()),
+            lightness: Int((lightness * 100.0).rounded())
+        )
+    }
+
+
     static func randomChoice<Element>(from choices: [Element]) throws -> Element {
         var generator = SystemRandomNumberGenerator()
         return try randomChoice(from: choices, using: &generator)
@@ -327,6 +412,50 @@ enum VeilLocalToolEngine {
             }
         }
         return output
+    }
+
+    private static func jsonTypeName(_ value: Any) -> String {
+        if value is NSNull { return "NULL" }
+        if value is [String: Any] { return "OBJECT" }
+        if value is [Any] { return "ARRAY" }
+        if value is String { return "STRING" }
+        if let number = value as? NSNumber {
+            return CFGetTypeID(number) == CFBooleanGetTypeID() ? "BOOLEAN" : "NUMBER"
+        }
+        return "VALUE"
+    }
+
+    private static func inspectJSON(
+        _ value: Any,
+        depth: Int
+    ) -> (nodes: Int, maxDepth: Int, keys: Int) {
+        if let dictionary = value as? [String: Any] {
+            var nodes = 1
+            var maxDepth = depth
+            var keys = dictionary.count
+            for child in dictionary.values {
+                let nested = inspectJSON(child, depth: depth + 1)
+                nodes += nested.nodes
+                maxDepth = max(maxDepth, nested.maxDepth)
+                keys += nested.keys
+            }
+            return (nodes, maxDepth, keys)
+        }
+
+        if let array = value as? [Any] {
+            var nodes = 1
+            var maxDepth = depth
+            var keys = 0
+            for child in array {
+                let nested = inspectJSON(child, depth: depth + 1)
+                nodes += nested.nodes
+                maxDepth = max(maxDepth, nested.maxDepth)
+                keys += nested.keys
+            }
+            return (nodes, maxDepth, keys)
+        }
+
+        return (1, depth, 0)
     }
 
     private static func jsonObject(_ text: String) throws -> Any {
