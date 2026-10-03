@@ -230,6 +230,7 @@ def check_tests():
         "XiangqiBotTests.swift",
         "GomokuBotTests.swift",
         "LudoBotTests.swift",
+        "BoardBotDifficultyTests.swift",
         "VeilTalkLiteRuntimeTests.swift",
         "NativeGameBrokerTests.swift",
         "CoreSourceIsolationTests.swift",
