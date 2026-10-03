@@ -976,7 +976,7 @@ private struct VeilCompactToolSurface: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     func veilCompactToolSurface(cornerRadius: CGFloat) -> some View {
         modifier(VeilCompactToolSurface(cornerRadius: cornerRadius))
     }
