@@ -88,44 +88,118 @@ extension TacticalV2 {
             }
 
             let friendlyOccupied = Set(friendly.map(\.cell))
-            var best: (unit: Unit, target: Int, score: Int)?
+            let enemyCommand = enemy.first { $0.kind == .command }
+            let enemySupply = enemy.first { $0.kind == .supply }
+
+            struct Candidate {
+                let unit: Unit
+                let target: Unit
+                let route: RoutePlanV2
+                let score: Int64
+            }
+
+            var best: Candidate?
 
             for unit in friendly {
-                for target in map.neighbors(of: unit.cell) {
-                    if friendlyOccupied.contains(target) { continue }
-                    let distance = enemy
-                        .map { map.distance(target, $0.cell) }
-                        .min() ?? Int.max / 8
-                    let cell = map.cell(target)
-                    let movement = Int(cell?.movementCostMilli ?? 1000)
-                    let roadBonus = cell?.road == true ? -220 : 0
-                    let kindBias: Int
+                // Keep the logistics tail conservative. It may still move when every
+                // combat formation is blocked, but it should not lead the offensive.
+                let targetPreference: [Unit]
+                switch unit.kind {
+                case .cavalry:
+                    targetPreference = [enemySupply, enemyCommand]
+                        .compactMap { $0 } + enemy
+                case .ranged:
+                    targetPreference = enemy.sorted {
+                        map.distance(unit.cell, $0.cell) < map.distance(unit.cell, $1.cell)
+                    }
+                case .infantry:
+                    targetPreference = [enemyCommand, enemySupply]
+                        .compactMap { $0 } + enemy
+                case .command:
+                    targetPreference = [enemyCommand].compactMap { $0 } + enemy
+                case .supply:
+                    targetPreference = [enemySupply].compactMap { $0 } + enemy
+                }
+
+                var seenTargets = Set<String>()
+                for target in targetPreference where seenTargets.insert(target.id).inserted {
+                    var blocked = friendlyOccupied
+                    blocked.remove(unit.cell)
+
+                    guard let route = RoutePlannerV2.plan(
+                        map: map,
+                        from: unit.cell,
+                        to: target.cell,
+                        blocked: blocked,
+                        maxExpandedNodes: 2_048
+                    ), route.cells.count >= 2 else {
+                        continue
+                    }
+
+                    let strategicTargetBonus: Int64
+                    switch target.kind {
+                    case .command: strategicTargetBonus = -85_000
+                    case .supply: strategicTargetBonus = -62_000
+                    case .ranged: strategicTargetBonus = -28_000
+                    case .cavalry: strategicTargetBonus = -24_000
+                    case .infantry: strategicTargetBonus = -20_000
+                    }
+
+                    let roleBias: Int64
                     switch unit.kind {
-                    case .cavalry: kindBias = -90
-                    case .infantry: kindBias = -50
-                    case .ranged: kindBias = -25
-                    case .command: kindBias = 40
-                    case .supply: kindBias = 120
+                    case .cavalry: roleBias = -18_000
+                    case .infantry: roleBias = -11_000
+                    case .ranged: roleBias = -8_000
+                    case .command: roleBias = 8_000
+                    case .supply: roleBias = 26_000
                     }
-                    let score = distance * 10_000 + movement + roadBonus + kindBias + target
-                    if best == nil || score < best!.score {
-                        best = (unit, target, score)
+
+                    let firstStep = route.cells[1]
+                    let roadBonus: Int64 = map.cell(firstStep)?.road == true ? -4_000 : 0
+                    let score = route.totalCostMilli
+                        + strategicTargetBonus
+                        + roleBias
+                        + roadBonus
+                        + Int64(firstStep)
+
+                    let candidate = Candidate(
+                        unit: unit,
+                        target: target,
+                        route: route,
+                        score: score
+                    )
+                    if best == nil || candidate.score < best!.score {
+                        best = candidate
                     }
+
+                    // The first viable preferred target is enough for this formation;
+                    // later fallback targets are intentionally lower priority.
+                    break
                 }
             }
 
-            guard let best else {
+            guard let best, best.route.cells.count >= 2 else {
                 return passOrder(actor: actor, turn: state.simulationTurn)
             }
 
-            let enemyOccupiesTarget = enemy.contains { $0.cell == best.target }
+            let next = best.route.cells[1]
+            let enemyOccupiesNext = enemy.contains { $0.cell == next }
+            let kind: OrderKindV2
+            if enemyOccupiesNext {
+                kind = .attack
+            } else if best.unit.kind == .cavalry && best.target.kind == .supply {
+                kind = .probe
+            } else {
+                kind = .march
+            }
+
             return OrderV2(
-                id: "solo-bot-\(state.simulationTurn)-\(best.unit.id)-\(best.target)",
-                kind: enemyOccupiesTarget ? .attack : .march,
+                id: "solo-bot-\(state.simulationTurn)-\(best.unit.id)-\(next)",
+                kind: kind,
                 actor: actor,
                 issuedTurn: state.simulationTurn,
                 unitID: best.unit.id,
-                routeCells: [UInt16(best.unit.cell), UInt16(best.target)]
+                routeCells: [UInt16(best.unit.cell), UInt16(next)]
             )
         }
 
