@@ -168,7 +168,7 @@ final class MiniGameTests: XCTestCase {
 
     func testLudoCaptureMetadataAndFinishedCountersStayConsistent() {
         let sessionID = UUID().uuidString
-        var state = LudoState()
+        let state = LudoState()
         XCTAssertEqual(state.finishedCount(for: .host), 0)
         XCTAssertEqual(state.finishedCount(for: .guest), 0)
         XCTAssertTrue((1...6).contains(state.expectedDice(sessionID: sessionID)))

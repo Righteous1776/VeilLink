@@ -452,7 +452,7 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
     }
 
     private func scheduleReconnectLocked(endpointKey key: String) {
-        guard running, endpointToLink[key] == nil, let endpoint = discoveredEndpoints[key] else { return }
+        guard running, endpointToLink[key] == nil, discoveredEndpoints[key] != nil else { return }
         reconnectWorkItems.removeValue(forKey: key)?.cancel()
         let attempt = reconnectAttempts[key, default: 0]
         reconnectAttempts[key] = min(attempt + 1, 32)
