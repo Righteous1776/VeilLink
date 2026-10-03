@@ -41,9 +41,9 @@ for needle in [
     if needle not in tools:
         raise SystemExit(f"FAIL Tool Center skeuomorphic invariant missing {needle}")
 
-if re.search(r"(?<![A-Za-z0-9_])Slider\\s*\\(", tools):
+if re.search(r"(?<![A-Za-z0-9_])Slider\s*\(", tools):
     raise SystemExit("FAIL Tool Center regressed to system Slider")
-if re.search(r"(?<![A-Za-z0-9_])Toggle\\s*\\(", tools):
+if re.search(r"(?<![A-Za-z0-9_])Toggle\s*\(", tools):
     raise SystemExit("FAIL Tool Center regressed to system Toggle")
 if "VeilAmbientBackground()" in tools:
     raise SystemExit("FAIL Tool Center regressed to generic ambient background")
