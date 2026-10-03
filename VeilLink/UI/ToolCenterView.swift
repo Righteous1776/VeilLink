@@ -17,6 +17,52 @@ struct VeilToolCenterView: View {
         return q.isEmpty || keywords.lowercased().contains(q)
     }
 
+    private var hasCommsMatches: Bool {
+        matches("二维码 qr 临时 文本 分享")
+        || matches("网络 局域网 lan 蓝牙 ble 链路 诊断")
+    }
+
+    private var hasSecureMatches: Bool {
+        matches("密码 password 随机 安全 生成器")
+        || matches("指纹 hash sha256 文本 校验 摘要")
+        || matches("uuid guid 唯一 标识符 批量")
+        || matches("随机 决策 抽签 骰子 硬币 random dice")
+    }
+
+    private var hasDataMatches: Bool {
+        matches("json 格式化 校验 压缩 pretty minify")
+        || matches("base64 编码 解码 utf8")
+        || matches("url uri 百分号 percent 编码 解码")
+        || matches("文本 清理 去重 排序 空行 trim clean")
+        || matches("摩斯 morse 电码 编码 解码 sos")
+    }
+
+    private var hasLabMatches: Bool {
+        matches("时间戳 timestamp unix iso8601 日期 时间")
+        || matches("颜色 color hex rgb 转换 色块")
+    }
+
+    private var matchedModuleCount: Int {
+        var count = matchesWalkie ? 1 : 0
+        let keywords = [
+            "二维码 qr 临时 文本 分享",
+            "网络 局域网 lan 蓝牙 ble 链路 诊断",
+            "密码 password 随机 安全 生成器",
+            "指纹 hash sha256 文本 校验 摘要",
+            "uuid guid 唯一 标识符 批量",
+            "随机 决策 抽签 骰子 硬币 random dice",
+            "json 格式化 校验 压缩 pretty minify",
+            "base64 编码 解码 utf8",
+            "url uri 百分号 percent 编码 解码",
+            "文本 清理 去重 排序 空行 trim clean",
+            "摩斯 morse 电码 编码 解码 sos",
+            "时间戳 timestamp unix iso8601 日期 时间",
+            "颜色 color hex rgb 转换 色块"
+        ]
+        count += keywords.filter(matches).count
+        return count
+    }
+
     var body: some View {
         VeilStableScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -40,7 +86,7 @@ struct VeilToolCenterView: View {
                     emphasized: true
                 ) {
                     HStack(spacing: 10) {
-                        VeilLCDDisplay(title: "MODULES", value: "13 + PTT")
+                        VeilLCDDisplay(title: "MODULES", value: query.isEmpty ? "13 + PTT" : "\(matchedModuleCount) FOUND")
                             .frame(maxWidth: .infinity)
                         VeilLCDDisplay(title: "MODE", value: "LOCAL")
                             .frame(maxWidth: .infinity)
@@ -98,7 +144,8 @@ struct VeilToolCenterView: View {
                     )
                 }
 
-                VeilInstrumentRackSection(
+                if hasCommsMatches {
+                    VeilInstrumentRackSection(
                     title: "通信与链路",
                     subtitle: "本地分享、无线状态与短距通信。",
                     code: "COMMS"
@@ -111,9 +158,11 @@ struct VeilToolCenterView: View {
                             toolLink("链路仪表", detail: "LAN 与 BLE 速览", icon: "wave.3.right.circle.fill", destination: VeilLinkPulseToolView(model: model))
                         }
                     }
+                    }
                 }
 
-                VeilInstrumentRackSection(
+                if hasSecureMatches {
+                    VeilInstrumentRackSection(
                     title: "安全与身份",
                     subtitle: "随机、安全校验与本地标识生成。",
                     code: "SECURE"
@@ -132,9 +181,11 @@ struct VeilToolCenterView: View {
                             toolLink("随机决策", detail: "抽签 · 硬币 · 多面骰", icon: "die.face.5.fill", destination: VeilRandomDecisionToolView())
                         }
                     }
+                    }
                 }
 
-                VeilInstrumentRackSection(
+                if hasDataMatches {
+                    VeilInstrumentRackSection(
                     title: "数据与文本",
                     subtitle: "编码、清理、格式化与轻量文本处理。",
                     code: "DATA"
@@ -156,9 +207,11 @@ struct VeilToolCenterView: View {
                             toolLink("摩斯电码", detail: "A–Z / 0–9 双向转换", icon: "waveform.path", destination: VeilMorseToolView())
                         }
                     }
+                    }
                 }
 
-                VeilInstrumentRackSection(
+                if hasLabMatches {
+                    VeilInstrumentRackSection(
                     title: "转换与实验",
                     subtitle: "时间、色彩与日常工程转换。",
                     code: "LAB"
@@ -171,8 +224,22 @@ struct VeilToolCenterView: View {
                             toolLink("颜色实验室", detail: "HEX ↔ RGB · 色块预览", icon: "paintpalette.fill", destination: VeilColorLabToolView())
                         }
                     }
+                    }
                 }
-                .animation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion), value: query)
+
+                if matchedModuleCount == 0 {
+                    VeilInstrumentDeck(
+                        title: "未找到本地模块",
+                        subtitle: "换一个关键词；工具不会联网搜索，也不会把查询发出设备。",
+                        symbol: "magnifyingglass"
+                    ) {
+                        VeilLCDDisplay(title: "RESULT", value: "0 MATCH")
+                    }
+                }
+
+                Color.clear
+                    .frame(height: 1)
+                    .animation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion), value: query)
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 20)
