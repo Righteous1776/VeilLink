@@ -1,0 +1,33 @@
+{
+  "schema": "veillink.agent-governance.v1",
+  "governance_version": "INBOX_V1",
+  "governor_id": "VEILLINK-IG-001",
+  "role": "Integration Governor",
+  "repository": "Righteous1776/VeilLink",
+  "trust_anchor": "default_branch:main",
+  "authority_chain": [
+    "Repository Owner",
+    "Integration Governor",
+    "Lane Agent"
+  ],
+  "command_prefix": "[INTEGRATION-GOVERNOR]",
+  "coordination_issue": 6,
+  "default_agent_mode": "INBOX_ONLY",
+  "submission_root": "AGENT_INBOX/submissions/",
+  "live_lane_grant_marker": "[INTEGRATION-GOVERNOR][LIVE-LANE-GRANT]",
+  "lane_agent_self_merge_authorized": false,
+  "lane_agent_release_authorized": false,
+  "lane_agent_workflow_dispatch_authorized": false,
+  "lane_agent_product_tree_write_authorized_by_default": false,
+  "integration_authority": {
+    "inbox_triage": true,
+    "conflict_arbitration": true,
+    "protected_surface_review": true,
+    "integration_order": true,
+    "quarantine": true,
+    "ci_gate_decision": true,
+    "merge_authorization": true,
+    "version_release_permission_control": true
+  },
+  "verification_note": "This record is authoritative only when read from the current default branch main and when it does not conflict with a newer explicit Repository Owner instruction."
+}
