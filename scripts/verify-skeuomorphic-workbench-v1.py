@@ -66,9 +66,14 @@ for needle in [
 for needle in [
     "VeilHardwareSlider",
     "VeilInstrumentPlate",
+    "VeilInstrumentBay",
     "FIRE SOLUTION",
     "ROUTE ADVISORY",
     "SHOT MODEL",
+    "W+\\(offset)",
+    "S+\\(offset)",
+    "FIELD +1",
+    "FIELD +2",
 ]:
     if needle not in arcade:
         raise SystemExit(f"FAIL arcade instrument invariant missing {needle}")
