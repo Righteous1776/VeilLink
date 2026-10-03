@@ -18,6 +18,7 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var lightTrail = LightTrailState()
     @Published private(set) var magneticHockey = MagneticHockeyState()
     @Published private(set) var tacticalDifficulty: TacticalBotDifficulty = .commander
+    @Published private(set) var arcadeDifficulty: ArcadeBotDifficulty = .operatorMode
     @Published private(set) var tacticalScenario: TacticalSoloScenario = .standard
     @Published private(set) var tacticalDailyChallenge = TacticalDailyChallenge.challenge()
     @Published private(set) var outcome: Outcome = .playing
@@ -149,6 +150,15 @@ final class LocalAIGameController: ObservableObject {
     func setTacticalDifficulty(_ difficulty: TacticalBotDifficulty) {
         guard game == .tactical else { return }
         tacticalDifficulty = difficulty
+    }
+
+    func setArcadeDifficulty(_ difficulty: ArcadeBotDifficulty) {
+        switch game {
+        case .artillery, .lightTrail, .magneticHockey:
+            arcadeDifficulty = difficulty
+        default:
+            break
+        }
     }
 
     func setTacticalScenario(_ scenario: TacticalSoloScenario) {
@@ -363,12 +373,17 @@ final class LocalAIGameController: ObservableObject {
             let snapshot = artillery
             let currentSessionID = sessionID
             let shot = await Task.detached(priority: .userInitiated) {
-                ArtilleryBot.chooseShot(in: snapshot, actor: .guest, sessionID: currentSessionID)
+                ArtilleryBot.chooseShot(
+                    in: snapshot,
+                    actor: .guest,
+                    sessionID: currentSessionID,
+                    difficulty: self.arcadeDifficulty
+                )
             }.value
             guard let shot else { return nil }
             var ruleGate = artillery
             guard ruleGate.apply(angle: shot.angle, power: shot.power, actor: .guest, sessionID: sessionID) else { return nil }
-            lastDecisionMode = "弹道搜索 Bot"
+            lastDecisionMode = "弹道搜索·\(arcadeDifficulty.title)"
             return AgentActionCandidate(
                 actionID: "artillery:\(shot.angle):\(shot.power)",
                 encodedAction: AgentGameEncoding.encodeInts([shot.angle, shot.power]),
@@ -379,12 +394,17 @@ final class LocalAIGameController: ObservableObject {
             let snapshot = lightTrail
             let currentSessionID = sessionID
             let shift = await Task.detached(priority: .userInitiated) {
-                LightTrailBot.chooseShift(in: snapshot, actor: .guest, sessionID: currentSessionID)
+                LightTrailBot.chooseShift(
+                    in: snapshot,
+                    actor: .guest,
+                    sessionID: currentSessionID,
+                    difficulty: self.arcadeDifficulty
+                )
             }.value
             guard let shift else { return nil }
             var ruleGate = lightTrail
             guard ruleGate.apply(shift: shift, actor: .guest, sessionID: sessionID) else { return nil }
-            lastDecisionMode = "赛道预判 Bot"
+            lastDecisionMode = "赛道预判·\(arcadeDifficulty.title)"
             return AgentActionCandidate(
                 actionID: "light-trail:\(shift)",
                 encodedAction: AgentGameEncoding.encodeInts([shift]),
@@ -395,12 +415,17 @@ final class LocalAIGameController: ObservableObject {
             let snapshot = magneticHockey
             let currentSessionID = sessionID
             let move = await Task.detached(priority: .userInitiated) {
-                MagneticHockeyBot.chooseMove(in: snapshot, actor: .guest, sessionID: currentSessionID)
+                MagneticHockeyBot.chooseMove(
+                    in: snapshot,
+                    actor: .guest,
+                    sessionID: currentSessionID,
+                    difficulty: self.arcadeDifficulty
+                )
             }.value
             guard let move else { return nil }
             var ruleGate = magneticHockey
             guard ruleGate.apply(move: move, actor: .guest, sessionID: sessionID) else { return nil }
-            lastDecisionMode = "磁场反弹 Bot"
+            lastDecisionMode = "磁场反弹·\(arcadeDifficulty.title)"
             return AgentActionCandidate(
                 actionID: "magnetic-hockey:\(move.angle):\(move.power)",
                 encodedAction: AgentGameEncoding.encodeInts([move.angle, move.power]),
