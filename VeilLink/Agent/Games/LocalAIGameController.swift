@@ -375,8 +375,15 @@ final class LocalAIGameController: ObservableObject {
                 sessionID: sessionID
             ) else { return nil }
             lastDecisionMode = "兵棋·\(difficulty.title)"
+            let actionID: String
+            if result.isPass {
+                actionID = "tactical:pass"
+            } else {
+                guard let from = result.from, let to = result.to else { return nil }
+                actionID = "tactical:\(from):\(to)"
+            }
             return AgentActionCandidate(
-                actionID: result.isPass ? "tactical:pass" : "tactical:\(result.from!):\(result.to!)",
+                actionID: actionID,
                 encodedAction: AgentGameEncoding.encodeInts([result.from ?? -1, result.to ?? -1]),
                 metadata: [
                     "from": result.from.map(String.init) ?? "pass",
