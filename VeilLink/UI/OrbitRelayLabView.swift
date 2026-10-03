@@ -184,13 +184,13 @@ struct OrbitRelayLabView: View {
             }
 
             drawCraft(
-                context: &context,
+                context: context,
                 at: point(state.hostCraft.position),
                 label: "YOU",
                 active: state.currentPlayer == .host
             )
             drawCraft(
-                context: &context,
+                context: context,
                 at: point(state.guestCraft.position),
                 label: "BOT",
                 active: state.currentPlayer == .guest
@@ -385,7 +385,7 @@ struct OrbitRelayLabView: View {
     }
 
     private func drawCraft(
-        context: inout GraphicsContext,
+        context: GraphicsContext,
         at point: CGPoint,
         label: String,
         active: Bool
