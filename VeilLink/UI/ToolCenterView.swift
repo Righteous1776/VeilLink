@@ -579,7 +579,7 @@ struct VeilTimestampToolView: View {
                     Text("UNIX → UTC").font(.caption.bold()).foregroundColor(VeilTheme.mutedGold)
                     TextField(usesMilliseconds ? "毫秒，例如 1700000000123" : "秒，例如 1700000000", text: $timestamp)
                         .keyboardType(.numbersAndPunctuation)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain).veilInstrumentField()
                     VeilToggleLever(title: "输入为毫秒", isOn: $usesMilliseconds)
                     Button("转换为 ISO 8601") { timestampToISO() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
                 }
@@ -589,7 +589,7 @@ struct VeilTimestampToolView: View {
                     TextField("2023-11-14T22:13:20.123Z", text: $iso8601)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain).veilInstrumentField()
                     Button("转换为时间戳") { isoToTimestamp() }.buttonStyle(VeilPhysicalButtonStyle())
                 }
                 .veilCompactToolSurface(cornerRadius: 16)
@@ -766,7 +766,7 @@ struct VeilColorLabToolView: View {
                         .textInputAutocapitalization(.characters)
                         .disableAutocorrection(true)
                         .font(.system(.body, design: .monospaced))
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain).veilInstrumentField()
                     HStack(spacing: 8) {
                         colorField("R", text: $red)
                         colorField("G", text: $green)
@@ -800,7 +800,7 @@ struct VeilColorLabToolView: View {
             TextField("0", text: text)
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.center)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain).veilInstrumentField()
         }
     }
 
@@ -865,8 +865,8 @@ struct VeilRandomDecisionToolView: View {
                     Button("抛硬币") { coin() }.buttonStyle(VeilPhysicalButtonStyle())
                 }
                 HStack(spacing: 9) {
-                    TextField("面数", text: $diceSides).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-                    TextField("数量", text: $diceCount).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+                    TextField("面数", text: $diceSides).keyboardType(.numberPad).textFieldStyle(.plain).veilInstrumentField()
+                    TextField("数量", text: $diceCount).keyboardType(.numberPad).textFieldStyle(.plain).veilInstrumentField()
                     Button("掷骰") { roll() }.buttonStyle(VeilPhysicalButtonStyle())
                 }
                 if let errorText {
