@@ -299,7 +299,8 @@ private struct ArcadeVisualLevelButton: View {
                     .foregroundColor(labelColor)
                     .lineLimit(1)
             }
-            .frame(width: 66, minHeight: 72)
+            .frame(width: 66)
+            .frame(minHeight: 72)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
