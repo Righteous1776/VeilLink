@@ -38,11 +38,9 @@ for needle in [
     if needle not in tools:
         raise SystemExit(f"FAIL Tool Center skeuomorphic invariant missing {needle}")
 
-tool_without_hardware_slider = tools.replace("VeilHardwareSlider(", "")
-tool_without_veil_toggle = tools.replace("VeilToggleLever(", "")
-if "Slider(" in tool_without_hardware_slider:
+if re.search(r"\\bSlider\\s*\\(", tools):
     raise SystemExit("FAIL Tool Center regressed to system Slider")
-if "Toggle(" in tool_without_veil_toggle:
+if re.search(r"\\bToggle\\s*\\(", tools):
     raise SystemExit("FAIL Tool Center regressed to system Toggle")
 if "VeilAmbientBackground()" in tools:
     raise SystemExit("FAIL Tool Center regressed to generic ambient background")
@@ -57,8 +55,7 @@ for needle in [
     if needle not in arcade:
         raise SystemExit(f"FAIL arcade instrument invariant missing {needle}")
 
-arcade_without_hardware_slider = arcade.replace("VeilHardwareSlider(", "")
-if "Slider(" in arcade_without_hardware_slider:
+if re.search(r"\\bSlider\\s*\\(", arcade):
     raise SystemExit("FAIL arcade controls regressed to system Slider")
 
 for rel, text in [
