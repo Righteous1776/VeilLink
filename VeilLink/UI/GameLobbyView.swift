@@ -98,7 +98,7 @@ struct GameLobbyView: View {
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .tactical)) {
-                gameRow(.tactical, detail: "战役指挥台 · 曹军先行 · 补给/目标/军师建议", enabled: true)
+                gameRow(.tactical, detail: "你执曹军先行 · 离线训练策略 + 补给与目标评估", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
@@ -159,12 +159,36 @@ struct GameLobbyView: View {
     }
 
     private func gameRow(_ game: MiniGameKind, detail: String, enabled: Bool) -> some View {
-        VeilGameCabinetRow(
-            game: game,
-            detail: detail,
-            status: enabled ? "LOCAL" : "LOCKED",
-            enabled: enabled
-        )
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(VeilTheme.gold.opacity(enabled ? 0.12 : 0.05))
+                Image(systemName: game.icon)
+                    .foregroundColor(enabled ? VeilTheme.gold : VeilTheme.tertiaryText)
+            }
+            .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(game.title)
+                    .font(.headline)
+                    .foregroundColor(enabled ? VeilTheme.text : VeilTheme.secondaryText)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Text(enabled ? "人机" : "待开发")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(enabled ? VeilTheme.gold : VeilTheme.tertiaryText)
+            if enabled {
+                Image(systemName: "chevron.right").font(.caption.bold()).foregroundColor(VeilTheme.tertiaryText)
+            }
+        }
+        .padding(13)
+        .background(VeilTheme.elevated.opacity(enabled ? 0.86 : 0.52))
+        .clipShape(VeilPanelShape(cut: 12, radius: 7))
+        .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(enabled ? "可以开始人机对局" : "尚未开放")
     }
 
     private func lobbyMetric(_ title: String, _ value: String) -> some View {
@@ -198,7 +222,6 @@ struct LocalAIGameView: View {
         ScrollView {
             VStack(spacing: 14) {
                 statusCard
-                missionCard
                 if game == .tactical { tacticalControlCard }
                 board
                 if controller.outcome != .playing { resultCard }
@@ -267,37 +290,7 @@ struct LocalAIGameView: View {
                 statusMetric("耗时", controller.lastDecisionMilliseconds.map { "\($0)ms" } ?? "--")
             }
         }
-        .veilGameConsole(emphasized: true, cornerRadius: 18)
-    }
-
-    private var missionCard: some View {
-        let mission = LocalGameMissionDirector.mission(for: game, sessionID: controller.sessionID)
-        return HStack(spacing: 11) {
-            ZStack {
-                Circle()
-                    .fill(VeilTheme.gold.opacity(0.10))
-                    .frame(width: 38, height: 38)
-                Image(systemName: mission.systemImage)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(VeilTheme.goldBright)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text("本局战术任务 · " + mission.code)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .tracking(0.6)
-                    .foregroundColor(VeilTheme.mutedGold)
-                Text(mission.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(VeilTheme.text)
-                Text(mission.detail)
-                    .font(.caption)
-                    .foregroundColor(VeilTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 4)
-        }
-        .padding(2)
-        .veilGameConsole(cornerRadius: 16)
+        .veilCard(emphasized: true)
     }
 
     @ViewBuilder
@@ -332,7 +325,7 @@ struct LocalAIGameView: View {
                 model.haptics.impact()
             }
         case .tactical:
-            TacticalSoloCommandDeckView(
+            TacticalBoardView(
                 state: controller.tactical,
                 localPlayer: .host,
                 enabled: controller.canHumanAct,
@@ -355,7 +348,6 @@ struct LocalAIGameView: View {
                 controller.humanArtilleryShot(angle: angle, power: power)
                 model.haptics.impact()
             }
-            .veilGameConsole(cornerRadius: 18)
         case .lightTrail:
             LightTrailGameView(
                 state: controller.lightTrail,
@@ -366,7 +358,6 @@ struct LocalAIGameView: View {
                 controller.humanLightTrailShift(shift)
                 model.haptics.selection()
             }
-            .veilGameConsole(cornerRadius: 18)
         case .magneticHockey:
             MagneticHockeyGameView(
                 state: controller.magneticHockey,
@@ -377,7 +368,6 @@ struct LocalAIGameView: View {
                 controller.humanMagneticHockeyShot(angle: angle, power: power)
                 model.haptics.impact()
             }
-            .veilGameConsole(cornerRadius: 18)
         }
     }
 
