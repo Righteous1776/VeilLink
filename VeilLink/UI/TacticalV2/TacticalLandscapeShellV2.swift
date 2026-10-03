@@ -164,101 +164,137 @@ struct TacticalLandscapeShellV2: View {
     }
 
     private var commandSidebar: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("指挥")
-                .font(.headline)
-
-            if let unit = selectedFriendly {
-                Text(unit.id)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    metric("兵种", kindName(unit.kind))
-                    metric("兵力", "\(unit.steps)")
+                    Text("指挥")
+                        .font(.headline)
+                    Spacer()
+                    VeilInstrumentLabel(
+                        title: "TURN",
+                        value: "\(simulationTurn + 1)",
+                        active: true
+                    )
                 }
 
-                if let routePreview {
-                    metric("路线", "\(max(0, routePreview.cells.count - 1)) 段")
-                    metric("预计耗费", String(format: "%.1f", Double(routePreview.totalCostMilli) / 1000.0))
+                if let unit = selectedFriendly {
+                    Text(unit.id)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
 
-                    if let assessment = commandAssessment {
+                    HStack {
+                        metric("兵种", kindName(unit.kind))
+                        metric("兵力", "\(unit.steps)")
+                    }
+
+                    if let routePreview {
                         HStack {
-                            metric("补给", supplyTitle(assessment.supplyStatus))
-                            metric("暴露", exposureTitle(assessment.exposureStatus))
+                            metric("路线", "\(max(0, routePreview.cells.count - 1)) 段")
+                            metric(
+                                "预计耗费",
+                                String(
+                                    format: "%.1f",
+                                    Double(routePreview.totalCostMilli) / 1000.0
+                                )
+                            )
                         }
-                        if let objective = assessment.nearestObjectiveTitle {
-                            metric("邻近目标", objective)
-                        }
-                    }
 
-                    Button("下达行军命令") {
-                        guard routePreview.cells.count >= 2 else { return }
-                        let order = TacticalV2.OrderV2(
-                            id: UUID().uuidString,
-                            kind: .march,
-                            actor: redacted.viewer,
-                            issuedTurn: simulationTurn,
-                            unitID: unit.id,
-                            routeCells: routePreview.cells.map { UInt16($0) }
-                        )
-                        onSubmitOrder(order)
+                        if let assessment = commandAssessment {
+                            HStack {
+                                metric("补给", supplyTitle(assessment.supplyStatus))
+                                metric("暴露", exposureTitle(assessment.exposureStatus))
+                            }
+                            VeilGaugeMeter(
+                                title: "PEAK THREAT",
+                                value: Double(assessment.peakThreatPermille) / 1000.0,
+                                text: "\(assessment.peakThreatPermille)‰"
+                            )
+                            if let objective = assessment.nearestObjectiveTitle {
+                                metric("邻近目标", objective)
+                            }
+                        }
+
+                        Button("下达行军命令") {
+                            guard routePreview.cells.count >= 2 else { return }
+                            let order = TacticalV2.OrderV2(
+                                id: UUID().uuidString,
+                                kind: .march,
+                                actor: redacted.viewer,
+                                issuedTurn: simulationTurn,
+                                unitID: unit.id,
+                                routeCells: routePreview.cells.map { UInt16($0) }
+                            )
+                            onSubmitOrder(order)
+                        }
+                        .buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    } else {
+                        Text("拖动地图上的目标位置来规划路线。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
-                    .buttonStyle(VeilPhysicalButtonStyle(accent: true))
                 } else {
-                    Text("拖动地图上的目标位置来规划路线。")
+                    Text("选择己方部队后，可直接在地图上拖出行军路线。")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-            } else {
-                Text("选择己方部队后，可直接在地图上拖出行军路线。")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+
+                Divider().opacity(0.2)
+
+                Text("敌情")
+                    .font(.system(size: 12, weight: .semibold))
+
+                VeilStatusStrip(
+                    leftTitle: "CONFIRMED",
+                    leftValue: "\(confirmedEnemyCount)",
+                    rightTitle: "PARTIAL",
+                    rightValue: "\(partialEnemyCount)",
+                    active: confirmedEnemyCount + partialEnemyCount > 0
+                )
+
+                VeilStatusStrip(
+                    leftTitle: "SUSPECTED",
+                    leftValue: "\(suspectedEnemyCount)",
+                    rightTitle: "CONTACTS",
+                    rightValue: "\(redacted.enemyMarkers.count)",
+                    active: !redacted.enemyMarkers.isEmpty
+                )
+
+                VeilGaugeMeter(
+                    title: "VISIBLE AREA",
+                    value: visibleCoverage,
+                    text: "\(Int((visibleCoverage * 100).rounded()))%"
+                )
+
+                VeilGaugeMeter(
+                    title: "EXPLORED AREA",
+                    value: exploredCoverage,
+                    text: "\(Int((exploredCoverage * 100).rounded()))%"
+                )
+
+                Divider().opacity(0.2)
+
+                HStack {
+                    Text("战略目标")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Text("\(operationalField.objectives.count) NODES")
+                        .font(.system(size: 8, weight: .black, design: .monospaced))
+                        .foregroundColor(VeilTheme.tertiaryText)
+                }
+
+                ForEach(operationalField.objectives) { objective in
+                    objectiveRow(objective)
+                }
+
+                Button("取消路线") {
+                    routePlanner.cancel()
+                    routePreview = nil
+                }
+                .buttonStyle(VeilPhysicalButtonStyle())
+                .disabled(routePreview == nil)
             }
-
-            Divider().opacity(0.2)
-
-            Text("敌情")
-                .font(.system(size: 12, weight: .semibold))
-
-            VeilStatusStrip(
-                leftTitle: "CONFIRMED",
-                leftValue: "\(confirmedEnemyCount)",
-                rightTitle: "PARTIAL",
-                rightValue: "\(partialEnemyCount)",
-                active: confirmedEnemyCount + partialEnemyCount > 0
-            )
-
-            VeilStatusStrip(
-                leftTitle: "SUSPECTED",
-                leftValue: "\(suspectedEnemyCount)",
-                rightTitle: "CONTACTS",
-                rightValue: "\(redacted.enemyMarkers.count)",
-                active: !redacted.enemyMarkers.isEmpty
-            )
-
-            VeilGaugeMeter(
-                title: "VISIBLE AREA",
-                value: visibleCoverage,
-                text: "\(Int((visibleCoverage * 100).rounded()))%"
-            )
-
-            VeilGaugeMeter(
-                title: "EXPLORED AREA",
-                value: exploredCoverage,
-                text: "\(Int((exploredCoverage * 100).rounded()))%"
-            )
-
-            Spacer()
-
-            Button("取消路线") {
-                routePlanner.cancel()
-                routePreview = nil
-            }
-            .buttonStyle(VeilPhysicalButtonStyle())
-            .disabled(routePreview == nil)
+            .padding(14)
         }
-        .padding(14)
         .background(
             VeilInstrumentPlate(
                 shape: RoundedRectangle(cornerRadius: 14, style: .continuous),
@@ -266,6 +302,50 @@ struct TacticalLandscapeShellV2: View {
             )
         )
         .padding(6)
+    }
+
+    private func objectiveRow(
+        _ objective: TacticalV2.ObjectiveMarkerV2
+    ) -> some View {
+        HStack(spacing: 8) {
+            VeilIndicatorLamp(
+                active: objective.side != .neutral,
+                color: objective.side == .local
+                    ? VeilTheme.success
+                    : (objective.side == .enemyKnown ? VeilTheme.danger : VeilTheme.gold)
+            )
+            VStack(alignment: .leading, spacing: 1) {
+                Text(objective.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.text)
+                Text("价值 \(objective.value) · \(objectiveSideTitle(objective.side))")
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .foregroundColor(VeilTheme.secondaryText)
+            }
+            Spacer()
+            Text("\(objective.pressurePermille)‰")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundColor(VeilTheme.mutedGold)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(Color.black.opacity(0.16))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 0.7)
+        )
+    }
+
+    private func objectiveSideTitle(
+        _ side: TacticalV2.ObjectiveSideV2
+    ) -> String {
+        switch side {
+        case .neutral: return "中立"
+        case .local: return "我方控制"
+        case .contested: return "争夺中"
+        case .enemyKnown: return "已知敌控"
+        }
     }
 
     private var overlayBar: some View {
