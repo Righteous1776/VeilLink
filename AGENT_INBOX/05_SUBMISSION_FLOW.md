@@ -30,6 +30,20 @@ Inbox-only PRs are excluded from the normal iOS product CI trigger.
 
 Do not manually start product CI.
 
+## Machine gate
+
+Every Inbox PR is checked by the lightweight **Agent Inbox Gate** on `ubuntu-latest`.
+
+The gate rejects:
+- branches not named `agent-drop/*`;
+- PR titles not starting with `[AGENT-DROP]`;
+- any changed file outside one `AGENT_INBOX/submissions/<agent-id>/<task-id>/` root;
+- packages missing any of the five required files;
+- manifest base SHAs that predate Inbox V1 or are not ancestors of the PR base;
+- binary files or files larger than 2 MiB.
+
+A mixed PR that touches both Inbox and product source is rejected by the Inbox Gate and also stops qualifying for the iOS-CI Inbox path exemption.
+
 ## Governor intake
 
 The Integration Governor checks:
