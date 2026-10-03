@@ -77,7 +77,7 @@ struct TacticalLandscapeShellV2: View {
             Divider().opacity(0.18)
             overlayBar
         }
-        .background(Color(red: 0.055, green: 0.052, blue: 0.046))
+        .background(VeilInstrumentBackground())
         .preferredColorScheme(.dark)
     }
 
@@ -92,16 +92,26 @@ struct TacticalLandscapeShellV2: View {
 
             Spacer()
 
-            Text(redacted.viewer == .cao ? "曹军视角" : "袁军视角")
-                .font(.system(size: 11, weight: .semibold))
+            VeilInstrumentLabel(
+                title: "FACTION",
+                value: redacted.viewer == .cao ? "曹军" : "袁军",
+                active: true
+            )
 
-            Text(lodTitle(renderSnapshot.lod))
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
+            VeilInstrumentLabel(
+                title: "LOD",
+                value: lodTitle(renderSnapshot.lod),
+                active: true
+            )
         }
         .padding(.horizontal, 14)
-        .frame(height: 42)
-        .background(Color.black.opacity(0.20))
+        .frame(height: 50)
+        .background(
+            VeilInstrumentPlate(
+                shape: Rectangle(),
+                emphasized: false
+            )
+        )
     }
 
     private var battlefield: some View {
@@ -124,6 +134,9 @@ struct TacticalLandscapeShellV2: View {
                     .padding(10)
             }
         }
+        .padding(5)
+        .background(Color.black.opacity(0.30))
+        .overlay(Rectangle().stroke(Color.black.opacity(0.48), lineWidth: 1))
         .clipped()
     }
 
@@ -168,8 +181,7 @@ struct TacticalLandscapeShellV2: View {
                         )
                         onSubmitOrder(order)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color(red: 0.68, green: 0.51, blue: 0.22))
+                    .buttonStyle(VeilPhysicalButtonStyle(accent: true))
                 } else {
                     Text("拖动地图上的目标位置来规划路线。")
                         .font(.caption)
@@ -196,11 +208,17 @@ struct TacticalLandscapeShellV2: View {
                 routePlanner.cancel()
                 routePreview = nil
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(VeilPhysicalButtonStyle())
             .disabled(routePreview == nil)
         }
         .padding(14)
-        .background(Color.black.opacity(0.20))
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                emphasized: true
+            )
+        )
+        .padding(6)
     }
 
     private var overlayBar: some View {
@@ -230,8 +248,13 @@ struct TacticalLandscapeShellV2: View {
             }
         }
         .padding(.horizontal, 14)
-        .frame(height: 40)
-        .background(Color.black.opacity(0.26))
+        .frame(height: 44)
+        .background(
+            VeilInstrumentPlate(
+                shape: Rectangle(),
+                emphasized: false
+            )
+        )
     }
 
     private func mapGesture(size: CGSize) -> some Gesture {
@@ -297,14 +320,8 @@ struct TacticalLandscapeShellV2: View {
     }
 
     private func metric(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(size: 9))
-                .foregroundColor(.secondary)
-            Text(value)
-                .font(.system(size: 12, weight: .semibold))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        VeilLCDDisplay(title: title, value: value)
+            .frame(maxWidth: .infinity)
     }
 
     private func kindName(_ kind: TacticalV2.UnitKind) -> String {
