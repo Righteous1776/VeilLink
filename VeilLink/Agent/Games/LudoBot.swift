@@ -6,22 +6,70 @@ struct LudoBotMove: Equatable, Sendable {
 }
 
 enum LudoBot {
-    static func chooseMove(in state: LudoState, for player: MiniGamePlayer, sessionID: String) -> LudoBotMove? {
+    static func chooseMove(
+        in state: LudoState,
+        for player: MiniGamePlayer,
+        sessionID: String,
+        difficulty: BoardBotDifficulty = .strategist
+    ) -> LudoBotMove? {
         guard state.winner == nil, state.currentPlayer == player else { return nil }
-        let legal = state.legalPieces(sessionID: sessionID)
+        let legal = state.legalPieces(sessionID: sessionID).sorted()
         if legal.isEmpty {
             return LudoBotMove(pieceIndex: -1, score: 0)
         }
 
+        if difficulty == .trainee, let first = legal.first {
+            var next = state
+            guard next.apply(pieceIndex: first, actor: player, sessionID: sessionID) else {
+                return nil
+            }
+            return LudoBotMove(
+                pieceIndex: first,
+                score: evaluate(before: state, after: next, player: player, movedPiece: first)
+            )
+        }
+
         var best: LudoBotMove?
-        for piece in legal.sorted() {
+        for piece in legal {
             var next = state
             guard next.apply(pieceIndex: piece, actor: player, sessionID: sessionID) else { continue }
-            let score = evaluate(before: state, after: next, player: player, movedPiece: piece)
+
+            var score = evaluate(before: state, after: next, player: player, movedPiece: piece)
+            if difficulty == .master,
+               next.winner == nil,
+               next.currentPlayer == player.opponent {
+                score -= strongestReplyScore(
+                    in: next,
+                    for: player.opponent,
+                    sessionID: sessionID
+                ) / 2
+            }
+
             let candidate = LudoBotMove(pieceIndex: piece, score: score)
-            if best == nil || candidate.score > best!.score || (candidate.score == best!.score && piece < best!.pieceIndex) {
+            if best == nil
+                || candidate.score > best!.score
+                || (candidate.score == best!.score && piece < best!.pieceIndex) {
                 best = candidate
             }
+        }
+        return best
+    }
+
+
+    private static func strongestReplyScore(
+        in state: LudoState,
+        for player: MiniGamePlayer,
+        sessionID: String
+    ) -> Int {
+        let legal = state.legalPieces(sessionID: sessionID).sorted()
+        var best = 0
+        for piece in legal {
+            var reply = state
+            guard reply.apply(pieceIndex: piece, actor: player, sessionID: sessionID) else { continue }
+            best = max(
+                best,
+                evaluate(before: state, after: reply, player: player, movedPiece: piece)
+            )
         }
         return best
     }
