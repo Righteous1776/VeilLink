@@ -42,15 +42,26 @@ jobs:
               print(f'::error title=Agent Inbox Gate::{message}')
               raise SystemExit(1)
 
-          if not head_ref.startswith('agent-drop/'):
-              fail(f'branch must start with agent-drop/: {head_ref}')
-          if not title.startswith('[AGENT-DROP]'):
-              fail(f'PR title must start with [AGENT-DROP]: {title}')
-
           changed = subprocess.check_output(['git', 'diff', '--name-only', base, head], text=True).splitlines()
           changed = [p.strip() for p in changed if p.strip()]
           if not changed:
-              fail('submission has no changed files')
+              fail('PR has no changed files')
+
+          is_drop = head_ref.startswith('agent-drop/')
+          is_admin = head_ref.startswith('admin/')
+
+          if not is_drop:
+              if not is_admin:
+                  fail(f'AGENT_INBOX changes require agent-drop/* or admin/* branch: {head_ref}')
+              if any(p.startswith('AGENT_INBOX/submissions/') for p in changed):
+                  fail('admin governance PR must not write agent submission payloads')
+              print('VEILLINK_AGENT_INBOX_ADMIN_GATE_PASS')
+              print(f'BRANCH={head_ref}')
+              print(f'CHANGED_FILES={len(changed)}')
+              raise SystemExit(0)
+
+          if not title.startswith('[AGENT-DROP]'):
+              fail(f'PR title must start with [AGENT-DROP]: {title}')
 
           roots = set()
           for path in changed:
