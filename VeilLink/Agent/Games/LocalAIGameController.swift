@@ -372,12 +372,13 @@ final class LocalAIGameController: ObservableObject {
         case .artillery:
             let snapshot = artillery
             let currentSessionID = sessionID
+            let difficulty = arcadeDifficulty
             let shot = await Task.detached(priority: .userInitiated) {
                 ArtilleryBot.chooseShot(
                     in: snapshot,
                     actor: .guest,
                     sessionID: currentSessionID,
-                    difficulty: self.arcadeDifficulty
+                    difficulty: difficulty
                 )
             }.value
             guard let shot else { return nil }
@@ -393,12 +394,13 @@ final class LocalAIGameController: ObservableObject {
         case .lightTrail:
             let snapshot = lightTrail
             let currentSessionID = sessionID
+            let difficulty = arcadeDifficulty
             let shift = await Task.detached(priority: .userInitiated) {
                 LightTrailBot.chooseShift(
                     in: snapshot,
                     actor: .guest,
                     sessionID: currentSessionID,
-                    difficulty: self.arcadeDifficulty
+                    difficulty: difficulty
                 )
             }.value
             guard let shift else { return nil }
@@ -414,12 +416,13 @@ final class LocalAIGameController: ObservableObject {
         case .magneticHockey:
             let snapshot = magneticHockey
             let currentSessionID = sessionID
+            let difficulty = arcadeDifficulty
             let move = await Task.detached(priority: .userInitiated) {
                 MagneticHockeyBot.chooseMove(
                     in: snapshot,
                     actor: .guest,
                     sessionID: currentSessionID,
-                    difficulty: self.arcadeDifficulty
+                    difficulty: difficulty
                 )
             }.value
             guard let move else { return nil }
