@@ -19,98 +19,165 @@ struct VeilToolCenterView: View {
 
     var body: some View {
         VeilStableScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass").foregroundColor(VeilTheme.secondaryText)
-                    TextField("搜索工具", text: $query)
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(VeilTheme.gold)
+                    TextField("搜索本地模块", text: $query)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
+                        .textFieldStyle(.plain)
+                    VeilIndicatorLamp(active: query.isEmpty == false)
                 }
                 .padding(.horizontal, 14)
-                .frame(height: 46)
+                .frame(height: 48)
                 .veilCompactToolSurface(cornerRadius: 14)
 
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("TOOLS").font(.system(size: 8, weight: .bold, design: .monospaced)).tracking(1.3).foregroundColor(VeilTheme.mutedGold)
-                        Text("工具中心").font(.title2.bold()).foregroundColor(VeilTheme.text)
+                VeilInstrumentDeck(
+                    title: "VeilLink 本地仪器台",
+                    subtitle: "所有工具默认离线处理；输入不进入诊断、遥测或网络上传。",
+                    symbol: "wrench.and.screwdriver.fill",
+                    emphasized: true
+                ) {
+                    HStack(spacing: 10) {
+                        VeilLCDDisplay(title: "MODULES", value: "13 + PTT")
+                            .frame(maxWidth: .infinity)
+                        VeilLCDDisplay(title: "MODE", value: "LOCAL")
+                            .frame(maxWidth: .infinity)
                     }
-                    Spacer()
-                    Text(VeilAppearanceController.shared.appearanceLabel)
-                        .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                        .foregroundColor(VeilTheme.tertiaryText)
+                    HStack {
+                        VeilInstrumentLabel(title: "PRIVACY", value: "LOCAL ONLY", active: true)
+                        Spacer()
+                        VeilInstrumentLabel(title: "RENDER", value: VeilRenderProfile.allowsExpensiveVisualEffects ? "FULL" : "LITE", active: true)
+                    }
                 }
 
                 if matchesWalkie {
                     NavigationLink(destination: VeilWalkieTalkieView(model: model)) {
                         HStack(spacing: 16) {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 16).fill(LinearGradient(colors: [VeilTheme.panelSoft, VeilTheme.panel], startPoint: .top, endPoint: .bottom))
-                                VStack(spacing: 6) {
-                                    VeilSpeakerGrille(columns: 6, rows: 4)
-                                    HStack(spacing: 6) { VeilIndicatorLamp(active: true); Text("PTT").font(.system(size: 8, weight: .bold, design: .monospaced)) }
+                                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                    .fill(Color.black.opacity(0.24))
+                                VStack(spacing: 7) {
+                                    VeilSpeakerGrille(columns: 7, rows: 5)
+                                    HStack(spacing: 6) {
+                                        VeilIndicatorLamp(active: true)
+                                        Text("PTT / LIVE")
+                                            .font(.system(size: 7.5, weight: .black, design: .monospaced))
+                                            .tracking(0.8)
+                                    }
                                 }
                             }
-                            .frame(width: 80, height: 80)
+                            .frame(width: 88, height: 88)
+                            .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.white.opacity(0.09), lineWidth: 0.7))
+
                             VStack(alignment: .leading, spacing: 5) {
-                                Text("对讲机").font(.headline).foregroundColor(VeilTheme.text)
-                                Text("附近 E2EE · 半双工 PTT · 实时语音").font(.caption).foregroundColor(VeilTheme.secondaryText)
-                                Text("LIVE AUDIO · JITTER BUFFER · PRIORITY").font(.system(size: 7.5, weight: .bold, design: .monospaced)).tracking(0.8).foregroundColor(VeilTheme.mutedGold)
+                                Text("对讲机")
+                                    .font(.headline)
+                                    .foregroundColor(VeilTheme.text)
+                                Text("附近 E2EE · 半双工 PTT · 实时语音")
+                                    .font(.caption)
+                                    .foregroundColor(VeilTheme.secondaryText)
+                                HStack(spacing: 6) {
+                                    VeilInstrumentLabel(title: "LINK", value: "BLE", active: model.bluetooth.isRunning)
+                                    VeilInstrumentLabel(title: "AUDIO", value: "PTT", active: true)
+                                }
                             }
-                            Spacer(); Image(systemName: "chevron.right").foregroundColor(VeilTheme.tertiaryText)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(VeilTheme.gold)
                         }
                         .padding(14)
                     }
-                    .buttonStyle(VeilPressStyle())
-                    .background(VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: 20, style: .continuous), emphasized: true))
+                    .buttonStyle(.plain)
+                    .background(
+                        VeilInstrumentPlate(
+                            shape: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                            emphasized: true
+                        )
+                    )
                 }
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
-                    if matches("密码 password 随机 安全 生成器") {
-                        toolLink("安全密码", detail: "系统随机数 · 强度估算", icon: "key.fill", destination: VeilPasswordToolView())
+                VeilInstrumentRackSection(
+                    title: "通信与链路",
+                    subtitle: "本地分享、无线状态与短距通信。",
+                    code: "COMMS"
+                ) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+                        if matches("二维码 qr 临时 文本 分享") {
+                            toolLink("临时二维码", detail: "短文本离线转码", icon: "qrcode", destination: VeilTemporaryQRToolView())
+                        }
+                        if matches("网络 局域网 lan 蓝牙 ble 链路 诊断") {
+                            toolLink("链路仪表", detail: "LAN 与 BLE 速览", icon: "wave.3.right.circle.fill", destination: VeilLinkPulseToolView(model: model))
+                        }
                     }
-                    if matches("指纹 hash sha256 文本 校验 摘要") {
-                        toolLink("文本指纹", detail: "SHA-256 · 字节统计", icon: "number", destination: VeilFingerprintToolView())
+                }
+
+                VeilInstrumentRackSection(
+                    title: "安全与身份",
+                    subtitle: "随机、安全校验与本地标识生成。",
+                    code: "SECURE"
+                ) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+                        if matches("密码 password 随机 安全 生成器") {
+                            toolLink("安全密码", detail: "系统随机数 · 强度估算", icon: "key.fill", destination: VeilPasswordToolView())
+                        }
+                        if matches("指纹 hash sha256 文本 校验 摘要") {
+                            toolLink("文本指纹", detail: "SHA-256 · 字节统计", icon: "number", destination: VeilFingerprintToolView())
+                        }
+                        if matches("uuid guid 唯一 标识符 批量") {
+                            toolLink("UUID 批量", detail: "本地生成 · 一键复制", icon: "barcode", destination: VeilUUIDToolView())
+                        }
+                        if matches("随机 决策 抽签 骰子 硬币 random dice") {
+                            toolLink("随机决策", detail: "抽签 · 硬币 · 多面骰", icon: "die.face.5.fill", destination: VeilRandomDecisionToolView())
+                        }
                     }
-                    if matches("二维码 qr 临时 文本 分享") {
-                        toolLink("临时二维码", detail: "短文本离线转码", icon: "qrcode", destination: VeilTemporaryQRToolView())
+                }
+
+                VeilInstrumentRackSection(
+                    title: "数据与文本",
+                    subtitle: "编码、清理、格式化与轻量文本处理。",
+                    code: "DATA"
+                ) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+                        if matches("json 格式化 校验 压缩 pretty minify") {
+                            toolLink("JSON 工坊", detail: "校验 · 整理 · 压缩", icon: "curlybraces", destination: VeilJSONToolView())
+                        }
+                        if matches("base64 编码 解码 utf8") {
+                            toolLink("Base64", detail: "UTF-8 本地编解码", icon: "textformat.abc", destination: VeilTextCodecToolView(kind: .base64))
+                        }
+                        if matches("url uri 百分号 percent 编码 解码") {
+                            toolLink("URL 编码", detail: "RFC 3986 百分号转码", icon: "link", destination: VeilTextCodecToolView(kind: .urlPercent))
+                        }
+                        if matches("文本 清理 去重 排序 空行 trim clean") {
+                            toolLink("文本清理", detail: "修剪 · 去重 · 排序", icon: "text.alignleft", destination: VeilTextCleanerToolView())
+                        }
+                        if matches("摩斯 morse 电码 编码 解码 sos") {
+                            toolLink("摩斯电码", detail: "A–Z / 0–9 双向转换", icon: "waveform.path", destination: VeilMorseToolView())
+                        }
                     }
-                    if matches("网络 局域网 lan 蓝牙 ble 链路 诊断") {
-                        toolLink("链路仪表", detail: "LAN 与 BLE 速览", icon: "wave.3.right.circle.fill", destination: VeilLinkPulseToolView(model: model))
-                    }
-                    if matches("json 格式化 校验 压缩 pretty minify") {
-                        toolLink("JSON 工坊", detail: "校验 · 整理 · 压缩", icon: "curlybraces", destination: VeilJSONToolView())
-                    }
-                    if matches("base64 编码 解码 utf8") {
-                        toolLink("Base64", detail: "UTF-8 本地编解码", icon: "textformat.abc", destination: VeilTextCodecToolView(kind: .base64))
-                    }
-                    if matches("url uri 百分号 percent 编码 解码") {
-                        toolLink("URL 编码", detail: "RFC 3986 百分号转码", icon: "link", destination: VeilTextCodecToolView(kind: .urlPercent))
-                    }
-                    if matches("时间戳 timestamp unix iso8601 日期 时间") {
-                        toolLink("时间戳", detail: "Unix ↔ ISO 8601 UTC", icon: "clock.arrow.2.circlepath", destination: VeilTimestampToolView())
-                    }
-                    if matches("uuid guid 唯一 标识符 批量") {
-                        toolLink("UUID 批量", detail: "本地生成 · 一键复制", icon: "barcode", destination: VeilUUIDToolView())
-                    }
-                    if matches("文本 清理 去重 排序 空行 trim clean") {
-                        toolLink("文本清理", detail: "修剪 · 去重 · 排序", icon: "text.alignleft", destination: VeilTextCleanerToolView())
-                    }
-                    if matches("颜色 color hex rgb 转换 色块") {
-                        toolLink("颜色实验室", detail: "HEX ↔ RGB · 色块预览", icon: "paintpalette.fill", destination: VeilColorLabToolView())
-                    }
-                    if matches("随机 决策 抽签 骰子 硬币 random dice") {
-                        toolLink("随机决策", detail: "抽签 · 硬币 · 多面骰", icon: "die.face.5.fill", destination: VeilRandomDecisionToolView())
-                    }
-                    if matches("摩斯 morse 电码 编码 解码 sos") {
-                        toolLink("摩斯电码", detail: "A–Z / 0–9 双向转换", icon: "waveform.path", destination: VeilMorseToolView())
+                }
+
+                VeilInstrumentRackSection(
+                    title: "转换与实验",
+                    subtitle: "时间、色彩与日常工程转换。",
+                    code: "LAB"
+                ) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+                        if matches("时间戳 timestamp unix iso8601 日期 时间") {
+                            toolLink("时间戳", detail: "Unix ↔ ISO 8601 UTC", icon: "clock.arrow.2.circlepath", destination: VeilTimestampToolView())
+                        }
+                        if matches("颜色 color hex rgb 转换 色块") {
+                            toolLink("颜色实验室", detail: "HEX ↔ RGB · 色块预览", icon: "paintpalette.fill", destination: VeilColorLabToolView())
+                        }
                     }
                 }
                 .animation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion), value: query)
             }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 20)
         }
-        .padding(.horizontal, 14)
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("工具")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -118,25 +185,60 @@ struct VeilToolCenterView: View {
     private func toolLink<Destination: View>(_ title: String, detail: String, icon: String, destination: Destination) -> some View {
         NavigationLink(destination: destination) {
             VStack(alignment: .leading, spacing: 9) {
-                Image(systemName: icon)
-                    .font(.system(size: 21, weight: .semibold))
-                    .foregroundColor(VeilTheme.gold)
-                    .frame(width: 42, height: 42)
-                    .background(VeilTheme.gold.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.headline).foregroundColor(VeilTheme.text)
-                    Text(detail).font(.caption2).foregroundColor(VeilTheme.secondaryText).lineLimit(2)
+                HStack {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.black.opacity(0.24))
+                        Image(systemName: icon)
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundColor(VeilTheme.goldBright)
+                    }
+                    .frame(width: 40, height: 40)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08), lineWidth: 0.7))
+                    Spacer()
+                    VeilIndicatorLamp(active: true)
                 }
-                Spacer()
-                Image(systemName: "arrow.up.right").font(.caption.bold()).foregroundColor(VeilTheme.tertiaryText)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(VeilTheme.text)
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 4)
+
+                HStack {
+                    Text("LOCAL")
+                        .font(.system(size: 7.5, weight: .black, design: .monospaced))
+                        .tracking(0.9)
+                        .foregroundColor(VeilTheme.mutedGold)
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.bold())
+                        .foregroundColor(VeilTheme.tertiaryText)
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 128, alignment: .leading)
-            .padding(14)
-            .veilCompactToolSurface(cornerRadius: 16)
+            .padding(13)
         }
-        .buttonStyle(VeilPressStyle())
+        .buttonStyle(.plain)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 15, style: .continuous),
+                emphasized: false
+            )
+        )
+        .overlay(alignment: .topTrailing) {
+            VeilScrewHead().padding(6)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .veilSpatialPress(maximumTilt: 2.4, cornerRadius: 15, highlightColor: VeilTheme.goldBright)
     }
+
 }
 
 struct VeilToolCenterToolbarLink: View {
@@ -175,36 +277,32 @@ struct VeilPasswordToolView: View {
                     .font(.caption.monospaced())
                     .foregroundColor(VeilTheme.secondaryText)
                 }
-                .veilCard(emphasized: true)
+                .veilCompactToolSurface(cornerRadius: 18)
 
                 VStack(spacing: 12) {
-                    HStack(spacing: 10) {
-                        Text("长度").frame(width: 42, alignment: .leading)
-                        Slider(value: lengthBinding, in: 12...64, step: 1)
-                        Text("\(recipe.length)").monospacedDigit().frame(width: 28, alignment: .trailing)
-                    }
-                    Toggle("包含大写字母", isOn: $recipe.uppercase)
-                    Toggle("包含数字", isOn: $recipe.digits)
-                    Toggle("包含符号", isOn: $recipe.symbols)
-                    Toggle("排除易混淆字符 Il1O0o", isOn: $recipe.excludesAmbiguous)
+                    VeilHardwareSlider(title: "长度", value: lengthBinding, range: 12...64, step: 1)
+                    VeilToggleLever(title: "包含大写字母", isOn: $recipe.uppercase)
+                    VeilToggleLever(title: "包含数字", isOn: $recipe.digits)
+                    VeilToggleLever(title: "包含符号", isOn: $recipe.symbols)
+                    VeilToggleLever(title: "排除易混淆字符 Il1O0o", isOn: $recipe.excludesAmbiguous)
                 }
                 .tint(VeilTheme.gold)
-                .veilCard()
+                .veilCompactToolSurface(cornerRadius: 16)
 
                 HStack(spacing: 10) {
-                    Button("重新生成") { regenerate() }.buttonStyle(VeilGamePrimaryButtonStyle())
+                    Button("重新生成") { regenerate() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
                     Button(copied ? "已复制" : "复制") {
                         VeilToolClipboard.copy(generated)
                         copied = true
                     }
-                    .buttonStyle(VeilGameSecondaryButtonStyle())
+                    .buttonStyle(VeilPhysicalButtonStyle())
                     .disabled(generated.isEmpty)
                 }
                 privacyNote("密码仅在本机内存中生成；复制内容仅留在本设备，并会在 5 分钟后过期。")
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("安全密码")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { if generated.isEmpty { regenerate() } }
@@ -252,14 +350,14 @@ struct VeilFingerprintToolView: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     Button("复制指纹") { VeilToolClipboard.copy(VeilLocalToolEngine.sha256(text)) }
-                        .buttonStyle(VeilGameSecondaryButtonStyle())
+                        .buttonStyle(VeilPhysicalButtonStyle())
                 }
-                .veilCard(emphasized: true)
+                .veilCompactToolSurface(cornerRadius: 18)
                 privacyNote("输入内容只在本机计算，不会写入聊天、诊断日志或网络。")
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("文本指纹")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -292,18 +390,18 @@ struct VeilTemporaryQRToolView: View {
                         .frame(maxWidth: 320)
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
                     Button("复制原文") { VeilToolClipboard.copy(text) }
-                        .buttonStyle(VeilGameSecondaryButtonStyle())
+                        .buttonStyle(VeilPhysicalButtonStyle())
                 } else {
                     Label("输入文本后自动生成", systemImage: "qrcode")
                         .foregroundColor(VeilTheme.secondaryText)
                         .frame(maxWidth: .infinity, minHeight: 180)
-                        .veilCard()
+                        .veilCompactToolSurface(cornerRadius: 16)
                 }
                 privacyNote("二维码由本机 Core Image 即时生成，不保存、不上传。二维码本身可被任何扫描者读出，请勿放入长期密钥。")
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("临时二维码")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: text) { value in
@@ -343,10 +441,10 @@ struct VeilJSONToolView: View {
                     .veilCompactToolSurface(cornerRadius: 14)
                 toolInputMeter(input)
                 HStack(spacing: 9) {
-                    Button("整理") { transform(pretty: true) }.buttonStyle(VeilGamePrimaryButtonStyle())
-                    Button("压缩") { transform(pretty: false) }.buttonStyle(VeilGameSecondaryButtonStyle())
+                    Button("整理") { transform(pretty: true) }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("压缩") { transform(pretty: false) }.buttonStyle(VeilPhysicalButtonStyle())
                     Button("复制") { VeilToolClipboard.copy(output) }
-                        .buttonStyle(VeilGameSecondaryButtonStyle())
+                        .buttonStyle(VeilPhysicalButtonStyle())
                         .disabled(output.isEmpty)
                 }
                 if let errorText {
@@ -370,7 +468,7 @@ struct VeilJSONToolView: View {
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("JSON 工坊")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: input) { _ in
@@ -416,10 +514,10 @@ struct VeilTextCodecToolView: View {
                     .veilCompactToolSurface(cornerRadius: 14)
                 toolInputMeter(input)
                 HStack(spacing: 9) {
-                    Button("编码") { encode() }.buttonStyle(VeilGamePrimaryButtonStyle())
-                    Button("解码") { decode() }.buttonStyle(VeilGameSecondaryButtonStyle())
+                    Button("编码") { encode() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("解码") { decode() }.buttonStyle(VeilPhysicalButtonStyle())
                     Button("复制") { VeilToolClipboard.copy(output) }
-                        .buttonStyle(VeilGameSecondaryButtonStyle())
+                        .buttonStyle(VeilPhysicalButtonStyle())
                         .disabled(output.isEmpty)
                 }
                 if let errorText {
@@ -438,7 +536,7 @@ struct VeilTextCodecToolView: View {
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle(kind.title)
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: input) { _ in
@@ -482,19 +580,19 @@ struct VeilTimestampToolView: View {
                     TextField(usesMilliseconds ? "毫秒，例如 1700000000123" : "秒，例如 1700000000", text: $timestamp)
                         .keyboardType(.numbersAndPunctuation)
                         .textFieldStyle(.roundedBorder)
-                    Toggle("输入为毫秒", isOn: $usesMilliseconds).tint(VeilTheme.gold)
-                    Button("转换为 ISO 8601") { timestampToISO() }.buttonStyle(VeilGamePrimaryButtonStyle())
+                    VeilToggleLever(title: "输入为毫秒", isOn: $usesMilliseconds)
+                    Button("转换为 ISO 8601") { timestampToISO() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
                 }
-                .veilCard()
+                .veilCompactToolSurface(cornerRadius: 16)
                 VStack(alignment: .leading, spacing: 10) {
                     Text("UTC → UNIX").font(.caption.bold()).foregroundColor(VeilTheme.mutedGold)
                     TextField("2023-11-14T22:13:20.123Z", text: $iso8601)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
                         .textFieldStyle(.roundedBorder)
-                    Button("转换为时间戳") { isoToTimestamp() }.buttonStyle(VeilGameSecondaryButtonStyle())
+                    Button("转换为时间戳") { isoToTimestamp() }.buttonStyle(VeilPhysicalButtonStyle())
                 }
-                .veilCard()
+                .veilCompactToolSurface(cornerRadius: 16)
                 if let errorText {
                     Label(errorText, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption).foregroundColor(VeilTheme.danger)
@@ -513,16 +611,16 @@ struct VeilTimestampToolView: View {
                         timestamp = usesMilliseconds ? String(Int64((now * 1_000).rounded())) : String(Int64(now))
                         timestampToISO()
                     }
-                    .buttonStyle(VeilGameSecondaryButtonStyle())
+                    .buttonStyle(VeilPhysicalButtonStyle())
                     Button("复制结果") { VeilToolClipboard.copy(result) }
-                    .buttonStyle(VeilGameSecondaryButtonStyle())
+                    .buttonStyle(VeilPhysicalButtonStyle())
                     .disabled(result.isEmpty)
                 }
                 privacyNote("使用 UTC 进行转换；不读取日历、定位或网络时间。")
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("时间戳")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -566,12 +664,8 @@ struct VeilUUIDToolView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                HStack(spacing: 10) {
-                    Text("数量").font(.caption.weight(.semibold))
-                    Slider(value: $count, in: 1...20, step: 1).tint(VeilTheme.gold)
-                    Text("\(Int(count))").font(.caption.monospacedDigit()).frame(width: 28)
-                }
-                .veilCard()
+                VeilHardwareSlider(title: "数量", value: $count, range: 1...20, step: 1)
+                .veilCompactToolSurface(cornerRadius: 16)
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(values, id: \.self) { value in
                         Text(value)
@@ -584,16 +678,16 @@ struct VeilUUIDToolView: View {
                 .padding(12)
                 .veilCompactToolSurface(cornerRadius: 14)
                 HStack(spacing: 10) {
-                    Button("重新生成") { generate() }.buttonStyle(VeilGamePrimaryButtonStyle())
+                    Button("重新生成") { generate() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
                     Button("复制全部") { VeilToolClipboard.copy(values.joined(separator: "\n")) }
-                        .buttonStyle(VeilGameSecondaryButtonStyle())
+                        .buttonStyle(VeilPhysicalButtonStyle())
                         .disabled(values.isEmpty)
                 }
                 privacyNote("使用系统 UUID 生成器，不读取设备标识，不把结果关联到 VeilLink 身份。")
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("UUID 批量")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { if values.isEmpty { generate() } }
@@ -618,18 +712,18 @@ struct VeilTextCleanerToolView: View {
                     .veilCompactToolSurface(cornerRadius: 14)
                 toolInputMeter(input)
                 VStack(spacing: 9) {
-                    Toggle("修剪每行首尾空白", isOn: $options.trimsLines)
-                    Toggle("连续空行压成一行", isOn: $options.collapsesBlankLines)
-                    Toggle("删除重复行", isOn: $options.removesDuplicateLines)
-                    Toggle("按字符顺序排序", isOn: $options.sortsLines)
+                    VeilToggleLever(title: "修剪每行首尾空白", isOn: $options.trimsLines)
+                    VeilToggleLever(title: "连续空行压成一行", isOn: $options.collapsesBlankLines)
+                    VeilToggleLever(title: "删除重复行", isOn: $options.removesDuplicateLines)
+                    VeilToggleLever(title: "按字符顺序排序", isOn: $options.sortsLines)
                 }
                 .tint(VeilTheme.gold)
-                .veilCard()
+                .veilCompactToolSurface(cornerRadius: 16)
                 HStack(spacing: 9) {
                     Button("清理") { output = VeilLocalToolEngine.cleanText(input, options: options) }
-                        .buttonStyle(VeilGamePrimaryButtonStyle())
+                        .buttonStyle(VeilPhysicalButtonStyle(accent: true))
                     Button("复制") { VeilToolClipboard.copy(output) }
-                        .buttonStyle(VeilGameSecondaryButtonStyle())
+                        .buttonStyle(VeilPhysicalButtonStyle())
                         .disabled(output.isEmpty)
                 }
                 Text(output.isEmpty ? "清理结果会显示在这里" : output)
@@ -642,7 +736,7 @@ struct VeilTextCleanerToolView: View {
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("文本清理")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: input) { _ in output = "" }
@@ -679,23 +773,23 @@ struct VeilColorLabToolView: View {
                         colorField("B", text: $blue)
                     }
                 }
-                .veilCard()
+                .veilCompactToolSurface(cornerRadius: 16)
                 HStack(spacing: 9) {
-                    Button("HEX → RGB") { fromHex() }.buttonStyle(VeilGamePrimaryButtonStyle())
-                    Button("RGB → HEX") { fromRGB() }.buttonStyle(VeilGameSecondaryButtonStyle())
+                    Button("HEX → RGB") { fromHex() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("RGB → HEX") { fromRGB() }.buttonStyle(VeilPhysicalButtonStyle())
                 }
                 if let errorText {
                     Label(errorText, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption).foregroundColor(VeilTheme.danger)
                 }
                 Button("复制 \(lastValidatedHex)") { VeilToolClipboard.copy(lastValidatedHex) }
-                    .buttonStyle(VeilGameSecondaryButtonStyle())
+                    .buttonStyle(VeilPhysicalButtonStyle())
                     .disabled(!isValidatedColor)
                 privacyNote("颜色转换不读取照片或屏幕内容；复制内容仅留在本设备，并会在 5 分钟后过期。")
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("颜色实验室")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -760,20 +854,20 @@ struct VeilRandomDecisionToolView: View {
                     .font(.title3.bold())
                     .foregroundColor(VeilTheme.goldBright)
                     .frame(maxWidth: .infinity, minHeight: 76)
-                    .veilCard(emphasized: true)
+                    .veilCompactToolSurface(cornerRadius: 18)
                 TextEditor(text: boundedToolText($choices))
                     .frame(minHeight: 120)
                     .padding(8)
                     .veilCompactToolSurface(cornerRadius: 14)
                 toolInputMeter(choices)
                 HStack(spacing: 9) {
-                    Button("抽一个") { pick() }.buttonStyle(VeilGamePrimaryButtonStyle())
-                    Button("抛硬币") { coin() }.buttonStyle(VeilGameSecondaryButtonStyle())
+                    Button("抽一个") { pick() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("抛硬币") { coin() }.buttonStyle(VeilPhysicalButtonStyle())
                 }
                 HStack(spacing: 9) {
                     TextField("面数", text: $diceSides).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
                     TextField("数量", text: $diceCount).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-                    Button("掷骰") { roll() }.buttonStyle(VeilGameSecondaryButtonStyle())
+                    Button("掷骰") { roll() }.buttonStyle(VeilPhysicalButtonStyle())
                 }
                 if let errorText {
                     Text(errorText).font(.caption).foregroundColor(VeilTheme.danger)
@@ -782,7 +876,7 @@ struct VeilRandomDecisionToolView: View {
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("随机决策")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -825,10 +919,10 @@ struct VeilMorseToolView: View {
                     .veilCompactToolSurface(cornerRadius: 14)
                 toolInputMeter(input)
                 HStack(spacing: 9) {
-                    Button("编码") { output = VeilLocalToolEngine.morseEncode(input) }.buttonStyle(VeilGamePrimaryButtonStyle())
-                    Button("解码") { output = VeilLocalToolEngine.morseDecode(input) }.buttonStyle(VeilGameSecondaryButtonStyle())
+                    Button("编码") { output = VeilLocalToolEngine.morseEncode(input) }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("解码") { output = VeilLocalToolEngine.morseDecode(input) }.buttonStyle(VeilPhysicalButtonStyle())
                     Button("复制") { VeilToolClipboard.copy(output) }
-                        .buttonStyle(VeilGameSecondaryButtonStyle()).disabled(output.isEmpty)
+                        .buttonStyle(VeilPhysicalButtonStyle()).disabled(output.isEmpty)
                 }
                 Text(output.isEmpty ? "... --- ..." : output)
                     .font(.system(.body, design: .monospaced).weight(.semibold))
@@ -841,7 +935,7 @@ struct VeilMorseToolView: View {
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("摩斯电码")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: input) { _ in output = "" }
@@ -874,12 +968,12 @@ struct VeilLinkPulseToolView: View {
                 } label: {
                     Label("刷新本地链路", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(VeilGamePrimaryButtonStyle())
+                .buttonStyle(VeilPhysicalButtonStyle(accent: true))
                 privacyNote("只刷新 VeilLink 自己的 Bonjour/BLE 发现，不进行互联网测速、端口扫描或局域网设备探测。")
             }
             .padding(16)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("链路仪表")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -961,18 +1055,19 @@ private struct VeilCompactToolSurface: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if VeilRenderProfile.allowsExpensiveVisualEffects {
-            content
-                .background(.ultraThinMaterial)
-                .background(VeilTheme.elevated.opacity(0.42))
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(VeilTheme.hairline, lineWidth: 0.8))
-        } else {
-            content
-                .background(VeilTheme.elevated.opacity(0.94))
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(VeilTheme.hairline, lineWidth: 1))
-        }
+        content
+            .background(
+                VeilInstrumentPlate(
+                    shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
+                    emphasized: false
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: max(2, cornerRadius - 2), style: .continuous)
+                    .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
+                    .padding(2)
+            )
     }
 }
 
@@ -1006,7 +1101,7 @@ struct VeilWalkieTalkieView: View {
             }
             .padding(18)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("对讲机")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -1116,7 +1211,7 @@ struct VeilWalkieTalkieView: View {
 
     private var peerPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("开放给附近已信任设备", isOn: $openToTrustedNearby).tint(VeilTheme.gold)
+            VeilToggleLever(title: "开放给附近已信任设备", isOn: $openToTrustedNearby)
             if trustedPeers.isEmpty {
                 Label("附近没有已信任设备", systemImage: "person.2.slash").font(.caption).foregroundColor(VeilTheme.secondaryText)
             } else if !openToTrustedNearby {
@@ -1133,7 +1228,7 @@ struct VeilWalkieTalkieView: View {
                     .font(.caption).foregroundColor(VeilTheme.secondaryText)
             }
         }
-        .veilCard()
+        .veilCompactToolSurface(cornerRadius: 16)
     }
 
     private func statusLamp(_ title: String, active: Bool, color: Color) -> some View {
