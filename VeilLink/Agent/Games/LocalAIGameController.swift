@@ -19,6 +19,7 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var magneticHockey = MagneticHockeyState()
     @Published private(set) var tacticalDifficulty: TacticalBotDifficulty = .commander
     @Published private(set) var arcadeDifficulty: ArcadeBotDifficulty = .operatorMode
+    @Published private(set) var boardDifficulty: BoardBotDifficulty = .strategist
     @Published private(set) var tacticalScenario: TacticalSoloScenario = .standard
     @Published private(set) var tacticalDailyChallenge = TacticalDailyChallenge.challenge()
     @Published private(set) var outcome: Outcome = .playing
@@ -161,6 +162,15 @@ final class LocalAIGameController: ObservableObject {
         }
     }
 
+    func setBoardDifficulty(_ difficulty: BoardBotDifficulty) {
+        switch game {
+        case .gomoku, .xiangqi, .ludo:
+            boardDifficulty = difficulty
+        default:
+            break
+        }
+    }
+
     func setTacticalScenario(_ scenario: TacticalSoloScenario) {
         guard game == .tactical, tacticalScenario != scenario else { return }
         tacticalScenario = scenario
@@ -260,7 +270,8 @@ final class LocalAIGameController: ObservableObject {
         switch game {
         case .gomoku:
             let snapshot = gomoku
-            let budget = GomokuBotBudget.standard(
+            let difficulty = boardDifficulty
+            let budget = difficulty.gomokuBudget(
                 profileLabel: VeilDevicePerformance.current.label
             )
             let result = await Task.detached(priority: .userInitiated) {
@@ -270,7 +281,7 @@ final class LocalAIGameController: ObservableObject {
 
             var ruleGate = gomoku
             guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
-            lastDecisionMode = "五子棋 Bot"
+            lastDecisionMode = "五子棋 \(difficulty.title) · \(result.nodes) 节点"
             return AgentActionCandidate(
                 actionID: "gomoku:\(result.index)",
                 encodedAction: AgentGameEncoding.encodeInts([result.index]),
@@ -284,7 +295,8 @@ final class LocalAIGameController: ObservableObject {
 
         case .xiangqi:
             let snapshot = xiangqi
-            let budget = XiangqiBotBudget.standard(
+            let difficulty = boardDifficulty
+            let budget = difficulty.xiangqiBudget(
                 profileLabel: VeilDevicePerformance.current.label
             )
             let result = await Task.detached(priority: .userInitiated) {
@@ -295,8 +307,8 @@ final class LocalAIGameController: ObservableObject {
             var ruleGate = xiangqi
             guard ruleGate.apply(from: result.from, to: result.to, actor: .guest) else { return nil }
             lastDecisionMode = result.completedDepth > 0
-                ? "象棋 Bot D\(result.completedDepth)"
-                : "象棋 Bot 快速着"
+                ? "象棋 \(difficulty.title) · D\(result.completedDepth) · \(result.nodes) 节点"
+                : "象棋 \(difficulty.title) · 快速着"
             return AgentActionCandidate(
                 actionID: "xiangqi:\(result.from):\(result.to)",
                 encodedAction: AgentGameEncoding.encodeInts([result.from, result.to]),
@@ -313,8 +325,14 @@ final class LocalAIGameController: ObservableObject {
         case .ludo:
             let snapshot = ludo
             let currentSessionID = sessionID
+            let difficulty = boardDifficulty
             let result = await Task.detached(priority: .userInitiated) {
-                LudoBot.chooseMove(in: snapshot, for: .guest, sessionID: currentSessionID)
+                LudoBot.chooseMove(
+                    in: snapshot,
+                    for: .guest,
+                    sessionID: currentSessionID,
+                    difficulty: difficulty
+                )
             }.value
             guard let result else { return nil }
 
@@ -324,7 +342,7 @@ final class LocalAIGameController: ObservableObject {
                 actor: .guest,
                 sessionID: sessionID
             ) else { return nil }
-            lastDecisionMode = "飞行棋 Bot"
+            lastDecisionMode = "飞行棋 \(difficulty.title) · 风险评估"
             return AgentActionCandidate(
                 actionID: "ludo:\(result.pieceIndex)",
                 encodedAction: AgentGameEncoding.encodeInts([result.pieceIndex]),
