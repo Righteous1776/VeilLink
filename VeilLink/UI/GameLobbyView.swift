@@ -449,48 +449,54 @@ struct LocalAIGameView: View {
             subtitle: "只改变本机 Bot 的搜索精度与前视深度，不改变游戏规则或联机协议。",
             symbol: "cpu"
         ) {
-            HStack(spacing: 10) {
-                Menu {
+            VStack(spacing: 9) {
+                HStack {
+                    VeilInstrumentLabel(
+                        title: "DIFFICULTY",
+                        value: controller.arcadeDifficulty.title,
+                        active: true
+                    )
+                    Spacer()
+                    VeilLCDDisplay(
+                        title: "BOT MODE",
+                        value: controller.arcadeDifficulty.telemetryLabel
+                    )
+                    .frame(width: 112)
+                }
+
+                HStack(spacing: 7) {
                     ForEach(ArcadeBotDifficulty.allCases) { difficulty in
                         Button {
                             controller.setArcadeDifficulty(difficulty)
                             model.haptics.selection()
                         } label: {
-                            if difficulty == controller.arcadeDifficulty {
-                                Label(difficulty.title, systemImage: "checkmark")
-                            } else {
+                            VStack(spacing: 2) {
                                 Text(difficulty.title)
+                                Text(difficulty.telemetryLabel)
+                                    .font(.system(size: 6.5, weight: .black, design: .monospaced))
+                                    .tracking(0.5)
+                                    .opacity(0.72)
                             }
+                            .frame(maxWidth: .infinity)
                         }
+                        .buttonStyle(
+                            VeilCompactKeyStyle(
+                                selected: difficulty == controller.arcadeDifficulty
+                            )
+                        )
+                        .accessibilityLabel("难度 \(difficulty.title)")
+                        .accessibilityValue(
+                            difficulty == controller.arcadeDifficulty ? "当前选择" : "未选择"
+                        )
                     }
-                } label: {
-                    HStack(spacing: 8) {
-                        VeilIndicatorLamp(active: true)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("DIFFICULTY")
-                                .font(.system(size: 7.5, weight: .black, design: .monospaced))
-                                .tracking(0.8)
-                                .foregroundColor(VeilTheme.tertiaryText)
-                            Text(controller.arcadeDifficulty.title)
-                                .font(.subheadline.bold())
-                                .foregroundColor(VeilTheme.text)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption2.bold())
-                            .foregroundColor(VeilTheme.gold)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.18))
-                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                 }
-
-                VeilLCDDisplay(
-                    title: "BOT MODE",
-                    value: controller.arcadeDifficulty.telemetryLabel
+                .padding(6)
+                .background(Color.black.opacity(0.20))
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
                 )
-                .frame(width: 112)
             }
 
             let detail: String = {
