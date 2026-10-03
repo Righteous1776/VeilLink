@@ -104,4 +104,35 @@ final class MagneticHockeyGameTests: XCTestCase {
         XCTAssertEqual(state.winner, .host)
         XCTAssertTrue(state.isFinished)
     }
+    func testEveryDifficultyProducesDeterministicLegalHockeyMove() {
+        let state = MagneticHockeyState()
+        for difficulty in ArcadeBotDifficulty.allCases {
+            let first = MagneticHockeyBot.chooseMove(
+                in: state,
+                actor: .host,
+                sessionID: sessionID,
+                difficulty: difficulty
+            )
+            let replay = MagneticHockeyBot.chooseMove(
+                in: state,
+                actor: .host,
+                sessionID: sessionID,
+                difficulty: difficulty
+            )
+            XCTAssertEqual(first, replay)
+            guard let first else {
+                XCTFail("Every hockey difficulty must produce an opening move")
+                continue
+            }
+            var gate = state
+            XCTAssertTrue(
+                gate.apply(
+                    move: first,
+                    actor: .host,
+                    sessionID: sessionID
+                )
+            )
+        }
+    }
+
 }
