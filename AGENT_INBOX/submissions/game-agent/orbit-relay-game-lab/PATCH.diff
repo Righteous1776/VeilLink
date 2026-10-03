@@ -1,0 +1,1432 @@
+diff --git a/VeilLink/Core/LocalGameMissionDirector.swift b/VeilLink/Core/LocalGameMissionDirector.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/LocalGameMissionDirector.swift
+@@ -0,0 +1,70 @@
++import Foundation
++
++struct LocalGameMission: Equatable {
++    let code: String
++    let title: String
++    let detail: String
++    let systemImage: String
++}
++
++/// Session-seeded side objectives for local play.
++/// This is intentionally meta-game only: it never changes legal moves, scoring,
++/// replay data, network payloads or deterministic game state.
++enum LocalGameMissionDirector {
++    static func mission(for game: MiniGameKind, sessionID: String) -> LocalGameMission {
++        let variant = Int(stableHash(sessionID + game.title) % 3)
++        switch game {
++        case .gomoku:
++            return [
++                LocalGameMission(code: "CENTER_LOCK", title: "中央封锁", detail: "优先争夺中央交叉区，逼电脑在外圈应对。", systemImage: "scope"),
++                LocalGameMission(code: "DOUBLE_THREAT", title: "双向威胁", detail: "尝试制造两个必须同时回应的潜在连线。", systemImage: "point.3.filled.connected.trianglepath.dotted"),
++                LocalGameMission(code: "QUIET_BUILD", title: "静默筑势", detail: "减少无效追击，用连续两手构建后续强制线。", systemImage: "square.grid.3x3.fill")
++            ][variant]
++        case .xiangqi:
++            return [
++                LocalGameMission(code: "KING_SAFETY", title: "将帅安全", detail: "先稳定中路与底线，再把主动权转向边翼。", systemImage: "shield.lefthalf.filled"),
++                LocalGameMission(code: "OPEN_FILE", title: "打开纵线", detail: "争取让车或炮获得一条高价值纵向通道。", systemImage: "arrow.up.and.down"),
++                LocalGameMission(code: "TEMPO_CHAIN", title: "连续先手", detail: "让至少两步形成连续威胁，而不是单次交换。", systemImage: "bolt.horizontal.fill")
++            ][variant]
++        case .ludo:
++            return [
++                LocalGameMission(code: "SAFE_ROUTE", title: "安全推进", detail: "优先让领先棋子进入更安全的阶段，减少暴露。", systemImage: "figure.walk"),
++                LocalGameMission(code: "BALANCED_FIELD", title: "双子推进", detail: "不要只押一枚棋子，保持至少两枚持续向前。", systemImage: "person.2.fill"),
++                LocalGameMission(code: "FINISH_PRESSURE", title: "终局压力", detail: "一旦形成领先，优先把可终结的棋子送进终点区。", systemImage: "flag.checkered")
++            ][variant]
++        case .tactical:
++            return [
++                LocalGameMission(code: "SUPPLY_FIRST", title: "粮道优先", detail: "保持主力补给不断，再把前线压力推向官渡。", systemImage: "shippingbox.fill"),
++                LocalGameMission(code: "OBJECTIVE_NET", title: "目标网", detail: "争夺官渡的同时，让另一支部队威胁白马或乌巢。", systemImage: "map.fill"),
++                LocalGameMission(code: "COMMAND_GUARD", title: "中军护卫", detail: "避免中军孤立，用友军形成支援链和反击空间。", systemImage: "shield.checkered")
++            ][variant]
++        case .artillery:
++            return [
++                LocalGameMission(code: "WIND_READ", title: "读风校射", detail: "第一炮先建立风偏基准，第二炮再做精确修正。", systemImage: "wind"),
++                LocalGameMission(code: "LOW_ARC", title: "低弧压制", detail: "尝试在不过度牺牲精度的前提下降低弹道时间。", systemImage: "arrow.down.right"),
++                LocalGameMission(code: "POWER_DISCIPLINE", title: "火力纪律", detail: "优先微调力度而不是同时大幅改变两个参数。", systemImage: "dial.medium.fill")
++            ][variant]
++        case .lightTrail:
++            return [
++                LocalGameMission(code: "ENERGY_BANK", title: "能量储备", detail: "减少无意义换道，把能量留给连续障碍区。", systemImage: "battery.75percent"),
++                LocalGameMission(code: "LANE_READ", title: "赛道预判", detail: "提前读取两段路线，不要等障碍贴近才变道。", systemImage: "road.lanes"),
++                LocalGameMission(code: "CLEAN_LINE", title: "洁净路线", detail: "追求连续安全换道，避免短时间内反复左右修正。", systemImage: "waveform.path")
++            ][variant]
++        case .magneticHockey:
++            return [
++                LocalGameMission(code: "FIELD_READ", title: "磁场读秒", detail: "观察本回合偏转方向，再选择直射或借边。", systemImage: "dot.radiowaves.left.and.right"),
++                LocalGameMission(code: "BANK_SHOT", title: "边墙借力", detail: "在角度允许时，用一次反弹改变入射方向。", systemImage: "arrow.turn.down.right"),
++                LocalGameMission(code: "CENTER_CONTROL", title: "中线控制", detail: "尽量让球在出手后穿过中轴附近，保留二次机会。", systemImage: "circle.grid.cross.fill")
++            ][variant]
++        }
++    }
++
++    private static func stableHash(_ text: String) -> UInt64 {
++        var hash: UInt64 = 1469598103934665603
++        for byte in text.utf8 {
++            hash ^= UInt64(byte)
++            hash &*= 1099511628211
++        }
++        return hash
++    }
++}
+diff --git a/VeilLink/Core/LocalGameMissionEvaluator.swift b/VeilLink/Core/LocalGameMissionEvaluator.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/LocalGameMissionEvaluator.swift
+@@ -0,0 +1,255 @@
++import Foundation
++
++struct LocalGameMissionProgress: Equatable {
++    let fraction: Double
++    let label: String
++
++    var completed: Bool { fraction >= 0.999 }
++
++    init(fraction: Double, label: String) {
++        self.fraction = min(1, max(0, fraction))
++        self.label = label
++    }
++}
++
++enum LocalGameMissionEvaluator {
++    static func progress(
++        for mission: LocalGameMission,
++        session: MiniGameSessionSnapshot
++    ) -> LocalGameMissionProgress {
++        let player = session.localPlayer
++        switch session.game {
++        case .gomoku:
++            guard let state = session.gomoku else { return pending() }
++            return gomoku(mission: mission, state: state, player: player)
++        case .xiangqi:
++            guard let state = session.xiangqi else { return pending() }
++            return xiangqi(mission: mission, state: state, player: player)
++        case .ludo:
++            guard let state = session.ludo else { return pending() }
++            return ludo(mission: mission, state: state, player: player)
++        case .tactical:
++            guard let state = session.tactical else { return pending() }
++            return tactical(mission: mission, state: state, player: player)
++        case .artillery:
++            guard let state = session.artillery else { return pending() }
++            return artillery(mission: mission, state: state, player: player)
++        case .lightTrail:
++            guard let state = session.lightTrail else { return pending() }
++            return lightTrail(mission: mission, state: state, player: player)
++        case .magneticHockey:
++            guard let state = session.magneticHockey else { return pending() }
++            return magneticHockey(mission: mission, state: state, player: player)
++        }
++    }
++
++    private static func gomoku(
++        mission: LocalGameMission,
++        state: GomokuState,
++        player: MiniGamePlayer
++    ) -> LocalGameMissionProgress {
++        let value: Int8 = player == .host ? 1 : 2
++        switch mission.code {
++        case "CENTER_LOCK":
++            var count = 0
++            for row in 5...9 {
++                for col in 5...9 where state.value(at: row * GomokuState.size + col) == value {
++                    count += 1
++                }
++            }
++            return .init(fraction: Double(count) / 4.0, label: "中央落子 \(count)/4")
++        case "DOUBLE_THREAT":
++            let line = longestLine(in: state, value: value)
++            return .init(fraction: Double(line) / 4.0, label: "最长连续 \(line)/4")
++        default:
++            let stones = (0..<(GomokuState.size * GomokuState.size))
++                .filter { state.value(at: $0) == value }
++                .count
++            return .init(fraction: Double(stones) / 6.0, label: "已布子 \(stones)/6")
++        }
++    }
++
++    private static func xiangqi(
++        mission: LocalGameMission,
++        state: XiangqiState,
++        player: MiniGamePlayer
++    ) -> LocalGameMissionProgress {
++        switch mission.code {
++        case "KING_SAFETY":
++            let safe = !state.isInCheck(player: player)
++            let tempo = min(1, Double(state.moveCount) / 6.0)
++            return .init(
++                fraction: safe ? max(0.35, tempo) : 0,
++                label: safe ? "将帅安全 · 第 \(state.moveCount) 手" : "正在被将军"
++            )
++        case "OPEN_FILE":
++            let opponentSide: XiangqiSide = player == .host ? .black : .red
++            let remaining = (0..<(XiangqiState.rows * XiangqiState.columns))
++                .compactMap { state.piece(at: $0) }
++                .filter { $0.side == opponentSide }
++                .count
++            let captured = max(0, 16 - remaining)
++            return .init(fraction: Double(captured) / 2.0, label: "吃子 \(captured)/2")
++        default:
++            let checks = state.consecutiveCheckCount(for: player)
++            return .init(fraction: Double(checks) / 2.0, label: "连续将军 \(checks)/2")
++        }
++    }
++
++    private static func ludo(
++        mission: LocalGameMission,
++        state: LudoState,
++        player: MiniGamePlayer
++    ) -> LocalGameMissionProgress {
++        let pieces = state.pieces(for: player)
++        switch mission.code {
++        case "SAFE_ROUTE":
++            let advanced = pieces.filter { $0 >= 12 }.count
++            return .init(fraction: Double(advanced) / 2.0, label: "深入赛道 \(advanced)/2")
++        case "BALANCED_FIELD":
++            let deployed = pieces.filter { $0 >= 0 && $0 < LudoState.finishProgress }.count
++            return .init(fraction: Double(deployed) / 2.0, label: "在场棋子 \(deployed)/2")
++        default:
++            let finished = state.finishedCount(for: player)
++            return .init(fraction: Double(finished), label: "抵达终点 \(finished)/1")
++        }
++    }
++
++    private static func tactical(
++        mission: LocalGameMission,
++        state: TacticalState,
++        player: MiniGamePlayer
++    ) -> LocalGameMissionProgress {
++        let faction: TacticalFaction = player == .host ? .cao : .yuan
++        let situation = state.situationSnapshot()
++        switch mission.code {
++        case "SUPPLY_FIRST":
++            let units = state.units(for: player)
++            guard !units.isEmpty else { return .init(fraction: 0, label: "无可用部队") }
++            let supplied = units.filter(situation.isSupplied).count
++            return .init(
++                fraction: Double(supplied) / Double(units.count),
++                label: "补给 \(supplied)/\(units.count)"
++            )
++        case "OBJECTIVE_NET":
++            let vp = state.victoryPoints(for: player)
++            return .init(fraction: Double(vp) / 4.0, label: "战役点数 \(vp)/4")
++        default:
++            guard let command = state.units(for: player).first(where: { $0.kind == .command }) else {
++                return .init(fraction: 0, label: "中军已失")
++            }
++            let threatened = situation.threatenedHexes(by: faction.opponent).contains(command.position)
++            return .init(
++                fraction: threatened ? 0.25 : 1,
++                label: threatened ? "中军受威胁" : "中军安全"
++            )
++        }
++    }
++
++    private static func artillery(
++        mission: LocalGameMission,
++        state: ArtilleryState,
++        player: MiniGamePlayer
++    ) -> LocalGameMissionProgress {
++        guard let shot = state.lastShot else { return pending() }
++        switch mission.code {
++        case "WIND_READ":
++            return .init(
++                fraction: shot.damage > 0 ? 1 : 0.45,
++                label: shot.damage > 0 ? "校射命中" : "已建立落点"
++            )
++        case "LOW_ARC":
++            let success = shot.angle <= 42 && shot.damage > 0
++            return .init(
++                fraction: success ? 1 : (shot.angle <= 42 ? 0.55 : 0.2),
++                label: "末炮 \(shot.angle)° · \(shot.damage)伤害"
++            )
++        default:
++            let disciplined = shot.power <= 82
++            let fraction = shot.damage > 0 && disciplined ? 1 : (disciplined ? 0.6 : 0.25)
++            return .init(
++                fraction: fraction,
++                label: "末炮 \(shot.power)% · \(shot.damage)伤害"
++            )
++        }
++    }
++
++    private static func lightTrail(
++        mission: LocalGameMission,
++        state: LightTrailState,
++        player: MiniGamePlayer
++    ) -> LocalGameMissionProgress {
++        switch mission.code {
++        case "ENERGY_BANK":
++            let energy = state.energy(for: player)
++            return .init(fraction: Double(energy) / 2.0, label: "能量 \(energy)/2")
++        case "LANE_READ":
++            let shield = state.shield(for: player)
++            let fraction = Double(shield) / 3.0
++            return .init(fraction: fraction, label: "护盾 \(shield)/3 · 第 \(state.round) 轮")
++        default:
++            let survived = !state.lastCollision
++            let fraction = state.round == 0 ? 0 : (survived ? min(1, Double(state.round) / 5.0) : 0.2)
++            return .init(
++                fraction: fraction,
++                label: survived ? "连续安全 · 第 \(state.round) 轮" : "刚发生碰撞"
++            )
++        }
++    }
++
++    private static func magneticHockey(
++        mission: LocalGameMission,
++        state: MagneticHockeyState,
++        player: MiniGamePlayer
++    ) -> LocalGameMissionProgress {
++        switch mission.code {
++        case "FIELD_READ":
++            guard let shot = state.lastShot else { return pending() }
++            let ownGoal = shot.scoredPlayer == player.opponent
++            return .init(
++                fraction: ownGoal ? 0 : min(1, Double(state.turn) / 3.0),
++                label: ownGoal ? "出现反向进球风险" : "磁场处理稳定"
++            )
++        case "BANK_SHOT":
++            guard let shot = state.lastShot else { return pending() }
++            let scored = shot.scoredPlayer == player
++            let fraction = scored && shot.wallBounces > 0 ? 1 : (shot.wallBounces > 0 ? 0.65 : 0.2)
++            return .init(
++                fraction: fraction,
++                label: "反弹 \(shot.wallBounces) · " + (scored ? "得分" : "未得分")
++            )
++        default:
++            let score = state.score(for: player)
++            return .init(fraction: Double(score), label: "进球 \(score)/1")
++        }
++    }
++
++    private static func pending() -> LocalGameMissionProgress {
++        .init(fraction: 0, label: "等待第一步操作")
++    }
++
++    private static func longestLine(in state: GomokuState, value: Int8) -> Int {
++        let size = GomokuState.size
++        let directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
++        var best = 0
++        for row in 0..<size {
++            for col in 0..<size {
++                guard state.value(at: row * size + col) == value else { continue }
++                for (dr, dc) in directions {
++                    var count = 1
++                    var r = row + dr
++                    var c = col + dc
++                    while (0..<size).contains(r),
++                          (0..<size).contains(c),
++                          state.value(at: r * size + c) == value {
++                        count += 1
++                        r += dr
++                        c += dc
++                    }
++                    best = max(best, count)
++                }
++            }
++        }
++        return best
++    }
++}
+diff --git a/VeilLink/Core/OrbitRelayGame.swift b/VeilLink/Core/OrbitRelayGame.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/OrbitRelayGame.swift
+@@ -0,0 +1,280 @@
++import Foundation
++
++struct OrbitRelayPoint: Equatable, Sendable {
++    var x: Double
++    var y: Double
++
++    func distance(to other: OrbitRelayPoint) -> Double {
++        hypot(x - other.x, y - other.y)
++    }
++}
++
++struct OrbitRelayVector: Equatable, Sendable {
++    var x: Double
++    var y: Double
++
++    var magnitude: Double { hypot(x, y) }
++}
++
++struct OrbitRelayMove: Equatable, Sendable {
++    let angle: Int
++    let power: Int
++}
++
++struct OrbitRelayCraft: Equatable, Sendable {
++    var position: OrbitRelayPoint
++    var velocity: OrbitRelayVector
++    var fuel: Int
++    var stability: Int
++    var score: Int
++}
++
++struct OrbitRelayTurnResult: Equatable, Sendable {
++    let actor: MiniGamePlayer
++    let move: OrbitRelayMove
++    let capturedRelay: Bool
++    let boundaryHits: Int
++    let wellWarning: Bool
++    let fuelSpent: Int
++    let path: [OrbitRelayPoint]
++}
++
++struct OrbitRelayState: Equatable, Sendable {
++    static let fieldWidth = 1_000.0
++    static let fieldHeight = 700.0
++    static let center = OrbitRelayPoint(x: 500, y: 350)
++    static let relayCaptureRadius = 48.0
++    static let exclusionRadius = 92.0
++    static let winningScore = 3
++    static let maximumTurns = 24
++
++    private static let fixedTimeStep = 0.055
++    private static let simulationSteps = 320
++    private static let gravityCoefficient = 185_000.0
++
++    private(set) var currentPlayer: MiniGamePlayer = .host
++    private(set) var hostCraft = OrbitRelayCraft(
++        position: OrbitRelayPoint(x: 220, y: 350),
++        velocity: OrbitRelayVector(x: 0, y: -43),
++        fuel: 100,
++        stability: 5,
++        score: 0
++    )
++    private(set) var guestCraft = OrbitRelayCraft(
++        position: OrbitRelayPoint(x: 780, y: 350),
++        velocity: OrbitRelayVector(x: 0, y: 43),
++        fuel: 100,
++        stability: 5,
++        score: 0
++    )
++    private(set) var relayIndex = 0
++    private(set) var turn = 0
++    private(set) var winner: MiniGamePlayer?
++    private(set) var isDraw = false
++    private(set) var lastTurn: OrbitRelayTurnResult?
++
++    var isFinished: Bool { winner != nil || isDraw }
++
++    func craft(for player: MiniGamePlayer) -> OrbitRelayCraft {
++        player == .host ? hostCraft : guestCraft
++    }
++
++    func relayPoint(sessionID: String) -> OrbitRelayPoint {
++        Self.relayPoint(sessionID: sessionID, index: relayIndex)
++    }
++
++    static func relayPoint(sessionID: String, index: Int) -> OrbitRelayPoint {
++        let angleHash = stableHash("\(sessionID)|orbit-relay|angle|\(index)")
++        let radiusHash = stableHash("\(sessionID)|orbit-relay|radius|\(index)")
++        let angle = Double(angleHash % 360) * .pi / 180
++        let radius = 190.0 + Double(radiusHash % 111)
++        return OrbitRelayPoint(
++            x: center.x + cos(angle) * radius,
++            y: center.y + sin(angle) * radius
++        )
++    }
++
++    @discardableResult
++    mutating func apply(
++        move: OrbitRelayMove,
++        actor: MiniGamePlayer,
++        sessionID: String
++    ) -> Bool {
++        guard !isFinished,
++              actor == currentPlayer,
++              !sessionID.isEmpty,
++              (0..<360).contains(move.angle),
++              (0...100).contains(move.power) else { return false }
++
++        var craft = self.craft(for: actor)
++        let fuelSpent = move.power == 0 ? 0 : max(1, Int(ceil(Double(move.power) / 12.0)))
++        guard craft.fuel >= fuelSpent else { return false }
++
++        let radians = Double(move.angle) * .pi / 180
++        let burn = Double(move.power) * 0.72
++        craft.velocity.x += cos(radians) * burn
++        craft.velocity.y += sin(radians) * burn
++        craft.fuel -= fuelSpent
++
++        let relay = relayPoint(sessionID: sessionID)
++        var captured = false
++        var boundaryHits = 0
++        var wellWarning = false
++        var path: [OrbitRelayPoint] = [craft.position]
++        path.reserveCapacity(42)
++
++        for step in 0..<Self.simulationSteps {
++            let dx = Self.center.x - craft.position.x
++            let dy = Self.center.y - craft.position.y
++            let distanceSquared = max(7_500.0, dx * dx + dy * dy)
++            let distance = sqrt(distanceSquared)
++            let acceleration = Self.gravityCoefficient / distanceSquared
++            craft.velocity.x += (dx / distance) * acceleration * Self.fixedTimeStep
++            craft.velocity.y += (dy / distance) * acceleration * Self.fixedTimeStep
++
++            craft.position.x += craft.velocity.x * Self.fixedTimeStep
++            craft.position.y += craft.velocity.y * Self.fixedTimeStep
++
++            if craft.position.x < 18 {
++                craft.position.x = 18
++                craft.velocity.x = abs(craft.velocity.x) * 0.74
++                boundaryHits += 1
++            } else if craft.position.x > Self.fieldWidth - 18 {
++                craft.position.x = Self.fieldWidth - 18
++                craft.velocity.x = -abs(craft.velocity.x) * 0.74
++                boundaryHits += 1
++            }
++            if craft.position.y < 18 {
++                craft.position.y = 18
++                craft.velocity.y = abs(craft.velocity.y) * 0.74
++                boundaryHits += 1
++            } else if craft.position.y > Self.fieldHeight - 18 {
++                craft.position.y = Self.fieldHeight - 18
++                craft.velocity.y = -abs(craft.velocity.y) * 0.74
++                boundaryHits += 1
++            }
++
++            let wellDistance = craft.position.distance(to: Self.center)
++            if wellDistance < Self.exclusionRadius {
++                wellWarning = true
++                let nx = (craft.position.x - Self.center.x) / max(1, wellDistance)
++                let ny = (craft.position.y - Self.center.y) / max(1, wellDistance)
++                craft.position.x = Self.center.x + nx * Self.exclusionRadius
++                craft.position.y = Self.center.y + ny * Self.exclusionRadius
++                craft.velocity.x += nx * 22
++                craft.velocity.y += ny * 22
++                craft.stability = max(0, craft.stability - 1)
++            }
++
++            if !captured, craft.position.distance(to: relay) <= Self.relayCaptureRadius {
++                captured = true
++                craft.score += 1
++            }
++
++            if step % 8 == 0 {
++                path.append(craft.position)
++            }
++        }
++
++        if boundaryHits > 0 {
++            craft.stability = max(0, craft.stability - min(2, boundaryHits))
++        }
++
++        if actor == .host { hostCraft = craft }
++        else { guestCraft = craft }
++
++        if captured { relayIndex += 1 }
++        turn += 1
++        lastTurn = OrbitRelayTurnResult(
++            actor: actor,
++            move: move,
++            capturedRelay: captured,
++            boundaryHits: boundaryHits,
++            wellWarning: wellWarning,
++            fuelSpent: fuelSpent,
++            path: path
++        )
++
++        resolveOutcome(after: actor)
++        return true
++    }
++
++    private mutating func resolveOutcome(after actor: MiniGamePlayer) {
++        let active = craft(for: actor)
++        if active.score >= Self.winningScore {
++            winner = actor
++            return
++        }
++        if active.stability <= 0 {
++            winner = actor.opponent
++            return
++        }
++
++        if turn >= Self.maximumTurns {
++            let hostRank = hostCraft.score * 10_000 + hostCraft.stability * 100 + hostCraft.fuel
++            let guestRank = guestCraft.score * 10_000 + guestCraft.stability * 100 + guestCraft.fuel
++            if hostRank > guestRank { winner = .host }
++            else if guestRank > hostRank { winner = .guest }
++            else { isDraw = true }
++            return
++        }
++
++        currentPlayer = actor.opponent
++    }
++
++    private static func stableHash(_ text: String) -> UInt64 {
++        var hash: UInt64 = 1469598103934665603
++        for byte in text.utf8 {
++            hash ^= UInt64(byte)
++            hash &*= 1099511628211
++        }
++        return hash
++    }
++}
++
++enum OrbitRelayBot {
++    static func chooseMove(
++        in state: OrbitRelayState,
++        actor: MiniGamePlayer,
++        sessionID: String
++    ) -> OrbitRelayMove? {
++        guard !state.isFinished,
++              state.currentPlayer == actor,
++              !sessionID.isEmpty else { return nil }
++
++        var best: (move: OrbitRelayMove, score: Double)?
++
++        for angle in stride(from: 0, to: 360, by: 15) {
++            for power in stride(from: 0, through: 100, by: 20) {
++                let move = OrbitRelayMove(angle: angle, power: power)
++                var candidate = state
++                guard candidate.apply(move: move, actor: actor, sessionID: sessionID) else { continue }
++
++                let craft = candidate.craft(for: actor)
++                let relay = candidate.relayPoint(sessionID: sessionID)
++                let distance = craft.position.distance(to: relay)
++                let captured = candidate.lastTurn?.capturedRelay == true
++                let warning = candidate.lastTurn?.wellWarning == true
++                let hits = candidate.lastTurn?.boundaryHits ?? 0
++                let value = (candidate.winner == actor ? 10_000_000.0 : 0)
++                    + (captured ? 1_000_000.0 : 0)
++                    + Double(craft.score) * 100_000
++                    + Double(craft.stability) * 6_000
++                    + Double(craft.fuel) * 18
++                    - distance * 14
++                    - (warning ? 55_000 : 0)
++                    - Double(hits) * 18_000
++
++                if best == nil || value > best!.score {
++                    best = (move, value)
++                }
++            }
++        }
++
++        guard let move = best?.move else { return nil }
++        var legalityProbe = state
++        return legalityProbe.apply(move: move, actor: actor, sessionID: sessionID)
++            ? move
++            : nil
++    }
++}
+diff --git a/VeilLink/UI/LocalGameMissionStrip.swift b/VeilLink/UI/LocalGameMissionStrip.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/LocalGameMissionStrip.swift
+@@ -0,0 +1,76 @@
++import SwiftUI
++
++struct LocalGameMissionStrip: View {
++    let session: MiniGameSessionSnapshot
++
++    private var mission: LocalGameMission {
++        LocalGameMissionDirector.mission(for: session.game, sessionID: session.id)
++    }
++
++    private var progress: LocalGameMissionProgress {
++        LocalGameMissionEvaluator.progress(for: mission, session: session)
++    }
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 8) {
++            HStack(spacing: 9) {
++                ZStack {
++                    Circle()
++                        .fill(VeilTheme.gold.opacity(0.10))
++                        .frame(width: 34, height: 34)
++                    Image(systemName: progress.completed ? "checkmark.seal.fill" : mission.systemImage)
++                        .font(.system(size: 14, weight: .semibold))
++                        .foregroundColor(VeilTheme.goldBright)
++                }
++
++                VStack(alignment: .leading, spacing: 2) {
++                    Text("MISSION · " + mission.code)
++                        .font(.system(size: 8, weight: .black, design: .monospaced))
++                        .tracking(0.8)
++                        .foregroundColor(VeilTheme.mutedGold)
++                    Text(mission.title)
++                        .font(.caption.weight(.bold))
++                        .foregroundColor(VeilTheme.text)
++                }
++
++                Spacer(minLength: 6)
++
++                Text(progress.completed ? "COMPLETE" : progress.label)
++                    .font(.system(size: 8, weight: .bold, design: .monospaced))
++                    .foregroundColor(progress.completed ? VeilTheme.goldBright : VeilTheme.secondaryText)
++                    .lineLimit(1)
++                    .minimumScaleFactor(0.75)
++            }
++
++            GeometryReader { proxy in
++                ZStack(alignment: .leading) {
++                    Capsule()
++                        .fill(Color.black.opacity(0.28))
++                    Capsule()
++                        .fill(VeilTheme.gold)
++                        .frame(width: max(4, proxy.size.width * progress.fraction))
++                }
++            }
++            .frame(height: 5)
++
++            Text(mission.detail)
++                .font(.caption2)
++                .foregroundColor(VeilTheme.secondaryText)
++                .fixedSize(horizontal: false, vertical: true)
++        }
++        .padding(10)
++        .background(
++            VeilInstrumentPlate(
++                shape: RoundedRectangle(cornerRadius: 14, style: .continuous),
++                emphasized: progress.completed
++            )
++        )
++        .overlay(
++            RoundedRectangle(cornerRadius: 14, style: .continuous)
++                .stroke(VeilTheme.hairline, lineWidth: 0.8)
++        )
++        .accessibilityElement(children: .combine)
++        .accessibilityLabel("本局任务 " + mission.title)
++        .accessibilityValue(progress.label)
++    }
++}
+diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
+--- a/VeilLink/UI/MiniGameViews.swift
++++ b/VeilLink/UI/MiniGameViews.swift
+@@ -43,6 +43,13 @@ struct MiniGameHubView: View {
+ 
+     private var statistics: MiniGameStatistics { MiniGameStatistics(sessions: sessions) }
+ 
++    private var completedMissionContracts: Int {
++        sessions.filter { $0.localOutcome != nil }.filter { session in
++            let mission = LocalGameMissionDirector.mission(for: session.game, sessionID: session.id)
++            return LocalGameMissionEvaluator.progress(for: mission, session: session).completed
++        }.count
++    }
++
+     private func liveSession(for game: MiniGameKind) -> MiniGameSessionSnapshot? {
+         liveSessions.first { $0.game == game }
+     }
+@@ -54,6 +61,7 @@ struct MiniGameHubView: View {
+                     header
+                     if statistics.completed > 0 { statisticsOverview }
+                     gamePicker
++                    localGameLab
+ 
+                     if !incomingInvitations.isEmpty {
+                         sessionSection(title: "待回应", sessions: incomingInvitations)
+@@ -131,6 +139,10 @@ struct MiniGameHubView: View {
+                     Label("\(statistics.currentWinStreak) 连胜", systemImage: "flame.fill")
+                 }
+                 Spacer()
++                Label(
++                    "任务 \(completedMissionContracts)/\(statistics.completed)",
++                    systemImage: "checkmark.seal.fill"
++                )
+             }
+             .font(.caption.weight(.semibold))
+             .foregroundColor(VeilTheme.gold)
+@@ -232,6 +244,51 @@ struct MiniGameHubView: View {
+     }
+ 
+     @ViewBuilder
++    private var localGameLab: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            sectionTitle("Game Lab · 本地实验室")
++            NavigationLink(destination: OrbitRelayLabView()) {
++                HStack(spacing: 12) {
++                    ZStack {
++                        Circle()
++                            .fill(VeilTheme.gold.opacity(0.11))
++                            .frame(width: 44, height: 44)
++                        Image(systemName: "orbit")
++                            .font(.system(size: 19, weight: .semibold))
++                            .foregroundColor(VeilTheme.goldBright)
++                    }
++                    VStack(alignment: .leading, spacing: 3) {
++                        HStack(spacing: 6) {
++                            Text("轨道接力")
++                                .font(.headline)
++                                .foregroundColor(VeilTheme.text)
++                            VeilIndicatorLamp(active: true, color: VeilTheme.goldBright)
++                        }
++                        Text("固定步引力场 · 推力矢量 · 燃料/稳定性 · 本地搜索 Bot")
++                            .font(.caption)
++                            .foregroundColor(VeilTheme.secondaryText)
++                            .lineLimit(2)
++                    }
++                    Spacer()
++                    Text("LAB")
++                        .font(.system(size: 9, weight: .black, design: .monospaced))
++                        .foregroundColor(VeilTheme.gold)
++                    Image(systemName: "chevron.right")
++                        .font(.caption.bold())
++                        .foregroundColor(VeilTheme.tertiaryText)
++                }
++                .padding(12)
++                .background(
++                    VeilInstrumentPlate(
++                        shape: RoundedRectangle(cornerRadius: 14, style: .continuous),
++                        emphasized: true
++                    )
++                )
++            }
++            .buttonStyle(VeilPressStyle())
++        }
++    }
++
+     private func sessionSection(title: String, sessions: [MiniGameSessionSnapshot]) -> some View {
+         VStack(alignment: .leading, spacing: 10) {
+             sectionTitle(title)
+@@ -722,6 +779,11 @@ struct MiniGameSessionView: View {
+                         .disabled(isSending)
+                     }
+ 
++                    if session.status == .active || session.localOutcome != nil {
++                        LocalGameMissionStrip(session: session)
++                            .padding(.horizontal, 14)
++                    }
++
+                     switch session.status {
+                     case .invited:
+                         invitationView(session)
+diff --git a/VeilLink/UI/OrbitRelayLabView.swift b/VeilLink/UI/OrbitRelayLabView.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/OrbitRelayLabView.swift
+@@ -0,0 +1,413 @@
++import SwiftUI
++
++struct OrbitRelayLabView: View {
++    @State private var state = OrbitRelayState()
++    @State private var sessionID = UUID().uuidString
++    @State private var angle = 0.0
++    @State private var power = 40.0
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    var body: some View {
++        ScrollView {
++            VStack(spacing: 14) {
++                headerDeck
++                arena
++                controls
++                lastTurnPanel
++                if state.isFinished { resultPanel }
++            }
++            .padding(14)
++        }
++        .background(VeilInstrumentBackground())
++        .navigationTitle("轨道接力 · Game Lab")
++        .navigationBarTitleDisplayMode(.inline)
++        .toolbar {
++            ToolbarItem(placement: .navigationBarTrailing) {
++                Button("重置") { reset() }
++                    .foregroundColor(VeilTheme.gold)
++            }
++        }
++    }
++
++    private var headerDeck: some View {
++        VStack(spacing: 10) {
++            HStack(spacing: 8) {
++                VeilLCDDisplay(
++                    title: "YOU / RELAY",
++                    value: "\(state.hostCraft.score)/\(OrbitRelayState.winningScore)"
++                )
++                .frame(maxWidth: .infinity)
++
++                VeilLCDDisplay(
++                    title: "TURN",
++                    value: "\(state.turn + 1)"
++                )
++                .frame(width: 86)
++
++                VeilLCDDisplay(
++                    title: "BOT / RELAY",
++                    value: "\(state.guestCraft.score)/\(OrbitRelayState.winningScore)"
++                )
++                .frame(maxWidth: .infinity)
++            }
++
++            HStack(spacing: 8) {
++                statusMeter(
++                    title: "燃料",
++                    value: state.hostCraft.fuel,
++                    maximum: 100,
++                    symbol: "fuelpump.fill"
++                )
++                statusMeter(
++                    title: "稳定",
++                    value: state.hostCraft.stability,
++                    maximum: 5,
++                    symbol: "gyroscope"
++                )
++                statusMeter(
++                    title: "速度",
++                    value: Int(state.hostCraft.velocity.magnitude.rounded()),
++                    maximum: 160,
++                    symbol: "speedometer"
++                )
++            }
++
++            Text("固定步长轨道博弈：选择推力方向与力度，抢先捕获 3 个动态中继点。撞击边界或进入引力井会损失稳定性。")
++                .font(.caption2)
++                .foregroundColor(VeilTheme.secondaryText)
++                .fixedSize(horizontal: false, vertical: true)
++        }
++        .padding(12)
++        .background(
++            VeilInstrumentPlate(
++                shape: RoundedRectangle(cornerRadius: 18, style: .continuous),
++                emphasized: true
++            )
++        )
++    }
++
++    private var arena: some View {
++        Canvas { context, size in
++            let sx = size.width / OrbitRelayState.fieldWidth
++            let sy = size.height / OrbitRelayState.fieldHeight
++
++            func point(_ p: OrbitRelayPoint) -> CGPoint {
++                CGPoint(x: p.x * sx, y: p.y * sy)
++            }
++
++            let center = point(OrbitRelayState.center)
++            let wellRadius = CGFloat(OrbitRelayState.exclusionRadius) * min(sx, sy)
++            let relay = point(state.relayPoint(sessionID: sessionID))
++            let relayRadius = CGFloat(OrbitRelayState.relayCaptureRadius) * min(sx, sy)
++
++            var outer = Path()
++            outer.addRoundedRect(
++                in: CGRect(origin: .zero, size: size),
++                cornerSize: CGSize(width: 18, height: 18)
++            )
++            context.fill(outer, with: .color(Color.black.opacity(0.42)))
++
++            for fraction in [0.22, 0.38, 0.54] {
++                let radius = min(size.width, size.height) * CGFloat(fraction)
++                let rect = CGRect(
++                    x: center.x - radius,
++                    y: center.y - radius,
++                    width: radius * 2,
++                    height: radius * 2
++                )
++                context.stroke(
++                    Path(ellipseIn: rect),
++                    with: .color(Color.white.opacity(0.055)),
++                    lineWidth: 0.8
++                )
++            }
++
++            context.fill(
++                Path(
++                    ellipseIn: CGRect(
++                        x: center.x - wellRadius,
++                        y: center.y - wellRadius,
++                        width: wellRadius * 2,
++                        height: wellRadius * 2
++                    )
++                ),
++                with: .color(Color.black.opacity(0.72))
++            )
++            context.stroke(
++                Path(
++                    ellipseIn: CGRect(
++                        x: center.x - wellRadius,
++                        y: center.y - wellRadius,
++                        width: wellRadius * 2,
++                        height: wellRadius * 2
++                    )
++                ),
++                with: .color(VeilTheme.gold.opacity(0.32)),
++                lineWidth: 1.2
++            )
++
++            context.stroke(
++                Path(
++                    ellipseIn: CGRect(
++                        x: relay.x - relayRadius,
++                        y: relay.y - relayRadius,
++                        width: relayRadius * 2,
++                        height: relayRadius * 2
++                    )
++                ),
++                with: .color(VeilTheme.goldBright),
++                lineWidth: 2.2
++            )
++            context.fill(
++                Path(
++                    ellipseIn: CGRect(
++                        x: relay.x - 5,
++                        y: relay.y - 5,
++                        width: 10,
++                        height: 10
++                    )
++                ),
++                with: .color(VeilTheme.goldBright)
++            )
++
++            if let pathPoints = state.lastTurn?.path, pathPoints.count > 1 {
++                var path = Path()
++                path.move(to: point(pathPoints[0]))
++                for sample in pathPoints.dropFirst() {
++                    path.addLine(to: point(sample))
++                }
++                context.stroke(
++                    path,
++                    with: .color(VeilTheme.gold.opacity(0.42)),
++                    lineWidth: 1.4
++                )
++            }
++
++            drawCraft(
++                context: &context,
++                at: point(state.hostCraft.position),
++                label: "YOU",
++                active: state.currentPlayer == .host
++            )
++            drawCraft(
++                context: &context,
++                at: point(state.guestCraft.position),
++                label: "BOT",
++                active: state.currentPlayer == .guest
++            )
++        }
++        .frame(height: 300)
++        .padding(6)
++        .background(Color.black.opacity(0.22))
++        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
++        .overlay(
++            RoundedRectangle(cornerRadius: 18, style: .continuous)
++                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
++        )
++        .accessibilityLabel("轨道接力竞技场")
++    }
++
++    private var controls: some View {
++        VStack(spacing: 10) {
++            controlSlider(title: "推力方向", value: $angle, range: 0...359, suffix: "°")
++            controlSlider(title: "推力功率", value: $power, range: 0...100, suffix: "%")
++
++            Button {
++                commitHumanTurn()
++            } label: {
++                Label(
++                    state.isFinished ? "本局已结束" : "执行轨道脉冲",
++                    systemImage: "move.3d"
++                )
++                .frame(maxWidth: .infinity)
++            }
++            .buttonStyle(VeilPhysicalButtonStyle(accent: true))
++            .disabled(state.isFinished || state.currentPlayer != .host)
++        }
++        .padding(12)
++        .background(
++            VeilInstrumentPlate(
++                shape: RoundedRectangle(cornerRadius: 18, style: .continuous)
++            )
++        )
++    }
++
++    @ViewBuilder
++    private var lastTurnPanel: some View {
++        if let result = state.lastTurn {
++            HStack(spacing: 10) {
++                VeilIndicatorLamp(
++                    active: result.capturedRelay,
++                    color: VeilTheme.goldBright
++                )
++                VStack(alignment: .leading, spacing: 2) {
++                    Text(result.actor == .host ? "你的上一轨道段" : "BOT 上一轨道段")
++                        .font(.caption.weight(.semibold))
++                        .foregroundColor(VeilTheme.text)
++                    Text(turnSummary(result))
++                        .font(.caption2.monospacedDigit())
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++                Spacer()
++            }
++            .padding(10)
++            .background(
++                VeilInstrumentPlate(
++                    shape: RoundedRectangle(cornerRadius: 14, style: .continuous)
++                )
++            )
++        }
++    }
++
++    private var resultPanel: some View {
++        VStack(spacing: 10) {
++            Image(systemName: state.isDraw ? "equal.circle.fill" : "flag.checkered")
++                .font(.system(size: 28, weight: .semibold))
++                .foregroundColor(VeilTheme.goldBright)
++            Text(resultTitle)
++                .font(.headline)
++                .foregroundColor(VeilTheme.text)
++            Text("你 \(state.hostCraft.score) : \(state.guestCraft.score) BOT · 剩余燃料 \(state.hostCraft.fuel)% · 稳定 \(state.hostCraft.stability)/5")
++                .font(.caption.monospacedDigit())
++                .foregroundColor(VeilTheme.secondaryText)
++            Button("再来一局") { reset() }
++                .buttonStyle(VeilPhysicalButtonStyle(accent: true))
++        }
++        .frame(maxWidth: .infinity)
++        .padding(16)
++        .background(
++            VeilInstrumentPlate(
++                shape: RoundedRectangle(cornerRadius: 18, style: .continuous),
++                emphasized: true
++            )
++        )
++    }
++
++    private var resultTitle: String {
++        if state.isDraw { return "轨道窗口关闭 · 平局" }
++        return state.winner == .host ? "中继链建立完成" : "BOT 抢先完成中继链"
++    }
++
++    private func statusMeter(
++        title: String,
++        value: Int,
++        maximum: Int,
++        symbol: String
++    ) -> some View {
++        VStack(spacing: 4) {
++            Image(systemName: symbol)
++                .font(.caption)
++                .foregroundColor(VeilTheme.gold)
++            Text("\(value)/\(maximum)")
++                .font(.caption2.bold().monospacedDigit())
++                .foregroundColor(VeilTheme.text)
++            Text(title)
++                .font(.system(size: 8, weight: .medium))
++                .foregroundColor(VeilTheme.tertiaryText)
++        }
++        .frame(maxWidth: .infinity)
++        .padding(.vertical, 7)
++        .background(Color.black.opacity(0.16))
++        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
++    }
++
++    private func controlSlider(
++        title: String,
++        value: Binding<Double>,
++        range: ClosedRange<Double>,
++        suffix: String
++    ) -> some View {
++        HStack(spacing: 10) {
++            Text(title)
++                .font(.caption.weight(.semibold))
++                .frame(width: 66, alignment: .leading)
++            Slider(value: value, in: range, step: 1)
++                .tint(VeilTheme.gold)
++            Text("\(Int(value.wrappedValue.rounded()))\(suffix)")
++                .font(.caption.monospacedDigit())
++                .frame(width: 52, alignment: .trailing)
++        }
++    }
++
++    private func commitHumanTurn() {
++        let move = OrbitRelayMove(
++            angle: Int(angle.rounded()) % 360,
++            power: Int(power.rounded())
++        )
++        var next = state
++        guard next.apply(move: move, actor: .host, sessionID: sessionID) else { return }
++        applyState(next)
++
++        guard !next.isFinished,
++              let botMove = OrbitRelayBot.chooseMove(
++                in: next,
++                actor: .guest,
++                sessionID: sessionID
++              ) else { return }
++
++        var afterBot = next
++        guard afterBot.apply(
++            move: botMove,
++            actor: .guest,
++            sessionID: sessionID
++        ) else { return }
++        applyState(afterBot)
++    }
++
++    private func applyState(_ next: OrbitRelayState) {
++        if let animation = VeilMotionPolicy.animation(
++            .resolve,
++            reduceMotionRequested: reduceMotion
++        ) {
++            withAnimation(animation) { state = next }
++        } else {
++            state = next
++        }
++    }
++
++    private func reset() {
++        state = OrbitRelayState()
++        sessionID = UUID().uuidString
++        angle = 0
++        power = 40
++    }
++
++    private func turnSummary(_ result: OrbitRelayTurnResult) -> String {
++        var parts = [
++            "A\(result.move.angle)°",
++            "P\(result.move.power)%",
++            "燃料 -\(result.fuelSpent)"
++        ]
++        if result.capturedRelay { parts.append("捕获中继") }
++        if result.boundaryHits > 0 { parts.append("边界×\(result.boundaryHits)") }
++        if result.wellWarning { parts.append("引力井警告") }
++        return parts.joined(separator: " · ")
++    }
++
++    private func drawCraft(
++        context: inout GraphicsContext,
++        at point: CGPoint,
++        label: String,
++        active: Bool
++    ) {
++        let radius: CGFloat = active ? 10 : 8
++        context.fill(
++            Path(
++                ellipseIn: CGRect(
++                    x: point.x - radius,
++                    y: point.y - radius,
++                    width: radius * 2,
++                    height: radius * 2
++                )
++            ),
++            with: .color(active ? VeilTheme.goldBright : Color.white.opacity(0.72))
++        )
++
++        context.draw(
++            Text(label)
++                .font(.system(size: 8, weight: .black, design: .monospaced))
++                .foregroundColor(.white),
++            at: CGPoint(x: point.x, y: point.y - 17)
++        )
++    }
++}
+diff --git a/VeilLinkTests/LocalGameMissionTests.swift b/VeilLinkTests/LocalGameMissionTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/LocalGameMissionTests.swift
+@@ -0,0 +1,107 @@
++import XCTest
++@testable import VeilLink
++
++final class LocalGameMissionTests: XCTestCase {
++    func testMissionSelectionIsDeterministicPerSession() {
++        let games = MiniGameKind.allCases
++        for game in games {
++            let first = LocalGameMissionDirector.mission(
++                for: game,
++                sessionID: "mission-determinism-session"
++            )
++            let second = LocalGameMissionDirector.mission(
++                for: game,
++                sessionID: "mission-determinism-session"
++            )
++            XCTAssertEqual(first, second)
++            XCTAssertFalse(first.code.isEmpty)
++            XCTAssertFalse(first.title.isEmpty)
++            XCTAssertFalse(first.detail.isEmpty)
++        }
++    }
++
++    func testArtilleryMissionProgressReadsResolvedState() throws {
++        let sessionID = "mission-artillery-test"
++        var state = ArtilleryState()
++        let move = try XCTUnwrap(
++            ArtilleryBot.chooseShot(in: state, actor: .host, sessionID: sessionID)
++        )
++        XCTAssertTrue(
++            state.apply(
++                angle: move.angle,
++                power: move.power,
++                actor: .host,
++                sessionID: sessionID
++            )
++        )
++
++        let snapshot = makeSnapshot(
++            id: sessionID,
++            game: .artillery,
++            artillery: state
++        )
++        let mission = LocalGameMission(
++            code: "WIND_READ",
++            title: "读风校射",
++            detail: "test",
++            systemImage: "wind"
++        )
++        let progress = LocalGameMissionEvaluator.progress(
++            for: mission,
++            session: snapshot
++        )
++
++        XCTAssertGreaterThanOrEqual(progress.fraction, 0.45)
++        XCTAssertLessThanOrEqual(progress.fraction, 1)
++        XCTAssertNotEqual(progress.label, "等待第一步操作")
++    }
++
++    func testTacticalMissionProgressIsBoundedAndReadOnly() {
++        let state = TacticalState()
++        let snapshot = makeSnapshot(
++            id: "mission-tactical-test",
++            game: .tactical,
++            tactical: state
++        )
++        let mission = LocalGameMission(
++            code: "SUPPLY_FIRST",
++            title: "粮道优先",
++            detail: "test",
++            systemImage: "shippingbox.fill"
++        )
++        let before = state
++        let progress = LocalGameMissionEvaluator.progress(
++            for: mission,
++            session: snapshot
++        )
++
++        XCTAssertGreaterThanOrEqual(progress.fraction, 0)
++        XCTAssertLessThanOrEqual(progress.fraction, 1)
++        XCTAssertEqual(state, before)
++    }
++
++    private func makeSnapshot(
++        id: String,
++        game: MiniGameKind,
++        tactical: TacticalState? = nil,
++        artillery: ArtilleryState? = nil
++    ) -> MiniGameSessionSnapshot {
++        MiniGameSessionSnapshot(
++            id: id,
++            game: game,
++            hostIsLocal: true,
++            status: .active,
++            invitedAt: Date(timeIntervalSince1970: 1),
++            startedAt: Date(timeIntervalSince1970: 2),
++            lastActivity: Date(timeIntervalSince1970: 3),
++            gomoku: game == .gomoku ? GomokuState() : nil,
++            xiangqi: game == .xiangqi ? XiangqiState() : nil,
++            ludo: game == .ludo ? LudoState() : nil,
++            tactical: tactical,
++            artillery: artillery,
++            lightTrail: game == .lightTrail ? LightTrailState() : nil,
++            magneticHockey: game == .magneticHockey ? MagneticHockeyState() : nil,
++            endedByResignation: false
++        )
++    }
++}
+diff --git a/VeilLinkTests/OrbitRelayGameTests.swift b/VeilLinkTests/OrbitRelayGameTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/OrbitRelayGameTests.swift
+@@ -0,0 +1,96 @@
++import XCTest
++@testable import VeilLink
++
++final class OrbitRelayGameTests: XCTestCase {
++    func testRelayPointIsDeterministic() {
++        let first = OrbitRelayState.relayPoint(
++            sessionID: "orbit-relay-determinism",
++            index: 3
++        )
++        let second = OrbitRelayState.relayPoint(
++            sessionID: "orbit-relay-determinism",
++            index: 3
++        )
++        XCTAssertEqual(first, second)
++        XCTAssertGreaterThanOrEqual(first.x, 0)
++        XCTAssertLessThanOrEqual(first.x, OrbitRelayState.fieldWidth)
++        XCTAssertGreaterThanOrEqual(first.y, 0)
++        XCTAssertLessThanOrEqual(first.y, OrbitRelayState.fieldHeight)
++    }
++
++    func testSameMoveReplaysIdentically() {
++        let sessionID = "orbit-relay-replay"
++        let move = OrbitRelayMove(angle: 32, power: 48)
++        var first = OrbitRelayState()
++        var second = OrbitRelayState()
++
++        XCTAssertTrue(first.apply(move: move, actor: .host, sessionID: sessionID))
++        XCTAssertTrue(second.apply(move: move, actor: .host, sessionID: sessionID))
++        XCTAssertEqual(first, second)
++        XCTAssertEqual(first.lastTurn, second.lastTurn)
++    }
++
++    func testTurnSwitchesAndFuelIsBounded() {
++        let sessionID = "orbit-relay-turn"
++        var state = OrbitRelayState()
++        let beforeFuel = state.hostCraft.fuel
++
++        XCTAssertTrue(
++            state.apply(
++                move: OrbitRelayMove(angle: 0, power: 24),
++                actor: .host,
++                sessionID: sessionID
++            )
++        )
++        XCTAssertLessThan(state.hostCraft.fuel, beforeFuel)
++        XCTAssertGreaterThanOrEqual(state.hostCraft.fuel, 0)
++        if !state.isFinished {
++            XCTAssertEqual(state.currentPlayer, .guest)
++        }
++    }
++
++    func testBotReturnsRuleValidatedMove() throws {
++        let sessionID = "orbit-relay-bot"
++        var state = OrbitRelayState()
++        XCTAssertTrue(
++            state.apply(
++                move: OrbitRelayMove(angle: 25, power: 35),
++                actor: .host,
++                sessionID: sessionID
++            )
++        )
++        guard !state.isFinished else { return }
++
++        let move = try XCTUnwrap(
++            OrbitRelayBot.chooseMove(
++                in: state,
++                actor: .guest,
++                sessionID: sessionID
++            )
++        )
++        var probe = state
++        XCTAssertTrue(probe.apply(move: move, actor: .guest, sessionID: sessionID))
++    }
++
++    func testInvalidTurnAndMoveAreRejected() {
++        let sessionID = "orbit-relay-invalid"
++        var state = OrbitRelayState()
++        let original = state
++
++        XCTAssertFalse(
++            state.apply(
++                move: OrbitRelayMove(angle: -1, power: 50),
++                actor: .host,
++                sessionID: sessionID
++            )
++        )
++        XCTAssertFalse(
++            state.apply(
++                move: OrbitRelayMove(angle: 20, power: 50),
++                actor: .guest,
++                sessionID: sessionID
++            )
++        )
++        XCTAssertEqual(state, original)
++    }
++}
