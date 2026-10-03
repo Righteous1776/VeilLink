@@ -1,0 +1,44 @@
+diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/DeepTelemetry.swift
+--- a/VeilLink/Diagnostics/DeepTelemetry.swift
++++ b/VeilLink/Diagnostics/DeepTelemetry.swift
+@@ -305,24 +305,32 @@
+         observers.append(center.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { notification in
+-            Task { @MainActor in DeepTelemetry.shared.recordKeyboard(notification, showing: true) }
++            nonisolated(unsafe) let keyboardNotification = notification
++            Task { @MainActor in DeepTelemetry.shared.recordKeyboard(keyboardNotification, showing: true) }
+         })
+         observers.append(center.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { notification in
+-            Task { @MainActor in DeepTelemetry.shared.recordKeyboard(notification, showing: false) }
++            nonisolated(unsafe) let keyboardNotification = notification
++            Task { @MainActor in DeepTelemetry.shared.recordKeyboard(keyboardNotification, showing: false) }
+         })
+         observers.append(center.addObserver(forName: UITextField.textDidBeginEditingNotification, object: nil, queue: .main) { notification in
+-            Task { @MainActor in DeepTelemetry.shared.recordTextField(notification.object, event: "input.field.begin") }
++            nonisolated(unsafe) let fieldObject = notification.object
++            Task { @MainActor in DeepTelemetry.shared.recordTextField(fieldObject, event: "input.field.begin") }
+         })
+         observers.append(center.addObserver(forName: UITextField.textDidChangeNotification, object: nil, queue: .main) { notification in
+-            Task { @MainActor in DeepTelemetry.shared.recordTextField(notification.object, event: "input.field.change") }
++            nonisolated(unsafe) let fieldObject = notification.object
++            Task { @MainActor in DeepTelemetry.shared.recordTextField(fieldObject, event: "input.field.change") }
+         })
+         observers.append(center.addObserver(forName: UITextField.textDidEndEditingNotification, object: nil, queue: .main) { notification in
+-            Task { @MainActor in DeepTelemetry.shared.recordTextField(notification.object, event: "input.field.end") }
++            nonisolated(unsafe) let fieldObject = notification.object
++            Task { @MainActor in DeepTelemetry.shared.recordTextField(fieldObject, event: "input.field.end") }
+         })
+         observers.append(center.addObserver(forName: UITextView.textDidBeginEditingNotification, object: nil, queue: .main) { notification in
+-            Task { @MainActor in DeepTelemetry.shared.recordTextView(notification.object, event: "input.textview.begin") }
++            nonisolated(unsafe) let textViewObject = notification.object
++            Task { @MainActor in DeepTelemetry.shared.recordTextView(textViewObject, event: "input.textview.begin") }
+         })
+         observers.append(center.addObserver(forName: UITextView.textDidChangeNotification, object: nil, queue: .main) { notification in
+-            Task { @MainActor in DeepTelemetry.shared.recordTextView(notification.object, event: "input.textview.change") }
++            nonisolated(unsafe) let textViewObject = notification.object
++            Task { @MainActor in DeepTelemetry.shared.recordTextView(textViewObject, event: "input.textview.change") }
+         })
+         observers.append(center.addObserver(forName: UITextView.textDidEndEditingNotification, object: nil, queue: .main) { notification in
+-            Task { @MainActor in DeepTelemetry.shared.recordTextView(notification.object, event: "input.textview.end") }
++            nonisolated(unsafe) let textViewObject = notification.object
++            Task { @MainActor in DeepTelemetry.shared.recordTextView(textViewObject, event: "input.textview.end") }
+         })
