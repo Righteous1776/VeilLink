@@ -87,6 +87,15 @@ if "VeilCompactKeyStyle(" not in lobby or "ArcadeBotDifficulty.allCases" not in 
 if "BoardBotDifficulty.allCases" not in lobby or "controller.setBoardDifficulty" not in lobby:
     raise SystemExit("FAIL board-game difficulty selector regressed from hardware keys")
 
+for needle in [
+    "boardSituationCard",
+    "GomokuBot.legalCandidateCount",
+    "XiangqiBot.legalMoveCount",
+    "NEXT DICE",
+]:
+    if needle not in lobby:
+        raise SystemExit(f"FAIL board-game situation instrumentation missing {needle}")
+
 if "E2EE" not in lobby or "VeilInstrumentDeck" not in lobby:
     raise SystemExit("FAIL nearby game hub regressed from skeuomorphic E2EE console")
 
