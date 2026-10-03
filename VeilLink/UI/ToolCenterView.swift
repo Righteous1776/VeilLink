@@ -540,6 +540,7 @@ struct VeilJSONToolView: View {
     @State private var input = ""
     @State private var output = ""
     @State private var errorText: String?
+    @State private var structure: VeilJSONStructure?
 
     var body: some View {
         ScrollView {
@@ -571,6 +572,21 @@ struct VeilJSONToolView: View {
                     active: errorText == nil
                 )
 
+                if let structure {
+                    HStack(spacing: 8) {
+                        VeilLCDDisplay(title: "ROOT", value: structure.rootType)
+                            .frame(maxWidth: .infinity)
+                        VeilLCDDisplay(title: "NODES", value: "\(structure.nodeCount)")
+                            .frame(maxWidth: .infinity)
+                    }
+                    HStack(spacing: 8) {
+                        VeilLCDDisplay(title: "DEPTH", value: "\(structure.maxDepth)")
+                            .frame(maxWidth: .infinity)
+                        VeilLCDDisplay(title: "KEYS", value: "\(structure.keyCount)")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+
                 if let errorText {
                     Label(errorText, systemImage: "xmark.octagon.fill")
                         .font(.caption)
@@ -595,6 +611,7 @@ struct VeilJSONToolView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: input) { _ in
             output = ""
+            structure = nil
             errorText = nil
         }
     }
@@ -604,9 +621,11 @@ struct VeilJSONToolView: View {
             output = try (pretty
                 ? VeilLocalToolEngine.prettyJSON(input)
                 : VeilLocalToolEngine.minifiedJSON(input))
+            structure = try VeilLocalToolEngine.jsonStructure(input)
             errorText = nil
         } catch {
             output = ""
+            structure = nil
             errorText = (error as? LocalizedError)?.errorDescription ?? "JSON 格式无效"
         }
     }
@@ -625,17 +644,22 @@ struct VeilTextCodecToolView: View {
     @State private var input = ""
     @State private var output = ""
     @State private var errorText: String?
+    @State private var base64URLSafe = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
                 VeilStatusStrip(
                     leftTitle: "CODEC",
-                    leftValue: kind == .base64 ? "BASE64" : "RFC3986",
+                    leftValue: kind == .base64 ? (base64URLSafe ? "BASE64URL" : "BASE64") : "RFC3986",
                     rightTitle: "MODE",
                     rightValue: "LOCAL",
                     active: true
                 )
+
+                if kind == .base64 {
+                    VeilToggleLever(title: "URL-safe（无填充）", isOn: $base64URLSafe)
+                }
 
                 VeilInstrumentBay(title: "源文本", role: .input, active: !input.isEmpty) {
                     TextEditor(text: boundedToolText($input))
@@ -685,17 +709,25 @@ struct VeilTextCodecToolView: View {
     }
 
     private func encode() {
-        output = kind == .base64
-            ? VeilLocalToolEngine.base64EncodeUTF8(input)
-            : VeilLocalToolEngine.urlPercentEncode(input)
+        if kind == .base64 {
+            output = base64URLSafe
+                ? VeilLocalToolEngine.base64URLEncodeUTF8(input)
+                : VeilLocalToolEngine.base64EncodeUTF8(input)
+        } else {
+            output = VeilLocalToolEngine.urlPercentEncode(input)
+        }
         errorText = nil
     }
 
     private func decode() {
         do {
-            output = try (kind == .base64
-                ? VeilLocalToolEngine.base64DecodeUTF8(input)
-                : VeilLocalToolEngine.urlPercentDecode(input))
+            if kind == .base64 {
+                output = try (base64URLSafe
+                    ? VeilLocalToolEngine.base64URLDecodeUTF8(input)
+                    : VeilLocalToolEngine.base64DecodeUTF8(input))
+            } else {
+                output = try VeilLocalToolEngine.urlPercentDecode(input)
+            }
             errorText = nil
         } catch {
             output = ""
@@ -959,6 +991,15 @@ struct VeilColorLabToolView: View {
                         VeilGaugeMeter(title: "GREEN", value: Double(preview.green) / 255.0, text: "\(preview.green)")
                         VeilGaugeMeter(title: "BLUE", value: Double(preview.blue) / 255.0, text: "\(preview.blue)")
                     }
+
+                    let hsl = VeilLocalToolEngine.hsl(rgb: preview)
+                    VeilStatusStrip(
+                        leftTitle: "HUE",
+                        leftValue: "\(hsl.hue)°",
+                        rightTitle: "SAT / LIGHT",
+                        rightValue: "\(hsl.saturation)% / \(hsl.lightness)%",
+                        active: isValidatedColor
+                    )
                 }
 
                 VeilInstrumentBay(title: "颜色输入", role: .input, active: true) {
