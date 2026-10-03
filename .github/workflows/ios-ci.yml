@@ -46,7 +46,21 @@ jobs:
         run: |
           set -o pipefail
           rm -rf ci-artifacts/BuildResults.xcresult
+          set +e
           xcodebuild             -project VeilLink.xcodeproj             -scheme VeilLink             -configuration Debug             -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             -resultBundlePath ci-artifacts/BuildResults.xcresult             CODE_SIGNING_ALLOWED=NO             build 2>&1 | tee ci-artifacts/ios-simulator-build.log
+          build_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$build_status" -ne 0 ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          log = Path("ci-artifacts/ios-simulator-build.log").read_text(encoding="utf-8", errors="replace")
+          failures = [line.strip() for line in log.splitlines() if " error:" in line or "fatal error:" in line]
+          for line in failures[-80:]:
+              escaped = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Xcode build::{escaped}")
+          PY
+            exit "$build_status"
+          fi
 
       - name: Run unit tests
         run: |
