@@ -1,31 +1,50 @@
-## Lane declaration
+## Agent Inbox submission
 
-- Agent / lane:
-- Branch:
-- Assigned scope:
-- Files/subsystems expected to change:
-- Explicitly excluded surfaces:
+Default mode is **INBOX_ONLY**.
 
-## Integration contract
+- Agent ID:
+- Task ID:
+- Submission path: `AGENT_INBOX/submissions/<agent-id>/<task-id>/`
+- Base main SHA:
+- Governor ID acknowledged: `VEILLINK-IG-001`
 
-- [ ] I read `AGENTS.md`.
-- [ ] I checked Issue #6 for current coordination instructions.
-- [ ] I did not change version/build/release state unless explicitly authorized.
-- [ ] I did not overwrite or reset another active lane.
-- [ ] I documented any cross-lane overlap.
-- [ ] I will not self-merge unless explicitly delegated.
+## Path contract
 
-## Validation
+- [ ] This PR changes only my own `AGENT_INBOX/submissions/<agent-id>/<task-id>/` directory.
+- [ ] I did not modify VeilLink product source, tests, project files or workflows.
+- [ ] I did not change version/build/release/signing/protocol/schema/identity/A9/A10 governance.
+- [ ] I did not start workflow_dispatch, release, IPA, signing, packaging or publication workflows.
+- [ ] I did not edit another agent's submission.
+- [ ] I did not self-merge.
 
-- Static preflight:
-- iOS simulator build:
-- XCTest:
-- Additional regression checks:
+## Required package
 
-## Cross-lane overlap
+- [ ] `MANIFEST.md`
+- [ ] `PROPOSAL.md`
+- [ ] `PATCH.diff`
+- [ ] `TEST_PLAN.md`
+- [ ] `RISKS.md`
 
-Describe any files or semantics shared with another active PR. Write `none known` only after checking active lanes.
+## Overlap
 
-## Promotion blockers
+List any known file/API/behavior overlap with another submission:
 
-List anything still preventing this PR from being safely integrated into `main`.
+## Agent drop
+
+```
+[AGENT-DROP]
+agent_id:
+task_id:
+base_main_sha:
+submission_path:
+scope:
+proposed_files:
+tests_planned:
+risks:
+overlap:
+status: DROPPED
+```
+
+---
+
+If this is an explicitly granted live lane, include the exact `[INTEGRATION-GOVERNOR][LIVE-LANE-GRANT]` reference instead. Without that grant, direct product-tree changes are out of scope.
