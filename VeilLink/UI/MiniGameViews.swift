@@ -43,6 +43,13 @@ struct MiniGameHubView: View {
 
     private var statistics: MiniGameStatistics { MiniGameStatistics(sessions: sessions) }
 
+    private var completedMissionContracts: Int {
+        sessions.filter { $0.localOutcome != nil }.filter { session in
+            let mission = LocalGameMissionDirector.mission(for: session.game, sessionID: session.id)
+            return LocalGameMissionEvaluator.progress(for: mission, session: session).completed
+        }.count
+    }
+
     private func liveSession(for game: MiniGameKind) -> MiniGameSessionSnapshot? {
         liveSessions.first { $0.game == game }
     }
@@ -131,6 +138,10 @@ struct MiniGameHubView: View {
                     Label("\(statistics.currentWinStreak) 连胜", systemImage: "flame.fill")
                 }
                 Spacer()
+                Label(
+                    "任务 \(completedMissionContracts)/\(statistics.completed)",
+                    systemImage: "checkmark.seal.fill"
+                )
             }
             .font(.caption.weight(.semibold))
             .foregroundColor(VeilTheme.gold)
@@ -722,7 +733,7 @@ struct MiniGameSessionView: View {
                         .disabled(isSending)
                     }
 
-                    if session.status == .active {
+                    if session.status == .active || session.localOutcome != nil {
                         LocalGameMissionStrip(session: session)
                             .padding(.horizontal, 14)
                     }
