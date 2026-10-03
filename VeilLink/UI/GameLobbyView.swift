@@ -380,6 +380,7 @@ struct LocalAIGameView: View {
             VStack(spacing: 14) {
                 statusCard
                 if isArcadeGame { arcadeControlCard }
+                if isBoardGame { boardControlCard }
                 if game == .tactical { tacticalControlCard }
                 board
                     .padding(10)
@@ -440,6 +441,81 @@ struct LocalAIGameView: View {
             return true
         default:
             return false
+        }
+    }
+
+    private var isBoardGame: Bool {
+        switch game {
+        case .gomoku, .xiangqi, .ludo:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private var boardControlCard: some View {
+        VeilInstrumentDeck(
+            title: "棋盘对手",
+            subtitle: "本地搜索预算分档；不会改变棋盘规则、存档格式或附近联机协议。",
+            symbol: "brain.head.profile"
+        ) {
+            HStack {
+                VeilInstrumentLabel(
+                    title: "DIFFICULTY",
+                    value: controller.boardDifficulty.title,
+                    active: true
+                )
+                Spacer()
+                VeilLCDDisplay(
+                    title: "BOT MODE",
+                    value: controller.boardDifficulty.telemetryLabel
+                )
+                .frame(width: 112)
+            }
+
+            HStack(spacing: 7) {
+                ForEach(BoardBotDifficulty.allCases) { difficulty in
+                    Button {
+                        controller.setBoardDifficulty(difficulty)
+                        model.haptics.selection()
+                    } label: {
+                        VStack(spacing: 2) {
+                            Text(difficulty.title)
+                            Text(difficulty.telemetryLabel)
+                                .font(.system(size: 6.5, weight: .black, design: .monospaced))
+                                .tracking(0.5)
+                                .opacity(0.72)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(
+                        VeilCompactKeyStyle(
+                            selected: difficulty == controller.boardDifficulty
+                        )
+                    )
+                    .accessibilityLabel("难度 \(difficulty.title)")
+                    .accessibilityValue(
+                        difficulty == controller.boardDifficulty ? "当前选择" : "未选择"
+                    )
+                }
+            }
+            .padding(6)
+            .background(Color.black.opacity(0.20))
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
+            )
+
+            Text(
+                controller.boardDifficulty.telemetryDetail(
+                    profileLabel: VeilDevicePerformance.current.label,
+                    game: game
+                )
+            )
+            .font(.caption2.monospaced())
+            .foregroundColor(VeilTheme.secondaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
