@@ -62,7 +62,7 @@ struct VeilToolCenterView: View {
                                     VeilSpeakerGrille(columns: 7, rows: 5)
                                     HStack(spacing: 6) {
                                         VeilIndicatorLamp(active: true)
-                                        Text("PTT / LIVE")
+                                        Text("LIVE AUDIO")
                                             .font(.system(size: 7.5, weight: .black, design: .monospaced))
                                             .tracking(0.8)
                                     }
