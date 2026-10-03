@@ -1,0 +1,12 @@
+diff --git a/VeilLink/Core/AppearanceTheme.swift b/VeilLink/Core/AppearanceTheme.swift
+--- a/VeilLink/Core/AppearanceTheme.swift
++++ b/VeilLink/Core/AppearanceTheme.swift
+@@ -116,7 +116,7 @@ struct VeilThemePalette {
+ }
+ 
+ final class VeilAppearanceController: ObservableObject {
+-    static let shared = VeilAppearanceController()
++    @MainActor static let shared = VeilAppearanceController()
+     private enum Key {
+         static let selection = "appearance.theme.selection.v1"
+         static let colorMode = "appearance.color.mode.v1"
