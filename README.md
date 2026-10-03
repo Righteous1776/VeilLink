@@ -1,8 +1,10 @@
 # VeilLink
 
-> **Current cumulative checkpoint:** VeilLink **26.9 (Build 55)**. This line restores
-> the complete 26.9 formal-release feature set and integrates the I12/A10 Ultra M5
-> overlay. See [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
+> **Current cumulative checkpoint:** VeilLink **26.10 (Build 56)**. This release keeps
+> the complete 26.9 recovery line and adds Tactical Solo, three deterministic 2D games,
+> 13 local utilities, adaptive motion/performance policy, and LAN Turbo hardening.
+> See [the Build 56 release notes](docs/RELEASE_26_10_BUILD_56.md) and
+> [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
 
 VeilLink is a GitHub-buildable iOS 15+ prototype for nearby, serverless encrypted
 messaging over Bluetooth Low Energy. The UI is Chinese-first and adapts separately

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed if a future update drops the 26.9 base or the I12/A10 overlay."""
+"""Fail closed if a future update drops the 26.9 base, Build 56, or I12/A10 overlay."""
 
 import hashlib
 import json
@@ -8,8 +8,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_VERSION = "26.9"
-EXPECTED_BUILD = "55"
+EXPECTED_VERSION = "26.10"
+EXPECTED_BUILD = "56"
 MIN_TRACKED_FILES = 500
 MIN_SWIFT_FILES = 180
 MIN_TEST_FILES = 65
@@ -85,7 +85,7 @@ def check_inventory():
 def check_identity():
     project = (ROOT / "project.yml").read_text(encoding="utf-8")
     if f'MARKETING_VERSION: "{EXPECTED_VERSION}"' not in project:
-        fail("project.yml no longer declares VeilLink 26.9")
+        fail(f"project.yml no longer declares VeilLink {EXPECTED_VERSION}")
     if f'CURRENT_PROJECT_VERSION: "{EXPECTED_BUILD}"' not in project:
         fail(f"project.yml no longer declares recovery build {EXPECTED_BUILD}")
 

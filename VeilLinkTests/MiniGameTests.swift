@@ -329,8 +329,24 @@ final class MiniGameTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 2_000)
         let invite = MiniGamePacket(game: .gomoku, command: .invite, createdAt: base)
         let accept = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .accept, createdAt: base.addingTimeInterval(1))
-        let legal = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .move, turn: 0, move: .gomoku(index: 112), createdAt: base.addingTimeInterval(2))
-        let impossibleLate = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .move, turn: 0, move: .gomoku(index: 113), createdAt: base.addingTimeInterval(500))
+        let legal = MiniGamePacket(
+            sessionID: invite.sessionID,
+            game: .gomoku,
+            command: .move,
+            turn: 0,
+            move: .gomoku(index: 112),
+            actionID: "00000000-0000-0000-0000-000000000010",
+            createdAt: base.addingTimeInterval(2)
+        )
+        let impossibleLate = MiniGamePacket(
+            sessionID: invite.sessionID,
+            game: .gomoku,
+            command: .move,
+            turn: 0,
+            move: .gomoku(index: 113),
+            actionID: "00000000-0000-0000-0000-000000000020",
+            createdAt: base.addingTimeInterval(500)
+        )
         let messages = [
             ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(invite), sentAt: base, isOutgoing: true, deliveryState: .delivered),
             ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "guest", body: try MiniGameCodec.encode(accept), sentAt: base.addingTimeInterval(1), isOutgoing: false, deliveryState: .delivered),
