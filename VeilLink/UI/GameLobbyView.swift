@@ -239,6 +239,16 @@ struct LocalAIGameView: View {
                 statusCard
                 if game == .tactical { tacticalControlCard }
                 board
+                    .padding(10)
+                    .background(
+                        VeilInstrumentPlate(
+                            shape: RoundedRectangle(cornerRadius: 18, style: .continuous),
+                            emphasized: true
+                        )
+                    )
+                    .overlay(alignment: .topTrailing) {
+                        VeilScrewHead().padding(7)
+                    }
                 if controller.outcome != .playing { resultCard }
             }
             .padding(14)
