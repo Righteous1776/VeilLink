@@ -81,7 +81,7 @@ for needle in [
 if re.search(r"(?<![A-Za-z0-9_])Slider\\s*\\(", arcade):
     raise SystemExit("FAIL arcade controls regressed to system Slider")
 
-if "VeilCompactKeyStyle(selected:" not in lobby:
+if "VeilCompactKeyStyle(" not in lobby or "ArcadeBotDifficulty.allCases" not in lobby:
     raise SystemExit("FAIL arcade difficulty selector regressed from hardware keys")
 
 if "E2EE" not in lobby or "VeilInstrumentDeck" not in lobby:
