@@ -737,7 +737,7 @@ struct VeilColorLabToolView: View {
                         systemImage: contrast.meetsAANormalText ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
                     )
                     .font(.caption)
-                    .foregroundColor(contrast.meetsAANormalText ? VeilTheme.success : VeilTheme.warning)
+                    .foregroundColor(contrast.meetsAANormalText ? VeilTheme.success : VeilTheme.gold)
                 }
                 Button("复制 \(lastValidatedHex)") { VeilToolClipboard.copy(lastValidatedHex) }
                     .buttonStyle(VeilGameSecondaryButtonStyle())
