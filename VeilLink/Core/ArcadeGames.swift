@@ -230,17 +230,64 @@ enum LightTrailBot {
     static func chooseShift(in state: LightTrailState, actor: MiniGamePlayer, sessionID: String) -> Int? {
         guard state.currentPlayer == actor, state.winner == nil, !state.isDraw else { return nil }
         let round = state.turn / 2
-        let obstacles = LightTrailState.obstacleLanes(sessionID: sessionID, round: round)
-        let energy = LightTrailState.energyLane(sessionID: sessionID, round: round)
         let lane = state.lane(for: actor)
+
         return (-1...1)
             .filter { (0..<LightTrailState.laneCount).contains(lane + $0) }
             .max { lhs, rhs in
-                let leftLane = lane + lhs
-                let rightLane = lane + rhs
-                let left = (obstacles.contains(leftLane) ? -100 : 0) + (leftLane == energy ? 10 : 0) - abs(leftLane - 2)
-                let right = (obstacles.contains(rightLane) ? -100 : 0) + (rightLane == energy ? 10 : 0) - abs(rightLane - 2)
-                return left < right
+                score(
+                    lane: lane + lhs,
+                    round: round,
+                    sessionID: sessionID,
+                    depth: 3
+                ) < score(
+                    lane: lane + rhs,
+                    round: round,
+                    sessionID: sessionID,
+                    depth: 3
+                )
             }
+    }
+
+    /// Three-sector deterministic look-ahead. It never bypasses the real rule
+    /// gate; this only ranks the three legal lane commands before application.
+    private static func score(
+        lane: Int,
+        round: Int,
+        sessionID: String,
+        depth: Int
+    ) -> Int {
+        guard depth > 0, round < LightTrailState.rounds else { return 0 }
+
+        let obstacles = LightTrailState.obstacleLanes(
+            sessionID: sessionID,
+            round: round
+        )
+        let energy = LightTrailState.energyLane(
+            sessionID: sessionID,
+            round: round
+        )
+
+        var immediate = 0
+        immediate += obstacles.contains(lane) ? -1_000 : 0
+        immediate += lane == energy ? 85 : 0
+        immediate -= abs(lane - 2) * 5
+
+        guard depth > 1 else { return immediate }
+
+        let future = (-1...1)
+            .map { lane + $0 }
+            .filter { (0..<LightTrailState.laneCount).contains($0) }
+            .map {
+                score(
+                    lane: $0,
+                    round: round + 1,
+                    sessionID: sessionID,
+                    depth: depth - 1
+                )
+            }
+            .max() ?? 0
+
+        return immediate + Int(Double(future) * 0.68)
     }
 }
