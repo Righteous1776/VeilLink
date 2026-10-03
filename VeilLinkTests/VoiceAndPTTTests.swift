@@ -29,6 +29,11 @@ final class VoiceAndPTTTests: XCTestCase {
         XCTAssertNoThrow(try VeilPTTCodec.encodeControl(packet))
     }
 
+    func testPTTBeginPreemptsWhileEndQueuesBehindRealtimeTail() {
+        XCTAssertEqual(VeilPTTTransportPolicy.priority(for: .begin), .control)
+        XCTAssertEqual(VeilPTTTransportPolicy.priority(for: .end), .realtime)
+    }
+
     func testFortyMillisecondPTTFrameFitsSingleObserved512ByteATTFragment() throws {
         let talkID = UUID().uuidString
         let clear = try VeilPTTCodec.encodeAudio(

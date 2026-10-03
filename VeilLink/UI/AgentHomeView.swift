@@ -79,6 +79,26 @@ struct AgentHomeView: View {
             if controls.autoLoadLanguageModel { model.agent.activate() }
         }
         .onDisappear { model.agent.setComputeFocus(.idle) }
+        .onReceive(NotificationCenter.default.publisher(for: .veilLinkStressUICommand)) { notification in
+            guard let request = DeviceStressCommandBus.request(from: notification) else { return }
+            switch request.command {
+            case .agentOpenDiagnostics:
+                showDiagnostics = true
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    disposition: showDiagnostics ? .applied : .ignored,
+                    detail: "agent diagnostics presentation state enabled"
+                )
+            case .agentCloseDiagnostics:
+                showDiagnostics = false
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    detail: "agent diagnostics presentation state cleared"
+                )
+            default:
+                break
+            }
+        }
     }
 }
 

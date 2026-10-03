@@ -34,6 +34,21 @@ final class MessageTextFeaturesTests: XCTestCase {
         XCTAssertEqual(ReplyTextCodec.quoteSource(for: image), "图片")
     }
 
+    func testVoiceReplyUsesVoiceLabelInsteadOfImageLabel() {
+        let voice = ChatMessage(
+            id: UUID().uuidString,
+            conversationID: "c",
+            senderIdentityID: "peer",
+            body: VoiceMessageCodec.encode(durationSeconds: 3.42),
+            sentAt: Date(),
+            isOutgoing: false,
+            deliveryState: .delivered,
+            attachment: ChatAttachment(id: "voice-a", mimeType: "audio/mp4", byteCount: 10)
+        )
+
+        XCTAssertEqual(ReplyTextCodec.quoteSource(for: voice), "[语音] 3″")
+    }
+
     func testReplyPreviewShowsOnlyNewReply() {
         let encoded = ReplyTextCodec.encode(quoted: "旧内容", reply: "新的回答")
         XCTAssertEqual(ReplyTextCodec.previewText(for: encoded), "↪︎ 新的回答")

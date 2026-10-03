@@ -187,6 +187,42 @@ private struct TabletLayout: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onReceive(NotificationCenter.default.publisher(for: .veilLinkStressUICommand)) { notification in
+                guard let request = DeviceStressCommandBus.request(from: notification) else { return }
+                switch request.command {
+                case .chatOpenFirstConversation:
+                    guard model.selectedSection == .chats,
+                          model.selectedConversation == nil,
+                          model.conversations.first != nil else { return }
+                    guard let conversation = model.conversations.first else {
+                        DeviceStressCommandBus.acknowledge(
+                            request,
+                            disposition: .ignored,
+                            detail: "no conversation available"
+                        )
+                        return
+                    }
+                    model.selectedSection = .chats
+                    model.selectedConversation = conversation
+                    let applied = model.selectedSection == .chats && model.selectedConversation?.id == conversation.id
+                    DeviceStressCommandBus.acknowledge(
+                        request,
+                        disposition: applied ? .applied : .ignored,
+                        detail: applied ? "first conversation selected" : "conversation selection was not retained"
+                    )
+                case .chatCloseConversation:
+                    guard model.selectedSection == .chats, model.selectedConversation != nil else { return }
+                    model.selectedConversation = nil
+                    let applied = model.selectedConversation == nil
+                    DeviceStressCommandBus.acknowledge(
+                        request,
+                        disposition: applied ? .applied : .ignored,
+                        detail: applied ? "conversation selection cleared" : "conversation selection remained active"
+                    )
+                default:
+                    break
+                }
+            }
         }
     }
 }

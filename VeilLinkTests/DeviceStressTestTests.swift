@@ -34,4 +34,41 @@ final class DeviceStressTestTests: XCTestCase {
             XCTAssertEqual(DeviceStressUICommand(rawValue: command.rawValue), command)
         }
     }
+
+    @MainActor
+    func testUICommandRequiresRequestIDAndDoesNotCreateReceiptWithoutConsumer() async {
+        DeviceStressCommandBus.resetReceiptsForTesting()
+        let request = DeviceStressCommandBus.post(.chatOpenFirstConversation)
+        let receipt = await DeviceStressCommandBus.waitForReceipt(
+            requestID: request.id,
+            timeoutMilliseconds: 1
+        )
+        XCTAssertNil(receipt)
+
+        let legacyNotification = Notification(
+            name: .veilLinkStressUICommand,
+            object: nil,
+            userInfo: ["command": DeviceStressUICommand.chatOpenFirstConversation.rawValue]
+        )
+        XCTAssertNil(DeviceStressCommandBus.request(from: legacyNotification))
+    }
+
+    @MainActor
+    func testUICommandReceiptMustMatchMountedConsumerDisposition() async {
+        DeviceStressCommandBus.resetReceiptsForTesting()
+        let request = DeviceStressCommandBus.post(.settingsOpenBackup)
+        DeviceStressCommandBus.acknowledge(
+            request,
+            disposition: .ignored,
+            detail: "presentation binding did not retain state"
+        )
+
+        let receipt = await DeviceStressCommandBus.waitForReceipt(
+            requestID: request.id,
+            timeoutMilliseconds: 1
+        )
+        XCTAssertEqual(receipt?.request, request)
+        XCTAssertEqual(receipt?.disposition, .ignored)
+        XCTAssertEqual(receipt?.detail, "presentation binding did not retain state")
+    }
 }

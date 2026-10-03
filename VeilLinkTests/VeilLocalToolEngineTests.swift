@@ -166,4 +166,72 @@ final class VeilLocalToolEngineTests: XCTestCase {
         XCTAssertEqual(VeilLocalToolEngine.morseDecode(".- / --..-- / -..."), "A ? B")
         XCTAssertEqual(VeilLocalToolEngine.morseDecode(".../---/..."), "S O S")
     }
+
+    func testDetailedTextMetricsExposeWordsAndASCIIRatio() {
+        let metrics = VeilLocalToolEngine.detailedTextMetrics("Veil Link\n链路 42")
+        XCTAssertEqual(metrics.characters, 15)
+        XCTAssertEqual(metrics.utf8Bytes, 19)
+        XCTAssertEqual(metrics.lines, 2)
+        XCTAssertEqual(metrics.words, 4)
+        XCTAssertEqual(metrics.nonWhitespaceScalars, 12)
+        XCTAssertEqual(metrics.unicodeScalars, 15)
+        XCTAssertEqual(metrics.asciiScalars, 13)
+        XCTAssertEqual(metrics.asciiRatioPermille, 867)
+    }
+
+    func testJSONStructureMetricsCountNestedContainersAndDepth() throws {
+        let metrics = try VeilLocalToolEngine.jsonStructureMetrics(
+            #"{"a":[1,{"b":true}],"c":null}"#
+        )
+        XCTAssertEqual(metrics.objectCount, 2)
+        XCTAssertEqual(metrics.arrayCount, 1)
+        XCTAssertEqual(metrics.scalarCount, 3)
+        XCTAssertEqual(metrics.keyCount, 3)
+        XCTAssertEqual(metrics.maxDepth, 4)
+        XCTAssertEqual(metrics.totalNodes, 6)
+        XCTAssertThrowsError(try VeilLocalToolEngine.jsonStructureMetrics("{broken")) {
+            XCTAssertEqual($0 as? VeilLocalToolError, .invalidJSON)
+        }
+    }
+
+    func testEncodingMetricsReportDeterministicExpansion() {
+        XCTAssertEqual(
+            VeilLocalToolEngine.base64EncodingMetrics("abc"),
+            VeilEncodingMetrics(inputBytes: 3, outputBytes: 4, deltaBytes: 1, expansionPercent: 33)
+        )
+        XCTAssertEqual(
+            VeilLocalToolEngine.urlPercentEncodingMetrics("a b"),
+            VeilEncodingMetrics(inputBytes: 3, outputBytes: 5, deltaBytes: 2, expansionPercent: 67)
+        )
+        XCTAssertEqual(
+            VeilLocalToolEngine.base64EncodingMetrics(""),
+            VeilEncodingMetrics(inputBytes: 0, outputBytes: 0, deltaBytes: 0, expansionPercent: 0)
+        )
+    }
+
+    func testColorContrastChoosesReadableForeground() throws {
+        let black = try VeilLocalToolEngine.colorContrast(
+            rgb: VeilRGBColor(red: 0, green: 0, blue: 0)
+        )
+        XCTAssertEqual(black.relativeLuminance, 0, accuracy: 0.000_001)
+        XCTAssertEqual(black.contrastWithWhite, 21, accuracy: 0.001)
+        XCTAssertEqual(black.preferredForeground, .white)
+        XCTAssertTrue(black.meetsAANormalText)
+        XCTAssertTrue(black.meetsAALargeText)
+
+        let white = try VeilLocalToolEngine.colorContrast(
+            rgb: VeilRGBColor(red: 255, green: 255, blue: 255)
+        )
+        XCTAssertEqual(white.relativeLuminance, 1, accuracy: 0.000_001)
+        XCTAssertEqual(white.contrastWithBlack, 21, accuracy: 0.001)
+        XCTAssertEqual(white.preferredForeground, .black)
+
+        XCTAssertThrowsError(
+            try VeilLocalToolEngine.colorContrast(
+                rgb: VeilRGBColor(red: 256, green: 0, blue: 0)
+            )
+        ) {
+            XCTAssertEqual($0 as? VeilLocalToolError, .rgbOutOfRange)
+        }
+    }
 }

@@ -13,7 +13,8 @@ struct GameLobbyView: View {
             VStack(alignment: .leading, spacing: 18) {
                 hero.veilStaggeredEntrance(index: 0)
                 singlePlayerSection.veilStaggeredEntrance(index: 1)
-                nearbySection.veilStaggeredEntrance(index: 2)
+                realtimeArcadeSection.veilStaggeredEntrance(index: 2)
+                nearbySection.veilStaggeredEntrance(index: 3)
             }
         }
         .background(VeilAmbientBackground())
@@ -149,6 +150,45 @@ struct GameLobbyView: View {
                 }
             }
         }
+    }
+
+    private var realtimeArcadeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("实时街机", subtitle: "SpriteKit 实时 2D · 单机运行，不接入对局传输")
+            NavigationLink(destination: VeilPulseRunnerView()) {
+                realtimeGameRow(title: "星隙快递", detail: "三段式横版平台跳跃 · 收集星核 · 冲刺", motif: .comet)
+            }
+            .buttonStyle(.plain)
+            NavigationLink(destination: VeilVoidSwarmView()) {
+                realtimeGameRow(title: "虚空蜂群", detail: "触控移动 · 自动射击 · 波次生存", motif: .guardian)
+            }
+            .buttonStyle(.plain)
+            NavigationLink(destination: RhythmNeonView()) {
+                realtimeGameRow(title: "霓虹节拍", detail: "节拍闪避 · 连击得分 · 超载冲刺", motif: .pulse)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func realtimeGameRow(title: String, detail: String, motif: ArcadeVisualMotif) -> some View {
+        HStack(spacing: 12) {
+            ArcadeVisualIcon(motif: motif, animated: false)
+                .frame(width: 52, height: 52)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline).foregroundColor(VeilTheme.text)
+                Text(detail).font(.caption).foregroundColor(VeilTheme.secondaryText).lineLimit(2)
+            }
+            Spacer(minLength: 4)
+            Text("实时")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundColor(VeilTheme.goldBright)
+            Image(systemName: "chevron.right").font(.caption.bold()).foregroundColor(VeilTheme.tertiaryText)
+        }
+        .padding(12)
+        .background(VeilTheme.elevated.opacity(0.86))
+        .clipShape(VeilPanelShape(cut: 12, radius: 7))
+        .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+        .accessibilityElement(children: .combine)
     }
 
     private func sectionTitle(_ title: String, subtitle: String) -> some View {

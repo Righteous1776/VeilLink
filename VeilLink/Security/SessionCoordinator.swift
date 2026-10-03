@@ -1397,6 +1397,7 @@ final class SessionCoordinator: ObservableObject {
 
     func sendPTTControl(_ packet: VeilPTTControlPacket, to peerIdentityIDs: [String]) {
         guard let clear = try? VeilPTTCodec.encodeControl(packet) else { return }
+        let priority = VeilPTTTransportPolicy.priority(for: packet.kind)
         for peerIdentityID in Set(peerIdentityIDs) {
             guard let transportID = peerTransport[peerIdentityID], var context = sessions[transportID],
                   let remote = context.remoteHello, let keys = context.keys,
@@ -1406,7 +1407,7 @@ final class SessionCoordinator: ObservableObject {
                 let encrypted = try CryptoEngine.encrypt(clear, key: keys.sendKey, messageID: packet.talkID, sequence: context.nextSendSequence, context: "ptt-control")
                 context.nextSendSequence += 1
                 let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .pttControl, payload: try WireCodec.encodeEncryptedPayload(encrypted))
-                if envelope.count <= WireProtocol.maximumEnvelopeBytes { _ = transportSend?(transportID, envelope, .control) }
+                if envelope.count <= WireProtocol.maximumEnvelopeBytes { _ = transportSend?(transportID, envelope, priority) }
                 sessions[transportID] = context
             } catch { continue }
         }

@@ -65,6 +65,51 @@ struct VeilRGBColor: Equatable, Sendable {
     let blue: Int
 }
 
+struct VeilDetailedTextMetrics: Equatable, Sendable {
+    let characters: Int
+    let utf8Bytes: Int
+    let lines: Int
+    let words: Int
+    let nonWhitespaceScalars: Int
+    let unicodeScalars: Int
+    let asciiScalars: Int
+    let asciiRatioPermille: Int
+}
+
+struct VeilJSONStructureMetrics: Equatable, Sendable {
+    let objectCount: Int
+    let arrayCount: Int
+    let scalarCount: Int
+    let keyCount: Int
+    let maxDepth: Int
+
+    var totalNodes: Int {
+        objectCount + arrayCount + scalarCount
+    }
+}
+
+struct VeilEncodingMetrics: Equatable, Sendable {
+    let inputBytes: Int
+    let outputBytes: Int
+    let deltaBytes: Int
+    let expansionPercent: Int
+}
+
+enum VeilPreferredForeground: String, Equatable, Sendable {
+    case black
+    case white
+}
+
+struct VeilColorContrastAnalysis: Equatable, Sendable {
+    let relativeLuminance: Double
+    let contrastWithBlack: Double
+    let contrastWithWhite: Double
+    let preferredForeground: VeilPreferredForeground
+    let preferredContrast: Double
+    let meetsAANormalText: Bool
+    let meetsAALargeText: Bool
+}
+
 enum VeilLocalToolEngine {
     private static let lowercase = Array("abcdefghijkmnpqrstuvwxyz")
     private static let uppercase = Array("ABCDEFGHJKLMNPQRSTUVWXYZ")
@@ -140,6 +185,71 @@ enum VeilLocalToolEngine {
         (text.count, text.utf8.count, text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count)
     }
 
+    static func detailedTextMetrics(_ text: String) -> VeilDetailedTextMetrics {
+        let basic = textMetrics(text)
+        let whitespace = CharacterSet.whitespacesAndNewlines
+        let scalarCount = text.unicodeScalars.count
+        let nonWhitespace = text.unicodeScalars.reduce(into: 0) { count, scalar in
+            if !whitespace.contains(scalar) {
+                count += 1
+            }
+        }
+        let ascii = text.unicodeScalars.reduce(into: 0) { count, scalar in
+            if scalar.value < 128 {
+                count += 1
+            }
+        }
+        let words = text.split { character in
+            character.unicodeScalars.allSatisfy { whitespace.contains($0) }
+        }.count
+        let ratio = scalarCount == 0
+            ? 0
+            : Int((Double(ascii) / Double(scalarCount) * 1_000).rounded())
+
+        return VeilDetailedTextMetrics(
+            characters: basic.characters,
+            utf8Bytes: basic.utf8Bytes,
+            lines: basic.lines,
+            words: words,
+            nonWhitespaceScalars: nonWhitespace,
+            unicodeScalars: scalarCount,
+            asciiScalars: ascii,
+            asciiRatioPermille: ratio
+        )
+    }
+
+    static func jsonStructureMetrics(_ text: String) throws -> VeilJSONStructureMetrics {
+        let root = try jsonObject(text)
+        var objectCount = 0
+        var arrayCount = 0
+        var scalarCount = 0
+        var keyCount = 0
+        var maxDepth = 0
+        var stack: [(value: Any, depth: Int)] = [(root, 1)]
+
+        while let item = stack.popLast() {
+            maxDepth = max(maxDepth, item.depth)
+            if let object = item.value as? [String: Any] {
+                objectCount += 1
+                keyCount += object.count
+                stack.append(contentsOf: object.values.map { ($0, item.depth + 1) })
+            } else if let array = item.value as? [Any] {
+                arrayCount += 1
+                stack.append(contentsOf: array.map { ($0, item.depth + 1) })
+            } else {
+                scalarCount += 1
+            }
+        }
+
+        return VeilJSONStructureMetrics(
+            objectCount: objectCount,
+            arrayCount: arrayCount,
+            scalarCount: scalarCount,
+            keyCount: keyCount,
+            maxDepth: maxDepth
+        )
+    }
+
     static func jsonValidation(_ text: String) -> VeilJSONValidation {
         do {
             _ = try jsonObject(text)
@@ -158,6 +268,14 @@ enum VeilLocalToolEngine {
 
     static func minifiedJSON(_ text: String) throws -> String {
         try serializeJSONObject(jsonObject(text), options: [.sortedKeys])
+    }
+
+    static func base64EncodingMetrics(_ text: String) -> VeilEncodingMetrics {
+        encodingMetrics(input: text, output: base64EncodeUTF8(text))
+    }
+
+    static func urlPercentEncodingMetrics(_ text: String) -> VeilEncodingMetrics {
+        encodingMetrics(input: text, output: urlPercentEncode(text))
     }
 
     static func base64EncodeUTF8(_ text: String) -> String {
@@ -274,6 +392,30 @@ enum VeilLocalToolEngine {
         return String(format: "#%02X%02X%02X", red, green, blue)
     }
 
+    static func colorContrast(rgb: VeilRGBColor) throws -> VeilColorContrastAnalysis {
+        guard (0...255).contains(rgb.red),
+              (0...255).contains(rgb.green),
+              (0...255).contains(rgb.blue) else {
+            throw VeilLocalToolError.rgbOutOfRange
+        }
+
+        let luminance = relativeLuminance(rgb)
+        let contrastWithBlack = (luminance + 0.05) / 0.05
+        let contrastWithWhite = 1.05 / (luminance + 0.05)
+        let preferred: VeilPreferredForeground = contrastWithBlack >= contrastWithWhite ? .black : .white
+        let preferredContrast = max(contrastWithBlack, contrastWithWhite)
+
+        return VeilColorContrastAnalysis(
+            relativeLuminance: luminance,
+            contrastWithBlack: contrastWithBlack,
+            contrastWithWhite: contrastWithWhite,
+            preferredForeground: preferred,
+            preferredContrast: preferredContrast,
+            meetsAANormalText: preferredContrast >= 4.5,
+            meetsAALargeText: preferredContrast >= 3.0
+        )
+    }
+
     static func randomChoice<Element>(from choices: [Element]) throws -> Element {
         var generator = SystemRandomNumberGenerator()
         return try randomChoice(from: choices, using: &generator)
@@ -327,6 +469,34 @@ enum VeilLocalToolEngine {
             }
         }
         return output
+    }
+
+    private static func encodingMetrics(input: String, output: String) -> VeilEncodingMetrics {
+        let inputBytes = input.utf8.count
+        let outputBytes = output.utf8.count
+        let delta = outputBytes - inputBytes
+        let expansionPercent = inputBytes == 0
+            ? 0
+            : Int((Double(delta) / Double(inputBytes) * 100).rounded())
+        return VeilEncodingMetrics(
+            inputBytes: inputBytes,
+            outputBytes: outputBytes,
+            deltaBytes: delta,
+            expansionPercent: expansionPercent
+        )
+    }
+
+    private static func relativeLuminance(_ rgb: VeilRGBColor) -> Double {
+        let red = linearizedSRGB(Double(rgb.red) / 255.0)
+        let green = linearizedSRGB(Double(rgb.green) / 255.0)
+        let blue = linearizedSRGB(Double(rgb.blue) / 255.0)
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    }
+
+    private static func linearizedSRGB(_ value: Double) -> Double {
+        value <= 0.04045
+            ? value / 12.92
+            : pow((value + 0.055) / 1.055, 2.4)
     }
 
     private static func jsonObject(_ text: String) throws -> Any {

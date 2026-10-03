@@ -2,6 +2,40 @@ import XCTest
 @testable import VeilLink
 
 final class A9HealthLatticeTests: XCTestCase {
+    func testTransportRollupIncludesLANHealthAndQueuePressure() {
+        let readyID = UUID()
+        let recoveringID = UUID()
+        let rollup = VeilTransportHealthRollup.make(
+            bluetoothRunning: true,
+            bluetooth: [],
+            lanRunning: true,
+            lan: [
+                LANTurboLinkSnapshot(
+                    id: readyID,
+                    role: .outgoing,
+                    endpointDescription: "peer-ready",
+                    isReady: true,
+                    pendingFrames: 2,
+                    pendingBytes: 4_096
+                ),
+                LANTurboLinkSnapshot(
+                    id: recoveringID,
+                    role: .incoming,
+                    endpointDescription: "peer-recovering",
+                    isReady: false,
+                    pendingFrames: 1,
+                    pendingBytes: 2_048
+                )
+            ]
+        )
+
+        XCTAssertEqual(rollup.coverage, .multiTransport)
+        XCTAssertEqual(rollup.connectedLinkCount, 1)
+        XCTAssertEqual(rollup.trackedLinkCount, 2)
+        XCTAssertEqual(rollup.recoveringLinkCount, 1)
+        XCTAssertEqual(rollup.pendingBytes, 6_144)
+    }
+
     func testA9LatticeContainsExactly144States() {
         XCTAssertEqual(VeilA9Lattice.cells.count, 144)
         XCTAssertEqual(Set((0..<144).map { $0 }).count, 144)
