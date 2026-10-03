@@ -17,7 +17,7 @@ final class LudoBotTests: XCTestCase {
 
     func testNoLegalMoveUsesPassSentinel() {
         let sessionID = "00000000-0000-0000-0000-000000000002"
-        var state = LudoState()
+        let state = LudoState()
         let legal = state.legalPieces(sessionID: sessionID)
         if legal.isEmpty {
             let move = LudoBot.chooseMove(in: state, for: .host, sessionID: sessionID)
