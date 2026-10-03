@@ -80,6 +80,46 @@ final class VeilLocalToolEngineTests: XCTestCase {
         }
     }
 
+    func testJSONStructureReportsRootDepthNodesAndKeys() throws {
+        let source = #"{"a":[1,{"b":true}],"c":null}"#
+        XCTAssertEqual(
+            try VeilLocalToolEngine.jsonStructure(source),
+            VeilJSONStructure(
+                rootType: "OBJECT",
+                nodeCount: 6,
+                maxDepth: 4,
+                keyCount: 3
+            )
+        )
+        XCTAssertEqual(
+            try VeilLocalToolEngine.jsonStructure("[1,2]"),
+            VeilJSONStructure(
+                rootType: "ARRAY",
+                nodeCount: 3,
+                maxDepth: 2,
+                keyCount: 0
+            )
+        )
+    }
+
+    func testBase64URLSafeRoundTripWithoutPadding() throws {
+        let source = "VeilLink+/ 链路"
+        let encoded = VeilLocalToolEngine.base64URLEncodeUTF8(source)
+        XCTAssertFalse(encoded.contains("+"))
+        XCTAssertFalse(encoded.contains("/"))
+        XCTAssertFalse(encoded.contains("="))
+        XCTAssertEqual(try VeilLocalToolEngine.base64URLDecodeUTF8(encoded), source)
+        XCTAssertEqual(
+            try VeilLocalToolEngine.base64URLDecodeUTF8(
+                VeilLocalToolEngine.base64URLEncodeUTF8(source, padded: true)
+            ),
+            source
+        )
+        XCTAssertThrowsError(try VeilLocalToolEngine.base64URLDecodeUTF8("x")) {
+            XCTAssertEqual($0 as? VeilLocalToolError, .invalidBase64)
+        }
+    }
+
     func testURLPercentEncodingUsesRFC3986UnreservedSet() throws {
         let source = "https://veil.link/链路?q=a+b&safe=~-._"
         let encoded = VeilLocalToolEngine.urlPercentEncode(source)
@@ -131,6 +171,21 @@ final class VeilLocalToolEngineTests: XCTestCase {
         XCTAssertThrowsError(try VeilLocalToolEngine.hex(red: -1, green: 0, blue: 0)) {
             XCTAssertEqual($0 as? VeilLocalToolError, .rgbOutOfRange)
         }
+    }
+
+    func testRGBToHSLAnalysis() {
+        XCTAssertEqual(
+            VeilLocalToolEngine.hsl(rgb: VeilRGBColor(red: 255, green: 0, blue: 0)),
+            VeilHSLColor(hue: 0, saturation: 100, lightness: 50)
+        )
+        XCTAssertEqual(
+            VeilLocalToolEngine.hsl(rgb: VeilRGBColor(red: 128, green: 128, blue: 128)),
+            VeilHSLColor(hue: 0, saturation: 0, lightness: 50)
+        )
+        let gold = VeilLocalToolEngine.hsl(rgb: VeilRGBColor(red: 200, green: 164, blue: 93))
+        XCTAssertTrue((40...50).contains(gold.hue))
+        XCTAssertTrue((45...60).contains(gold.saturation))
+        XCTAssertTrue((50...65).contains(gold.lightness))
     }
 
     func testRandomChoiceAndDiceHaveDeterministicInjectedRNG() throws {
