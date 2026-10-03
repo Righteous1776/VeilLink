@@ -364,3 +364,36 @@ struct VeilInstrumentRackSection<Content: View>: View {
         }
     }
 }
+
+
+private struct VeilInstrumentFieldModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        VeilAppearanceController.shared.isDarkAppearance
+                        ? Color(red: 0.075, green: 0.085, blue: 0.08)
+                        : Color(red: 0.82, green: 0.83, blue: 0.78)
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.black.opacity(0.40), lineWidth: 1.2)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
+                    .padding(2)
+            )
+            .foregroundColor(VeilTheme.text)
+    }
+}
+
+extension View {
+    func veilInstrumentField() -> some View {
+        modifier(VeilInstrumentFieldModifier())
+    }
+}
