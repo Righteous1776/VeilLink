@@ -541,7 +541,6 @@ struct VeilJSONToolView: View {
     @State private var output = ""
     @State private var structure: VeilJSONStructure?
     @State private var errorText: String?
-    @State private var structure: VeilJSONStructure?
 
     var body: some View {
         ScrollView {
