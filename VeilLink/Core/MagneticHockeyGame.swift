@@ -195,15 +195,16 @@ enum MagneticHockeyBot {
     static func chooseMove(
         in state: MagneticHockeyState,
         actor: MiniGamePlayer,
-        sessionID: String
+        sessionID: String,
+        difficulty: ArcadeBotDifficulty = .operatorMode
     ) -> MagneticHockeyMove? {
         guard state.currentPlayer == actor, !state.isFinished, !sessionID.isEmpty else { return nil }
 
         let startingScore = state.score(for: actor)
         var best: (move: MagneticHockeyMove, score: Double)?
 
-        for angle in stride(from: 0, to: 360, by: 5) {
-            for power in stride(from: 10, through: 100, by: 5) {
+        for angle in stride(from: 0, to: 360, by: difficulty.hockeyAngleStep) {
+            for power in stride(from: 10, through: 100, by: difficulty.hockeyPowerStep) {
                 let move = MagneticHockeyMove(angle: angle, power: power)
                 var candidate = state
                 guard candidate.apply(move: move, actor: actor, sessionID: sessionID),
