@@ -16,7 +16,7 @@ struct GameLobbyView: View {
                 nearbySection.veilStaggeredEntrance(index: 2)
             }
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("游戏")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -59,8 +59,17 @@ struct GameLobbyView: View {
                 lobbyMetric("联网", "不需要")
             }
         }
-        .veilCard(emphasized: true)
-        .veilSpatialPress(maximumTilt: 3.8, cornerRadius: 20, highlightColor: VeilTheme.goldBright)
+        .padding(14)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                emphasized: true
+            )
+        )
+        .overlay(alignment: .topTrailing) {
+            VeilScrewHead().padding(7)
+        }
+        .veilSpatialPress(maximumTilt: 2.0, cornerRadius: 20, highlightColor: VeilTheme.goldBright)
         .veilDynamicGlow(active: true, emphasized: true)
     }
 
@@ -71,37 +80,37 @@ struct GameLobbyView: View {
                 gameRow(.artillery, detail: "可视化弹道 · 确定性风力 · 本地参数搜索 Bot", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+            .veilSpatialPress(maximumTilt: 2.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .lightTrail)) {
                 gameRow(.lightTrail, detail: "动态赛道 · 闪避与能量 · 本地预判 Bot", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+            .veilSpatialPress(maximumTilt: 2.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .magneticHockey)) {
                 gameRow(.magneticHockey, detail: "固定步物理 · 磁场偏转 · 三球决胜", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+            .veilSpatialPress(maximumTilt: 2.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
                 gameRow(.gomoku, detail: "你执黑先手 · 威胁识别 + 候选搜索 + 规则校验", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+            .veilSpatialPress(maximumTilt: 2.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
                 gameRow(.xiangqi, detail: "你执红先手 · Alpha-Beta + 局面评估 + 规则校验", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+            .veilSpatialPress(maximumTilt: 2.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .ludo)) {
                 gameRow(.ludo, detail: "确定性骰子 · 规则评分 Bot 自动完成回合", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+            .veilSpatialPress(maximumTilt: 2.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: TacticalSoloV2View(model: model)) {
                 gameRow(.tactical, detail: "48×27 战役大地图 · 战争迷雾 · WEGO · 补给与作战层", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+            .veilSpatialPress(maximumTilt: 2.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
         }
     }
 
@@ -145,7 +154,7 @@ struct GameLobbyView: View {
                         .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
                     }
                     .buttonStyle(VeilPressStyle())
-                    .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+                    .veilSpatialPress(maximumTilt: 2.0, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
                 }
             }
         }
@@ -184,9 +193,15 @@ struct GameLobbyView: View {
             }
         }
         .padding(13)
-        .background(VeilTheme.elevated.opacity(enabled ? 0.86 : 0.52))
-        .clipShape(VeilPanelShape(cut: 12, radius: 7))
-        .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                emphasized: enabled
+            )
+        )
+        .overlay(alignment: .topTrailing) {
+            VeilIndicatorLamp(active: enabled).padding(8)
+        }
         .accessibilityElement(children: .combine)
         .accessibilityValue(enabled ? "可以开始人机对局" : "尚未开放")
     }
@@ -228,7 +243,7 @@ struct LocalAIGameView: View {
             }
             .padding(14)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle(game.title + " · 人机")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -290,7 +305,13 @@ struct LocalAIGameView: View {
                 statusMetric("耗时", controller.lastDecisionMilliseconds.map { "\($0)ms" } ?? "--")
             }
         }
-        .veilCard(emphasized: true)
+        .padding(14)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 18, style: .continuous),
+                emphasized: true
+            )
+        )
     }
 
     @ViewBuilder
@@ -402,7 +423,7 @@ struct LocalAIGameView: View {
                 selectedXiangqiIndex = nil
                 controller.restart()
             }
-            .buttonStyle(VeilGamePrimaryButtonStyle())
+            .buttonStyle(VeilPhysicalButtonStyle(accent: true))
         }
         .frame(maxWidth: .infinity)
         .padding(20)
