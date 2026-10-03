@@ -61,6 +61,29 @@ struct TacticalLandscapeShellV2: View {
         return redacted.friendlies.first { $0.id == selectedFriendlyID }
     }
 
+
+    private var confirmedEnemyCount: Int {
+        redacted.enemyMarkers.filter { $0.level == .confirmed }.count
+    }
+
+    private var partialEnemyCount: Int {
+        redacted.enemyMarkers.filter { $0.level == .partial }.count
+    }
+
+    private var suspectedEnemyCount: Int {
+        redacted.enemyMarkers.filter { $0.level == .suspected }.count
+    }
+
+    private var visibleCoverage: Double {
+        guard !map.cells.isEmpty else { return 0 }
+        return Double(redacted.visibleCells.count) / Double(map.cells.count)
+    }
+
+    private var exploredCoverage: Double {
+        guard !map.cells.isEmpty else { return 0 }
+        return Double(redacted.exploredCells.count) / Double(map.cells.count)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             topBar
@@ -198,9 +221,33 @@ struct TacticalLandscapeShellV2: View {
             Text("敌情")
                 .font(.system(size: 12, weight: .semibold))
 
-            Text("\(redacted.enemyMarkers.count) 条当前/历史接触记录")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            VeilStatusStrip(
+                leftTitle: "CONFIRMED",
+                leftValue: "\(confirmedEnemyCount)",
+                rightTitle: "PARTIAL",
+                rightValue: "\(partialEnemyCount)",
+                active: confirmedEnemyCount + partialEnemyCount > 0
+            )
+
+            VeilStatusStrip(
+                leftTitle: "SUSPECTED",
+                leftValue: "\(suspectedEnemyCount)",
+                rightTitle: "CONTACTS",
+                rightValue: "\(redacted.enemyMarkers.count)",
+                active: !redacted.enemyMarkers.isEmpty
+            )
+
+            VeilGaugeMeter(
+                title: "VISIBLE AREA",
+                value: visibleCoverage,
+                text: "\(Int((visibleCoverage * 100).rounded()))%"
+            )
+
+            VeilGaugeMeter(
+                title: "EXPLORED AREA",
+                value: exploredCoverage,
+                text: "\(Int((exploredCoverage * 100).rounded()))%"
+            )
 
             Spacer()
 
@@ -227,25 +274,28 @@ struct TacticalLandscapeShellV2: View {
                 Button(overlayTitle(item)) {
                     overlay = item
                 }
-                .buttonStyle(.borderless)
-                .font(.system(size: 11, weight: overlay == item ? .semibold : .regular))
-                .foregroundColor(
-                    overlay == item
-                    ? Color(red: 0.90, green: 0.73, blue: 0.35)
-                    : .secondary
-                )
+                .buttonStyle(VeilCompactKeyStyle(selected: overlay == item))
             }
 
             Spacer()
+
+            VeilInstrumentLabel(
+                title: "OVERLAY",
+                value: overlayTitle(overlay),
+                active: true
+            )
 
             Button("－") {
                 zoom = max(0.55, zoom - 0.15)
                 applyZoom()
             }
+            .buttonStyle(VeilCompactKeyStyle())
+
             Button("＋") {
                 zoom = min(2.0, zoom + 0.15)
                 applyZoom()
             }
+            .buttonStyle(VeilCompactKeyStyle())
         }
         .padding(.horizontal, 14)
         .frame(height: 44)
