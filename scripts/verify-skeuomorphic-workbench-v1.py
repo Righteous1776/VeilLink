@@ -60,7 +60,7 @@ for needle in [
     if needle not in arcade:
         raise SystemExit(f"FAIL arcade instrument invariant missing {needle}")
 
-if re.search(r"(?<![A-Za-z0-9_])Slider\\s*\\(", arcade):
+if re.search(r"(?<![A-Za-z0-9_])Slider\s*\(", arcade):
     raise SystemExit("FAIL arcade controls regressed to system Slider")
 
 if "VeilCompactKeyStyle(selected:" not in lobby:
