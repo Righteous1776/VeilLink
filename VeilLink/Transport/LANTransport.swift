@@ -77,6 +77,27 @@ enum LANDataPlanePolicy {
     }
 }
 
+enum LANRefreshAction: Equatable {
+    case start
+    case preserveHealthyInfrastructure
+    case repairMissingInfrastructure
+}
+
+enum LANInfrastructureRecoveryPolicy {
+    private static let retrySchedule: [TimeInterval] = [0.35, 0.80, 1.50, 3.0, 5.0, 8.0]
+    static let maximumAttempts = retrySchedule.count
+
+    static func refreshAction(isRunning: Bool, hasListener: Bool, hasBrowser: Bool) -> LANRefreshAction {
+        guard isRunning else { return .start }
+        return hasListener && hasBrowser ? .preserveHealthyInfrastructure : .repairMissingInfrastructure
+    }
+
+    static func retryDelay(attempt: Int) -> TimeInterval? {
+        guard attempt >= 0, attempt < maximumAttempts else { return nil }
+        return retrySchedule[attempt]
+    }
+}
+
 enum LANFrameCodec {
     static let maximumPayloadBytes = 96_000
     static let headerBytes = 4
@@ -95,35 +116,52 @@ enum LANFrameCodec {
 struct LANFrameDecoder {
     private(set) var bufferedByteCount = 0
     private var storage = Data()
+    private var readOffset = 0
 
     mutating func append(_ bytes: Data) throws -> [Data] {
         guard !bytes.isEmpty else { return [] }
         storage.append(bytes)
-        bufferedByteCount = storage.count
 
         var output: [Data] = []
-        while storage.count >= LANFrameCodec.headerBytes {
-            let length: UInt32 = storage.prefix(LANFrameCodec.headerBytes).withUnsafeBytes { raw in
+        while storage.count - readOffset >= LANFrameCodec.headerBytes {
+            let headerStart = storage.index(storage.startIndex, offsetBy: readOffset)
+            let headerEnd = storage.index(headerStart, offsetBy: LANFrameCodec.headerBytes)
+            let length: UInt32 = storage[headerStart..<headerEnd].withUnsafeBytes { raw in
                 raw.loadUnaligned(as: UInt32.self).bigEndian
             }
             let payloadBytes = Int(length)
             guard payloadBytes > 0, payloadBytes <= LANFrameCodec.maximumPayloadBytes else {
-                storage.removeAll(keepingCapacity: false)
-                bufferedByteCount = 0
+                reset()
                 throw LANFrameError.invalidLength
             }
             let total = LANFrameCodec.headerBytes + payloadBytes
-            guard storage.count >= total else { break }
-            output.append(Data(storage[LANFrameCodec.headerBytes..<total]))
-            storage.removeSubrange(0..<total)
+            guard storage.count - readOffset >= total else { break }
+            let payloadStart = headerEnd
+            let payloadEnd = storage.index(payloadStart, offsetBy: payloadBytes)
+            output.append(Data(storage[payloadStart..<payloadEnd]))
+            readOffset += total
         }
-        bufferedByteCount = storage.count
+        compactIfNeeded()
+        bufferedByteCount = storage.count - readOffset
         return output
     }
 
     mutating func reset() {
         storage.removeAll(keepingCapacity: false)
+        readOffset = 0
         bufferedByteCount = 0
+    }
+
+    private mutating func compactIfNeeded() {
+        guard readOffset > 0 else { return }
+        if readOffset == storage.count {
+            storage.removeAll(keepingCapacity: true)
+            readOffset = 0
+        } else if readOffset >= 64 * 1_024 || readOffset * 2 >= storage.count {
+            let unreadStart = storage.index(storage.startIndex, offsetBy: readOffset)
+            storage.removeSubrange(storage.startIndex..<unreadStart)
+            readOffset = 0
+        }
     }
 }
 
@@ -238,6 +276,10 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
     private var discoveredEndpoints: [String: NWEndpoint] = [:]
     private var reconnectAttempts: [String: Int] = [:]
     private var reconnectWorkItems: [String: DispatchWorkItem] = [:]
+    private var listenerRecoveryAttempts = 0
+    private var browserRecoveryAttempts = 0
+    private var listenerRecoveryWorkItem: DispatchWorkItem?
+    private var browserRecoveryWorkItem: DispatchWorkItem?
     private var sentPayloadBytes: UInt64 = 0
     private var receivedPayloadBytes: UInt64 = 0
     private var running = false
@@ -269,11 +311,7 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
     }
 
     func refresh() {
-        queue.async { [weak self] in
-            guard let self else { return }
-            self.stopLocked(publishStopped: false)
-            self.startLocked()
-        }
+        queue.async { [weak self] in self?.refreshLocked() }
     }
 
     func containsTransport(_ id: UUID) -> Bool {
@@ -325,10 +363,56 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
     }
 
     private func startLocked() {
-        guard !running else { return }
+        guard !running else {
+            ensureInfrastructureLocked(resetRecoveryBudget: false)
+            return
+        }
         running = true
+        resetInfrastructureRecoveryLocked()
         publishRunning(true, status: "正在寻找同一局域网中的 VeilLink")
+        ensureInfrastructureLocked(resetRecoveryBudget: false)
+    }
 
+    private func refreshLocked() {
+        switch LANInfrastructureRecoveryPolicy.refreshAction(
+            isRunning: running,
+            hasListener: listener != nil,
+            hasBrowser: browser != nil
+        ) {
+        case .start:
+            startLocked()
+        case .preserveHealthyInfrastructure:
+            // Foreground/app-refresh probes must not cancel live connections or discard their
+            // priority queues. Network.framework already keeps healthy listener/browser objects
+            // current, so there is nothing destructive to refresh here.
+            break
+        case .repairMissingInfrastructure:
+            ensureInfrastructureLocked(resetRecoveryBudget: true)
+        }
+    }
+
+    private func ensureInfrastructureLocked(resetRecoveryBudget: Bool) {
+        guard running else { return }
+        if listener == nil {
+            if resetRecoveryBudget {
+                listenerRecoveryWorkItem?.cancel()
+                listenerRecoveryWorkItem = nil
+                listenerRecoveryAttempts = 0
+            }
+            startListenerLocked()
+        }
+        if browser == nil {
+            if resetRecoveryBudget {
+                browserRecoveryWorkItem?.cancel()
+                browserRecoveryWorkItem = nil
+                browserRecoveryAttempts = 0
+            }
+            startBrowserLocked()
+        }
+    }
+
+    private func startListenerLocked() {
+        guard running, listener == nil else { return }
         do {
             let parameters = makeParameters()
             let listener = try NWListener(using: parameters)
@@ -340,34 +424,42 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
             )
             advertisedService.noAutoRename = true
             listener.service = advertisedService
-            listener.stateUpdateHandler = { [weak self] state in
-                guard let self else { return }
-                self.handleListenerStateLocked(state)
+            listener.stateUpdateHandler = { [weak self, weak listener] state in
+                guard let self, let listener else { return }
+                self.handleListenerStateLocked(state, source: listener)
             }
             listener.newConnectionHandler = { [weak self] connection in
                 self?.registerLocked(connection: connection, role: .incoming, endpointKey: "incoming:\(UUID().uuidString)")
             }
             self.listener = listener
             listener.start(queue: queue)
-
-            let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: parameters)
-            browser.stateUpdateHandler = { [weak self] state in
-                self?.handleBrowserStateLocked(state)
-            }
-            browser.browseResultsChangedHandler = { [weak self] results, _ in
-                self?.handleBrowseResultsLocked(results)
-            }
-            self.browser = browser
-            browser.start(queue: queue)
         } catch {
-            running = false
-            publishRunning(false, status: "局域网高速通道启动失败")
+            scheduleListenerRecoveryLocked()
         }
+    }
+
+    private func startBrowserLocked() {
+        guard running, browser == nil else { return }
+        let browser = NWBrowser(
+            for: .bonjour(type: Self.serviceType, domain: nil),
+            using: makeParameters()
+        )
+        browser.stateUpdateHandler = { [weak self, weak browser] state in
+            guard let self, let browser else { return }
+            self.handleBrowserStateLocked(state, source: browser)
+        }
+        browser.browseResultsChangedHandler = { [weak self, weak browser] results, _ in
+            guard let self, let browser, self.browser === browser else { return }
+            self.handleBrowseResultsLocked(results)
+        }
+        self.browser = browser
+        browser.start(queue: queue)
     }
 
     private func stopLocked(publishStopped: Bool = true) {
         guard running || listener != nil || browser != nil || !links.isEmpty else { return }
         running = false
+        resetInfrastructureRecoveryLocked()
         browser?.cancel()
         browser = nil
         listener?.cancel()
@@ -396,14 +488,19 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func handleListenerStateLocked(_ state: NWListener.State) {
+    private func handleListenerStateLocked(_ state: NWListener.State, source: NWListener) {
+        guard listener === source else { return }
         switch state {
         case .ready:
+            listenerRecoveryAttempts = 0
+            listenerRecoveryWorkItem?.cancel()
+            listenerRecoveryWorkItem = nil
             publishRunning(true, status: "LAN Turbo 已就绪 · 正在发现同网设备")
         case .failed(_):
-            listener?.cancel()
             listener = nil
+            source.cancel()
             publishRunning(running, status: "LAN Turbo 监听失败 · BLE 仍可用")
+            scheduleListenerRecoveryLocked()
         case .cancelled:
             break
         default:
@@ -411,17 +508,64 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func handleBrowserStateLocked(_ state: NWBrowser.State) {
+    private func handleBrowserStateLocked(_ state: NWBrowser.State, source: NWBrowser) {
+        guard browser === source else { return }
         switch state {
+        case .ready:
+            browserRecoveryAttempts = 0
+            browserRecoveryWorkItem?.cancel()
+            browserRecoveryWorkItem = nil
         case .failed(_):
-            browser?.cancel()
             browser = nil
+            source.cancel()
             publishMain { [weak self] in
                 self?.statusText = "局域网发现不可用 · BLE 仍可用"
             }
+            scheduleBrowserRecoveryLocked()
         default:
             break
         }
+    }
+
+    private func scheduleListenerRecoveryLocked() {
+        guard running, listener == nil, listenerRecoveryWorkItem == nil else { return }
+        guard let delay = LANInfrastructureRecoveryPolicy.retryDelay(attempt: listenerRecoveryAttempts) else {
+            publishRunning(true, status: "LAN Turbo 监听恢复次数已达上限 · 可手动刷新")
+            return
+        }
+        listenerRecoveryAttempts += 1
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.listenerRecoveryWorkItem = nil
+            self.startListenerLocked()
+        }
+        listenerRecoveryWorkItem = item
+        queue.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    private func scheduleBrowserRecoveryLocked() {
+        guard running, browser == nil, browserRecoveryWorkItem == nil else { return }
+        guard let delay = LANInfrastructureRecoveryPolicy.retryDelay(attempt: browserRecoveryAttempts) else {
+            publishRunning(true, status: "LAN Turbo 发现恢复次数已达上限 · 可手动刷新")
+            return
+        }
+        browserRecoveryAttempts += 1
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.browserRecoveryWorkItem = nil
+            self.startBrowserLocked()
+        }
+        browserRecoveryWorkItem = item
+        queue.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    private func resetInfrastructureRecoveryLocked() {
+        listenerRecoveryWorkItem?.cancel()
+        listenerRecoveryWorkItem = nil
+        browserRecoveryWorkItem?.cancel()
+        browserRecoveryWorkItem = nil
+        listenerRecoveryAttempts = 0
+        browserRecoveryAttempts = 0
     }
 
     private func handleBrowseResultsLocked(_ results: Set<NWBrowser.Result>) {

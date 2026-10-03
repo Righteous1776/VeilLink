@@ -2,6 +2,19 @@ import Foundation
 
 enum VeilPTTControlKind: UInt8, Codable, Sendable { case begin = 1, end = 2 }
 
+enum VeilPTTTransportPolicy {
+    static func priority(for kind: VeilPTTControlKind) -> BLESendPriority {
+        switch kind {
+        case .begin:
+            return .control
+        case .end:
+            // Audio frames and the end marker share one FIFO lane so the marker
+            // cannot overtake the final realtime frame queued before it.
+            return .realtime
+        }
+    }
+}
+
 struct VeilPTTControlPacket: Codable, Equatable, Sendable {
     let talkID: String
     let kind: VeilPTTControlKind

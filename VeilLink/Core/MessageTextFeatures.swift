@@ -11,6 +11,9 @@ enum ReplyTextCodec {
     static let maximumQuoteCharacters = 160
 
     static func quoteSource(for message: ChatMessage) -> String {
+        if let voice = VoiceMessageCodec.decode(message.body) {
+            return VoiceMessageCodec.preview(durationSeconds: voice.durationSeconds)
+        }
         if message.attachment != nil || message.body == "[图片]" { return "图片" }
         let source = decode(message.body)?.reply ?? message.body
         return normalizedQuote(source)

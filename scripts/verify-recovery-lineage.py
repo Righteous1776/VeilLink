@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed if a future update drops the 26.9 base, Build 56, or I12/A10 overlay."""
+"""Fail closed if a future update drops the recovered source base, regresses release identity, or loses the I12/A10 overlay."""
 
 import hashlib
 import json
@@ -8,8 +8,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_VERSION = "26.10"
-EXPECTED_BUILD = "56"
+RECOVERY_FLOOR_VERSION = (26, 10)
+RECOVERY_FLOOR_BUILD = 56
 MIN_TRACKED_FILES = 500
 MIN_SWIFT_FILES = 180
 MIN_TEST_FILES = 65
@@ -84,10 +84,33 @@ def check_inventory():
 
 def check_identity():
     project = (ROOT / "project.yml").read_text(encoding="utf-8")
-    if f'MARKETING_VERSION: "{EXPECTED_VERSION}"' not in project:
-        fail(f"project.yml no longer declares VeilLink {EXPECTED_VERSION}")
-    if f'CURRENT_PROJECT_VERSION: "{EXPECTED_BUILD}"' not in project:
-        fail(f"project.yml no longer declares recovery build {EXPECTED_BUILD}")
+
+    version_line = next(
+        (line for line in project.splitlines() if line.strip().startswith("MARKETING_VERSION:")),
+        None,
+    )
+    build_line = next(
+        (line for line in project.splitlines() if line.strip().startswith("CURRENT_PROJECT_VERSION:")),
+        None,
+    )
+    if version_line is None or build_line is None:
+        fail("project.yml is missing release identity fields")
+
+    version = version_line.split(":", 1)[1].strip().strip('"')
+    build_text = build_line.split(":", 1)[1].strip().strip('"')
+    try:
+        version_parts = tuple(int(part) for part in version.split("."))
+        build = int(build_text)
+    except ValueError:
+        fail(f"invalid release identity: {version} ({build_text})")
+
+    if len(version_parts) < 2:
+        fail(f"marketing version is not comparable: {version}")
+    if version_parts < RECOVERY_FLOOR_VERSION:
+        floor = ".".join(str(part) for part in RECOVERY_FLOOR_VERSION)
+        fail(f"marketing version regressed below recovery floor {floor}: {version}")
+    if build < RECOVERY_FLOOR_BUILD:
+        fail(f"build regressed below recovery floor {RECOVERY_FLOOR_BUILD}: {build}")
 
     with (ROOT / "VeilLink/Resources/Info.plist").open("rb") as handle:
         info = plistlib.load(handle)
@@ -95,6 +118,8 @@ def check_identity():
         fail("Info.plist hardcodes a marketing version")
     if info.get("CFBundleVersion") != "$(CURRENT_PROJECT_VERSION)":
         fail("Info.plist hardcodes a build number")
+
+    return version, build
 
 
 def check_a10_m5():
@@ -121,10 +146,12 @@ def check_a10_m5():
 
 def main():
     check_inventory()
-    check_identity()
+    version, build = check_identity()
     check_a10_m5()
+    floor = ".".join(str(part) for part in RECOVERY_FLOOR_VERSION)
     print("VEILLINK_RECOVERY_LINEAGE_PASS")
-    print(f"RECOVERY_IDENTITY={EXPECTED_VERSION}({EXPECTED_BUILD})")
+    print(f"RECOVERY_IDENTITY={version}({build})")
+    print(f"RECOVERY_FLOOR={floor}({RECOVERY_FLOOR_BUILD})")
     print(f"SWIFT_SOURCE_COUNT={len(list((ROOT / 'VeilLink').rglob('*.swift')))}")
     print(f"TEST_SOURCE_COUNT={len(list((ROOT / 'VeilLinkTests').rglob('*.swift')))}")
 

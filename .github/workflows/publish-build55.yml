@@ -1,10 +1,10 @@
-name: Publish VeilLink 26.9 Build 55 P0 hotfix
+name: Validate archived VeilLink 26.9 Build 55 hotfix
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   publish-hotfix:
@@ -16,6 +16,11 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Record immutable validation baseline
+        run: |
+          set -euo pipefail
+          echo "BASE_MAIN_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Reconstruct and verify audited hotfix commit
         run: |
@@ -44,5 +49,11 @@ jobs:
           grep -q 'legal.consent.acknowledgment' VeilLink/UI/LegalConsentGateView.swift
           test "$(git diff HEAD^ --name-only | wc -l | tr -d ' ')" = "14"
 
-      - name: Publish Build 55 to main
-        run: git push origin HEAD:refs/heads/main
+      - name: Prove the archive validation cannot publish
+        run: |
+          set -euo pipefail
+          test -n "$BASE_MAIN_SHA"
+          test "$(git rev-parse HEAD^)" = "$BASE_MAIN_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$BASE_MAIN_SHA"
+          echo "ARCHIVE_VALIDATION_ONLY=PASS"
+          echo "No branch, tag, release, or artifact was published."

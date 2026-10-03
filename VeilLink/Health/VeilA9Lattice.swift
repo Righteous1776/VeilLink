@@ -83,8 +83,8 @@ enum VeilA9TransportCoverage: String, Codable, Sendable {
     var title: String {
         switch self {
         case .none: return "未上报传输健康"
-        case .bluetoothOnly: return "仅 BLE（当前 main 未上报 LAN / Relay / Mesh）"
-        case .multiTransport: return "多传输"
+        case .bluetoothOnly: return "仅 BLE"
+        case .multiTransport: return "BLE + LAN Turbo 多传输"
         }
     }
 }

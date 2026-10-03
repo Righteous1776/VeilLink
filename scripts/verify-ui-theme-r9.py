@@ -21,7 +21,7 @@ info = (root / 'VeilLink/Resources/Info.plist').read_text(encoding='utf-8')
 if '<string>$(MARKETING_VERSION)</string>' not in info or '<string>$(CURRENT_PROJECT_VERSION)</string>' not in info:
     raise SystemExit('FAIL release identity placeholders')
 project = (root / 'project.yml').read_text(encoding='utf-8')
-if 'MARKETING_VERSION: "26.10"' not in project or 'CURRENT_PROJECT_VERSION: "56"' not in project:
+if 'MARKETING_VERSION: "26.11"' not in project or 'CURRENT_PROJECT_VERSION: "57"' not in project:
     raise SystemExit('FAIL current release identity')
 if not (root / 'docs/history/ui/V0106_R8_ORIGINAL_THEME/manifest.sha256').is_file():
     raise SystemExit('FAIL history manifest')

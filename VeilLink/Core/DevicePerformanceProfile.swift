@@ -88,7 +88,10 @@ enum DevicePerformancePolicy {
                 imagePreviewCacheCount: 3,
                 imagePreviewCacheBytes: 10 * 1_024 * 1_024,
                 outboundAttachmentCacheBytes: 3 * 1_024 * 1_024,
-                bleQueuePacketLimit: 8_192,
+                // A protocol attachment envelope can be slightly larger than its 48 KiB
+                // clear chunk. At the legacy 20-byte ATT size it needs 8,203 v2 fragments;
+                // 9,216 keeps that reachable while preserving 512 slots for control traffic.
+                bleQueuePacketLimit: 9_216,
                 bleQueueByteLimit: 640_000,
                 bleReassemblyMessageLimit: 16,
                 bleReassemblyPerSourceLimit: 4,

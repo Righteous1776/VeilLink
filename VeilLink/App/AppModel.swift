@@ -1,6 +1,35 @@
 import Combine
 import Foundation
 
+struct VeilTransportHealthRollup: Equatable {
+    let coverage: VeilA9TransportCoverage
+    let connectedLinkCount: Int
+    let trackedLinkCount: Int
+    let recoveringLinkCount: Int
+    let pendingBytes: Int
+
+    static func make(
+        bluetoothRunning: Bool,
+        bluetooth: [BLEPeerLinkSnapshot],
+        lanRunning: Bool,
+        lan: [LANTurboLinkSnapshot]
+    ) -> VeilTransportHealthRollup {
+        let hasBluetoothTelemetry = bluetoothRunning || !bluetooth.isEmpty
+        let hasLANTelemetry = lanRunning || !lan.isEmpty
+        let coverage: VeilA9TransportCoverage = hasLANTelemetry
+            ? .multiTransport
+            : (hasBluetoothTelemetry ? .bluetoothOnly : .none)
+        return VeilTransportHealthRollup(
+            coverage: coverage,
+            connectedLinkCount: bluetooth.filter(\.isConnected).count + lan.filter(\.isReady).count,
+            trackedLinkCount: bluetooth.count + lan.count,
+            recoveringLinkCount: bluetooth.filter(\.isRecovering).count + lan.filter { !$0.isReady }.count,
+            pendingBytes: bluetooth.reduce(0) { $0 + $1.pendingBytes }
+                + lan.reduce(0) { $0 + $1.pendingBytes }
+        )
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var conversations: [ConversationSummary] = []
@@ -47,6 +76,7 @@ final class AppModel: ObservableObject {
     let remotePairing: VeilRemotePairingCoordinator
     let backups: BackupManager
     let haptics: HapticEngine
+    let walkieTalkie: VeilWalkieTalkieAudioController
     let performanceOverrides: PerformanceOverrideController
     let a9Health: VeilA9HealthMonitor
     let computeGovernor: VeilA9ComputeGovernor
@@ -89,6 +119,7 @@ final class AppModel: ObservableObject {
         community = VeilCommunityStore(keychain: keychain, identity: identity)
         backups = BackupManager(database: database, identity: identity)
         haptics = HapticEngine()
+        walkieTalkie = VeilWalkieTalkieAudioController()
         a9Health = VeilA9HealthMonitor()
         let agentProfile = AgentCapabilityProfile.current
         computeGovernor = VeilA9ComputeGovernor(profile: agentProfile)
@@ -154,6 +185,18 @@ final class AppModel: ObservableObject {
             if lanTurbo?.containsTransport(id) == true { lanTurbo?.disconnect(id) }
             else if internetRelay?.containsTransport(id) == true { internetRelay?.disconnect(id) }
             else { bluetooth?.disconnect(id) }
+        }
+        walkieTalkie.sendControl = { [weak sessions] packet, peers in
+            sessions?.sendPTTControl(packet, to: peers)
+        }
+        walkieTalkie.sendAudioFrame = { [weak sessions] frame, peers in
+            sessions?.sendPTTAudioFrame(frame, to: peers) ?? VeilPTTSendReport()
+        }
+        sessions.onPTTControl = { [weak walkieTalkie] incoming in
+            walkieTalkie?.receiveControl(incoming)
+        }
+        sessions.onPTTAudioFrame = { [weak walkieTalkie] incoming in
+            walkieTalkie?.receiveAudio(incoming)
         }
         sessions.relayProvisionSecretProvider = { [weak relayCapabilities] peerIdentityID in
             relayCapabilities?.provisioningSecretIfOwner(for: peerIdentityID)
@@ -239,6 +282,16 @@ final class AppModel: ObservableObject {
                 Task { @MainActor [weak self] in self?.scheduleA9Refresh() }
             }
             .store(in: &a9Cancellables)
+        lanTurbo.$linkSnapshots
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.scheduleA9Refresh() }
+            }
+            .store(in: &a9Cancellables)
+        lanTurbo.$isRunning
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.scheduleA9Refresh() }
+            }
+            .store(in: &a9Cancellables)
         agent.$runtimeState
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in self?.scheduleA9Refresh() }
@@ -273,17 +326,24 @@ final class AppModel: ObservableObject {
         // A9 must reason about operational links, not every UUID passively observed by scanning.
         let snapshots = bluetooth.linkSnapshots.values.filter(\.isA9Relevant)
         let liveQualitySnapshots = snapshots.filter(\.contributesLinkQualityToA9)
-        let input = VeilA9Input(
-            transportCoverage: .bluetoothOnly,
+        let lanSnapshots = Array(lanTurbo.linkSnapshots.values)
+        let transport = VeilTransportHealthRollup.make(
             bluetoothRunning: bluetooth.isRunning,
-            connectedPeerCount: snapshots.filter(\.isConnected).count,
-            trackedPeerCount: snapshots.count,
-            recoveringPeerCount: snapshots.filter(\.isRecovering).count,
+            bluetooth: Array(snapshots),
+            lanRunning: lanTurbo.isRunning,
+            lan: lanSnapshots
+        )
+        let input = VeilA9Input(
+            transportCoverage: transport.coverage,
+            bluetoothRunning: bluetooth.isRunning,
+            connectedPeerCount: transport.connectedLinkCount,
+            trackedPeerCount: transport.trackedLinkCount,
+            recoveringPeerCount: transport.recoveringLinkCount,
             weakPeerCount: liveQualitySnapshots.filter { $0.quality == .weak }.count,
             marginalPeerCount: liveQualitySnapshots.filter { $0.quality == .marginal }.count,
             minimumLinkHealth: liveQualitySnapshots.map(\.healthScore).min(),
             maximumReconnectAttempt: snapshots.map(\.reconnectAttempt).max() ?? 0,
-            pendingBytes: snapshots.reduce(0) { $0 + $1.pendingBytes },
+            pendingBytes: transport.pendingBytes,
             controlPendingPackets: snapshots.reduce(0) { $0 + $1.controlPendingPackets },
             maximumStallMilliseconds: Int((snapshots.compactMap(\.stalledFor).max() ?? 0) * 1_000),
             agentUnavailable: agent.runtimeState == .unavailable,
@@ -504,6 +564,7 @@ final class AppModel: ObservableObject {
         a9PeriodicTask?.cancel()
         a9PeriodicTask = nil
         agent.handleBackground()
+        walkieTalkie.stopAll()
         trimCachesForBackgroundIfNeeded()
     }
 

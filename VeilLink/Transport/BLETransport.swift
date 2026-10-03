@@ -2,7 +2,115 @@ import Combine
 import CoreBluetooth
 import Foundation
 
-private struct OutboundPacketQueue {
+struct BLEQueueAdmissionPolicy {
+    private static func reservedCapacity(
+        priority: BLESendPriority,
+        maximumPackets: Int,
+        maximumBytes: Int
+    ) -> (packets: Int, bytes: Int) {
+        guard priority != .control else { return (0, 0) }
+        return (
+            min(512, max(0, maximumPackets) / 8),
+            min(96 * 1_024, max(0, maximumBytes) / 8)
+        )
+    }
+
+    static func canEnqueue(
+        pendingPackets: Int,
+        pendingBytes: Int,
+        additionalPackets: Int,
+        additionalBytes: Int,
+        priority: BLESendPriority,
+        maximumPackets: Int,
+        maximumBytes: Int
+    ) -> Bool {
+        guard pendingPackets >= 0,
+              pendingBytes >= 0,
+              additionalPackets >= 0,
+              additionalBytes >= 0 else { return false }
+        let reserve = reservedCapacity(
+            priority: priority,
+            maximumPackets: maximumPackets,
+            maximumBytes: maximumBytes
+        )
+        let packetLimit = max(0, maximumPackets - reserve.packets)
+        let byteLimit = max(0, maximumBytes - reserve.bytes)
+        let (nextPackets, packetOverflow) = pendingPackets.addingReportingOverflow(additionalPackets)
+        let (nextBytes, byteOverflow) = pendingBytes.addingReportingOverflow(additionalBytes)
+        return !packetOverflow
+            && !byteOverflow
+            && nextPackets <= packetLimit
+            && nextBytes <= byteLimit
+    }
+}
+
+enum BLEQueueDirection {
+    case central
+    case peripheral
+}
+
+struct BLEQueueProgressState {
+    private var central: [UUID: TimeInterval] = [:]
+    private var peripheral: [UUID: TimeInterval] = [:]
+
+    mutating func beginIfNeeded(_ direction: BLEQueueDirection, peerID: UUID, at timestamp: TimeInterval) {
+        switch direction {
+        case .central:
+            if central[peerID] == nil { central[peerID] = timestamp }
+        case .peripheral:
+            if peripheral[peerID] == nil { peripheral[peerID] = timestamp }
+        }
+    }
+
+    mutating func recordProgress(_ direction: BLEQueueDirection, peerID: UUID, at timestamp: TimeInterval) {
+        switch direction {
+        case .central: central[peerID] = timestamp
+        case .peripheral: peripheral[peerID] = timestamp
+        }
+    }
+
+    func lastProgress(_ direction: BLEQueueDirection, peerID: UUID) -> TimeInterval? {
+        switch direction {
+        case .central: return central[peerID]
+        case .peripheral: return peripheral[peerID]
+        }
+    }
+
+    func stalledDuration(
+        peerID: UUID,
+        centralPending: Bool,
+        peripheralPending: Bool,
+        now: TimeInterval
+    ) -> TimeInterval? {
+        var durations: [TimeInterval] = []
+        if centralPending, let timestamp = central[peerID] {
+            durations.append(max(0, now - timestamp))
+        }
+        if peripheralPending, let timestamp = peripheral[peerID] {
+            durations.append(max(0, now - timestamp))
+        }
+        return durations.max()
+    }
+
+    mutating func clear(_ direction: BLEQueueDirection, peerID: UUID) {
+        switch direction {
+        case .central: central.removeValue(forKey: peerID)
+        case .peripheral: peripheral.removeValue(forKey: peerID)
+        }
+    }
+
+    mutating func clear(peerID: UUID) {
+        central.removeValue(forKey: peerID)
+        peripheral.removeValue(forKey: peerID)
+    }
+
+    mutating func clearAll() {
+        central.removeAll(keepingCapacity: false)
+        peripheral.removeAll(keepingCapacity: false)
+    }
+}
+
+struct OutboundPacketQueue {
     private var packets: [Data] = []
     private var head = 0
     private var queuedBytes = 0
@@ -12,14 +120,19 @@ private struct OutboundPacketQueue {
     var first: Data? { head < packets.count ? packets[head] : nil }
     var isEmpty: Bool { pendingCount == 0 }
 
-    mutating func append(contentsOf newPackets: [Data]) {
-        guard !newPackets.isEmpty else { return }
+    @discardableResult
+    mutating func appendEncodedPayload(_ data: Data, maximumPacketSize: Int) -> Bool {
         if head > 0 && (head >= 256 || head * 2 >= packets.count) {
             packets.removeFirst(head)
             head = 0
         }
-        packets.append(contentsOf: newPackets)
-        queuedBytes += newPackets.reduce(0) { $0 + $1.count }
+        guard let plan = BLEFragment.appendEncodedPackets(
+            data,
+            maximumPacketSize: maximumPacketSize,
+            to: &packets
+        ) else { return false }
+        queuedBytes += plan.encodedByteCount
+        return true
     }
 
     @discardableResult
@@ -47,11 +160,19 @@ private struct PeerOutboundQueue {
     var controlPendingCount: Int { control.pendingCount }
     var isEmpty: Bool { control.isEmpty && realtime.isEmpty && bulk.isEmpty }
 
-    mutating func append(contentsOf packets: [Data], priority: BLESendPriority) {
+    @discardableResult
+    mutating func appendEncodedPayload(
+        _ data: Data,
+        maximumPacketSize: Int,
+        priority: BLESendPriority
+    ) -> Bool {
         switch priority {
-        case .control: control.append(contentsOf: packets)
-        case .realtime: realtime.append(contentsOf: packets)
-        case .bulk: bulk.append(contentsOf: packets)
+        case .control:
+            return control.appendEncodedPayload(data, maximumPacketSize: maximumPacketSize)
+        case .realtime:
+            return realtime.appendEncodedPayload(data, maximumPacketSize: maximumPacketSize)
+        case .bulk:
+            return bulk.appendEncodedPayload(data, maximumPacketSize: maximumPacketSize)
         }
     }
 
@@ -96,7 +217,7 @@ final class BLETransport: NSObject, ObservableObject {
     private var smoothedRSSI: [UUID: Double] = [:]
     private var lastRSSIPublishAt: [UUID: TimeInterval] = [:]
     private var lastSeenAt: [UUID: TimeInterval] = [:]
-    private var lastQueueProgressAt: [UUID: TimeInterval] = [:]
+    private var queueProgress = BLEQueueProgressState()
     private var rssiPollTask: Task<Void, Never>?
     private var lastRSSIMaintenanceAt: TimeInterval = 0
     private var connectionEvents = ConnectionEventGate()
@@ -205,6 +326,7 @@ final class BLETransport: NSObject, ObservableObject {
         remoteCharacteristics.removeAll()
         centralOutboundQueues.removeAll()
         peripheralOutboundQueues.removeAll()
+        queueProgress.clearAll()
         statusText = "蓝牙发现已暂停"
         publishLinkSnapshots(force: true)
     }
@@ -248,7 +370,7 @@ final class BLETransport: NSObject, ObservableObject {
         centralOutboundQueues.removeValue(forKey: id)
         peripheralOutboundQueues.removeValue(forKey: id)
         remoteCharacteristics.removeValue(forKey: id)
-        lastQueueProgressAt.removeValue(forKey: id)
+        queueProgress.clear(peerID: id)
         assembler.reset(source: id)
     }
 
@@ -296,15 +418,27 @@ final class BLETransport: NSObject, ObservableObject {
             guard let plan = BLEFragment.fragmentationPlan(payloadByteCount: data.count, maximumPacketSize: maximum),
                   plan.fragmentCount <= maxFragmentsPerMessage else { return .unsupportedLink }
             let existing = centralOutboundQueues[transportID]
-            let packetReserve = priority == .bulk ? min(512, maxQueuedPacketsPerPeer / 8) : 0
-            let byteReserve = priority == .bulk ? min(96 * 1_024, maxQueuedBytesPerPeer / 8) : 0
-            guard (existing?.pendingCount ?? 0) + plan.fragmentCount <= maxQueuedPacketsPerPeer - packetReserve,
-                  (existing?.pendingBytes ?? 0) + plan.encodedByteCount <= maxQueuedBytesPerPeer - byteReserve else {
+            guard BLEQueueAdmissionPolicy.canEnqueue(
+                pendingPackets: existing?.pendingCount ?? 0,
+                pendingBytes: existing?.pendingBytes ?? 0,
+                additionalPackets: plan.fragmentCount,
+                additionalBytes: plan.encodedByteCount,
+                priority: priority,
+                maximumPackets: maxQueuedPacketsPerPeer,
+                maximumBytes: maxQueuedBytesPerPeer
+            ) else {
                 return .temporarilyUnavailable
             }
-            let packets = BLEFragment.split(data, maximumPacketSize: maximum).map(\.encoded)
-            centralOutboundQueues[transportID, default: PeerOutboundQueue()].append(contentsOf: packets, priority: priority)
-            if lastQueueProgressAt[transportID] == nil { lastQueueProgressAt[transportID] = Date().timeIntervalSinceReferenceDate }
+            guard centralOutboundQueues[transportID, default: PeerOutboundQueue()].appendEncodedPayload(
+                data,
+                maximumPacketSize: maximum,
+                priority: priority
+            ) else { return .unsupportedLink }
+            queueProgress.beginIfNeeded(
+                .central,
+                peerID: transportID,
+                at: Date().timeIntervalSinceReferenceDate
+            )
             drainCentralQueue(peripheral: peripheral, characteristic: characteristic)
             return .accepted
         }
@@ -315,15 +449,27 @@ final class BLETransport: NSObject, ObservableObject {
         guard let plan = BLEFragment.fragmentationPlan(payloadByteCount: data.count, maximumPacketSize: maximum),
               plan.fragmentCount <= maxFragmentsPerMessage else { return .unsupportedLink }
         let existing = peripheralOutboundQueues[transportID]
-        let packetReserve = priority == .bulk ? min(512, maxQueuedPacketsPerPeer / 8) : 0
-        let byteReserve = priority == .bulk ? min(96 * 1_024, maxQueuedBytesPerPeer / 8) : 0
-        guard (existing?.pendingCount ?? 0) + plan.fragmentCount <= maxQueuedPacketsPerPeer - packetReserve,
-              (existing?.pendingBytes ?? 0) + plan.encodedByteCount <= maxQueuedBytesPerPeer - byteReserve else {
+        guard BLEQueueAdmissionPolicy.canEnqueue(
+            pendingPackets: existing?.pendingCount ?? 0,
+            pendingBytes: existing?.pendingBytes ?? 0,
+            additionalPackets: plan.fragmentCount,
+            additionalBytes: plan.encodedByteCount,
+            priority: priority,
+            maximumPackets: maxQueuedPacketsPerPeer,
+            maximumBytes: maxQueuedBytesPerPeer
+        ) else {
             return .temporarilyUnavailable
         }
-        let packets = BLEFragment.split(data, maximumPacketSize: maximum).map(\.encoded)
-        peripheralOutboundQueues[transportID, default: PeerOutboundQueue()].append(contentsOf: packets, priority: priority)
-        if lastQueueProgressAt[transportID] == nil { lastQueueProgressAt[transportID] = Date().timeIntervalSinceReferenceDate }
+        guard peripheralOutboundQueues[transportID, default: PeerOutboundQueue()].appendEncodedPayload(
+            data,
+            maximumPacketSize: maximum,
+            priority: priority
+        ) else { return .unsupportedLink }
+        queueProgress.beginIfNeeded(
+            .peripheral,
+            peerID: transportID,
+            at: Date().timeIntervalSinceReferenceDate
+        )
         drainPeripheralQueue(for: transportID, characteristic: localCharacteristic)
         return .accepted
     }
@@ -337,11 +483,11 @@ final class BLETransport: NSObject, ObservableObject {
         while sent < tuning.packetBurstLimit, peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
             peripheral.writeValue(packet, for: characteristic, type: .withoutResponse)
             sent += 1
-            lastQueueProgressAt[id] = Date().timeIntervalSinceReferenceDate
+            queueProgress.recordProgress(.central, peerID: id, at: Date().timeIntervalSinceReferenceDate)
         }
         if queue.isEmpty {
             centralOutboundQueues.removeValue(forKey: id)
-            lastQueueProgressAt.removeValue(forKey: id)
+            queueProgress.clear(.central, peerID: id)
         } else {
             centralOutboundQueues[id] = queue
             // `peripheralIsReady` is the primary CoreBluetooth resume signal. Keep one bounded
@@ -369,11 +515,11 @@ final class BLETransport: NSObject, ObservableObject {
             }
             _ = queue.removeFirst()
             sent += 1
-            lastQueueProgressAt[centralID] = Date().timeIntervalSinceReferenceDate
+            queueProgress.recordProgress(.peripheral, peerID: centralID, at: Date().timeIntervalSinceReferenceDate)
         }
         if queue.isEmpty {
             peripheralOutboundQueues.removeValue(forKey: centralID)
-            lastQueueProgressAt.removeValue(forKey: centralID)
+            queueProgress.clear(.peripheral, peerID: centralID)
         } else {
             peripheralOutboundQueues[centralID] = queue
             schedulePeripheralDrain(for: centralID, after: tuning.interBurstDelay)
@@ -459,12 +605,12 @@ final class BLETransport: NSObject, ObservableObject {
         }
         if let central = subscribedCentrals[id] { packetSizes.append(central.maximumUpdateValueLength) }
         let rssi = smoothedRSSI[id].map { Int($0.rounded()) } ?? discoveredRSSI[id]
-        let stalledFor: TimeInterval?
-        if pendingPackets > 0, let lastProgress = lastQueueProgressAt[id] {
-            stalledFor = max(0, Date().timeIntervalSinceReferenceDate - lastProgress)
-        } else {
-            stalledFor = nil
-        }
+        let stalledFor = queueProgress.stalledDuration(
+            peerID: id,
+            centralPending: centralQueue?.isEmpty == false,
+            peripheralPending: peripheralQueue?.isEmpty == false,
+            now: Date().timeIntervalSinceReferenceDate
+        )
         return BLEPeerLinkSnapshot(
             id: id,
             isConnected: centralReady || peripheralReady,
@@ -700,9 +846,9 @@ final class BLETransport: NSObject, ObservableObject {
             guard let queue = centralOutboundQueues[id], !queue.isEmpty else { continue }
             let tuning = linkTuning(for: id)
             let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
-            guard now - (lastQueueProgressAt[id] ?? now) >= timeout else { continue }
+            guard now - (queueProgress.lastProgress(.central, peerID: id) ?? now) >= timeout else { continue }
             centralOutboundQueues.removeValue(forKey: id)
-            lastQueueProgressAt.removeValue(forKey: id)
+            queueProgress.clear(.central, peerID: id)
             statusText = "检测到蓝牙发送停滞，正在自动恢复链路"
             if wantedConnections.contains(id) { recover(id) }
         }
@@ -710,12 +856,12 @@ final class BLETransport: NSObject, ObservableObject {
             guard let queue = peripheralOutboundQueues[id], !queue.isEmpty else { continue }
             let tuning = linkTuning(for: id)
             let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
-            guard now - (lastQueueProgressAt[id] ?? now) >= timeout else { continue }
+            guard now - (queueProgress.lastProgress(.peripheral, peerID: id) ?? now) >= timeout else { continue }
             // A peripheral cannot force-disconnect one subscribed central. Drop only the stale
             // transport frame; the persistent application outbox/checkpoint logic will resend it.
             peripheralOutboundQueues.removeValue(forKey: id)
             peripheralDrainWorkItems.removeValue(forKey: id)?.cancel()
-            lastQueueProgressAt.removeValue(forKey: id)
+            queueProgress.clear(.peripheral, peerID: id)
             statusText = "检测到蓝牙发送停滞，已切换到应用层重传"
         }
         publishLinkSnapshots()
@@ -779,9 +925,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
         remoteCharacteristics.removeValue(forKey: id)
         centralOutboundQueues.removeValue(forKey: id)
-        if peripheralOutboundQueues[id]?.isEmpty != false {
-            lastQueueProgressAt.removeValue(forKey: id)
-        }
+        queueProgress.clear(.central, peerID: id)
         reconcileConnectionEvent(id)
         if !hasReadyDataChannel(id) {
             assembler.reset(source: id)
@@ -797,9 +941,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
         remoteCharacteristics.removeValue(forKey: id)
         centralOutboundQueues.removeValue(forKey: id)
-        if peripheralOutboundQueues[id]?.isEmpty != false {
-            lastQueueProgressAt.removeValue(forKey: id)
-        }
+        queueProgress.clear(.central, peerID: id)
         reconcileConnectionEvent(id)
         if !hasReadyDataChannel(id) {
             assembler.reset(source: id)
@@ -931,9 +1073,7 @@ extension BLETransport: @preconcurrency CBPeripheralManagerDelegate {
         let id = central.identifier
         subscribedCentrals.removeValue(forKey: id)
         peripheralOutboundQueues.removeValue(forKey: id)
-        if centralOutboundQueues[id]?.isEmpty != false {
-            lastQueueProgressAt.removeValue(forKey: id)
-        }
+        queueProgress.clear(.peripheral, peerID: id)
         reconcileConnectionEvent(id)
         if !hasReadyDataChannel(id) {
             assembler.reset(source: id)

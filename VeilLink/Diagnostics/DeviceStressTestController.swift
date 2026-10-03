@@ -17,19 +17,85 @@ enum DeviceStressUICommand: String, Codable {
     case chatCloseConversation
 }
 
+struct DeviceStressUIRequest: Equatable {
+    let id: String
+    let command: DeviceStressUICommand
+}
+
+enum DeviceStressUIReceiptDisposition: String, Equatable {
+    case applied
+    case ignored
+}
+
+struct DeviceStressUIReceipt: Equatable {
+    let request: DeviceStressUIRequest
+    let disposition: DeviceStressUIReceiptDisposition
+    let detail: String
+}
+
+@MainActor
 enum DeviceStressCommandBus {
-    static func post(_ command: DeviceStressUICommand) {
+    private static var receipts: [String: DeviceStressUIReceipt] = [:]
+
+    @discardableResult
+    static func post(_ command: DeviceStressUICommand) -> DeviceStressUIRequest {
+        let request = DeviceStressUIRequest(id: UUID().uuidString, command: command)
         NotificationCenter.default.post(
             name: .veilLinkStressUICommand,
             object: nil,
-            userInfo: ["command": command.rawValue]
+            userInfo: [
+                "command": command.rawValue,
+                "request_id": request.id
+            ]
         )
+        return request
     }
 
-    static func command(from notification: Notification) -> DeviceStressUICommand? {
-        guard let raw = notification.userInfo?["command"] as? String else { return nil }
-        return DeviceStressUICommand(rawValue: raw)
+    static func request(from notification: Notification) -> DeviceStressUIRequest? {
+        guard let requestID = notification.userInfo?["request_id"] as? String,
+              !requestID.isEmpty,
+              let raw = notification.userInfo?["command"] as? String,
+              let command = DeviceStressUICommand(rawValue: raw) else { return nil }
+        return DeviceStressUIRequest(id: requestID, command: command)
     }
+
+    static func acknowledge(
+        _ request: DeviceStressUIRequest,
+        disposition: DeviceStressUIReceiptDisposition = .applied,
+        detail: String
+    ) {
+        receipts[request.id] = DeviceStressUIReceipt(
+            request: request,
+            disposition: disposition,
+            detail: detail
+        )
+        if receipts.count > 128 {
+            receipts.removeValue(forKey: receipts.keys.first ?? request.id)
+        }
+    }
+
+    static func waitForReceipt(
+        requestID: String,
+        timeoutMilliseconds: Int
+    ) async -> DeviceStressUIReceipt? {
+        let timeout = max(1, timeoutMilliseconds)
+        let deadline = ProcessInfo.processInfo.systemUptime + (Double(timeout) / 1_000)
+        while !Task.isCancelled {
+            if let receipt = receipts.removeValue(forKey: requestID) {
+                return receipt
+            }
+            if ProcessInfo.processInfo.systemUptime >= deadline {
+                return nil
+            }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return nil
+    }
+
+    static func resetReceiptsForTesting() {
+        receipts.removeAll()
+    }
+
 }
 
 enum DeviceStressPreset: String, CaseIterable, Codable, Identifiable {
@@ -369,13 +435,21 @@ final class DeviceStressTestController: ObservableObject {
 
         await step("ui.chat.open", cycle: cycle, configuration: configuration, delayMultiplier: 2.0) {
             guard !model.conversations.isEmpty else { return .skipped("no conversation available") }
-            DeviceStressCommandBus.post(.chatOpenFirstConversation)
-            return .passed("requested first conversation presentation")
+            model.selectedSection = .chats
+            model.selectedConversation = nil
+            let request = DeviceStressCommandBus.post(.chatOpenFirstConversation)
+            return try await self.waitForUIReceipt(
+                request,
+                timeoutMilliseconds: self.uiCommandTimeout(for: configuration)
+            )
         }
         await step("ui.chat.close", cycle: cycle, configuration: configuration) {
-            DeviceStressCommandBus.post(.chatCloseConversation)
-            model.selectedConversation = nil
-            return .passed("chat presentation cleared")
+            model.selectedSection = .chats
+            let request = DeviceStressCommandBus.post(.chatCloseConversation)
+            return try await self.waitForUIReceipt(
+                request,
+                timeoutMilliseconds: self.uiCommandTimeout(for: configuration)
+            )
         }
 
         await step("ui.tabs.nearby", cycle: cycle, configuration: configuration) {
@@ -438,8 +512,18 @@ final class DeviceStressTestController: ObservableObject {
         }
 
         await step("a9.refresh", cycle: cycle, configuration: configuration) {
+            let previousA9Evaluation = model.a9Health.lastEvaluatedAt
+            let previousRuntimeSample = model.a10Ultra.lastRuntimeSample?.sampleID
             model.refreshA9Health()
-            return .passed("A9 sampled")
+            guard let evaluatedAt = model.a9Health.lastEvaluatedAt,
+                  evaluatedAt != previousA9Evaluation else {
+                throw StressFailure("A9 health evaluation timestamp did not advance")
+            }
+            guard let runtimeSample = model.a10Ultra.lastRuntimeSample,
+                  runtimeSample.sampleID != previousRuntimeSample else {
+                throw StressFailure("A10 runtime sample did not advance in mode \(model.kernelRuntime.mode.rawValue)")
+            }
+            return .passed("A9 evaluated at \(ISO8601DateFormatter().string(from: evaluatedAt)); A10 runtime sample \(runtimeSample.sampleID) recorded (\(runtimeSample.divergenceClass))")
         }
 
         await step("ui.tabs.agent", cycle: cycle, configuration: configuration) {
@@ -450,13 +534,16 @@ final class DeviceStressTestController: ObservableObject {
         if configuration.exerciseAgentAndMaleCNS {
             await step("agent.activate", cycle: cycle, configuration: configuration, delayMultiplier: 1.5) {
                 model.agent.activate()
-                return .passed("agent activation requested")
+                return try await self.waitForAgentActivation(
+                    model.agent,
+                    timeoutMilliseconds: 15_000
+                )
             }
             if configuration.exercisePresentations {
                 await presentationStep("ui.agent.diagnostics_sheet", open: .agentOpenDiagnostics, close: .agentCloseDiagnostics, cycle: cycle, configuration: configuration)
             }
             await step("malecns.core-isolation", cycle: cycle, configuration: configuration) {
-                return .passed("MaleCNS experimental runtime is intentionally excluded from Core")
+                return .skipped("MaleCNS experimental runtime is intentionally excluded from Core; no runtime was exercised")
             }
         }
 
@@ -495,12 +582,18 @@ final class DeviceStressTestController: ObservableObject {
         configuration: DeviceStressConfiguration
     ) async {
         await step(name + ".open", cycle: cycle, configuration: configuration, delayMultiplier: 2.0) {
-            DeviceStressCommandBus.post(open)
-            return .passed("presentation open requested")
+            let request = DeviceStressCommandBus.post(open)
+            return try await self.waitForUIReceipt(
+                request,
+                timeoutMilliseconds: self.uiCommandTimeout(for: configuration)
+            )
         }
         await step(name + ".close", cycle: cycle, configuration: configuration, delayMultiplier: 1.5) {
-            DeviceStressCommandBus.post(close)
-            return .passed("presentation close requested")
+            let request = DeviceStressCommandBus.post(close)
+            return try await self.waitForUIReceipt(
+                request,
+                timeoutMilliseconds: self.uiCommandTimeout(for: configuration)
+            )
         }
     }
 
@@ -509,7 +602,7 @@ final class DeviceStressTestController: ObservableObject {
         cycle: Int,
         configuration: DeviceStressConfiguration,
         delayMultiplier: Double = 1.0,
-        action: () throws -> StressDisposition
+        action: () async throws -> StressDisposition
     ) async {
         guard !Task.isCancelled else { return }
         await waitWhilePaused()
@@ -541,7 +634,7 @@ final class DeviceStressTestController: ObservableObject {
         let outcome: DeviceStressStepOutcome
         let detail: String
         do {
-            switch try action() {
+            switch try await action() {
             case .passed(let message):
                 outcome = .passed
                 detail = message
@@ -596,6 +689,64 @@ final class DeviceStressTestController: ObservableObject {
 
         let delay = max(15, Int(Double(configuration.stepDelayMilliseconds) * delayMultiplier))
         await sleep(milliseconds: delay)
+    }
+
+    private func waitForUIReceipt(
+        _ request: DeviceStressUIRequest,
+        timeoutMilliseconds: Int
+    ) async throws -> StressDisposition {
+        guard let receipt = await DeviceStressCommandBus.waitForReceipt(
+            requestID: request.id,
+            timeoutMilliseconds: timeoutMilliseconds
+        ) else {
+            throw StressFailure(
+                "UI command \(request.command.rawValue) was not acknowledged by a mounted consumer within \(timeoutMilliseconds) ms"
+            )
+        }
+        guard receipt.request.command == request.command else {
+            throw StressFailure("UI command receipt did not match request \(request.id)")
+        }
+        switch receipt.disposition {
+        case .applied:
+            return .passed("consumer acknowledged: \(receipt.detail)")
+        case .ignored:
+            return .skipped("consumer ignored: \(receipt.detail)")
+        }
+    }
+
+    private func waitForAgentActivation(
+        _ agent: AgentCoordinator,
+        timeoutMilliseconds: Int
+    ) async throws -> StressDisposition {
+        let timeout = max(1, timeoutMilliseconds)
+        let deadline = ProcessInfo.processInfo.systemUptime + (Double(timeout) / 1_000)
+        while !Task.isCancelled {
+            switch agent.runtimeState {
+            case .ready:
+                return .passed("agent runtime reached ready")
+            case .generating:
+                return .passed("agent runtime is actively generating")
+            case .cooling:
+                return .skipped("agent runtime preparation completed in governance cooling state")
+            case .unavailable:
+                if let error = agent.lastError ?? agent.diagnostics.lastFailure {
+                    throw StressFailure("agent runtime unavailable: \(error)")
+                }
+            case .unloaded, .loading:
+                break
+            }
+            if ProcessInfo.processInfo.systemUptime >= deadline {
+                throw StressFailure(
+                    "agent activation timed out in state \(agent.runtimeState.rawValue) after \(timeout) ms"
+                )
+            }
+            await sleep(milliseconds: 25)
+        }
+        throw CancellationError()
+    }
+
+    private func uiCommandTimeout(for configuration: DeviceStressConfiguration) -> Int {
+        max(1_000, min(4_000, configuration.stepDelayMilliseconds * 8))
     }
 
     private func finish(model: AppModel, configuration: DeviceStressConfiguration, reason: String) async {

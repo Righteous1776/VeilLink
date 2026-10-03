@@ -66,6 +66,18 @@ struct VeilToolCenterView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+                    if matches("手电筒信标 手电筒 信标 闪光灯 sos flashlight beacon") {
+                        toolLink("手电筒信标", detail: "常亮 · 脉冲 · SOS", icon: "flashlight.on.fill", destination: VeilBeaconView())
+                    }
+                    if matches("双轴水平仪 水平仪 陀螺仪 重力 找平 level gyro") {
+                        toolLink("双轴水平仪", detail: "实时横滚与俯仰 · 校零", icon: "level.fill", destination: VeilSpiritLevelView())
+                    }
+                    if matches("声级与波形 声级 波形 麦克风 音频 sound scope") {
+                        toolLink("声级与波形", detail: "本机麦克风实时采样", icon: "waveform", destination: VeilSoundScopeView())
+                    }
+                    if matches("屏幕节拍器 节拍器 bpm 节拍 触感 metronome") {
+                        toolLink("屏幕节拍器", detail: "30–240 BPM · TAP 测速", icon: "metronome.fill", destination: VeilScreenMetronomeView())
+                    }
                     if matches("密码 password 随机 安全 生成器") {
                         toolLink("安全密码", detail: "系统随机数 · 强度估算", icon: "key.fill", destination: VeilPasswordToolView())
                     }
@@ -239,11 +251,16 @@ struct VeilFingerprintToolView: View {
                     .padding(8)
                     .veilCompactToolSurface(cornerRadius: 14)
                 toolInputMeter(text)
-                let metrics = VeilLocalToolEngine.textMetrics(text)
+                let metrics = VeilLocalToolEngine.detailedTextMetrics(text)
                 HStack(spacing: 8) {
                     metric("字符", "\(metrics.characters)")
-                    metric("UTF-8", "\(metrics.utf8Bytes) B")
+                    metric("词数", "\(metrics.words)")
                     metric("行", "\(metrics.lines)")
+                }
+                HStack(spacing: 8) {
+                    metric("UTF-8", "\(metrics.utf8Bytes) B")
+                    metric("标量", "\(metrics.unicodeScalars)")
+                    metric("ASCII", "\(metrics.asciiRatioPermille / 10)%")
                 }
                 VStack(alignment: .leading, spacing: 9) {
                     Text("SHA-256").font(.caption.bold()).foregroundColor(VeilTheme.mutedGold)
@@ -358,6 +375,13 @@ struct VeilJSONToolView: View {
                         .font(.caption).foregroundColor(VeilTheme.success)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                if let structure = try? VeilLocalToolEngine.jsonStructureMetrics(input), !input.isEmpty {
+                    HStack(spacing: 8) {
+                        metric("节点", "\(structure.totalNodes)")
+                        metric("键", "\(structure.keyCount)")
+                        metric("深度", "\(structure.maxDepth)")
+                    }
+                }
                 if !output.isEmpty {
                     Text(output)
                         .font(.system(size: 12, design: .monospaced))
@@ -403,6 +427,7 @@ struct VeilTextCodecToolView: View {
     @State private var input = ""
     @State private var output = ""
     @State private var errorText: String?
+    @State private var encodingMetrics: VeilEncodingMetrics?
 
     var body: some View {
         ScrollView {
@@ -427,6 +452,13 @@ struct VeilTextCodecToolView: View {
                         .font(.caption).foregroundColor(VeilTheme.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                if let encodingMetrics {
+                    HStack(spacing: 8) {
+                        metric("输入", "\(encodingMetrics.inputBytes) B")
+                        metric("输出", "\(encodingMetrics.outputBytes) B")
+                        metric("变化", "\(encodingMetrics.expansionPercent)%")
+                    }
+                }
                 Text(output.isEmpty ? "结果会显示在这里" : output)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(output.isEmpty ? VeilTheme.tertiaryText : VeilTheme.text)
@@ -444,6 +476,7 @@ struct VeilTextCodecToolView: View {
         .onChange(of: input) { _ in
             output = ""
             errorText = nil
+            encodingMetrics = nil
         }
     }
 
@@ -451,6 +484,9 @@ struct VeilTextCodecToolView: View {
         output = kind == .base64
             ? VeilLocalToolEngine.base64EncodeUTF8(input)
             : VeilLocalToolEngine.urlPercentEncode(input)
+        encodingMetrics = kind == .base64
+            ? VeilLocalToolEngine.base64EncodingMetrics(input)
+            : VeilLocalToolEngine.urlPercentEncodingMetrics(input)
         errorText = nil
     }
 
@@ -459,9 +495,11 @@ struct VeilTextCodecToolView: View {
             output = try (kind == .base64
                 ? VeilLocalToolEngine.base64DecodeUTF8(input)
                 : VeilLocalToolEngine.urlPercentDecode(input))
+            encodingMetrics = nil
             errorText = nil
         } catch {
             output = ""
+            encodingMetrics = nil
             errorText = (error as? LocalizedError)?.errorDescription ?? "无法解码"
         }
     }
@@ -687,6 +725,19 @@ struct VeilColorLabToolView: View {
                 if let errorText {
                     Label(errorText, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption).foregroundColor(VeilTheme.danger)
+                }
+                if let contrast = try? VeilLocalToolEngine.colorContrast(rgb: preview) {
+                    HStack(spacing: 8) {
+                        metric("黑字对比", String(format: "%.1f:1", contrast.contrastWithBlack))
+                        metric("白字对比", String(format: "%.1f:1", contrast.contrastWithWhite))
+                        metric("建议前景", contrast.preferredForeground == .black ? "黑色" : "白色")
+                    }
+                    Label(
+                        contrast.meetsAANormalText ? "推荐前景符合 WCAG AA 正文标准" : "仅建议用于大字号或装饰内容",
+                        systemImage: contrast.meetsAANormalText ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
+                    )
+                    .font(.caption)
+                    .foregroundColor(contrast.meetsAANormalText ? VeilTheme.success : VeilTheme.gold)
                 }
                 Button("复制 \(lastValidatedHex)") { VeilToolClipboard.copy(lastValidatedHex) }
                     .buttonStyle(VeilGameSecondaryButtonStyle())
@@ -958,20 +1009,35 @@ private func metric(_ title: String, _ value: String) -> some View {
 
 private struct VeilCompactToolSurface: ViewModifier {
     let cornerRadius: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if VeilRenderProfile.allowsExpensiveVisualEffects {
+        let budget = VeilSkeuomorphicPerformance.currentBudget(
+            for: .toolPanel,
+            reduceMotionRequested: reduceMotion
+        )
+        if budget.allowsBackdropMaterial {
             content
                 .background(.ultraThinMaterial)
                 .background(VeilTheme.elevated.opacity(0.42))
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(VeilTheme.hairline, lineWidth: 0.8))
+                .shadow(
+                    color: Color.black.opacity(budget.outerShadowLayers > 0 ? 0.14 : 0),
+                    radius: CGFloat(budget.maxShadowRadius),
+                    y: budget.outerShadowLayers > 0 ? 2 : 0
+                )
         } else {
             content
                 .background(VeilTheme.elevated.opacity(0.94))
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(VeilTheme.hairline, lineWidth: 1))
+                .shadow(
+                    color: Color.black.opacity(budget.outerShadowLayers > 0 ? 0.10 : 0),
+                    radius: CGFloat(budget.maxShadowRadius),
+                    y: budget.outerShadowLayers > 0 ? 1 : 0
+                )
         }
     }
 }
@@ -984,11 +1050,16 @@ extension View {
 
 struct VeilWalkieTalkieView: View {
     @ObservedObject var model: AppModel
-    @StateObject private var radio = VeilWalkieTalkieAudioController()
+    @ObservedObject private var radio: VeilWalkieTalkieAudioController
     @State private var openToTrustedNearby = true
     @State private var selectedPeerIDs = Set<String>()
     @State private var pressed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(model: AppModel) {
+        self.model = model
+        _radio = ObservedObject(wrappedValue: model.walkieTalkie)
+    }
 
     private var trustedPeers: [NearbyPeer] { model.sessions.nearbyPeers.filter { $0.trustState == .trusted } }
     private var recipients: [String] {
@@ -1009,17 +1080,10 @@ struct VeilWalkieTalkieView: View {
         .background(VeilAmbientBackground())
         .navigationTitle("对讲机")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            let controller = radio
-            controller.sendControl = { packet, peers in model.sessions.sendPTTControl(packet, to: peers) }
-            controller.sendAudioFrame = { frame, peers in model.sessions.sendPTTAudioFrame(frame, to: peers) }
-            model.sessions.onPTTControl = { [weak controller] incoming in controller?.receiveControl(incoming) }
-            model.sessions.onPTTAudioFrame = { [weak controller] incoming in controller?.receiveAudio(incoming) }
-        }
         .onDisappear {
-            radio.stopAll()
-            model.sessions.onPTTControl = nil
-            model.sessions.onPTTAudioFrame = nil
+            if radio.state == .transmitting || radio.state == .preparing {
+                radio.endTransmit()
+            }
         }
     }
 
@@ -1103,7 +1167,7 @@ struct VeilWalkieTalkieView: View {
                 .disabled(recipients.isEmpty || isReceiving)
 
             HStack {
-                Text("G.711 µ-law · 8 kHz · 80 ms")
+                Text("G.711 µ-law · 8 kHz · 40 ms")
                 Spacer()
                 Text("\(VeilDevicePerformance.current.label)")
             }

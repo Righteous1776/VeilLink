@@ -1,11 +1,11 @@
 # CURRENT CHECKPOINT
 
-VeilLink **26.10 (Build 56)** is the current cumulative release checkpoint. Build 56 adds
-Tactical Solo, the expanded local Tool Center, three deterministic 2D games, adaptive
-motion/performance policy, and LAN Turbo hardening while preserving the complete Build 55
-recovery line.
+VeilLink **26.11 (Build 57)** is the current cumulative release checkpoint. Build 57 adds
+native real-time arcade, hardware-backed Live Tools, BLE/LAN transport hardening, PTT/chat
+repairs, and explicit render/performance budgets while preserving the complete 26.10 Build 56
+release line.
 
-The branch is based on the complete 26.9 Build 55 recovery tree and carries
+The branch is based on the complete 26.10 Build 56 release tree and carries
 the I12/A10 Ultra M5 overlay plus the subsequent compile and release-gate fixes.
 It retains the formal release features that were accidentally removed when the
 I12 update package was materialized over the older V0.9.7 tree, including voice/PTT,

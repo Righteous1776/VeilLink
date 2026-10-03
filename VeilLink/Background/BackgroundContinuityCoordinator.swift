@@ -149,9 +149,7 @@ final class VeilBackgroundContinuityCenter: ObservableObject {
     func becameActive(model: AppModel) {
         attach(to: model)
         endFiniteTransitionWindow()
-        model.bluetooth.refreshLinks()
-        model.lanTurbo.refresh()
-        model.meshRouter.replayRecent()
+        refreshContinuityPaths(model)
         updateVisibleContinuitySurface(startIfNeeded: true)
         statusText = "前台 · BLE/LAN/Mesh 全速运行"
     }
@@ -163,9 +161,7 @@ final class VeilBackgroundContinuityCenter: ObservableObject {
 
     func refreshNow() {
         guard let model else { return }
-        model.bluetooth.refreshLinks()
-        model.lanTurbo.refresh()
-        model.meshRouter.replayRecent()
+        refreshContinuityPaths(model)
         lastRefreshResult = "已请求 BLE/LAN/Mesh 刷新 · \(Date().formatted())"
         updateVisibleContinuitySurface(startIfNeeded: false)
     }
@@ -189,9 +185,7 @@ final class VeilBackgroundContinuityCenter: ObservableObject {
             return
         }
         lastBackgroundWakeAt = Date()
-        model.bluetooth.refreshLinks()
-        model.lanTurbo.refresh()
-        model.meshRouter.replayRecent()
+        refreshContinuityPaths(model)
         updateVisibleContinuitySurface(startIfNeeded: false)
 
         // App refresh is opportunistic, not a real-time keepalive. A short observation window gives
@@ -226,6 +220,14 @@ final class VeilBackgroundContinuityCenter: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.endFiniteTransitionWindow()
         }
+    }
+
+    private func refreshContinuityPaths(_ model: AppModel) {
+        model.bluetooth.refreshLinks()
+        // LAN refresh is in-place: healthy links and their pending priority queues survive, while
+        // a missing listener/browser gets a fresh bounded recovery budget.
+        model.lanTurbo.refresh()
+        model.meshRouter.replayRecent()
     }
 
     private func endFiniteTransitionWindow() {

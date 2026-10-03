@@ -3,9 +3,20 @@ import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
 
+enum ConversationMessageWindowPolicy {
+    static func committedLimit(
+        currentLimit: Int,
+        resolvedLimit: Int,
+        loadAll: Bool
+    ) -> Int {
+        loadAll ? currentLimit : max(currentLimit, resolvedLimit)
+    }
+}
+
 struct ConversationListView: View {
     @ObservedObject var model: AppModel
     let usesNavigationLinks: Bool
+    @State private var stressConversation: ConversationSummary?
 
     var body: some View {
         Group {
@@ -150,6 +161,51 @@ struct ConversationListView: View {
             }
         }
         .background(VeilAmbientBackground())
+        .background(
+            NavigationLink(
+                destination: Group {
+                    if let conversation = stressConversation {
+                        ChatView(model: model, conversation: conversation)
+                    }
+                },
+                isActive: Binding(
+                    get: { stressConversation != nil },
+                    set: { if !$0 { stressConversation = nil } }
+                )
+            ) {
+                EmptyView()
+            }
+            .hidden()
+        )
+        .onReceive(NotificationCenter.default.publisher(for: .veilLinkStressUICommand)) { notification in
+            guard usesNavigationLinks,
+                  let request = DeviceStressCommandBus.request(from: notification) else { return }
+            switch request.command {
+            case .chatOpenFirstConversation:
+                guard let conversation = model.conversations.first else {
+                    DeviceStressCommandBus.acknowledge(
+                        request,
+                        disposition: .ignored,
+                        detail: "no conversation available"
+                    )
+                    return
+                }
+                stressConversation = conversation
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    disposition: stressConversation?.id == conversation.id ? .applied : .ignored,
+                    detail: "phone conversation route activated"
+                )
+            case .chatCloseConversation:
+                stressConversation = nil
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    detail: "phone conversation route cleared"
+                )
+            default:
+                break
+            }
+        }
     }
 }
 
@@ -239,6 +295,7 @@ struct ChatView: View {
     @State private var isPreparingImage = false
     @State private var mediaStatus: String?
     @State private var showsContactDetails = false
+    @State private var showsAgentAssistant = false
     @State private var showsMiniGames = false
     @State private var miniGameInitialSessionID: String?
     @State private var messagePendingDeletion: ChatMessage?
@@ -593,6 +650,9 @@ struct ChatView: View {
                     } label: {
                         Label("搜索聊天", systemImage: "magnifyingglass")
                     }
+                    Button { showsAgentAssistant = true } label: {
+                        Label("灵核助手", systemImage: "sparkles")
+                    }
                     Button { showsContactDetails = true } label: {
                         Label("联系人信息", systemImage: "person.crop.circle")
                     }
@@ -631,6 +691,9 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showsContactDetails) {
             ContactDetailsSheet(model: model, conversation: conversation)
+        }
+        .sheet(isPresented: $showsAgentAssistant) {
+            AgentConversationAssistantSheet(model: model, conversation: conversation, messages: messages)
         }
         .sheet(isPresented: $showsMiniGames, onDismiss: { miniGameInitialSessionID = nil }) {
             MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
@@ -722,13 +785,18 @@ struct ChatView: View {
                 loadedMessages = page.messages
                 hasOlder = page.hasOlder
             }
+            let resolvedLimit = effectiveLimit
             let loadedGameSessions = MiniGameSessionBuilder.sessionsByID(from: loadedMessages)
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [resolvedLimit] in
                 guard generation == messageReloadGeneration else { return }
                 if messages != loadedMessages { messages = loadedMessages }
                 gameSessionsByID = loadedGameSessions
                 if hasOlderMessages != hasOlder { hasOlderMessages = hasOlder }
-                if !loadAll { messageWindowLimit = max(messageWindowLimit, effectiveLimit) }
+                messageWindowLimit = ConversationMessageWindowPolicy.committedLimit(
+                    currentLimit: messageWindowLimit,
+                    resolvedLimit: resolvedLimit,
+                    loadAll: loadAll
+                )
                 if isReloadingMessages { isReloadingMessages = false }
             }
         }

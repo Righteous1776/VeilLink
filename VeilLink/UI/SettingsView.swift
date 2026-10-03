@@ -136,14 +136,29 @@ struct SettingsView: View {
             DeepTelemetry.shared.presentation("owner.console", presented: presented)
         }
         .onReceive(NotificationCenter.default.publisher(for: .veilLinkStressUICommand)) { notification in
-            guard let command = DeviceStressCommandBus.command(from: notification) else { return }
-            switch command {
+            guard let request = DeviceStressCommandBus.request(from: notification) else { return }
+            switch request.command {
             case .settingsOpenIdentity:
                 showsIdentityManager = true
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    disposition: showsIdentityManager ? .applied : .ignored,
+                    detail: "identity manager presentation state enabled"
+                )
             case .settingsOpenAppLock:
                 showsLockSheet = true
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    disposition: showsLockSheet ? .applied : .ignored,
+                    detail: "app lock presentation state enabled"
+                )
             case .settingsOpenBackup:
                 showsBackupSheet = true
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    disposition: showsBackupSheet ? .applied : .ignored,
+                    detail: "backup presentation state enabled"
+                )
             case .settingsClosePresentations:
                 showsLockSheet = false
                 showsIdentityManager = false
@@ -151,6 +166,10 @@ struct SettingsView: View {
                 showsRestorePassword = false
                 showsImporter = false
                 restoreURL = nil
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    detail: "settings presentation state cleared"
+                )
             default:
                 break
             }
