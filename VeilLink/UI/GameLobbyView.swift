@@ -198,6 +198,7 @@ struct LocalAIGameView: View {
         ScrollView {
             VStack(spacing: 14) {
                 statusCard
+                missionCard
                 if game == .tactical { tacticalControlCard }
                 board
                 if controller.outcome != .playing { resultCard }
@@ -266,7 +267,37 @@ struct LocalAIGameView: View {
                 statusMetric("耗时", controller.lastDecisionMilliseconds.map { "\($0)ms" } ?? "--")
             }
         }
-        .veilCard(emphasized: true)
+        .veilGameConsole(emphasized: true, cornerRadius: 18)
+    }
+
+    private var missionCard: some View {
+        let mission = LocalGameMissionDirector.mission(for: game, sessionID: controller.sessionID)
+        return HStack(spacing: 11) {
+            ZStack {
+                Circle()
+                    .fill(VeilTheme.gold.opacity(0.10))
+                    .frame(width: 38, height: 38)
+                Image(systemName: mission.systemImage)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("本局战术任务 · " + mission.code)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .tracking(0.6)
+                    .foregroundColor(VeilTheme.mutedGold)
+                Text(mission.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(VeilTheme.text)
+                Text(mission.detail)
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(2)
+        .veilGameConsole(cornerRadius: 16)
     }
 
     @ViewBuilder
