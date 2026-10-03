@@ -97,8 +97,8 @@ struct GameLobbyView: View {
             }
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
-            NavigationLink(destination: LocalAIGameView(model: model, game: .tactical)) {
-                gameRow(.tactical, detail: "你执曹军先行 · 离线训练策略 + 补给与目标评估", enabled: true)
+            NavigationLink(destination: TacticalSoloV2View(model: model)) {
+                gameRow(.tactical, detail: "48×27 战役大地图 · 战争迷雾 · WEGO · 补给与作战层", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
