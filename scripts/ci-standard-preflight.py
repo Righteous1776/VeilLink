@@ -226,6 +226,7 @@ def check_tests():
         "AgentGameExecutionValidationTests.swift",
         "A9RuntimeConstraintTests.swift",
         "TacticalV2Tests.swift",
+        "TacticalSoloV2Tests.swift",
         "XiangqiBotTests.swift",
         "GomokuBotTests.swift",
         "LudoBotTests.swift",
@@ -253,6 +254,8 @@ def main():
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-autoregulation-r7.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-maintenance-r8.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-ui-theme-r9.py")], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-skeuomorphic-workbench-v1.py")], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-tactical-v2-primary.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-voice-ptt-r10.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-runtime-maintenance-r12.py")], cwd=ROOT)
     check_repo_hygiene()
