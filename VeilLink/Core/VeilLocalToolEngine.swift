@@ -429,33 +429,32 @@ enum VeilLocalToolEngine {
         _ value: Any,
         depth: Int
     ) -> (nodes: Int, maxDepth: Int, keys: Int) {
-        if let dictionary = value as? [String: Any] {
-            var nodes = 1
-            var maxDepth = depth
-            var keys = dictionary.count
-            for child in dictionary.values {
-                let nested = inspectJSON(child, depth: depth + 1)
-                nodes += nested.nodes
-                maxDepth = max(maxDepth, nested.maxDepth)
-                keys += nested.keys
+        // Use an explicit stack instead of recursive descent. Tool input is bounded,
+        // but intentionally deep JSON should not be able to consume the Swift call stack.
+        var pending: [(value: Any, depth: Int)] = [(value, depth)]
+        var nodes = 0
+        var maxDepth = depth
+        var keys = 0
+
+        while let current = pending.popLast() {
+            nodes += 1
+            maxDepth = max(maxDepth, current.depth)
+
+            if let dictionary = current.value as? [String: Any] {
+                keys += dictionary.count
+                let childDepth = current.depth + 1
+                for child in dictionary.values {
+                    pending.append((child, childDepth))
+                }
+            } else if let array = current.value as? [Any] {
+                let childDepth = current.depth + 1
+                for child in array {
+                    pending.append((child, childDepth))
+                }
             }
-            return (nodes, maxDepth, keys)
         }
 
-        if let array = value as? [Any] {
-            var nodes = 1
-            var maxDepth = depth
-            var keys = 0
-            for child in array {
-                let nested = inspectJSON(child, depth: depth + 1)
-                nodes += nested.nodes
-                maxDepth = max(maxDepth, nested.maxDepth)
-                keys += nested.keys
-            }
-            return (nodes, maxDepth, keys)
-        }
-
-        return (1, depth, 0)
+        return (nodes, maxDepth, keys)
     }
 
     private static func jsonObject(_ text: String) throws -> Any {
