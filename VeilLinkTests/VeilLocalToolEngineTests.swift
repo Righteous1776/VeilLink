@@ -102,6 +102,19 @@ final class VeilLocalToolEngineTests: XCTestCase {
         )
     }
 
+
+    func testJSONStructureHandlesDeepNestingWithIterativeWalker() throws {
+        let depth = 64
+        let source = String(repeating: "[", count: depth)
+            + "0"
+            + String(repeating: "]", count: depth)
+        let structure = try VeilLocalToolEngine.jsonStructure(source)
+        XCTAssertEqual(structure.rootType, "ARRAY")
+        XCTAssertEqual(structure.nodeCount, depth + 1)
+        XCTAssertEqual(structure.maxDepth, depth + 1)
+        XCTAssertEqual(structure.keyCount, 0)
+    }
+
     func testBase64URLSafeRoundTripWithoutPadding() throws {
         let source = "VeilLink+/ 链路"
         let encoded = VeilLocalToolEngine.base64URLEncodeUTF8(source)
