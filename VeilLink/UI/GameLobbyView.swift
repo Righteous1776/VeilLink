@@ -380,7 +380,10 @@ struct LocalAIGameView: View {
             VStack(spacing: 14) {
                 statusCard
                 if isArcadeGame { arcadeControlCard }
-                if isBoardGame { boardControlCard }
+                if isBoardGame {
+                    boardControlCard
+                    boardSituationCard
+                }
                 if game == .tactical { tacticalControlCard }
                 board
                     .padding(10)
@@ -517,6 +520,100 @@ struct LocalAIGameView: View {
             .foregroundColor(VeilTheme.secondaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private var boardSituationCard: some View {
+        switch game {
+        case .gomoku:
+            VeilInstrumentDeck(
+                title: "五子棋局势",
+                subtitle: "候选点来自规则 Bot 的局部搜索窗口。",
+                symbol: "circle.grid.3x3.fill"
+            ) {
+                HStack(spacing: 8) {
+                    VeilLCDDisplay(title: "MOVES", value: "\(controller.gomoku.moveCount)")
+                        .frame(maxWidth: .infinity)
+                    VeilLCDDisplay(
+                        title: "CANDIDATES",
+                        value: "\(GomokuBot.legalCandidateCount(in: controller.gomoku, radius: 2))"
+                    )
+                    .frame(maxWidth: .infinity)
+                    VeilLCDDisplay(
+                        title: "TURN",
+                        value: controller.gomoku.currentPlayer == .host ? "YOU" : "BOT"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+            }
+
+        case .xiangqi:
+            let redCount = xiangqiPieceCount(side: .red)
+            let blackCount = xiangqiPieceCount(side: .black)
+            let legal = XiangqiBot.legalMoveCount(
+                in: controller.xiangqi,
+                actor: controller.xiangqi.currentPlayer
+            )
+            VeilInstrumentDeck(
+                title: "象棋局势",
+                subtitle: "显示双方子力、当前合法着数与将军状态。",
+                symbol: "checkerboard.rectangle"
+            ) {
+                HStack(spacing: 8) {
+                    VeilLCDDisplay(title: "RED", value: "\(redCount)")
+                        .frame(maxWidth: .infinity)
+                    VeilLCDDisplay(title: "BLACK", value: "\(blackCount)")
+                        .frame(maxWidth: .infinity)
+                    VeilLCDDisplay(title: "LEGAL", value: "\(legal)")
+                        .frame(maxWidth: .infinity)
+                }
+                VeilStatusStrip(
+                    leftTitle: "CHECK",
+                    leftValue: controller.xiangqi.isCurrentPlayerInCheck ? "YES" : "NO",
+                    rightTitle: "REPEAT",
+                    rightValue: "\(controller.xiangqi.currentPositionRepetitionCount)x",
+                    active: controller.xiangqi.isCurrentPlayerInCheck
+                )
+            }
+
+        case .ludo:
+            let dice = controller.ludo.expectedDice(sessionID: controller.sessionID)
+            let legal = controller.ludo.legalPieces(sessionID: controller.sessionID).count
+            VeilInstrumentDeck(
+                title: "飞行棋局势",
+                subtitle: "下一骰由本局 session seed 确定，双方状态可复现。",
+                symbol: "die.face.5.fill"
+            ) {
+                HStack(spacing: 8) {
+                    VeilLCDDisplay(title: "NEXT DICE", value: "\(dice)")
+                        .frame(maxWidth: .infinity)
+                    VeilLCDDisplay(title: "LEGAL", value: "\(legal)")
+                        .frame(maxWidth: .infinity)
+                    VeilLCDDisplay(
+                        title: "FINISH",
+                        value: "\(controller.ludo.finishedCount(for: .host))/4"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                VeilStatusStrip(
+                    leftTitle: "BOT FINISH",
+                    leftValue: "\(controller.ludo.finishedCount(for: .guest))/4",
+                    rightTitle: "TURN",
+                    rightValue: controller.ludo.currentPlayer == .host ? "YOU" : "BOT",
+                    active: true
+                )
+            }
+
+        default:
+            EmptyView()
+        }
+    }
+
+    private func xiangqiPieceCount(side: XiangqiSide) -> Int {
+        (0..<(XiangqiState.rows * XiangqiState.columns))
+            .compactMap { controller.xiangqi.piece(at: $0) }
+            .filter { $0.side == side }
+            .count
     }
 
     private var arcadeControlCard: some View {
