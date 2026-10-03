@@ -539,6 +539,7 @@ struct VeilTemporaryQRToolView: View {
 struct VeilJSONToolView: View {
     @State private var input = ""
     @State private var output = ""
+    @State private var structure: VeilJSONStructure?
     @State private var errorText: String?
     @State private var structure: VeilJSONStructure?
 
@@ -643,6 +644,7 @@ struct VeilTextCodecToolView: View {
     let kind: VeilTextCodecKind
     @State private var input = ""
     @State private var output = ""
+    @State private var usesURLSafeBase64 = false
     @State private var errorText: String?
     @State private var base64URLSafe = false
 
@@ -704,6 +706,7 @@ struct VeilTextCodecToolView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: input) { _ in
             output = ""
+            structure = nil
             errorText = nil
         }
     }
