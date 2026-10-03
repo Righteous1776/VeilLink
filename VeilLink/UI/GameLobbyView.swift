@@ -379,6 +379,7 @@ struct LocalAIGameView: View {
         ScrollView {
             VStack(spacing: 14) {
                 statusCard
+                if isArcadeGame { arcadeControlCard }
                 if game == .tactical { tacticalControlCard }
                 board
                     .padding(10)
@@ -430,6 +431,84 @@ struct LocalAIGameView: View {
         }
         .sheet(isPresented: $showsTacticalGuide) {
             TacticalSoloGuideView()
+        }
+    }
+
+    private var isArcadeGame: Bool {
+        switch game {
+        case .artillery, .lightTrail, .magneticHockey:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private var arcadeControlCard: some View {
+        VeilInstrumentDeck(
+            title: "本地对手",
+            subtitle: "只改变本机 Bot 的搜索精度与前视深度，不改变游戏规则或联机协议。",
+            symbol: "cpu"
+        ) {
+            HStack(spacing: 10) {
+                Menu {
+                    ForEach(ArcadeBotDifficulty.allCases) { difficulty in
+                        Button {
+                            controller.setArcadeDifficulty(difficulty)
+                            model.haptics.selection()
+                        } label: {
+                            if difficulty == controller.arcadeDifficulty {
+                                Label(difficulty.title, systemImage: "checkmark")
+                            } else {
+                                Text(difficulty.title)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        VeilIndicatorLamp(active: true)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("DIFFICULTY")
+                                .font(.system(size: 7.5, weight: .black, design: .monospaced))
+                                .tracking(0.8)
+                                .foregroundColor(VeilTheme.tertiaryText)
+                            Text(controller.arcadeDifficulty.title)
+                                .font(.subheadline.bold())
+                                .foregroundColor(VeilTheme.text)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2.bold())
+                            .foregroundColor(VeilTheme.gold)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color.black.opacity(0.18))
+                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                }
+
+                VeilLCDDisplay(
+                    title: "BOT MODE",
+                    value: controller.arcadeDifficulty.telemetryLabel
+                )
+                .frame(width: 112)
+            }
+
+            let detail: String = {
+                switch game {
+                case .artillery:
+                    return "火控搜索步长：角度 \(controller.arcadeDifficulty.artilleryAngleStep)° / 力度 \(controller.arcadeDifficulty.artilleryPowerStep)%"
+                case .lightTrail:
+                    return "赛道前视：\(controller.arcadeDifficulty.lightTrailDepth) 个赛段"
+                case .magneticHockey:
+                    return "击球采样：角度 \(controller.arcadeDifficulty.hockeyAngleStep)° / 力度 \(controller.arcadeDifficulty.hockeyPowerStep)%"
+                default:
+                    return ""
+                }
+            }()
+            Text(detail)
+                .font(.caption2.monospaced())
+                .foregroundColor(VeilTheme.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
