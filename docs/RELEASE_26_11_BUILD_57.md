@@ -20,6 +20,10 @@ Build 57 is the controlled integration release following VeilLink 26.10 Build 56
 - The published Core IPA is unsigned. It validates the iPhoneOS build and package carrier but still requires appropriate Apple signing/provisioning before normal-device installation.
 - Simulator/XCTest results do not substitute for physical BLE/LAN range, RF coexistence, thermal, background scheduling, or long-duration device testing.
 
+## Publication activation
+
+Build 57 uses the Core unsigned release workflow when this versioned release note lands on `main`; ordinary source-only pushes do not publish a release.
+
 ## Validation gates
 
 Publication is blocked unless static preflight, XcodeGen generation, iOS Simulator build, the full XCTest inventory, unsigned iPhoneOS Release build, Core source-isolation and size/resource verification, release manifest generation, provenance generation, and SHA-256 checks all succeed.
