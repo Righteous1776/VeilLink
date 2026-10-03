@@ -411,16 +411,23 @@ private struct MiniGameLinkStatusView: View {
                         .font(.caption.weight(.bold))
                         .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(VeilCompactKeyStyle())
                 .foregroundColor(VeilTheme.gold)
                 .accessibilityLabel("立即恢复对手蓝牙链路")
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Color.white.opacity(0.035))
-        .clipShape(VeilPanelShape(cut: 8, radius: 6))
-        .overlay(VeilPanelShape(cut: 8, radius: 6).stroke(VeilTheme.hairline, lineWidth: 1))
+        .padding(.vertical, 8)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 10, style: .continuous),
+                emphasized: linkReady
+            )
+        )
+        .overlay(alignment: .topTrailing) {
+            VeilIndicatorLamp(active: linkReady)
+                .padding(5)
+        }
         .accessibilityElement(children: .combine)
     }
 }
