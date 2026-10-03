@@ -392,6 +392,7 @@ private enum A10UltraOmegaMetrics {
         #endif
     }
 
+    @MainActor
     static func batteryPermille() -> Int {
         #if canImport(UIKit)
         let value = UIDevice.current.batteryLevel
