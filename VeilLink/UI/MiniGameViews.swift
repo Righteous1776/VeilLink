@@ -937,6 +937,7 @@ struct MiniGameSessionView: View {
                     send(command: .move, turn: session.moveCount, move: .artillery(angle: angle, power: power))
                 }
                 .padding(.horizontal, 12)
+                .veilGameConsole(cornerRadius: 18)
             }
         case .lightTrail:
             if let state = session.lightTrail {
@@ -949,6 +950,7 @@ struct MiniGameSessionView: View {
                     send(command: .move, turn: session.moveCount, move: .lightTrail(shift: shift))
                 }
                 .padding(.horizontal, 12)
+                .veilGameConsole(cornerRadius: 18)
             }
         case .magneticHockey:
             if let state = session.magneticHockey {
@@ -961,6 +963,7 @@ struct MiniGameSessionView: View {
                     send(command: .move, turn: session.moveCount, move: .magneticHockey(angle: angle, power: power))
                 }
                 .padding(.horizontal, 12)
+                .veilGameConsole(cornerRadius: 18)
             }
         }
     }
