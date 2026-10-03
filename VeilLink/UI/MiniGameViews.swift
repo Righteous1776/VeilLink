@@ -722,6 +722,11 @@ struct MiniGameSessionView: View {
                         .disabled(isSending)
                     }
 
+                    if session.status == .active {
+                        LocalGameMissionStrip(session: session)
+                            .padding(.horizontal, 14)
+                    }
+
                     switch session.status {
                     case .invited:
                         invitationView(session)
