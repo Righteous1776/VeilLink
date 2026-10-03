@@ -397,29 +397,43 @@ struct VeilFingerprintToolView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                TextEditor(text: boundedToolText($text))
-                    .font(.body)
-                    .frame(minHeight: 170)
-                    .padding(8)
-                    .veilCompactToolSurface(cornerRadius: 14)
-                toolInputMeter(text)
-                let metrics = VeilLocalToolEngine.textMetrics(text)
-                HStack(spacing: 8) {
-                    metric("字符", "\(metrics.characters)")
-                    metric("UTF-8", "\(metrics.utf8Bytes) B")
-                    metric("行", "\(metrics.lines)")
+            VStack(spacing: 14) {
+                VeilInstrumentBay(title: "原文输入", role: .input, active: !text.isEmpty) {
+                    TextEditor(text: boundedToolText($text))
+                        .font(.body)
+                        .frame(minHeight: 150)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                    toolInputMeter(text)
                 }
-                VStack(alignment: .leading, spacing: 9) {
-                    Text("SHA-256").font(.caption.bold()).foregroundColor(VeilTheme.mutedGold)
+
+                let metrics = VeilLocalToolEngine.textMetrics(text)
+                VeilStatusStrip(
+                    leftTitle: "CHARS",
+                    leftValue: "\(metrics.characters)",
+                    rightTitle: "UTF-8",
+                    rightValue: "\(metrics.utf8Bytes) B",
+                    active: !text.isEmpty
+                )
+
+                VeilInstrumentBay(title: "SHA-256 指纹", role: .output, active: !text.isEmpty) {
                     Text(VeilLocalToolEngine.sha256(text))
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundColor(VeilTheme.goldBright)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("复制指纹") { VeilToolClipboard.copy(VeilLocalToolEngine.sha256(text)) }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack {
+                        VeilInstrumentLabel(title: "LINES", value: "\(metrics.lines)", active: !text.isEmpty)
+                        Spacer()
+                        Button("复制指纹") {
+                            VeilToolClipboard.copy(VeilLocalToolEngine.sha256(text))
+                        }
                         .buttonStyle(VeilPhysicalButtonStyle())
+                        .disabled(text.isEmpty)
+                    }
                 }
-                .veilCompactToolSurface(cornerRadius: 18)
+
                 privacyNote("输入内容只在本机计算，不会写入聊天、诊断日志或网络。")
             }
             .padding(16)
@@ -501,36 +515,48 @@ struct VeilJSONToolView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                TextEditor(text: boundedToolText($input))
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 150)
-                    .padding(8)
-                    .veilCompactToolSurface(cornerRadius: 14)
-                toolInputMeter(input)
+                VeilInstrumentBay(title: "JSON 输入", role: .input, active: !input.isEmpty) {
+                    TextEditor(text: boundedToolText($input))
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 145)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                    toolInputMeter(input)
+                }
+
                 HStack(spacing: 9) {
-                    Button("整理") { transform(pretty: true) }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
-                    Button("压缩") { transform(pretty: false) }.buttonStyle(VeilPhysicalButtonStyle())
+                    Button("整理") { transform(pretty: true) }
+                        .buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("压缩") { transform(pretty: false) }
+                        .buttonStyle(VeilPhysicalButtonStyle())
                     Button("复制") { VeilToolClipboard.copy(output) }
                         .buttonStyle(VeilPhysicalButtonStyle())
                         .disabled(output.isEmpty)
                 }
+
+                VeilStatusStrip(
+                    leftTitle: "PARSER",
+                    leftValue: errorText == nil && !output.isEmpty ? "VALID" : (errorText == nil ? "IDLE" : "FAULT"),
+                    rightTitle: "OUTPUT",
+                    rightValue: output.isEmpty ? "0 B" : "\(output.utf8.count) B",
+                    active: errorText == nil
+                )
+
                 if let errorText {
                     Label(errorText, systemImage: "xmark.octagon.fill")
-                        .font(.caption).foregroundColor(VeilTheme.danger)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else if !output.isEmpty {
-                    Label("JSON 有效 · 键名已稳定排序", systemImage: "checkmark.seal.fill")
-                        .font(.caption).foregroundColor(VeilTheme.success)
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if !output.isEmpty {
-                    Text(output)
+
+                VeilInstrumentBay(title: "稳定化输出", role: .output, active: !output.isEmpty) {
+                    Text(output.isEmpty ? "{ }" : output)
                         .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(output.isEmpty ? VeilTheme.tertiaryText : VeilTheme.text)
                         .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .veilCompactToolSurface(cornerRadius: 12)
+                        .frame(maxWidth: .infinity, minHeight: 90, alignment: .topLeading)
                 }
+
                 privacyNote("JSON 仅在本机解析；错误提示不会包含或记录你的输入内容。")
             }
             .padding(16)
@@ -546,7 +572,9 @@ struct VeilJSONToolView: View {
 
     private func transform(pretty: Bool) {
         do {
-            output = try (pretty ? VeilLocalToolEngine.prettyJSON(input) : VeilLocalToolEngine.minifiedJSON(input))
+            output = try (pretty
+                ? VeilLocalToolEngine.prettyJSON(input)
+                : VeilLocalToolEngine.minifiedJSON(input))
             errorText = nil
         } catch {
             output = ""
@@ -823,35 +851,71 @@ struct VeilColorLabToolView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(red: Double(preview.red) / 255, green: Double(preview.green) / 255, blue: Double(preview.blue) / 255))
-                    .frame(height: 150)
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 1))
-                    .accessibilityLabel("颜色预览 \(hex)")
-                VStack(spacing: 10) {
+                VeilInstrumentBay(title: "色彩监视器", role: .status, active: isValidatedColor) {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(
+                            red: Double(preview.red) / 255,
+                            green: Double(preview.green) / 255,
+                            blue: Double(preview.blue) / 255
+                        ))
+                        .frame(height: 130)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                        )
+                        .overlay(alignment: .bottomLeading) {
+                            Text(lastValidatedHex.isEmpty ? "INVALID" : lastValidatedHex)
+                                .font(.system(size: 11, weight: .black, design: .monospaced))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(.black.opacity(0.48))
+                                .clipShape(Capsule())
+                                .padding(8)
+                        }
+                        .accessibilityLabel("颜色预览 \(hex)")
+
+                    VStack(spacing: 7) {
+                        VeilGaugeMeter(title: "RED", value: Double(preview.red) / 255.0, text: "\(preview.red)")
+                        VeilGaugeMeter(title: "GREEN", value: Double(preview.green) / 255.0, text: "\(preview.green)")
+                        VeilGaugeMeter(title: "BLUE", value: Double(preview.blue) / 255.0, text: "\(preview.blue)")
+                    }
+                }
+
+                VeilInstrumentBay(title: "颜色输入", role: .input, active: true) {
                     TextField("#RRGGBB", text: $hex)
                         .textInputAutocapitalization(.characters)
                         .disableAutocorrection(true)
                         .font(.system(.body, design: .monospaced))
-                        .textFieldStyle(.plain).veilInstrumentField()
+                        .textFieldStyle(.plain)
+                        .veilInstrumentField()
+
                     HStack(spacing: 8) {
                         colorField("R", text: $red)
                         colorField("G", text: $green)
                         colorField("B", text: $blue)
                     }
                 }
-                .veilCompactToolSurface(cornerRadius: 16)
+
                 HStack(spacing: 9) {
-                    Button("HEX → RGB") { fromHex() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
-                    Button("RGB → HEX") { fromRGB() }.buttonStyle(VeilPhysicalButtonStyle())
+                    Button("HEX → RGB") { fromHex() }
+                        .buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("RGB → HEX") { fromRGB() }
+                        .buttonStyle(VeilPhysicalButtonStyle())
                 }
+
                 if let errorText {
                     Label(errorText, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption).foregroundColor(VeilTheme.danger)
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.danger)
                 }
-                Button("复制 \(lastValidatedHex)") { VeilToolClipboard.copy(lastValidatedHex) }
-                    .buttonStyle(VeilPhysicalButtonStyle())
-                    .disabled(!isValidatedColor)
+
+                Button("复制 \(lastValidatedHex)") {
+                    VeilToolClipboard.copy(lastValidatedHex)
+                }
+                .buttonStyle(VeilPhysicalButtonStyle())
+                .disabled(!isValidatedColor)
+
                 privacyNote("颜色转换不读取照片或屏幕内容；复制内容仅留在本设备，并会在 5 分钟后过期。")
             }
             .padding(16)
@@ -863,11 +927,14 @@ struct VeilColorLabToolView: View {
 
     private func colorField(_ title: String, text: Binding<String>) -> some View {
         VStack(spacing: 3) {
-            Text(title).font(.caption2.bold()).foregroundColor(VeilTheme.tertiaryText)
+            Text(title)
+                .font(.caption2.bold())
+                .foregroundColor(VeilTheme.tertiaryText)
             TextField("0", text: text)
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.center)
-                .textFieldStyle(.plain).veilInstrumentField()
+                .textFieldStyle(.plain)
+                .veilInstrumentField()
         }
     }
 
@@ -883,7 +950,9 @@ struct VeilColorLabToolView: View {
         do {
             let value = try VeilLocalToolEngine.rgb(hex: hex)
             preview = value
-            red = String(value.red); green = String(value.green); blue = String(value.blue)
+            red = String(value.red)
+            green = String(value.green)
+            blue = String(value.blue)
             hex = try VeilLocalToolEngine.hex(rgb: value)
             lastValidatedHex = hex
             errorText = nil
@@ -895,7 +964,9 @@ struct VeilColorLabToolView: View {
 
     private func fromRGB() {
         do {
-            guard let r = Int(red), let g = Int(green), let b = Int(blue) else { throw VeilLocalToolError.rgbOutOfRange }
+            guard let r = Int(red), let g = Int(green), let b = Int(blue) else {
+                throw VeilLocalToolError.rgbOutOfRange
+            }
             hex = try VeilLocalToolEngine.hex(red: r, green: g, blue: b)
             preview = VeilRGBColor(red: r, green: g, blue: b)
             lastValidatedHex = hex
@@ -917,28 +988,50 @@ struct VeilRandomDecisionToolView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                Text(result)
-                    .font(.title3.bold())
-                    .foregroundColor(VeilTheme.goldBright)
-                    .frame(maxWidth: .infinity, minHeight: 76)
-                    .veilCompactToolSurface(cornerRadius: 18)
-                TextEditor(text: boundedToolText($choices))
-                    .frame(minHeight: 120)
-                    .padding(8)
-                    .veilCompactToolSurface(cornerRadius: 14)
-                toolInputMeter(choices)
-                HStack(spacing: 9) {
-                    Button("抽一个") { pick() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
-                    Button("抛硬币") { coin() }.buttonStyle(VeilPhysicalButtonStyle())
+                VeilInstrumentBay(title: "随机输出", role: .output, active: true) {
+                    Text(result)
+                        .font(.system(.title3, design: .rounded).weight(.bold))
+                        .foregroundColor(VeilTheme.goldBright)
+                        .frame(maxWidth: .infinity, minHeight: 62, alignment: .center)
+                        .multilineTextAlignment(.center)
                 }
-                HStack(spacing: 9) {
-                    TextField("面数", text: $diceSides).keyboardType(.numberPad).textFieldStyle(.plain).veilInstrumentField()
-                    TextField("数量", text: $diceCount).keyboardType(.numberPad).textFieldStyle(.plain).veilInstrumentField()
-                    Button("掷骰") { roll() }.buttonStyle(VeilPhysicalButtonStyle())
+
+                VeilInstrumentBay(title: "候选池", role: .input, active: !parsedChoices.isEmpty) {
+                    TextEditor(text: boundedToolText($choices))
+                        .frame(minHeight: 110)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                    toolInputMeter(choices)
                 }
+
+                HStack(spacing: 9) {
+                    Button("抽一个") { pick() }
+                        .buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("抛硬币") { coin() }
+                        .buttonStyle(VeilPhysicalButtonStyle())
+                }
+
+                VeilInstrumentBay(title: "骰子模块", role: .input, active: true) {
+                    HStack(spacing: 9) {
+                        TextField("面数", text: $diceSides)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.plain)
+                            .veilInstrumentField()
+                        TextField("数量", text: $diceCount)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.plain)
+                            .veilInstrumentField()
+                        Button("掷骰") { roll() }
+                            .buttonStyle(VeilPhysicalButtonStyle())
+                    }
+                }
+
                 if let errorText {
-                    Text(errorText).font(.caption).foregroundColor(VeilTheme.danger)
+                    Text(errorText)
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.danger)
                 }
+
                 privacyNote("使用系统安全随机源；结果不联网、不上报，也不会替你承担决定的后果。")
             }
             .padding(16)
@@ -949,26 +1042,42 @@ struct VeilRandomDecisionToolView: View {
     }
 
     private var parsedChoices: [String] {
-        choices.split(whereSeparator: { $0.isNewline }).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        choices
+            .split(whereSeparator: { $0.isNewline })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     private func pick() {
-        do { result = try VeilLocalToolEngine.randomChoice(from: parsedChoices); errorText = nil }
-        catch { errorText = (error as? LocalizedError)?.errorDescription }
+        do {
+            result = try VeilLocalToolEngine.randomChoice(from: parsedChoices)
+            errorText = nil
+        } catch {
+            errorText = (error as? LocalizedError)?.errorDescription
+        }
     }
 
     private func coin() {
-        do { result = try VeilLocalToolEngine.randomChoice(from: ["正面", "反面"]); errorText = nil }
-        catch { errorText = (error as? LocalizedError)?.errorDescription }
+        do {
+            result = try VeilLocalToolEngine.randomChoice(from: ["正面", "反面"])
+            errorText = nil
+        } catch {
+            errorText = (error as? LocalizedError)?.errorDescription
+        }
     }
 
     private func roll() {
         do {
-            guard let sides = Int(diceSides), let count = Int(diceCount) else { throw VeilLocalToolError.invalidDice }
+            guard let sides = Int(diceSides), let count = Int(diceCount) else {
+                throw VeilLocalToolError.invalidDice
+            }
             let values = try VeilLocalToolEngine.rollDice(sides: sides, count: count)
-            result = values.map(String.init).joined(separator: " + ") + " = \(values.reduce(0, +))"
+            result = values.map(String.init).joined(separator: " + ")
+                + " = \(values.reduce(0, +))"
             errorText = nil
-        } catch { errorText = (error as? LocalizedError)?.errorDescription }
+        } catch {
+            errorText = (error as? LocalizedError)?.errorDescription
+        }
     }
 }
 
@@ -979,25 +1088,41 @@ struct VeilMorseToolView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                TextEditor(text: boundedToolText($input))
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 130)
-                    .padding(8)
-                    .veilCompactToolSurface(cornerRadius: 14)
-                toolInputMeter(input)
-                HStack(spacing: 9) {
-                    Button("编码") { output = VeilLocalToolEngine.morseEncode(input) }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
-                    Button("解码") { output = VeilLocalToolEngine.morseDecode(input) }.buttonStyle(VeilPhysicalButtonStyle())
-                    Button("复制") { VeilToolClipboard.copy(output) }
-                        .buttonStyle(VeilPhysicalButtonStyle()).disabled(output.isEmpty)
+                VeilInstrumentBay(title: "明文 / 电码输入", role: .input, active: !input.isEmpty) {
+                    TextEditor(text: boundedToolText($input))
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 120)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                    toolInputMeter(input)
                 }
-                Text(output.isEmpty ? "... --- ..." : output)
-                    .font(.system(.body, design: .monospaced).weight(.semibold))
-                    .foregroundColor(output.isEmpty ? VeilTheme.tertiaryText : VeilTheme.goldBright)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
-                    .padding(12)
-                    .veilCompactToolSurface(cornerRadius: 12)
+
+                HStack(spacing: 9) {
+                    Button("编码") {
+                        output = VeilLocalToolEngine.morseEncode(input)
+                    }
+                    .buttonStyle(VeilPhysicalButtonStyle(accent: true))
+
+                    Button("解码") {
+                        output = VeilLocalToolEngine.morseDecode(input)
+                    }
+                    .buttonStyle(VeilPhysicalButtonStyle())
+
+                    Button("复制") {
+                        VeilToolClipboard.copy(output)
+                    }
+                    .buttonStyle(VeilPhysicalButtonStyle())
+                    .disabled(output.isEmpty)
+                }
+
+                VeilInstrumentBay(title: "信号输出", role: .output, active: !output.isEmpty) {
+                    Text(output.isEmpty ? "... --- ..." : output)
+                        .font(.system(.body, design: .monospaced).weight(.semibold))
+                        .foregroundColor(output.isEmpty ? VeilTheme.tertiaryText : VeilTheme.goldBright)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
+                }
+
                 privacyNote("支持 A–Z 与 0–9；词间使用 /。不支持的字符显示为 ?，转换完全离线。")
             }
             .padding(16)
@@ -1014,28 +1139,43 @@ struct VeilLinkPulseToolView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 14) {
+                VeilStatusStrip(
+                    leftTitle: "LAN PEERS",
+                    leftValue: "\(model.lanTurbo.connectedPeerCount)",
+                    rightTitle: "BLE PEERS",
+                    rightValue: "\(model.bluetooth.connectedPeerCount)",
+                    active: model.lanTurbo.isRunning || model.bluetooth.isRunning
+                )
+
                 linkCard(
                     title: "LAN Turbo",
                     icon: "wifi",
                     active: model.lanTurbo.isRunning,
                     status: model.lanTurbo.statusText,
-                    detail: "连接 \(model.lanTurbo.connectedPeerCount) · \(model.lanTurbo.dataPlaneSummary)"
+                    detail: model.lanTurbo.dataPlaneSummary,
+                    peerCount: model.lanTurbo.connectedPeerCount
                 )
+
                 linkCard(
                     title: "Bluetooth LE",
                     icon: "dot.radiowaves.left.and.right",
                     active: model.bluetooth.isRunning,
                     status: model.bluetooth.isRunning ? "BLE 正在运行" : "BLE 未启动",
-                    detail: "连接 \(model.bluetooth.connectedPeerCount) · 追踪 \(model.bluetooth.linkSnapshots.count)"
+                    detail: "追踪 \(model.bluetooth.linkSnapshots.count) 条链路快照",
+                    peerCount: model.bluetooth.connectedPeerCount
                 )
+
                 Button {
                     model.lanTurbo.refresh()
-                    if !model.bluetooth.isRunning { model.bluetooth.start() }
+                    if !model.bluetooth.isRunning {
+                        model.bluetooth.start()
+                    }
                 } label: {
                     Label("刷新本地链路", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(VeilPhysicalButtonStyle(accent: true))
+
                 privacyNote("只刷新 VeilLink 自己的 Bonjour/BLE 发现，不进行互联网测速、端口扫描或局域网设备探测。")
             }
             .padding(16)
@@ -1045,17 +1185,32 @@ struct VeilLinkPulseToolView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func linkCard(title: String, icon: String, active: Bool, status: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(title, systemImage: icon).font(.headline)
-                Spacer()
-                VeilIndicatorLamp(active: active)
+    private func linkCard(
+        title: String,
+        icon: String,
+        active: Bool,
+        status: String,
+        detail: String,
+        peerCount: Int
+    ) -> some View {
+        VeilInstrumentDeck(
+            title: title,
+            subtitle: detail,
+            symbol: icon,
+            emphasized: active
+        ) {
+            HStack(spacing: 10) {
+                VeilLCDDisplay(title: "STATE", value: active ? "ONLINE" : "STANDBY")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "PEERS", value: "\(peerCount)")
+                    .frame(maxWidth: .infinity)
             }
-            Text(status).font(.subheadline).foregroundColor(VeilTheme.text)
-            Text(detail).font(.caption.monospaced()).foregroundColor(VeilTheme.secondaryText)
+            VeilGaugeMeter(
+                title: "LINK ACTIVITY",
+                value: active ? min(1, 0.28 + Double(peerCount) * 0.18) : 0,
+                text: active ? status : "OFF"
+            )
         }
-        .veilCard(emphasized: active)
     }
 }
 
