@@ -331,7 +331,7 @@ final class PlatformerScene: SKScene, SKPhysicsContactDelegate {
         for hazard in level.hazards { buildHazard(hazard) }
         for (index, crystal) in level.crystals.enumerated() { buildCrystal(at: crystal, index: index) }
         for spring in level.springs { buildSpring(at: spring) }
-        for (index, patrol) in level.patrols { buildPatrol(patrol, index: index) }
+        for (index, patrol) in level.patrols.enumerated() { buildPatrol(patrol, index: index) }
         buildExit(at: level.exit)
     }
 
