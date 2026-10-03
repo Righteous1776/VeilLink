@@ -3,6 +3,10 @@ name: Core unsigned release
 on:
   workflow_dispatch:
   workflow_call:
+  push:
+    branches: [main]
+    paths:
+      - '.github/release-triggers/26.11-b57'
 
 permissions:
   contents: write
@@ -121,7 +125,7 @@ jobs:
           retention-days: 30
 
       - name: Publish versioned GitHub Release
-        if: success() && github.event_name == 'workflow_dispatch'
+        if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.release_identity.outputs.version }}
