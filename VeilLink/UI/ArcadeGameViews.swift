@@ -18,12 +18,30 @@ struct ArtilleryGameView: View {
                 windGauge
                 health("对手", player: localPlayer.opponent)
             }
+
+            HStack(spacing: 8) {
+                VeilInstrumentLabel(
+                    title: "FIRE SOLUTION",
+                    value: fireSolutionText,
+                    active: predictedShot.damage > 0
+                )
+                Spacer()
+                VeilInstrumentLabel(
+                    title: "NEXT WIND",
+                    value: formattedWind(ArtilleryState.wind(sessionID: sessionID, turn: state.turn + 1)),
+                    active: true
+                )
+            }
+            .padding(.horizontal, 4)
+
             battlefield
                 .frame(height: 238)
+                .padding(5)
+                .background(Color.black.opacity(0.26))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(VeilTheme.hairline, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.46), lineWidth: 1.2))
 
-            VStack(spacing: 8) {
+            VeilInstrumentBay(title: "火控输入", role: .input, active: enabled) {
                 parameterSlider(title: "角度", value: $angle, range: 15...80, suffix: "°")
                 parameterSlider(title: "力度", value: $power, range: 30...100, suffix: "%")
                 Button {
@@ -32,11 +50,9 @@ struct ArtilleryGameView: View {
                     Label(enabled ? "发射" : "等待对方射击", systemImage: "scope")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(VeilGamePrimaryButtonStyle())
+                .buttonStyle(VeilPhysicalButtonStyle(accent: true))
                 .disabled(!enabled)
             }
-            .padding(12)
-            .veilCompactToolSurface(cornerRadius: 14)
 
             if let shot = state.lastShot {
                 Text(shot.damage > 0 ? "命中 · 造成 \(shot.damage) 点损伤" : "落点偏离 · 校正角度、力度并留意风向")
@@ -45,37 +61,59 @@ struct ArtilleryGameView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
+        .padding(12)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                emphasized: true
+            )
+        )
         .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: state.turn)
     }
 
     private var wind: Int { ArtilleryState.wind(sessionID: sessionID, turn: state.turn) }
+
+    private var predictedShot: ArtilleryShot {
+        ArtilleryState.simulate(
+            angle: Int(angle.rounded()),
+            power: Int(power.rounded()),
+            actor: localPlayer,
+            sessionID: sessionID,
+            turn: state.turn
+        )
+    }
+
+    private var fireSolutionText: String {
+        if predictedShot.damage >= 2 { return "DIRECT / 2 DMG" }
+        if predictedShot.damage == 1 { return "SPLASH / 1 DMG" }
+        let target = ArtilleryState.turretX(for: localPlayer.opponent)
+        let miss = Int(abs(predictedShot.landingX - target).rounded())
+        return "MISS ±\(miss)"
+    }
+
+    private func formattedWind(_ value: Int) -> String {
+        if value == 0 { return "CALM" }
+        return "\(value > 0 ? "→" : "←") \(abs(value))"
+    }
 
     /// Legacy devices use a cheaper Canvas path. God-mode full visuals makes
     /// the central policy return `true`, restoring the richer rendering path.
     private var usesHighQualityRendering: Bool { VeilMotionPolicy.allowsFullSpatialEffects }
 
     private var windGauge: some View {
-        VStack(spacing: 2) {
-            Image(systemName: wind == 0 ? "minus" : (wind > 0 ? "arrow.right" : "arrow.left"))
-                .foregroundColor(VeilTheme.gold)
-            Text("风 \(abs(wind))")
-                .font(.caption2.monospacedDigit())
-                .foregroundColor(VeilTheme.secondaryText)
-        }
-        .frame(width: 54)
+        VeilLCDDisplay(
+            title: "WIND",
+            value: formattedWind(wind)
+        )
+        .frame(width: 92)
     }
 
     private func health(_ title: String, player: MiniGamePlayer) -> some View {
-        VStack(alignment: player == localPlayer ? .leading : .trailing, spacing: 3) {
-            Text(title).font(.caption2).foregroundColor(VeilTheme.secondaryText)
-            HStack(spacing: 3) {
-                ForEach(0..<5, id: \.self) { index in
-                    Capsule()
-                        .fill(index < state.health(for: player) ? VeilTheme.gold : Color.white.opacity(0.08))
-                        .frame(height: 5)
-                }
-            }
-        }
+        VeilGaugeMeter(
+            title: title,
+            value: Double(state.health(for: player)) / 5.0,
+            text: "\(state.health(for: player))/5"
+        )
         .frame(maxWidth: .infinity)
     }
 
@@ -172,16 +210,13 @@ struct ArtilleryGameView: View {
     }
 
     private func parameterSlider(title: String, value: Binding<Double>, range: ClosedRange<Double>, suffix: String) -> some View {
-        HStack(spacing: 9) {
-            Text(title).font(.caption.weight(.semibold)).frame(width: 32, alignment: .leading)
-            Slider(value: value, in: range, step: 1).tint(VeilTheme.gold)
-            Text("\(Int(value.wrappedValue))\(suffix)")
-                .font(.caption.monospacedDigit())
-                .frame(width: 44, alignment: .trailing)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(title)
-        .accessibilityValue("\(Int(value.wrappedValue))\(suffix)")
+        VeilHardwareSlider(
+            title: title,
+            value: value,
+            range: range,
+            step: 1,
+            suffix: suffix
+        )
     }
 }
 
@@ -196,15 +231,25 @@ struct LightTrailGameView: View {
 
     var body: some View {
         VStack(spacing: 11) {
-            HStack {
-                metric("护盾", "\(state.shield(for: localPlayer))/3")
-                metric("能量", "\(state.energy(for: localPlayer))")
-                metric("赛段", "\(min(LightTrailState.rounds, state.round + 1))/\(LightTrailState.rounds)")
+            HStack(spacing: 8) {
+                metric("SHIELD", "\(state.shield(for: localPlayer))/3")
+                metric("ENERGY", "\(state.energy(for: localPlayer))")
+                metric("SECTOR", "\(min(LightTrailState.rounds, state.round + 1))/\(LightTrailState.rounds)")
             }
+
+            HStack(spacing: 8) {
+                VeilInstrumentLabel(title: "ROUTE ADVISORY", value: routeAdvisory, active: true)
+                Spacer()
+                VeilInstrumentLabel(title: "SAFE LANES", value: safeLaneText, active: !safeLanes.isEmpty)
+            }
+            .padding(.horizontal, 4)
+
             track
                 .frame(height: 300)
+                .padding(5)
+                .background(Color.black.opacity(0.26))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(VeilTheme.hairline, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.46), lineWidth: 1.2))
             HStack(spacing: 10) {
                 shiftButton(-1, title: "左移", icon: "arrow.left")
                 shiftButton(0, title: "直行", icon: "arrow.up")
@@ -214,7 +259,45 @@ struct LightTrailGameView: View {
                 .font(.caption)
                 .foregroundColor(state.lastCollision ? VeilTheme.danger : VeilTheme.secondaryText)
         }
+        .padding(12)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                emphasized: true
+            )
+        )
         .animation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion), value: state.turn)
+    }
+
+    private var currentCourseRound: Int { state.turn / 2 }
+
+    private var safeLanes: [Int] {
+        let blocked = LightTrailState.obstacleLanes(
+            sessionID: sessionID,
+            round: currentCourseRound
+        )
+        return (0..<LightTrailState.laneCount).filter { !blocked.contains($0) }
+    }
+
+    private var safeLaneText: String {
+        safeLanes.map { String($0 + 1) }.joined(separator: "·")
+    }
+
+    private var routeAdvisory: String {
+        let lane = state.lane(for: localPlayer)
+        let energy = LightTrailState.energyLane(
+            sessionID: sessionID,
+            round: currentCourseRound
+        )
+        let blocked = LightTrailState.obstacleLanes(
+            sessionID: sessionID,
+            round: currentCourseRound
+        )
+        if blocked.contains(lane) { return "CURRENT LANE BLOCKED" }
+        if lane == energy { return "ENERGY ALIGNED" }
+        if energy < lane { return "ENERGY LEFT" }
+        if energy > lane { return "ENERGY RIGHT" }
+        return "HOLD COURSE"
     }
 
     private var track: some View {
@@ -277,18 +360,15 @@ struct LightTrailGameView: View {
                 .minimumScaleFactor(0.76)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(VeilGameSecondaryButtonStyle())
+        .buttonStyle(VeilPhysicalButtonStyle())
         .disabled(!enabled || !(0..<LightTrailState.laneCount).contains(destination))
         .accessibilityLabel(title)
         .accessibilityHint((0..<LightTrailState.laneCount).contains(destination) ? "移动到第 \(destination + 1) 轨" : "已到达赛道边缘")
     }
 
     private func metric(_ title: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
-            Text(title).font(.caption2).foregroundColor(VeilTheme.tertiaryText)
-            Text(value).font(.caption.weight(.bold).monospacedDigit()).foregroundColor(VeilTheme.text)
-        }
-        .frame(maxWidth: .infinity)
+        VeilLCDDisplay(title: title, value: value)
+            .frame(maxWidth: .infinity)
     }
 }
 
@@ -320,22 +400,30 @@ struct MagneticHockeyGameView: View {
 
     var body: some View {
         VStack(spacing: 11) {
-            HStack(spacing: 10) {
-                score("你", state.score(for: localPlayer))
-                VStack(spacing: 2) {
-                    Image(systemName: polarity == 0 ? "minus" : (polarity > 0 ? "arrow.clockwise" : "arrow.counterclockwise"))
-                    Text("磁场 \(polarity >= 0 ? "+" : "")\(polarity)")
-                        .font(.caption2.monospacedDigit())
-                }
-                .foregroundColor(VeilTheme.gold)
-                .frame(width: 68)
-                score("对手", state.score(for: localPlayer.opponent))
+            HStack(spacing: 8) {
+                score("YOU", state.score(for: localPlayer))
+                VeilLCDDisplay(
+                    title: "FIELD",
+                    value: "\(polarity >= 0 ? "+" : "")\(polarity)"
+                )
+                .frame(width: 92)
+                score("RIVAL", state.score(for: localPlayer.opponent))
             }
+
+            HStack(spacing: 8) {
+                VeilInstrumentLabel(title: "SHOT MODEL", value: shotForecastText, active: enabled)
+                Spacer()
+                VeilInstrumentLabel(title: "TURN", value: "\(state.turn + 1)/\(MagneticHockeyState.maximumTurns)", active: true)
+            }
+            .padding(.horizontal, 4)
+
             rink
                 .frame(height: 230)
+                .padding(5)
+                .background(Color.black.opacity(0.26))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(VeilTheme.hairline, lineWidth: 1))
-            VStack(spacing: 8) {
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.46), lineWidth: 1.2))
+            VeilInstrumentBay(title: "击球控制", role: .input, active: enabled) {
                 slider("方向", value: $angle, range: 0...359, suffix: "°")
                     .accessibilityHint(localPlayer == .host ? "零度朝右侧球门" : "一百八十度朝左侧球门")
                 slider("力度", value: $power, range: 10...100, suffix: "%")
@@ -345,11 +433,9 @@ struct MagneticHockeyGameView: View {
                     Label(enabled ? "击球" : "等待对方击球", systemImage: "circle.circle.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(VeilGamePrimaryButtonStyle())
+                .buttonStyle(VeilPhysicalButtonStyle(accent: true))
                 .disabled(!enabled)
             }
-            .padding(12)
-            .veilCompactToolSurface(cornerRadius: 14)
             if let shot = state.lastShot {
                 Text(shot.scoredPlayer == nil
                      ? "固定步 \(shot.fixedStepCount) · 反弹 \(shot.wallBounces) 次"
@@ -358,10 +444,36 @@ struct MagneticHockeyGameView: View {
                     .foregroundColor(shot.scoredPlayer == nil ? VeilTheme.secondaryText : VeilTheme.goldBright)
             }
         }
+        .padding(12)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                emphasized: true
+            )
+        )
         .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: state.turn)
     }
 
     private var polarity: Int { MagneticHockeyState.fieldPolarity(sessionID: sessionID, turn: state.turn) }
+
+    private var predictedShot: MagneticHockeyShot? {
+        guard enabled else { return nil }
+        var candidate = state
+        guard candidate.apply(
+            angle: Int(angle.rounded()) % 360,
+            power: Int(power.rounded()),
+            actor: localPlayer,
+            sessionID: sessionID
+        ) else { return nil }
+        return candidate.lastShot
+    }
+
+    private var shotForecastText: String {
+        guard let predictedShot else { return "WAIT" }
+        if predictedShot.scoredPlayer == localPlayer { return "GOAL VECTOR" }
+        if predictedShot.scoredPlayer == localPlayer.opponent { return "OWN GOAL RISK" }
+        return "BOUNCE \(predictedShot.wallBounces) / \(predictedShot.fixedStepCount)T"
+    }
 
     private var rink: some View {
         Canvas { context, size in
@@ -402,21 +514,20 @@ struct MagneticHockeyGameView: View {
     }
 
     private func score(_ title: String, _ value: Int) -> some View {
-        VStack(spacing: 2) {
-            Text(title).font(.caption2).foregroundColor(VeilTheme.secondaryText)
-            Text("\(value)/\(MagneticHockeyState.winningScore)")
-                .font(.headline.monospacedDigit()).foregroundColor(VeilTheme.text)
-        }
+        VeilLCDDisplay(
+            title: title,
+            value: "\(value)/\(MagneticHockeyState.winningScore)"
+        )
         .frame(maxWidth: .infinity)
     }
 
     private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, suffix: String) -> some View {
-        HStack(spacing: 9) {
-            Text(title).font(.caption.weight(.semibold)).frame(width: 32, alignment: .leading)
-            Slider(value: value, in: range, step: 1).tint(VeilTheme.gold)
-            Text("\(Int(value.wrappedValue))\(suffix)")
-                .font(.caption.monospacedDigit()).frame(width: 48, alignment: .trailing)
-        }
-        .accessibilityElement(children: .combine)
+        VeilHardwareSlider(
+            title: title,
+            value: value,
+            range: range,
+            step: 1,
+            suffix: suffix
+        )
     }
 }

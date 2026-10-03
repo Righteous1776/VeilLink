@@ -273,4 +273,64 @@ final class ArcadeGamesTests: XCTestCase {
         }
         return messages
     }
+    func testArcadeDifficultyTiersRemainDeterministicAndLegal() {
+        for difficulty in ArcadeBotDifficulty.allCases {
+            let artillery = ArtilleryState()
+            let firstShot = ArtilleryBot.chooseShot(
+                in: artillery,
+                actor: .host,
+                sessionID: artillerySessionID,
+                difficulty: difficulty
+            )
+            let replayShot = ArtilleryBot.chooseShot(
+                in: artillery,
+                actor: .host,
+                sessionID: artillerySessionID,
+                difficulty: difficulty
+            )
+            XCTAssertEqual(firstShot?.angle, replayShot?.angle)
+            XCTAssertEqual(firstShot?.power, replayShot?.power)
+            guard let firstShot else {
+                XCTFail("Every artillery difficulty must produce a legal opening shot")
+                continue
+            }
+            var artilleryGate = artillery
+            XCTAssertTrue(
+                artilleryGate.apply(
+                    angle: firstShot.angle,
+                    power: firstShot.power,
+                    actor: .host,
+                    sessionID: artillerySessionID
+                )
+            )
+
+            let trail = LightTrailState()
+            let firstShift = LightTrailBot.chooseShift(
+                in: trail,
+                actor: .host,
+                sessionID: trailSessionID,
+                difficulty: difficulty
+            )
+            let replayShift = LightTrailBot.chooseShift(
+                in: trail,
+                actor: .host,
+                sessionID: trailSessionID,
+                difficulty: difficulty
+            )
+            XCTAssertEqual(firstShift, replayShift)
+            guard let firstShift else {
+                XCTFail("Every trail difficulty must produce a legal opening shift")
+                continue
+            }
+            var trailGate = trail
+            XCTAssertTrue(
+                trailGate.apply(
+                    shift: firstShift,
+                    actor: .host,
+                    sessionID: trailSessionID
+                )
+            )
+        }
+    }
+
 }

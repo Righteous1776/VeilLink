@@ -70,7 +70,7 @@ struct MiniGameHubView: View {
                 }
                 .padding(16)
             }
-            .background(VeilAmbientBackground())
+            .background(VeilInstrumentBackground())
             .navigationTitle("双人小游戏")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -86,54 +86,49 @@ struct MiniGameHubView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 9) {
-                Image(systemName: "lock.shield.fill")
-                    .foregroundColor(VeilTheme.gold)
-                Text("加密小游戏")
-                    .font(.system(size: 27, weight: .bold, design: .rounded))
-                    .foregroundColor(VeilTheme.text)
-            }
-            Text("棋局操作沿用当前聊天的端到端加密、ACK 与断线重发；重新打开 App 后也能从加密历史恢复棋盘。")
-                .font(.subheadline)
-                .foregroundColor(VeilTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+        VeilInstrumentDeck(
+            title: "加密游戏终端",
+            subtitle: "操作沿用当前聊天的端到端加密、ACK 与断线重发；重新打开 App 后也能从加密历史恢复。",
+            symbol: "lock.shield.fill",
+            emphasized: true
+        ) {
             MiniGameLinkStatusView(
                 bluetooth: model.bluetooth,
                 sessions: model.sessions,
                 peerIdentityID: conversation.peerIdentityID
             )
+
+            HStack(spacing: 8) {
+                VeilLCDDisplay(title: "CHANNEL", value: "E2EE")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "RECOVERY", value: "ACK")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "SESSIONS", value: "\(liveSessions.count)")
+                    .frame(maxWidth: .infinity)
+            }
         }
-        .padding(.bottom, 2)
     }
 
     private var statisticsOverview: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack {
-                sectionTitle("战绩")
-                Spacer()
-                Text("仅基于当前加密会话")
-                    .font(.caption2)
-                    .foregroundColor(VeilTheme.tertiaryText)
-            }
-
-            HStack(spacing: 9) {
-                statisticTile(value: "\(statistics.completed)", label: "已完成")
-                statisticTile(value: "\(statistics.wins)", label: "胜")
-                statisticTile(value: "\(statistics.losses)", label: "负")
-                statisticTile(value: "\(statistics.draws)", label: "和")
-            }
-
+        VeilInstrumentDeck(
+            title: "加密会话战绩",
+            subtitle: "仅从当前会话可重建的历史对局计算。",
+            symbol: "chart.bar.xaxis"
+        ) {
             HStack(spacing: 8) {
-                Label("胜率 \(Int((statistics.winRate * 100).rounded()))%", systemImage: "chart.line.uptrend.xyaxis")
-                if statistics.currentWinStreak > 1 {
-                    Text("·")
-                    Label("\(statistics.currentWinStreak) 连胜", systemImage: "flame.fill")
-                }
-                Spacer()
+                statisticTile(value: "\(statistics.completed)", label: "DONE")
+                statisticTile(value: "\(statistics.wins)", label: "WIN")
+                statisticTile(value: "\(statistics.losses)", label: "LOSS")
+                statisticTile(value: "\(statistics.draws)", label: "DRAW")
             }
-            .font(.caption.weight(.semibold))
-            .foregroundColor(VeilTheme.gold)
+
+            VeilStatusStrip(
+                leftTitle: "WIN RATE",
+                leftValue: "\(Int((statistics.winRate * 100).rounded()))%",
+                rightTitle: "STREAK",
+                rightValue: "\(statistics.currentWinStreak)",
+                active: statistics.completed > 0
+            )
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
@@ -150,8 +145,9 @@ struct MiniGameHubView: View {
                             .foregroundColor(VeilTheme.secondaryText)
                             .padding(.horizontal, 9)
                             .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.045))
+                            .background(Color.black.opacity(0.18))
                             .clipShape(Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.06), lineWidth: 0.7))
                         }
                     }
                 }
@@ -160,73 +156,90 @@ struct MiniGameHubView: View {
     }
 
     private func statisticTile(value: String, label: String) -> some View {
-        VStack(spacing: 3) {
-            Text(value)
-                .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundColor(VeilTheme.text)
-            Text(label)
-                .font(.caption2)
-                .foregroundColor(VeilTheme.secondaryText)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(VeilTheme.elevated.opacity(0.74))
-        .clipShape(VeilPanelShape(cut: 8, radius: 6))
-        .overlay(VeilPanelShape(cut: 8, radius: 6).stroke(VeilTheme.hairline, lineWidth: 1))
+        VeilLCDDisplay(title: label, value: value)
+            .frame(maxWidth: .infinity)
     }
 
     private var gamePicker: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("开始一局")
-            ForEach(MiniGameKind.allCases) { game in
-                let existing = liveSession(for: game)
-                Button {
-                    if let existing { selectedSessionID = existing.id }
-                    else { createGame(game) }
-                } label: {
-                    HStack(spacing: 13) {
-                        ZStack {
-                            Circle().fill(VeilTheme.gold.opacity(0.09))
-                            Image(systemName: game.icon)
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(VeilTheme.gold)
-                        }
-                        .frame(width: 42, height: 42)
+        VeilInstrumentRackSection(
+            title: "发起对局",
+            subtitle: "选择模块后，通过现有安全会话发送邀请。",
+            code: "E2EE GAME"
+        ) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 150), spacing: 10)],
+                spacing: 10
+            ) {
+                ForEach(MiniGameKind.allCases) { game in
+                    let existing = liveSession(for: game)
+                    Button {
+                        if let existing { selectedSessionID = existing.id }
+                        else { createGame(game) }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 9) {
+                            HStack {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(Color.black.opacity(0.24))
+                                    Image(systemName: game.icon)
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundColor(VeilTheme.goldBright)
+                                }
+                                .frame(width: 40, height: 40)
+                                Spacer()
+                                if creatingGame == game {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .tint(VeilTheme.gold)
+                                } else {
+                                    VeilIndicatorLamp(active: existing != nil)
+                                }
+                            }
 
-                        VStack(alignment: .leading, spacing: 4) {
                             Text(game.title)
-                                .font(.headline)
+                                .font(.subheadline.bold())
                                 .foregroundColor(VeilTheme.text)
                             Text(game.subtitle)
-                                .font(.caption)
+                                .font(.caption2)
                                 .foregroundColor(VeilTheme.secondaryText)
                                 .lineLimit(2)
-                        }
-                        Spacer(minLength: 8)
-                        if creatingGame == game {
-                            ProgressView().tint(VeilTheme.gold)
-                        } else if existing != nil {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("继续")
-                                    .font(.caption2.weight(.bold))
-                                Image(systemName: "arrow.right.circle.fill")
-                                    .font(.title3)
+
+                            Spacer(minLength: 3)
+
+                            HStack {
+                                Text(existing == nil ? "NEW SESSION" : "RESUME")
+                                    .font(.system(size: 7.5, weight: .black, design: .monospaced))
+                                    .tracking(0.8)
+                                    .foregroundColor(existing == nil ? VeilTheme.mutedGold : VeilTheme.success)
+                                Spacer()
+                                Image(systemName: existing == nil ? "plus" : "arrow.right")
+                                    .font(.caption2.bold())
+                                    .foregroundColor(VeilTheme.gold)
                             }
-                            .foregroundColor(VeilTheme.gold)
-                        } else {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title3)
-                                .foregroundColor(VeilTheme.gold)
                         }
+                        .frame(maxWidth: .infinity, minHeight: 128, alignment: .leading)
+                        .padding(12)
+                        .background(
+                            VeilInstrumentPlate(
+                                shape: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                                emphasized: existing != nil
+                            )
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
-                    .padding(14)
-                    .background(VeilTheme.elevated.opacity(0.88))
-                    .clipShape(VeilPanelShape(cut: 13, radius: 7))
-                    .overlay(VeilPanelShape(cut: 13, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+                    .buttonStyle(.plain)
+                    .disabled(creatingGame != nil)
+                    .veilSpatialPress(
+                        maximumTilt: 1.8,
+                        cornerRadius: 14,
+                        highlightColor: VeilTheme.goldBright
+                    )
+                    .accessibilityLabel(
+                        existing == nil
+                        ? "开始\(game.title)，\(game.subtitle)"
+                        : "继续\(game.title)对局"
+                    )
                 }
-                .buttonStyle(VeilPressStyle())
-                .disabled(creatingGame != nil)
-                .accessibilityLabel(existing == nil ? "开始\(game.title)，\(game.subtitle)" : "继续\(game.title)对局")
             }
         }
     }
@@ -398,16 +411,23 @@ private struct MiniGameLinkStatusView: View {
                         .font(.caption.weight(.bold))
                         .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(VeilCompactKeyStyle())
                 .foregroundColor(VeilTheme.gold)
                 .accessibilityLabel("立即恢复对手蓝牙链路")
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Color.white.opacity(0.035))
-        .clipShape(VeilPanelShape(cut: 8, radius: 6))
-        .overlay(VeilPanelShape(cut: 8, radius: 6).stroke(VeilTheme.hairline, lineWidth: 1))
+        .padding(.vertical, 8)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 10, style: .continuous),
+                emphasized: linkReady
+            )
+        )
+        .overlay(alignment: .topTrailing) {
+            VeilIndicatorLamp(active: linkReady)
+                .padding(5)
+        }
         .accessibilityElement(children: .combine)
     }
 }

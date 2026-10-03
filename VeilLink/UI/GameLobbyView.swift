@@ -16,7 +16,7 @@ struct GameLobbyView: View {
                 nearbySection.veilStaggeredEntrance(index: 2)
             }
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle("游戏")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -59,50 +59,201 @@ struct GameLobbyView: View {
                 lobbyMetric("联网", "不需要")
             }
         }
-        .veilCard(emphasized: true)
-        .veilSpatialPress(maximumTilt: 3.8, cornerRadius: 20, highlightColor: VeilTheme.goldBright)
+        .padding(14)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                emphasized: true
+            )
+        )
+        .overlay(alignment: .topTrailing) {
+            VeilScrewHead().padding(7)
+        }
+        .veilSpatialPress(maximumTilt: 2.0, cornerRadius: 20, highlightColor: VeilTheme.goldBright)
         .veilDynamicGlow(active: true, emphasized: true)
     }
 
     private var singlePlayerSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("单机 · 本地电脑", subtitle: "棋盘策略 + 2D 物理与赛道玩法，全部离线运行")
-            NavigationLink(destination: LocalAIGameView(model: model, game: .artillery)) {
-                gameRow(.artillery, detail: "可视化弹道 · 确定性风力 · 本地参数搜索 Bot", enabled: true)
+        VStack(alignment: .leading, spacing: 14) {
+            sectionTitle(
+                "单机 · 本地电脑",
+                subtitle: "战役沙盘、2D 物理实验与经典棋盘全部离线运行"
+            )
+
+            NavigationLink(destination: TacticalSoloV2View(model: model)) {
+                tacticalFeaturedCard
             }
-            .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
-            NavigationLink(destination: LocalAIGameView(model: model, game: .lightTrail)) {
-                gameRow(.lightTrail, detail: "动态赛道 · 闪避与能量 · 本地预判 Bot", enabled: true)
+            .buttonStyle(.plain)
+            .veilSpatialPress(maximumTilt: 1.8, cornerRadius: 18, highlightColor: VeilTheme.goldBright)
+
+            VeilInstrumentRackSection(
+                title: "2D 街机实验台",
+                subtitle: "确定性物理、赛道与磁场玩法；相同输入可复算。",
+                code: "ARCADE"
+            ) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 150), spacing: 10)],
+                    spacing: 10
+                ) {
+                    NavigationLink(destination: LocalAIGameView(model: model, game: .artillery)) {
+                        gameTile(
+                            .artillery,
+                            detail: "弹道火控 · 风场预测",
+                            telemetry: "PHYSICS"
+                        )
+                    }
+                    NavigationLink(destination: LocalAIGameView(model: model, game: .lightTrail)) {
+                        gameTile(
+                            .lightTrail,
+                            detail: "五轨闪避 · 能量路线",
+                            telemetry: "3-STEP AI"
+                        )
+                    }
+                    NavigationLink(destination: LocalAIGameView(model: model, game: .magneticHockey)) {
+                        gameTile(
+                            .magneticHockey,
+                            detail: "固定步物理 · 磁场偏转",
+                            telemetry: "120 Hz"
+                        )
+                    }
+                }
             }
-            .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
-            NavigationLink(destination: LocalAIGameView(model: model, game: .magneticHockey)) {
-                gameRow(.magneticHockey, detail: "固定步物理 · 磁场偏转 · 三球决胜", enabled: true)
+
+            VeilInstrumentRackSection(
+                title: "经典棋盘台",
+                subtitle: "轻量规则 Bot 与确定性棋局恢复。",
+                code: "BOARD"
+            ) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 150), spacing: 10)],
+                    spacing: 10
+                ) {
+                    NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
+                        gameTile(.gomoku, detail: "威胁识别 · 候选搜索", telemetry: "TACTIC")
+                    }
+                    NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
+                        gameTile(.xiangqi, detail: "Alpha-Beta · 局面评估", telemetry: "SEARCH")
+                    }
+                    NavigationLink(destination: LocalAIGameView(model: model, game: .ludo)) {
+                        gameTile(.ludo, detail: "确定性骰子 · 规则评分", telemetry: "RULE BOT")
+                    }
+                }
             }
-            .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
-            NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
-                gameRow(.gomoku, detail: "你执黑先手 · 威胁识别 + 候选搜索 + 规则校验", enabled: true)
-            }
-            .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
-            NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
-                gameRow(.xiangqi, detail: "你执红先手 · Alpha-Beta + 局面评估 + 规则校验", enabled: true)
-            }
-            .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
-            NavigationLink(destination: LocalAIGameView(model: model, game: .ludo)) {
-                gameRow(.ludo, detail: "确定性骰子 · 规则评分 Bot 自动完成回合", enabled: true)
-            }
-            .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
-            NavigationLink(destination: LocalAIGameView(model: model, game: .tactical)) {
-                gameRow(.tactical, detail: "你执曹军先行 · 离线训练策略 + 补给与目标评估", enabled: true)
-            }
-            .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
         }
+    }
+
+    private var tacticalFeaturedCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(Color.black.opacity(0.28))
+                    Image(systemName: MiniGameKind.tactical.icon)
+                        .font(.system(size: 25, weight: .semibold))
+                        .foregroundColor(VeilTheme.goldBright)
+                }
+                .frame(width: 58, height: 58)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .stroke(Color.white.opacity(0.09), lineWidth: 0.8)
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("GUANDU CAMPAIGN / V2")
+                        .font(.system(size: 8, weight: .black, design: .monospaced))
+                        .tracking(1)
+                        .foregroundColor(VeilTheme.mutedGold)
+                    Text("官渡决战")
+                        .font(.title3.bold())
+                        .foregroundColor(VeilTheme.text)
+                    Text("48×27 大地图 · 战争迷雾 · WEGO · 补给与作战层")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(2)
+                }
+                Spacer()
+                VeilIndicatorLamp(active: true)
+            }
+
+            HStack(spacing: 8) {
+                VeilLCDDisplay(title: "MAP", value: "48×27")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "SYSTEM", value: "WEGO")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "INTEL", value: "FOG")
+                    .frame(maxWidth: .infinity)
+            }
+
+            HStack {
+                VeilInstrumentLabel(title: "SOLO", value: "A* BOT", active: true)
+                Spacer()
+                VeilInstrumentLabel(title: "MODE", value: "CAMPAIGN", active: true)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundColor(VeilTheme.gold)
+            }
+        }
+        .padding(14)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 18, style: .continuous),
+                emphasized: true
+            )
+        )
+        .overlay(alignment: .topLeading) { VeilScrewHead().padding(7) }
+        .overlay(alignment: .bottomTrailing) { VeilScrewHead().padding(7) }
+    }
+
+    private func gameTile(
+        _ game: MiniGameKind,
+        detail: String,
+        telemetry: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.black.opacity(0.24))
+                    Image(systemName: game.icon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(VeilTheme.goldBright)
+                }
+                .frame(width: 40, height: 40)
+                Spacer()
+                VeilIndicatorLamp(active: true)
+            }
+
+            Text(game.title)
+                .font(.subheadline.bold())
+                .foregroundColor(VeilTheme.text)
+            Text(detail)
+                .font(.caption2)
+                .foregroundColor(VeilTheme.secondaryText)
+                .lineLimit(2)
+
+            Spacer(minLength: 3)
+
+            HStack {
+                Text(telemetry)
+                    .font(.system(size: 7.5, weight: .black, design: .monospaced))
+                    .tracking(0.7)
+                    .foregroundColor(VeilTheme.mutedGold)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption2.bold())
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 126, alignment: .leading)
+        .padding(12)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                emphasized: false
+            )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var nearbySection: some View {
@@ -145,7 +296,7 @@ struct GameLobbyView: View {
                         .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
                     }
                     .buttonStyle(VeilPressStyle())
-                    .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+                    .veilSpatialPress(maximumTilt: 2.0, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
                 }
             }
         }
@@ -184,9 +335,15 @@ struct GameLobbyView: View {
             }
         }
         .padding(13)
-        .background(VeilTheme.elevated.opacity(enabled ? 0.86 : 0.52))
-        .clipShape(VeilPanelShape(cut: 12, radius: 7))
-        .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                emphasized: enabled
+            )
+        )
+        .overlay(alignment: .topTrailing) {
+            VeilIndicatorLamp(active: enabled).padding(8)
+        }
         .accessibilityElement(children: .combine)
         .accessibilityValue(enabled ? "可以开始人机对局" : "尚未开放")
     }
@@ -222,13 +379,24 @@ struct LocalAIGameView: View {
         ScrollView {
             VStack(spacing: 14) {
                 statusCard
+                if isArcadeGame { arcadeControlCard }
                 if game == .tactical { tacticalControlCard }
                 board
+                    .padding(10)
+                    .background(
+                        VeilInstrumentPlate(
+                            shape: RoundedRectangle(cornerRadius: 18, style: .continuous),
+                            emphasized: true
+                        )
+                    )
+                    .overlay(alignment: .topTrailing) {
+                        VeilScrewHead().padding(7)
+                    }
                 if controller.outcome != .playing { resultCard }
             }
             .padding(14)
         }
-        .background(VeilAmbientBackground())
+        .background(VeilInstrumentBackground())
         .navigationTitle(game.title + " · 人机")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -266,6 +434,90 @@ struct LocalAIGameView: View {
         }
     }
 
+    private var isArcadeGame: Bool {
+        switch game {
+        case .artillery, .lightTrail, .magneticHockey:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private var arcadeControlCard: some View {
+        VeilInstrumentDeck(
+            title: "本地对手",
+            subtitle: "只改变本机 Bot 的搜索精度与前视深度，不改变游戏规则或联机协议。",
+            symbol: "cpu"
+        ) {
+            VStack(spacing: 9) {
+                HStack {
+                    VeilInstrumentLabel(
+                        title: "DIFFICULTY",
+                        value: controller.arcadeDifficulty.title,
+                        active: true
+                    )
+                    Spacer()
+                    VeilLCDDisplay(
+                        title: "BOT MODE",
+                        value: controller.arcadeDifficulty.telemetryLabel
+                    )
+                    .frame(width: 112)
+                }
+
+                HStack(spacing: 7) {
+                    ForEach(ArcadeBotDifficulty.allCases) { difficulty in
+                        Button {
+                            controller.setArcadeDifficulty(difficulty)
+                            model.haptics.selection()
+                        } label: {
+                            VStack(spacing: 2) {
+                                Text(difficulty.title)
+                                Text(difficulty.telemetryLabel)
+                                    .font(.system(size: 6.5, weight: .black, design: .monospaced))
+                                    .tracking(0.5)
+                                    .opacity(0.72)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(
+                            VeilCompactKeyStyle(
+                                selected: difficulty == controller.arcadeDifficulty
+                            )
+                        )
+                        .accessibilityLabel("难度 \(difficulty.title)")
+                        .accessibilityValue(
+                            difficulty == controller.arcadeDifficulty ? "当前选择" : "未选择"
+                        )
+                    }
+                }
+                .padding(6)
+                .background(Color.black.opacity(0.20))
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
+                )
+            }
+
+            let detail: String = {
+                switch game {
+                case .artillery:
+                    return "火控搜索步长：角度 \(controller.arcadeDifficulty.artilleryAngleStep)° / 力度 \(controller.arcadeDifficulty.artilleryPowerStep)%"
+                case .lightTrail:
+                    return "赛道前视：\(controller.arcadeDifficulty.lightTrailDepth) 个赛段"
+                case .magneticHockey:
+                    return "击球采样：角度 \(controller.arcadeDifficulty.hockeyAngleStep)° / 力度 \(controller.arcadeDifficulty.hockeyPowerStep)%"
+                default:
+                    return ""
+                }
+            }()
+            Text(detail)
+                .font(.caption2.monospaced())
+                .foregroundColor(VeilTheme.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
@@ -290,7 +542,13 @@ struct LocalAIGameView: View {
                 statusMetric("耗时", controller.lastDecisionMilliseconds.map { "\($0)ms" } ?? "--")
             }
         }
-        .veilCard(emphasized: true)
+        .padding(14)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 18, style: .continuous),
+                emphasized: true
+            )
+        )
     }
 
     @ViewBuilder
@@ -402,7 +660,7 @@ struct LocalAIGameView: View {
                 selectedXiangqiIndex = nil
                 controller.restart()
             }
-            .buttonStyle(VeilGamePrimaryButtonStyle())
+            .buttonStyle(VeilPhysicalButtonStyle(accent: true))
         }
         .frame(maxWidth: .infinity)
         .padding(20)
