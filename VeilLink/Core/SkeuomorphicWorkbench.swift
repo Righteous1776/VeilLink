@@ -486,3 +486,42 @@ struct VeilStatusStrip: View {
         )
     }
 }
+
+
+struct VeilCompactKeyStyle: ButtonStyle {
+    var selected = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 10, weight: selected ? .bold : .semibold, design: .rounded))
+            .foregroundColor(selected ? VeilTheme.goldBright : VeilTheme.secondaryText)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: selected
+                                ? [VeilTheme.keycapTop, VeilTheme.goldDeep.opacity(0.42)]
+                                : [VeilTheme.keycapTop, VeilTheme.keycapBottom],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(
+                        selected ? VeilTheme.gold.opacity(0.48) : Color.white.opacity(0.10),
+                        lineWidth: selected ? 1.1 : 0.7
+                    )
+            )
+            .offset(y: configuration.isPressed ? 1.5 : 0)
+            .shadow(
+                color: Color.black.opacity(VeilMotionPolicy.allowsFullSpatialEffects ? 0.30 : 0),
+                radius: configuration.isPressed ? 1 : 3,
+                x: 0,
+                y: configuration.isPressed ? 1 : 2
+            )
+    }
+}
