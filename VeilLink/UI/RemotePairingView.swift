@@ -303,7 +303,7 @@ enum VeilPairQRRenderer {
     static func detectText(in image: UIImage) throws -> String {
         guard let cgImage = image.cgImage else { throw VeilRemotePairError.invalidQRCode }
         let request = VNDetectBarcodesRequest()
-        request.symbologies = [.QR]
+        request.symbologies = [.qr]
         try VNImageRequestHandler(cgImage: cgImage, orientation: cgOrientation(image.imageOrientation)).perform([request])
         guard let value = request.results?.compactMap({ $0.payloadStringValue }).first(where: { $0.hasPrefix("veillink://pair?") }) else {
             throw VeilRemotePairError.invalidQRCode

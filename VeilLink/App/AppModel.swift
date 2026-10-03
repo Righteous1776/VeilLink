@@ -467,7 +467,8 @@ final class AppModel: ObservableObject {
         guard a9PeriodicTask == nil else { return }
         a9PeriodicTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: a9PeriodicSamplingNanoseconds)
+                guard let sleepNanoseconds = self?.a9PeriodicSamplingNanoseconds else { break }
+                try? await Task.sleep(nanoseconds: sleepNanoseconds)
                 guard !Task.isCancelled, let self else { break }
                 self.refreshA9Health()
                 self.evaluateAutoRegulation()

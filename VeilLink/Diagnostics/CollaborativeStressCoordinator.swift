@@ -398,7 +398,7 @@ final class CollaborativeStressCoordinator: ObservableObject {
         if case .accepted = send(makeFrame(.gameReset, metadata: ["game_session": gameID])) {} else { metrics.droppedFrames += 1 }
         var seed = epoch ^ 0x4741_4D45
 
-        for turn in 0..<moveCount {
+        for _ in 0..<moveCount {
             guard !Task.isCancelled else { return }
             if state.winner != nil || state.isDraw {
                 state = GomokuState()

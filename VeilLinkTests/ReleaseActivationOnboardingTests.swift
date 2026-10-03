@@ -1,7 +1,6 @@
 import XCTest
 @testable import VeilLink
 
-@MainActor
 final class ReleaseActivationOnboardingTests: XCTestCase {
     private var suiteName: String!
     private var defaults: UserDefaults!
@@ -20,12 +19,14 @@ final class ReleaseActivationOnboardingTests: XCTestCase {
         super.tearDown()
     }
 
+    @MainActor
     func testFirstActivationStartsAtPageZero() {
         let controller = VeilFirstRunOnboardingController(defaults: defaults)
         XCTAssertFalse(controller.isCompleted)
         XCTAssertEqual(controller.resumePage, 0)
     }
 
+    @MainActor
     func testResumePagePersistsUntilCompletion() {
         let controller = VeilFirstRunOnboardingController(defaults: defaults)
         controller.remember(page: 3)
@@ -35,6 +36,7 @@ final class ReleaseActivationOnboardingTests: XCTestCase {
         XCTAssertEqual(relaunched.resumePage, 3)
     }
 
+    @MainActor
     func testCompletionPersistsAndDoesNotReplay() {
         let controller = VeilFirstRunOnboardingController(defaults: defaults)
         controller.complete()
@@ -44,6 +46,7 @@ final class ReleaseActivationOnboardingTests: XCTestCase {
         XCTAssertEqual(relaunched.resumePage, 4)
     }
 
+    @MainActor
     func testPageIsClamped() {
         let controller = VeilFirstRunOnboardingController(defaults: defaults)
         controller.remember(page: 99)

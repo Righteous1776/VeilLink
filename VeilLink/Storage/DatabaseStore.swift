@@ -636,7 +636,11 @@ final class DatabaseStore {
                 return InboundAttachmentState(nextChunk: next, chunkCount: chunkCount, completed: false)
             }
         }
-        guard let senderIdentityID = read("SELECT sender_identity_id FROM messages WHERE id = ? AND is_outgoing = 0 LIMIT 1;", bindings: [.text(messageID)]) { text($0, 0) }.first,
+        guard let senderIdentityID = read(
+            "SELECT sender_identity_id FROM messages WHERE id = ? AND is_outgoing = 0 LIMIT 1;",
+            bindings: [.text(messageID)],
+            transform: { text($0, 0) }
+        ).first,
               !senderIdentityID.isEmpty else {
             throw DatabaseError.statementFailed("附件 Manifest 缺少有效发送者。")
         }
@@ -745,8 +749,9 @@ final class DatabaseStore {
     private func inboundChunkClearData(messageID: String, index: Int) -> Data? {
         guard let protected = read(
             "SELECT ciphertext FROM inbound_attachment_chunks WHERE message_id = ? AND chunk_index = ? LIMIT 1;",
-            bindings: [.text(messageID), .int(index)]
-        ) { data($0, 0) }.first,
+            bindings: [.text(messageID), .int(index)],
+            transform: { data($0, 0) }
+        ).first,
               let box = try? ChaChaPoly.SealedBox(combined: protected),
               let clear = try? ChaChaPoly.open(box, using: storageKey) else { return nil }
         return clear
@@ -923,7 +928,7 @@ final class DatabaseStore {
     }
 
     func deleteMessageLocally(messageID: String, conversationID: String) throws {
-        queue.sync { decryptedBodyCache.removeValue(forKey: messageID) }
+        queue.sync { _ = decryptedBodyCache.removeValue(forKey: messageID) }
         guard let message = fetchMessage(id: messageID), message.conversationID == conversationID else { return }
         if !message.isOutgoing,
            (inboundAttachmentMetadata(messageID: messageID) != nil ||
@@ -1098,7 +1103,7 @@ final class DatabaseStore {
                 throw DatabaseError.backupFailed("无法验证恢复数据库结构。")
             }
             defer { sqlite3_finalize(statement) }
-            table.withCString { sqlite3_bind_text(statement, 1, $0, -1, transient) }
+            _ = table.withCString { sqlite3_bind_text(statement, 1, $0, -1, transient) }
             guard sqlite3_step(statement) == SQLITE_ROW else {
                 throw DatabaseError.backupFailed("恢复数据库缺少必要数据表：\(table)。")
             }
@@ -1139,8 +1144,9 @@ final class DatabaseStore {
         let expected = Data("VeilLink/StorageKeyCheck/v1".utf8)
         if let protectedMarker = read(
             "SELECT value FROM secure_metadata WHERE key = ? LIMIT 1;",
-            bindings: [.text(markerName)]
-        ) { data($0, 0) }.first {
+            bindings: [.text(markerName)],
+            transform: { data($0, 0) }
+        ).first {
             guard let box = try? ChaChaPoly.SealedBox(combined: protectedMarker),
                   let clear = try? ChaChaPoly.open(box, using: storageKey),
                   clear == expected else { throw DatabaseError.encryptionKeyMismatch }
@@ -1149,12 +1155,12 @@ final class DatabaseStore {
 
         // Databases created before V0.2 have no marker. Validate at least one existing
         // encrypted payload before trusting the current Keychain key, then install it.
-        if let protectedBody = read("SELECT body_ciphertext FROM messages LIMIT 1;") { data($0, 0) }.first {
+        if let protectedBody = read("SELECT body_ciphertext FROM messages LIMIT 1;", transform: { data($0, 0) }).first {
             guard let box = try? ChaChaPoly.SealedBox(combined: protectedBody),
                   (try? ChaChaPoly.open(box, using: storageKey)) != nil else {
                 throw DatabaseError.encryptionKeyMismatch
             }
-        } else if let relativePath = read("SELECT relative_path FROM attachments LIMIT 1;") { text($0, 0) }.first {
+        } else if let relativePath = read("SELECT relative_path FROM attachments LIMIT 1;", transform: { text($0, 0) }).first {
             let url = attachmentsURL.appendingPathComponent(relativePath)
             guard let protectedAttachment = try? Data(contentsOf: url),
                   let box = try? ChaChaPoly.SealedBox(combined: protectedAttachment),
@@ -1580,9 +1586,9 @@ final class DatabaseStore {
             let index = Int32(offset + 1)
             switch value {
             case .text(let value):
-                value.withCString { sqlite3_bind_text(statement, index, $0, -1, transient) }
+                _ = value.withCString { sqlite3_bind_text(statement, index, $0, -1, transient) }
             case .blob(let value):
-                value.withUnsafeBytes { buffer in
+                _ = value.withUnsafeBytes { buffer in
                     sqlite3_bind_blob(statement, index, buffer.baseAddress, Int32(buffer.count), transient)
                 }
             case .double(let value): sqlite3_bind_double(statement, index, value)
