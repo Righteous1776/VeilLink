@@ -54,6 +54,14 @@ if "VeilAmbientBackground()" in tools:
     raise SystemExit("FAIL Tool Center regressed to generic ambient background")
 if tools.count("VeilInstrumentBay(") < 10:
     raise SystemExit("FAIL Tool Center instrument-bay coverage regressed")
+for needle in [
+    "VeilLocalToolEngine.jsonStructure(input)",
+    "VeilLocalToolEngine.base64URLEncodeUTF8",
+    "VeilLocalToolEngine.base64URLDecodeUTF8",
+    "VeilLocalToolEngine.hsl(rgb: preview)",
+]:
+    if needle not in tools:
+        raise SystemExit(f"FAIL advanced Tool Center analysis missing {needle}")
 
 for needle in [
     "VeilHardwareSlider",
