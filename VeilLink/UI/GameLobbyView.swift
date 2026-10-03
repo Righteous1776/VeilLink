@@ -828,7 +828,18 @@ struct LocalAIGameView: View {
                             .clipShape(Capsule())
                     }
                 }
+            } else {
+                compactGameDebrief
             }
+
+            VeilStatusStrip(
+                leftTitle: "AI MODE",
+                leftValue: controller.lastDecisionMode,
+                rightTitle: "AI TIME",
+                rightValue: controller.lastDecisionMilliseconds.map { "\($0)ms" } ?? "--",
+                active: controller.lastDecisionMilliseconds != nil
+            )
+
             Button("再来一局") {
                 selectedXiangqiIndex = nil
                 controller.restart()
@@ -838,6 +849,74 @@ struct LocalAIGameView: View {
         .frame(maxWidth: .infinity)
         .padding(20)
         .veilCard()
+    }
+
+    @ViewBuilder
+    private var compactGameDebrief: some View {
+        switch game {
+        case .gomoku:
+            HStack(spacing: 8) {
+                VeilLCDDisplay(title: "MOVES", value: "\(controller.gomoku.moveCount)")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "WIN LINE", value: "\(controller.gomoku.winningLine.count)")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "LEVEL", value: controller.boardDifficulty.telemetryLabel)
+                    .frame(maxWidth: .infinity)
+            }
+
+        case .xiangqi:
+            HStack(spacing: 8) {
+                VeilLCDDisplay(title: "MOVES", value: "\(controller.xiangqi.moveCount)")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "RED", value: "\(xiangqiPieceCount(side: .red))")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "BLACK", value: "\(xiangqiPieceCount(side: .black))")
+                    .frame(maxWidth: .infinity)
+            }
+
+        case .ludo:
+            HStack(spacing: 8) {
+                VeilLCDDisplay(title: "TURNS", value: "\(controller.ludo.turn)")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "YOU", value: "\(controller.ludo.finishedCount(for: .host))/4")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "BOT", value: "\(controller.ludo.finishedCount(for: .guest))/4")
+                    .frame(maxWidth: .infinity)
+            }
+
+        case .artillery:
+            HStack(spacing: 8) {
+                VeilLCDDisplay(title: "TURNS", value: "\(controller.artillery.turn)")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "YOU HP", value: "\(controller.artillery.health(for: .host))/5")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "BOT HP", value: "\(controller.artillery.health(for: .guest))/5")
+                    .frame(maxWidth: .infinity)
+            }
+
+        case .lightTrail:
+            HStack(spacing: 8) {
+                VeilLCDDisplay(title: "SECTOR", value: "\(controller.lightTrail.round)/\(LightTrailState.rounds)")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "SHIELD", value: "\(controller.lightTrail.shield(for: .host))/3")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "ENERGY", value: "\(controller.lightTrail.energy(for: .host))")
+                    .frame(maxWidth: .infinity)
+            }
+
+        case .magneticHockey:
+            HStack(spacing: 8) {
+                VeilLCDDisplay(title: "TURNS", value: "\(controller.magneticHockey.turn)")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "YOU", value: "\(controller.magneticHockey.score(for: .host))")
+                    .frame(maxWidth: .infinity)
+                VeilLCDDisplay(title: "BOT", value: "\(controller.magneticHockey.score(for: .guest))")
+                    .frame(maxWidth: .infinity)
+            }
+
+        case .tactical:
+            EmptyView()
+        }
     }
 
     private var tacticalControlCard: some View {
