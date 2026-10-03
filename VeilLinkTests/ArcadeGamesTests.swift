@@ -114,7 +114,7 @@ final class ArcadeGamesTests: XCTestCase {
     func testLightTrailCollisionCanDecideTheWinner() {
         var state = LightTrailState()
 
-        for round in 0..<3 {
+        for round in 0..<LightTrailState.rounds where state.winner == nil {
             let hostLane = state.lane(for: .host)
             let obstacles = LightTrailState.obstacleLanes(sessionID: trailSessionID, round: round)
             let safeShift = (-1...1).first { shift in
@@ -123,7 +123,13 @@ final class ArcadeGamesTests: XCTestCase {
             }
             guard let safeShift else { return XCTFail("Every round must retain a navigable lane") }
             XCTAssertTrue(state.apply(shift: safeShift, actor: .host, sessionID: trailSessionID))
-            XCTAssertTrue(state.apply(shift: 0, actor: .guest, sessionID: trailSessionID))
+
+            let guestLane = state.lane(for: .guest)
+            let collisionShift = (-1...1).first { obstacles.contains(guestLane + $0) }
+            let pursuitShift = collisionShift ?? (obstacles.min(by: {
+                abs($0 - guestLane) < abs($1 - guestLane)
+            }).map { min(1, max(-1, $0 - guestLane)) } ?? 0)
+            XCTAssertTrue(state.apply(shift: pursuitShift, actor: .guest, sessionID: trailSessionID))
         }
 
         XCTAssertEqual(state.shield(for: .guest), 0)
