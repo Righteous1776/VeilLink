@@ -46,7 +46,9 @@ final class RealtimeArcadeAndLiveToolTests: XCTestCase {
 
         let waveform = VeilLiveToolMath.downsample([0, 1, 0, 1], count: 2)
         XCTAssertEqual(waveform.count, 2)
-        XCTAssertEqual(waveform, [1 / sqrt(2), 1 / sqrt(2)])
+        let expectedRMS = 1 / sqrt(2.0)
+        XCTAssertEqual(waveform[0], expectedRMS, accuracy: 1e-12)
+        XCTAssertEqual(waveform[1], expectedRMS, accuracy: 1e-12)
 
         let offset = VeilLiveToolMath.clampedBubbleOffset(roll: 90, pitch: 90, radius: 20)
         XCTAssertEqual(hypot(offset.x, offset.y), 20, accuracy: 0.000_001)
