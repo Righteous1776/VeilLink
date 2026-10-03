@@ -397,3 +397,92 @@ extension View {
         modifier(VeilInstrumentFieldModifier())
     }
 }
+
+
+enum VeilInstrumentBayRole {
+    case input
+    case output
+    case status
+
+    var label: String {
+        switch self {
+        case .input: return "INPUT"
+        case .output: return "OUTPUT"
+        case .status: return "STATUS"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .input: return "arrow.down.to.line.compact"
+        case .output: return "arrow.up.from.line.compact"
+        case .status: return "waveform.path.ecg"
+        }
+    }
+}
+
+struct VeilInstrumentBay<Content: View>: View {
+    let title: String
+    let role: VeilInstrumentBayRole
+    var active = true
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Image(systemName: role.symbol)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(VeilTheme.gold)
+                Text(role.label)
+                    .font(.system(size: 7.5, weight: .black, design: .monospaced))
+                    .tracking(1.0)
+                    .foregroundColor(VeilTheme.mutedGold)
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.text)
+                Spacer()
+                VeilIndicatorLamp(active: active)
+            }
+
+            VeilRecessedWell(cornerRadius: 11) {
+                content()
+            }
+        }
+        .padding(11)
+        .background(
+            VeilInstrumentPlate(
+                shape: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                emphasized: false
+            )
+        )
+        .overlay(alignment: .topTrailing) {
+            VeilScrewHead().padding(5)
+        }
+    }
+}
+
+struct VeilStatusStrip: View {
+    let leftTitle: String
+    let leftValue: String
+    let rightTitle: String
+    let rightValue: String
+    var active = true
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VeilInstrumentLabel(title: leftTitle, value: leftValue, active: active)
+            Spacer(minLength: 8)
+            VeilInstrumentLabel(title: rightTitle, value: rightValue, active: active)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.black.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.20 : 0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
+        )
+    }
+}
