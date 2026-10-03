@@ -1,5 +1,69 @@
 import Foundation
 
+enum ArcadeBotDifficulty: String, CaseIterable, Identifiable, Sendable {
+    case cadet
+    case operatorMode
+    case ace
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .cadet: return "训练"
+        case .operatorMode: return "标准"
+        case .ace: return "王牌"
+        }
+    }
+
+    var telemetryLabel: String {
+        switch self {
+        case .cadet: return "COARSE"
+        case .operatorMode: return "TACTICAL"
+        case .ace: return "DEEP"
+        }
+    }
+
+    var artilleryAngleStep: Int {
+        switch self {
+        case .cadet: return 8
+        case .operatorMode: return 4
+        case .ace: return 2
+        }
+    }
+
+    var artilleryPowerStep: Int {
+        switch self {
+        case .cadet: return 8
+        case .operatorMode: return 4
+        case .ace: return 2
+        }
+    }
+
+    var lightTrailDepth: Int {
+        switch self {
+        case .cadet: return 1
+        case .operatorMode: return 2
+        case .ace: return 3
+        }
+    }
+
+    var hockeyAngleStep: Int {
+        switch self {
+        case .cadet: return 15
+        case .operatorMode: return 10
+        case .ace: return 5
+        }
+    }
+
+    var hockeyPowerStep: Int {
+        switch self {
+        case .cadet: return 10
+        case .operatorMode: return 5
+        case .ace: return 5
+        }
+    }
+}
+
 // MARK: - Arc artillery
 
 struct ArtilleryShot: Equatable, Sendable {
@@ -121,12 +185,17 @@ struct ArtilleryState: Equatable, Sendable {
 }
 
 enum ArtilleryBot {
-    static func chooseShot(in state: ArtilleryState, actor: MiniGamePlayer, sessionID: String) -> (angle: Int, power: Int)? {
+    static func chooseShot(
+        in state: ArtilleryState,
+        actor: MiniGamePlayer,
+        sessionID: String,
+        difficulty: ArcadeBotDifficulty = .operatorMode
+    ) -> (angle: Int, power: Int)? {
         guard state.currentPlayer == actor, state.winner == nil, !state.isDraw else { return nil }
         let targetX = ArtilleryState.turretX(for: actor.opponent)
         var best: (angle: Int, power: Int, score: Double)?
-        for angle in stride(from: 18, through: 78, by: 3) {
-            for power in stride(from: 34, through: 100, by: 3) {
+        for angle in stride(from: 18, through: 78, by: difficulty.artilleryAngleStep) {
+            for power in stride(from: 34, through: 100, by: difficulty.artilleryPowerStep) {
                 let shot = ArtilleryState.simulate(
                     angle: angle,
                     power: power,
@@ -227,7 +296,12 @@ struct LightTrailState: Equatable, Sendable {
 }
 
 enum LightTrailBot {
-    static func chooseShift(in state: LightTrailState, actor: MiniGamePlayer, sessionID: String) -> Int? {
+    static func chooseShift(
+        in state: LightTrailState,
+        actor: MiniGamePlayer,
+        sessionID: String,
+        difficulty: ArcadeBotDifficulty = .operatorMode
+    ) -> Int? {
         guard state.currentPlayer == actor, state.winner == nil, !state.isDraw else { return nil }
         let round = state.turn / 2
         let lane = state.lane(for: actor)
@@ -239,12 +313,12 @@ enum LightTrailBot {
                     lane: lane + lhs,
                     round: round,
                     sessionID: sessionID,
-                    depth: 3
+                    depth: difficulty.lightTrailDepth
                 ) < score(
                     lane: lane + rhs,
                     round: round,
                     sessionID: sessionID,
-                    depth: 3
+                    depth: difficulty.lightTrailDepth
                 )
             }
     }
