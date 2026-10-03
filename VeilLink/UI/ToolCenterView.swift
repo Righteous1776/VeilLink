@@ -327,37 +327,36 @@ struct VeilPasswordToolView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(generated.isEmpty ? "点击生成" : generated)
+            VStack(spacing: 14) {
+                VeilInstrumentBay(title: "生成结果", role: .output, active: !generated.isEmpty) {
+                    Text(generated.isEmpty ? "READY" : generated)
                         .font(.system(.title3, design: .monospaced).weight(.semibold))
                         .foregroundColor(VeilTheme.goldBright)
                         .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
                         .id(generated)
-                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .bottom)), removal: .opacity))
-                    HStack {
-                        Label("约 \(VeilLocalToolEngine.passwordEntropyBits(recipe: recipe)) bit", systemImage: "shield.lefthalf.filled")
-                        Spacer()
-                        Text("\(recipe.length) 位")
-                    }
-                    .font(.caption.monospaced())
-                    .foregroundColor(VeilTheme.secondaryText)
-                }
-                .veilCompactToolSurface(cornerRadius: 18)
+                        .transition(.opacity)
 
-                VStack(spacing: 12) {
+                    VeilStatusStrip(
+                        leftTitle: "ENTROPY",
+                        leftValue: "~\(VeilLocalToolEngine.passwordEntropyBits(recipe: recipe)) bit",
+                        rightTitle: "LENGTH",
+                        rightValue: "\(recipe.length)",
+                        active: true
+                    )
+                }
+
+                VeilInstrumentBay(title: "生成参数", role: .input, active: true) {
                     VeilHardwareSlider(title: "长度", value: lengthBinding, range: 12...64, step: 1)
                     VeilToggleLever(title: "包含大写字母", isOn: $recipe.uppercase)
                     VeilToggleLever(title: "包含数字", isOn: $recipe.digits)
                     VeilToggleLever(title: "包含符号", isOn: $recipe.symbols)
                     VeilToggleLever(title: "排除易混淆字符 Il1O0o", isOn: $recipe.excludesAmbiguous)
                 }
-                .tint(VeilTheme.gold)
-                .veilCompactToolSurface(cornerRadius: 16)
 
                 HStack(spacing: 10) {
-                    Button("重新生成") { regenerate() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("重新生成") { regenerate() }
+                        .buttonStyle(VeilPhysicalButtonStyle(accent: true))
                     Button(copied ? "已复制" : "复制") {
                         VeilToolClipboard.copy(generated)
                         copied = true
@@ -365,6 +364,7 @@ struct VeilPasswordToolView: View {
                     .buttonStyle(VeilPhysicalButtonStyle())
                     .disabled(generated.isEmpty)
                 }
+
                 privacyNote("密码仅在本机内存中生成；复制内容仅留在本设备，并会在 5 分钟后过期。")
             }
             .padding(16)
@@ -376,7 +376,13 @@ struct VeilPasswordToolView: View {
     }
 
     private var lengthBinding: Binding<Double> {
-        Binding(get: { Double(recipe.length) }, set: { recipe.length = Int($0); regenerate() })
+        Binding(
+            get: { Double(recipe.length) },
+            set: {
+                recipe.length = Int($0)
+                regenerate()
+            }
+        )
     }
 
     private func regenerate() {
@@ -452,32 +458,55 @@ struct VeilTemporaryQRToolView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                TextEditor(text: $text)
-                    .frame(minHeight: 120)
-                    .padding(8)
-                    .veilCompactToolSurface(cornerRadius: 14)
+            VStack(spacing: 14) {
+                VeilInstrumentBay(title: "二维码载荷", role: .input, active: !text.isEmpty) {
+                    TextEditor(text: $text)
+                        .frame(minHeight: 110)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                    VeilGaugeMeter(
+                        title: "PAYLOAD",
+                        value: min(1, Double(text.utf8.count) / 1024.0),
+                        text: "\(text.utf8.count) / 1024 B"
+                    )
+                }
+
                 if text.utf8.count > 1_024 {
                     Label("内容过长，请控制在 1024 字节内", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption).foregroundColor(VeilTheme.danger)
-                } else if let image = qrImage {
-                    Image(uiImage: image)
-                        .interpolation(.none)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(18)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
-                        .frame(maxWidth: 320)
-                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.danger)
+                }
+
+                VeilInstrumentBay(title: "QR 光学输出", role: .output, active: qrImage != nil) {
+                    Group {
+                        if let image = qrImage {
+                            Image(uiImage: image)
+                                .interpolation(.none)
+                                .resizable()
+                                .scaledToFit()
+                                .padding(14)
+                                .background(Color.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .frame(maxWidth: 300)
+                                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                        } else {
+                            VStack(spacing: 8) {
+                                Image(systemName: "qrcode")
+                                    .font(.system(size: 42, weight: .light))
+                                    .foregroundColor(VeilTheme.tertiaryText)
+                                Text("等待有效载荷")
+                                    .font(.caption.monospaced())
+                                    .foregroundColor(VeilTheme.secondaryText)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 160)
+                        }
+                    }
+
                     Button("复制原文") { VeilToolClipboard.copy(text) }
                         .buttonStyle(VeilPhysicalButtonStyle())
-                } else {
-                    Label("输入文本后自动生成", systemImage: "qrcode")
-                        .foregroundColor(VeilTheme.secondaryText)
-                        .frame(maxWidth: .infinity, minHeight: 180)
-                        .veilCompactToolSurface(cornerRadius: 16)
+                        .disabled(text.isEmpty)
                 }
+
                 privacyNote("二维码由本机 Core Image 即时生成，不保存、不上传。二维码本身可被任何扫描者读出，请勿放入长期密钥。")
             }
             .padding(16)
@@ -600,33 +629,48 @@ struct VeilTextCodecToolView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                Text(kind.detail).font(.caption).foregroundColor(VeilTheme.secondaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                TextEditor(text: boundedToolText($input))
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 140)
-                    .padding(8)
-                    .veilCompactToolSurface(cornerRadius: 14)
-                toolInputMeter(input)
+                VeilStatusStrip(
+                    leftTitle: "CODEC",
+                    leftValue: kind == .base64 ? "BASE64" : "RFC3986",
+                    rightTitle: "MODE",
+                    rightValue: "LOCAL",
+                    active: true
+                )
+
+                VeilInstrumentBay(title: "源文本", role: .input, active: !input.isEmpty) {
+                    TextEditor(text: boundedToolText($input))
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 125)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                    toolInputMeter(input)
+                }
+
                 HStack(spacing: 9) {
-                    Button("编码") { encode() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
-                    Button("解码") { decode() }.buttonStyle(VeilPhysicalButtonStyle())
+                    Button("编码") { encode() }
+                        .buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("解码") { decode() }
+                        .buttonStyle(VeilPhysicalButtonStyle())
                     Button("复制") { VeilToolClipboard.copy(output) }
                         .buttonStyle(VeilPhysicalButtonStyle())
                         .disabled(output.isEmpty)
                 }
+
                 if let errorText {
                     Label(errorText, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption).foregroundColor(VeilTheme.danger)
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text(output.isEmpty ? "结果会显示在这里" : output)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(output.isEmpty ? VeilTheme.tertiaryText : VeilTheme.text)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
-                    .padding(12)
-                    .veilCompactToolSurface(cornerRadius: 12)
+
+                VeilInstrumentBay(title: "转换输出", role: .output, active: !output.isEmpty) {
+                    Text(output.isEmpty ? "READY" : output)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(output.isEmpty ? VeilTheme.tertiaryText : VeilTheme.text)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
+                }
+
                 privacyNote("编解码完全离线。Base64 不是加密，请勿把它当成机密保护。")
             }
             .padding(16)
@@ -670,47 +714,68 @@ struct VeilTimestampToolView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("UNIX → UTC").font(.caption.bold()).foregroundColor(VeilTheme.mutedGold)
-                    TextField(usesMilliseconds ? "毫秒，例如 1700000000123" : "秒，例如 1700000000", text: $timestamp)
-                        .keyboardType(.numbersAndPunctuation)
-                        .textFieldStyle(.plain).veilInstrumentField()
+                VeilStatusStrip(
+                    leftTitle: "ZONE",
+                    leftValue: "UTC",
+                    rightTitle: "PRECISION",
+                    rightValue: usesMilliseconds ? "MILLI" : "SECOND",
+                    active: true
+                )
+
+                VeilInstrumentBay(title: "UNIX → UTC", role: .input, active: !timestamp.isEmpty) {
+                    TextField(
+                        usesMilliseconds ? "毫秒，例如 1700000000123" : "秒，例如 1700000000",
+                        text: $timestamp
+                    )
+                    .keyboardType(.numbersAndPunctuation)
+                    .textFieldStyle(.plain)
+                    .veilInstrumentField()
+
                     VeilToggleLever(title: "输入为毫秒", isOn: $usesMilliseconds)
-                    Button("转换为 ISO 8601") { timestampToISO() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("转换为 ISO 8601") { timestampToISO() }
+                        .buttonStyle(VeilPhysicalButtonStyle(accent: true))
                 }
-                .veilCompactToolSurface(cornerRadius: 16)
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("UTC → UNIX").font(.caption.bold()).foregroundColor(VeilTheme.mutedGold)
+
+                VeilInstrumentBay(title: "UTC → UNIX", role: .input, active: !iso8601.isEmpty) {
                     TextField("2023-11-14T22:13:20.123Z", text: $iso8601)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
-                        .textFieldStyle(.plain).veilInstrumentField()
-                    Button("转换为时间戳") { isoToTimestamp() }.buttonStyle(VeilPhysicalButtonStyle())
+                        .textFieldStyle(.plain)
+                        .veilInstrumentField()
+
+                    Button("转换为时间戳") { isoToTimestamp() }
+                        .buttonStyle(VeilPhysicalButtonStyle())
                 }
-                .veilCompactToolSurface(cornerRadius: 16)
+
                 if let errorText {
                     Label(errorText, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption).foregroundColor(VeilTheme.danger)
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.danger)
                 }
-                if !result.isEmpty {
-                    Text(result)
+
+                VeilInstrumentBay(title: "转换结果", role: .output, active: !result.isEmpty) {
+                    Text(result.isEmpty ? "READY" : result)
                         .font(.system(.body, design: .monospaced))
+                        .foregroundColor(result.isEmpty ? VeilTheme.tertiaryText : VeilTheme.goldBright)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .veilCompactToolSurface(cornerRadius: 12)
-                }
-                HStack(spacing: 9) {
-                    Button("填入当前时间") {
-                        let now = Date().timeIntervalSince1970
-                        timestamp = usesMilliseconds ? String(Int64((now * 1_000).rounded())) : String(Int64(now))
-                        timestampToISO()
+
+                    HStack(spacing: 9) {
+                        Button("填入当前时间") {
+                            let now = Date().timeIntervalSince1970
+                            timestamp = usesMilliseconds
+                                ? String(Int64((now * 1_000).rounded()))
+                                : String(Int64(now))
+                            timestampToISO()
+                        }
+                        .buttonStyle(VeilPhysicalButtonStyle())
+
+                        Button("复制结果") { VeilToolClipboard.copy(result) }
+                            .buttonStyle(VeilPhysicalButtonStyle())
+                            .disabled(result.isEmpty)
                     }
-                    .buttonStyle(VeilPhysicalButtonStyle())
-                    Button("复制结果") { VeilToolClipboard.copy(result) }
-                    .buttonStyle(VeilPhysicalButtonStyle())
-                    .disabled(result.isEmpty)
                 }
+
                 privacyNote("使用 UTC 进行转换；不读取日历、定位或网络时间。")
             }
             .padding(16)
@@ -759,25 +824,32 @@ struct VeilUUIDToolView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                VeilHardwareSlider(title: "数量", value: $count, range: 1...20, step: 1)
-                .veilCompactToolSurface(cornerRadius: 16)
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(values, id: \.self) { value in
-                        Text(value)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                VeilInstrumentBay(title: "批量参数", role: .input, active: true) {
+                    VeilHardwareSlider(title: "数量", value: $count, range: 1...20, step: 1)
+                }
+
+                VeilInstrumentBay(title: "UUID 输出", role: .output, active: !values.isEmpty) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(values, id: \.self) { value in
+                            Text(value)
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
+                    .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
                 }
-                .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
-                .padding(12)
-                .veilCompactToolSurface(cornerRadius: 14)
+
                 HStack(spacing: 10) {
-                    Button("重新生成") { generate() }.buttonStyle(VeilPhysicalButtonStyle(accent: true))
-                    Button("复制全部") { VeilToolClipboard.copy(values.joined(separator: "\n")) }
-                        .buttonStyle(VeilPhysicalButtonStyle())
-                        .disabled(values.isEmpty)
+                    Button("重新生成") { generate() }
+                        .buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("复制全部") {
+                        VeilToolClipboard.copy(values.joined(separator: "\n"))
+                    }
+                    .buttonStyle(VeilPhysicalButtonStyle())
+                    .disabled(values.isEmpty)
                 }
+
                 privacyNote("使用系统 UUID 生成器，不读取设备标识，不把结果关联到 VeilLink 身份。")
             }
             .padding(16)
@@ -801,32 +873,39 @@ struct VeilTextCleanerToolView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                TextEditor(text: boundedToolText($input))
-                    .frame(minHeight: 140)
-                    .padding(8)
-                    .veilCompactToolSurface(cornerRadius: 14)
-                toolInputMeter(input)
-                VStack(spacing: 9) {
+                VeilInstrumentBay(title: "源文本", role: .input, active: !input.isEmpty) {
+                    TextEditor(text: boundedToolText($input))
+                        .frame(minHeight: 125)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                    toolInputMeter(input)
+                }
+
+                VeilInstrumentBay(title: "清理规则", role: .status, active: true) {
                     VeilToggleLever(title: "修剪每行首尾空白", isOn: $options.trimsLines)
                     VeilToggleLever(title: "连续空行压成一行", isOn: $options.collapsesBlankLines)
                     VeilToggleLever(title: "删除重复行", isOn: $options.removesDuplicateLines)
                     VeilToggleLever(title: "按字符顺序排序", isOn: $options.sortsLines)
                 }
-                .tint(VeilTheme.gold)
-                .veilCompactToolSurface(cornerRadius: 16)
+
                 HStack(spacing: 9) {
-                    Button("清理") { output = VeilLocalToolEngine.cleanText(input, options: options) }
-                        .buttonStyle(VeilPhysicalButtonStyle(accent: true))
+                    Button("清理") {
+                        output = VeilLocalToolEngine.cleanText(input, options: options)
+                    }
+                    .buttonStyle(VeilPhysicalButtonStyle(accent: true))
+
                     Button("复制") { VeilToolClipboard.copy(output) }
                         .buttonStyle(VeilPhysicalButtonStyle())
                         .disabled(output.isEmpty)
                 }
-                Text(output.isEmpty ? "清理结果会显示在这里" : output)
-                    .foregroundColor(output.isEmpty ? VeilTheme.tertiaryText : VeilTheme.text)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
-                    .padding(12)
-                    .veilCompactToolSurface(cornerRadius: 12)
+
+                VeilInstrumentBay(title: "清理结果", role: .output, active: !output.isEmpty) {
+                    Text(output.isEmpty ? "READY" : output)
+                        .foregroundColor(output.isEmpty ? VeilTheme.tertiaryText : VeilTheme.text)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, minHeight: 95, alignment: .topLeading)
+                }
+
                 privacyNote("文本只在当前页面内处理；排序采用稳定、可复现的字符顺序。")
             }
             .padding(16)
