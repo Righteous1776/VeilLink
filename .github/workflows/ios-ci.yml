@@ -3,7 +3,11 @@ name: iOS CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'AGENT_INBOX/**'
   pull_request:
+    paths-ignore:
+      - 'AGENT_INBOX/**'
   workflow_dispatch:
   workflow_call:
 
