@@ -61,6 +61,7 @@ struct MiniGameHubView: View {
                     header
                     if statistics.completed > 0 { statisticsOverview }
                     gamePicker
+                    localGameLab
 
                     if !incomingInvitations.isEmpty {
                         sessionSection(title: "待回应", sessions: incomingInvitations)
@@ -243,6 +244,51 @@ struct MiniGameHubView: View {
     }
 
     @ViewBuilder
+    private var localGameLab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Game Lab · 本地实验室")
+            NavigationLink(destination: OrbitRelayLabView()) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(VeilTheme.gold.opacity(0.11))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "orbit")
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundColor(VeilTheme.goldBright)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text("轨道接力")
+                                .font(.headline)
+                                .foregroundColor(VeilTheme.text)
+                            VeilIndicatorLamp(active: true, color: VeilTheme.goldBright)
+                        }
+                        Text("固定步引力场 · 推力矢量 · 燃料/稳定性 · 本地搜索 Bot")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.secondaryText)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    Text("LAB")
+                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                        .foregroundColor(VeilTheme.gold)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundColor(VeilTheme.tertiaryText)
+                }
+                .padding(12)
+                .background(
+                    VeilInstrumentPlate(
+                        shape: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                        emphasized: true
+                    )
+                )
+            }
+            .buttonStyle(VeilPressStyle())
+        }
+    }
+
     private func sessionSection(title: String, sessions: [MiniGameSessionSnapshot]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle(title)
