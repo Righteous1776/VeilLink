@@ -116,6 +116,11 @@ struct A10UltraOmegaShadowDecision: Equatable, Sendable {
     let vaultStatus: String
 }
 
+struct A10UltraOmegaGovernanceResult: Equatable, Sendable {
+    let decision: VeilKernelDecisionSnapshot
+    let budget: A10UltraOmegaBudget
+}
+
 struct A10UltraOmegaComparisonRecord: Equatable, Sendable {
     let sampleID: String
     let epoch: UInt64
@@ -579,7 +584,7 @@ final class A10UltraOmegaShadowCoordinator: ObservableObject {
     func evaluateA10UltraIsolated(
         sample: A10UltraOmegaSharedSample,
         runtime: VeilKernelRuntimeEnvironment
-    ) -> Bool {
+    ) -> A10UltraOmegaGovernanceResult? {
         let preliminary = A10UltraOmegaCompatibilityNormalizer.aggregate(sample.rawInput, persistenceSeconds: 0)
         let ultraPersistenceSeconds: Int
         if preliminary.light == 0 {
@@ -607,7 +612,10 @@ final class A10UltraOmegaShadowCoordinator: ObservableObject {
                 sourceDomains: sample.sourceDomains, signalDigest: sample.signalDigest, environment: runtime,
                 a9Decision: nil, ultraDecision: result.compatibilityDecision,
                 a9Budget: nil, ultraBudget: result.budget,
-                decisionMatch: nil, divergenceClass: "NOT_COMPARABLE_A10_ONLY_LAB",
+                decisionMatch: nil,
+                divergenceClass: runtime.mode == .a10Independent
+                    ? "A10_INDEPENDENT_GOVERNANCE"
+                    : "NOT_COMPARABLE_A10_ONLY_LAB",
                 a9LatencyNanos: 0, ultraLatencyNanos: wallEnd &- wallStart,
                 a9CPUNanos: 0, ultraCPUNanos: cpuNanos,
                 ultraPhysicalSlotCount: result.physicalSlotCount, rssBytes: rss,
@@ -619,7 +627,10 @@ final class A10UltraOmegaShadowCoordinator: ObservableObject {
                 fallbackEvent: false, guardianStatus: result.guardianStatus, rageStatus: result.rageStatus, vaultStatus: result.vaultStatus,
                 runtimeBackend: result.backend
             )
-            return true
+            return A10UltraOmegaGovernanceResult(
+                decision: result.compatibilityDecision,
+                budget: result.budget
+            )
         } catch {
             let wallEnd = A10UltraOmegaMetrics.monotonicNanos()
             let cpuEnd = A10UltraOmegaMetrics.threadCPUNanos()
@@ -638,7 +649,7 @@ final class A10UltraOmegaShadowCoordinator: ObservableObject {
                 fallbackEvent: true, guardianStatus: "FAILED", rageStatus: "FAILED", vaultStatus: "FAILED",
                 runtimeBackend: A10UltraOmegaRelease.runtimeBackend
             )
-            return false
+            return nil
         }
     }
 

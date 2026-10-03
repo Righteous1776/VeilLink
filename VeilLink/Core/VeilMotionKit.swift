@@ -9,21 +9,71 @@ import Foundation
 /// - Preserve iPhone 7 / iOS 15 stability by automatically reducing persistent effects.
 /// - Avoid Web/JS runtimes; ideas from open-source motion libraries are reimplemented in native SwiftUI.
 enum VeilMotionPolicy {
+    enum Semantic {
+        case reveal
+        case transit
+        case resolve
+    }
+
     private static var runtimeConstrained: Bool {
         let process = ProcessInfo.processInfo
         return process.isLowPowerModeEnabled || process.thermalState == .serious || process.thermalState == .critical
     }
 
     static var allowsFullSpatialEffects: Bool {
-        VeilRenderProfile.allowsExpensiveVisualEffects
+        if VeilPerformanceOverrides.forceFullVisualEffects { return true }
+        return VeilRenderProfile.allowsExpensiveVisualEffects
             && !VeilRenderProfile.usesLegacyCompositorPath
             && !runtimeConstrained
     }
 
     static var allowsContinuousDecorativeMotion: Bool {
-        VeilRenderProfile.allowsPersistentAnimations
-            && !VeilRenderProfile.usesLegacyCompositorPath
-            && !runtimeConstrained
+        PerformanceOverridePolicy.allowsPersistentMotion(
+            baseAllows: VeilRenderProfile.allowsPersistentAnimations,
+            usesLegacyCompositor: VeilRenderProfile.usesLegacyCompositorPath,
+            runtimeConstrained: runtimeConstrained,
+            snapshot: VeilPerformanceOverrides.snapshot
+        )
+    }
+
+    static func quality(reduceMotionRequested: Bool) -> PerformanceOverridePolicy.TransientMotionQuality {
+        let visualComplexity: TransferVisualComplexity = runtimeConstrained
+            ? .minimal
+            : VeilDevicePerformance.current.transferVisualComplexity
+        return PerformanceOverridePolicy.transientMotionQuality(
+            reduceMotionEnabled: reduceMotionRequested,
+            visualComplexity: visualComplexity,
+            snapshot: VeilPerformanceOverrides.snapshot
+        )
+    }
+
+    static func usesReducedMotion(_ reduceMotionRequested: Bool) -> Bool {
+        quality(reduceMotionRequested: reduceMotionRequested) == .reduced
+    }
+
+    /// Semantic transitions stay available on compact devices through a cheaper
+    /// transform/opacity curve. Explicit God-mode full visuals always select the
+    /// high-quality spring, even when the system requests reduced motion.
+    static func animation(
+        _ semantic: Semantic,
+        reduceMotionRequested: Bool
+    ) -> Animation? {
+        switch quality(reduceMotionRequested: reduceMotionRequested) {
+        case .reduced:
+            return nil
+        case .efficient:
+            switch semantic {
+            case .reveal: return .easeOut(duration: 0.12)
+            case .transit: return .easeOut(duration: 0.16)
+            case .resolve: return .easeOut(duration: 0.18)
+            }
+        case .high:
+            switch semantic {
+            case .reveal: return .easeOut(duration: 0.24)
+            case .transit: return .interactiveSpring(response: 0.38, dampingFraction: 0.84)
+            case .resolve: return .spring(response: 0.42, dampingFraction: 0.72)
+            }
+        }
     }
 
     static var pressScale: CGFloat {
@@ -64,6 +114,7 @@ struct VeilSpatialPressModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @GestureState private var press: DragGesture.Value? = nil
     @State private var measuredSize: CGSize = .zero
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     func body(content: Content) -> some View {
         let point = press?.location ?? CGPoint(x: measuredSize.width * 0.5, y: measuredSize.height * 0.5)
@@ -72,11 +123,11 @@ struct VeilSpatialPressModifier: ViewModifier {
         let dx = (normalizedX - 0.5) * 2
         let dy = (normalizedY - 0.5) * 2
         let magnitude = min(1, abs(dx) + abs(dy))
-        let angle = reduceMotion ? 0 : maximumTilt * Double(magnitude)
+        let angle = motionReduced ? 0 : maximumTilt * Double(magnitude)
         let axisX = -dy
         let axisY = dx
         let isPressed = press != nil
-        let full = VeilMotionPolicy.allowsFullSpatialEffects && !reduceMotion
+        let full = VeilMotionPolicy.allowsFullSpatialEffects && !motionReduced
 
         content
             .background(
@@ -85,7 +136,7 @@ struct VeilSpatialPressModifier: ViewModifier {
                 }
             )
             .onPreferenceChange(VeilMotionSizePreferenceKey.self) { measuredSize = $0 }
-            .scaleEffect(isPressed && !reduceMotion ? VeilMotionPolicy.pressScale : 1)
+            .scaleEffect(isPressed && !motionReduced ? VeilMotionPolicy.pressScale : 1)
             .rotation3DEffect(
                 .degrees(full && isPressed ? angle : 0),
                 axis: (x: axisX, y: axisY, z: 0),
@@ -125,7 +176,7 @@ struct VeilSpatialPressModifier: ViewModifier {
                 x: 0,
                 y: full ? (isPressed ? 2 : 8) : 0
             )
-            .animation(reduceMotion ? nil : VeilMotionPolicy.spring, value: isPressed)
+            .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: isPressed)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .updating($press) { value, state, _ in state = value }
@@ -146,10 +197,11 @@ struct VeilRockerSwitch: View {
     var offLabel = "OFF"
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     var body: some View {
         Button {
-            withAnimation(reduceMotion ? nil : VeilMotionPolicy.spring) {
+            withAnimation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion)) {
                 isOn.toggle()
             }
         } label: {
@@ -178,7 +230,7 @@ struct VeilRockerSwitch: View {
                     )
                     .padding(3)
                     .rotation3DEffect(
-                        .degrees(reduceMotion ? 0 : (isOn ? -7.0 : 7.0)),
+                        .degrees(motionReduced ? 0 : (isOn ? -7.0 : 7.0)),
                         axis: (x: 1, y: 0, z: 0),
                         anchor: isOn ? .bottom : .top,
                         perspective: VeilMotionPolicy.allowsFullSpatialEffects ? 0.82 : 0.35
@@ -262,11 +314,11 @@ struct VeilFluidCapsule<Compact: View, Expanded: View>: View {
         .frame(width: isExpanded ? expandedWidth : collapsedWidth, height: height)
         .contentShape(Capsule())
         .onTapGesture {
-            withAnimation(reduceMotion ? nil : .interactiveSpring(response: 0.34, dampingFraction: 0.76, blendDuration: 0.08)) {
+            withAnimation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion)) {
                 isExpanded.toggle()
             }
         }
-        .animation(reduceMotion ? nil : .interactiveSpring(response: 0.34, dampingFraction: 0.76, blendDuration: 0.08), value: isExpanded)
+        .animation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion), value: isExpanded)
     }
 }
 
@@ -277,6 +329,7 @@ struct VeilDynamicGlowBorder: View {
     var emphasized = true
     @State private var rotates = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     var body: some View {
         ZStack {
@@ -300,7 +353,7 @@ struct VeilDynamicGlowBorder: View {
                     .scaleEffect(1.55)
                     .rotationEffect(.degrees(rotates ? 360 : 0))
                     .mask(glowMask)
-                    .opacity(VeilMotionPolicy.allowsContinuousDecorativeMotion && !reduceMotion ? 0.82 : 0.54)
+                    .opacity(VeilMotionPolicy.allowsContinuousDecorativeMotion && !motionReduced ? 0.82 : 0.54)
                     .shadow(
                         color: VeilTheme.gold.opacity(VeilMotionPolicy.allowsFullSpatialEffects ? 0.25 : 0.10),
                         radius: VeilMotionPolicy.allowsFullSpatialEffects ? 10 : 4
@@ -338,9 +391,9 @@ struct VeilDynamicGlowBorder: View {
 
     private func updateRotation() {
         stopRotation()
-        guard active, !reduceMotion, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
+        guard active, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
         DispatchQueue.main.async {
-            guard active, !reduceMotion, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
+            guard active, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
             withAnimation(.linear(duration: 5.5).repeatForever(autoreverses: false)) {
                 rotates = true
             }
@@ -358,19 +411,21 @@ struct VeilStaggeredEntranceModifier: ViewModifier {
     let index: Int
     @State private var appeared = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     func body(content: Content) -> some View {
         content
             .opacity(appeared ? 1 : 0)
-            .offset(y: appeared || reduceMotion ? 0 : 16)
-            .scaleEffect(appeared || reduceMotion ? 1 : 0.985, anchor: .bottom)
+            .offset(y: appeared || motionReduced ? 0 : 16)
+            .scaleEffect(appeared || motionReduced ? 1 : 0.985, anchor: .bottom)
             .onAppear {
                 guard !appeared else { return }
-                if reduceMotion {
+                if motionReduced {
                     appeared = true
                 } else {
                     let delay = Double(min(max(index, 0), 10)) * VeilMotionPolicy.staggerStep
-                    withAnimation(VeilMotionPolicy.spring.delay(delay)) { appeared = true }
+                    let animation = VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion)?.delay(delay)
+                    withAnimation(animation) { appeared = true }
                 }
             }
     }
@@ -383,6 +438,7 @@ private struct VeilRollingDigit: View {
     @State private var current = 0
     @State private var phase: CGFloat = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     var body: some View {
         ZStack {
@@ -404,9 +460,9 @@ private struct VeilRollingDigit: View {
         .onChange(of: digit) { value in
             previous = current
             current = value
-            phase = reduceMotion ? 1 : 0
-            guard !reduceMotion else { return }
-            withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.82)) { phase = 1 }
+            phase = motionReduced ? 1 : 0
+            guard !motionReduced else { return }
+            withAnimation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion)) { phase = 1 }
         }
     }
 }
@@ -440,6 +496,7 @@ struct VeilOdometerNumber: View {
 struct VeilMagneticScrubber: View {
     let values: [Double]
     @Binding var selectedIndex: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { proxy in
@@ -461,7 +518,7 @@ struct VeilMagneticScrubber: View {
                         .frame(width: 10, height: 10)
                         .shadow(color: VeilTheme.gold.opacity(0.70), radius: 6)
                         .position(x: x, y: proxy.size.height * 0.5)
-                        .animation(VeilMotionPolicy.spring, value: clampedIndex)
+                        .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: clampedIndex)
                 }
             }
             .contentShape(Rectangle())
@@ -560,7 +617,7 @@ struct VeilMorphIcon: View {
         VeilMorphVectorShape(from: from, to: to, progress: toggled ? 1 : 0)
             .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
             .frame(width: size, height: size)
-            .animation(reduceMotion ? nil : VeilMotionPolicy.spring, value: toggled)
+            .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: toggled)
             .accessibilityHidden(true)
     }
 }
@@ -596,7 +653,7 @@ struct VeilSharedExpansionContainer<Compact: View, Expanded: View>: View {
                     .transition(.opacity)
             }
         }
-        .animation(reduceMotion ? nil : .interactiveSpring(response: 0.40, dampingFraction: 0.82, blendDuration: 0.10), value: isExpanded)
+        .animation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion), value: isExpanded)
     }
 }
 
@@ -658,13 +715,13 @@ struct VeilElasticDrawer<Content: View>: View {
                         let projectedVisible = baseVisible - value.predictedEndTranslation.height
                         let target = nearestFraction(to: projectedVisible / max(proxy.size.height, 1))
                         if value.predictedEndTranslation.height > proxy.size.height * 0.28, settledFraction <= minimum + 0.02 {
-                            withAnimation(reduceMotion ? nil : VeilMotionPolicy.spring) { isPresented = false }
+                            withAnimation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion)) { isPresented = false }
                         } else {
-                            withAnimation(reduceMotion ? nil : VeilMotionPolicy.spring) { settledFraction = target }
+                            withAnimation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion)) { settledFraction = target }
                         }
                     }
             )
-            .animation(reduceMotion ? nil : VeilMotionPolicy.spring, value: isPresented)
+            .animation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion), value: isPresented)
         }
         .ignoresSafeArea(edges: .bottom)
     }

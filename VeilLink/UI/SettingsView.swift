@@ -62,6 +62,11 @@ struct SettingsView: View {
         }
         .background(VeilAmbientBackground())
         .navigationTitle("设置")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                VeilToolCenterToolbarLink(model: model)
+            }
+        }
         .alert("进入 A10 Ultra Ω 单轨实验？", isPresented: $showsA10OnlyLabWarning) {
             Button("取消", role: .cancel) { requestedKernelMode = nil }
             Button("进入实验", role: .destructive) {
@@ -863,7 +868,9 @@ struct SettingsView: View {
             }
             .font(.subheadline)
 
-            Text("A10 Ultra Ω 单轨实验不会成为生产 Cutover；黑匣子会把 kernel_mode、环境 ID、两路是否启用、延迟/CPU/RSS/温控/电量代理与 fallback 一起记录。")
+            Text(runtime.mode == .a10Independent
+                ? "A10 Ultra Ω 已作为独立治理核生成正式算力预算；权限仅限治理合同，传输、存储、密钥、消息、游戏与工具执行仍由宿主持有。运行失败自动回退 A9。"
+                : "黑匣子会记录 kernel_mode、环境 ID、两路启用状态、延迟/CPU/RSS/温控/电量代理与 fallback。M5 推理核仍未获得生产切换或 mutation authority。")
                 .font(.caption)
                 .foregroundColor(VeilTheme.tertiaryText)
 

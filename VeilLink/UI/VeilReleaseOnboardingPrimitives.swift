@@ -158,6 +158,7 @@ struct VeilReleasePrimaryButton: View {
 struct VeilReleasePageDots: View {
     let page: Int
     let count: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 7) {
@@ -171,7 +172,7 @@ struct VeilReleasePageDots: View {
                         .opacity(index == page ? 1 : 0.78)
                 }
                 .frame(width: 19, height: 6)
-                .animation(VeilMotionPolicy.spring, value: page)
+                .animation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion), value: page)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -207,6 +208,7 @@ struct VeilActivationMorphCore: View {
     @State private var morphs = false
     @State private var rotates = false
     @State private var pulse = false
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     var compact = false
 
@@ -246,12 +248,12 @@ struct VeilActivationMorphCore: View {
                 color: VeilTheme.goldBright,
                 lineWidth: compact ? 2.3 : 2.7
             )
-            .scaleEffect(pulse && !reduceMotion ? 1.025 : 1)
+            .scaleEffect(pulse && !motionReduced ? 1.025 : 1)
         }
         .frame(width: size, height: size)
         .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.interactiveSpring(response: 0.42, dampingFraction: 0.82)) { morphs = true }
+            guard !motionReduced else { return }
+            withAnimation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion)) { morphs = true }
             guard VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
             withAnimation(.linear(duration: 6.0).repeatForever(autoreverses: false)) { rotates = true }
             withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { pulse = true }

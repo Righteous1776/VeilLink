@@ -61,6 +61,15 @@ Every real GGUF/VFLY/native model artifact must record exact upstream revision, 
 - Exporter: `Tools/AgentTraining/export_policy_vlpol.py`; source checkpoint SHA-256 `221193e79f04e06f0fc8c6a6fbfaa8519e203cafd1819aa1ce6048a350dbd9a5`.
 - The app-side scorer is read-only and can score only engine-generated legal candidates. It does not create a game seat and does not support `tactical`.
 
+### TacticalBot dedicated local policy
+
+- Artifact ID: `tactical-linear-v1-e240-s96`.
+- Scope: original 7×9 三国兵棋 only; separate from `veillink.game-policy.ranker.v4`.
+- Training: 96 deterministic reviewed pairwise examples, 240 epochs, reproduced by `Tools/AgentTraining/train_tactical_policy.py` without external dependencies.
+- Inputs: 12 documented positional/action features; no chat text, identity data, network data or personal information.
+- Runtime boundary: ranks only rules-engine legal commands and performs a second `TacticalState.apply` validation before returning a choice.
+- Shipping artifact: `VeilLink/Resources/TacticalBotPolicyV1.json`; an embedded conservative fallback is used only if schema, feature order or finite-weight validation fails.
+
 ## MaleCNS / VFLY1 graph provenance (V0.9.3)
 
 - Authoritative dataset: MaleCNS v1.0 (`male-cns:v1.0`), CC BY 4.0.

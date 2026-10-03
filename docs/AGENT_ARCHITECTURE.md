@@ -1,5 +1,7 @@
 # VeilLink Local Agent Architecture
 
+> Historical V0.8/V0.9 foundation snapshot. For the current cumulative runtime, governance and Core-source boundary, see `CHECKPOINT_CURRENT.md` and the current executable configuration in `project.yml`.
+
 ## Product boundary
 
 V0.8.0 introduces a reusable local Agent platform and the fourth root section, **灵核**. The internal route is `.agent`; the user-facing name may change without changing the route contract.

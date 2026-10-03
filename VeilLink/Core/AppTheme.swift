@@ -380,7 +380,7 @@ struct VeilPressStyle: ButtonStyle {
         let pressed = configuration.isPressed
         let appleSoft = VeilAppearanceController.shared.isAppleSoft
         configuration.label
-            .scaleEffect(pressed && !reduceMotion ? (appleSoft ? 0.982 : VeilMotionPolicy.pressScale) : 1)
+            .scaleEffect(pressed && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : VeilMotionPolicy.pressScale) : 1)
             .offset(y: pressed ? (appleSoft ? 0.8 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4)) : 0)
             .brightness(pressed ? (appleSoft ? -0.018 : -0.035) : 0)
             .opacity(pressed ? (appleSoft ? 0.90 : 0.96) : 1)
@@ -390,7 +390,7 @@ struct VeilPressStyle: ButtonStyle {
                 x: 0,
                 y: pressed ? 1 : (appleSoft ? 3 : (VeilMotionPolicy.allowsFullSpatialEffects ? 4 : 2))
             )
-            .animation(reduceMotion ? nil : (appleSoft ? .easeOut(duration: 0.13) : VeilMotionPolicy.spring), value: pressed)
+            .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: pressed)
     }
 }
 
@@ -472,6 +472,7 @@ struct VeilLinkTrace: View {
     var width: CGFloat = 90
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var travels = false
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -489,7 +490,7 @@ struct VeilLinkTrace: View {
                         color: VeilRenderProfile.allowsExpensiveVisualEffects ? VeilTheme.gold.opacity(0.75) : .clear,
                         radius: VeilRenderProfile.allowsExpensiveVisualEffects ? 5 : 0
                     )
-                    .offset(x: VeilRenderProfile.allowsPersistentAnimations ? (travels ? width - 4 : 0) : width * 0.70)
+                    .offset(x: VeilMotionPolicy.allowsContinuousDecorativeMotion ? (travels ? width - 4 : 0) : width * 0.70)
             }
         }
         .frame(width: width, height: 4)
@@ -500,7 +501,7 @@ struct VeilLinkTrace: View {
 
     private func updateMotion() {
         travels = false
-        guard active, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }
+        guard active, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
         withAnimation(.linear(duration: 1.7).repeatForever(autoreverses: false)) {
             travels = true
         }
@@ -529,8 +530,8 @@ struct VeilResolveMark: View {
 
     private func resolve() {
         expanded = false
-        guard resolved, !reduceMotion, VeilRenderProfile.allowsExpensiveVisualEffects else { return }
-        withAnimation(VeilMotion.resolve) { expanded = true }
+        guard resolved, !VeilMotionPolicy.usesReducedMotion(reduceMotion), VeilMotionPolicy.allowsFullSpatialEffects else { return }
+        withAnimation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion)) { expanded = true }
     }
 }
 

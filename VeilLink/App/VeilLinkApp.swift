@@ -238,6 +238,7 @@ private struct RootContainer: View {
     @ObservedObject var legalConsent: VeilLegalConsentController
     @ObservedObject var stressTest: DeviceStressTestController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     init(model: AppModel) {
         self.model = model
@@ -262,10 +263,10 @@ private struct RootContainer: View {
             } else if appLock.isLocked {
                 LockScreenView(controller: appLock, haptics: model.haptics)
                     .telemetryScreen("lock")
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.992)))
+                    .transition(motionReduced ? .opacity : .opacity.combined(with: .scale(scale: 0.992)))
             } else {
                 AdaptiveRootView(model: model)
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 1.006)))
+                    .transition(motionReduced ? .opacity : .opacity.combined(with: .scale(scale: 1.006)))
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -275,8 +276,8 @@ private struct RootContainer: View {
                     .padding(.trailing, 8)
             }
         }
-        .animation(reduceMotion ? nil : VeilMotion.reveal, value: appLock.isLocked)
-        .animation(reduceMotion ? nil : VeilMotion.reveal, value: identity.activeIdentity?.id)
+        .animation(VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion), value: appLock.isLocked)
+        .animation(VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion), value: identity.activeIdentity?.id)
         .alert("VeilLink", isPresented: Binding(
             get: { model.alertMessage != nil },
             set: { if !$0 { model.alertMessage = nil } }

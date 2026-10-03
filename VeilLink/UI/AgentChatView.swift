@@ -4,6 +4,7 @@ struct AgentChatView: View {
     @ObservedObject var coordinator: AgentCoordinator
     @State private var draft = ""
     @FocusState private var composerFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 10) {
@@ -32,7 +33,7 @@ struct AgentChatView: View {
             }
             .onChange(of: coordinator.session.messages.count) { _ in
                 if let id = coordinator.session.messages.last?.id {
-                    withAnimation(VeilRenderProfile.allowsPersistentAnimations ? VeilMotion.reveal : nil) {
+                    withAnimation(VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion)) {
                         proxy.scrollTo(id, anchor: .bottom)
                     }
                 }

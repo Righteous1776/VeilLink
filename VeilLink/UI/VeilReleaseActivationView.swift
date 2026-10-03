@@ -11,6 +11,7 @@ struct VeilReleaseActivationView: View {
     @State private var activationProgress: CGFloat = 0
     @State private var contentVisible = false
     @GestureState private var dragX: CGFloat = 0
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     private let pageCount = 5
 
@@ -39,8 +40,8 @@ struct VeilReleaseActivationView: View {
                         pageContent(proxy: proxy)
                             .id(page)
                             .opacity(contentVisible ? 1 : 0)
-                            .scaleEffect(contentVisible || reduceMotion ? 1 : 0.975)
-                            .offset(x: reduceMotion ? 0 : dragX * 0.12, y: contentVisible || reduceMotion ? 0 : 12)
+                            .scaleEffect(contentVisible || motionReduced ? 1 : 0.975)
+                            .offset(x: motionReduced ? 0 : dragX * 0.12, y: contentVisible || motionReduced ? 0 : 12)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
@@ -428,20 +429,20 @@ struct VeilReleaseActivationView: View {
     private func move(to target: Int) {
         let target = min(max(target, 0), 4)
         guard target != page else { return }
-        if !reduceMotion { contentVisible = false }
+        if !motionReduced { contentVisible = false }
         page = target
     }
 
     private func startPageEntrance() {
-        contentVisible = reduceMotion
-        guard !reduceMotion else { return }
+        contentVisible = motionReduced
+        guard !motionReduced else { return }
         DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.22)) { contentVisible = true }
+            withAnimation(VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion)) { contentVisible = true }
         }
     }
 
     private func runActivationIfNeeded() {
-        if reduceMotion {
+        if motionReduced {
             activationProgress = 1
             return
         }

@@ -5,7 +5,7 @@ on:
   workflow_call:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   preflight:
@@ -119,3 +119,27 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+      - name: Publish versioned GitHub Release
+        if: success() && github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release_identity.outputs.version }}
+          BUILD: ${{ steps.release_identity.outputs.build }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}-b${BUILD}"
+          RELEASE_NOTES="docs/RELEASE_${VERSION//./_}_BUILD_${BUILD}.md"
+          test -s "$RELEASE_NOTES"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to overwrite immutable release assets." >&2
+            exit 1
+          fi
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "VeilLink ${VERSION} (Build ${BUILD}) — unsigned Core IPA" \
+            --notes-file "$RELEASE_NOTES" \
+            "build/VeilLink-unsigned.ipa#VeilLink-${VERSION}-b${BUILD}-unsigned.ipa" \
+            CORE_RELEASE_MANIFEST.json \
+            CORE_RELEASE_PROVENANCE.json \
+            CORE_RELEASE_SHA256SUMS.txt

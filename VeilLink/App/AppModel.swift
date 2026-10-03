@@ -293,9 +293,9 @@ final class AppModel: ObservableObject {
             lowPowerMode: currentA9LowPowerMode(),
             databaseIntegrity: a9Health.databaseIntegrity
         )
-        // I8 manual runtime selector: every mode still starts from one raw host sample.
-        // A10-only LAB is an experiment rail, not a production cutover. In that mode A9 health
-        // evaluation is skipped and the host keeps the last already-committed safe compute budget.
+        // Every governance mode starts from the same raw, privacy-safe host sample. Formal A10
+        // independent mode may update only the shared compute budget contract; app mutation,
+        // transport, storage, identity and game authority remain host-owned.
         a10M5GovernanceRuntime.applyBudget(A10UltraComputeBudget.fromA9(computeGovernor.plan))
         a10M5Governance.evaluate(
             input: input,
@@ -347,8 +347,20 @@ final class AppModel: ObservableObject {
             )
             a10Ultra.evaluateA10UltraShadow(sample: ultraSample, runtime: runtimeEnvironment)
 
+        case .a10Independent:
+            if let result = a10Ultra.evaluateA10UltraIsolated(sample: ultraSample, runtime: runtimeEnvironment) {
+                computeGovernor.updateFromA10Ultra(result.decision)
+                latticeKernel.recordComputePlan(computeGovernor.plan)
+                a10M5GovernanceRuntime.applyBudget(A10UltraComputeBudget.fromA9(computeGovernor.plan))
+            } else {
+                kernelRuntime.forceA9Fallback(reason: "ULTRA_INDEPENDENT_RUNTIME_FAILURE")
+                a10Ultra.resetRuntimeEpoch(reason: "ULTRA_INDEPENDENT_RUNTIME_FAILURE")
+                computeGovernor.setPlanFrozen(false, recomputeOnUnfreeze: false)
+                Task { @MainActor [weak self] in self?.refreshA9Health() }
+            }
+
         case .a10OnlyLab:
-            let ultraHealthy = a10Ultra.evaluateA10UltraIsolated(sample: ultraSample, runtime: runtimeEnvironment)
+            let ultraHealthy = a10Ultra.evaluateA10UltraIsolated(sample: ultraSample, runtime: runtimeEnvironment) != nil
             let hostSafetyReason = VeilKernelHostSafetyPolicy.fallbackReason(for: input)
             if !ultraHealthy || hostSafetyReason != nil {
                 let reason = hostSafetyReason?.rawValue ?? "ULTRA_INTERNAL_FAILURE"

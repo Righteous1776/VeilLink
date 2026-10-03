@@ -13,6 +13,13 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var gomoku = GomokuState()
     @Published private(set) var xiangqi = XiangqiState()
     @Published private(set) var ludo = LudoState()
+    @Published private(set) var tactical = TacticalState()
+    @Published private(set) var artillery = ArtilleryState()
+    @Published private(set) var lightTrail = LightTrailState()
+    @Published private(set) var magneticHockey = MagneticHockeyState()
+    @Published private(set) var tacticalDifficulty: TacticalBotDifficulty = .commander
+    @Published private(set) var tacticalScenario: TacticalSoloScenario = .standard
+    @Published private(set) var tacticalDailyChallenge = TacticalDailyChallenge.challenge()
     @Published private(set) var outcome: Outcome = .playing
     @Published private(set) var isAIThinking = false
     @Published private(set) var lastDecisionMode = "基础策略"
@@ -36,7 +43,10 @@ final class LocalAIGameController: ObservableObject {
         case .gomoku: return gomoku.currentPlayer == humanPlayer
         case .xiangqi: return xiangqi.currentPlayer == humanPlayer
         case .ludo: return ludo.currentPlayer == humanPlayer
-        case .tactical: return false
+        case .tactical: return tactical.currentPlayer == humanPlayer
+        case .artillery: return artillery.currentPlayer == humanPlayer
+        case .lightTrail: return lightTrail.currentPlayer == humanPlayer
+        case .magneticHockey: return magneticHockey.currentPlayer == humanPlayer
         }
     }
 
@@ -56,6 +66,15 @@ final class LocalAIGameController: ObservableObject {
         gomoku = GomokuState()
         xiangqi = XiangqiState()
         ludo = LudoState()
+        artillery = ArtilleryState()
+        lightTrail = LightTrailState()
+        magneticHockey = MagneticHockeyState()
+        if tacticalScenario == .daily {
+            tacticalDailyChallenge = TacticalDailyChallenge.challenge()
+            tactical = tacticalDailyChallenge.makeState()
+        } else {
+            tactical = TacticalState()
+        }
         sessionID = UUID().uuidString
         outcome = .playing
         isAIThinking = false
@@ -87,6 +106,79 @@ final class LocalAIGameController: ObservableObject {
         finishOrScheduleAI()
     }
 
+    func humanTacticalMove(from: Int, to: Int) {
+        guard game == .tactical, canHumanAct else { return }
+        var state = tactical
+        guard state.apply(from: from, to: to, actor: humanPlayer, sessionID: sessionID) else { return }
+        tactical = state
+        finishOrScheduleAI()
+    }
+
+    func humanTacticalPass() {
+        guard game == .tactical, canHumanAct else { return }
+        var state = tactical
+        guard state.apply(from: nil, to: nil, actor: humanPlayer, sessionID: sessionID) else { return }
+        tactical = state
+        finishOrScheduleAI()
+    }
+
+    func humanArtilleryShot(angle: Int, power: Int) {
+        guard game == .artillery, canHumanAct else { return }
+        var state = artillery
+        guard state.apply(angle: angle, power: power, actor: humanPlayer, sessionID: sessionID) else { return }
+        artillery = state
+        finishOrScheduleAI()
+    }
+
+    func humanLightTrailShift(_ shift: Int) {
+        guard game == .lightTrail, canHumanAct else { return }
+        var state = lightTrail
+        guard state.apply(shift: shift, actor: humanPlayer, sessionID: sessionID) else { return }
+        lightTrail = state
+        finishOrScheduleAI()
+    }
+
+    func humanMagneticHockeyShot(angle: Int, power: Int) {
+        guard game == .magneticHockey, canHumanAct else { return }
+        var state = magneticHockey
+        guard state.apply(angle: angle, power: power, actor: humanPlayer, sessionID: sessionID) else { return }
+        magneticHockey = state
+        finishOrScheduleAI()
+    }
+
+    func setTacticalDifficulty(_ difficulty: TacticalBotDifficulty) {
+        guard game == .tactical else { return }
+        tacticalDifficulty = difficulty
+    }
+
+    func setTacticalScenario(_ scenario: TacticalSoloScenario) {
+        guard game == .tactical, tacticalScenario != scenario else { return }
+        tacticalScenario = scenario
+        restart()
+    }
+
+    var tacticalCoachText: String {
+        guard game == .tactical else { return "" }
+        if tactical.currentPlayer != humanPlayer { return "军师正在观察袁军调动…" }
+        let situation = tactical.situationSnapshot()
+        let unsupplied = tactical.units(for: humanPlayer).filter { !situation.isSupplied($0) }
+        if !unsupplied.isEmpty { return "补给告急：\(unsupplied.map(\.name).joined(separator: "、")) 已断粮。" }
+        if tactical.control(at: 31) != .cao { return "建议：优先争夺中央官渡，每轮可得 2 VP。" }
+        if let command = tactical.unit(id: "cao-command"),
+           situation.threatenedHexes(by: .yuan).contains(command.position) {
+            return "中军处在袁军威胁范围内，考虑后撤或用友军屏护。"
+        }
+        return "官渡在手：守住目标，同时寻找切断袁军粮道的机会。"
+    }
+
+    var tacticalDebrief: TacticalDebrief {
+        TacticalDebrief.make(
+            state: tactical,
+            humanPlayer: humanPlayer,
+            challenge: tacticalScenario == .daily ? tacticalDailyChallenge : nil
+        )
+    }
+
     func cancelAI() {
         aiTask?.cancel(); aiTask = nil
         isAIThinking = false
@@ -109,7 +201,17 @@ final class LocalAIGameController: ObservableObject {
         case .ludo:
             if let winner = ludo.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
         case .tactical:
-            break
+            if let winner = tactical.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+            else if tactical.isDraw { outcome = .draw }
+        case .artillery:
+            if let winner = artillery.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+            else if artillery.isDraw { outcome = .draw }
+        case .lightTrail:
+            if let winner = lightTrail.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+            else if lightTrail.isDraw { outcome = .draw }
+        case .magneticHockey:
+            if let winner = magneticHockey.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+            else if magneticHockey.isDraw { outcome = .draw }
         }
     }
 
@@ -120,7 +222,10 @@ final class LocalAIGameController: ObservableObject {
         case .gomoku: current = gomoku.currentPlayer
         case .xiangqi: current = xiangqi.currentPlayer
         case .ludo: current = ludo.currentPlayer
-        case .tactical: current = nil
+        case .tactical: current = tactical.currentPlayer
+        case .artillery: current = artillery.currentPlayer
+        case .lightTrail: current = lightTrail.currentPlayer
+        case .magneticHockey: current = magneticHockey.currentPlayer
         }
         guard current == aiPlayer else { return }
         aiTask?.cancel()
@@ -221,7 +326,87 @@ final class LocalAIGameController: ObservableObject {
             )
 
         case .tactical:
-            return nil
+            let snapshot = tactical
+            let currentSessionID = sessionID
+            let difficulty = tacticalDifficulty
+            let result = await Task.detached(priority: .userInitiated) {
+                TacticalBot.chooseMove(
+                    in: snapshot,
+                    for: .guest,
+                    sessionID: currentSessionID,
+                    difficulty: difficulty
+                )
+            }.value
+            guard let result else { return nil }
+
+            var ruleGate = tactical
+            guard ruleGate.apply(
+                from: result.from,
+                to: result.to,
+                actor: .guest,
+                sessionID: sessionID
+            ) else { return nil }
+            lastDecisionMode = "兵棋·\(difficulty.title)"
+            return AgentActionCandidate(
+                actionID: result.isPass ? "tactical:pass" : "tactical:\(result.from!):\(result.to!)",
+                encodedAction: AgentGameEncoding.encodeInts([result.from ?? -1, result.to ?? -1]),
+                metadata: [
+                    "from": result.from.map(String.init) ?? "pass",
+                    "to": result.to.map(String.init) ?? "pass",
+                    "score": String(format: "%.4f", result.score),
+                    "candidates": String(result.candidates),
+                    "policy": result.policyID
+                ],
+                features: []
+            )
+        case .artillery:
+            let snapshot = artillery
+            let currentSessionID = sessionID
+            let shot = await Task.detached(priority: .userInitiated) {
+                ArtilleryBot.chooseShot(in: snapshot, actor: .guest, sessionID: currentSessionID)
+            }.value
+            guard let shot else { return nil }
+            var ruleGate = artillery
+            guard ruleGate.apply(angle: shot.angle, power: shot.power, actor: .guest, sessionID: sessionID) else { return nil }
+            lastDecisionMode = "弹道搜索 Bot"
+            return AgentActionCandidate(
+                actionID: "artillery:\(shot.angle):\(shot.power)",
+                encodedAction: AgentGameEncoding.encodeInts([shot.angle, shot.power]),
+                metadata: ["angle": String(shot.angle), "power": String(shot.power)],
+                features: []
+            )
+        case .lightTrail:
+            let snapshot = lightTrail
+            let currentSessionID = sessionID
+            let shift = await Task.detached(priority: .userInitiated) {
+                LightTrailBot.chooseShift(in: snapshot, actor: .guest, sessionID: currentSessionID)
+            }.value
+            guard let shift else { return nil }
+            var ruleGate = lightTrail
+            guard ruleGate.apply(shift: shift, actor: .guest, sessionID: sessionID) else { return nil }
+            lastDecisionMode = "赛道预判 Bot"
+            return AgentActionCandidate(
+                actionID: "light-trail:\(shift)",
+                encodedAction: AgentGameEncoding.encodeInts([shift]),
+                metadata: ["shift": String(shift)],
+                features: []
+            )
+        case .magneticHockey:
+            let snapshot = magneticHockey
+            let currentSessionID = sessionID
+            let move = await Task.detached(priority: .userInitiated) {
+                MagneticHockeyBot.chooseMove(in: snapshot, actor: .guest, sessionID: currentSessionID)
+            }.value
+            guard let move else { return nil }
+            var ruleGate = magneticHockey
+            guard ruleGate.apply(move: move, actor: .guest, sessionID: sessionID) else { return nil }
+            lastDecisionMode = "磁场反弹 Bot"
+            return AgentActionCandidate(
+                actionID: "magnetic-hockey:\(move.angle):\(move.power)",
+                encodedAction: AgentGameEncoding.encodeInts([move.angle, move.power]),
+                metadata: ["angle": String(move.angle), "power": String(move.power)],
+                features: []
+            )
         }
     }
 
@@ -231,6 +416,7 @@ final class LocalAIGameController: ObservableObject {
         case .xiangqi: return XiangqiAgentAdapter(state: xiangqi, actor: aiPlayer)
         case .ludo: return LudoAgentAdapter(state: ludo, actor: aiPlayer, sessionID: sessionID)
         case .tactical: return nil
+        case .artillery, .lightTrail, .magneticHockey: return nil
         }
     }
 
@@ -247,7 +433,10 @@ final class LocalAIGameController: ObservableObject {
             gomoku: game == .gomoku ? gomoku : nil,
             xiangqi: game == .xiangqi ? xiangqi : nil,
             ludo: game == .ludo ? ludo : nil,
-            tactical: nil,
+            tactical: game == .tactical ? tactical : nil,
+            artillery: game == .artillery ? artillery : nil,
+            lightTrail: game == .lightTrail ? lightTrail : nil,
+            magneticHockey: game == .magneticHockey ? magneticHockey : nil,
             endedByResignation: false
         )
     }
@@ -271,7 +460,28 @@ final class LocalAIGameController: ObservableObject {
             guard state.apply(pieceIndex: piece, actor: aiPlayer, sessionID: sessionID) else { return }
             ludo = state
         case .tactical:
-            break
+            let from = candidate.metadata["from"].flatMap(Int.init)
+            let to = candidate.metadata["to"].flatMap(Int.init)
+            var state = tactical
+            guard state.apply(from: from, to: to, actor: aiPlayer, sessionID: sessionID) else { return }
+            tactical = state
+        case .artillery:
+            guard let angle = candidate.metadata["angle"].flatMap(Int.init),
+                  let power = candidate.metadata["power"].flatMap(Int.init) else { return }
+            var state = artillery
+            guard state.apply(angle: angle, power: power, actor: aiPlayer, sessionID: sessionID) else { return }
+            artillery = state
+        case .lightTrail:
+            guard let shift = candidate.metadata["shift"].flatMap(Int.init) else { return }
+            var state = lightTrail
+            guard state.apply(shift: shift, actor: aiPlayer, sessionID: sessionID) else { return }
+            lightTrail = state
+        case .magneticHockey:
+            guard let angle = candidate.metadata["angle"].flatMap(Int.init),
+                  let power = candidate.metadata["power"].flatMap(Int.init) else { return }
+            var state = magneticHockey
+            guard state.apply(angle: angle, power: power, actor: aiPlayer, sessionID: sessionID) else { return }
+            magneticHockey = state
         }
     }
 }

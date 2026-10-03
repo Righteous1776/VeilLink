@@ -231,13 +231,122 @@ final class MiniGameTests: XCTestCase {
         XCTAssertEqual(frames.last?.snapshot.duration ?? -1, 2, accuracy: 0.001)
     }
 
+    func testLegacyVLGM1InviteStillDecodesAfterAddingArcadeKinds() {
+        let body = "\u{2063}VLGM1:eyJ2ZXJzaW9uIjoxLCJzZXNzaW9uSUQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJnYW1lIjoiZ29tb2t1IiwiY29tbWFuZCI6Imludml0ZSIsInR1cm4iOjAsImFjdGlvbklEIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwiY3JlYXRlZEF0IjowfQ=="
+
+        let packet = MiniGameCodec.decode(body)
+        XCTAssertEqual(packet?.version, 1)
+        XCTAssertEqual(packet?.game, .gomoku)
+        XCTAssertEqual(packet?.command, .invite)
+        XCTAssertNil(packet?.move)
+    }
+
+    func testArtilleryReplayIsStableUnderDuplicateAndReorderedVLGM1Events() throws {
+        let conversationID = UUID().uuidString
+        let sessionID = "00000000-0000-4000-8000-000000000101"
+        let base = Date(timeIntervalSince1970: 4_000)
+        let invite = MiniGamePacket(sessionID: sessionID, game: .artillery, command: .invite, createdAt: base)
+        let accept = MiniGamePacket(sessionID: sessionID, game: .artillery, command: .accept, createdAt: base.addingTimeInterval(1))
+        let moves = [
+            MiniGamePacket(sessionID: sessionID, game: .artillery, command: .move, turn: 0, move: .artillery(angle: 48, power: 94), createdAt: base.addingTimeInterval(2)),
+            MiniGamePacket(sessionID: sessionID, game: .artillery, command: .move, turn: 1, move: .artillery(angle: 48, power: 94), createdAt: base.addingTimeInterval(3))
+        ]
+
+        func message(_ packet: MiniGamePacket, outgoing: Bool, sentAt: Date) throws -> ChatMessage {
+            ChatMessage(
+                id: UUID().uuidString,
+                conversationID: conversationID,
+                senderIdentityID: outgoing ? "host" : "guest",
+                body: try MiniGameCodec.encode(packet),
+                sentAt: sentAt,
+                isOutgoing: outgoing,
+                deliveryState: .delivered
+            )
+        }
+
+        let canonical = try [
+            message(invite, outgoing: true, sentAt: base),
+            message(accept, outgoing: false, sentAt: base.addingTimeInterval(1)),
+            message(moves[0], outgoing: true, sentAt: base.addingTimeInterval(2)),
+            message(moves[1], outgoing: false, sentAt: base.addingTimeInterval(3))
+        ]
+        let noisy = try [
+            message(moves[1], outgoing: false, sentAt: base.addingTimeInterval(30)),
+            canonical[2],
+            canonical[0],
+            message(moves[0], outgoing: true, sentAt: base.addingTimeInterval(40)),
+            canonical[1],
+            canonical[3]
+        ]
+
+        let expected = MiniGameSessionBuilder.session(id: sessionID, from: canonical)
+        let rebuilt = MiniGameSessionBuilder.session(id: sessionID, from: noisy)
+        XCTAssertEqual(rebuilt, expected)
+        XCTAssertEqual(rebuilt?.moveCount, 2)
+        XCTAssertEqual(MiniGameSessionBuilder.replay(sessionID: sessionID, from: noisy).map(\.label), [
+            "邀请对局", "对局开始", "第 1 发", "第 2 发"
+        ])
+    }
+
+    func testLightTrailRebuildRejectsMalformedAndWrongTurnEvents() throws {
+        let conversationID = UUID().uuidString
+        let sessionID = "00000000-0000-4000-8000-000000000102"
+        let base = Date(timeIntervalSince1970: 5_000)
+        let invite = MiniGamePacket(sessionID: sessionID, game: .lightTrail, command: .invite, createdAt: base)
+        let accept = MiniGamePacket(sessionID: sessionID, game: .lightTrail, command: .accept, createdAt: base.addingTimeInterval(1))
+        let legal = MiniGamePacket(sessionID: sessionID, game: .lightTrail, command: .move, turn: 0, move: .lightTrail(shift: -1), createdAt: base.addingTimeInterval(2))
+        let malformed = MiniGamePacket(sessionID: sessionID, game: .lightTrail, command: .move, turn: 1, move: .lightTrail(shift: 2), createdAt: base.addingTimeInterval(3))
+        let future = MiniGamePacket(sessionID: sessionID, game: .lightTrail, command: .move, turn: 9, move: .lightTrail(shift: 0), createdAt: base.addingTimeInterval(4))
+
+        func message(_ packet: MiniGamePacket, outgoing: Bool) throws -> ChatMessage {
+            ChatMessage(
+                id: UUID().uuidString,
+                conversationID: conversationID,
+                senderIdentityID: outgoing ? "host" : "guest",
+                body: try MiniGameCodec.encode(packet),
+                sentAt: packet.createdAt,
+                isOutgoing: outgoing,
+                deliveryState: .delivered
+            )
+        }
+
+        let messages = try [
+            message(future, outgoing: false),
+            message(legal, outgoing: true),
+            message(invite, outgoing: true),
+            message(malformed, outgoing: false),
+            message(accept, outgoing: false)
+        ]
+        let snapshot = MiniGameSessionBuilder.session(id: sessionID, from: messages)
+        XCTAssertEqual(snapshot?.moveCount, 1)
+        XCTAssertEqual(snapshot?.lightTrail?.lane(for: .host), 1)
+        XCTAssertEqual(snapshot?.lightTrail?.currentPlayer, .guest)
+        XCTAssertEqual(snapshot?.lastActivity, legal.createdAt)
+    }
+
     func testRejectedLatePacketDoesNotRewriteEffectiveLastActivity() throws {
         let conversationID = UUID().uuidString
         let base = Date(timeIntervalSince1970: 2_000)
         let invite = MiniGamePacket(game: .gomoku, command: .invite, createdAt: base)
         let accept = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .accept, createdAt: base.addingTimeInterval(1))
-        let legal = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .move, turn: 0, move: .gomoku(index: 112), createdAt: base.addingTimeInterval(2))
-        let impossibleLate = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .move, turn: 0, move: .gomoku(index: 113), createdAt: base.addingTimeInterval(500))
+        let legal = MiniGamePacket(
+            sessionID: invite.sessionID,
+            game: .gomoku,
+            command: .move,
+            turn: 0,
+            move: .gomoku(index: 112),
+            actionID: "00000000-0000-0000-0000-000000000010",
+            createdAt: base.addingTimeInterval(2)
+        )
+        let impossibleLate = MiniGamePacket(
+            sessionID: invite.sessionID,
+            game: .gomoku,
+            command: .move,
+            turn: 0,
+            move: .gomoku(index: 113),
+            actionID: "00000000-0000-0000-0000-000000000020",
+            createdAt: base.addingTimeInterval(500)
+        )
         let messages = [
             ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(invite), sentAt: base, isOutgoing: true, deliveryState: .delivered),
             ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "guest", body: try MiniGameCodec.encode(accept), sentAt: base.addingTimeInterval(1), isOutgoing: false, deliveryState: .delivered),
@@ -328,6 +437,79 @@ final class MiniGameTests: XCTestCase {
         XCTAssertEqual(state.hex(at: 31)?.name, "官渡")
         XCTAssertEqual(state.hex(at: 10)?.name, "乌巢")
         XCTAssertEqual(state.hex(at: 22)?.name, "白马")
+    }
+
+    func testTacticalBotReturnsDeterministicRuleValidatedCommand() {
+        var state = TacticalState()
+        let sessionID = "tactical-bot-test-session"
+        XCTAssertTrue(state.apply(from: 55, to: 46, actor: .host, sessionID: sessionID))
+        XCTAssertTrue(state.apply(from: nil, to: nil, actor: .host, sessionID: sessionID))
+
+        let first = TacticalBot.chooseMove(in: state, for: .guest, sessionID: sessionID)
+        let second = TacticalBot.chooseMove(in: state, for: .guest, sessionID: sessionID)
+        XCTAssertEqual(first, second)
+        XCTAssertNotNil(first)
+        XCTAssertGreaterThan(TacticalBot.legalCommandCount(in: state, for: .guest), 1)
+
+        var validated = state
+        XCTAssertTrue(validated.apply(
+            from: first?.from,
+            to: first?.to,
+            actor: .guest,
+            sessionID: sessionID
+        ))
+    }
+
+    func testTacticalBotRejectsWrongSideAndFinishedTurn() {
+        let state = TacticalState()
+        XCTAssertNil(TacticalBot.chooseMove(in: state, for: .guest, sessionID: "wrong-side"))
+        XCTAssertNotNil(TacticalBot.chooseMove(in: state, for: .host, sessionID: "host-turn"))
+    }
+
+    func testTacticalBotDifficultiesRemainDeterministicAndLegal() {
+        let state = TacticalState()
+        for difficulty in TacticalBotDifficulty.allCases {
+            let first = TacticalBot.chooseMove(
+                in: state,
+                for: .host,
+                sessionID: "difficulty-test",
+                difficulty: difficulty
+            )
+            let second = TacticalBot.chooseMove(
+                in: state,
+                for: .host,
+                sessionID: "difficulty-test",
+                difficulty: difficulty
+            )
+            XCTAssertEqual(first, second)
+            var validated = state
+            XCTAssertTrue(validated.apply(
+                from: first?.from,
+                to: first?.to,
+                actor: .host,
+                sessionID: "difficulty-test"
+            ))
+            XCTAssertTrue(first?.policyID.hasSuffix(difficulty.rawValue) == true)
+        }
+    }
+
+    func testDailyTacticalVariantsHaveValidUniqueDeployments() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let start = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1))!
+        var variants = Set<Int>()
+        for offset in 0..<4 {
+            let date = calendar.date(byAdding: .day, value: offset, to: start)!
+            let challenge = TacticalDailyChallenge.challenge(on: date)
+            let state = challenge.makeState()
+            variants.insert(challenge.variant)
+            XCTAssertEqual(state.units.count, TacticalState.initialUnits.count)
+            XCTAssertEqual(Set(state.units.map(\.position)).count, state.units.count)
+            XCTAssertTrue(state.units.allSatisfy { state.hex(at: $0.position)?.terrain.movementCost != nil })
+            XCTAssertFalse(challenge.title.isEmpty)
+            XCTAssertFalse(challenge.medalGoal.isEmpty)
+        }
+        XCTAssertEqual(variants, Set(0..<4))
     }
 
     func testTacticalTwoOrdersThenSwitchesActivation() {
@@ -477,6 +659,114 @@ final class MiniGameTests: XCTestCase {
         XCTAssertLessThan(mirrored.x, 1)
         XCTAssertGreaterThan(mirrored.y, 0)
         XCTAssertLessThan(mirrored.y, 1.0 / TacticalLocalRenderCache.boardAspectRatio)
+    }
+
+    func testCodecRejectsMalformedCommandShapes() throws {
+        let sessionID = UUID().uuidString
+        let malformedAccept = MiniGamePacket(
+            sessionID: sessionID,
+            game: .artillery,
+            command: .accept,
+            turn: 999,
+            move: .artillery(angle: 45, power: 80)
+        )
+        let surplusArtilleryField = MiniGamePacket(
+            sessionID: sessionID,
+            game: .artillery,
+            command: .move,
+            move: MiniGameMove(from: 45, to: 80, piece: 1)
+        )
+        let missingTrailShift = MiniGamePacket(
+            sessionID: sessionID,
+            game: .lightTrail,
+            command: .move,
+            move: MiniGameMove(from: 1, to: nil, piece: nil)
+        )
+
+        XCTAssertNil(MiniGameCodec.decode(try MiniGameCodec.encode(malformedAccept)))
+        XCTAssertNil(MiniGameCodec.decode(try MiniGameCodec.encode(surplusArtilleryField)))
+        XCTAssertNil(MiniGameCodec.decode(try MiniGameCodec.encode(missingTrailShift)))
+    }
+
+    func testMalformedMoveCannotReviveCancelledInvitation() throws {
+        let conversationID = UUID().uuidString
+        let sessionID = UUID().uuidString
+        let base = Date(timeIntervalSince1970: 9_000)
+        let invite = MiniGamePacket(sessionID: sessionID, game: .lightTrail, command: .invite, createdAt: base)
+        let cancel = MiniGamePacket(sessionID: sessionID, game: .lightTrail, command: .cancelInvite, createdAt: base.addingTimeInterval(1))
+        let malformed = MiniGamePacket(
+            sessionID: sessionID,
+            game: .lightTrail,
+            command: .move,
+            turn: 99,
+            move: MiniGameMove(from: 7, to: 8, piece: nil),
+            createdAt: base.addingTimeInterval(2)
+        )
+        func message(_ packet: MiniGamePacket, outgoing: Bool) throws -> ChatMessage {
+            ChatMessage(
+                id: UUID().uuidString,
+                conversationID: conversationID,
+                senderIdentityID: outgoing ? "host" : "guest",
+                body: try MiniGameCodec.encode(packet),
+                sentAt: packet.createdAt,
+                isOutgoing: outgoing,
+                deliveryState: .delivered
+            )
+        }
+
+        let snapshot = MiniGameSessionBuilder.session(
+            id: sessionID,
+            from: try [message(malformed, outgoing: false), message(cancel, outgoing: true), message(invite, outgoing: true)]
+        )
+        XCTAssertEqual(snapshot?.status, .cancelled)
+        XCTAssertEqual(snapshot?.moveCount, 0)
+    }
+
+    func testSameTurnConflictUsesStableTotalOrderAcrossInputShuffles() throws {
+        let conversationID = UUID().uuidString
+        let sessionID = UUID().uuidString
+        let base = Date(timeIntervalSince1970: 10_000)
+        let invite = MiniGamePacket(sessionID: sessionID, game: .artillery, command: .invite, createdAt: base)
+        let accept = MiniGamePacket(sessionID: sessionID, game: .artillery, command: .accept, createdAt: base.addingTimeInterval(1))
+        let first = MiniGamePacket(
+            sessionID: sessionID,
+            game: .artillery,
+            command: .move,
+            turn: 0,
+            move: .artillery(angle: 39, power: 82),
+            actionID: "00000000-0000-0000-0000-000000000010",
+            createdAt: base.addingTimeInterval(4)
+        )
+        let second = MiniGamePacket(
+            sessionID: sessionID,
+            game: .artillery,
+            command: .move,
+            turn: 0,
+            move: .artillery(angle: 48, power: 94),
+            actionID: "00000000-0000-0000-0000-000000000020",
+            createdAt: base.addingTimeInterval(2)
+        )
+        func message(_ packet: MiniGamePacket, outgoing: Bool) throws -> ChatMessage {
+            ChatMessage(
+                id: UUID().uuidString,
+                conversationID: conversationID,
+                senderIdentityID: outgoing ? "host" : "guest",
+                body: try MiniGameCodec.encode(packet),
+                sentAt: packet.createdAt,
+                isOutgoing: outgoing,
+                deliveryState: .delivered
+            )
+        }
+        let events = try [
+            message(invite, outgoing: true),
+            message(accept, outgoing: false),
+            message(first, outgoing: true),
+            message(second, outgoing: true)
+        ]
+        let forward = MiniGameSessionBuilder.session(id: sessionID, from: events)
+        let reverse = MiniGameSessionBuilder.session(id: sessionID, from: Array(events.reversed()))
+        XCTAssertEqual(forward, reverse)
+        XCTAssertEqual(forward?.artillery?.lastShot?.angle, 39)
     }
 
 }

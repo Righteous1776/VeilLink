@@ -53,6 +53,8 @@ pass "swiftc -parse ${#SWIFT_FILES[@]} Swift files"
 swiftc -typecheck \
     VeilLink/Core/Models.swift \
     VeilLink/Core/MessageTextFeatures.swift \
+    VeilLink/Core/ArcadeGames.swift \
+    VeilLink/Core/MagneticHockeyGame.swift \
     VeilLink/Core/MiniGames.swift \
     VeilLink/Core/TacticalGame.swift \
     VeilLink/Core/RenderCompatibilityPolicy.swift \
@@ -79,6 +81,7 @@ swiftc -typecheck \
     VeilLink/Agent/Games/XiangqiAgentAdapter.swift \
     VeilLink/Agent/Games/LudoAgentAdapter.swift \
     VeilLink/Agent/Games/AgentGameRegistry.swift \
+    VeilLink/Agent/Games/TacticalBot.swift \
     VeilLink/Agent/Games/TrainedGamePolicyRuntime.swift \
     VeilLink/Transport/ConnectionEventGate.swift \
     VeilLink/Transport/BLEConnectionIntentStore.swift \
@@ -107,6 +110,10 @@ precondition(ephemeralAgentSession.messages.map(\.id) == ["b", "c"])
 precondition(!AgentTokenStream.chunks(text: "VeilLink灵核", targetCharacters: 3).isEmpty)
 precondition(AgentGameRegistry.trainingEnabledKinds == [.gomoku, .xiangqi, .ludo])
 precondition(!AgentGameRegistry.isTrainingEnabled(.tactical))
+precondition(AgentGameRegistry.hasDedicatedLocalPolicy(.tactical))
+precondition(AgentGameRegistry.hasDedicatedLocalPolicy(.artillery))
+precondition(AgentGameRegistry.hasDedicatedLocalPolicy(.lightTrail))
+precondition(AgentGameRegistry.hasDedicatedLocalPolicy(.magneticHockey))
 let a9Green = VeilA9Packet(light: .green, p0: 0, p1: 0, p2: 0, p3: 0, riskBP: 0, persistenceRuns: 0, blocker: false, healthBP: 1_000, issues: [])
 precondition(VeilA9Lattice.cells.count == 144)
 precondition(VeilA9Lattice.decide(a9Green).level == .l0Observe)
@@ -216,6 +223,21 @@ precondition(tactical.apply(from: 55, to: 46, actor: .host, sessionID: tacticalS
 precondition(tactical.turn == 1 && tactical.currentPlayer == .host && tactical.ordersRemaining == 1)
 precondition(tactical.apply(from: nil, to: nil, actor: .host, sessionID: tacticalSession))
 precondition(tactical.turn == 2 && tactical.currentPlayer == .guest && tactical.ordersRemaining == TacticalState.ordersPerActivation)
+
+let arcadeSession = "00000000-0000-0000-0000-000000000002"
+var artillery = ArtilleryState()
+let artilleryBotShot = ArtilleryBot.chooseShot(in: artillery, actor: .host, sessionID: arcadeSession)
+precondition(artilleryBotShot != nil)
+precondition(artillery.apply(angle: artilleryBotShot!.angle, power: artilleryBotShot!.power, actor: .host, sessionID: arcadeSession))
+precondition(artillery.turn == 1 && artillery.currentPlayer == .guest)
+var lightTrail = LightTrailState()
+let trailShift = LightTrailBot.chooseShift(in: lightTrail, actor: .host, sessionID: arcadeSession)
+precondition(trailShift != nil)
+precondition(lightTrail.apply(shift: trailShift!, actor: .host, sessionID: arcadeSession))
+precondition(lightTrail.turn == 1 && lightTrail.currentPlayer == .guest)
+var magneticHockey = MagneticHockeyState()
+precondition(magneticHockey.apply(angle: 0, power: 100, actor: .host, sessionID: arcadeSession))
+precondition(magneticHockey.hostScore == 1 && magneticHockey.currentPlayer == .guest)
 
 let conversationID = UUID().uuidString
 let invite = MiniGamePacket(game: .gomoku, command: .invite, createdAt: Date(timeIntervalSince1970: 10))
@@ -348,6 +370,8 @@ SWIFT
 swiftc \
     VeilLink/Core/Models.swift \
     VeilLink/Core/MessageTextFeatures.swift \
+    VeilLink/Core/ArcadeGames.swift \
+    VeilLink/Core/MagneticHockeyGame.swift \
     VeilLink/Core/MiniGames.swift \
     VeilLink/Core/TacticalGame.swift \
     VeilLink/Core/RenderCompatibilityPolicy.swift \
@@ -936,8 +960,8 @@ settings=Path('VeilLink/UI/SettingsView.swift').read_text(encoding='utf-8')
 adaptive=Path('VeilLink/UI/AdaptiveRootView.swift').read_text(encoding='utf-8')
 conversation=Path('VeilLink/UI/ConversationViews.swift').read_text(encoding='utf-8')
 assert 'RenderCompatibilityPolicy.shouldUseLegacyCompositor' in theme
-assert 'guard active, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }' in theme
-assert 'guard isRunning, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }' in nearby
+assert 'guard active, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }' in theme
+assert 'guard isRunning, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }' in nearby
 assert 'VeilLinkTrace(active: peer.trustState == .awaitingConfirmation, width: 30)' in nearby
 assert 'VeilLinkTrace(active: true, width: 34)' not in settings
 assert 'VeilLinkTrace(active: true, width: 34)' not in adaptive
@@ -1064,6 +1088,8 @@ game_ui = (root/'VeilLink/UI/MiniGameViews.swift').read_text(encoding='utf-8')
 tactical_ui = (root/'VeilLink/UI/TacticalGameViews.swift').read_text(encoding='utf-8')
 tactical_render = (root/'VeilLink/UI/TacticalLocalRenderCache.swift').read_text(encoding='utf-8')
 app_entry = (root/'VeilLink/App/VeilLinkApp.swift').read_text(encoding='utf-8')
+tool_center = (root/'VeilLink/UI/ToolCenterView.swift').read_text(encoding='utf-8')
+tool_engine = (root/'VeilLink/Core/VeilLocalToolEngine.swift').read_text(encoding='utf-8')
 assert 'MiniGameStatistics' in games and 'MiniGameReplayFrame' in games and 'static func replay(sessionID:' in games
 assert 'threefoldRepetition' in games and 'currentPositionRepetitionCount' in games and 'consecutiveCheckCount' in games
 assert '棋局回放' in game_ui and '自动回放' in game_ui and '掷骰子' in game_ui and '当前加密会话' in game_ui
@@ -1079,9 +1105,37 @@ assert 'TacticalIntelLayer' in tactical_ui and '交战预估' in tactical_ui and
 assert 'supplyNetwork(for faction:' in (root/'VeilLink/Core/TacticalGame.swift').read_text(encoding='utf-8')
 assert 'threatenedHexes(by faction:' in (root/'VeilLink/Core/TacticalGame.swift').read_text(encoding='utf-8')
 assert 'combatForecast(attackerID:' in (root/'VeilLink/Core/TacticalGame.swift').read_text(encoding='utf-8')
+bot = (root/'VeilLink/Agent/Games/TacticalBot.swift').read_text(encoding='utf-8')
+guide = (root/'VeilLink/UI/TacticalSoloGuideView.swift').read_text(encoding='utf-8')
+assert 'TacticalState' in bot and 'legalCommands' in bot and 'Final rule gate' in bot
+assert 'TacticalBotDifficulty' in bot and 'bestContinuationScore' in bot
+assert '新手教程' in guide and '完整规则' in guide and '第 6 步' in guide
+solo = (root/'VeilLink/Core/TacticalSoloFeatures.swift').read_text(encoding='utf-8')
+assert 'TacticalDailyChallenge' in solo and 'TacticalDebrief' in solo and '今日军令' in solo
+policy = __import__('json').loads((root/'VeilLink/Resources/TacticalBotPolicyV1.json').read_text(encoding='utf-8'))
+assert policy['schema'] == 1 and policy['trainingExamples'] == 96 and policy['trainingEpochs'] == 240
+assert len(policy['featureOrder']) == len(policy['weights']) == 12
 assert 'static let cells' in tactical_render and 'static let terrainSegments' in tactical_render
 assert 'displayCenter(for layout:' in tactical_render
 assert 'TacticalLocalRenderCache.warmUp()' in app_entry
+for label in ['安全密码', '文本指纹', '临时二维码', '链路仪表', 'JSON 工坊', 'Base64', 'URL 编码', '时间戳', 'UUID 批量', '文本清理', '颜色实验室', '随机决策', '摩斯电码']:
+    assert label in tool_center
+assert 'SystemRandomNumberGenerator' in tool_engine and 'SHA256.hash' in tool_engine
+assert 'LazyVGrid' in tool_center and 'minimum: 138' in tool_center
+assert '180_000_000' in tool_center and 'renderTask?.cancel()' in tool_center
+assert '.ultraThinMaterial' in tool_center and 'VeilRenderProfile.allowsExpensiveVisualEffects' in tool_center
+assert 'accessibilityReduceMotion' in tool_center and 'VeilMotionPolicy.animation(.reveal' in tool_center
+assert 'veilToolTextByteLimit = 128 * 1_024' in tool_center
+assert '.localOnly: true' in tool_center and '.expirationDate:' in tool_center
+assert 'VeilToolCenterToolbarLink' in (root/'VeilLink/UI/GameLobbyView.swift').read_text(encoding='utf-8')
+assert 'VeilToolCenterToolbarLink' in (root/'VeilLink/UI/NearbyView.swift').read_text(encoding='utf-8')
+assert 'VeilToolCenterToolbarLink' in (root/'VeilLink/UI/SettingsView.swift').read_text(encoding='utf-8')
+selector = (root/'VeilLink/Health/VeilKernelRuntimeSelector.swift').read_text(encoding='utf-8')
+app_model = (root/'VeilLink/App/AppModel.swift').read_text(encoding='utf-8')
+assert 'A10_ULTRA_INDEPENDENT_GOVERNANCE' in selector
+assert 'GOVERNANCE_ONLY_APPROVED' in selector
+assert 'case .a10Independent' in app_model and 'updateFromA10Ultra' in app_model
+assert 'mutationAuthority: 0' in selector
 print('targeted-perf-ok')
 PY2
 pass "current-version targeted-device + games + replay + God Mode + image viewer + BLE reliability guard"
@@ -1157,6 +1211,8 @@ if [[ "${VEILLINK_RUN_SLOW_TRAINING_SMOKE:-0}" == "1" ]]; then
     swiftc \
         VeilLink/Core/Models.swift \
         VeilLink/Core/TacticalGame.swift \
+        VeilLink/Core/ArcadeGames.swift \
+        VeilLink/Core/MagneticHockeyGame.swift \
         VeilLink/Core/MiniGames.swift \
         VeilLink/Agent/Games/AgentGameAdapter.swift \
         VeilLink/Agent/Games/GomokuAgentAdapter.swift \
@@ -1187,7 +1243,10 @@ python3 -m py_compile \
     Tools/AgentTraining/train_policy_ranker.py \
     Tools/AgentTraining/train_language_lora.py \
     Tools/AgentTraining/build_agent_sft_dataset.py \
-    Tools/AgentTraining/export_policy_vlpol.py
+    Tools/AgentTraining/export_policy_vlpol.py \
+    Tools/AgentTraining/train_tactical_policy.py
+python3 Tools/AgentTraining/train_tactical_policy.py --output "$HARNESS_DIR/TacticalBotPolicyV1.json"
+cmp "$HARNESS_DIR/TacticalBotPolicyV1.json" VeilLink/Resources/TacticalBotPolicyV1.json
 python3 - <<'PYAGENTTRAIN'
 import json, pathlib
 pins=json.loads(pathlib.Path('Tools/AgentTraining/manifests/language_model_pins.json').read_text())
@@ -1196,6 +1255,7 @@ assert all(len(m['primary_weight_sha256']) == 64 for m in pins['models'])
 registry=pathlib.Path('VeilLink/Agent/Games/AgentGameRegistry.swift').read_text()
 assert 'trainingEnabledKinds: [MiniGameKind] = [.gomoku, .xiangqi, .ludo]' in registry
 assert 'case .tactical' in registry
+assert 'dedicatedLocalPolicyKinds: [MiniGameKind] = [.tactical]' in registry
 for path in ['Tools/AgentTraining/SelfPlayExporter.swift','Tools/AgentTraining/build_agent_sft_dataset.py']:
     text=pathlib.Path(path).read_text()
     assert 'tactical' in text.lower()

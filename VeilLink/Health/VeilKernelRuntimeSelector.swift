@@ -4,6 +4,7 @@ import Foundation
 enum VeilKernelRuntimeMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case a9Only = "A9_ONLY"
     case dualShadow = "A9_PLUS_A10_ULTRA_SHADOW"
+    case a10Independent = "A10_ULTRA_INDEPENDENT_GOVERNANCE"
     case a10OnlyLab = "A10_ULTRA_ONLY_LAB"
 
     var id: String { rawValue }
@@ -12,6 +13,7 @@ enum VeilKernelRuntimeMode: String, Codable, CaseIterable, Identifiable, Sendabl
         switch self {
         case .a9Only: return "仅 A9"
         case .dualShadow: return "A9 + A10 Ultra Ω"
+        case .a10Independent: return "A10 Ultra Ω · 独立治理"
         case .a10OnlyLab: return "仅 A10 Ultra Ω · 实验"
         }
     }
@@ -22,13 +24,15 @@ enum VeilKernelRuntimeMode: String, Codable, CaseIterable, Identifiable, Sendabl
             return "只运行 A9 Health Lattice / Compute Governor，作为生产基线。"
         case .dualShadow:
             return "A9 保持 PRIMARY；A10 Ultra Ω 以 SHADOW_ACCELERATOR 同样本并行运行。"
+        case .a10Independent:
+            return "A10 Ultra Ω 独立完成健康裁决并正式生成算力预算；运行失败时由宿主立即回退 A9。"
         case .a10OnlyLab:
             return "只运行 A10 Ultra Ω 健康裁决；A9 本轮不计算，宿主冻结进入实验前的安全预算。仅用于本机实验，不能视为 Cutover。"
         }
     }
 
     var a9EvaluationEnabled: Bool {
-        self != .a10OnlyLab
+        self != .a10Independent && self != .a10OnlyLab
     }
 
     var ultraEvaluationEnabled: Bool {
@@ -38,6 +42,7 @@ enum VeilKernelRuntimeMode: String, Codable, CaseIterable, Identifiable, Sendabl
     var productionAuthority: String {
         switch self {
         case .a9Only, .dualShadow: return "A9_PRIMARY"
+        case .a10Independent: return "A10_ULTRA_GOVERNANCE"
         case .a10OnlyLab: return "HOST_FROZEN_BASELINE"
         }
     }
@@ -46,11 +51,16 @@ enum VeilKernelRuntimeMode: String, Codable, CaseIterable, Identifiable, Sendabl
         switch self {
         case .a9Only: return "A9_LOCAL"
         case .dualShadow: return "A9_IMMEDIATE"
+        case .a10Independent: return "AUTO_FALLBACK_TO_A9_ON_ULTRA_FAILURE"
         case .a10OnlyLab: return "AUTO_EXIT_TO_A9_ON_ULTRA_FAILURE_OR_RESTART"
         }
     }
 
     var isExperimental: Bool { self == .a10OnlyLab }
+
+    var productionCutover: String {
+        self == .a10Independent ? "GOVERNANCE_ONLY_APPROVED" : "DENIED"
+    }
 }
 
 struct VeilKernelRuntimeEnvironment: Equatable, Sendable {
@@ -127,7 +137,7 @@ final class VeilKernelRuntimeSelector: ObservableObject {
             defaults.set(false, forKey: Self.labActiveKey)
             defaults.set(VeilKernelRuntimeMode.a9Only.rawValue, forKey: Self.stableModeKey)
         } else {
-            mode = saved ?? .dualShadow
+            mode = saved ?? .a10Independent
         }
     }
 
@@ -175,7 +185,7 @@ final class VeilKernelRuntimeSelector: ObservableObject {
             a9EvaluationEnabled: mode.a9EvaluationEnabled,
             ultraEvaluationEnabled: mode.ultraEvaluationEnabled,
             mutationAuthority: 0,
-            productionCutover: "DENIED"
+            productionCutover: mode.productionCutover
         )
     }
 
@@ -192,7 +202,7 @@ final class VeilKernelRuntimeSelector: ObservableObject {
             a9EvaluationEnabled: mode.a9EvaluationEnabled,
             ultraEvaluationEnabled: mode.ultraEvaluationEnabled,
             mutationAuthority: 0,
-            productionCutover: "DENIED"
+            productionCutover: mode.productionCutover
         )
     }
 
@@ -210,7 +220,8 @@ final class VeilKernelRuntimeSelector: ObservableObject {
             "Fallback: \(mode.fallbackPolicy)",
             "Last fallback reason: \(lastFallbackReason ?? "none")",
             "Mutation authority: 0",
-            "PRODUCTION_CUTOVER: DENIED"
+            "PRODUCTION_CUTOVER: \(mode.productionCutover)",
+            "Boundary: governance-only; M5 inference and app mutation authority are not promoted"
         ].joined(separator: "\n")
     }
 }

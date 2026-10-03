@@ -101,7 +101,8 @@ struct NearbyView: View {
         .background(VeilAmbientBackground())
         .navigationTitle("附近设备")
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                VeilToolCenterToolbarLink(model: model)
                 Button {
                     model.haptics.selection()
                     bluetooth.isRunning ? bluetooth.stop() : bluetooth.start()
@@ -119,6 +120,7 @@ private struct RadarStatusView: View {
     let reduceMotion: Bool
     @State private var pulse = false
     @State private var sweep = false
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     var body: some View {
         ZStack {
@@ -155,7 +157,7 @@ private struct RadarStatusView: View {
                     .frame(width: 1, height: 35)
                     .offset(y: -17.5)
                     .rotationEffect(.degrees(sweep ? 360 : 0), anchor: .bottom)
-                    .opacity(reduceMotion ? 0.28 : 0.72)
+                    .opacity(motionReduced ? 0.28 : 0.72)
             }
 
             if isRunning {
@@ -190,7 +192,7 @@ private struct RadarStatusView: View {
     private func updateMotion() {
         pulse = false
         sweep = false
-        guard isRunning, !reduceMotion, VeilRenderProfile.allowsPersistentAnimations else { return }
+        guard isRunning, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
         withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) {
             pulse = true
         }

@@ -94,4 +94,44 @@ final class AgentControlAndLocalGameTests: XCTestCase {
         XCTAssertTrue(occupied.isEmpty)
         XCTAssertEqual(controller.outcome, .playing)
     }
+
+    func testLocalTacticalBotCompletesItsTwoOrderActivationOffline() async throws {
+        let controller = LocalAIGameController(game: .tactical)
+
+        XCTAssertTrue(controller.canHumanAct)
+        controller.humanTacticalMove(from: 55, to: 46)
+        XCTAssertEqual(controller.tactical.turn, 1)
+        XCTAssertTrue(controller.canHumanAct)
+
+        controller.humanTacticalPass()
+        XCTAssertEqual(controller.tactical.currentPlayer, .guest)
+        XCTAssertTrue(controller.isAIThinking)
+
+        let deadline = Date().addingTimeInterval(3.0)
+        while (controller.tactical.currentPlayer != .host || controller.isAIThinking), Date() < deadline {
+            try await Task.sleep(nanoseconds: 40_000_000)
+        }
+
+        XCTAssertFalse(controller.isAIThinking)
+        XCTAssertEqual(controller.tactical.currentPlayer, .host)
+        XCTAssertGreaterThanOrEqual(controller.tactical.turn, 4)
+        XCTAssertEqual(controller.lastDecisionMode, "兵棋·都督")
+        XCTAssertTrue(controller.lastDecisionMilliseconds.map { $0 >= 0 } ?? false)
+    }
+
+    func testTacticalScenarioAndDifficultyControlsRestartLocally() {
+        let controller = LocalAIGameController(game: .tactical)
+        controller.humanTacticalMove(from: 55, to: 46)
+        XCTAssertEqual(controller.tactical.turn, 1)
+
+        controller.setTacticalDifficulty(.strategist)
+        XCTAssertEqual(controller.tacticalDifficulty, .strategist)
+        XCTAssertEqual(controller.tactical.turn, 1)
+
+        controller.setTacticalScenario(.daily)
+        XCTAssertEqual(controller.tacticalScenario, .daily)
+        XCTAssertEqual(controller.tactical.turn, 0)
+        XCTAssertEqual(controller.tactical.currentPlayer, .host)
+        XCTAssertEqual(Set(controller.tactical.units.map(\.position)).count, controller.tactical.units.count)
+    }
 }

@@ -168,4 +168,31 @@ final class A9ComputeGovernorTests: XCTestCase {
         XCTAssertEqual(governor.plan.maleCNS.tier, .suspended)
         XCTAssertFalse(governor.plan.training.enabled)
     }
+
+    @MainActor
+    func testGovernorAcceptsIndependentA10DecisionThroughStableBudgetContract() {
+        let governor = VeilA9ComputeGovernor(
+            profile: AgentCapabilityProfile.profile(devicePerformanceLabel: "13PRO-HIGH"),
+            logicalProcessorCount: 6
+        )
+        let snapshot = VeilKernelDecisionSnapshot(
+            profileID: VeilKernelHostProfile.veilLink.compatibilityProfileID,
+            light: VeilA9Light.red.title,
+            level: 5,
+            reasonCode: "P0_HARD_BREAK",
+            healthScore: 30,
+            riskBasisPoints: 4_000,
+            persistenceSeconds: 0,
+            latticeCell: 143,
+            issues: [VeilKernelIssueSnapshot(severity: "P0", source: "storage", code: "SQLITE_INTEGRITY_FAILED")],
+            preflight: .stopRecommended
+        )
+
+        governor.updateFromA10Ultra(snapshot)
+
+        XCTAssertEqual(governor.plan.mode, .emergency)
+        XCTAssertEqual(governor.plan.latticeIndex, 143)
+        XCTAssertEqual(governor.plan.maleCNS.tier, .suspended)
+        XCTAssertFalse(governor.plan.training.enabled)
+    }
 }

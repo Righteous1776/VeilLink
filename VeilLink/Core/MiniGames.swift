@@ -5,6 +5,9 @@ enum MiniGameKind: String, Codable, CaseIterable, Identifiable {
     case xiangqi
     case ludo
     case tactical
+    case artillery
+    case lightTrail
+    case magneticHockey
 
     var id: String { rawValue }
 
@@ -14,6 +17,9 @@ enum MiniGameKind: String, Codable, CaseIterable, Identifiable {
         case .xiangqi: return "中国象棋"
         case .ludo: return "飞行棋"
         case .tactical: return "三国兵棋"
+        case .artillery: return "弧光炮战"
+        case .lightTrail: return "光轨突围"
+        case .magneticHockey: return "磁轨冰球"
         }
     }
 
@@ -23,6 +29,9 @@ enum MiniGameKind: String, Codable, CaseIterable, Identifiable {
         case .xiangqi: return "标准双人棋盘 · 红方先手"
         case .ludo: return "双人四棋子 · 本地确定性骰子"
         case .tactical: return "官渡决战 · 战役大地图 · 战争迷雾"
+        case .artillery: return "2D 弹道 · 风力与地形 · 参数同步"
+        case .lightTrail: return "2D 竞速 · 闪避障碍 · 能量争夺"
+        case .magneticHockey: return "2D 物理 · 磁场偏转 · 三球决胜"
         }
     }
 
@@ -32,6 +41,19 @@ enum MiniGameKind: String, Codable, CaseIterable, Identifiable {
         case .xiangqi: return "checkerboard.rectangle"
         case .ludo: return "die.face.5"
         case .tactical: return "map.fill"
+        case .artillery: return "scope"
+        case .lightTrail: return "bolt.car.fill"
+        case .magneticHockey: return "sportscourt.fill"
+        }
+    }
+
+    var moveUnit: String {
+        switch self {
+        case .tactical: return "道命令"
+        case .artillery: return "发"
+        case .lightTrail: return "赛段"
+        case .magneticHockey: return "杆"
+        case .gomoku, .xiangqi, .ludo: return "手"
         }
     }
 }
@@ -68,6 +90,18 @@ struct MiniGameMove: Codable, Hashable, Sendable {
 
     static func tacticalPass() -> MiniGameMove {
         MiniGameMove(from: nil, to: nil, piece: -1)
+    }
+
+    static func artillery(angle: Int, power: Int) -> MiniGameMove {
+        MiniGameMove(from: angle, to: power, piece: nil)
+    }
+
+    static func lightTrail(shift: Int) -> MiniGameMove {
+        MiniGameMove(from: nil, to: nil, piece: shift)
+    }
+
+    static func magneticHockey(angle: Int, power: Int) -> MiniGameMove {
+        MiniGameMove(from: angle, to: power, piece: nil)
     }
 }
 
@@ -121,8 +155,39 @@ enum MiniGameCodec {
               packet.version == MiniGamePacket.currentVersion,
               UUID(uuidString: packet.sessionID) != nil,
               UUID(uuidString: packet.actionID) != nil,
-              packet.turn >= 0 else { return nil }
+              packet.turn >= 0,
+              structurallyValid(packet) else { return nil }
         return packet
+    }
+
+    /// Wire v1 has no causal parent pointer, but each command still has one exact
+    /// shape. Rejecting surplus fields prevents malformed control packets from
+    /// changing invitation state or being reinterpreted by a future rules path.
+    private static func structurallyValid(_ packet: MiniGamePacket) -> Bool {
+        switch packet.command {
+        case .invite, .accept, .decline, .cancelInvite:
+            return packet.turn == 0 && packet.move == nil
+        case .resign:
+            return packet.move == nil
+        case .move:
+            guard let move = packet.move else { return false }
+            switch packet.game {
+            case .gomoku:
+                return move.from == nil && move.to != nil && move.piece == nil
+            case .xiangqi:
+                return move.from != nil && move.to != nil && move.piece == nil
+            case .ludo:
+                return move.from == nil && move.to == nil && move.piece != nil
+            case .tactical:
+                let pass = move.from == nil && move.to == nil && move.piece == -1
+                let command = move.from != nil && move.to != nil && move.piece == nil
+                return pass || command
+            case .artillery, .magneticHockey:
+                return move.from != nil && move.to != nil && move.piece == nil
+            case .lightTrail:
+                return move.from == nil && move.to == nil && move.piece != nil
+            }
+        }
     }
 
     static func previewText(for body: String) -> String? {
@@ -667,6 +732,9 @@ struct MiniGameSessionSnapshot: Identifiable, Equatable {
     let xiangqi: XiangqiState?
     let ludo: LudoState?
     let tactical: TacticalState?
+    let artillery: ArtilleryState?
+    let lightTrail: LightTrailState?
+    let magneticHockey: MagneticHockeyState?
     let endedByResignation: Bool
 
     init(
@@ -681,6 +749,9 @@ struct MiniGameSessionSnapshot: Identifiable, Equatable {
         xiangqi: XiangqiState?,
         ludo: LudoState?,
         tactical: TacticalState? = nil,
+        artillery: ArtilleryState? = nil,
+        lightTrail: LightTrailState? = nil,
+        magneticHockey: MagneticHockeyState? = nil,
         endedByResignation: Bool
     ) {
         self.id = id
@@ -694,6 +765,9 @@ struct MiniGameSessionSnapshot: Identifiable, Equatable {
         self.xiangqi = xiangqi
         self.ludo = ludo
         self.tactical = tactical
+        self.artillery = artillery
+        self.lightTrail = lightTrail
+        self.magneticHockey = magneticHockey
         self.endedByResignation = endedByResignation
     }
 
@@ -705,6 +779,9 @@ struct MiniGameSessionSnapshot: Identifiable, Equatable {
         case .xiangqi: return xiangqi?.currentPlayer
         case .ludo: return ludo?.currentPlayer
         case .tactical: return tactical?.currentPlayer
+        case .artillery: return artillery?.currentPlayer
+        case .lightTrail: return lightTrail?.currentPlayer
+        case .magneticHockey: return magneticHockey?.currentPlayer
         }
     }
 
@@ -714,6 +791,9 @@ struct MiniGameSessionSnapshot: Identifiable, Equatable {
         case .xiangqi: return xiangqi?.moveCount ?? 0
         case .ludo: return ludo?.turn ?? 0
         case .tactical: return tactical?.turn ?? 0
+        case .artillery: return artillery?.turn ?? 0
+        case .lightTrail: return lightTrail?.turn ?? 0
+        case .magneticHockey: return magneticHockey?.turn ?? 0
         }
     }
 
@@ -881,7 +961,7 @@ enum MiniGameSessionBuilder {
             case .cancelInvite: label = "邀请已撤回"
             case .resign: label = snapshot.status == .cancelled ? "邀请已撤回（旧协议）" : "认输结束"
             case .move:
-                let unit = snapshot.game == .tactical ? "道命令" : "手"
+                let unit = snapshot.game.moveUnit
                 if case .finished(let winner) = snapshot.status, winner == nil {
                     label = "第 \(snapshot.moveCount) \(unit) · 和棋"
                 } else {
@@ -938,13 +1018,16 @@ enum MiniGameSessionBuilder {
         let initialXiangqi = game == .xiangqi ? XiangqiState() : nil
         let initialLudo = game == .ludo ? LudoState() : nil
         let initialTactical = game == .tactical ? TacticalState() : nil
+        let initialArtillery = game == .artillery ? ArtilleryState() : nil
+        let initialLightTrail = game == .lightTrail ? LightTrailState() : nil
+        let initialMagneticHockey = game == .magneticHockey ? MagneticHockeyState() : nil
 
-        let hasGameplayMove = valid.contains { $0.1.command == .move }
-        if let explicitCancellation, !hasGameplayMove {
+        if let explicitCancellation, guestDecision?.1.command != .accept {
             return MiniGameSessionSnapshot(
                 id: sessionID, game: game, hostIsLocal: hostIsLocal, status: .cancelled,
                 invitedAt: invitedAt, startedAt: nil, lastActivity: activity(explicitCancellation),
                 gomoku: initialGomoku, xiangqi: initialXiangqi, ludo: initialLudo, tactical: initialTactical,
+                artillery: initialArtillery, lightTrail: initialLightTrail, magneticHockey: initialMagneticHockey,
                 endedByResignation: false
             )
         }
@@ -954,6 +1037,7 @@ enum MiniGameSessionBuilder {
                 id: sessionID, game: game, hostIsLocal: hostIsLocal, status: .declined,
                 invitedAt: invitedAt, startedAt: nil, lastActivity: guestDecision.map(activity) ?? invitedAt,
                 gomoku: initialGomoku, xiangqi: initialXiangqi, ludo: initialLudo, tactical: initialTactical,
+                artillery: initialArtillery, lightTrail: initialLightTrail, magneticHockey: initialMagneticHockey,
                 endedByResignation: false
             )
         }
@@ -966,6 +1050,7 @@ enum MiniGameSessionBuilder {
                     id: sessionID, game: game, hostIsLocal: hostIsLocal, status: .cancelled,
                     invitedAt: invitedAt, startedAt: nil, lastActivity: activity(legacyCancellation),
                     gomoku: initialGomoku, xiangqi: initialXiangqi, ludo: initialLudo, tactical: initialTactical,
+                    artillery: initialArtillery, lightTrail: initialLightTrail, magneticHockey: initialMagneticHockey,
                     endedByResignation: false
                 )
             }
@@ -973,6 +1058,7 @@ enum MiniGameSessionBuilder {
                 id: sessionID, game: game, hostIsLocal: hostIsLocal, status: .invited,
                 invitedAt: invitedAt, startedAt: nil, lastActivity: invitedAt,
                 gomoku: initialGomoku, xiangqi: initialXiangqi, ludo: initialLudo, tactical: initialTactical,
+                artillery: initialArtillery, lightTrail: initialLightTrail, magneticHockey: initialMagneticHockey,
                 endedByResignation: false
             )
         }
@@ -984,6 +1070,9 @@ enum MiniGameSessionBuilder {
         var xiangqi = initialXiangqi
         var ludo = initialLudo
         var tactical = initialTactical
+        var artillery = initialArtillery
+        var lightTrail = initialLightTrail
+        var magneticHockey = initialMagneticHockey
         var resignationWinner: MiniGamePlayer?
         var usedActionIDs = Set<String>()
         var effectiveLastActivity = startedAt
@@ -998,6 +1087,9 @@ enum MiniGameSessionBuilder {
             case .xiangqi: turn = xiangqi?.moveCount ?? 0
             case .ludo: turn = ludo?.turn ?? 0
             case .tactical: turn = tactical?.turn ?? 0
+            case .artillery: turn = artillery?.turn ?? 0
+            case .lightTrail: turn = lightTrail?.turn ?? 0
+            case .magneticHockey: turn = magneticHockey?.turn ?? 0
             }
 
             let candidates = (gameplayEventsByTurn[turn] ?? [])
@@ -1032,6 +1124,16 @@ enum MiniGameSessionBuilder {
                     } else {
                         applied = tactical?.apply(from: move.from, to: move.to, actor: player, sessionID: sessionID) ?? false
                     }
+                case .artillery:
+                    if let angle = move.from, let power = move.to {
+                        applied = artillery?.apply(angle: angle, power: power, actor: player, sessionID: sessionID) ?? false
+                    } else { applied = false }
+                case .lightTrail:
+                    applied = move.piece.map { lightTrail?.apply(shift: $0, actor: player, sessionID: sessionID) ?? false } ?? false
+                case .magneticHockey:
+                    if let angle = move.from, let power = move.to {
+                        applied = magneticHockey?.apply(angle: angle, power: power, actor: player, sessionID: sessionID) ?? false
+                    } else { applied = false }
                 }
                 if applied {
                     effectiveLastActivity = max(effectiveLastActivity, activity(event))
@@ -1047,6 +1149,9 @@ enum MiniGameSessionBuilder {
             case .xiangqi: hasWinner = xiangqi?.winner != nil
             case .ludo: hasWinner = ludo?.winner != nil
             case .tactical: hasWinner = tactical?.winner != nil || tactical?.isDraw == true
+            case .artillery: hasWinner = artillery?.winner != nil || artillery?.isDraw == true
+            case .lightTrail: hasWinner = lightTrail?.winner != nil || lightTrail?.isDraw == true
+            case .magneticHockey: hasWinner = magneticHockey?.winner != nil || magneticHockey?.isDraw == true
             }
             if hasWinner { break }
         }
@@ -1066,6 +1171,15 @@ enum MiniGameSessionBuilder {
         case .tactical:
             boardWinner = tactical?.winner
             boardDraw = tactical?.isDraw == true
+        case .artillery:
+            boardWinner = artillery?.winner
+            boardDraw = artillery?.isDraw == true
+        case .lightTrail:
+            boardWinner = lightTrail?.winner
+            boardDraw = lightTrail?.isDraw == true
+        case .magneticHockey:
+            boardWinner = magneticHockey?.winner
+            boardDraw = magneticHockey?.isDraw == true
         }
 
         let status: MiniGameSessionStatus
@@ -1081,6 +1195,7 @@ enum MiniGameSessionBuilder {
             id: sessionID, game: game, hostIsLocal: hostIsLocal, status: status,
             invitedAt: invitedAt, startedAt: startedAt, lastActivity: effectiveLastActivity,
             gomoku: gomoku, xiangqi: xiangqi, ludo: ludo, tactical: tactical,
+            artillery: artillery, lightTrail: lightTrail, magneticHockey: magneticHockey,
             endedByResignation: resignationWinner != nil
         )
     }
@@ -1132,11 +1247,9 @@ enum MiniGameSessionBuilder {
     }
 
     private static func gameplayOrder(_ lhs: (ChatMessage, MiniGamePacket), _ rhs: (ChatMessage, MiniGamePacket)) -> Bool {
-        // createdAt is only comparable when both candidates originate from the same device.
-        // isOutgoing equality is preserved on both peers even though its boolean value flips.
-        if lhs.0.isOutgoing == rhs.0.isOutgoing, lhs.1.createdAt != rhs.1.createdAt {
-            return lhs.1.createdAt < rhs.1.createdAt
-        }
+        // A single total key is required here. Mixing same-sender timestamps with
+        // cross-sender IDs can form a non-transitive comparator and make replay
+        // depend on the standard-library sort implementation.
         return lhs.1.actionID < rhs.1.actionID
     }
 }

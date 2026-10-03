@@ -926,6 +926,42 @@ struct MiniGameSessionView: View {
                     }
                 )
             }
+        case .artillery:
+            if let state = session.artillery {
+                ArtilleryGameView(
+                    state: state,
+                    sessionID: session.id,
+                    localPlayer: session.localPlayer,
+                    enabled: session.isLocalTurn && !isSending
+                ) { angle, power in
+                    send(command: .move, turn: session.moveCount, move: .artillery(angle: angle, power: power))
+                }
+                .padding(.horizontal, 12)
+            }
+        case .lightTrail:
+            if let state = session.lightTrail {
+                LightTrailGameView(
+                    state: state,
+                    sessionID: session.id,
+                    localPlayer: session.localPlayer,
+                    enabled: session.isLocalTurn && !isSending
+                ) { shift in
+                    send(command: .move, turn: session.moveCount, move: .lightTrail(shift: shift))
+                }
+                .padding(.horizontal, 12)
+            }
+        case .magneticHockey:
+            if let state = session.magneticHockey {
+                MagneticHockeyGameView(
+                    state: state,
+                    sessionID: session.id,
+                    localPlayer: session.localPlayer,
+                    enabled: session.isLocalTurn && !isSending
+                ) { angle, power in
+                    send(command: .move, turn: session.moveCount, move: .magneticHockey(angle: angle, power: power))
+                }
+                .padding(.horizontal, 12)
+            }
         }
     }
 
@@ -948,7 +984,7 @@ struct MiniGameSessionView: View {
 
             if let duration = session.duration, session.moveCount > 0 {
                 HStack(spacing: 12) {
-                    Label(session.game == .tactical ? "\(session.moveCount) 道命令" : "\(session.moveCount) 手", systemImage: "number")
+                    Label("\(session.moveCount) \(session.game.moveUnit)", systemImage: "number")
                     Label("约 " + formatDuration(duration), systemImage: "clock")
                 }
                 .font(.caption.monospacedDigit())
@@ -1227,6 +1263,18 @@ private struct MiniGameReplayView: View {
             if let state = snapshot.tactical {
                 TacticalReplayBoardView(state: state, localPlayer: snapshot.localPlayer)
             }
+        case .artillery:
+            if let state = snapshot.artillery {
+                ArtilleryGameView(state: state, sessionID: snapshot.id, localPlayer: snapshot.localPlayer, enabled: false) { _, _ in }
+            }
+        case .lightTrail:
+            if let state = snapshot.lightTrail {
+                LightTrailGameView(state: state, sessionID: snapshot.id, localPlayer: snapshot.localPlayer, enabled: false) { _ in }
+            }
+        case .magneticHockey:
+            if let state = snapshot.magneticHockey {
+                MagneticHockeyGameView(state: state, sessionID: snapshot.id, localPlayer: snapshot.localPlayer, enabled: false) { _, _ in }
+            }
         }
     }
 
@@ -1446,7 +1494,7 @@ struct GomokuBoardView: View {
                     }
                 }
                 .frame(width: side, height: side)
-                .animation(reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal ? nil : VeilMotion.resolve, value: state.moveCount)
+                .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: state.moveCount)
             }
             .aspectRatio(1, contentMode: .fit)
 
@@ -1579,7 +1627,7 @@ struct XiangqiBoardView: View {
                 }
             }
             .aspectRatio(0.86, contentMode: .fit)
-            .animation(reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal ? nil : VeilMotion.resolve, value: state.moveCount)
+            .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: state.moveCount)
 
             HStack {
                 Text(localSide == .red ? "你执红 · 先手" : "你执黑 · 后手")
@@ -1710,10 +1758,10 @@ struct LudoBoardView: View {
                 Button {
                     onRoll()
                     rollPulse &+= 1
-                    if reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal {
+                    if VeilMotionPolicy.usesReducedMotion(reduceMotion) {
                         revealedTurn = state.turn
                     } else {
-                        withAnimation(VeilMotion.resolve) { revealedTurn = state.turn }
+                        withAnimation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion)) { revealedTurn = state.turn }
                     }
                 } label: {
                     Label("掷骰子", systemImage: "die.face.5.fill")
@@ -1746,7 +1794,7 @@ struct LudoBoardView: View {
             Image(systemName: canAct ? "die.face.\(dice).fill" : (enabled ? "die.face.5" : "questionmark.square.dashed"))
                 .font(.system(size: 31, weight: .regular))
                 .foregroundColor(VeilTheme.gold)
-                .rotationEffect(.degrees(canAct && !reduceMotion ? Double(rollPulse % 4) * 90 : 0))
+                .rotationEffect(.degrees(canAct && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? Double(rollPulse % 4) * 90 : 0))
             Text(canAct ? "点数 \(dice)" : (enabled ? "待掷" : "等待"))
                 .font(.caption.weight(.semibold))
                 .foregroundColor(VeilTheme.text)
@@ -1849,7 +1897,7 @@ private struct LudoTrackView: View {
                 }
             }
             .frame(width: side, height: side)
-            .animation(reduceMotion || VeilDevicePerformance.current.transferVisualComplexity == .minimal ? nil : VeilMotion.transit, value: state.turn)
+            .animation(VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion), value: state.turn)
         }
         .accessibilityElement(children: .contain)
     }
@@ -1969,6 +2017,24 @@ private struct MiniGameRulesView: View {
                 rule("占领官渡、乌巢、白马可在整轮结束时获得胜利点；达到 8 VP、攻占敌方大营或击溃敌方中军均可获胜。")
                 rule("战斗结算使用双方都能由同一加密历史重算的确定性骰值，因此断线重连后结果仍保持一致。")
                 rule("本作只借鉴桌面兵棋的表现形式，地图、数值与规则均为 VeilLink 原创轻量化设计，并非对现成桌游的数字复刻。")
+            }
+        case .artillery:
+            VStack(alignment: .leading, spacing: 10) {
+                rule("双方轮流调整 15°–80° 角度与 30%–100% 力度，炮弹受重力、地形与当回合风力影响。")
+                rule("直接命中造成 2 点损伤，近距离爆炸造成 1 点损伤；生命归零即告负，24 回合后按剩余生命判定。")
+                rule("联机只发送角度与力度；风力和弹道由会话编号与回合数确定，两端可独立复算并在断线后恢复。")
+            }
+        case .lightTrail:
+            VStack(alignment: .leading, spacing: 10) {
+                rule("每个赛段可向左、直行或向右切换一条光轨；撞上红色屏障会损失护盾。")
+                rule("安全通过金色能量核心可加分；护盾归零立即出局，18 个赛段后先比较护盾，再比较能量。")
+                rule("双方使用由会话编号生成的同一确定性赛道；操作作为加密回合事件同步，弱网下不会出现两套障碍布局。")
+            }
+        case .magneticHockey:
+            VStack(alignment: .leading, spacing: 10) {
+                rule("双方轮流选择 0°–359° 方向与 10%–100% 力度击球；主方向右攻，客方向左攻。")
+                rule("冰球以固定 120 Hz 步进计算摩擦、边墙反弹和球门；当回合磁场会让轨迹产生可预见的偏转。")
+                rule("先得 3 球获胜；20 杆仍未结束则按比分判定，相同比分为和局。联机仅同步方向与力度，两端复算完整物理。")
             }
         }
     }

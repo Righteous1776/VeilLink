@@ -36,6 +36,13 @@ For later MaleCNS tiers: graph load time/memory, steps/sec, simulated episode wa
 
 Simulator/Linux results must never be used to claim real iPhone 7 viability.
 
+## Tactical Solo V1 dedicated policy
+
+- Tactical remains excluded from the historical generic VLPOL1 registry and corpus.
+- Single-player Tactical uses a separate 12-feature linear policy trained from 96 reviewed pairwise examples for 240 deterministic epochs.
+- The policy ranks only commands enumerated by `TacticalState`, runs without network access and has a built-in safe fallback if its JSON resource fails validation.
+- Physical iPhone 7 latency, memory and thermal measurements are still required before making device-specific performance claims.
+
 ## V0.9.3 VFLY1 / MaleCNS graph-import status
 
 - VFLY1 builder, verifier, graph-guided Core/Lite extractor, Swift loader and VeilFly native-runtime bridge are implemented.

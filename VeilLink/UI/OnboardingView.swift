@@ -140,6 +140,7 @@ struct OnboardingView: View {
 private struct VeilOnboardingMark: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var revealed = false
+    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
     var body: some View {
         ZStack {
@@ -164,10 +165,10 @@ private struct VeilOnboardingMark: View {
         .shadow(color: VeilTheme.gold.opacity(0.16), radius: 18)
         .accessibilityHidden(true)
         .onAppear {
-            if reduceMotion {
+            if motionReduced {
                 revealed = true
             } else {
-                withAnimation(VeilMotion.reveal) { revealed = true }
+                withAnimation(VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion)) { revealed = true }
             }
         }
     }
