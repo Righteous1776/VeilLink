@@ -34,6 +34,21 @@ struct ArtilleryGameView: View {
             }
             .padding(.horizontal, 4)
 
+            HStack(spacing: 7) {
+                ForEach(1...3, id: \.self) { offset in
+                    VeilLCDDisplay(
+                        title: "W+\(offset)",
+                        value: formattedWind(
+                            ArtilleryState.wind(
+                                sessionID: sessionID,
+                                turn: state.turn + offset
+                            )
+                        )
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+            }
+
             battlefield
                 .frame(height: 238)
                 .padding(5)
@@ -244,6 +259,16 @@ struct LightTrailGameView: View {
             }
             .padding(.horizontal, 4)
 
+            HStack(spacing: 7) {
+                ForEach(0..<3, id: \.self) { offset in
+                    VeilLCDDisplay(
+                        title: "S+\(offset)",
+                        value: safeLaneForecast(roundOffset: offset)
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+            }
+
             track
                 .frame(height: 300)
                 .padding(5)
@@ -282,6 +307,22 @@ struct LightTrailGameView: View {
     private var safeLaneText: String {
         safeLanes.map { String($0 + 1) }.joined(separator: "·")
     }
+
+    private func safeLaneForecast(roundOffset: Int) -> String {
+        let round = min(
+            LightTrailState.rounds - 1,
+            currentCourseRound + roundOffset
+        )
+        let blocked = LightTrailState.obstacleLanes(
+            sessionID: sessionID,
+            round: round
+        )
+        let safe = (0..<LightTrailState.laneCount)
+            .filter { !blocked.contains($0) }
+            .map { String($0 + 1) }
+        return safe.isEmpty ? "NONE" : safe.joined(separator: "·")
+    }
+
 
     private var routeAdvisory: String {
         let lane = state.lane(for: localPlayer)
@@ -417,6 +458,30 @@ struct MagneticHockeyGameView: View {
             }
             .padding(.horizontal, 4)
 
+            HStack(spacing: 7) {
+                VeilLCDDisplay(
+                    title: "FIELD +1",
+                    value: formattedPolarity(
+                        MagneticHockeyState.fieldPolarity(
+                            sessionID: sessionID,
+                            turn: state.turn + 1
+                        )
+                    )
+                )
+                .frame(maxWidth: .infinity)
+
+                VeilLCDDisplay(
+                    title: "FIELD +2",
+                    value: formattedPolarity(
+                        MagneticHockeyState.fieldPolarity(
+                            sessionID: sessionID,
+                            turn: state.turn + 2
+                        )
+                    )
+                )
+                .frame(maxWidth: .infinity)
+            }
+
             rink
                 .frame(height: 230)
                 .padding(5)
@@ -455,6 +520,12 @@ struct MagneticHockeyGameView: View {
     }
 
     private var polarity: Int { MagneticHockeyState.fieldPolarity(sessionID: sessionID, turn: state.turn) }
+
+    private func formattedPolarity(_ value: Int) -> String {
+        if value == 0 { return "NEUTRAL" }
+        return "\(value > 0 ? "+" : "")\(value)"
+    }
+
 
     private var predictedShot: MagneticHockeyShot? {
         guard enabled else { return nil }
