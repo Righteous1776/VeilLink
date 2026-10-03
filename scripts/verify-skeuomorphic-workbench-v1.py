@@ -38,7 +38,7 @@ for needle in [
     "VeilInstrumentBackground",
     "VeilInstrumentBay",
     "VeilStatusStrip",
-    "base64URLSafe",
+    "usesURLSafeBase64",
     "jsonStructure",
     "VeilLocalToolEngine.hsl",
     "LIVE AUDIO",
@@ -83,6 +83,9 @@ if re.search(r"(?<![A-Za-z0-9_])Slider\\s*\\(", arcade):
 
 if "VeilCompactKeyStyle(" not in lobby or "ArcadeBotDifficulty.allCases" not in lobby:
     raise SystemExit("FAIL arcade difficulty selector regressed from hardware keys")
+
+if "BoardBotDifficulty.allCases" not in lobby or "controller.setBoardDifficulty" not in lobby:
+    raise SystemExit("FAIL board-game difficulty selector regressed from hardware keys")
 
 if "E2EE" not in lobby or "VeilInstrumentDeck" not in lobby:
     raise SystemExit("FAIL nearby game hub regressed from skeuomorphic E2EE console")
