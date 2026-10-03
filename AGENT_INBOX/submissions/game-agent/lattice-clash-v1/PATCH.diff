@@ -1,0 +1,839 @@
+diff --git a/VeilLink/Core/LatticeClashGame.swift b/VeilLink/Core/LatticeClashGame.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/LatticeClashGame.swift
+@@ -0,0 +1,326 @@
++import Foundation
++
++enum LatticeClashPlayer: UInt8, CaseIterable, Equatable, Sendable {
++    case host = 1
++    case guest = 2
++
++    var opponent: LatticeClashPlayer {
++        self == .host ? .guest : .host
++    }
++}
++
++enum LatticeClashCell: UInt8, Equatable, Sendable {
++    case empty = 0
++    case host = 1
++    case guest = 2
++
++    init(owner: LatticeClashPlayer) {
++        self = owner == .host ? .host : .guest
++    }
++
++    var owner: LatticeClashPlayer? {
++        switch self {
++        case .empty: return nil
++        case .host: return .host
++        case .guest: return .guest
++        }
++    }
++}
++
++struct LatticeClashMove: Equatable, Sendable {
++    let index: Int
++}
++
++struct LatticeClashTurnResult: Equatable, Sendable {
++    let actor: LatticeClashPlayer
++    let move: LatticeClashMove
++    let captured: [Int]
++    let hostCount: Int
++    let guestCount: Int
++    let retainedTurn: Bool
++}
++
++struct LatticeClashState: Equatable, Sendable {
++    static let size = 7
++    static let cellCount = size * size
++    static let majorityCount = 25
++    static let maxTurns = cellCount - 4
++
++    private(set) var board: [LatticeClashCell]
++    private(set) var currentPlayer: LatticeClashPlayer
++    private(set) var turn: Int
++    private(set) var winner: LatticeClashPlayer?
++    private(set) var isDraw: Bool
++    private(set) var lastMove: Int?
++    private(set) var lastTurn: LatticeClashTurnResult?
++
++    init() {
++        var board = Array(repeating: LatticeClashCell.empty, count: Self.cellCount)
++        board[Self.index(row: 2, column: 0)] = .host
++        board[Self.index(row: 4, column: 0)] = .host
++        board[Self.index(row: 2, column: 6)] = .guest
++        board[Self.index(row: 4, column: 6)] = .guest
++        self.init(board: board, currentPlayer: .host)
++    }
++
++    init(
++        board: [LatticeClashCell],
++        currentPlayer: LatticeClashPlayer,
++        turn: Int = 0,
++        winner: LatticeClashPlayer? = nil,
++        isDraw: Bool = false,
++        lastMove: Int? = nil,
++        lastTurn: LatticeClashTurnResult? = nil
++    ) {
++        precondition(board.count == Self.cellCount, "Lattice Clash requires a 7x7 board")
++        self.board = board
++        self.currentPlayer = currentPlayer
++        self.turn = max(0, turn)
++        self.winner = winner
++        self.isDraw = isDraw
++        self.lastMove = lastMove
++        self.lastTurn = lastTurn
++    }
++
++    var isFinished: Bool {
++        winner != nil || isDraw
++    }
++
++    func cell(at index: Int) -> LatticeClashCell {
++        guard (0..<Self.cellCount).contains(index) else { return .empty }
++        return board[index]
++    }
++
++    func count(for player: LatticeClashPlayer) -> Int {
++        board.filter { $0.owner == player }.count
++    }
++
++    func legalMoves(for player: LatticeClashPlayer) -> [LatticeClashMove] {
++        guard !isFinished else { return [] }
++        return rawLegalMoves(for: player)
++    }
++
++    func isLegal(move: LatticeClashMove, actor: LatticeClashPlayer) -> Bool {
++        guard !isFinished,
++              actor == currentPlayer,
++              (0..<Self.cellCount).contains(move.index),
++              board[move.index] == .empty else {
++            return false
++        }
++        return Self.neighbors(of: move.index).contains { board[$0].owner == actor }
++    }
++
++    @discardableResult
++    mutating func apply(move: LatticeClashMove, actor: LatticeClashPlayer) -> Bool {
++        guard isLegal(move: move, actor: actor) else { return false }
++
++        board[move.index] = LatticeClashCell(owner: actor)
++        let captured = resolveCaptures(for: actor)
++        turn += 1
++        lastMove = move.index
++
++        if count(for: actor) >= Self.majorityCount {
++            winner = actor
++        } else if turn >= Self.maxTurns || !board.contains(.empty) {
++            finishByScore()
++        } else {
++            let opponent = actor.opponent
++            let opponentMoves = rawLegalMoves(for: opponent)
++            if !opponentMoves.isEmpty {
++                currentPlayer = opponent
++            } else if !rawLegalMoves(for: actor).isEmpty {
++                currentPlayer = actor
++            } else {
++                finishByScore()
++            }
++        }
++
++        lastTurn = LatticeClashTurnResult(
++            actor: actor,
++            move: move,
++            captured: captured,
++            hostCount: count(for: .host),
++            guestCount: count(for: .guest),
++            retainedTurn: !isFinished && currentPlayer == actor
++        )
++        return true
++    }
++
++    private func rawLegalMoves(for player: LatticeClashPlayer) -> [LatticeClashMove] {
++        guard count(for: player) > 0 else { return [] }
++        var moves: [LatticeClashMove] = []
++        moves.reserveCapacity(Self.cellCount)
++        for index in 0..<Self.cellCount where board[index] == .empty {
++            if Self.neighbors(of: index).contains(where: { board[$0].owner == player }) {
++                moves.append(LatticeClashMove(index: index))
++            }
++        }
++        return moves
++    }
++
++    private mutating func resolveCaptures(for actor: LatticeClashPlayer) -> [Int] {
++        var captured: [Int] = []
++        let enemy = actor.opponent
++
++        while true {
++            var wave: [Int] = []
++            for index in 0..<Self.cellCount where board[index].owner == enemy {
++                let support = Self.neighbors(of: index)
++                    .reduce(into: 0) { partial, neighbor in
++                        if board[neighbor].owner == actor {
++                            partial += 1
++                        }
++                    }
++                if support >= 3 {
++                    wave.append(index)
++                }
++            }
++
++            guard !wave.isEmpty else { break }
++            for index in wave {
++                board[index] = LatticeClashCell(owner: actor)
++            }
++            captured.append(contentsOf: wave)
++        }
++
++        return captured
++    }
++
++    private mutating func finishByScore() {
++        let host = count(for: .host)
++        let guest = count(for: .guest)
++        if host == guest {
++            winner = nil
++            isDraw = true
++        } else {
++            winner = host > guest ? .host : .guest
++            isDraw = false
++        }
++    }
++
++    static func index(row: Int, column: Int) -> Int {
++        row * size + column
++    }
++
++    static func rowColumn(for index: Int) -> (row: Int, column: Int) {
++        (index / size, index % size)
++    }
++
++    static func neighbors(of index: Int) -> [Int] {
++        guard (0..<cellCount).contains(index) else { return [] }
++        let origin = rowColumn(for: index)
++        var result: [Int] = []
++        result.reserveCapacity(8)
++
++        for rowDelta in -1...1 {
++            for columnDelta in -1...1 {
++                if rowDelta == 0 && columnDelta == 0 { continue }
++                let row = origin.row + rowDelta
++                let column = origin.column + columnDelta
++                guard (0..<size).contains(row), (0..<size).contains(column) else { continue }
++                result.append(Self.index(row: row, column: column))
++            }
++        }
++        return result
++    }
++}
++
++enum LatticeClashBot {
++    static func chooseMove(
++        in state: LatticeClashState,
++        actor: LatticeClashPlayer
++    ) -> LatticeClashMove? {
++        guard !state.isFinished, state.currentPlayer == actor else { return nil }
++        let legal = state.legalMoves(for: actor)
++        guard !legal.isEmpty else { return nil }
++
++        var bestMove = legal[0]
++        var bestScore = Int.min
++
++        for move in legal {
++            var probe = state
++            guard probe.apply(move: move, actor: actor) else { continue }
++            let score = search(state: probe, perspective: actor, depth: 1)
++            if score > bestScore || (score == bestScore && move.index < bestMove.index) {
++                bestScore = score
++                bestMove = move
++            }
++        }
++        return bestMove
++    }
++
++    private static func search(
++        state: LatticeClashState,
++        perspective: LatticeClashPlayer,
++        depth: Int
++    ) -> Int {
++        if depth == 0 || state.isFinished {
++            return evaluate(state: state, perspective: perspective)
++        }
++
++        let actor = state.currentPlayer
++        let moves = state.legalMoves(for: actor)
++        guard !moves.isEmpty else {
++            return evaluate(state: state, perspective: perspective)
++        }
++
++        if actor == perspective {
++            var best = Int.min
++            for move in moves {
++                var probe = state
++                guard probe.apply(move: move, actor: actor) else { continue }
++                best = max(best, search(state: probe, perspective: perspective, depth: depth - 1))
++            }
++            return best
++        } else {
++            var best = Int.max
++            for move in moves {
++                var probe = state
++                guard probe.apply(move: move, actor: actor) else { continue }
++                best = min(best, search(state: probe, perspective: perspective, depth: depth - 1))
++            }
++            return best
++        }
++    }
++
++    private static func evaluate(
++        state: LatticeClashState,
++        perspective: LatticeClashPlayer
++    ) -> Int {
++        if state.winner == perspective {
++            return 1_000_000 - state.turn
++        }
++        if state.winner == perspective.opponent {
++            return -1_000_000 + state.turn
++        }
++        if state.isDraw {
++            return 0
++        }
++
++        let ownCount = state.count(for: perspective)
++        let enemyCount = state.count(for: perspective.opponent)
++        let ownMobility = state.legalMoves(for: perspective).count
++        let enemyMobility = state.legalMoves(for: perspective.opponent).count
++        let center = centrality(in: state, player: perspective)
++            - centrality(in: state, player: perspective.opponent)
++
++        return (ownCount - enemyCount) * 100
++            + (ownMobility - enemyMobility) * 6
++            + center * 2
++    }
++
++    private static func centrality(
++        in state: LatticeClashState,
++        player: LatticeClashPlayer
++    ) -> Int {
++        let midpoint = LatticeClashState.size / 2
++        var score = 0
++
++        for index in 0..<LatticeClashState.cellCount where state.cell(at: index).owner == player {
++            let coordinate = LatticeClashState.rowColumn(for: index)
++            let distance = abs(coordinate.row - midpoint) + abs(coordinate.column - midpoint)
++            score += max(0, LatticeClashState.size - distance)
++        }
++        return score
++    }
++}
+
+diff --git a/VeilLink/UI/LatticeClashLabView.swift b/VeilLink/UI/LatticeClashLabView.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/LatticeClashLabView.swift
+@@ -0,0 +1,371 @@
++import SwiftUI
++
++struct LatticeClashLabView: View {
++    @State private var state = LatticeClashState()
++
++    private var columns: [GridItem] {
++        Array(
++            repeating: GridItem(.flexible(), spacing: 5),
++            count: LatticeClashState.size
++        )
++    }
++
++    var body: some View {
++        ZStack {
++            LinearGradient(
++                colors: [
++                    Color(red: 0.055, green: 0.065, blue: 0.085),
++                    Color(red: 0.11, green: 0.12, blue: 0.15)
++                ],
++                startPoint: .topLeading,
++                endPoint: .bottomTrailing
++            )
++            .ignoresSafeArea()
++
++            ScrollView {
++                VStack(spacing: 16) {
++                    header
++                    scoreDeck
++                    board
++                    turnDeck
++                    rulesDeck
++                }
++                .padding(16)
++                .frame(maxWidth: 620)
++                .frame(maxWidth: .infinity)
++            }
++        }
++        .navigationTitle("晶格争夺")
++        .navigationBarTitleDisplayMode(.inline)
++    }
++
++    private var header: some View {
++        VStack(alignment: .leading, spacing: 7) {
++            HStack {
++                VStack(alignment: .leading, spacing: 2) {
++                    Text("LATTICE CLASH")
++                        .font(.system(.caption, design: .monospaced).weight(.bold))
++                        .tracking(1.4)
++                        .foregroundColor(Color.cyan.opacity(0.86))
++                    Text("晶格争夺 · Game Lab")
++                        .font(.title3.weight(.semibold))
++                        .foregroundColor(.white)
++                }
++                Spacer()
++                Text("7×7")
++                    .font(.caption.bold().monospacedDigit())
++                    .foregroundColor(.white.opacity(0.7))
++                    .padding(.horizontal, 10)
++                    .padding(.vertical, 6)
++                    .background(Color.white.opacity(0.07))
++                    .clipShape(Capsule())
++            }
++
++            Text("从两侧锚点扩张晶格。新节点若让敌方节点同时受到至少 3 个友方邻点支撑，会触发确定性链式转化。先控制 25 格者获胜。")
++                .font(.caption)
++                .foregroundColor(.white.opacity(0.62))
++                .fixedSize(horizontal: false, vertical: true)
++        }
++        .panel()
++    }
++
++    private var scoreDeck: some View {
++        HStack(spacing: 10) {
++            scoreCard(
++                title: "YOU",
++                value: state.count(for: .host),
++                color: .cyan,
++                active: state.currentPlayer == .host && !state.isFinished
++            )
++            scoreCard(
++                title: "BOT",
++                value: state.count(for: .guest),
++                color: .orange,
++                active: state.currentPlayer == .guest && !state.isFinished
++            )
++            VStack(spacing: 4) {
++                Text("TURN")
++                    .font(.caption2.bold().monospaced())
++                    .foregroundColor(.white.opacity(0.45))
++                Text("\(state.turn)")
++                    .font(.title3.bold().monospacedDigit())
++                    .foregroundColor(.white)
++                Text("/ \(LatticeClashState.maxTurns)")
++                    .font(.caption2.monospacedDigit())
++                    .foregroundColor(.white.opacity(0.4))
++            }
++            .frame(maxWidth: .infinity)
++            .padding(.vertical, 10)
++            .background(Color.black.opacity(0.22))
++            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
++        }
++        .panel()
++    }
++
++    private var board: some View {
++        LazyVGrid(columns: columns, spacing: 5) {
++            ForEach(0..<LatticeClashState.cellCount, id: \.self) { index in
++                cellButton(index: index)
++            }
++        }
++        .padding(9)
++        .background(Color.black.opacity(0.3))
++        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
++        .overlay(
++            RoundedRectangle(cornerRadius: 18, style: .continuous)
++                .stroke(Color.white.opacity(0.08), lineWidth: 1)
++        )
++        .shadow(color: Color.black.opacity(0.28), radius: 16, y: 8)
++        .accessibilityElement(children: .contain)
++        .accessibilityLabel("晶格争夺棋盘")
++    }
++
++    private var turnDeck: some View {
++        VStack(spacing: 10) {
++            HStack {
++                Circle()
++                    .fill(statusColor)
++                    .frame(width: 8, height: 8)
++                    .shadow(color: statusColor.opacity(0.8), radius: 4)
++                Text(statusText)
++                    .font(.caption.weight(.semibold))
++                    .foregroundColor(.white.opacity(0.84))
++                Spacer()
++                if let result = state.lastTurn, !result.captured.isEmpty {
++                    Text("链式转化 +\(result.captured.count)")
++                        .font(.caption2.bold().monospacedDigit())
++                        .foregroundColor(.yellow.opacity(0.9))
++                }
++            }
++
++            if state.isFinished {
++                Button("重新布设晶格") {
++                    state = LatticeClashState()
++                }
++                .buttonStyle(LatticeClashControlButtonStyle())
++            } else {
++                HStack {
++                    Text("可落点 \(state.legalMoves(for: .host).count)")
++                        .font(.caption2.monospacedDigit())
++                        .foregroundColor(.white.opacity(0.45))
++                    Spacer()
++                    Text("多数阈值 \(LatticeClashState.majorityCount)")
++                        .font(.caption2.monospacedDigit())
++                        .foregroundColor(.white.opacity(0.45))
++                }
++            }
++        }
++        .panel()
++    }
++
++    private var rulesDeck: some View {
++        VStack(alignment: .leading, spacing: 7) {
++            Text("RULESET")
++                .font(.caption2.bold().monospaced())
++                .foregroundColor(.white.opacity(0.45))
++            Text("• 只能在己方节点的八邻域空格中扩张。\n• 敌方节点被至少 3 个己方邻点包围时转化；转化会继续触发下一波。\n• 对手无合法着法时保留回合；双方都无法行动则按控制格数结算。\n• Bot 只搜索有限合法着法，使用同一规则引擎验证，没有随机数和模型资源。")
++                .font(.caption)
++                .foregroundColor(.white.opacity(0.6))
++                .fixedSize(horizontal: false, vertical: true)
++        }
++        .frame(maxWidth: .infinity, alignment: .leading)
++        .panel()
++    }
++
++    private func cellButton(index: Int) -> some View {
++        let cell = state.cell(at: index)
++        let legal = state.isLegal(
++            move: LatticeClashMove(index: index),
++            actor: .host
++        )
++
++        return Button {
++            commitHumanMove(index: index)
++        } label: {
++            ZStack {
++                RoundedRectangle(cornerRadius: 9, style: .continuous)
++                    .fill(cellBackground(cell: cell, legal: legal))
++                    .overlay(
++                        RoundedRectangle(cornerRadius: 9, style: .continuous)
++                            .stroke(
++                                state.lastMove == index
++                                    ? Color.white.opacity(0.8)
++                                    : Color.white.opacity(0.055),
++                                lineWidth: state.lastMove == index ? 1.5 : 0.8
++                            )
++                    )
++
++                switch cell {
++                case .host:
++                    node(color: .cyan)
++                case .guest:
++                    node(color: .orange)
++                case .empty:
++                    if legal {
++                        Circle()
++                            .fill(Color.cyan.opacity(0.32))
++                            .frame(width: 7, height: 7)
++                    }
++                }
++            }
++            .aspectRatio(1, contentMode: .fit)
++        }
++        .buttonStyle(PlainButtonStyle())
++        .disabled(!legal || state.isFinished)
++        .accessibilityLabel(cellAccessibility(index: index, cell: cell, legal: legal))
++    }
++
++    private func node(color: Color) -> some View {
++        Circle()
++            .fill(
++                RadialGradient(
++                    colors: [Color.white.opacity(0.9), color],
++                    center: .topLeading,
++                    startRadius: 0,
++                    endRadius: 18
++                )
++            )
++            .padding(7)
++            .shadow(color: color.opacity(0.45), radius: 5)
++    }
++
++    private func cellBackground(cell: LatticeClashCell, legal: Bool) -> Color {
++        switch cell {
++        case .host:
++            return Color.cyan.opacity(0.09)
++        case .guest:
++            return Color.orange.opacity(0.09)
++        case .empty:
++            return legal ? Color.cyan.opacity(0.06) : Color.white.opacity(0.025)
++        }
++    }
++
++    private func scoreCard(
++        title: String,
++        value: Int,
++        color: Color,
++        active: Bool
++    ) -> some View {
++        VStack(spacing: 4) {
++            HStack(spacing: 5) {
++                Circle()
++                    .fill(color)
++                    .frame(width: 7, height: 7)
++                Text(title)
++                    .font(.caption2.bold().monospaced())
++                    .foregroundColor(.white.opacity(0.5))
++            }
++            Text("\(value)")
++                .font(.title2.bold().monospacedDigit())
++                .foregroundColor(.white)
++            Text(active ? "ACTIVE" : "STANDBY")
++                .font(.system(size: 8, weight: .bold, design: .monospaced))
++                .foregroundColor(active ? color : Color.white.opacity(0.28))
++        }
++        .frame(maxWidth: .infinity)
++        .padding(.vertical, 9)
++        .background(Color.black.opacity(active ? 0.28 : 0.2))
++        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
++    }
++
++    private var statusColor: Color {
++        if state.isFinished {
++            return state.isDraw ? .yellow : (state.winner == .host ? .cyan : .orange)
++        }
++        return state.currentPlayer == .host ? .cyan : .orange
++    }
++
++    private var statusText: String {
++        if state.isDraw {
++            return "晶格锁定 · 平局"
++        }
++        if let winner = state.winner {
++            return winner == .host ? "多数控制完成 · 你获胜" : "多数控制完成 · BOT 获胜"
++        }
++        return state.currentPlayer == .host ? "你的扩张窗口" : "BOT 正在计算"
++    }
++
++    private func commitHumanMove(index: Int) {
++        var next = state
++        guard next.apply(
++            move: LatticeClashMove(index: index),
++            actor: .host
++        ) else {
++            return
++        }
++
++        var safety = 0
++        while !next.isFinished,
++              next.currentPlayer == .guest,
++              safety < LatticeClashState.maxTurns {
++            guard let move = LatticeClashBot.chooseMove(in: next, actor: .guest),
++                  next.apply(move: move, actor: .guest) else {
++                break
++            }
++            safety += 1
++        }
++
++        withAnimation(.easeInOut(duration: 0.18)) {
++            state = next
++        }
++    }
++
++    private func cellAccessibility(
++        index: Int,
++        cell: LatticeClashCell,
++        legal: Bool
++    ) -> String {
++        let coordinate = LatticeClashState.rowColumn(for: index)
++        let owner: String
++        switch cell {
++        case .empty: owner = legal ? "空格，可落子" : "空格"
++        case .host: owner = "你的节点"
++        case .guest: owner = "BOT 节点"
++        }
++        return "第 \(coordinate.row + 1) 行，第 \(coordinate.column + 1) 列，\(owner)"
++    }
++}
++
++private struct LatticeClashControlButtonStyle: ButtonStyle {
++    func makeBody(configuration: Configuration) -> some View {
++        configuration.label
++            .font(.caption.weight(.semibold))
++            .foregroundColor(.black.opacity(0.82))
++            .frame(maxWidth: .infinity)
++            .padding(.vertical, 11)
++            .background(
++                LinearGradient(
++                    colors: [
++                        Color.cyan.opacity(configuration.isPressed ? 0.62 : 0.94),
++                        Color.blue.opacity(configuration.isPressed ? 0.55 : 0.78)
++                    ],
++                    startPoint: .top,
++                    endPoint: .bottom
++                )
++            )
++            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
++            .scaleEffect(configuration.isPressed ? 0.985 : 1)
++    }
++}
++
++private extension View {
++    func panel() -> some View {
++        self
++            .padding(13)
++            .background(
++                LinearGradient(
++                    colors: [
++                        Color.white.opacity(0.075),
++                        Color.white.opacity(0.035)
++                    ],
++                    startPoint: .top,
++                    endPoint: .bottom
++                )
++            )
++            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
++            .overlay(
++                RoundedRectangle(cornerRadius: 17, style: .continuous)
++                    .stroke(Color.white.opacity(0.07), lineWidth: 0.8)
++            )
++    }
++}
+
+diff --git a/VeilLinkTests/LatticeClashGameTests.swift b/VeilLinkTests/LatticeClashGameTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/LatticeClashGameTests.swift
+@@ -0,0 +1,125 @@
++import XCTest
++@testable import VeilLink
++
++final class LatticeClashGameTests: XCTestCase {
++    func testInitialAnchorsAndLegalMoves() {
++        let state = LatticeClashState()
++
++        XCTAssertEqual(state.count(for: .host), 2)
++        XCTAssertEqual(state.count(for: .guest), 2)
++        XCTAssertEqual(state.currentPlayer, .host)
++        XCTAssertFalse(state.legalMoves(for: .host).isEmpty)
++        XCTAssertFalse(state.legalMoves(for: .guest).isEmpty)
++    }
++
++    func testRemotePlacementIsRejectedWithoutMutation() {
++        var state = LatticeClashState()
++        let original = state
++        let center = LatticeClashState.index(row: 3, column: 3)
++
++        XCTAssertFalse(
++            state.apply(
++                move: LatticeClashMove(index: center),
++                actor: .host
++            )
++        )
++        XCTAssertEqual(state, original)
++    }
++
++    func testThreeSideSupportCapturesEnemyNode() {
++        var board = Array(
++            repeating: LatticeClashCell.empty,
++            count: LatticeClashState.cellCount
++        )
++        board[17] = .host
++        board[23] = .host
++        board[25] = .host
++        board[24] = .guest
++
++        var state = LatticeClashState(
++            board: board,
++            currentPlayer: .host
++        )
++
++        XCTAssertTrue(
++            state.apply(
++                move: LatticeClashMove(index: 31),
++                actor: .host
++            )
++        )
++        XCTAssertEqual(state.cell(at: 24), .host)
++        XCTAssertEqual(state.lastTurn?.captured, [24])
++    }
++
++    func testIdenticalMoveSequenceProducesIdenticalState() {
++        var first = LatticeClashState()
++        var second = LatticeClashState()
++
++        for _ in 0..<12 {
++            guard !first.isFinished else { break }
++            let actor = first.currentPlayer
++            let move = first.legalMoves(for: actor).first
++
++            XCTAssertEqual(actor, second.currentPlayer)
++            XCTAssertEqual(move, second.legalMoves(for: actor).first)
++
++            guard let move else { break }
++            XCTAssertTrue(first.apply(move: move, actor: actor))
++            XCTAssertTrue(second.apply(move: move, actor: actor))
++            XCTAssertEqual(first, second)
++        }
++    }
++
++    func testBotChoiceIsDeterministicAndRuleValidated() throws {
++        let state = LatticeClashState()
++
++        let first = try XCTUnwrap(
++            LatticeClashBot.chooseMove(in: state, actor: .host)
++        )
++        let second = try XCTUnwrap(
++            LatticeClashBot.chooseMove(in: state, actor: .host)
++        )
++
++        XCTAssertEqual(first, second)
++
++        var probe = state
++        XCTAssertTrue(probe.apply(move: first, actor: .host))
++    }
++
++    func testMajorityControlEndsGame() {
++        var board = Array(
++            repeating: LatticeClashCell.empty,
++            count: LatticeClashState.cellCount
++        )
++        for index in 0..<24 {
++            board[index] = .host
++        }
++        board[48] = .guest
++
++        var state = LatticeClashState(
++            board: board,
++            currentPlayer: .host
++        )
++
++        XCTAssertTrue(
++            state.apply(
++                move: LatticeClashMove(index: 24),
++                actor: .host
++            )
++        )
++        XCTAssertEqual(state.count(for: .host), 25)
++        XCTAssertEqual(state.winner, .host)
++        XCTAssertTrue(state.isFinished)
++    }
++
++    func testWrongActorIsRejected() throws {
++        var state = LatticeClashState()
++        let original = state
++        let guestMove = try XCTUnwrap(
++            state.legalMoves(for: .guest).first
++        )
++
++        XCTAssertFalse(state.apply(move: guestMove, actor: .guest))
++        XCTAssertEqual(state, original)
++    }
++}
