@@ -17,7 +17,7 @@ runtime = read("VeilLink/Core/TacticalV2/TacticalSoloRuntimeV2.swift")
 
 required_lobby = [
     "NavigationLink(destination: TacticalSoloV2View(model: model))",
-    "48×27 战役大地图",
+    "48×27 大地图",
 ]
 for needle in required_lobby:
     if needle not in lobby:
