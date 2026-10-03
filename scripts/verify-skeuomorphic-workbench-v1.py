@@ -22,6 +22,9 @@ for needle in [
     "VeilHardwareSlider",
     "VeilToggleLever",
     "VeilInstrumentRackSection",
+    "VeilInstrumentBay",
+    "VeilStatusStrip",
+    "VeilCompactKeyStyle",
     "veilInstrumentField",
 ]:
     if needle not in workbench:
@@ -44,6 +47,8 @@ if re.search(r"(?<![A-Za-z0-9_])Toggle\\s*\\(", tools):
     raise SystemExit("FAIL Tool Center regressed to system Toggle")
 if "VeilAmbientBackground()" in tools:
     raise SystemExit("FAIL Tool Center regressed to generic ambient background")
+if tools.count("VeilInstrumentBay(") < 10:
+    raise SystemExit("FAIL Tool Center instrument-bay coverage regressed")
 
 for needle in [
     "VeilHardwareSlider",
@@ -57,6 +62,18 @@ for needle in [
 
 if re.search(r"(?<![A-Za-z0-9_])Slider\\s*\\(", arcade):
     raise SystemExit("FAIL arcade controls regressed to system Slider")
+
+if "VeilCompactKeyStyle(selected:" not in lobby:
+    raise SystemExit("FAIL arcade difficulty selector regressed from hardware keys")
+
+for needle in [
+    "CONFIRMED",
+    "VISIBLE AREA",
+    "EXPLORED AREA",
+    "VeilCompactKeyStyle(selected:",
+]:
+    if needle not in tactical:
+        raise SystemExit(f"FAIL Tactical V2 instrumentation missing {needle}")
 
 for rel, text in [
     ("VeilLink/UI/GameLobbyView.swift", lobby),
