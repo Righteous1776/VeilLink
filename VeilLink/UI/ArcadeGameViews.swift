@@ -41,7 +41,7 @@ struct ArtilleryGameView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.46), lineWidth: 1.2))
 
-            VStack(spacing: 8) {
+            VeilInstrumentBay(title: "火控输入", role: .input, active: enabled) {
                 parameterSlider(title: "角度", value: $angle, range: 15...80, suffix: "°")
                 parameterSlider(title: "力度", value: $power, range: 30...100, suffix: "%")
                 Button {
@@ -53,8 +53,6 @@ struct ArtilleryGameView: View {
                 .buttonStyle(VeilPhysicalButtonStyle(accent: true))
                 .disabled(!enabled)
             }
-            .padding(12)
-            .veilCompactToolSurface(cornerRadius: 14)
 
             if let shot = state.lastShot {
                 Text(shot.damage > 0 ? "命中 · 造成 \(shot.damage) 点损伤" : "落点偏离 · 校正角度、力度并留意风向")
@@ -425,7 +423,7 @@ struct MagneticHockeyGameView: View {
                 .background(Color.black.opacity(0.26))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.46), lineWidth: 1.2))
-            VStack(spacing: 8) {
+            VeilInstrumentBay(title: "击球控制", role: .input, active: enabled) {
                 slider("方向", value: $angle, range: 0...359, suffix: "°")
                     .accessibilityHint(localPlayer == .host ? "零度朝右侧球门" : "一百八十度朝左侧球门")
                 slider("力度", value: $power, range: 10...100, suffix: "%")
@@ -438,8 +436,6 @@ struct MagneticHockeyGameView: View {
                 .buttonStyle(VeilPhysicalButtonStyle(accent: true))
                 .disabled(!enabled)
             }
-            .padding(12)
-            .veilCompactToolSurface(cornerRadius: 14)
             if let shot = state.lastShot {
                 Text(shot.scoredPlayer == nil
                      ? "固定步 \(shot.fixedStepCount) · 反弹 \(shot.wallBounces) 次"
