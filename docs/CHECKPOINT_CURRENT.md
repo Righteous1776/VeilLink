@@ -1,11 +1,11 @@
 # CURRENT CHECKPOINT
 
-VeilLink **26.11 (Build 57)** is the current cumulative release checkpoint. Build 57 adds
-native real-time arcade, hardware-backed Live Tools, BLE/LAN transport hardening, PTT/chat
-repairs, and explicit render/performance budgets while preserving the complete 26.10 Build 56
-release line.
+VeilLink **26.12 (Build 58)** is the current cumulative release checkpoint. Build 58 adds
+six substantial real-time 2D/3D games, deterministic gameplay cores, adaptive render profiles,
+local model/vector asset fallbacks and expanded regression coverage while preserving the complete
+26.11 Build 57 release line.
 
-The branch is based on the complete 26.10 Build 56 release tree and carries
+The branch is based on the complete 26.11 Build 57 release tree and carries
 the I12/A10 Ultra M5 overlay plus the subsequent compile and release-gate fixes.
 It retains the formal release features that were accidentally removed when the
 I12 update package was materialized over the older V0.9.7 tree, including voice/PTT,
@@ -30,3 +30,9 @@ local Tool Center expansion, LAN Turbo hardening, centralized adaptive/God-mode
 motion quality, and three deterministic 2D games (弧光炮战、光轨突围、磁轨冰球) that share their
 rule state across local Bot and nearby encrypted multiplayer. These additions do
 not change Protocol 4, VLGM1 v1 or SQLite Schema V8.
+
+Build 58 expands the real-time game collection with Prism Rift 3D, Afterglow Convoy,
+Ash Harbor, Rainline Last Train, Signal Dive and Blackout District. Render quality adapts
+to device and Reduce Motion settings, while authenticated God Mode can retain the existing
+high-refresh/full-effects override. Imported Kenney assets are CC0 and ShaderKit components
+retain their MIT notice; every game remains fully offline and preserves a procedural fallback.
