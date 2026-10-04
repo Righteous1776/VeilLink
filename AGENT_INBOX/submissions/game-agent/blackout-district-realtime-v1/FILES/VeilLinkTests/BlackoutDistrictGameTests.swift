@@ -207,7 +207,7 @@ final class BlackoutDistrictGameTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.totalNodes,
-            9
+            12
         )
 
         XCTAssertEqual(
@@ -219,7 +219,12 @@ final class BlackoutDistrictGameTests: XCTestCase {
 
         XCTAssertGreaterThan(
             snapshot.totalBuildings,
-            90
+            130
+        )
+
+        XCTAssertEqual(
+            state.nodes.filter(\.critical).count,
+            4
         )
     }
 }
