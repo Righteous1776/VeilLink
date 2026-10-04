@@ -20,8 +20,16 @@ struct RainlineInput: Equatable, Sendable {
 }
 
 struct RainlineFault: Equatable, Sendable {
+    enum Kind: Int, CaseIterable, Equatable, Sendable {
+        case lighting
+        case traction
+        case thermal
+        case comms
+    }
+
     let id: Int
     let car: Int
+    let kind: Kind
     let severity: Double
     let repairTicks: Int
 }
@@ -152,7 +160,7 @@ struct RainlineState: Equatable, Sendable {
             carPower[fault.car] = min(1, carPower[fault.car] + 0.42)
             repairTicks = 0
             repairingFaultID = nil
-            activeLine = repairLine(for: fault.car)
+            activeLine = repairLine(for: fault.car, kind: fault.kind)
         }
     }
 
@@ -160,17 +168,40 @@ struct RainlineState: Equatable, Sendable {
         let rain = rainIntensity
         let activeFaults = faults.filter { !repairedFaultIDs.contains($0.id) }
         let faultLoad = activeFaults.reduce(0.0) { $0 + $1.severity }
+        let thermalLoad = activeFaults
+            .filter { $0.kind == .thermal }
+            .reduce(0.0) { $0 + $1.severity }
+        let tractionLoad = activeFaults
+            .filter { $0.kind == .traction }
+            .reduce(0.0) { $0 + $1.severity }
         let boostDrain = input.boostGrid ? 1.9 : 0
-        let baseDrain = 0.36 + rain * 0.32 + faultLoad * 0.11 + boostDrain
+        let baseDrain = 0.34 + rain * 0.30 + faultLoad * 0.085 + thermalLoad * 0.22 + boostDrain
         trainPower = max(0, trainPower - baseDrain * Self.fixedDelta)
 
         traction = max(0, min(100,
-            traction + (input.boostGrid ? 4.8 : -0.25 - faultLoad * 0.03) * Self.fixedDelta
+            traction + (
+                input.boostGrid
+                ? 4.8
+                : -0.20 - faultLoad * 0.022 - tractionLoad * 0.16
+            ) * Self.fixedDelta
         ))
 
         for car in 0..<Self.carCount {
-            let hasFault = activeFaults.contains { $0.car == car }
-            let target = hasFault ? 0.08 : (trainPower > 22 ? 1.0 : max(0.08, trainPower / 22))
+            let carFaults = activeFaults.filter { $0.car == car }
+            let lightingSeverity = carFaults
+                .filter { $0.kind == .lighting }
+                .reduce(0.0) { $0 + $1.severity }
+            let hasAnyFault = !carFaults.isEmpty
+
+            let target: Double
+            if lightingSeverity > 0 {
+                target = max(0.03, 0.12 - lightingSeverity * 0.035)
+            } else if hasAnyFault {
+                target = trainPower > 22 ? 0.62 : max(0.08, trainPower / 34)
+            } else {
+                target = trainPower > 22 ? 1.0 : max(0.08, trainPower / 22)
+            }
+
             let response = input.boostGrid ? 0.055 : 0.032
             carPower[car] += (target - carPower[car]) * response
             carPower[car] = min(1, max(0, carPower[car]))
@@ -187,9 +218,22 @@ struct RainlineState: Equatable, Sendable {
         let id = tick / 8 + Int(seed % 1_000)
         let car = deterministicInt(salt: UInt64(id) ^ 0xA55A, upperBound: Self.carCount)
         guard fault(for: car) == nil else { return }
+        let kindIndex = deterministicInt(
+            salt: UInt64(id) ^ 0xBEEF,
+            upperBound: RainlineFault.Kind.allCases.count
+        )
+        let kind = RainlineFault.Kind.allCases[kindIndex]
         let severity = 0.75 + deterministicUnit(salt: UInt64(id) ^ 0x91E1) * 1.45
         let repairTicks = 78 + deterministicInt(salt: UInt64(id) ^ 0xCAFE, upperBound: 88)
-        faults.append(.init(id: id, car: car, severity: severity, repairTicks: repairTicks))
+        faults.append(
+            .init(
+                id: id,
+                car: car,
+                kind: kind,
+                severity: severity,
+                repairTicks: repairTicks
+            )
+        )
     }
 
     private mutating func updateStory() {
@@ -226,17 +270,28 @@ struct RainlineState: Equatable, Sendable {
         }
     }
 
-    private func repairLine(for car: Int) -> String {
-        switch car {
-        case 0: return "司机：驾驶台电压回来了。"
-        case 1: return "一号车厢：灯亮了，谢谢。"
-        case 2: return "二号车厢：别急着走，前面还有人。"
-        case 3: return "三号车厢：孩子不哭了。"
-        case 4: return "四号车厢：窗外全是雨，里面终于能看清人。"
-        case 5: return "五号车厢：暖气也恢复了一点。"
-        case 6: return "六号车厢：我们还能听见广播。"
-        default: return "尾车：最后一盏灯重新亮了。"
+    private func repairLine(for car: Int, kind: RainlineFault.Kind) -> String {
+        let system: String
+        switch kind {
+        case .lighting: system = "照明"
+        case .traction: system = "牵引"
+        case .thermal: system = "热控"
+        case .comms: system = "通讯"
         }
+
+        let line: String
+        switch car {
+        case 0: line = "司机：驾驶台电压回来了。"
+        case 1: line = "一号车厢：灯亮了，谢谢。"
+        case 2: line = "二号车厢：别急着走，前面还有人。"
+        case 3: line = "三号车厢：孩子不哭了。"
+        case 4: line = "四号车厢：窗外全是雨，里面终于能看清人。"
+        case 5: line = "五号车厢：暖气也恢复了一点。"
+        case 6: line = "六号车厢：我们还能听见广播。"
+        default: line = "尾车：最后一盏灯重新亮了。"
+        }
+
+        return "(system)恢复。(line)"
     }
 
     private func deterministicInt(salt: UInt64, upperBound: Int) -> Int {
@@ -257,9 +312,11 @@ struct RainlineState: Equatable, Sendable {
 
     static let storyBeats: [RainlineStoryBeat] = [
         .init(progress: 0.05, line: "广播：雨线已经压到高架桥。末班车不停站。"),
-        .init(progress: 0.22, line: "司机：后面有一节车厢掉电了。能过去看看吗？"),
-        .init(progress: 0.44, line: "乘客：窗外的楼都黑了，只有我们还在动。"),
-        .init(progress: 0.68, line: "广播：下一段隧道没有市电。保持车内照明。"),
-        .init(progress: 0.88, line: "司机：前面能看到终点站的灯了。把后面的车厢也带过去。")
+        .init(progress: 0.18, line: "司机：供电开始抖了。后面会先掉灯，也可能先掉牵引。"),
+        .init(progress: 0.31, line: "乘客：外面的广告牌一块一块灭了。车还在走。"),
+        .init(progress: 0.46, line: "广播：前方积水越过轨面。热控和牵引都可能过载。"),
+        .init(progress: 0.61, line: "五号车厢：广播刚刚断了一下。能听见的人回一声。"),
+        .init(progress: 0.76, line: "司机：下一段隧道没有市电。别把电全压在一个系统上。"),
+        .init(progress: 0.90, line: "司机：终点站灯已经看见了。把能亮的车厢都带过去。")
     ]
 }
