@@ -1,0 +1,39 @@
+# Submission Manifest
+
+- agent_id: game-agent
+- task_id: realtime-game-render-runtime-v3
+- status: DROPPED
+- base_main_sha: 41ebd5728e72683fd035c48e1fe5ea194f78a086
+- asset_grant: VEILLINK-ASSET-GAME-001
+- scope: Unified V3 successor for Rainline, Signal Dive and Blackout District. Carries all three V2 gameplay/compatibility proposals forward and adds one shared asset/render runtime with common 2D-alias -> third-party source -> procedural fallback resolution, LOD/Reduce Motion profiles, night grading, shader-safe loading and cached OBJ-to-SKTexture fallback rendering.
+- protected_surfaces: none
+- direct_product_tree_writes: none
+- staged_asset_files: 10
+- staged_asset_bytes: 274918
+- proposed_primary_files:
+  - VeilLink/UI/RealtimeGameAssetRuntime.swift
+  - VeilLink/Resources/GameAssets/REALTIME_GAME_ASSET_CATALOG.json
+  - VeilLink/Core/RainlineLastTrainGame.swift
+  - VeilLink/UI/RainlineLastTrainScene.swift
+  - VeilLink/UI/RainlineLastTrainLabView.swift
+  - VeilLink/Core/SignalDiveGame.swift
+  - VeilLink/UI/SignalDiveScene.swift
+  - VeilLink/UI/SignalDiveLabView.swift
+  - VeilLink/UI/SignalDiveKenneyVectorArt.swift
+  - VeilLink/Core/BlackoutDistrictGame.swift
+  - VeilLink/UI/BlackoutDistrictScene.swift
+  - VeilLink/UI/BlackoutDistrictLabView.swift
+  - VeilLinkTests/RealtimeGameAssetRuntimeTests.swift
+  - VeilLinkTests/RainlineLastTrainGameTests.swift
+  - VeilLinkTests/SignalDiveGameTests.swift
+  - VeilLinkTests/BlackoutDistrictGameTests.swift
+- third_party_text:
+  - ShaderKit MIT extension / dynamic-noise shader / radial-gradient shader / license
+  - Kenney Fish Pack CC0 vector fragments + provenance
+- third_party_assets:
+  - Kenney Train Kit CC0 locomotive / detailed track OBJ+MTL
+  - Kenney Car Kit CC0 service truck OBJ+MTL
+  - Kenney City Kit Roads CC0 straight road OBJ+MTL
+  - Kenney City Kit Commercial CC0 low-detail building OBJ+MTL
+- supersedes: PR #32 Rainline V2; PR #33 Signal Dive V2; PR #34 Blackout District V2 if Governor accepts this unified successor
+- live_lane_grant: none
