@@ -5,7 +5,7 @@
 - status: DROPPED
 - base_main_sha: 41ebd5728e72683fd035c48e1fe5ea194f78a086
 - asset_grant: VEILLINK-ASSET-GAME-001
-- scope: Unified V3 successor for Rainline, Signal Dive and Blackout District. Carries all three V2 gameplay/compatibility proposals forward and adds one shared asset/render runtime with common 2D-alias -> third-party source -> procedural fallback resolution, LOD/Reduce Motion profiles, night grading, shader-safe loading and cached OBJ-to-SKTexture fallback rendering.
+- scope: Unified V3 successor for Rainline, Signal Dive and Blackout District. Carries all three V2 gameplay/compatibility proposals forward and adds one shared asset/render runtime with common 2D-alias -> third-party source -> procedural fallback resolution, LOD/Reduce Motion profiles, night grading, shader-safe loading and per-scene cached SCNRenderer OBJ-to-SKTexture fallback rendering.
 - protected_surfaces: none
 - direct_product_tree_writes: none
 - staged_asset_files: 10
