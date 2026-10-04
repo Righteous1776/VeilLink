@@ -6,6 +6,18 @@ final class ArcadeGamesTests: XCTestCase {
     private let trailSessionID = "00000000-0000-0000-0000-000000000002"
     private let hockeySessionID = "00000000-0000-0000-0000-000000000003"
 
+    @MainActor
+    func testRealtimeCadenceAppliesThermalEmergencyGuard() {
+        XCTAssertLessThanOrEqual(
+            ArcadeRenderPolicy.preferredFramesPerSecond(thermalState: .serious),
+            60
+        )
+        XCTAssertLessThanOrEqual(
+            ArcadeRenderPolicy.preferredFramesPerSecond(thermalState: .critical),
+            30
+        )
+    }
+
     func testArtillerySimulationIsDeterministicAndClampsPreviewInputs() {
         let first = ArtilleryState.simulate(
             angle: 48,

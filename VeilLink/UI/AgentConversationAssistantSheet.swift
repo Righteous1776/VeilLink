@@ -39,7 +39,6 @@ struct AgentConversationAssistantSheet: View {
             }
         }
         .navigationViewStyle(.stack)
-        .preferredColorScheme(.dark)
         .onAppear {
             model.agent.setComputeFocus(.languageChat)
             if controls.autoLoadLanguageModel { model.agent.activate() }

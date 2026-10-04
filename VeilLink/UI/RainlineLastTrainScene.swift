@@ -10,6 +10,7 @@ final class RainlineLastTrainScene: SKScene {
     private var lastUpdateTime: TimeInterval = 0
     private var accumulator: TimeInterval = 0
     private var reduceMotion = false
+    private var hierarchyConfigured = false
     private let assetRuntime =
         RealtimeGameAssetRuntime()
 
@@ -57,13 +58,18 @@ final class RainlineLastTrainScene: SKScene {
     override func didMove(to view: SKView) {
         view.ignoresSiblingOrder = true
         view.preferredFramesPerSecond = 60
-        if children.isEmpty { configureHierarchy() }
+        configureHierarchyIfNeeded()
         rebuildForSize()
         publishSnapshot()
     }
 
     override func didChangeSize(_ oldSize: CGSize) {
         super.didChangeSize(oldSize)
+        // SpriteView can deliver a resize before the scene is presented. Building nodes here
+        // used to parent `playerNode` early, then didMove attempted to add it again and SpriteKit
+        // raised an Objective-C exception (MetricKit SIGABRT in build 58).
+        guard view != nil else { return }
+        configureHierarchyIfNeeded()
         rebuildForSize()
     }
 
@@ -130,7 +136,9 @@ final class RainlineLastTrainScene: SKScene {
         publishSnapshot()
     }
 
-    private func configureHierarchy() {
+    private func configureHierarchyIfNeeded() {
+        guard !hierarchyConfigured else { return }
+        hierarchyConfigured = true
         addChild(skylineFar)
         addChild(skylineNear)
         addChild(roadReflectionLayer)
@@ -151,8 +159,8 @@ final class RainlineLastTrainScene: SKScene {
         cameraNode.addChild(stormOverlay)
         cameraNode.addChild(lightningOverlay)
 
-        configurePlayer()
-        trainLayer.addChild(playerNode)
+        if playerNode.children.isEmpty { configurePlayer() }
+        if playerNode.parent !== trainLayer { trainLayer.addChild(playerNode) }
     }
 
     private func rebuildForSize() {
@@ -286,7 +294,7 @@ final class RainlineLastTrainScene: SKScene {
         trainLayer.removeAllChildren()
         carNodes.removeAll()
         carLightNodes.removeAll()
-        trainLayer.addChild(playerNode)
+        if playerNode.parent !== trainLayer { trainLayer.addChild(playerNode) }
 
         let trainWidth = size.width * 0.94
         let carWidth = trainWidth / CGFloat(RainlineState.carCount)

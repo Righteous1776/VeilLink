@@ -233,6 +233,5 @@ private struct AgentDiagnosticsView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 }

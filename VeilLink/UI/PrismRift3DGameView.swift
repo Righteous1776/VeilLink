@@ -47,15 +47,15 @@ final class PrismRift3DController: NSObject, ObservableObject {
     }
 
     func start() {
-        guard displayLink == nil else { paused = false; return }
         paused = false
+        view.isPlaying = true
+        view.rendersContinuously = true
+        applyRenderCadence()
+        guard displayLink == nil else { return }
         let link = CADisplayLink(target: self, selector: #selector(frame(_:)))
-        if #available(iOS 15.0, *) {
-            let maximum = Float(ArcadeRenderPolicy.preferredFramesPerSecond)
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: maximum, preferred: maximum)
-        }
         link.add(to: .main, forMode: .common)
         displayLink = link
+        applyRenderCadence()
     }
 
     func pause() {
@@ -63,6 +63,9 @@ final class PrismRift3DController: NSObject, ObservableObject {
         firing = false
         boosting = false
         lastTimestamp = 0
+        displayLink?.isPaused = true
+        view.isPlaying = false
+        view.rendersContinuously = false
     }
 
     func stop() {
@@ -81,6 +84,11 @@ final class PrismRift3DController: NSObject, ObservableObject {
         accumulator = 0
         lastTimestamp = 0
         paused = false
+        start()
+    }
+
+    func handleThermalStateChange() {
+        applyRenderCadence()
     }
 
     func steer(horizontal: Double, vertical: Double) {
@@ -136,6 +144,21 @@ final class PrismRift3DController: NSObject, ObservableObject {
         configureStars()
         configureBoss()
         streamEncounterNodes(force: true)
+    }
+
+    private func applyRenderCadence() {
+        let framesPerSecond = ArcadeRenderPolicy.preferredFramesPerSecond
+        view.preferredFramesPerSecond = framesPerSecond
+        displayLink?.preferredFramesPerSecond = framesPerSecond
+        displayLink?.isPaused = paused
+        if #available(iOS 15.0, *) {
+            let maximum = Float(framesPerSecond)
+            displayLink?.preferredFrameRateRange = CAFrameRateRange(
+                minimum: min(30, maximum),
+                maximum: maximum,
+                preferred: maximum
+            )
+        }
     }
 
     private func configureShip() {
@@ -535,6 +558,9 @@ struct PrismRift3DGameView: View {
             } else {
                 controller.start()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
+            controller.handleThermalStateChange()
         }
     }
 
