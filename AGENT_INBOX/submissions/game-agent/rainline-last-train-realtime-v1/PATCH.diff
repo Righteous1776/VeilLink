@@ -670,7 +670,7 @@ new file mode 100644
 +
 +    private func updateFaultEffects(snapshot: RainlineSnapshot) {
 +        let active = state.faults.filter { !state.repairedFaultIDs.contains($0.id) }
-+        let activeIDs = Set(active.map(.id))
++        let activeIDs = Set(active.map(\.id))
 +
 +        for id in faultEmitters.keys where !activeIDs.contains(id) {
 +            faultEmitters.removeValue(forKey: id)?.removeFromParent()
@@ -881,9 +881,9 @@ new file mode 100644
 +        HStack(spacing: 8) {
 +            meter("GRID", model.snapshot.trainPower, .yellow)
 +            meter("DRIVE", model.snapshot.traction, .cyan)
-+            metric("LIGHT", "(model.snapshot.litCars)/8")
-+            metric("FAULT", "(model.snapshot.activeFaults)")
-+            metric("ROUTE", "(Int(model.snapshot.progress * 100))%")
++            metric("LIGHT", "\\(model.snapshot.litCars)/8")
++            metric("FAULT", "\\(model.snapshot.activeFaults)")
++            metric("ROUTE", "\\(Int(model.snapshot.progress * 100))%")
 +        }
 +        .padding(10)
 +        .background(Color.black.opacity(0.34))
@@ -949,9 +949,9 @@ new file mode 100644
 +            }
 +
 +            HStack {
-+                Text("当前位置：第 (model.snapshot.playerCar + 1) 节")
++                Text("当前位置：第 \\(model.snapshot.playerCar + 1) 节")
 +                Spacer()
-+                Text("已修复 (model.snapshot.repairedFaults)")
++                Text("已修复 \\(model.snapshot.repairedFaults)")
 +            }
 +            .font(.caption2.monospacedDigit())
 +            .foregroundColor(.white.opacity(0.48))
@@ -1012,7 +1012,7 @@ new file mode 100644
 +            }
 +            .frame(height: 4)
 +
-+            Text("(Int(value.rounded()))")
++            Text("\\(Int(value.rounded()))")
 +                .font(.caption2.bold().monospacedDigit())
 +                .foregroundColor(.white.opacity(0.76))
 +        }
@@ -1045,7 +1045,7 @@ new file mode 100644
 +                .font(.title3.weight(.semibold))
 +                .foregroundColor(.white)
 +
-+            Text("亮灯车厢 (model.snapshot.litCars)/8 · 修复 (model.snapshot.repairedFaults) 次")
++            Text("亮灯车厢 \\(model.snapshot.litCars)/8 · 修复 \\(model.snapshot.repairedFaults) 次")
 +                .font(.caption.monospacedDigit())
 +                .foregroundColor(.white.opacity(0.60))
 +
