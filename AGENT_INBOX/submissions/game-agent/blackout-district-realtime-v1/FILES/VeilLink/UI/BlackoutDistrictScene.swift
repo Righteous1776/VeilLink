@@ -592,6 +592,32 @@ final class BlackoutDistrictScene: SKScene {
             )
 
             root.addChild(sprite)
+
+            for row in 0..<2 {
+                for column in 0..<3 {
+                    let window = SKShapeNode(
+                        rectOf: CGSize(
+                            width: 8,
+                            height: 5
+                        ),
+                        cornerRadius: 1.5
+                    )
+
+                    window.name = "window"
+                    window.position = CGPoint(
+                        x: -18 + CGFloat(column) * 18,
+                        y: -7 + CGFloat(row) * 15
+                    )
+                    window.fillColor = UIColor(
+                        red: 1,
+                        green: 0.72,
+                        blue: 0.30,
+                        alpha: 0.0
+                    )
+                    window.strokeColor = .clear
+                    root.addChild(window)
+                }
+            }
         } else {
             let width =
                 76 +
