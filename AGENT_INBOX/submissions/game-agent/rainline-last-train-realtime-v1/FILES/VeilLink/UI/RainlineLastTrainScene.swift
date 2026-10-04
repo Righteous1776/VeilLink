@@ -9,6 +9,7 @@ final class RainlineLastTrainScene: SKScene {
     private var input = RainlineInput()
     private var lastUpdateTime: TimeInterval = 0
     private var accumulator: TimeInterval = 0
+    private var reduceMotion = false
 
     private let cameraNode = SKCameraNode()
     private let skylineFar = SKNode()
@@ -27,6 +28,7 @@ final class RainlineLastTrainScene: SKScene {
     private var faultEmitters: [Int: SKEmitterNode] = [:]
     private var rainEmitter: SKEmitterNode?
     private let glassRain = SKSpriteNode()
+    private let thirdPartyNoise = SKSpriteNode()
 
     init(seed: UInt64) {
         state = RainlineState(seed: seed)
@@ -88,6 +90,11 @@ final class RainlineLastTrainScene: SKScene {
 
     func setGridBoost(_ active: Bool) {
         input.boostGrid = active
+    }
+
+    func setReduceMotion(_ enabled: Bool) {
+        reduceMotion = enabled
+        rainEmitter?.particleBirthRate = enabled ? 170 : 320
     }
 
     func restart(seed: UInt64) {
@@ -249,14 +256,21 @@ final class RainlineLastTrainScene: SKScene {
                 y: trainY
             )
 
-            let shell = SKShapeNode(
-                roundedRectOf: CGSize(width: carWidth - 3, height: 126),
-                cornerRadius: 7
-            )
-            shell.fillColor = UIColor(red: 0.055, green: 0.07, blue: 0.085, alpha: 0.98)
-            shell.strokeColor = UIColor.white.withAlphaComponent(0.11)
-            shell.lineWidth = 0.8
-            node.addChild(shell)
+            if let trainImage = UIImage(named: "rainline_kenney_train_car") {
+                let shell = SKSpriteNode(texture: SKTexture(image: trainImage))
+                shell.size = CGSize(width: carWidth - 3, height: 126)
+                shell.alpha = 0.92
+                node.addChild(shell)
+            } else {
+                let shell = SKShapeNode(
+                    roundedRectOf: CGSize(width: carWidth - 3, height: 126),
+                    cornerRadius: 7
+                )
+                shell.fillColor = UIColor(red: 0.055, green: 0.07, blue: 0.085, alpha: 0.98)
+                shell.strokeColor = UIColor.white.withAlphaComponent(0.11)
+                shell.lineWidth = 0.8
+                node.addChild(shell)
+            }
 
             let interior = SKShapeNode(
                 roundedRectOf: CGSize(width: carWidth - 10, height: 88),
@@ -326,6 +340,17 @@ final class RainlineLastTrainScene: SKScene {
         ]
         glassRain.zPosition = 70
         glassLayer.addChild(glassRain)
+
+        thirdPartyNoise.size = size
+        thirdPartyNoise.anchorPoint = CGPoint(x: 0, y: 0)
+        thirdPartyNoise.position = .zero
+        thirdPartyNoise.color = UIColor(white: 0.12, alpha: 1)
+        thirdPartyNoise.colorBlendFactor = 1
+        thirdPartyNoise.alpha = reduceMotion ? 0.012 : 0.035
+        thirdPartyNoise.blendMode = .add
+        thirdPartyNoise.zPosition = 71
+        thirdPartyNoise.shader = shaderIfAvailable(named: "SHKDynamicGrayNoise")
+        glassLayer.addChild(thirdPartyNoise)
     }
 
     private func rebuildOverlays() {
@@ -402,7 +427,7 @@ final class RainlineLastTrainScene: SKScene {
 
         for fault in active where fault.car < carNodes.count {
             if faultEmitters[fault.id] == nil {
-                let emitter = makeSparkEmitter()
+                let emitter = makeSparkEmitter(kind: fault.kind)
                 emitter.position = CGPoint(x: 0, y: 35)
                 carNodes[fault.car].addChild(emitter)
                 faultEmitters[fault.id] = emitter
@@ -412,7 +437,7 @@ final class RainlineLastTrainScene: SKScene {
 
     private func updateWeather(snapshot: RainlineSnapshot) {
         let rain = CGFloat(snapshot.rain)
-        rainEmitter?.particleBirthRate = 260 + rain * 260
+        rainEmitter?.particleBirthRate = (reduceMotion ? 150 : 260) + rain * (reduceMotion ? 120 : 260)
         stormOverlay.alpha = 0.04 + rain * 0.16
         glassRain.shader?.uniformNamed("u_rain")?.floatValue = Float(rain)
         glassRain.shader?.uniformNamed("u_power")?.floatValue = Float(snapshot.trainPower / 100)
@@ -421,12 +446,20 @@ final class RainlineLastTrainScene: SKScene {
         let phase = Int(state.seed % UInt64(period))
         if snapshot.rain > 0.72 && state.tick % period == phase {
             lightningOverlay.removeAllActions()
-            lightningOverlay.run(.sequence([
-                .fadeAlpha(to: 0.56, duration: 0.02),
-                .fadeAlpha(to: 0.05, duration: 0.055),
-                .fadeAlpha(to: 0.31, duration: 0.03),
-                .fadeOut(withDuration: 0.15)
-            ]))
+
+            if reduceMotion {
+                lightningOverlay.run(.sequence([
+                    .fadeAlpha(to: 0.14, duration: 0.04),
+                    .fadeOut(withDuration: 0.18)
+                ]))
+            } else {
+                lightningOverlay.run(.sequence([
+                    .fadeAlpha(to: 0.56, duration: 0.02),
+                    .fadeAlpha(to: 0.05, duration: 0.055),
+                    .fadeAlpha(to: 0.31, duration: 0.03),
+                    .fadeOut(withDuration: 0.15)
+                ]))
+            }
         }
     }
 
@@ -436,7 +469,7 @@ final class RainlineLastTrainScene: SKScene {
         }
     }
 
-    private func makeSparkEmitter() -> SKEmitterNode {
+    private func makeSparkEmitter(kind: RainlineFault.Kind) -> SKEmitterNode {
         let emitter = SKEmitterNode()
         emitter.particleTexture = makeDotTexture(diameter: 5)
         emitter.particleBirthRate = 26
@@ -447,7 +480,16 @@ final class RainlineLastTrainScene: SKScene {
         emitter.emissionAngleRange = .pi * 2
         emitter.particleAlpha = 0.92
         emitter.particleAlphaSpeed = -1.9
-        emitter.particleColor = .systemOrange
+        switch kind {
+        case .lighting:
+            emitter.particleColor = .systemYellow
+        case .traction:
+            emitter.particleColor = .systemRed
+        case .thermal:
+            emitter.particleColor = .systemOrange
+        case .comms:
+            emitter.particleColor = .systemCyan
+        }
         emitter.particleColorBlendFactor = 1
         emitter.particleBlendMode = .add
         return emitter
@@ -467,6 +509,15 @@ final class RainlineLastTrainScene: SKScene {
             UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: diameter, height: diameter)).fill()
         }
         return SKTexture(image: image)
+    }
+
+    private func shaderIfAvailable(named name: String) -> SKShader? {
+        guard let path = Bundle.main.path(forResource: name, ofType: "fsh"),
+              let source = try? String(contentsOfFile: path) else {
+            return nil
+        }
+
+        return SKShader(source: source)
     }
 
     private func procedural(index: Int, salt: UInt64) -> Double {
