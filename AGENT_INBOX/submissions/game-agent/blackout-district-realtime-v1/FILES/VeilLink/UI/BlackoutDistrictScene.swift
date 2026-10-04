@@ -162,6 +162,7 @@ final class BlackoutDistrictScene: SKScene {
             vehicleLayer,
             effectLayer
         ].forEach {
+            $0.removeAllChildren()
             worldRoot.addChild($0)
         }
 
