@@ -12,5 +12,5 @@
 - Reduce Motion affects presentation only;
 - iPad-size scene rebuild and camera scaling smoke;
 - scene restart idempotence;
-- Asset Drop gate validates 4 staged assets with exact SHA-256/bytes;
+- Asset Drop gate validates 6 staged assets with exact SHA-256/bytes;
 - integration-time iOS 15 semantic build and full XCTest.
