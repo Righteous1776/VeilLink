@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 @testable import VeilLink
 
 final class RealtimeGameAssetRuntimeTests: XCTestCase {
