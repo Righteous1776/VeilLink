@@ -40,6 +40,26 @@
       "bytes": 155,
       "purpose": "Texture-free CC0 derivative fallback material for the road",
       "attribution": ""
+    },
+    {
+      "path": "ASSETS/blackout_commercial_low_a.obj",
+      "alias": "blackout-kenney-commercial-low-a",
+      "source_url": "https://github.com/ThomasW1204/A-Rolling-Start/blob/df74eea644c7e5ebfd5c0ce9c5cb8fe55fad71e7/assets/kenney_city-kit-commercial_2.1/Models/OBJ%20format/low-detail-building-a.obj",
+      "license": "CC0-1.0",
+      "sha256": "ef632daa0535dcdb85645c3e039ab8158f1957c8ec3ad962c46fbe5e0894c444",
+      "bytes": 11744,
+      "purpose": "Kenney City Kit Commercial low-detail building for district/building sprite bake",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/low-detail-building-a.mtl",
+      "alias": "blackout-kenney-commercial-material",
+      "source_url": "https://github.com/ThomasW1204/A-Rolling-Start/blob/df74eea644c7e5ebfd5c0ce9c5cb8fe55fad71e7/assets/kenney_city-kit-commercial_2.1/Models/OBJ%20format/low-detail-building-a.mtl",
+      "license": "CC0-1.0",
+      "sha256": "3547d20cbb3246c86437ece8ba33d0a9c14d90dc06059716f7cea6bccec4264c",
+      "bytes": 157,
+      "purpose": "Texture-free CC0 derivative fallback material for the commercial building",
+      "attribution": ""
     }
   ]
 }
