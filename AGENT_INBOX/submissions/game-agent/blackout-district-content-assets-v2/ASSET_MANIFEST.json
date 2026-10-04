@@ -1,0 +1,35 @@
+{
+  "grant_id": "VEILLINK-ASSET-GAME-001",
+  "assets": [
+    {
+      "path": "ASSETS/blackout_kenney_service_truck.glb",
+      "alias": "blackout_kenney_service_truck",
+      "source_url": "https://github.com/Matias-Sanmiguel/fly-crossy-connectome/blob/main/public/assets/kenney/car-kit/truck.glb",
+      "license": "CC0-1.0",
+      "sha256": "5e1bc66c343501dd7d5734b57e672dd949bf95d7abdce680c6508cef99d374f8",
+      "bytes": 176360,
+      "purpose": "Kenney Car Kit maintenance-truck source model for offline top-down sprite baking.",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/blackout_kenney_road_straight.glb",
+      "alias": "blackout_kenney_road_straight",
+      "source_url": "https://github.com/Matias-Sanmiguel/fly-crossy-connectome/blob/main/public/assets/kenney/city-roads/road-straight.glb",
+      "license": "CC0-1.0",
+      "sha256": "f8f744fb6fc96dedd5ad1f763b550166f2624a3757bf36b4b39969d2e7cacac5",
+      "bytes": 5248,
+      "purpose": "Kenney City Kit Roads straight-road source model for offline city sprite/road-detail baking.",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/blackout_kenney_traffic_light.glb",
+      "alias": "blackout_kenney_traffic_light",
+      "source_url": "https://github.com/Matias-Sanmiguel/fly-crossy-connectome/blob/main/public/assets/kenney/city-roads/traffic-light.glb",
+      "license": "CC0-1.0",
+      "sha256": "6c9ee253b7370e1043168493b2e662b349484a0cdd02100cff04d9d8d1bd9abb",
+      "bytes": 20344,
+      "purpose": "Kenney City Kit Roads traffic-light source model for offline roadside sprite baking.",
+      "attribution": ""
+    }
+  ]
+}
