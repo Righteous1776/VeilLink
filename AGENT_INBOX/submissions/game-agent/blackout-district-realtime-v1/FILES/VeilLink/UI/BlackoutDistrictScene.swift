@@ -11,6 +11,7 @@ final class BlackoutDistrictScene: SKScene {
     private var input = BlackoutInput()
     private var lastUpdateTime: TimeInterval = 0
     private var accumulator: TimeInterval = 0
+    private var reduceMotion = false
 
     private let worldRoot = SKNode()
     private let groundLayer = SKNode()
@@ -120,6 +121,11 @@ final class BlackoutDistrictScene: SKScene {
 
     func setRepairing(_ enabled: Bool) {
         input.repairing = enabled
+    }
+
+    func setReduceMotion(_ enabled: Bool) {
+        reduceMotion = enabled
+        rainEmitter?.particleBirthRate = enabled ? 190 : 420
     }
 
     func restart(seed: UInt64) {
@@ -333,6 +339,12 @@ final class BlackoutDistrictScene: SKScene {
 
         worldRoot.setScale(
             worldScale
+        )
+
+        cameraNode.setScale(
+            size.width >= 700
+            ? 1.18
+            : 1.0
         )
 
         rebuildWeather()
@@ -763,42 +775,46 @@ final class BlackoutDistrictScene: SKScene {
         sprite.alpha = 0
         sprite.blendMode = .add
 
-        let shader =
-            SKShader(
-                fromFile:
+        if let shader =
+            shaderIfAvailable(
+                named:
                     "SHKRadialGradient"
-            )
-
-        shader.uniforms = [
-            SKUniform(
-                name: "u_first_color",
-                color: UIColor(
-                    red: 0.24,
-                    green: 0.82,
-                    blue: 1,
-                    alpha: 0.36
-                )
-            ),
-            SKUniform(
-                name: "u_second_color",
-                color: UIColor(
-                    red: 0.05,
-                    green: 0.24,
-                    blue: 0.34,
-                    alpha: 0.0
-                )
-            ),
-            SKUniform(
-                name: "u_center",
-                vectorFloat2:
-                    vector_float2(
-                        0.5,
-                        0.5
+            ) {
+            shader.uniforms = [
+                SKUniform(
+                    name: "u_first_color",
+                    color: UIColor(
+                        red: 0.24,
+                        green: 0.82,
+                        blue: 1,
+                        alpha: 0.36
                     )
-            )
-        ]
+                ),
+                SKUniform(
+                    name: "u_second_color",
+                    color: UIColor(
+                        red: 0.05,
+                        green: 0.24,
+                        blue: 0.34,
+                        alpha: 0.0
+                    )
+                ),
+                SKUniform(
+                    name: "u_center",
+                    vectorFloat2:
+                        vector_float2(
+                            0.5,
+                            0.5
+                        )
+                )
+            ]
 
-        sprite.shader = shader
+            sprite.shader = shader
+        } else {
+            sprite.texture =
+                makeFallbackGlowTexture()
+        }
+
         return sprite
     }
 
@@ -914,14 +930,17 @@ final class BlackoutDistrictScene: SKScene {
             alpha: 1
         )
         noiseOverlay.colorBlendFactor = 1
-        noiseOverlay.alpha = 0.055
         noiseOverlay.blendMode = .add
         noiseOverlay.zPosition = 90
         noiseOverlay.shader =
-            SKShader(
-                fromFile:
+            shaderIfAvailable(
+                named:
                     "SHKDynamicGrayNoise"
             )
+        noiseOverlay.alpha =
+            noiseOverlay.shader == nil
+            ? 0
+            : (reduceMotion ? 0.018 : 0.055)
 
         let rect = CGRect(
             x: -size.width / 2,
@@ -1185,15 +1204,19 @@ final class BlackoutDistrictScene: SKScene {
     ) {
         rainEmitter?.particleBirthRate =
             CGFloat(
-                310 +
-                snapshot.storm * 260
+                (reduceMotion ? 170 : 310) +
+                snapshot.storm *
+                (reduceMotion ? 120 : 260)
             )
 
-        noiseOverlay.alpha =
-            CGFloat(
-                0.035 +
-                snapshot.storm * 0.055
-            )
+        if noiseOverlay.shader != nil {
+            noiseOverlay.alpha =
+                CGFloat(
+                    (reduceMotion ? 0.014 : 0.035) +
+                    snapshot.storm *
+                    (reduceMotion ? 0.018 : 0.055)
+                )
+        }
     }
 
     private func updateLightning(
@@ -1214,26 +1237,43 @@ final class BlackoutDistrictScene: SKScene {
             return
         }
 
-        lightningOverlay.run(
-            .sequence([
-                .fadeAlpha(
-                    to: 0.44,
-                    duration: 0.025
-                ),
-                .fadeAlpha(
-                    to: 0.05,
-                    duration: 0.055
-                ),
-                .fadeAlpha(
-                    to: 0.24,
-                    duration: 0.035
-                ),
-                .fadeOut(
-                    withDuration: 0.16
-                )
-            ]),
-            withKey: "blackout-lightning"
-        )
+        if reduceMotion {
+            lightningOverlay.run(
+                .sequence([
+                    .fadeAlpha(
+                        to: 0.14,
+                        duration: 0.05
+                    ),
+                    .fadeOut(
+                        withDuration: 0.20
+                    )
+                ]),
+                withKey:
+                    "blackout-lightning"
+            )
+        } else {
+            lightningOverlay.run(
+                .sequence([
+                    .fadeAlpha(
+                        to: 0.44,
+                        duration: 0.025
+                    ),
+                    .fadeAlpha(
+                        to: 0.05,
+                        duration: 0.055
+                    ),
+                    .fadeAlpha(
+                        to: 0.24,
+                        duration: 0.035
+                    ),
+                    .fadeOut(
+                        withDuration: 0.16
+                    )
+                ]),
+                withKey:
+                    "blackout-lightning"
+            )
+        }
     }
 
     private func handle(
@@ -1374,6 +1414,86 @@ final class BlackoutDistrictScene: SKScene {
     private func publishSnapshot() {
         onSnapshot?(
             state.snapshot()
+        )
+    }
+
+    private func shaderIfAvailable(
+        named name: String
+    ) -> SKShader? {
+        guard let path =
+                Bundle.main.path(
+                    forResource: name,
+                    ofType: "fsh"
+                ),
+              let source =
+                try? String(
+                    contentsOfFile: path
+                ) else {
+            return nil
+        }
+
+        return SKShader(
+            source: source
+        )
+    }
+
+    private func makeFallbackGlowTexture()
+    -> SKTexture {
+        let side: CGFloat = 192
+
+        let image =
+            UIGraphicsImageRenderer(
+                size: CGSize(
+                    width: side,
+                    height: side
+                )
+            )
+            .image { context in
+                let colors =
+                    [
+                        UIColor(
+                            red: 0.24,
+                            green: 0.82,
+                            blue: 1,
+                            alpha: 0.34
+                        ).cgColor,
+                        UIColor(
+                            red: 0.05,
+                            green: 0.24,
+                            blue: 0.34,
+                            alpha: 0.0
+                        ).cgColor
+                    ] as CFArray
+
+                guard let gradient =
+                    CGGradient(
+                        colorsSpace:
+                            CGColorSpaceCreateDeviceRGB(),
+                        colors: colors,
+                        locations: [0, 1]
+                    ) else {
+                    return
+                }
+
+                let center =
+                    CGPoint(
+                        x: side / 2,
+                        y: side / 2
+                    )
+
+                context.cgContext
+                    .drawRadialGradient(
+                        gradient,
+                        startCenter: center,
+                        startRadius: 0,
+                        endCenter: center,
+                        endRadius: side / 2,
+                        options: []
+                    )
+            }
+
+        return SKTexture(
+            image: image
         )
     }
 
