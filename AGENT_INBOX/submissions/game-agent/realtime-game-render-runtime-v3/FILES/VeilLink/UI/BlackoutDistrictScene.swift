@@ -383,6 +383,15 @@ final class BlackoutDistrictScene: SKScene {
             worldScale
         )
 
+        lightBloom.filter?
+            .setValue(
+                0.82 *
+                renderProfile
+                    .bloomMultiplier,
+                forKey:
+                    kCIInputIntensityKey
+            )
+
         cameraNode.setScale(
             (
                 size.width >= 700
