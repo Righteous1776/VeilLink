@@ -212,6 +212,7 @@ jobs:
                   sha256 = entry.get('sha256')
                   byte_count = entry.get('bytes')
                   purpose = entry.get('purpose')
+                  attribution = entry.get('attribution')
 
                   if not isinstance(rel, str) or not rel.startswith('ASSETS/'):
                       fail(f'invalid asset manifest path: {rel}')
@@ -231,6 +232,8 @@ jobs:
                       fail(f'asset license not allowed by grant for {rel}: {license_id}')
                   if not isinstance(purpose, str) or not purpose.strip():
                       fail(f'asset purpose missing for {rel}')
+                  if license_id == 'CC-BY-4.0' and (not isinstance(attribution, str) or not attribution.strip()):
+                      fail(f'CC-BY-4.0 asset requires attribution text: {rel}')
                   if not isinstance(sha256, str) or not re.fullmatch(r'[0-9a-fA-F]{64}', sha256):
                       fail(f'invalid SHA-256 for {rel}')
                   if not isinstance(byte_count, int) or byte_count < 0:
