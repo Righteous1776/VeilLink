@@ -76,6 +76,14 @@ final class BlackoutDistrictViewModel: ObservableObject {
         )
     }
 
+    func setReduceMotion(
+        _ enabled: Bool
+    ) {
+        scene.setReduceMotion(
+            enabled
+        )
+    }
+
     func restart() {
         seed &+=
             0x9E3779B97F4A7C15
@@ -106,6 +114,9 @@ final class BlackoutDistrictViewModel: ObservableObject {
 struct BlackoutDistrictLabView: View {
     @StateObject private var model =
         BlackoutDistrictViewModel()
+
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
 
     @State private var controlOrigin:
         CGPoint?
@@ -146,6 +157,18 @@ struct BlackoutDistrictLabView: View {
             }
             .background(
                 Color.black
+            )
+        }
+        .onAppear {
+            model.setReduceMotion(
+                reduceMotion
+            )
+        }
+        .onChange(
+            of: reduceMotion
+        ) {
+            model.setReduceMotion(
+                $0
             )
         }
         .navigationTitle(
