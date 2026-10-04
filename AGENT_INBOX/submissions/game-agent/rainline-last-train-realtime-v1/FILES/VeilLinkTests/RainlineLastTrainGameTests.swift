@@ -96,4 +96,35 @@ final class RainlineLastTrainGameTests: XCTestCase {
 
         XCTAssertEqual(first.faults, second.faults)
     }
+
+    func testFaultKindsDiversifyAcrossSeedCorpus() {
+        var observed: Set<RainlineFault.Kind> = []
+
+        for seed in UInt64(1)...UInt64(12) {
+            var state = RainlineState(seed: seed)
+
+            for _ in 0..<2_200 where !state.isFinished {
+                state.step(input: RainlineInput())
+            }
+
+            observed.formUnion(state.faults.map(\.kind))
+        }
+
+        XCTAssertGreaterThanOrEqual(observed.count, 3)
+    }
+
+    func testFaultKindsRemainSeedStable() {
+        var first = RainlineState(seed: 444)
+        var second = RainlineState(seed: 444)
+
+        for _ in 0..<2_200 {
+            first.step(input: RainlineInput())
+            second.step(input: RainlineInput())
+        }
+
+        XCTAssertEqual(
+            first.faults.map(\.kind),
+            second.faults.map(\.kind)
+        )
+    }
 }
