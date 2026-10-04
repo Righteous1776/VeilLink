@@ -388,7 +388,7 @@ final class AshHarborScene: SKScene {
         let visibleMax = state.x + 900
 
         let visibleDebris = state.level.debris.filter { $0.x >= visibleMin && $0.x <= visibleMax }
-        let debrisIDs = Set(visibleDebris.map(.id))
+        let debrisIDs = Set(visibleDebris.map(\.id))
         for id in debrisNodes.keys where !debrisIDs.contains(id) {
             debrisNodes.removeValue(forKey: id)?.removeFromParent()
         }
@@ -404,7 +404,7 @@ final class AshHarborScene: SKScene {
         }
 
         let visibleRescues = state.level.rescueSites.filter { $0.x >= visibleMin && $0.x <= visibleMax }
-        let rescueIDs = Set(visibleRescues.map(.id))
+        let rescueIDs = Set(visibleRescues.map(\.id))
         for id in rescueNodes.keys where !rescueIDs.contains(id) {
             rescueNodes.removeValue(forKey: id)?.removeFromParent()
         }
@@ -597,6 +597,6 @@ final class AshHarborScene: SKScene {
 
 private extension CGFloat {
     func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
-        min(range.upperBound, max(range.lowerBound, self))
+        Swift.min(range.upperBound, Swift.max(range.lowerBound, self))
     }
 }
