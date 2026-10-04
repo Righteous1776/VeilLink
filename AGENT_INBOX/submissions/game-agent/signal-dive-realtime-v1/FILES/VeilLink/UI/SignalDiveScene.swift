@@ -15,6 +15,7 @@ final class SignalDiveScene: SKScene {
     private let abyssBack = SKNode()
     private let abyssMid = SKNode()
     private let terrainLayer = SKNode()
+    private let biologicalLayer = SKNode()
     private let unknownLayer = SKNode()
     private let beaconLayer = SKNode()
     private let actorLayer = SKNode()
@@ -30,8 +31,10 @@ final class SignalDiveScene: SKScene {
 
     private var particulateEmitter: SKEmitterNode?
     private var obstacleNodes: [Int: SKNode] = [:]
+    private var biologicalNodes: [Int: SKNode] = [:]
     private var beaconNodes: [Int: SKNode] = [:]
     private var unknownNodes: [Int: SKNode] = [:]
+    private var reduceMotion = false
 
     init(seed: UInt64) {
         state = SignalDiveState(seed: seed)
@@ -126,6 +129,11 @@ final class SignalDiveScene: SKScene {
         input.floodlight = enabled
     }
 
+    func setReduceMotion(_ enabled: Bool) {
+        reduceMotion = enabled
+        particulateEmitter?.particleBirthRate = enabled ? 34 : 78
+    }
+
     func restart(seed: UInt64) {
         state = SignalDiveState(seed: seed)
         input = SignalDiveInput()
@@ -133,6 +141,9 @@ final class SignalDiveScene: SKScene {
         accumulator = 0
 
         obstacleNodes.values.forEach {
+            $0.removeFromParent()
+        }
+        biologicalNodes.values.forEach {
             $0.removeFromParent()
         }
         beaconNodes.values.forEach {
@@ -143,6 +154,7 @@ final class SignalDiveScene: SKScene {
         }
 
         obstacleNodes.removeAll()
+        biologicalNodes.removeAll()
         beaconNodes.removeAll()
         unknownNodes.removeAll()
         effectLayer.removeAllChildren()
@@ -157,6 +169,7 @@ final class SignalDiveScene: SKScene {
             abyssMid,
             unknownLayer,
             terrainLayer,
+            biologicalLayer,
             beaconLayer,
             actorLayer,
             particleLayer,
@@ -760,10 +773,208 @@ final class SignalDiveScene: SKScene {
             )
         }
 
+        updateBiologicalSchools(
+            snapshot: snapshot,
+            submarineX: submarineX
+        )
+
         updateUnknownSilhouettes(
             snapshot: snapshot,
             submarineX: submarineX
         )
+    }
+
+    private func updateBiologicalSchools(
+        snapshot: SignalDiveSnapshot,
+        submarineX: CGFloat
+    ) {
+        let contacts = state
+            .sonarContacts(maxRange: 1_100)
+            .compactMap { contact -> (Int, SignalDiveContact)? in
+                guard case let .biological(id) = contact.kind else {
+                    return nil
+                }
+
+                return (id, contact)
+            }
+
+        let wanted = Set(contacts.map { $0.0 })
+
+        for id in biologicalNodes.keys
+        where !wanted.contains(id) {
+            biologicalNodes
+                .removeValue(forKey: id)?
+                .removeFromParent()
+        }
+
+        for (id, contact) in contacts {
+            let node =
+                biologicalNodes[id] ??
+                {
+                    let created =
+                        makeBiologicalNode(
+                            id: id
+                        )
+                    biologicalLayer.addChild(
+                        created
+                    )
+                    biologicalNodes[id] =
+                        created
+                    return created
+                }()
+
+            let distanceScale =
+                CGFloat(
+                    contact.distance / 900
+                )
+
+            node.position = CGPoint(
+                x:
+                    submarineX +
+                    cos(
+                        CGFloat(
+                            contact.bearing
+                        )
+                    ) *
+                    distanceScale *
+                    size.width,
+                y:
+                    submarineNode.position.y -
+                    sin(
+                        CGFloat(
+                            contact.bearing
+                        )
+                    ) *
+                    distanceScale *
+                    size.height *
+                    0.58
+            )
+
+            node.alpha =
+                CGFloat(
+                    0.20 +
+                    max(
+                        0,
+                        1 -
+                        contact.distance / 1_100
+                    ) * 0.48
+                )
+        }
+    }
+
+    private func makeBiologicalNode(
+        id: Int
+    ) -> SKNode {
+        let root = SKNode()
+
+        for index in 0..<5 {
+            let fish = SKNode()
+            let alias =
+                "signal_dive_kenney_fish_\((id + index) % 3 + 1)"
+
+            if let image =
+                UIImage(
+                    named: alias
+                ) {
+                let sprite =
+                    SKSpriteNode(
+                        texture:
+                            SKTexture(
+                                image: image
+                            )
+                    )
+
+                sprite.size = CGSize(
+                    width: 26,
+                    height: 15
+                )
+                sprite.alpha = 0.72
+                fish.addChild(
+                    sprite
+                )
+            } else {
+                let body =
+                    SKShapeNode(
+                        ellipseOf:
+                            CGSize(
+                                width: 22,
+                                height: 9
+                            )
+                    )
+
+                body.fillColor =
+                    UIColor(
+                        red: 0.16,
+                        green: 0.35,
+                        blue: 0.38,
+                        alpha: 0.42
+                    )
+                body.strokeColor =
+                    UIColor.cyan
+                        .withAlphaComponent(
+                            0.08
+                        )
+                fish.addChild(
+                    body
+                )
+
+                let tailPath =
+                    CGMutablePath()
+                tailPath.move(
+                    to: CGPoint(
+                        x: -10,
+                        y: 0
+                    )
+                )
+                tailPath.addLine(
+                    to: CGPoint(
+                        x: -18,
+                        y: 6
+                    )
+                )
+                tailPath.addLine(
+                    to: CGPoint(
+                        x: -18,
+                        y: -6
+                    )
+                )
+                tailPath.closeSubpath()
+
+                let tail =
+                    SKShapeNode(
+                        path: tailPath
+                    )
+                tail.fillColor =
+                    body.fillColor
+                tail.strokeColor =
+                    .clear
+                fish.addChild(
+                    tail
+                )
+            }
+
+            fish.position = CGPoint(
+                x:
+                    CGFloat(
+                        index - 2
+                    ) * 18,
+                y:
+                    CGFloat(
+                        (index % 2) * 2 - 1
+                    ) * 9
+            )
+
+            fish.xScale =
+                index % 2 == 0
+                ? 1
+                : -1
+
+            root.addChild(
+                fish
+            )
+        }
+
+        return root
     }
 
     private func updateUnknownSilhouettes(
@@ -1068,8 +1279,9 @@ final class SignalDiveScene: SKScene {
         particulateEmitter?
             .particleBirthRate =
             CGFloat(
-                66 +
-                snapshot.pressure * 70
+                (reduceMotion ? 32 : 66) +
+                snapshot.pressure *
+                (reduceMotion ? 34 : 70)
             )
     }
 
@@ -1249,6 +1461,9 @@ final class SignalDiveScene: SKScene {
         case .beacon:
             return 6
 
+        case .biological:
+            return 8
+
         case .massiveUnknown:
             return 16
         }
@@ -1268,6 +1483,14 @@ final class SignalDiveScene: SKScene {
 
         case .beacon:
             return .systemOrange
+
+        case .biological:
+            return UIColor(
+                red: 0.32,
+                green: 0.86,
+                blue: 0.62,
+                alpha: 1
+            )
 
         case .massiveUnknown:
             return UIColor(
@@ -1353,6 +1576,8 @@ final class SignalDiveScene: SKScene {
     }
 
     private func shakeCamera() {
+        guard !reduceMotion else { return }
+
         let amplitude: CGFloat = 6
 
         cameraNode.removeAction(
