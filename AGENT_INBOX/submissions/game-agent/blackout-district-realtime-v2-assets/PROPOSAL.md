@@ -18,6 +18,7 @@
 - Direct ShaderKit MIT source/shaders.
 - Kenney Car Kit service truck OBJ under CC0.
 - Kenney City Kit Roads straight-road OBJ under CC0.
-- Texture-free CC0 derivative MTL files avoid a hard dependency on the original colormap PNG.
+- Kenney City Kit Commercial low-detail building OBJ under CC0.
+- Texture-free CC0 derivative MTL files avoid a hard dependency on the original colormap PNG for truck, road and building assets.
 
 Governor may bake the models into 2D sprites/atlases or import them directly.
