@@ -2200,7 +2200,7 @@ new file mode 100644
 +                            -1,
 +                            min(
 +                                1,
-+                                dx / 70
++                                -dx / 70
 +                            )
 +                        )
 +                    )
@@ -4224,6 +4224,12 @@ new file mode 100644
 +            if model.snapshot.outcome != .running {
 +                resultOverlay
 +            }
++        }
++        .onAppear {
++            model.setReduceMotion(reduceMotion)
++        }
++        .onChange(of: reduceMotion) {
++            model.setReduceMotion($0)
 +        }
 +        .background(Color.black)
 +        .navigationTitle("雨线末班车")
