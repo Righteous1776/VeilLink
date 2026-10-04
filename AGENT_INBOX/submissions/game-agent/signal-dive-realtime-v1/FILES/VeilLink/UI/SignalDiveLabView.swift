@@ -89,6 +89,10 @@ final class SignalDiveViewModel: ObservableObject {
         line = "声呐：脉冲已发出。"
     }
 
+    func setReduceMotion(_ enabled: Bool) {
+        scene.setReduceMotion(enabled)
+    }
+
     func toggleFloodlight() {
         floodlight.toggle()
 
@@ -133,6 +137,9 @@ final class SignalDiveViewModel: ObservableObject {
 struct SignalDiveLabView: View {
     @StateObject private var model =
         SignalDiveViewModel()
+
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
 
     @State private var controlOrigin:
         CGPoint?
@@ -182,6 +189,18 @@ struct SignalDiveLabView: View {
             }
             .background(
                 Color.black
+            )
+        }
+        .onAppear {
+            model.setReduceMotion(
+                reduceMotion
+            )
+        }
+        .onChange(
+            of: reduceMotion
+        ) {
+            model.setReduceMotion(
+                $0
             )
         }
         .navigationTitle(
