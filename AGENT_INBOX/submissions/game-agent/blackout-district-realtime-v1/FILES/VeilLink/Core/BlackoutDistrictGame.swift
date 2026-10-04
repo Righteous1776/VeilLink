@@ -122,7 +122,10 @@ struct BlackoutDistrictState: Equatable, Sendable {
             .init(id: 5, name: "工业仓区", x: 1_580, y: 820, demand: 1.12, buildingCount: 12, critical: false, health: 0.62, repairProgress: 0, faulted: false, powered: true),
             .init(id: 6, name: "南门街区", x: 1_020, y: 760, demand: 0.84, buildingCount: 14, critical: false, health: 0.70, repairProgress: 0, faulted: false, powered: true),
             .init(id: 7, name: "学校片区", x: 560, y: 700, demand: 0.74, buildingCount: 11, critical: true, health: 0.69, repairProgress: 0, faulted: false, powered: true),
-            .init(id: 8, name: "河东住宅", x: 1_420, y: 360, demand: 0.76, buildingCount: 13, critical: false, health: 0.63, repairProgress: 0, faulted: false, powered: true)
+            .init(id: 8, name: "河东住宅", x: 1_420, y: 360, demand: 0.76, buildingCount: 13, critical: false, health: 0.63, repairProgress: 0, faulted: false, powered: true),
+            .init(id: 9, name: "东站换乘", x: 2_080, y: 560, demand: 0.88, buildingCount: 12, critical: false, health: 0.67, repairProgress: 0, faulted: false, powered: true),
+            .init(id: 10, name: "应急指挥", x: 330, y: 1_060, demand: 0.66, buildingCount: 8, critical: true, health: 0.74, repairProgress: 0, faulted: false, powered: true),
+            .init(id: 11, name: "滨河商业", x: 1_920, y: 360, demand: 0.96, buildingCount: 14, critical: false, health: 0.65, repairProgress: 0, faulted: false, powered: true)
         ]
 
         edges = [
@@ -135,7 +138,13 @@ struct BlackoutDistrictState: Equatable, Sendable {
             .init(a: 6, b: 5),
             .init(a: 5, b: 4),
             .init(a: 5, b: 8),
-            .init(a: 7, b: 8)
+            .init(a: 7, b: 8),
+            .init(a: 0, b: 10),
+            .init(a: 10, b: 7),
+            .init(a: 4, b: 9),
+            .init(a: 3, b: 9),
+            .init(a: 9, b: 11),
+            .init(a: 11, b: 8)
         ]
 
         puddles = [
@@ -400,7 +409,7 @@ struct BlackoutDistrictState: Equatable, Sendable {
         }
 
         if gridStability >= 0.88 &&
-            nodes.filter(\.powered).count >= 8 &&
+            nodes.filter(\.powered).count >= 10 &&
             nodes.filter(\.faulted).isEmpty {
             stableTicks += 1
         } else {
