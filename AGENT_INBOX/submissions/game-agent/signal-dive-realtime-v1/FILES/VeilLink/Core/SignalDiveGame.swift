@@ -46,6 +46,7 @@ struct SignalDiveContact: Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case terrain
         case beacon(Int)
+        case biological(Int)
         case massiveUnknown(Int)
     }
 
@@ -311,6 +312,12 @@ struct SignalDiveState: Equatable, Sendable {
         }
 
         contacts.append(
+            contentsOf: biologicalContacts(
+                maxRange: maxRange
+            )
+        )
+
+        contacts.append(
             contentsOf: massiveUnknownContacts(
                 maxRange: maxRange
             )
@@ -322,6 +329,47 @@ struct SignalDiveState: Equatable, Sendable {
             }
             return lhs.distance < rhs.distance
         }
+    }
+
+    private func biologicalContacts(
+        maxRange: Double
+    ) -> [SignalDiveContact] {
+        let segment = Int(x / 620)
+        var output: [SignalDiveContact] = []
+
+        for offset in -1...2 {
+            let candidate = segment + offset
+            guard candidate >= 0 else { continue }
+
+            let anchorX =
+                Double(candidate) * 620 +
+                160 +
+                deterministicUnit(
+                    salt: UInt64(candidate) ^ 0xF157
+                ) * 210
+
+            let depthBand =
+                260 +
+                deterministicUnit(
+                    salt: UInt64(candidate) ^ 0xB10
+                ) * 930
+
+            let dx = anchorX - x
+            let dy = depthBand - depth
+            let distance = hypot(dx, dy)
+
+            if distance <= maxRange * 0.88 {
+                output.append(
+                    .init(
+                        kind: .biological(candidate),
+                        distance: distance,
+                        bearing: atan2(dy, dx)
+                    )
+                )
+            }
+        }
+
+        return output
     }
 
     private func massiveUnknownContacts(
