@@ -812,7 +812,7 @@ final class SignalDiveScene: SKScene {
 
             let anchorDepth =
                 680 +
-                procedural(
+                seededProcedural(
                     index: id,
                     salt: 0xD33F
                 ) * 610
@@ -1434,6 +1434,31 @@ final class SignalDiveScene: SKScene {
         return SKTexture(
             image: image
         )
+    }
+
+    private func seededProcedural(
+        index: Int,
+        salt: UInt64
+    ) -> Double {
+        var z =
+            state.seed ^
+            UInt64(
+                bitPattern:
+                    Int64(index)
+            ) ^
+            salt
+
+        z &+= 0x9E3779B97F4A7C15
+        z =
+            (z ^ (z >> 30)) &*
+            0xBF58476D1CE4E5B9
+        z =
+            (z ^ (z >> 27)) &*
+            0x94D049BB133111EB
+        z ^= z >> 31
+
+        return Double(z & 0xFFFF) /
+            Double(0xFFFF)
     }
 
     private func procedural(
