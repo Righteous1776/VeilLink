@@ -313,4 +313,69 @@ final class SignalDiveGameTests: XCTestCase {
                 }
         )
     }
+
+    func testBiologicalContactsAreDeterministic() {
+        var first = SignalDiveState(seed: 314)
+        var second = SignalDiveState(seed: 314)
+
+        for _ in 0..<1_200 {
+            let input = SignalDiveInput(
+                thrustX: 0.72,
+                thrustY: 0.24,
+                floodlight: false
+            )
+
+            first.step(input: input)
+            second.step(input: input)
+        }
+
+        let firstBio = first.sonarContacts(maxRange: 1_100).filter {
+            if case .biological = $0.kind {
+                return true
+            }
+            return false
+        }
+
+        let secondBio = second.sonarContacts(maxRange: 1_100).filter {
+            if case .biological = $0.kind {
+                return true
+            }
+            return false
+        }
+
+        XCTAssertEqual(firstBio, secondBio)
+        XCTAssertFalse(firstBio.isEmpty)
+    }
+
+    func testBiologicalAndUnknownContactsRemainDistinctKinds() {
+        var state = SignalDiveState(seed: 19)
+
+        for _ in 0..<1_600 {
+            state.step(
+                input: SignalDiveInput(
+                    thrustX: 0.8,
+                    thrustY: 0.3,
+                    floodlight: false
+                )
+            )
+        }
+
+        let contacts = state.sonarContacts(maxRange: 1_300)
+        XCTAssertTrue(
+            contacts.contains {
+                if case .biological = $0.kind {
+                    return true
+                }
+                return false
+            }
+        )
+        XCTAssertTrue(
+            contacts.contains {
+                if case .massiveUnknown = $0.kind {
+                    return true
+                }
+                return false
+            }
+        )
+    }
 }
