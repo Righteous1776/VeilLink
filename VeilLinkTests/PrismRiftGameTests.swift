@@ -58,7 +58,10 @@ final class PrismRiftGameTests: XCTestCase {
         let stoppedDistance = state.distance
         for _ in 0..<120 { state.step(input: PrismRiftInput()) }
         XCTAssertEqual(state.distance, stoppedDistance, accuracy: 0.000_001)
-        XCTAssertEqual(state.bossPosition(index: 0), state.bossPosition(index: 0))
+        let target = state.bossPosition(index: 0)
+        let replay = PrismRiftState(seed: 7).bossPosition(index: 0, tick: state.tick)
+        XCTAssertEqual(target.x, replay.x, accuracy: 0.000_001)
+        XCTAssertEqual(target.y, replay.y, accuracy: 0.000_001)
     }
 
     func testTerminalStateCannotMutate() {
