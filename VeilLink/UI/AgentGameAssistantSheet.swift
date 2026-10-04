@@ -153,7 +153,7 @@ struct AgentGameAssistantSheet: View {
         }
         .padding(.horizontal, 7)
         .frame(height: 22)
-        .background(Color.white.opacity(0.025))
+        .background(VeilTheme.subtleFill)
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
     }
 }

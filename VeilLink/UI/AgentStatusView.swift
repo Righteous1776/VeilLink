@@ -88,7 +88,7 @@ private struct AgentStatusChip: View {
         }
         .padding(.horizontal, 8)
         .frame(height: 24)
-        .background(Color.white.opacity(0.025))
+        .background(VeilTheme.subtleFill)
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
     }
 }

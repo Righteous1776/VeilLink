@@ -80,11 +80,11 @@ struct OnboardingView: View {
                 .disabled(!canCreate)
 
                 HStack(spacing: 12) {
-                    Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                    Rectangle().fill(VeilTheme.hairline).frame(height: 1)
                     Text("或")
                         .font(.caption)
                         .foregroundColor(VeilTheme.secondaryText)
-                    Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                    Rectangle().fill(VeilTheme.hairline).frame(height: 1)
                 }
 
                 Button {

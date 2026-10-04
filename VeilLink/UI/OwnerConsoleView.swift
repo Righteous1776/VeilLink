@@ -222,7 +222,7 @@ struct OwnerConsoleView: View {
             .buttonStyle(VeilPressStyle())
             .accessibilityIdentifier("owner.telemetry.timeline")
 
-            Divider().background(Color.white.opacity(0.08))
+            Divider().background(VeilTheme.hairline)
 
             Toggle(isOn: $telemetry.rawTouchCaptureEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -272,7 +272,7 @@ struct OwnerConsoleView: View {
                 RuntimeDiagnosticsBridge.shared.recordSemanticAction("owner.telemetry.performance", metadata: ["enabled": String(value)])
             }
 
-            Divider().background(Color.white.opacity(0.08))
+            Divider().background(VeilTheme.hairline)
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
                 Button("立即抓取状态") {
@@ -329,7 +329,7 @@ struct OwnerConsoleView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
-        .background(Color.white.opacity(0.035))
+        .background(VeilTheme.subtleFill)
         .clipShape(VeilPanelShape(cut: 6, radius: 4))
         .accessibilityElement(children: .combine)
     }
@@ -401,7 +401,7 @@ struct OwnerConsoleView: View {
             }
 
             if let summary = stressTest.lastSummary {
-                Divider().background(Color.white.opacity(0.08))
+                Divider().background(VeilTheme.hairline)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
                     telemetryMetric("结果", summary.stopReason)
                     telemetryMetric("P/S/F", "\(summary.passedSteps)/\(summary.skippedSteps)/\(summary.failedSteps)")
@@ -478,7 +478,7 @@ struct OwnerConsoleView: View {
                 )
             }
 
-            Divider().background(Color.white.opacity(0.08))
+            Divider().background(VeilTheme.hairline)
 
             godToggle(
                 "高清预览越狱",

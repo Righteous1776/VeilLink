@@ -393,7 +393,7 @@ struct ChatView: View {
                                 .foregroundColor(VeilTheme.mutedGold)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
-                                .background(Color.white.opacity(0.035))
+                                .background(VeilTheme.subtleFill)
                                 .clipShape(Capsule())
                             }
                             .buttonStyle(.plain)
@@ -603,7 +603,7 @@ struct ChatView: View {
                             .textFieldStyle(VeilTextFieldStyle())
                         Button(action: send) {
                             ZStack {
-                                if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Circle().fill(Color.white.opacity(0.05)) }
+                                if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Circle().fill(VeilTheme.subtleFillStrong) }
                                 else { Circle().fill(VeilTheme.goldGradient) }
                                 Image(systemName: "arrow.up")
                                     .font(.system(size: 15, weight: .bold))
@@ -1120,7 +1120,7 @@ private struct MessageBubble: View {
                     .foregroundColor(VeilTheme.gold)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.035))
+                    .background(VeilTheme.subtleFill)
                     .clipShape(Capsule())
                     .overlay(Capsule().stroke(VeilTheme.hairline, lineWidth: 1))
                 }

@@ -148,7 +148,7 @@ struct VeilReleaseActivationView: View {
                                 .foregroundColor(VeilTheme.mutedGold)
                         }
                         ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.055))
+                            Capsule().fill(VeilTheme.subtleFillStrong)
                             Capsule()
                                 .fill(VeilTheme.goldGradient)
                                 .scaleEffect(x: max(0.02, activationProgress), y: 1, anchor: .leading)
@@ -381,7 +381,7 @@ struct VeilReleaseActivationView: View {
             .foregroundColor(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(Capsule().fill(active ? VeilTheme.gold.opacity(0.10) : Color.white.opacity(0.025)))
+            .background(Capsule().fill(active ? VeilTheme.gold.opacity(0.10) : VeilTheme.subtleFill))
             .overlay(Capsule().stroke(active ? VeilTheme.gold.opacity(0.22) : VeilTheme.hairline, lineWidth: 0.8))
     }
 

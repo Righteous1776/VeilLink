@@ -138,7 +138,7 @@ private struct RadarStatusView: View {
                 Circle()
                     .trim(from: 0.06 + CGFloat(ring) * 0.08, to: 0.70 + CGFloat(ring) * 0.05)
                     .stroke(
-                        ring == 0 ? VeilTheme.gold.opacity(0.34) : Color.white.opacity(0.095),
+                        ring == 0 ? VeilTheme.gold.opacity(0.34) : VeilTheme.subtleStroke,
                         style: StrokeStyle(lineWidth: 1, lineCap: .round)
                     )
                     .scaleEffect(0.42 + CGFloat(ring) * 0.25)
@@ -309,7 +309,7 @@ private struct NearbyPeerCard: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(Color.white.opacity(0.028))
+                .background(VeilTheme.subtleFill)
                 .clipShape(VeilPanelShape(cut: 7, radius: 5))
             }
 
@@ -327,7 +327,7 @@ private struct NearbyPeerCard: View {
                             Text(String(character))
                                 .font(.system(size: 27, weight: .semibold, design: .monospaced))
                                 .frame(width: 34, height: 43)
-                                .background(index < 3 ? VeilTheme.gold.opacity(0.075) : Color.white.opacity(0.030))
+                                .background(index < 3 ? VeilTheme.gold.opacity(0.075) : VeilTheme.subtleFill)
                                 .clipShape(VeilPanelShape(cut: 6, radius: 4))
                                 .overlay(VeilPanelShape(cut: 6, radius: 4).stroke(VeilTheme.hairline, lineWidth: 1))
                         }

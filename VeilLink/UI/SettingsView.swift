@@ -210,7 +210,7 @@ struct SettingsView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(VeilTheme.secondaryText)
             }
-            Divider().background(Color.white.opacity(0.07))
+            Divider().background(VeilTheme.hairline)
             settingButton(
                 title: "管理本地身份",
                 detail: "\(identity.profiles.count)/\(IdentityManager.profileLimit) · 创建或安全切换",
@@ -261,38 +261,25 @@ struct SettingsView: View {
                 Text("显示模式")
                     .font(.caption.weight(.semibold))
                     .foregroundColor(VeilTheme.secondaryText)
-                HStack(spacing: 8) {
-                    ForEach(VeilColorMode.allCases) { mode in
-                        Button {
-                            var transaction = Transaction()
-                            transaction.disablesAnimations = true
-                            withTransaction(transaction) {
-                                appearance.setColorMode(mode)
-                            }
-                            VeilChrome.configure()
-                            haptics.selection()
-                        } label: {
-                            VStack(spacing: 5) {
-                                Image(systemName: mode.systemImage)
-                                    .font(.system(size: 16, weight: .semibold))
-                                Text(mode.title)
-                                    .font(.caption.weight(.semibold))
-                            }
-                            .foregroundColor(appearance.colorMode == mode ? VeilTheme.goldBright : VeilTheme.secondaryText)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(appearance.colorMode == mode ? VeilTheme.gold.opacity(0.11) : VeilTheme.elevated.opacity(0.55))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(appearance.colorMode == mode ? VeilTheme.gold.opacity(0.28) : VeilTheme.hairline, lineWidth: 0.8)
-                            )
+                Picker("显示模式", selection: Binding(
+                    get: { appearance.colorMode },
+                    set: { mode in
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            appearance.setColorMode(mode)
                         }
-                        .buttonStyle(VeilPressStyle())
+                        VeilChrome.configure()
+                        haptics.selection()
+                    }
+                )) {
+                    ForEach(VeilColorMode.allCases) { mode in
+                        Label(mode.title, systemImage: mode.systemImage).tag(mode)
                     }
                 }
+                .pickerStyle(.segmented)
+                .tint(VeilTheme.gold)
+                .accessibilityHint("切换后立即应用到全部应用界面")
                 Text(appearance.colorMode.subtitle)
                     .font(.caption2)
                     .foregroundColor(VeilTheme.tertiaryText)
@@ -331,7 +318,7 @@ struct SettingsView: View {
                 detail: model.appLock.isEnabled ? "六位密码与生物识别已启用" : "尚未启用",
                 icon: "lock.fill"
             ) { showsLockSheet = true }
-            Divider().background(Color.white.opacity(0.07))
+            Divider().background(VeilTheme.hairline)
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("内容加密").fontWeight(.medium)
@@ -384,7 +371,7 @@ struct SettingsView: View {
             settingButton(title: "导出加密ZIP", detail: "保存到文件或分享", icon: "square.and.arrow.up") {
                 showsBackupSheet = true
             }
-            Divider().background(Color.white.opacity(0.07))
+            Divider().background(VeilTheme.hairline)
             settingButton(title: "恢复备份", detail: "导入身份、对话与附件", icon: "arrow.counterclockwise") {
                 showsImporter = true
             }
@@ -466,7 +453,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(9)
-            .background(Color.white.opacity(0.03))
+            .background(VeilTheme.subtleFill)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             NavigationLink(destination: AgentControlCenterView(model: model)) {
@@ -508,7 +495,7 @@ struct SettingsView: View {
                 )
             }
             if haptics.isEnabled {
-                Divider().background(Color.white.opacity(0.07))
+                Divider().background(VeilTheme.hairline)
                 HStack {
                     Text("反馈强度")
                     Spacer()
@@ -581,7 +568,7 @@ struct SettingsView: View {
                 }
                 .prefix(3)
             if !activeSnapshots.isEmpty {
-                Divider().background(Color.white.opacity(0.07))
+                Divider().background(VeilTheme.hairline)
                 ForEach(Array(activeSnapshots)) { snapshot in
                     HStack(spacing: 9) {
                         Circle()
@@ -604,7 +591,7 @@ struct SettingsView: View {
                 }
             }
 
-            Divider().background(Color.white.opacity(0.07))
+            Divider().background(VeilTheme.hairline)
             HStack {
                 Text("待发送")
                 Spacer()
@@ -798,7 +785,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 7)
         .padding(.horizontal, 8)
-        .background(Color.white.opacity(0.035))
+        .background(VeilTheme.subtleFill)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 

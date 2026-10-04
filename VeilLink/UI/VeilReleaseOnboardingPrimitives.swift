@@ -98,7 +98,7 @@ struct VeilReleaseNeumorphicPlate<Content: View>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius - 2, style: .continuous)
-                    .stroke(Color.white.opacity(0.035), lineWidth: 3)
+                    .stroke(VeilTheme.subtleFill, lineWidth: 3)
                     .padding(2)
                     .blendMode(.screen)
             )
@@ -165,7 +165,7 @@ struct VeilReleasePageDots: View {
             ForEach(0..<count, id: \.self) { index in
                 ZStack {
                     Capsule()
-                        .fill(Color.white.opacity(0.08))
+                        .fill(VeilTheme.subtleFillStrong)
                     Capsule()
                         .fill(index == page ? VeilTheme.goldBright : Color.white.opacity(0.15))
                         .scaleEffect(x: index == page ? 1 : 0.32, y: 1, anchor: .center)
@@ -224,7 +224,7 @@ struct VeilActivationMorphCore: View {
                         endRadius: size * 0.68
                     )
                 )
-                .overlay(Circle().stroke(Color.white.opacity(0.09), lineWidth: 1))
+                .overlay(Circle().stroke(VeilTheme.subtleStroke, lineWidth: 1))
                 .shadow(color: Color.black.opacity(0.52), radius: compact ? 12 : 24, x: 10, y: 15)
                 .shadow(color: VeilTheme.gold.opacity(0.13), radius: compact ? 8 : 18, x: -7, y: -9)
 
