@@ -5847,3 +5847,3323 @@ new file mode 100644
 +    }
 +}
 
+diff --git a/VeilLinkTests/SignalDiveGameTests.swift b/VeilLinkTests/SignalDiveGameTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/SignalDiveGameTests.swift
+@@ -0,0 +1,396 @@
++import XCTest
++@testable import VeilLink
++
++final class SignalDiveGameTests: XCTestCase {
++    func testDeterministicReplay() {
++        var first =
++            SignalDiveState(
++                seed: 88
++            )
++
++        var second =
++            SignalDiveState(
++                seed: 88
++            )
++
++        for tick in 0..<3_000 {
++            let input =
++                SignalDiveInput(
++                    thrustX:
++                        sin(
++                            Double(tick) *
++                            0.013
++                        ),
++                    thrustY:
++                        cos(
++                            Double(tick) *
++                            0.017
++                        ) * 0.7,
++                    sonarPulse:
++                        tick % 190 == 0,
++                    floodlight:
++                        tick % 240 < 160
++                )
++
++            first.step(
++                input: input
++            )
++
++            second.step(
++                input: input
++            )
++
++            XCTAssertEqual(
++                first,
++                second
++            )
++
++            if first.isFinished {
++                break
++            }
++        }
++    }
++
++    func testResourcesStayBounded() {
++        var state =
++            SignalDiveState(
++                seed: 91
++            )
++
++        for tick in 0..<4_000
++        where !state.isFinished {
++            state.step(
++                input:
++                    SignalDiveInput(
++                        thrustX:
++                            sin(
++                                Double(tick) *
++                                0.011
++                            ),
++                        thrustY:
++                            cos(
++                                Double(tick) *
++                                0.009
++                            ),
++                        sonarPulse:
++                            tick % 210 == 0,
++                        floodlight:
++                            tick % 300 < 190
++                    )
++            )
++
++            let snapshot =
++                state.snapshot()
++
++            XCTAssertTrue(
++                (0...100)
++                    .contains(
++                        snapshot.hull
++                    )
++            )
++
++            XCTAssertTrue(
++                (0...100)
++                    .contains(
++                        snapshot.power
++                    )
++            )
++
++            XCTAssertTrue(
++                (0...1)
++                    .contains(
++                        snapshot.noise
++                    )
++            )
++
++            XCTAssertGreaterThanOrEqual(
++                snapshot.pressure,
++                0
++            )
++        }
++    }
++
++    func testSonarConsumesPowerAndCreatesCooldown() {
++        var state =
++            SignalDiveState(
++                seed: 12
++            )
++
++        let before =
++            state.power
++
++        state.step(
++            input:
++                SignalDiveInput(
++                    sonarPulse: true,
++                    floodlight: false
++                )
++        )
++
++        XCTAssertLessThan(
++            state.power,
++            before
++        )
++
++        XCTAssertGreaterThan(
++            state
++                .snapshot()
++                .sonarCooldown,
++            0
++        )
++
++        XCTAssertTrue(
++            state.events.contains {
++                if case .sonar =
++                    $0.kind {
++                    return true
++                }
++
++                return false
++            }
++        )
++    }
++
++    func testSonarContactsAreStableForSameState() {
++        let state =
++            SignalDiveState(
++                seed: 24
++            )
++
++        XCTAssertEqual(
++            state.sonarContacts(),
++            state.sonarContacts()
++        )
++    }
++
++    func testBeaconRecoveryAtLowSpeed() {
++        let level =
++            SignalDiveLevel(
++                length: 600,
++                maxDepth: 800,
++                beacons: [
++                    .init(
++                        id: 1,
++                        x: 120,
++                        depth: 260,
++                        captureRadius: 100,
++                        line: "test"
++                    )
++                ],
++                obstacles: []
++            )
++
++        var state =
++            SignalDiveState(
++                seed: 1,
++                level: level
++            )
++
++        state.step(
++            input:
++                SignalDiveInput(
++                    floodlight: false
++                )
++        )
++
++        XCTAssertEqual(
++            state
++                .snapshot()
++                .recovered,
++            1
++        )
++
++        XCTAssertEqual(
++            state
++                .snapshot()
++                .lastLine,
++            "控制台：四个信标都在。现在把它们带回有光的地方。"
++        )
++    }
++
++    func testHullFailureFreezesState() {
++        let level =
++            SignalDiveLevel(
++                length: 600,
++                maxDepth: 800,
++                beacons: [],
++                obstacles: [
++                    .init(
++                        id: 1,
++                        x: 120,
++                        depth: 260,
++                        radius: 120,
++                        damage: 150
++                    )
++                ]
++            )
++
++        var state =
++            SignalDiveState(
++                seed: 2,
++                level: level
++            )
++
++        state.step(
++            input:
++                SignalDiveInput(
++                    floodlight: false
++                )
++        )
++
++        XCTAssertEqual(
++            state.outcome,
++            .hullFailure
++        )
++
++        let frozen = state
++
++        state.step(
++            input:
++                SignalDiveInput(
++                    thrustX: 1,
++                    thrustY: 1,
++                    sonarPulse: true,
++                    floodlight: true
++                )
++        )
++
++        XCTAssertEqual(
++            state,
++            frozen
++        )
++    }
++
++    func testDifferentSeedsChangeUnknownEchoField() {
++        var first =
++            SignalDiveState(
++                seed: 1
++            )
++
++        var second =
++            SignalDiveState(
++                seed: 2
++            )
++
++        for _ in 0..<1_000 {
++            first.step(
++                input:
++                    SignalDiveInput(
++                        thrustX: 0.8,
++                        floodlight: false
++                    )
++            )
++
++            second.step(
++                input:
++                    SignalDiveInput(
++                        thrustX: 0.8,
++                        floodlight: false
++                    )
++            )
++        }
++
++        XCTAssertNotEqual(
++            first
++                .sonarContacts()
++                .filter {
++                    if case .massiveUnknown =
++                        $0.kind {
++                        return true
++                    }
++
++                    return false
++                },
++            second
++                .sonarContacts()
++                .filter {
++                    if case .massiveUnknown =
++                        $0.kind {
++                        return true
++                    }
++
++                    return false
++                }
++        )
++    }
++
++    func testBiologicalContactsAreDeterministic() {
++        var first = SignalDiveState(seed: 314)
++        var second = SignalDiveState(seed: 314)
++
++        for _ in 0..<1_200 {
++            let input = SignalDiveInput(
++                thrustX: 0.72,
++                thrustY: 0.24,
++                floodlight: false
++            )
++
++            first.step(input: input)
++            second.step(input: input)
++        }
++
++        let firstBio = first.sonarContacts(maxRange: 1_100).filter {
++            if case .biological = $0.kind {
++                return true
++            }
++            return false
++        }
++
++        let secondBio = second.sonarContacts(maxRange: 1_100).filter {
++            if case .biological = $0.kind {
++                return true
++            }
++            return false
++        }
++
++        XCTAssertEqual(firstBio, secondBio)
++        XCTAssertFalse(firstBio.isEmpty)
++    }
++
++    func testBiologicalAndUnknownContactsRemainDistinctKinds() {
++        var state = SignalDiveState(seed: 19)
++
++        for _ in 0..<1_600 {
++            state.step(
++                input: SignalDiveInput(
++                    thrustX: 0.8,
++                    thrustY: 0.3,
++                    floodlight: false
++                )
++            )
++        }
++
++        let contacts = state.sonarContacts(maxRange: 1_300)
++        XCTAssertTrue(
++            contacts.contains {
++                if case .biological = $0.kind {
++                    return true
++                }
++                return false
++            }
++        )
++        XCTAssertTrue(
++            contacts.contains {
++                if case .massiveUnknown = $0.kind {
++                    return true
++                }
++                return false
++            }
++        )
++    }
++    func testKenneyVectorFishBuilds() {
++        XCTAssertNotNil(
++            SignalDiveKenneyVectorArt
++                .makeNode(
++                    variant: 0
++                )
++        )
++
++        XCTAssertNotNil(
++            SignalDiveKenneyVectorArt
++                .makeNode(
++                    variant: 1
++                )
++        )
++    }
++}
+
+diff --git a/VeilLink/Resources/ThirdParty/KenneyFishPack/PROVENANCE.md b/VeilLink/Resources/ThirdParty/KenneyFishPack/PROVENANCE.md
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Resources/ThirdParty/KenneyFishPack/PROVENANCE.md
+@@ -0,0 +1,8 @@
++# Kenney Fish Pack vector provenance
++
++- upstream_author: Kenney
++- license: CC0-1.0
++- exact source file: https://github.com/MatteoMassaro/BubBlow/blob/5d7830ef6c7041787139cfa8b7cd6ae4d60a1a65/assets/sprites/kenney_fish-pack/Vector/fishPack_vector.svg
++- source Git blob: b1fec5175001ad981962cda0d601c4455281eb21
++
++SignalDiveKenneyVectorArt.swift contains two fish variants copied as vector path fragments from the source SVG and rendered directly with SpriteKit. The path fragments retain their original geometry and palette and are public-domain CC0 material.
+
+diff --git a/VeilLink/Core/BlackoutDistrictGame.swift b/VeilLink/Core/BlackoutDistrictGame.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/BlackoutDistrictGame.swift
+@@ -0,0 +1,440 @@
++import Foundation
++
++enum BlackoutOutcome: Equatable, Sendable {
++    case running
++    case stabilized
++    case gridCollapse
++    case timeExpired
++}
++
++struct BlackoutInput: Equatable, Sendable {
++    var throttle: Double
++    var steering: Double
++    var repairing: Bool
++
++    init(
++        throttle: Double = 0,
++        steering: Double = 0,
++        repairing: Bool = false
++    ) {
++        self.throttle = min(1, max(-1, throttle))
++        self.steering = min(1, max(-1, steering))
++        self.repairing = repairing
++    }
++}
++
++struct BlackoutGridNode: Equatable, Sendable, Identifiable {
++    let id: Int
++    let name: String
++    let x: Double
++    let y: Double
++    let demand: Double
++    let buildingCount: Int
++    let critical: Bool
++    var health: Double
++    var repairProgress: Double
++    var faulted: Bool
++    var powered: Bool
++}
++
++struct BlackoutGridEdge: Equatable, Sendable {
++    let a: Int
++    let b: Int
++}
++
++struct BlackoutPuddle: Equatable, Sendable {
++    let x: Double
++    let y: Double
++    let radius: Double
++    let drag: Double
++}
++
++struct BlackoutEvent: Equatable, Sendable {
++    enum Kind: Equatable, Sendable {
++        case surge(Int)
++        case faulted(Int)
++        case repairStarted(Int)
++        case repaired(Int)
++        case districtPowered(Int)
++        case districtDarkened(Int)
++        case radio(String)
++        case stabilized
++        case gridCollapse
++        case timeExpired
++    }
++
++    let tick: Int
++    let kind: Kind
++}
++
++struct BlackoutSnapshot: Equatable, Sendable {
++    let tick: Int
++    let vehicleX: Double
++    let vehicleY: Double
++    let speed: Double
++    let heading: Double
++    let gridStability: Double
++    let poweredNodes: Int
++    let totalNodes: Int
++    let litBuildings: Int
++    let totalBuildings: Int
++    let activeFaults: Int
++    let repairTarget: Int?
++    let repairProgress: Double
++    let timeRemaining: Double
++    let storm: Double
++    let outcome: BlackoutOutcome
++    let lastLine: String?
++}
++
++struct BlackoutDistrictState: Equatable, Sendable {
++    static let fixedDelta = 1.0 / 60.0
++    static let worldWidth = 2_400.0
++    static let worldHeight = 1_800.0
++    static let timeLimitTicks = 60 * 210
++
++    let seed: UInt64
++    let edges: [BlackoutGridEdge]
++    let puddles: [BlackoutPuddle]
++
++    private(set) var nodes: [BlackoutGridNode]
++    private(set) var tick = 0
++    private(set) var vehicleX = 220.0
++    private(set) var vehicleY = 1_520.0
++    private(set) var velocityX = 0.0
++    private(set) var velocityY = 0.0
++    private(set) var heading = 0.0
++    private(set) var repairTarget: Int?
++    private(set) var stableTicks = 0
++    private(set) var events: [BlackoutEvent] = []
++    private(set) var lastLine: String?
++    private(set) var outcome: BlackoutOutcome = .running
++
++    init(seed: UInt64) {
++        self.seed = seed
++
++        nodes = [
++            .init(id: 0, name: "北站主变", x: 310, y: 1_470, demand: 0.35, buildingCount: 4, critical: true, health: 1, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 1, name: "旧城西", x: 720, y: 1_420, demand: 0.82, buildingCount: 13, critical: false, health: 0.78, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 2, name: "商业街", x: 1_180, y: 1_380, demand: 1.08, buildingCount: 16, critical: false, health: 0.66, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 3, name: "河西住宅", x: 1_720, y: 1_360, demand: 0.92, buildingCount: 15, critical: false, health: 0.72, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 4, name: "社区医院", x: 2_050, y: 1_010, demand: 1.18, buildingCount: 10, critical: true, health: 0.58, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 5, name: "工业仓区", x: 1_580, y: 820, demand: 1.12, buildingCount: 12, critical: false, health: 0.62, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 6, name: "南门街区", x: 1_020, y: 760, demand: 0.84, buildingCount: 14, critical: false, health: 0.70, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 7, name: "学校片区", x: 560, y: 700, demand: 0.74, buildingCount: 11, critical: true, health: 0.69, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 8, name: "河东住宅", x: 1_420, y: 360, demand: 0.76, buildingCount: 13, critical: false, health: 0.63, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 9, name: "东站换乘", x: 2_080, y: 560, demand: 0.88, buildingCount: 12, critical: false, health: 0.67, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 10, name: "应急指挥", x: 330, y: 1_060, demand: 0.66, buildingCount: 8, critical: true, health: 0.74, repairProgress: 0, faulted: false, powered: true),
++            .init(id: 11, name: "滨河商业", x: 1_920, y: 360, demand: 0.96, buildingCount: 14, critical: false, health: 0.65, repairProgress: 0, faulted: false, powered: true)
++        ]
++
++        edges = [
++            .init(a: 0, b: 1),
++            .init(a: 1, b: 2),
++            .init(a: 2, b: 3),
++            .init(a: 3, b: 4),
++            .init(a: 2, b: 6),
++            .init(a: 6, b: 7),
++            .init(a: 6, b: 5),
++            .init(a: 5, b: 4),
++            .init(a: 5, b: 8),
++            .init(a: 7, b: 8),
++            .init(a: 0, b: 10),
++            .init(a: 10, b: 7),
++            .init(a: 4, b: 9),
++            .init(a: 3, b: 9),
++            .init(a: 9, b: 11),
++            .init(a: 11, b: 8)
++        ]
++
++        puddles = [
++            .init(x: 520, y: 1_160, radius: 115, drag: 0.30),
++            .init(x: 1_120, y: 1_040, radius: 145, drag: 0.38),
++            .init(x: 1_810, y: 1_170, radius: 120, drag: 0.34),
++            .init(x: 1_380, y: 610, radius: 135, drag: 0.42),
++            .init(x: 760, y: 440, radius: 105, drag: 0.27)
++        ]
++
++        recalculatePower(emitEvents: false)
++    }
++
++    var isFinished: Bool {
++        outcome != .running
++    }
++
++    var stormIntensity: Double {
++        let a = (sin(Double(tick) * 0.0047 + Double(seed % 67) * 0.041) + 1) * 0.5
++        let b = (sin(Double(tick) * 0.011 + Double(seed % 41) * 0.089) + 1) * 0.5
++        return min(1, max(0, 0.32 + a * 0.35 + b * 0.20))
++    }
++
++    var gridStability: Double {
++        let health = nodes.reduce(0.0) { $0 + $1.health } / Double(max(1, nodes.count))
++        let powered = Double(nodes.filter(\.powered).count) / Double(max(1, nodes.count))
++        return min(1, max(0, health * 0.58 + powered * 0.42))
++    }
++
++    mutating func step(input: BlackoutInput) {
++        guard outcome == .running else { return }
++
++        tick += 1
++        events.removeAll(keepingCapacity: true)
++
++        updateVehicle(input: input)
++        applyStormStress()
++        updateRepair(input: input)
++        recalculatePower(emitEvents: true)
++        resolveOutcome()
++    }
++
++    func snapshot() -> BlackoutSnapshot {
++        let targetProgress: Double
++        if let repairTarget,
++           let node = nodes.first(where: { $0.id == repairTarget }) {
++            targetProgress = node.repairProgress
++        } else {
++            targetProgress = 0
++        }
++
++        return BlackoutSnapshot(
++            tick: tick,
++            vehicleX: vehicleX,
++            vehicleY: vehicleY,
++            speed: hypot(velocityX, velocityY),
++            heading: heading,
++            gridStability: gridStability,
++            poweredNodes: nodes.filter(\.powered).count,
++            totalNodes: nodes.count,
++            litBuildings: nodes.filter(\.powered).reduce(0) { $0 + $1.buildingCount },
++            totalBuildings: nodes.reduce(0) { $0 + $1.buildingCount },
++            activeFaults: nodes.filter(\.faulted).count,
++            repairTarget: repairTarget,
++            repairProgress: targetProgress,
++            timeRemaining: max(0, Double(Self.timeLimitTicks - tick) * Self.fixedDelta),
++            storm: stormIntensity,
++            outcome: outcome,
++            lastLine: lastLine
++        )
++    }
++
++    private mutating func updateVehicle(input: BlackoutInput) {
++        let puddleFactor = tractionFactorAtVehicle()
++        let acceleration = 270 * puddleFactor
++        let rotationRate = 2.05 * max(0.28, min(1, hypot(velocityX, velocityY) / 70 + 0.25))
++
++        heading += input.steering * rotationRate * Self.fixedDelta
++
++        velocityX += cos(heading) * input.throttle * acceleration * Self.fixedDelta
++        velocityY += sin(heading) * input.throttle * acceleration * Self.fixedDelta
++
++        let damping = pow(0.955 - (1 - puddleFactor) * 0.018, Self.fixedDelta * 60)
++        velocityX *= damping
++        velocityY *= damping
++
++        let maxSpeed = 168 * puddleFactor + 42
++        let speed = hypot(velocityX, velocityY)
++        if speed > maxSpeed {
++            let scale = maxSpeed / speed
++            velocityX *= scale
++            velocityY *= scale
++        }
++
++        vehicleX = min(Self.worldWidth, max(0, vehicleX + velocityX * Self.fixedDelta))
++        vehicleY = min(Self.worldHeight, max(0, vehicleY + velocityY * Self.fixedDelta))
++    }
++
++    private func tractionFactorAtVehicle() -> Double {
++        for puddle in puddles {
++            if hypot(vehicleX - puddle.x, vehicleY - puddle.y) <= puddle.radius {
++                return max(0.45, 1 - puddle.drag)
++            }
++        }
++        return 1
++    }
++
++    private mutating func applyStormStress() {
++        guard tick % 90 == 0 else { return }
++
++        let storm = stormIntensity
++        let candidates = nodes.indices.filter { index in
++            index != 0 && !nodes[index].faulted
++        }
++
++        guard !candidates.isEmpty else { return }
++
++        let salt = UInt64(tick / 90)
++        let selected = candidates[Int(deterministicUnit(salt: salt) * Double(candidates.count)) % candidates.count]
++        let surge = 0.018 + storm * 0.032 + nodes[selected].demand * 0.008
++
++        nodes[selected].health = max(0, nodes[selected].health - surge)
++        events.append(.init(tick: tick, kind: .surge(nodes[selected].id)))
++
++        if nodes[selected].health <= 0.28 {
++            nodes[selected].faulted = true
++            nodes[selected].repairProgress = 0
++            events.append(.init(tick: tick, kind: .faulted(nodes[selected].id)))
++
++            let line = nodes[selected].critical
++                ? "调度：关键节点 \(nodes[selected].name) 失电。"
++                : "调度：\(nodes[selected].name) 跳闸。"
++
++            lastLine = line
++            events.append(.init(tick: tick, kind: .radio(line)))
++        }
++    }
++
++    private mutating func updateRepair(input: BlackoutInput) {
++        let speed = hypot(velocityX, velocityY)
++        let nearby = nodes.indices
++            .filter { nodes[$0].faulted }
++            .filter { hypot(nodes[$0].x - vehicleX, nodes[$0].y - vehicleY) <= 105 }
++            .min { lhs, rhs in
++                hypot(nodes[lhs].x - vehicleX, nodes[lhs].y - vehicleY) <
++                hypot(nodes[rhs].x - vehicleX, nodes[rhs].y - vehicleY)
++            }
++
++        guard input.repairing,
++              speed <= 22,
++              let index = nearby else {
++            repairTarget = nil
++            return
++        }
++
++        if repairTarget != nodes[index].id {
++            repairTarget = nodes[index].id
++            events.append(.init(tick: tick, kind: .repairStarted(nodes[index].id)))
++        }
++
++        let rate = nodes[index].critical ? 1.0 / 210.0 : 1.0 / 160.0
++        nodes[index].repairProgress = min(1, nodes[index].repairProgress + rate)
++
++        if nodes[index].repairProgress >= 1 {
++            nodes[index].faulted = false
++            nodes[index].health = max(0.88, nodes[index].health)
++            nodes[index].repairProgress = 0
++            repairTarget = nil
++
++            let line = nodes[index].critical
++                ? "调度：\(nodes[index].name) 恢复。那一片灯又亮了。"
++                : "调度：\(nodes[index].name) 已重新并网。"
++
++            lastLine = line
++            events.append(.init(tick: tick, kind: .repaired(nodes[index].id)))
++            events.append(.init(tick: tick, kind: .radio(line)))
++        }
++    }
++
++    private mutating func recalculatePower(emitEvents: Bool) {
++        let previous = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0.powered) })
++
++        for index in nodes.indices {
++            nodes[index].powered = false
++        }
++
++        guard !nodes[0].faulted,
++              nodes[0].health > 0.20 else {
++            if emitEvents {
++                emitPowerTransitions(previous: previous)
++            }
++            return
++        }
++
++        var queue = [0]
++        var visited: Set<Int> = [0]
++
++        while !queue.isEmpty {
++            let current = queue.removeFirst()
++            nodes[current].powered = !nodes[current].faulted
++
++            for neighborID in neighbors(of: nodes[current].id) {
++                guard let neighborIndex = nodes.firstIndex(where: { $0.id == neighborID }),
++                      !visited.contains(neighborID),
++                      !nodes[neighborIndex].faulted,
++                      nodes[neighborIndex].health > 0.20 else {
++                    continue
++                }
++
++                visited.insert(neighborID)
++                queue.append(neighborIndex)
++            }
++        }
++
++        let poweredDemand = nodes.filter(\.powered).reduce(0.0) { $0 + $1.demand }
++        let capacity = 6.9 * (0.72 + nodes[0].health * 0.28)
++
++        if poweredDemand > capacity {
++            let overload = min(0.12, (poweredDemand - capacity) / capacity * 0.06)
++            for index in nodes.indices where nodes[index].powered && index != 0 {
++                nodes[index].health = max(0, nodes[index].health - overload * nodes[index].demand)
++                if nodes[index].health <= 0.24 {
++                    nodes[index].faulted = true
++                    nodes[index].powered = false
++                }
++            }
++        }
++
++        if emitEvents {
++            emitPowerTransitions(previous: previous)
++        }
++    }
++
++    private mutating func emitPowerTransitions(previous: [Int: Bool]) {
++        for node in nodes {
++            let wasPowered = previous[node.id] ?? false
++
++            if !wasPowered && node.powered {
++                events.append(.init(tick: tick, kind: .districtPowered(node.id)))
++            } else if wasPowered && !node.powered {
++                events.append(.init(tick: tick, kind: .districtDarkened(node.id)))
++            }
++        }
++    }
++
++    private func neighbors(of id: Int) -> [Int] {
++        edges.compactMap { edge in
++            if edge.a == id { return edge.b }
++            if edge.b == id { return edge.a }
++            return nil
++        }
++    }
++
++    private mutating func resolveOutcome() {
++        let criticalDown = nodes.filter { $0.critical && !$0.powered }.count
++
++        if !nodes[0].powered && criticalDown >= 2 {
++            outcome = .gridCollapse
++            lastLine = "调度：主网失稳。街区进入全黑。"
++            events.append(.init(tick: tick, kind: .gridCollapse))
++            return
++        }
++
++        if gridStability >= 0.88 &&
++            nodes.filter(\.powered).count >= 10 &&
++            nodes.filter(\.faulted).isEmpty {
++            stableTicks += 1
++        } else {
++            stableTicks = 0
++        }
++
++        if stableTicks >= 60 * 8 {
++            outcome = .stabilized
++            lastLine = "调度：负载稳定。街区恢复常态供电。"
++            events.append(.init(tick: tick, kind: .stabilized))
++        } else if tick >= Self.timeLimitTicks {
++            outcome = .timeExpired
++            lastLine = "调度：风暴进入第二阶段。维修窗口关闭。"
++            events.append(.init(tick: tick, kind: .timeExpired))
++        }
++    }
++
++    private func deterministicUnit(salt: UInt64) -> Double {
++        Double(mix(seed ^ salt) & 0xFFFF) / Double(0xFFFF)
++    }
++
++    private func mix(_ input: UInt64) -> UInt64 {
++        var z = input &+ 0x9E3779B97F4A7C15
++        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
++        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
++        return z ^ (z >> 31)
++    }
++}
+
+diff --git a/VeilLink/UI/BlackoutDistrictScene.swift b/VeilLink/UI/BlackoutDistrictScene.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/BlackoutDistrictScene.swift
+@@ -0,0 +1,1668 @@
++import SpriteKit
++import CoreImage
++import UIKit
++import simd
++
++@MainActor
++final class BlackoutDistrictScene: SKScene {
++    var onSnapshot: ((BlackoutSnapshot) -> Void)?
++    var onEvent: ((BlackoutEvent) -> Void)?
++
++    private var state: BlackoutDistrictState
++    private var input = BlackoutInput()
++    private var lastUpdateTime: TimeInterval = 0
++    private var accumulator: TimeInterval = 0
++    private var reduceMotion = false
++    private var renderProfile =
++        RealtimeGameRenderProfile.resolve(
++            sceneSize: CGSize(
++                width: 390,
++                height: 844
++            ),
++            reduceMotion: false
++        )
++
++    private let worldRoot = SKNode()
++    private let groundLayer = SKNode()
++    private let roadLayer = SKNode()
++    private let reflectionLayer = SKNode()
++    private let buildingLayer = SKNode()
++    private let lightBloom = SKEffectNode()
++    private let gridLayer = SKNode()
++    private let vehicleLayer = SKNode()
++    private let weatherLayer = SKNode()
++    private let effectLayer = SKNode()
++
++    private let cameraNode = SKCameraNode()
++    private let serviceTruck = SKNode()
++    private let headlightCone = SKShapeNode()
++    private let noiseOverlay = SKSpriteNode()
++    private let lightningOverlay = SKShapeNode()
++    private let repairRing = SKShapeNode(circleOfRadius: 82)
++
++    private var nodeMarkers: [Int: SKNode] = [:]
++    private var buildingWindows: [Int: [SKShapeNode]] = [:]
++    private var districtGlowNodes: [Int: SKSpriteNode] = [:]
++    private var gridEdgeNodes: [String: SKShapeNode] = [:]
++    private var rainEmitter: SKEmitterNode?
++    private var worldScale: CGFloat = 0.28
++
++    init(seed: UInt64) {
++        state = BlackoutDistrictState(seed: seed)
++        super.init(size: CGSize(width: 390, height: 844))
++        scaleMode = .resizeFill
++        backgroundColor = UIColor(
++            red: 0.018,
++            green: 0.025,
++            blue: 0.038,
++            alpha: 1
++        )
++    }
++
++    required init?(coder: NSCoder) {
++        fatalError("init(coder:) has not been implemented")
++    }
++
++    var snapshot: BlackoutSnapshot {
++        state.snapshot()
++    }
++
++    override func didMove(to view: SKView) {
++        view.ignoresSiblingOrder = true
++        view.preferredFramesPerSecond = 60
++
++        if children.isEmpty {
++            configureHierarchy()
++        }
++
++        rebuildForSize()
++        publishSnapshot()
++    }
++
++    override func didChangeSize(_ oldSize: CGSize) {
++        super.didChangeSize(oldSize)
++        rebuildForSize()
++    }
++
++    override func update(_ currentTime: TimeInterval) {
++        if lastUpdateTime == 0 {
++            lastUpdateTime = currentTime
++            updateVisuals()
++            return
++        }
++
++        accumulator += min(
++            0.10,
++            max(0, currentTime - lastUpdateTime)
++        )
++        lastUpdateTime = currentTime
++
++        var catchup = 0
++
++        while accumulator >= BlackoutDistrictState.fixedDelta,
++              catchup < 6 {
++            state.step(input: input)
++
++            for event in state.events {
++                handle(event: event)
++            }
++
++            accumulator -= BlackoutDistrictState.fixedDelta
++            catchup += 1
++        }
++
++        if catchup == 6,
++           accumulator >= BlackoutDistrictState.fixedDelta {
++            accumulator = 0
++        }
++
++        updateVisuals()
++        publishSnapshot()
++    }
++
++    func setDrive(
++        throttle: Double,
++        steering: Double
++    ) {
++        input.throttle = min(1, max(-1, throttle))
++        input.steering = min(1, max(-1, steering))
++    }
++
++    func setRepairing(_ enabled: Bool) {
++        input.repairing = enabled
++    }
++
++    func setReduceMotion(_ enabled: Bool) {
++        reduceMotion = enabled
++        renderProfile =
++            RealtimeGameRenderProfile
++                .resolve(
++                    sceneSize: size,
++                    reduceMotion:
++                        reduceMotion
++                )
++
++        rainEmitter?.particleBirthRate =
++            420 *
++            renderProfile
++                .particleMultiplier
++    }
++
++    func restart(seed: UInt64) {
++        state = BlackoutDistrictState(seed: seed)
++        input = BlackoutInput()
++        lastUpdateTime = 0
++        accumulator = 0
++
++        nodeMarkers.removeAll()
++        buildingWindows.removeAll()
++        districtGlowNodes.removeAll()
++        gridEdgeNodes.removeAll()
++
++        worldRoot.removeAllChildren()
++        configureWorldLayers()
++        rebuildForSize()
++        publishSnapshot()
++    }
++
++    private func configureHierarchy() {
++        addChild(worldRoot)
++        configureWorldLayers()
++
++        addChild(weatherLayer)
++        addChild(cameraNode)
++        camera = cameraNode
++
++        cameraNode.addChild(noiseOverlay)
++        cameraNode.addChild(lightningOverlay)
++    }
++
++    private func configureWorldLayers() {
++        [
++            groundLayer,
++            roadLayer,
++            reflectionLayer,
++            buildingLayer,
++            lightBloom,
++            gridLayer,
++            vehicleLayer,
++            effectLayer
++        ].forEach {
++            $0.removeAllChildren()
++            worldRoot.addChild($0)
++        }
++
++        lightBloom.shouldRasterize = true
++
++        if let bloom = CIFilter(
++            name: "CIBloom"
++        ) {
++            bloom.setValue(
++                9.0,
++                forKey: kCIInputRadiusKey
++            )
++
++            bloom.setValue(
++                0.82,
++                forKey: kCIInputIntensityKey
++            )
++
++            lightBloom.filter = bloom
++        }
++
++        configureTruck()
++        vehicleLayer.addChild(serviceTruck)
++        vehicleLayer.addChild(repairRing)
++
++        buildCity()
++    }
++
++    private func configureTruck() {
++        serviceTruck.removeAllChildren()
++
++        if let texture =
++            RealtimeGameAssetRuntime
++                .texture(
++                    for:
++                        .blackoutServiceTruck
++                ) {
++            let sprite =
++                SKSpriteNode(
++                    texture: texture
++                )
++            sprite.size = CGSize(
++                width: 86,
++                height: 46
++            )
++
++            RealtimeGameAssetRuntime
++                .applyNightGrade(
++                    to: sprite,
++                    scene: .blackout,
++                    intensity: 0.82
++                )
++
++            serviceTruck.addChild(
++                sprite
++            )
++        } else {
++            let body = SKShapeNode(
++                rectOf: CGSize(
++                    width: 82,
++                    height: 42
++                ),
++                cornerRadius: 9
++            )
++
++            body.fillColor = UIColor(
++                red: 0.10,
++                green: 0.33,
++                blue: 0.42,
++                alpha: 1
++            )
++            body.strokeColor =
++                UIColor.cyan.withAlphaComponent(0.62)
++            body.lineWidth = 1.4
++
++            serviceTruck.addChild(body)
++
++            let cabin = SKShapeNode(
++                rectOf: CGSize(
++                    width: 28,
++                    height: 31
++                ),
++                cornerRadius: 7
++            )
++
++            cabin.position.x = 20
++            cabin.fillColor = UIColor(
++                red: 0.06,
++                green: 0.15,
++                blue: 0.19,
++                alpha: 1
++            )
++            cabin.strokeColor =
++                UIColor.white.withAlphaComponent(0.32)
++
++            serviceTruck.addChild(cabin)
++        }
++
++        for x in [-27.0, 27.0] {
++            let wheel = SKShapeNode(
++                circleOfRadius: 8
++            )
++            wheel.position = CGPoint(
++                x: x,
++                y: -22
++            )
++            wheel.fillColor = UIColor(
++                white: 0.04,
++                alpha: 1
++            )
++            wheel.strokeColor = UIColor(
++                white: 0.27,
++                alpha: 1
++            )
++            serviceTruck.addChild(wheel)
++        }
++
++        let path = CGMutablePath()
++        path.move(
++            to: CGPoint(
++                x: 35,
++                y: 7
++            )
++        )
++        path.addLine(
++            to: CGPoint(
++                x: 190,
++                y: 52
++            )
++        )
++        path.addLine(
++            to: CGPoint(
++                x: 190,
++                y: -38
++            )
++        )
++        path.closeSubpath()
++
++        headlightCone.path = path
++        headlightCone.fillColor = UIColor(
++            red: 0.74,
++            green: 0.88,
++            blue: 1,
++            alpha: 0.075
++        )
++        headlightCone.strokeColor = UIColor(
++            red: 0.82,
++            green: 0.93,
++            blue: 1,
++            alpha: 0.13
++        )
++        headlightCone.lineWidth = 0.8
++        headlightCone.zPosition = -1
++
++        serviceTruck.addChild(headlightCone)
++
++        repairRing.strokeColor =
++            UIColor.systemCyan.withAlphaComponent(0.80)
++        repairRing.fillColor =
++            UIColor.systemCyan.withAlphaComponent(0.025)
++        repairRing.lineWidth = 2
++        repairRing.glowWidth = 4
++        repairRing.isHidden = true
++    }
++
++    private func rebuildForSize() {
++        guard size.width > 1,
++              size.height > 1 else {
++            return
++        }
++
++        renderProfile =
++            RealtimeGameRenderProfile
++                .resolve(
++                    sceneSize: size,
++                    reduceMotion:
++                        reduceMotion
++                )
++
++        worldScale = max(
++            0.22,
++            min(
++                0.42,
++                min(
++                    size.width / 1_050,
++                    size.height / 1_300
++                )
++            )
++        )
++
++        worldRoot.setScale(
++            worldScale
++        )
++
++        cameraNode.setScale(
++            (
++                size.width >= 700
++                ? 1.10
++                : 1.0
++            ) *
++            renderProfile
++                .cameraScale
++        )
++
++        rebuildWeather()
++        rebuildOverlays()
++        updateVisuals()
++    }
++
++    private func buildCity() {
++        buildGround()
++        buildRoads()
++        buildPuddles()
++        buildDistricts()
++        buildGridLines()
++    }
++
++    private func buildGround() {
++        groundLayer.removeAllChildren()
++
++        let ground = SKShapeNode(
++            rectOf: CGSize(
++                width: BlackoutDistrictState.worldWidth,
++                height: BlackoutDistrictState.worldHeight
++            )
++        )
++
++        ground.position = CGPoint(
++            x: BlackoutDistrictState.worldWidth / 2,
++            y: BlackoutDistrictState.worldHeight / 2
++        )
++
++        ground.fillColor = UIColor(
++            red: 0.025,
++            green: 0.035,
++            blue: 0.044,
++            alpha: 1
++        )
++        ground.strokeColor = .clear
++
++        groundLayer.addChild(ground)
++    }
++
++    private func buildRoads() {
++        roadLayer.removeAllChildren()
++
++        for edge in state.edges {
++            guard let a = state.nodes.first(
++                where: { $0.id == edge.a }
++            ),
++            let b = state.nodes.first(
++                where: { $0.id == edge.b }
++            ) else {
++                continue
++            }
++
++            let path = CGMutablePath()
++            path.move(
++                to: CGPoint(
++                    x: a.x,
++                    y: a.y
++                )
++            )
++            path.addLine(
++                to: CGPoint(
++                    x: b.x,
++                    y: b.y
++                )
++            )
++
++            let road = SKShapeNode(
++                path: path
++            )
++            road.strokeColor = UIColor(
++                red: 0.075,
++                green: 0.085,
++                blue: 0.098,
++                alpha: 1
++            )
++            road.lineWidth = 108
++            road.lineCap = .round
++
++            roadLayer.addChild(road)
++
++            let lane = SKShapeNode(
++                path: path
++            )
++            lane.strokeColor = UIColor(
++                white: 0.38,
++                alpha: 0.13
++            )
++            lane.lineWidth = 3
++
++            roadLayer.addChild(lane)
++        }
++    }
++
++    private func buildPuddles() {
++        reflectionLayer.removeAllChildren()
++
++        for puddle in state.puddles {
++            let node = SKShapeNode(
++                ellipseOf: CGSize(
++                    width: puddle.radius * 2.0,
++                    height: puddle.radius * 0.86
++                )
++            )
++
++            node.position = CGPoint(
++                x: puddle.x,
++                y: puddle.y
++            )
++
++            node.fillColor = UIColor(
++                red: 0.03,
++                green: 0.11,
++                blue: 0.16,
++                alpha: 0.34
++            )
++
++            node.strokeColor = UIColor(
++                red: 0.19,
++                green: 0.44,
++                blue: 0.52,
++                alpha: 0.22
++            )
++
++            node.lineWidth = 1
++            reflectionLayer.addChild(node)
++        }
++    }
++
++    private func buildDistricts() {
++        buildingLayer.removeAllChildren()
++        lightBloom.removeAllChildren()
++        nodeMarkers.removeAll()
++        buildingWindows.removeAll()
++        districtGlowNodes.removeAll()
++
++        for node in state.nodes {
++            let cluster = SKNode()
++            cluster.position = CGPoint(
++                x: node.x,
++                y: node.y
++            )
++
++            let count = min(
++                9,
++                max(
++                    5,
++                    node.buildingCount / 2
++                )
++            )
++
++            var windows: [SKShapeNode] = []
++
++            for index in 0..<count {
++                let angle =
++                    Double(index) /
++                    Double(max(1, count)) *
++                    .pi * 2
++
++                let radius =
++                    120.0 +
++                    Double(index % 3) * 34
++
++                let x =
++                    cos(angle) * radius
++
++                let y =
++                    sin(angle) * radius * 0.72
++
++                let building = makeBuildingNode(
++                    districtID: node.id,
++                    buildingIndex: index
++                )
++
++                building.position = CGPoint(
++                    x: x,
++                    y: y
++                )
++
++                cluster.addChild(building)
++
++                for window in building.children.compactMap(
++                    { $0 as? SKShapeNode }
++                )
++                where window.name == "window" {
++                    windows.append(window)
++                }
++            }
++
++            buildingLayer.addChild(cluster)
++            buildingWindows[node.id] = windows
++
++            let marker = makeGridNodeMarker(
++                node
++            )
++            marker.position = CGPoint(
++                x: node.x,
++                y: node.y
++            )
++
++            gridLayer.addChild(marker)
++            nodeMarkers[node.id] = marker
++
++            let glow =
++                makeDistrictGlowNode(
++                    nodeID: node.id
++                )
++
++            glow.position = CGPoint(
++                x: node.x,
++                y: node.y
++            )
++
++            lightBloom.addChild(glow)
++            districtGlowNodes[node.id] = glow
++        }
++    }
++
++    private func makeBuildingNode(
++        districtID: Int,
++        buildingIndex: Int
++    ) -> SKNode {
++        let root = SKNode()
++
++        let textureName =
++            buildingIndex % 3 == 0
++            ? "blackout_kenney_commercial"
++            : (
++                districtID == 5
++                ? "blackout_kenney_industrial"
++                : "blackout_kenney_urban_building"
++            )
++
++        let resolvedTexture:
++            SKTexture?
++
++        if buildingIndex % 3 == 0 {
++            resolvedTexture =
++                RealtimeGameAssetRuntime
++                    .texture(
++                        for:
++                            .blackoutCommercialBuilding
++                    )
++        } else if let image =
++                    RealtimeGameAssetRuntime
++                        .image(
++                            named:
++                                textureName
++                        ) {
++            resolvedTexture =
++                SKTexture(
++                    image: image
++                )
++        } else {
++            resolvedTexture = nil
++        }
++
++        if let texture =
++                resolvedTexture {
++            let sprite =
++                SKSpriteNode(
++                    texture: texture
++                )
++
++            let width: CGFloat =
++                86 +
++                CGFloat(
++                    deterministicVisual(
++                        districtID,
++                        buildingIndex,
++                        salt: 41
++                    )
++                ) * 45
++
++            sprite.size = CGSize(
++                width: width,
++                height: width * 0.86
++            )
++
++            RealtimeGameAssetRuntime
++                .applyNightGrade(
++                    to: sprite,
++                    scene: .blackout,
++                    intensity: 0.94
++                )
++
++            root.addChild(sprite)
++
++            for row in 0..<2 {
++                for column in 0..<3 {
++                    let window = SKShapeNode(
++                        rectOf: CGSize(
++                            width: 8,
++                            height: 5
++                        ),
++                        cornerRadius: 1.5
++                    )
++
++                    window.name = "window"
++                    window.position = CGPoint(
++                        x: -18 + CGFloat(column) * 18,
++                        y: -7 + CGFloat(row) * 15
++                    )
++                    window.fillColor = UIColor(
++                        red: 1,
++                        green: 0.72,
++                        blue: 0.30,
++                        alpha: 0.0
++                    )
++                    window.strokeColor = .clear
++                    root.addChild(window)
++                }
++            }
++        } else {
++            let width =
++                76 +
++                CGFloat(
++                    deterministicVisual(
++                        districtID,
++                        buildingIndex,
++                        salt: 41
++                    )
++                ) * 54
++
++            let height =
++                66 +
++                CGFloat(
++                    deterministicVisual(
++                        districtID,
++                        buildingIndex,
++                        salt: 57
++                    )
++                ) * 72
++
++            let body = SKShapeNode(
++                rectOf: CGSize(
++                    width: width,
++                    height: height
++                ),
++                cornerRadius: 8
++            )
++
++            body.fillColor = UIColor(
++                red: 0.06,
++                green: 0.075,
++                blue: 0.09,
++                alpha: 1
++            )
++            body.strokeColor = UIColor(
++                white: 0.31,
++                alpha: 0.17
++            )
++            body.lineWidth = 1
++
++            root.addChild(body)
++
++            let columns = 3
++            let rows = max(
++                2,
++                Int(height / 24)
++            )
++
++            for row in 0..<rows {
++                for column in 0..<columns {
++                    let window = SKShapeNode(
++                        rectOf: CGSize(
++                            width: 8,
++                            height: 5
++                        ),
++                        cornerRadius: 1.5
++                    )
++
++                    window.name = "window"
++
++                    window.position = CGPoint(
++                        x:
++                            -width * 0.28 +
++                            CGFloat(column) *
++                            width * 0.28,
++                        y:
++                            -height * 0.32 +
++                            CGFloat(row) *
++                            15
++                    )
++
++                    window.fillColor =
++                        UIColor(
++                            red: 1,
++                            green: 0.72,
++                            blue: 0.30,
++                            alpha: 0.0
++                        )
++                    window.strokeColor = .clear
++
++                    root.addChild(window)
++                }
++            }
++        }
++
++        return root
++    }
++
++    private func makeGridNodeMarker(
++        _ node: BlackoutGridNode
++    ) -> SKNode {
++        let root = SKNode()
++
++        let ring = SKShapeNode(
++            circleOfRadius:
++                node.critical ? 33 : 27
++        )
++
++        ring.name = "ring"
++        ring.fillColor = UIColor(
++            red: 0.02,
++            green: 0.08,
++            blue: 0.10,
++            alpha: 0.80
++        )
++        ring.strokeColor = UIColor(
++            red: 0.23,
++            green: 0.84,
++            blue: 0.95,
++            alpha: 0.50
++        )
++        ring.lineWidth = 2
++
++        root.addChild(ring)
++
++        let core = SKShapeNode(
++            circleOfRadius: 7
++        )
++
++        core.name = "core"
++        core.fillColor = .systemCyan
++        core.strokeColor = .white
++        core.lineWidth = 1
++        core.glowWidth = 3
++
++        root.addChild(core)
++
++        return root
++    }
++
++    private func makeDistrictGlowNode(
++        nodeID: Int
++    ) -> SKSpriteNode {
++        let sprite = SKSpriteNode(
++            color: .white,
++            size: CGSize(
++                width: 280,
++                height: 280
++            )
++        )
++
++        sprite.alpha = 0
++        sprite.blendMode = .add
++
++        if let shader =
++            RealtimeGameAssetRuntime
++                .shader(
++                    named:
++                        "SHKRadialGradient"
++                ) {
++            shader.uniforms = [
++                SKUniform(
++                    name: "u_first_color",
++                    color: UIColor(
++                        red: 0.24,
++                        green: 0.82,
++                        blue: 1,
++                        alpha: 0.36
++                    )
++                ),
++                SKUniform(
++                    name: "u_second_color",
++                    color: UIColor(
++                        red: 0.05,
++                        green: 0.24,
++                        blue: 0.34,
++                        alpha: 0.0
++                    )
++                ),
++                SKUniform(
++                    name: "u_center",
++                    vectorFloat2:
++                        vector_float2(
++                            0.5,
++                            0.5
++                        )
++                )
++            ]
++
++            sprite.shader = shader
++        } else {
++            sprite.texture =
++                makeFallbackGlowTexture()
++        }
++
++        return sprite
++    }
++
++    private func buildGridLines() {
++        gridLayer.removeAllChildren()
++
++        for node in state.nodes {
++            if let marker =
++                nodeMarkers[node.id] {
++                gridLayer.addChild(
++                    marker
++                )
++            }
++        }
++
++        gridEdgeNodes.removeAll()
++
++        for edge in state.edges {
++            guard let a = state.nodes.first(
++                where: { $0.id == edge.a }
++            ),
++            let b = state.nodes.first(
++                where: { $0.id == edge.b }
++            ) else {
++                continue
++            }
++
++            let path = CGMutablePath()
++            path.move(
++                to: CGPoint(
++                    x: a.x,
++                    y: a.y
++                )
++            )
++            path.addLine(
++                to: CGPoint(
++                    x: b.x,
++                    y: b.y
++                )
++            )
++
++            let line = SKShapeNode(
++                path: path
++            )
++
++            line.strokeColor = UIColor(
++                red: 0.30,
++                green: 0.08,
++                blue: 0.08,
++                alpha: 0.34
++            )
++            line.lineWidth = 5
++            line.glowWidth = 1
++
++            let key =
++                edgeKey(
++                    edge.a,
++                    edge.b
++                )
++
++            gridLayer.addChild(line)
++            gridEdgeNodes[key] = line
++        }
++    }
++
++    private func rebuildWeather() {
++        weatherLayer.removeAllChildren()
++        rainEmitter = nil
++
++        let rain = SKEmitterNode()
++        rain.particleTexture =
++            makeRainTexture()
++        rain.particleBirthRate =
++            420 *
++            renderProfile
++                .particleMultiplier
++        rain.particleLifetime = 1.0
++        rain.particleLifetimeRange = 0.26
++        rain.position = CGPoint(
++            x: size.width / 2,
++            y: size.height + 20
++        )
++        rain.particlePositionRange =
++            CGVector(
++                dx: size.width * 1.6,
++                dy: 24
++            )
++        rain.particleSpeed = 850
++        rain.particleSpeedRange = 190
++        rain.emissionAngle =
++            -.pi / 2.10
++        rain.emissionAngleRange = 0.05
++        rain.particleAlpha = 0.31
++        rain.particleScale = 0.86
++        rain.particleColor = UIColor(
++            red: 0.65,
++            green: 0.80,
++            blue: 0.94,
++            alpha: 1
++        )
++        rain.particleColorBlendFactor = 1
++
++        weatherLayer.addChild(rain)
++        rainEmitter = rain
++    }
++
++    private func rebuildOverlays() {
++        noiseOverlay.size = size
++        noiseOverlay.position = .zero
++        noiseOverlay.anchorPoint = CGPoint(
++            x: 0.5,
++            y: 0.5
++        )
++        noiseOverlay.color = UIColor(
++            white: 0.08,
++            alpha: 1
++        )
++        noiseOverlay.colorBlendFactor = 1
++        noiseOverlay.blendMode = .add
++        noiseOverlay.zPosition = 90
++        noiseOverlay.shader =
++            RealtimeGameAssetRuntime
++                .shader(
++                    named:
++                        "SHKDynamicGrayNoise"
++                )
++        noiseOverlay.alpha =
++            noiseOverlay.shader == nil
++            ? 0
++            : 0.055 *
++                renderProfile
++                    .noiseMultiplier
++
++        let rect = CGRect(
++            x: -size.width / 2,
++            y: -size.height / 2,
++            width: size.width,
++            height: size.height
++        )
++
++        lightningOverlay.path =
++            CGPath(
++                rect: rect,
++                transform: nil
++            )
++        lightningOverlay.fillColor = .white
++        lightningOverlay.strokeColor = .clear
++        lightningOverlay.alpha = 0
++        lightningOverlay.blendMode = .add
++        lightningOverlay.zPosition = 110
++    }
++
++    private func updateVisuals() {
++        let snap = state.snapshot()
++
++        updateCamera(
++            snapshot: snap
++        )
++        updateTruck(
++            snapshot: snap
++        )
++        updateGrid()
++        updateBuildingLights()
++        updateRepairRing(
++            snapshot: snap
++        )
++        updateWeather(
++            snapshot: snap
++        )
++        updateLightning(
++            snapshot: snap
++        )
++    }
++
++    private func updateCamera(
++        snapshot: BlackoutSnapshot
++    ) {
++        let scenePoint = CGPoint(
++            x:
++                CGFloat(
++                    snapshot.vehicleX
++                ) * worldScale,
++            y:
++                CGFloat(
++                    snapshot.vehicleY
++                ) * worldScale
++        )
++
++        cameraNode.position = CGPoint(
++            x: scenePoint.x,
++            y: scenePoint.y
++        )
++    }
++
++    private func updateTruck(
++        snapshot: BlackoutSnapshot
++    ) {
++        serviceTruck.position = CGPoint(
++            x:
++                CGFloat(
++                    snapshot.vehicleX
++                ),
++            y:
++                CGFloat(
++                    snapshot.vehicleY
++                )
++        )
++
++        serviceTruck.zRotation =
++            CGFloat(
++                snapshot.heading
++            )
++
++        let intensity =
++            CGFloat(
++                0.45 +
++                snapshot.gridStability * 0.45
++            )
++
++        headlightCone.alpha =
++            intensity
++    }
++
++    private func updateGrid() {
++        let nodeByID =
++            Dictionary(
++                uniqueKeysWithValues:
++                    state.nodes.map {
++                        ($0.id, $0)
++                    }
++            )
++
++        for edge in state.edges {
++            guard let a =
++                    nodeByID[edge.a],
++                  let b =
++                    nodeByID[edge.b],
++                  let line =
++                    gridEdgeNodes[
++                        edgeKey(
++                            edge.a,
++                            edge.b
++                        )
++                    ] else {
++                continue
++            }
++
++            let powered =
++                a.powered &&
++                b.powered
++
++            line.strokeColor =
++                powered
++                ? UIColor(
++                    red: 0.18,
++                    green: 0.78,
++                    blue: 0.96,
++                    alpha: 0.62
++                )
++                : UIColor(
++                    red: 0.36,
++                    green: 0.07,
++                    blue: 0.07,
++                    alpha: 0.31
++                )
++
++            line.glowWidth =
++                powered ? 5 : 1
++        }
++
++        for node in state.nodes {
++            guard let marker =
++                    nodeMarkers[node.id] else {
++                continue
++            }
++
++            let ring =
++                marker.childNode(
++                    withName: "ring"
++                ) as? SKShapeNode
++
++            let core =
++                marker.childNode(
++                    withName: "core"
++                ) as? SKShapeNode
++
++            if node.faulted {
++                ring?.strokeColor =
++                    .systemRed
++                core?.fillColor =
++                    .systemRed
++                core?.glowWidth = 2
++            } else if node.powered {
++                ring?.strokeColor =
++                    .systemCyan
++                core?.fillColor =
++                    node.critical
++                    ? .systemYellow
++                    : .systemCyan
++                core?.glowWidth = 5
++            } else {
++                ring?.strokeColor =
++                    UIColor(
++                        white: 0.38,
++                        alpha: 0.26
++                    )
++                core?.fillColor =
++                    UIColor(
++                        white: 0.20,
++                        alpha: 1
++                    )
++                core?.glowWidth = 0
++            }
++        }
++    }
++
++    private func updateBuildingLights() {
++        for node in state.nodes {
++            let powered = node.powered
++            let windows =
++                buildingWindows[node.id] ??
++                []
++
++            for (
++                index,
++                window
++            ) in windows.enumerated() {
++                let on =
++                    powered &&
++                    (
++                        index %
++                        4 != 0 ||
++                        node.critical
++                    )
++
++                window.fillColor =
++                    on
++                    ? UIColor(
++                        red: 1,
++                        green: 0.70,
++                        blue: 0.25,
++                        alpha: 0.72
++                    )
++                    : UIColor(
++                        red: 0.08,
++                        green: 0.09,
++                        blue: 0.11,
++                        alpha: 0.20
++                    )
++            }
++
++            districtGlowNodes[
++                node.id
++            ]?.alpha =
++                powered
++                ? 0.46
++                : 0.0
++        }
++    }
++
++    private func updateRepairRing(
++        snapshot: BlackoutSnapshot
++    ) {
++        guard let targetID =
++                snapshot.repairTarget,
++              let target =
++                state.nodes.first(
++                    where: {
++                        $0.id == targetID
++                    }
++                ) else {
++            repairRing.isHidden = true
++            return
++        }
++
++        repairRing.isHidden = false
++        repairRing.position = CGPoint(
++            x: target.x,
++            y: target.y
++        )
++
++        repairRing.setScale(
++            CGFloat(
++                0.72 +
++                snapshot.repairProgress *
++                0.42
++            )
++        )
++    }
++
++    private func updateWeather(
++        snapshot: BlackoutSnapshot
++    ) {
++        rainEmitter?.particleBirthRate =
++            CGFloat(
++                310 +
++                snapshot.storm *
++                260
++            ) *
++            renderProfile
++                .particleMultiplier
++
++        if noiseOverlay.shader != nil {
++            noiseOverlay.alpha =
++                CGFloat(
++                    0.035 +
++                    snapshot.storm *
++                    0.055
++                ) *
++                renderProfile
++                    .noiseMultiplier
++        }
++    }
++
++    private func updateLightning(
++        snapshot: BlackoutSnapshot
++    ) {
++        let period = 470
++        let phase =
++            Int(
++                state.seed %
++                UInt64(period)
++            )
++
++        guard snapshot.storm > 0.68,
++              state.tick % period == phase,
++              lightningOverlay.action(
++                forKey: "blackout-lightning"
++              ) == nil else {
++            return
++        }
++
++        if reduceMotion {
++            lightningOverlay.run(
++                .sequence([
++                    .fadeAlpha(
++                        to: 0.14,
++                        duration: 0.05
++                    ),
++                    .fadeOut(
++                        withDuration: 0.20
++                    )
++                ]),
++                withKey:
++                    "blackout-lightning"
++            )
++        } else {
++            lightningOverlay.run(
++                .sequence([
++                    .fadeAlpha(
++                        to: 0.44,
++                        duration: 0.025
++                    ),
++                    .fadeAlpha(
++                        to: 0.05,
++                        duration: 0.055
++                    ),
++                    .fadeAlpha(
++                        to: 0.24,
++                        duration: 0.035
++                    ),
++                    .fadeOut(
++                        withDuration: 0.16
++                    )
++                ]),
++                withKey:
++                    "blackout-lightning"
++            )
++        }
++    }
++
++    private func handle(
++        event: BlackoutEvent
++    ) {
++        onEvent?(event)
++
++        switch event.kind {
++        case let .faulted(id):
++            if let node =
++                state.nodes.first(
++                    where: {
++                        $0.id == id
++                    }
++                ) {
++                spawnFaultBurst(
++                    at: CGPoint(
++                        x: node.x,
++                        y: node.y
++                    )
++                )
++            }
++
++        case let .repaired(id):
++            if let node =
++                state.nodes.first(
++                    where: {
++                        $0.id == id
++                    }
++                ) {
++                spawnRepairBurst(
++                    at: CGPoint(
++                        x: node.x,
++                        y: node.y
++                    )
++                )
++            }
++
++        case .gridCollapse:
++            flash(
++                color: .systemRed,
++                peak: 0.24
++            )
++
++        case .stabilized:
++            flash(
++                color: .systemCyan,
++                peak: 0.32
++            )
++
++        case .surge,
++             .repairStarted,
++             .districtPowered,
++             .districtDarkened,
++             .radio,
++             .timeExpired:
++            break
++        }
++    }
++
++    private func spawnFaultBurst(
++        at point: CGPoint
++    ) {
++        spawnBurst(
++            at: point,
++            color: .systemOrange,
++            count: 32
++        )
++    }
++
++    private func spawnRepairBurst(
++        at point: CGPoint
++    ) {
++        spawnBurst(
++            at: point,
++            color: .systemCyan,
++            count: 42
++        )
++    }
++
++    private func spawnBurst(
++        at point: CGPoint,
++        color: UIColor,
++        count: Int
++    ) {
++        let emitter = SKEmitterNode()
++        emitter.position = point
++        emitter.particleTexture =
++            makeDotTexture(
++                diameter: 6
++            )
++        emitter.particleBirthRate = 0
++        emitter.numParticlesToEmit = count
++        emitter.particleLifetime = 0.72
++        emitter.particleSpeed = 120
++        emitter.particleSpeedRange = 65
++        emitter.emissionAngleRange = .pi * 2
++        emitter.particleAlpha = 0.90
++        emitter.particleAlphaSpeed = -1.2
++        emitter.particleColor = color
++        emitter.particleColorBlendFactor = 1
++        emitter.particleBlendMode = .add
++
++        effectLayer.addChild(
++            emitter
++        )
++
++        emitter.run(
++            .sequence([
++                .wait(
++                    forDuration: 1.0
++                ),
++                .removeFromParent()
++            ])
++        )
++    }
++
++    private func flash(
++        color: UIColor,
++        peak: CGFloat
++    ) {
++        lightningOverlay.fillColor = color
++        lightningOverlay.removeAllActions()
++
++        lightningOverlay.run(
++            .sequence([
++                .fadeAlpha(
++                    to: peak,
++                    duration: 0.025
++                ),
++                .fadeOut(
++                    withDuration: 0.18
++                )
++            ])
++        )
++    }
++
++    private func publishSnapshot() {
++        onSnapshot?(
++            state.snapshot()
++        )
++    }
++
++    private func makeFallbackGlowTexture()
++    -> SKTexture {
++        let side: CGFloat = 192
++
++        let image =
++            UIGraphicsImageRenderer(
++                size: CGSize(
++                    width: side,
++                    height: side
++                )
++            )
++            .image { context in
++                let colors =
++                    [
++                        UIColor(
++                            red: 0.24,
++                            green: 0.82,
++                            blue: 1,
++                            alpha: 0.34
++                        ).cgColor,
++                        UIColor(
++                            red: 0.05,
++                            green: 0.24,
++                            blue: 0.34,
++                            alpha: 0.0
++                        ).cgColor
++                    ] as CFArray
++
++                guard let gradient =
++                    CGGradient(
++                        colorsSpace:
++                            CGColorSpaceCreateDeviceRGB(),
++                        colors: colors,
++                        locations: [0, 1]
++                    ) else {
++                    return
++                }
++
++                let center =
++                    CGPoint(
++                        x: side / 2,
++                        y: side / 2
++                    )
++
++                context.cgContext
++                    .drawRadialGradient(
++                        gradient,
++                        startCenter: center,
++                        startRadius: 0,
++                        endCenter: center,
++                        endRadius: side / 2,
++                        options: []
++                    )
++            }
++
++        return SKTexture(
++            image: image
++        )
++    }
++
++    private func edgeKey(
++        _ a: Int,
++        _ b: Int
++    ) -> String {
++        a < b
++        ? "\(a)-\(b)"
++        : "\(b)-\(a)"
++    }
++
++    private func deterministicVisual(
++        _ district: Int,
++        _ index: Int,
++        salt: UInt64
++    ) -> Double {
++        var z =
++            state.seed ^
++            UInt64(
++                bitPattern:
++                    Int64(
++                        district * 257 +
++                        index * 31
++                    )
++            ) ^
++            salt
++
++        z &+= 0x9E3779B97F4A7C15
++        z =
++            (z ^ (z >> 30)) &*
++            0xBF58476D1CE4E5B9
++        z =
++            (z ^ (z >> 27)) &*
++            0x94D049BB133111EB
++        z ^= z >> 31
++
++        return Double(
++            z & 0xFFFF
++        ) /
++        Double(0xFFFF)
++    }
++
++    private func makeRainTexture() -> SKTexture {
++        let image =
++            UIGraphicsImageRenderer(
++                size: CGSize(
++                    width: 3,
++                    height: 22
++                )
++            )
++            .image { context in
++                context.cgContext
++                    .setFillColor(
++                        UIColor.white
++                            .withAlphaComponent(
++                                0.90
++                            )
++                            .cgColor
++                    )
++
++                context.cgContext.fill(
++                    CGRect(
++                        x: 1,
++                        y: 0,
++                        width: 1,
++                        height: 22
++                    )
++                )
++            }
++
++        return SKTexture(
++            image: image
++        )
++    }
++
++    private func makeDotTexture(
++        diameter: CGFloat
++    ) -> SKTexture {
++        let image =
++            UIGraphicsImageRenderer(
++                size: CGSize(
++                    width: diameter,
++                    height: diameter
++                )
++            )
++            .image { _ in
++                UIColor.white
++                    .setFill()
++
++                UIBezierPath(
++                    ovalIn: CGRect(
++                        x: 0,
++                        y: 0,
++                        width: diameter,
++                        height: diameter
++                    )
++                )
++                .fill()
++            }
++
++        return SKTexture(
++            image: image
++        )
++    }
++}
+
+diff --git a/VeilLink/UI/BlackoutDistrictLabView.swift b/VeilLink/UI/BlackoutDistrictLabView.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/BlackoutDistrictLabView.swift
+@@ -0,0 +1,778 @@
++import SwiftUI
++import SpriteKit
++
++@MainActor
++final class BlackoutDistrictViewModel: ObservableObject {
++    @Published private(set) var snapshot: BlackoutSnapshot
++    @Published private(set) var line =
++        "调度：暴雨导致多点电压波动。保持街区供电，优先关键节点。"
++
++    let scene: BlackoutDistrictScene
++    private var seed: UInt64
++
++    init() {
++        seed = Self.seed(
++            from: UUID().uuidString
++        )
++
++        let scene =
++            BlackoutDistrictScene(
++                seed: seed
++            )
++
++        self.scene = scene
++        snapshot = scene.snapshot
++
++        scene.onSnapshot = {
++            [weak self] value in
++
++            Task {
++                @MainActor
++                [weak self] in
++
++                self?.snapshot = value
++            }
++        }
++
++        scene.onEvent = {
++            [weak self] event in
++
++            guard case let .radio(text) =
++                    event.kind else {
++                return
++            }
++
++            Task {
++                @MainActor
++                [weak self] in
++
++                self?.line = text
++            }
++        }
++    }
++
++    func drive(
++        throttle: Double,
++        steering: Double
++    ) {
++        scene.setDrive(
++            throttle: throttle,
++            steering: steering
++        )
++    }
++
++    func stopDriving() {
++        scene.setDrive(
++            throttle: 0,
++            steering: 0
++        )
++    }
++
++    func setRepairing(
++        _ enabled: Bool
++    ) {
++        scene.setRepairing(
++            enabled
++        )
++    }
++
++    func setReduceMotion(
++        _ enabled: Bool
++    ) {
++        scene.setReduceMotion(
++            enabled
++        )
++    }
++
++    func restart() {
++        seed &+=
++            0x9E3779B97F4A7C15
++
++        line =
++            "调度：新一轮风暴窗口开始。先找到最近的红色故障节点。"
++
++        scene.restart(
++            seed: seed
++        )
++    }
++
++    private static func seed(
++        from text: String
++    ) -> UInt64 {
++        var hash: UInt64 =
++            1469598103934665603
++
++        for byte in text.utf8 {
++            hash ^= UInt64(byte)
++            hash &*= 1099511628211
++        }
++
++        return hash
++    }
++}
++
++struct BlackoutDistrictLabView: View {
++    @StateObject private var model =
++        BlackoutDistrictViewModel()
++
++    @Environment(\.accessibilityReduceMotion)
++    private var reduceMotion
++
++    @State private var controlOrigin:
++        CGPoint?
++
++    var body: some View {
++        GeometryReader { proxy in
++            ZStack {
++                SpriteView(
++                    scene: model.scene
++                )
++                .ignoresSafeArea()
++
++                VStack(spacing: 0) {
++                    hud
++                    Spacer()
++                    dispatchCard
++                    controls(
++                        in: proxy.size
++                    )
++                }
++                .padding(
++                    .horizontal,
++                    14
++                )
++                .padding(
++                    .top,
++                    10
++                )
++                .padding(
++                    .bottom,
++                    14
++                )
++
++                if model.snapshot.outcome
++                    != .running {
++                    resultOverlay
++                }
++            }
++            .background(
++                Color.black
++            )
++        }
++        .onAppear {
++            model.setReduceMotion(
++                reduceMotion
++            )
++        }
++        .onChange(
++            of: reduceMotion
++        ) {
++            model.setReduceMotion(
++                $0
++            )
++        }
++        .navigationTitle(
++            "熄灯街区"
++        )
++        .navigationBarTitleDisplayMode(
++            .inline
++        )
++    }
++
++    private var hud: some View {
++        VStack(spacing: 8) {
++            HStack(spacing: 8) {
++                meter(
++                    "GRID",
++                    model.snapshot.gridStability * 100,
++                    .cyan
++                )
++
++                meter(
++                    "POWER",
++                    Double(model.snapshot.poweredNodes) /
++                        Double(max(1, model.snapshot.totalNodes)) *
++                        100,
++                    .blue
++                )
++
++                meter(
++                    "LIGHTS",
++                    Double(model.snapshot.litBuildings) /
++                        Double(max(1, model.snapshot.totalBuildings)) *
++                        100,
++                    .yellow
++                )
++
++                meter(
++                    "STORM",
++                    model.snapshot.storm * 100,
++                    .orange
++                )
++            }
++
++            HStack {
++                metric(
++                    "FAULT",
++                    "\(model.snapshot.activeFaults)"
++                )
++
++                metric(
++                    "NODE",
++                    "\(model.snapshot.poweredNodes)/\(model.snapshot.totalNodes)"
++                )
++
++                metric(
++                    "BUILD",
++                    "\(model.snapshot.litBuildings)/\(model.snapshot.totalBuildings)"
++                )
++
++                metric(
++                    "TIME",
++                    "\(Int(model.snapshot.timeRemaining))s"
++                )
++            }
++        }
++        .padding(10)
++        .background(
++            Color.black.opacity(0.38)
++        )
++        .clipShape(
++            RoundedRectangle(
++                cornerRadius: 14,
++                style: .continuous
++            )
++        )
++        .overlay(
++            RoundedRectangle(
++                cornerRadius: 14,
++                style: .continuous
++            )
++            .stroke(
++                Color.cyan.opacity(0.10),
++                lineWidth: 0.8
++            )
++        )
++    }
++
++    private var dispatchCard: some View {
++        HStack(
++            alignment: .top,
++            spacing: 9
++        ) {
++            Image(
++                systemName:
++                    "bolt.horizontal.circle.fill"
++            )
++            .font(
++                .caption
++            )
++            .foregroundColor(
++                .cyan.opacity(0.88)
++            )
++            .padding(
++                .top,
++                2
++            )
++
++            Text(model.line)
++                .font(
++                    .caption.weight(
++                        .medium
++                    )
++                )
++                .foregroundColor(
++                    .white.opacity(0.86)
++                )
++                .fixedSize(
++                    horizontal: false,
++                    vertical: true
++                )
++
++            Spacer(
++                minLength: 0
++            )
++        }
++        .padding(11)
++        .background(
++            Color.black.opacity(0.46)
++        )
++        .clipShape(
++            RoundedRectangle(
++                cornerRadius: 14,
++                style: .continuous
++            )
++        )
++        .padding(
++            .bottom,
++            9
++        )
++    }
++
++    private func controls(
++        in size: CGSize
++    ) -> some View {
++        HStack(spacing: 12) {
++            drivePad(
++                size: size
++            )
++
++            Spacer(
++                minLength: 8
++            )
++
++            VStack(spacing: 8) {
++                Text(
++                    model.snapshot.repairTarget == nil
++                    ? "靠近红色节点\n低速按住维修"
++                    : "正在维修\n\(Int(model.snapshot.repairProgress * 100))%"
++                )
++                .font(
++                    .caption2
++                        .weight(
++                            .semibold
++                        )
++                )
++                .multilineTextAlignment(
++                    .center
++                )
++                .foregroundColor(
++                    .white.opacity(0.70)
++                )
++
++                ZStack {
++                    Circle()
++                        .fill(
++                            LinearGradient(
++                                colors: [
++                                    Color.cyan.opacity(
++                                        0.36
++                                    ),
++                                    Color.blue.opacity(
++                                        0.16
++                                    )
++                                ],
++                                startPoint:
++                                    .topLeading,
++                                endPoint:
++                                    .bottomTrailing
++                            )
++                        )
++
++                    Circle()
++                        .stroke(
++                            Color.cyan.opacity(0.58),
++                            lineWidth: 1.2
++                        )
++
++                    Image(
++                        systemName:
++                            "wrench.adjustable.fill"
++                    )
++                    .font(
++                        .system(
++                            size: 20,
++                            weight: .semibold
++                        )
++                    )
++                    .foregroundColor(
++                        .cyan
++                    )
++                }
++                .frame(
++                    width: 68,
++                    height: 68
++                )
++                .contentShape(
++                    Circle()
++                )
++                .gesture(
++                    DragGesture(
++                        minimumDistance: 0
++                    )
++                    .onChanged { _ in
++                        model.setRepairing(
++                            true
++                        )
++                    }
++                    .onEnded { _ in
++                        model.setRepairing(
++                            false
++                        )
++                    }
++                )
++                .accessibilityLabel(
++                    "按住维修电网节点"
++                )
++            }
++        }
++        .padding(12)
++        .background(
++            Color.black.opacity(0.42)
++        )
++        .clipShape(
++            RoundedRectangle(
++                cornerRadius: 16,
++                style: .continuous
++            )
++        )
++    }
++
++    private func drivePad(
++        size: CGSize
++    ) -> some View {
++        ZStack {
++            RoundedRectangle(
++                cornerRadius: 18,
++                style: .continuous
++            )
++            .fill(
++                Color.white.opacity(0.04)
++            )
++
++            RoundedRectangle(
++                cornerRadius: 18,
++                style: .continuous
++            )
++            .stroke(
++                Color.white.opacity(0.10),
++                lineWidth: 1
++            )
++
++            VStack(spacing: 3) {
++                Image(
++                    systemName:
++                        "arrow.up.circle.fill"
++                )
++                .font(
++                    .title2
++                )
++
++                Text(
++                    "拖动驾驶"
++                )
++                .font(
++                    .caption2.weight(
++                        .semibold
++                    )
++                )
++
++                Image(
++                    systemName:
++                        "arrow.down.circle"
++                )
++                .font(
++                    .caption
++                )
++            }
++            .foregroundColor(
++                .white.opacity(0.54)
++            )
++        }
++        .frame(
++            width: min(
++                190,
++                size.width * 0.48
++            ),
++            height: 94
++        )
++        .contentShape(
++            Rectangle()
++        )
++        .gesture(
++            DragGesture(
++                minimumDistance: 0
++            )
++            .onChanged { value in
++                let origin =
++                    controlOrigin ??
++                    value.startLocation
++
++                if controlOrigin == nil {
++                    controlOrigin =
++                        origin
++                }
++
++                let dx =
++                    value.location.x -
++                    origin.x
++
++                let dy =
++                    value.location.y -
++                    origin.y
++
++                let steering =
++                    Double(
++                        max(
++                            -1,
++                            min(
++                                1,
++                                dx / 70
++                            )
++                        )
++                    )
++
++                let throttle =
++                    Double(
++                        max(
++                            -1,
++                            min(
++                                1,
++                                -dy / 55
++                            )
++                        )
++                    )
++
++                model.drive(
++                    throttle: throttle,
++                    steering: steering
++                )
++            }
++            .onEnded { _ in
++                controlOrigin = nil
++                model.stopDriving()
++            }
++        )
++        .accessibilityLabel(
++            "驾驶维修车"
++        )
++    }
++
++    private func meter(
++        _ title: String,
++        _ value: Double,
++        _ color: Color
++    ) -> some View {
++        VStack(
++            alignment: .leading,
++            spacing: 4
++        ) {
++            Text(title)
++                .font(
++                    .system(
++                        size: 8,
++                        weight: .bold,
++                        design: .monospaced
++                    )
++                )
++                .foregroundColor(
++                    .white.opacity(0.42)
++                )
++
++            GeometryReader {
++                geometry in
++
++                ZStack(
++                    alignment: .leading
++                ) {
++                    Capsule()
++                        .fill(
++                            Color.white.opacity(
++                                0.08
++                            )
++                        )
++
++                    Capsule()
++                        .fill(
++                            color.opacity(
++                                0.84
++                            )
++                        )
++                        .frame(
++                            width:
++                                geometry.size.width *
++                                CGFloat(
++                                    max(
++                                        0,
++                                        min(
++                                            1,
++                                            value / 100
++                                        )
++                                    )
++                                )
++                        )
++                }
++            }
++            .frame(
++                height: 4
++            )
++
++            Text(
++                "\(Int(value.rounded()))"
++            )
++            .font(
++                .caption2
++                    .bold()
++                    .monospacedDigit()
++            )
++            .foregroundColor(
++                .white.opacity(0.76)
++            )
++        }
++        .frame(
++            maxWidth: .infinity
++        )
++    }
++
++    private func metric(
++        _ title: String,
++        _ value: String
++    ) -> some View {
++        VStack(spacing: 3) {
++            Text(title)
++                .font(
++                    .system(
++                        size: 8,
++                        weight: .bold,
++                        design: .monospaced
++                    )
++                )
++                .foregroundColor(
++                    .white.opacity(0.40)
++                )
++
++            Text(value)
++                .font(
++                    .caption2
++                        .bold()
++                        .monospacedDigit()
++                )
++                .foregroundColor(
++                    .white.opacity(0.80)
++                )
++        }
++        .frame(
++            maxWidth: .infinity
++        )
++    }
++
++    private var resultOverlay: some View {
++        VStack(spacing: 12) {
++            Image(
++                systemName:
++                    resultIcon
++            )
++            .font(
++                .system(
++                    size: 34,
++                    weight: .semibold
++                )
++            )
++            .foregroundColor(
++                resultColor
++            )
++
++            Text(
++                resultTitle
++            )
++            .font(
++                .title3.weight(
++                    .semibold
++                )
++            )
++            .foregroundColor(
++                .white
++            )
++
++            Text(
++                "\(model.snapshot.litBuildings)/\(model.snapshot.totalBuildings) 栋楼宇仍有灯光"
++            )
++            .font(
++                .caption
++                    .monospacedDigit()
++            )
++            .foregroundColor(
++                .white.opacity(0.60)
++            )
++
++            Button(
++                "重新出车"
++            ) {
++                model.restart()
++            }
++            .font(
++                .caption.weight(
++                    .semibold
++                )
++            )
++            .foregroundColor(
++                .black.opacity(0.82)
++            )
++            .padding(
++                .horizontal,
++                18
++            )
++            .padding(
++                .vertical,
++                10
++            )
++            .background(
++                resultColor
++            )
++            .clipShape(
++                Capsule()
++            )
++        }
++        .padding(22)
++        .frame(
++            maxWidth: 300
++        )
++        .background(
++            Color.black.opacity(0.87)
++        )
++        .clipShape(
++            RoundedRectangle(
++                cornerRadius: 22,
++                style: .continuous
++            )
++        )
++    }
++
++    private var resultTitle: String {
++        switch model.snapshot.outcome {
++        case .running:
++            return ""
++
++        case .stabilized:
++            return "街区重新亮了"
++
++        case .gridCollapse:
++            return "主网失稳"
++
++        case .timeExpired:
++            return "维修窗口关闭"
++        }
++    }
++
++    private var resultIcon: String {
++        switch model.snapshot.outcome {
++        case .running:
++            return "circle"
++
++        case .stabilized:
++            return "building.2.crop.circle.fill"
++
++        case .gridCollapse:
++            return "bolt.slash.fill"
++
++        case .timeExpired:
++            return "clock.fill"
++        }
++    }
++
++    private var resultColor: Color {
++        switch model.snapshot.outcome {
++        case .running:
++            return .white
++
++        case .stabilized:
++            return .cyan
++
++        case .gridCollapse:
++            return .red
++
++        case .timeExpired:
++            return .orange
++        }
++    }
++}
+
