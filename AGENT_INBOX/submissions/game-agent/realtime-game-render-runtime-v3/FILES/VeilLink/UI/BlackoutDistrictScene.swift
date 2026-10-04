@@ -3,7 +3,6 @@ import CoreImage
 import UIKit
 import simd
 
-@MainActor
 final class BlackoutDistrictScene: SKScene {
     var onSnapshot: ((BlackoutSnapshot) -> Void)?
     var onEvent: ((BlackoutEvent) -> Void)?
@@ -13,6 +12,9 @@ final class BlackoutDistrictScene: SKScene {
     private var lastUpdateTime: TimeInterval = 0
     private var accumulator: TimeInterval = 0
     private var reduceMotion = false
+    private let assetRuntime =
+        RealtimeGameAssetRuntime()
+
     private var renderProfile =
         RealtimeGameRenderProfile.resolve(
             sceneSize: CGSize(
@@ -221,8 +223,7 @@ final class BlackoutDistrictScene: SKScene {
         serviceTruck.removeAllChildren()
 
         if let texture =
-            RealtimeGameAssetRuntime
-                .texture(
+            assetRuntime.texture(
                     for:
                         .blackoutServiceTruck
                 ) {
@@ -235,8 +236,7 @@ final class BlackoutDistrictScene: SKScene {
                 height: 46
             )
 
-            RealtimeGameAssetRuntime
-                .applyNightGrade(
+            assetRuntime.applyNightGrade(
                     to: sprite,
                     scene: .blackout,
                     intensity: 0.82
@@ -630,14 +630,12 @@ final class BlackoutDistrictScene: SKScene {
 
         if buildingIndex % 3 == 0 {
             resolvedTexture =
-                RealtimeGameAssetRuntime
-                    .texture(
+                assetRuntime.texture(
                         for:
                             .blackoutCommercialBuilding
                     )
         } else if let image =
-                    RealtimeGameAssetRuntime
-                        .image(
+                    assetRuntime.image(
                             named:
                                 textureName
                         ) {
@@ -671,8 +669,7 @@ final class BlackoutDistrictScene: SKScene {
                 height: width * 0.86
             )
 
-            RealtimeGameAssetRuntime
-                .applyNightGrade(
+            assetRuntime.applyNightGrade(
                     to: sprite,
                     scene: .blackout,
                     intensity: 0.94
@@ -851,8 +848,7 @@ final class BlackoutDistrictScene: SKScene {
         sprite.blendMode = .add
 
         if let shader =
-            RealtimeGameAssetRuntime
-                .shader(
+            assetRuntime.shader(
                     named:
                         "SHKRadialGradient"
                 ) {
@@ -1012,8 +1008,7 @@ final class BlackoutDistrictScene: SKScene {
         noiseOverlay.blendMode = .add
         noiseOverlay.zPosition = 90
         noiseOverlay.shader =
-            RealtimeGameAssetRuntime
-                .shader(
+            assetRuntime.shader(
                     named:
                         "SHKDynamicGrayNoise"
                 )
