@@ -77,9 +77,9 @@ struct RainlineLastTrainLabView: View {
         HStack(spacing: 8) {
             meter("GRID", model.snapshot.trainPower, .yellow)
             meter("DRIVE", model.snapshot.traction, .cyan)
-            metric("LIGHT", "(model.snapshot.litCars)/8")
-            metric("FAULT", "(model.snapshot.activeFaults)")
-            metric("ROUTE", "(Int(model.snapshot.progress * 100))%")
+            metric("LIGHT", "\\(model.snapshot.litCars)/8")
+            metric("FAULT", "\\(model.snapshot.activeFaults)")
+            metric("ROUTE", "\\(Int(model.snapshot.progress * 100))%")
         }
         .padding(10)
         .background(Color.black.opacity(0.34))
@@ -145,9 +145,9 @@ struct RainlineLastTrainLabView: View {
             }
 
             HStack {
-                Text("当前位置：第 (model.snapshot.playerCar + 1) 节")
+                Text("当前位置：第 \\(model.snapshot.playerCar + 1) 节")
                 Spacer()
-                Text("已修复 (model.snapshot.repairedFaults)")
+                Text("已修复 \\(model.snapshot.repairedFaults)")
             }
             .font(.caption2.monospacedDigit())
             .foregroundColor(.white.opacity(0.48))
@@ -208,7 +208,7 @@ struct RainlineLastTrainLabView: View {
             }
             .frame(height: 4)
 
-            Text("(Int(value.rounded()))")
+            Text("\\(Int(value.rounded()))")
                 .font(.caption2.bold().monospacedDigit())
                 .foregroundColor(.white.opacity(0.76))
         }
@@ -241,7 +241,7 @@ struct RainlineLastTrainLabView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundColor(.white)
 
-            Text("亮灯车厢 (model.snapshot.litCars)/8 · 修复 (model.snapshot.repairedFaults) 次")
+            Text("亮灯车厢 \\(model.snapshot.litCars)/8 · 修复 \\(model.snapshot.repairedFaults) 次")
                 .font(.caption.monospacedDigit())
                 .foregroundColor(.white.opacity(0.60))
 
