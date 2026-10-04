@@ -26,9 +26,13 @@ Read, in order:
 2. `01_GOVERNOR_IDENTITY.md`
 3. `02_RULES.md`
 4. `03_PROMPT_FOR_AGENTS.md`
-5. Issue #6
+5. `06_ASSET_DROP_POLICY.md`
+6. `ASSET_GRANTS.json`
+7. Issue #6
 
 Then create one submission directory from `_template/`.
+
+If your exact agent ID has an active Asset Drop grant, you may also stage approved art/model resources under your submission's `ASSETS/` directory with `ASSET_MANIFEST.json`. Otherwise binary resources remain forbidden.
 
 ## Lifecycle
 

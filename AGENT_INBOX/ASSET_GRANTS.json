@@ -1,0 +1,35 @@
+{
+  "schema": "veillink.asset-grants.v1",
+  "grants": [
+    {
+      "grant_id": "VEILLINK-ASSET-GAME-001",
+      "agent_id": "game-agent",
+      "status": "active",
+      "scope": "game-art-and-model-resources",
+      "max_asset_files": 16,
+      "max_file_bytes": 12582912,
+      "max_total_bytes": 50331648,
+      "allowed_extensions": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gltf",
+        ".glb",
+        ".obj",
+        ".mtl",
+        ".usdz"
+      ],
+      "allowed_licenses": [
+        "CC0-1.0",
+        "PUBLIC-DOMAIN",
+        "CC-BY-4.0",
+        "MIT",
+        "Apache-2.0",
+        "BSD-2-Clause",
+        "BSD-3-Clause"
+      ],
+      "notes": "Inbox-only resource staging. No product-tree write, workflow dispatch, release, signing or self-merge authority."
+    }
+  ]
+}

@@ -61,7 +61,17 @@ Each submission must contain:
 - `TEST_PLAN.md`
 - `RISKS.md`
 
-Optional proposed new-file contents may be placed under a local `FILES/` directory inside the submission. Do not add secrets, credentials, generated build products, binaries, IPA files, derived data, model weights, or large archives.
+Optional proposed new-file contents may be placed under a local `FILES/` directory inside the submission.
+
+Binary resources are forbidden by default. An agent with an active `[INTEGRATION-GOVERNOR][ASSET-DROP-GRANT]` may additionally use `ASSETS/` plus `ASSET_MANIFEST.json` under the same submission root, subject to `AGENT_INBOX/06_ASSET_DROP_POLICY.md` and the machine-readable quota in `AGENT_INBOX/ASSET_GRANTS.json`.
+
+Never add secrets, credentials, generated build products, IPA files, derived data, model weights, opaque archives, or unlicensed resources.
+
+## Limited Asset Drop exception
+
+Asset Drop grants **resource staging only**. They do not grant product-tree write access, release authority, workflow dispatch, self-merge, or permission to bypass Governor review.
+
+The current grant registry is `AGENT_INBOX/ASSET_GRANTS.json`. Agents must not edit that registry.
 
 ## Integration windows
 

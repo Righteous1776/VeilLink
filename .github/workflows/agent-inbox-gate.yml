@@ -25,6 +25,8 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           python3 - <<'PY'
+          import hashlib
+          import json
           import os
           import re
           import subprocess
@@ -32,6 +34,7 @@ jobs:
 
           ACTIVATION_SHA = 'c81f266e0032a1d0868cb25ddc26b690ddea4e43'
           REQUIRED = {'MANIFEST.md', 'PROPOSAL.md', 'PATCH.diff', 'TEST_PLAN.md', 'RISKS.md'}
+          TEXT_FILE_LIMIT = 2 * 1024 * 1024
 
           base = os.environ['BASE_SHA']
           head = os.environ['HEAD_SHA']
@@ -53,8 +56,13 @@ jobs:
           if not is_drop:
               if not is_admin:
                   fail(f'AGENT_INBOX changes require agent-drop/* or admin/* branch: {head_ref}')
-              if any(p.startswith('AGENT_INBOX/submissions/') for p in changed):
-                  fail('admin governance PR must not write agent submission payloads')
+              forbidden_admin_payloads = []
+              for p in changed:
+                  parts = Path(p).parts
+                  if len(parts) >= 4 and parts[0:2] == ('AGENT_INBOX', 'submissions'):
+                      forbidden_admin_payloads.append(p)
+              if forbidden_admin_payloads:
+                  fail(f'admin governance PR must not write agent submission payloads: {forbidden_admin_payloads}')
               print('VEILLINK_AGENT_INBOX_ADMIN_GATE_PASS')
               print(f'BRANCH={head_ref}')
               print(f'CHANGED_FILES={len(changed)}')
@@ -77,6 +85,9 @@ jobs:
 
           root = next(iter(roots))
           root_path = Path(root)
+          root_parts = root_path.parts
+          agent_id = root_parts[2]
+
           present = {p.name for p in root_path.iterdir() if p.is_file()}
           missing = sorted(REQUIRED - present)
           if missing:
@@ -98,14 +109,159 @@ jobs:
           if subprocess.call(['git', 'merge-base', '--is-ancestor', manifest_sha, base], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
               fail('base_main_sha is not an ancestor of the PR base main SHA')
 
+          asset_dir = root_path / 'ASSETS'
+          asset_files = []
+          if asset_dir.exists():
+              if not asset_dir.is_dir():
+                  fail('ASSETS must be a directory')
+              asset_files = sorted(p for p in asset_dir.rglob('*') if p.is_file())
+
+          asset_rel_paths = {p.relative_to(root_path).as_posix() for p in asset_files}
+
+          # Non-asset files remain text-only and capped at 2 MiB.
           for path in changed:
               p = Path(path)
               if not p.exists():
                   continue
-              if p.stat().st_size > 2 * 1024 * 1024:
-                  fail(f'file exceeds 2 MiB Inbox limit: {path}')
+              if p.is_symlink():
+                  fail(f'symlinks are forbidden in Agent Inbox: {path}')
+              try:
+                  rel = p.relative_to(root_path).as_posix()
+              except ValueError:
+                  fail(f'changed file escaped submission root: {path}')
+              if rel.startswith('ASSETS/'):
+                  continue
+              if p.stat().st_size > TEXT_FILE_LIMIT:
+                  fail(f'non-asset file exceeds 2 MiB Inbox limit: {path}')
               if b'\x00' in p.read_bytes():
-                  fail(f'binary content is forbidden in Agent Inbox: {path}')
+                  fail(f'binary content outside ASSETS is forbidden: {path}')
+
+          if asset_files:
+              grant_match = re.search(r'asset_grant:\s*`?([A-Za-z0-9._-]+)`?', manifest)
+              if not grant_match:
+                  fail('MANIFEST.md must declare asset_grant when ASSETS are present')
+              grant_id = grant_match.group(1)
+
+              grants_path = Path('AGENT_INBOX/ASSET_GRANTS.json')
+              if not grants_path.is_file():
+                  fail('asset grant registry is missing')
+              try:
+                  registry = json.loads(grants_path.read_text(encoding='utf-8'))
+              except Exception as exc:
+                  fail(f'asset grant registry is invalid JSON: {exc}')
+
+              grants = registry.get('grants', [])
+              grant = next((g for g in grants if g.get('grant_id') == grant_id), None)
+              if not grant:
+                  fail(f'unknown asset grant: {grant_id}')
+              if grant.get('status') != 'active':
+                  fail(f'asset grant is not active: {grant_id}')
+              if grant.get('agent_id') != agent_id:
+                  fail(f'asset grant {grant_id} does not belong to agent {agent_id}')
+
+              allowed_exts = {str(x).lower() for x in grant.get('allowed_extensions', [])}
+              allowed_licenses = set(grant.get('allowed_licenses', []))
+              max_files = int(grant.get('max_asset_files', 0))
+              max_file_bytes = int(grant.get('max_file_bytes', 0))
+              max_total_bytes = int(grant.get('max_total_bytes', 0))
+
+              if len(asset_files) > max_files:
+                  fail(f'asset count {len(asset_files)} exceeds grant limit {max_files}')
+
+              total_bytes = 0
+              for p in asset_files:
+                  if p.is_symlink():
+                      fail(f'symlink asset is forbidden: {p}')
+                  ext = p.suffix.lower()
+                  if ext not in allowed_exts:
+                      fail(f'asset extension not allowed by grant: {p}')
+                  size = p.stat().st_size
+                  if size > max_file_bytes:
+                      fail(f'asset exceeds per-file grant limit: {p} ({size} bytes)')
+                  total_bytes += size
+                  if p.read_bytes().startswith(b'version https://git-lfs.github.com/spec/v1'):
+                      fail(f'Git LFS pointer is not accepted as the staged asset payload: {p}')
+
+              if total_bytes > max_total_bytes:
+                  fail(f'asset payload {total_bytes} bytes exceeds grant total limit {max_total_bytes}')
+
+              asset_manifest_path = root_path / 'ASSET_MANIFEST.json'
+              if not asset_manifest_path.is_file():
+                  fail('ASSET_MANIFEST.json is required when ASSETS are present')
+              try:
+                  asset_manifest = json.loads(asset_manifest_path.read_text(encoding='utf-8'))
+              except Exception as exc:
+                  fail(f'ASSET_MANIFEST.json is invalid JSON: {exc}')
+
+              if asset_manifest.get('grant_id') != grant_id:
+                  fail('ASSET_MANIFEST.json grant_id does not match MANIFEST.md asset_grant')
+
+              entries = asset_manifest.get('assets')
+              if not isinstance(entries, list):
+                  fail('ASSET_MANIFEST.json assets must be an array')
+
+              entry_paths = set()
+              aliases = set()
+              for entry in entries:
+                  if not isinstance(entry, dict):
+                      fail('each asset manifest entry must be an object')
+                  rel = entry.get('path')
+                  alias = entry.get('alias')
+                  source_url = entry.get('source_url')
+                  license_id = entry.get('license')
+                  sha256 = entry.get('sha256')
+                  byte_count = entry.get('bytes')
+                  purpose = entry.get('purpose')
+                  attribution = entry.get('attribution')
+
+                  if not isinstance(rel, str) or not rel.startswith('ASSETS/'):
+                      fail(f'invalid asset manifest path: {rel}')
+                  if rel in entry_paths:
+                      fail(f'duplicate asset manifest path: {rel}')
+                  entry_paths.add(rel)
+
+                  if not isinstance(alias, str) or not alias.strip():
+                      fail(f'asset alias missing for {rel}')
+                  if alias in aliases:
+                      fail(f'duplicate asset alias: {alias}')
+                  aliases.add(alias)
+
+                  if not isinstance(source_url, str) or not source_url.startswith('https://'):
+                      fail(f'asset source_url must use https for {rel}')
+                  if license_id not in allowed_licenses:
+                      fail(f'asset license not allowed by grant for {rel}: {license_id}')
+                  if not isinstance(purpose, str) or not purpose.strip():
+                      fail(f'asset purpose missing for {rel}')
+                  if license_id == 'CC-BY-4.0' and (not isinstance(attribution, str) or not attribution.strip()):
+                      fail(f'CC-BY-4.0 asset requires attribution text: {rel}')
+                  if not isinstance(sha256, str) or not re.fullmatch(r'[0-9a-fA-F]{64}', sha256):
+                      fail(f'invalid SHA-256 for {rel}')
+                  if not isinstance(byte_count, int) or byte_count < 0:
+                      fail(f'invalid byte count for {rel}')
+
+                  p = root_path / rel
+                  if not p.is_file():
+                      fail(f'asset manifest points to missing file: {rel}')
+                  actual = p.read_bytes()
+                  actual_sha = hashlib.sha256(actual).hexdigest()
+                  if actual_sha.lower() != sha256.lower():
+                      fail(f'SHA-256 mismatch for {rel}')
+                  if len(actual) != byte_count:
+                      fail(f'byte-count mismatch for {rel}: manifest={byte_count} actual={len(actual)}')
+
+              if entry_paths != asset_rel_paths:
+                  missing_entries = sorted(asset_rel_paths - entry_paths)
+                  extra_entries = sorted(entry_paths - asset_rel_paths)
+                  fail(f'asset manifest/file set mismatch; missing={missing_entries} extra={extra_entries}')
+
+              print('VEILLINK_ASSET_DROP_GATE_PASS')
+              print(f'ASSET_GRANT={grant_id}')
+              print(f'ASSET_FILES={len(asset_files)}')
+              print(f'ASSET_BYTES={total_bytes}')
+          else:
+              # No ASSETS means all changed content must remain text-only.
+              if (root_path / 'ASSET_MANIFEST.json').exists():
+                  print('VEILLINK_ASSET_MANIFEST_WITHOUT_PAYLOAD=advisory')
 
           print('VEILLINK_AGENT_INBOX_GATE_PASS')
           print(f'BRANCH={head_ref}')

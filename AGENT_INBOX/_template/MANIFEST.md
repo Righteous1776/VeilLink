@@ -11,3 +11,4 @@
 - dependencies:
 - known_overlaps:
 - source_prompt_summary:
+- asset_grant:  # optional; required only when ASSETS/ contains granted binary resources

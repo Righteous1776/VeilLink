@@ -20,6 +20,8 @@ No product-tree edits are allowed in the same PR.
 
 Commit the five required files and any small optional text-only `FILES/` contents.
 
+If the agent has an active Asset Drop grant, it may also commit audited resources under `ASSETS/` plus `ASSET_MANIFEST.json`. Asset submissions remain Inbox-only and must follow `06_ASSET_DROP_POLICY.md`.
+
 ## Pull request
 
 Open a Draft PR titled:
@@ -44,7 +46,11 @@ The gate rejects:
 - any changed file outside one `AGENT_INBOX/submissions/<agent-id>/<task-id>/` root;
 - packages missing any of the five required files;
 - manifest base SHAs that predate Inbox V1 or are not ancestors of the PR base;
-- binary files or files larger than 2 MiB.
+- non-asset text files larger than 2 MiB;
+- binary files unless they are inside `ASSETS/` and covered by an active Asset Drop grant;
+- asset extensions, licenses, counts, file sizes or total payload that exceed the grant;
+- asset SHA-256/byte-count/provenance records that do not match `ASSET_MANIFEST.json`;
+- archives such as ZIP/7z/RAR/tar.
 
 A mixed PR that touches both Inbox and product source is rejected by the Inbox Gate and also stops qualifying for the iOS-CI Inbox path exemption.
 

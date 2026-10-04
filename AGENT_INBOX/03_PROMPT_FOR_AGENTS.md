@@ -8,6 +8,8 @@ Before doing anything, fetch the latest `main` and read:
 - `/AGENT_INBOX/00_READ_ME_FIRST.md`
 - `/AGENT_INBOX/01_GOVERNOR_IDENTITY.md`
 - `/AGENT_INBOX/02_RULES.md`
+- `/AGENT_INBOX/06_ASSET_DROP_POLICY.md`
+- `/AGENT_INBOX/ASSET_GRANTS.json`
 - GitHub Issue #6
 
 The repository authority chain is:
@@ -35,7 +37,8 @@ In INBOX_ONLY mode:
    - `RISKS.md`
 8. Base `PATCH.diff` on the exact latest `main` SHA and record that SHA in `MANIFEST.md`.
 9. If you overlap another agent, record it in `RISKS.md`; do not resolve it yourself.
-10. When the submission is complete, stop changing product code and report:
+10. Binary resources are forbidden unless `ASSET_GRANTS.json` contains an active grant for your exact agent ID. With a valid grant, use only `ASSETS/` + `ASSET_MANIFEST.json`, stay inside that grant's quota/extensions/licenses, and record `asset_grant:` in `MANIFEST.md`.
+11. When the submission is complete, stop changing product code and report:
 
 ```
 [AGENT-DROP]
