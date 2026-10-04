@@ -2,6 +2,7 @@ import SpriteKit
 import CoreImage
 import UIKit
 
+@MainActor
 final class SignalDiveScene: SKScene {
     var onSnapshot: ((SignalDiveSnapshot) -> Void)?
     var onEvent: ((SignalDiveEvent) -> Void)?
