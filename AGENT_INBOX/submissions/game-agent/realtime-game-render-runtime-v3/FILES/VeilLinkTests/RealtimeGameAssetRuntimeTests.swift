@@ -108,4 +108,47 @@ final class RealtimeGameAssetRuntimeTests: XCTestCase {
             Set(resources).count
         )
     }
+
+    func testMissingImageAliasIsSafe() {
+        let runtime =
+            RealtimeGameAssetRuntime()
+
+        XCTAssertNil(
+            runtime.image(
+                named:
+                    "__veillink_missing_asset__"
+            )
+        )
+    }
+
+    func testMissingShaderIsSafe() {
+        let runtime =
+            RealtimeGameAssetRuntime()
+
+        XCTAssertNil(
+            runtime.shader(
+                named:
+                    "__veillink_missing_shader__"
+            )
+        )
+    }
+
+    func testCacheResetIsSafe() {
+        let runtime =
+            RealtimeGameAssetRuntime()
+
+        _ = runtime.image(
+            named:
+                "__veillink_missing_asset__"
+        )
+
+        runtime.clearCaches()
+
+        XCTAssertNil(
+            runtime.image(
+                named:
+                    "__veillink_missing_asset__"
+            )
+        )
+    }
 }
