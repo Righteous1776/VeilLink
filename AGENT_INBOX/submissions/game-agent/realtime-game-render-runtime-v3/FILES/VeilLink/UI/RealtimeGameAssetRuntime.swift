@@ -379,35 +379,45 @@ enum RealtimeGameAssetRuntime {
             modelRoot
         )
 
-        let box =
-            modelRoot.boundingBox
+        var minimum =
+            SCNVector3Zero
+        var maximum =
+            SCNVector3Zero
+
+        guard modelRoot
+            .getBoundingBoxMin(
+                &minimum,
+                max: &maximum
+            ) else {
+            return nil
+        }
 
         let width =
             max(
                 0.001,
-                box.max.x -
-                box.min.x
+                maximum.x -
+                minimum.x
             )
         let height =
             max(
                 0.001,
-                box.max.y -
-                box.min.y
+                maximum.y -
+                minimum.y
             )
         let depth =
             max(
                 0.001,
-                box.max.z -
-                box.min.z
+                maximum.z -
+                minimum.z
             )
 
         let center =
             SCNVector3(
-                (box.min.x + box.max.x) *
+                (minimum.x + maximum.x) *
                     0.5,
-                (box.min.y + box.max.y) *
+                (minimum.y + maximum.y) *
                     0.5,
-                (box.min.z + box.max.z) *
+                (minimum.z + maximum.z) *
                     0.5
             )
 
