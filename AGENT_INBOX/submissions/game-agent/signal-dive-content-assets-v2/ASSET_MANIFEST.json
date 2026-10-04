@@ -1,0 +1,35 @@
+{
+  "grant_id": "VEILLINK-ASSET-GAME-001",
+  "assets": [
+    {
+      "path": "ASSETS/signal_dive_kenney_fish_1.png",
+      "alias": "signal_dive_kenney_fish_1",
+      "source_url": "https://github.com/MatteoMassaro/BubBlow/blob/main/assets/sprites/kenney_fish-pack/PNG/Retina/fishTile_033.png",
+      "license": "CC0-1.0",
+      "sha256": "7f76b14e6e0406384e282a7dc98acd0083e2f0f3862d4aca69b01cccd62261bb",
+      "bytes": 1601,
+      "purpose": "Direct SpriteKit fish texture for deterministic biological sonar schools.",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/signal_dive_kenney_fish_2.png",
+      "alias": "signal_dive_kenney_fish_2",
+      "source_url": "https://github.com/MatteoMassaro/BubBlow/blob/main/assets/sprites/kenney_fish-pack/PNG/Retina/fishTile_066.png",
+      "license": "CC0-1.0",
+      "sha256": "101cfd754ba9a295af70ad9e6dc62069508acbfd46fc4f263fbec79965ec84f5",
+      "bytes": 800,
+      "purpose": "Direct SpriteKit fish texture variant for biological schools.",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/signal_dive_kenney_fish_3.png",
+      "alias": "signal_dive_kenney_fish_3",
+      "source_url": "https://github.com/MatteoMassaro/BubBlow/blob/main/assets/sprites/kenney_fish-pack/PNG/Retina/fishTile_086.png",
+      "license": "CC0-1.0",
+      "sha256": "52852ec5ed2b4f3556d335d9eabc98dac5ffd3c8b34996ed99dfd0928e55ad1b",
+      "bytes": 620,
+      "purpose": "Direct SpriteKit fish texture variant for biological schools.",
+      "attribution": ""
+    }
+  ]
+}
