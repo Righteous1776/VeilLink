@@ -148,15 +148,14 @@ enum RealtimeGameAssetID: String, CaseIterable, Sendable {
     }
 }
 
-@MainActor
-enum RealtimeGameAssetRuntime {
-    private static let imageCache =
+final class RealtimeGameAssetRuntime {
+    private let imageCache =
         NSCache<NSString, UIImage>()
 
-    private static var urlCache:
+    private var urlCache:
         [String: URL] = [:]
 
-    static func image(
+    func image(
         named alias: String
     ) -> UIImage? {
         if let cached =
@@ -181,7 +180,7 @@ enum RealtimeGameAssetRuntime {
         return image
     }
 
-    static func texture(
+    func texture(
         for asset: RealtimeGameAssetID,
         targetSize: CGSize? = nil
     ) -> SKTexture? {
@@ -256,7 +255,7 @@ enum RealtimeGameAssetRuntime {
         return texture
     }
 
-    static func shader(
+    func shader(
         named name: String
     ) -> SKShader? {
         guard let url =
@@ -276,7 +275,7 @@ enum RealtimeGameAssetRuntime {
         )
     }
 
-    static func applyNightGrade(
+    func applyNightGrade(
         to sprite: SKSpriteNode,
         scene: RealtimeGameVisualScene,
         intensity: CGFloat = 1.0
@@ -335,12 +334,12 @@ enum RealtimeGameAssetRuntime {
             )
     }
 
-    static func clearCaches() {
+    func clearCaches() {
         imageCache.removeAllObjects()
         urlCache.removeAll()
     }
 
-    private static func renderModel(
+    private func renderModel(
         resource: String,
         size: CGSize,
         pitch: Float,
@@ -535,25 +534,29 @@ enum RealtimeGameAssetRuntime {
             rimNode
         )
 
-        let view =
-            SCNView(
-                frame:
-                    CGRect(
-                        origin: .zero,
-                        size: size
-                    )
-            )
-        view.backgroundColor = .clear
-        view.scene = scene
-        view.pointOfView = cameraNode
-        view.antialiasingMode =
-            .multisampling4X
-        view.isPlaying = false
+        scene.background.contents =
+            UIColor.clear
 
-        return view.snapshot()
+        let renderer =
+            SCNRenderer(
+                device: nil,
+                options: nil
+            )
+        renderer.scene = scene
+        renderer.pointOfView =
+            cameraNode
+        renderer.autoenablesDefaultLighting =
+            false
+
+        return renderer.snapshot(
+            atTime: 0,
+            with: size,
+            antialiasingMode:
+                .multisampling4X
+        )
     }
 
-    private static func resourceURL(
+    private func resourceURL(
         named fileName: String
     ) -> URL? {
         if let cached =
