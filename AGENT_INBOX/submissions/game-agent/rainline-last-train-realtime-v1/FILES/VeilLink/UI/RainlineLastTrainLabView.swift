@@ -29,6 +29,7 @@ final class RainlineViewModel: ObservableObject {
     func move(_ value: Double) { scene.setMove(value) }
     func repair(_ active: Bool) { scene.setRepairing(active) }
     func boost(_ active: Bool) { scene.setGridBoost(active) }
+    func setReduceMotion(_ enabled: Bool) { scene.setReduceMotion(enabled) }
 
     func restart() {
         seed &+= 0x9E3779B97F4A7C15
@@ -48,6 +49,7 @@ final class RainlineViewModel: ObservableObject {
 
 struct RainlineLastTrainLabView: View {
     @StateObject private var model = RainlineViewModel()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
