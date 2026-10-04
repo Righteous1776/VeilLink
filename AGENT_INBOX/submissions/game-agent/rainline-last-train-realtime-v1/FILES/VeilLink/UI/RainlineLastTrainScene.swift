@@ -394,7 +394,7 @@ final class RainlineLastTrainScene: SKScene {
 
     private func updateFaultEffects(snapshot: RainlineSnapshot) {
         let active = state.faults.filter { !state.repairedFaultIDs.contains($0.id) }
-        let activeIDs = Set(active.map(.id))
+        let activeIDs = Set(active.map(\.id))
 
         for id in faultEmitters.keys where !activeIDs.contains(id) {
             faultEmitters.removeValue(forKey: id)?.removeFromParent()
