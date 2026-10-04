@@ -1,6 +1,6 @@
 {
   "schema": "veillink.agent-governance.v1",
-  "governance_version": "INBOX_V1",
+  "governance_version": "INBOX_V1_1_ASSET_DROP",
   "governor_id": "VEILLINK-IG-001",
   "role": "Integration Governor",
   "repository": "Righteous1776/VeilLink",
@@ -27,7 +27,11 @@
     "quarantine": true,
     "ci_gate_decision": true,
     "merge_authorization": true,
-    "version_release_permission_control": true
+    "version_release_permission_control": true,
+    "asset_grant_control": true
   },
-  "verification_note": "This record is authoritative only when read from the current default branch main and when it does not conflict with a newer explicit Repository Owner instruction."
+  "verification_note": "This record is authoritative only when read from the current default branch main and when it does not conflict with a newer explicit Repository Owner instruction.",
+  "asset_drop_grant_marker": "[INTEGRATION-GOVERNOR][ASSET-DROP-GRANT]",
+  "asset_grant_registry": "AGENT_INBOX/ASSET_GRANTS.json",
+  "lane_agent_binary_asset_write_authorized_by_default": false
 }
