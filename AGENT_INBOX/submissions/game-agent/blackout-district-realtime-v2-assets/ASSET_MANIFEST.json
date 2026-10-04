@@ -1,0 +1,45 @@
+{
+  "grant_id": "VEILLINK-ASSET-GAME-001",
+  "assets": [
+    {
+      "path": "ASSETS/blackout_service_truck.obj",
+      "alias": "blackout-kenney-service-truck",
+      "source_url": "https://github.com/NazzaroJacopo/VesnaGoesFast/blob/5717e0ace5393545f43fceee07e09aa5eefa7684/vesna-light/env/f-1-circuito/assets/kenney_car-kit/Models/OBJ%20format/truck.obj",
+      "license": "CC0-1.0",
+      "sha256": "eed1dafe60c67cfb9588576cb338ed5e47e68f7d1fa558525e5176773b5bf895",
+      "bytes": 118651,
+      "purpose": "Kenney Car Kit service-truck source model for offline sprite bake or model import",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/truck.mtl",
+      "alias": "blackout-kenney-truck-material",
+      "source_url": "https://github.com/NazzaroJacopo/VesnaGoesFast/blob/5717e0ace5393545f43fceee07e09aa5eefa7684/vesna-light/env/f-1-circuito/assets/kenney_car-kit/Models/OBJ%20format/truck.mtl",
+      "license": "CC0-1.0",
+      "sha256": "a9ba33bda5fc10fc7389518a165a34f8954649e39b7804035fbe02f9413bc68d",
+      "bytes": 145,
+      "purpose": "Texture-free CC0 derivative fallback material for the service truck",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/blackout_road_straight.obj",
+      "alias": "blackout-kenney-road-straight",
+      "source_url": "https://github.com/coderKillo/jam-20sec-2025/blob/bd081fe2a1fbd5e3ffab54d7d1874388ece6c93e/assets/models/kenney_city-kit-roads/Models/OBJ%20format/road-straight.obj",
+      "license": "CC0-1.0",
+      "sha256": "bcffd67ea5ffacf60cff153ad4f4fee20989d3bfbbf1bfae114c7b9fb79bf6db",
+      "bytes": 2801,
+      "purpose": "Kenney City Kit Roads source model for road-surface baking",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/road-straight.mtl",
+      "alias": "blackout-kenney-road-material",
+      "source_url": "https://github.com/coderKillo/jam-20sec-2025/blob/bd081fe2a1fbd5e3ffab54d7d1874388ece6c93e/assets/models/kenney_city-kit-roads/Models/OBJ%20format/road-straight.mtl",
+      "license": "CC0-1.0",
+      "sha256": "462396b57af959ba9d6fd6dbcb9019f4a1ee4fa5893a37a327cedfcab0394fcf",
+      "bytes": 155,
+      "purpose": "Texture-free CC0 derivative fallback material for the road",
+      "attribution": ""
+    }
+  ]
+}
