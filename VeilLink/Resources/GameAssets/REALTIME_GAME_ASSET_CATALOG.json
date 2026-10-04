@@ -1,0 +1,113 @@
+{
+  "schema": "veillink.realtime-game-assets.v1",
+  "resolution_order": [
+    "final_2d_alias",
+    "staged_model_or_vector_source",
+    "procedural_fallback"
+  ],
+  "render_profiles": {
+    "motionReduced": {
+      "particle_multiplier": 0.52,
+      "bloom_multiplier": 0.66,
+      "noise_multiplier": 0.36,
+      "detail_multiplier": 0.78
+    },
+    "standard": {
+      "particle_multiplier": 1,
+      "bloom_multiplier": 1,
+      "noise_multiplier": 1,
+      "detail_multiplier": 1
+    },
+    "cinematic": {
+      "particle_multiplier": 1.22,
+      "bloom_multiplier": 1.1,
+      "noise_multiplier": 1.05,
+      "detail_multiplier": 1.18
+    }
+  },
+  "assets": [
+    {
+      "id": "rainlineTrainCar",
+      "scene": "rainline",
+      "final_2d_alias": "rainline_kenney_train_car",
+      "source_asset": "Rainline/rainline_train_diesel_a.obj",
+      "companion_material": "Rainline/train-diesel-a.mtl",
+      "recommended_bake": [
+        360,
+        180
+      ],
+      "night_grade_blend": 0.22,
+      "fallback": "procedural rounded train shell"
+    },
+    {
+      "id": "rainlineTrackDetailed",
+      "scene": "rainline",
+      "final_2d_alias": "rainline_kenney_track_detailed",
+      "source_asset": "Rainline/rainline_track_detailed.obj",
+      "companion_material": "Rainline/track-detailed.mtl",
+      "recommended_bake": [
+        480,
+        180
+      ],
+      "night_grade_blend": 0.2,
+      "fallback": "procedural parallax track/reflection layer",
+      "note": "source for offline tile/atlas bake; not forced onto arbitrary runtime track geometry"
+    },
+    {
+      "id": "signalDiveFish",
+      "scene": "signalDive",
+      "final_2d_aliases": [
+        "signal_dive_kenney_fish_1",
+        "signal_dive_kenney_fish_2",
+        "signal_dive_kenney_fish_3"
+      ],
+      "source": "Kenney Fish Pack CC0 vector fragments in SignalDiveKenneyVectorArt.swift",
+      "night_grade_blend": 0.18,
+      "fallback": "procedural fish ellipse + tail"
+    },
+    {
+      "id": "blackoutServiceTruck",
+      "scene": "blackout",
+      "final_2d_alias": "blackout_kenney_service_truck",
+      "source_asset": "Blackout/blackout_service_truck.obj",
+      "companion_material": "Blackout/truck.mtl",
+      "recommended_bake": [
+        220,
+        150
+      ],
+      "night_grade_blend": 0.2,
+      "fallback": "procedural maintenance truck"
+    },
+    {
+      "id": "blackoutCommercialBuilding",
+      "scene": "blackout",
+      "final_2d_alias": "blackout_kenney_commercial",
+      "source_asset": "Blackout/blackout_commercial_low_a.obj",
+      "companion_material": "Blackout/low-detail-building-a.mtl",
+      "recommended_bake": [
+        220,
+        220
+      ],
+      "night_grade_blend": 0.2,
+      "fallback": "procedural building body + controllable windows"
+    },
+    {
+      "id": "blackoutRoadStraight",
+      "scene": "blackout",
+      "final_2d_alias": "blackout_kenney_road_straight",
+      "source_asset": "Blackout/blackout_road_straight.obj",
+      "companion_material": "Blackout/road-straight.mtl",
+      "recommended_bake": [
+        240,
+        180
+      ],
+      "night_grade_blend": 0.18,
+      "fallback": "procedural graph-edge road stroke",
+      "note": "source for offline road tile bake; graph road geometry remains authoritative"
+    }
+  ],
+  "shaders": [
+    "SHKDynamicGrayNoise.fsh",
+    "SHKRadialGradient.fsh"
+  ]
+}

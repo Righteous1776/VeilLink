@@ -1,9 +1,9 @@
 # VeilLink
 
-> **Current cumulative checkpoint:** VeilLink **26.11 (Build 57)**. This release keeps
-> the complete 26.10 release line and adds native real-time arcade, hardware-backed Live Tools,
-> BLE/LAN transport hardening, PTT/chat repairs, and explicit render/performance budgets.
-> See [the Build 57 release notes](docs/RELEASE_26_11_BUILD_57.md) and
+> **Current cumulative checkpoint:** VeilLink **26.12 (Build 58)**. This release keeps
+> the complete 26.11 release line and adds six substantial real-time 2D/3D games,
+> deterministic game cores, adaptive rendering and audited offline art assets.
+> See [the Build 58 release notes](docs/RELEASE_26_12_BUILD_58.md) and
 > [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
 
 VeilLink is a GitHub-buildable iOS 15+ prototype for nearby, serverless encrypted

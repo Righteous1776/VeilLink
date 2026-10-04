@@ -15,7 +15,7 @@ info=read('VeilLink/Resources/Info.plist')
 if not re.search(r'<key>CFBundleShortVersionString</key>\s*<string>\$\(MARKETING_VERSION\)</string>',info): fail('version must inherit MARKETING_VERSION')
 if not re.search(r'<key>CFBundleVersion</key>\s*<string>\$\(CURRENT_PROJECT_VERSION\)</string>',info): fail('build must inherit CURRENT_PROJECT_VERSION')
 project=read('project.yml')
-if 'MARKETING_VERSION: "26.11"' not in project or 'CURRENT_PROJECT_VERSION: "57"' not in project: fail('current release identity missing')
+if 'MARKETING_VERSION: "26.12"' not in project or 'CURRENT_PROJECT_VERSION: "58"' not in project: fail('current release identity missing')
 plane=read('VeilLink/Agent/Integration/VeilAppControlPlane.swift')
 for n in ['guard permissions.localMutationsEnabled else', 'guard permissions.diagnosticsExportEnabled else', 'case .setResourceFocus, .trimCaches, .refreshBLE']:
     if n not in plane: fail(f'control invariant missing: {n}')
