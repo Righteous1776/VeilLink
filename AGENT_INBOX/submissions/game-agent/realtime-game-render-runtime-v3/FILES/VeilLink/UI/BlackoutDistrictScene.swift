@@ -3,6 +3,7 @@ import CoreImage
 import UIKit
 import simd
 
+@MainActor
 final class BlackoutDistrictScene: SKScene {
     var onSnapshot: ((BlackoutSnapshot) -> Void)?
     var onEvent: ((BlackoutEvent) -> Void)?
