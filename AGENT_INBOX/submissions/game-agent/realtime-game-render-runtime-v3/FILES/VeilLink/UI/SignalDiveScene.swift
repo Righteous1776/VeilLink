@@ -35,6 +35,14 @@ final class SignalDiveScene: SKScene {
     private var beaconNodes: [Int: SKNode] = [:]
     private var unknownNodes: [Int: SKNode] = [:]
     private var reduceMotion = false
+    private var renderProfile =
+        RealtimeGameRenderProfile.resolve(
+            sceneSize: CGSize(
+                width: 390,
+                height: 844
+            ),
+            reduceMotion: false
+        )
 
     init(seed: UInt64) {
         state = SignalDiveState(seed: seed)
@@ -131,7 +139,19 @@ final class SignalDiveScene: SKScene {
 
     func setReduceMotion(_ enabled: Bool) {
         reduceMotion = enabled
-        particulateEmitter?.particleBirthRate = enabled ? 34 : 78
+        renderProfile =
+            RealtimeGameRenderProfile
+                .resolve(
+                    sceneSize: size,
+                    reduceMotion:
+                        reduceMotion
+                )
+
+        particulateEmitter?
+            .particleBirthRate =
+            78 *
+            renderProfile
+                .particleMultiplier
     }
 
     func restart(seed: UInt64) {
@@ -336,9 +356,20 @@ final class SignalDiveScene: SKScene {
             return
         }
 
+        renderProfile =
+            RealtimeGameRenderProfile
+                .resolve(
+                    sceneSize: size,
+                    reduceMotion:
+                        reduceMotion
+                )
+
         cameraNode.position = CGPoint(
             x: size.width / 2,
             y: size.height / 2
+        )
+        cameraNode.setScale(
+            renderProfile.cameraScale
         )
 
         rebuildAbyss()
@@ -449,7 +480,10 @@ final class SignalDiveScene: SKScene {
             makeDotTexture(
                 diameter: 4
             )
-        emitter.particleBirthRate = 78
+        emitter.particleBirthRate =
+            78 *
+            renderProfile
+                .particleMultiplier
         emitter.particleLifetime = 7.2
         emitter.particleLifetimeRange = 2.5
         emitter.particlePositionRange =
@@ -873,9 +907,10 @@ final class SignalDiveScene: SKScene {
                 "signal_dive_kenney_fish_\((id + index) % 3 + 1)"
 
             if let image =
-                UIImage(
-                    named: alias
-                ) {
+                RealtimeGameAssetRuntime
+                    .image(
+                        named: alias
+                    ) {
                 let sprite =
                     SKSpriteNode(
                         texture:
@@ -889,6 +924,15 @@ final class SignalDiveScene: SKScene {
                     height: 15
                 )
                 sprite.alpha = 0.72
+
+                RealtimeGameAssetRuntime
+                    .applyNightGrade(
+                        to: sprite,
+                        scene:
+                            .signalDive,
+                        intensity: 0.72
+                    )
+
                 fish.addChild(
                     sprite
                 )
@@ -1288,10 +1332,12 @@ final class SignalDiveScene: SKScene {
         particulateEmitter?
             .particleBirthRate =
             CGFloat(
-                (reduceMotion ? 32 : 66) +
+                66 +
                 snapshot.pressure *
-                (reduceMotion ? 34 : 70)
-            )
+                70
+            ) *
+            renderProfile
+                .particleMultiplier
     }
 
     private func handle(
