@@ -2,7 +2,6 @@ import SpriteKit
 import CoreImage
 import UIKit
 
-@MainActor
 final class SignalDiveScene: SKScene {
     var onSnapshot: ((SignalDiveSnapshot) -> Void)?
     var onEvent: ((SignalDiveEvent) -> Void)?
@@ -36,6 +35,9 @@ final class SignalDiveScene: SKScene {
     private var beaconNodes: [Int: SKNode] = [:]
     private var unknownNodes: [Int: SKNode] = [:]
     private var reduceMotion = false
+    private let assetRuntime =
+        RealtimeGameAssetRuntime()
+
     private var renderProfile =
         RealtimeGameRenderProfile.resolve(
             sceneSize: CGSize(
@@ -908,8 +910,7 @@ final class SignalDiveScene: SKScene {
                 "signal_dive_kenney_fish_\((id + index) % 3 + 1)"
 
             if let image =
-                RealtimeGameAssetRuntime
-                    .image(
+                assetRuntime.image(
                         named: alias
                     ) {
                 let sprite =
@@ -926,8 +927,7 @@ final class SignalDiveScene: SKScene {
                 )
                 sprite.alpha = 0.72
 
-                RealtimeGameAssetRuntime
-                    .applyNightGrade(
+                assetRuntime.applyNightGrade(
                         to: sprite,
                         scene:
                             .signalDive,
