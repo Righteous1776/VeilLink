@@ -30,7 +30,6 @@ struct DeviceStressTestView: View {
                     }
                 }
         }
-        .preferredColorScheme(.dark)
         .onAppear {
             collaborative.attach(model: model)
             if selectedCollaborativePeerID.isEmpty {

@@ -1,7 +1,20 @@
 import XCTest
+import SpriteKit
 @testable import VeilLink
 
 final class RainlineLastTrainGameTests: XCTestCase {
+    @MainActor
+    func testResizeBeforePresentationDoesNotDoubleParentSceneNodes() {
+        let scene = RainlineLastTrainScene(seed: 58)
+        let oldSize = scene.size
+        scene.size = CGSize(width: 430, height: 932)
+
+        scene.didChangeSize(oldSize)
+        scene.didMove(to: SKView(frame: CGRect(origin: .zero, size: scene.size)))
+
+        XCTAssertFalse(scene.children.isEmpty)
+    }
+
     func testDeterministicReplay() {
         var first = RainlineState(seed: 77)
         var second = RainlineState(seed: 77)

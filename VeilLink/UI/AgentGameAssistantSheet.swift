@@ -36,7 +36,6 @@ struct AgentGameAssistantSheet: View {
             }
         }
         .navigationViewStyle(.stack)
-        .preferredColorScheme(.dark)
         .onAppear {
             model.updateAgentGameContext(session, conversation: conversation)
             model.agent.setComputeFocus(.gameDecision)

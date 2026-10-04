@@ -1,13 +1,32 @@
 import SwiftUI
 import UIKit
+import Foundation
 
 @MainActor
 enum ArcadeRenderPolicy {
     /// Real-time games keep a stable 60 Hz baseline. God Mode may explicitly use
     /// the display's higher refresh rate instead of having premium motion capped.
     static var preferredFramesPerSecond: Int {
+        preferredFramesPerSecond(thermalState: ProcessInfo.processInfo.thermalState)
+    }
+
+    /// God Mode keeps the full visual tier, but an already hot device must not keep asking
+    /// ProMotion for 120 updates per second. This changes cadence only: shaders, geometry,
+    /// particles and post-processing remain at the user-selected quality tier.
+    static func preferredFramesPerSecond(thermalState: ProcessInfo.ThermalState) -> Int {
         let displayMaximum = max(60, UIScreen.main.maximumFramesPerSecond)
-        return VeilPerformanceOverrides.forceFullVisualEffects ? min(120, displayMaximum) : min(60, displayMaximum)
+        switch thermalState {
+        case .critical:
+            return min(30, displayMaximum)
+        case .serious:
+            return min(60, displayMaximum)
+        case .nominal, .fair:
+            return VeilPerformanceOverrides.forceFullVisualEffects
+                ? min(120, displayMaximum)
+                : min(60, displayMaximum)
+        @unknown default:
+            return min(60, displayMaximum)
+        }
     }
 }
 

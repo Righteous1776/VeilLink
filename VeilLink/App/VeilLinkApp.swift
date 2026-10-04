@@ -130,6 +130,7 @@ enum VeilChrome {
             tab.shadowColor = UIColor(VeilTheme.hairline)
         }
         let selected = appleSoft ? UIColor.systemBlue : UIColor(VeilTheme.goldBright)
+        let navigationTint = appleSoft ? UIColor.systemBlue : UIColor(VeilTheme.gold)
         let normal = appleSoft ? UIColor.secondaryLabel : UIColor(VeilTheme.secondaryText)
         for appearance in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
             appearance.selected.iconColor = selected
@@ -142,10 +143,75 @@ enum VeilChrome {
         tabBar.scrollEdgeAppearance = tab
 
         UITableView.appearance().backgroundColor = background
-        UITableView.appearance().separatorColor = UIColor.white.withAlphaComponent(0.06)
+        UITableView.appearance().separatorColor = UIColor(VeilTheme.hairline)
         UITableViewCell.appearance().backgroundColor = .clear
         UICollectionView.appearance().backgroundColor = background
         UISearchBar.appearance().barTintColor = elevated
+
+        // UIAppearance only affects controls created after the change. Apply the same palette to
+        // bars already on screen so switching Day/Night does not leave a light tab bar attached
+        // to dark content (or vice versa) until the next launch.
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            for window in scene.windows {
+                refreshVisibleChrome(
+                    in: window.rootViewController,
+                    navigation: navigation,
+                    tab: tab,
+                    navigationTint: navigationTint,
+                    tabTint: selected,
+                    isDark: appearance.isDarkAppearance
+                )
+            }
+        }
+    }
+
+    @MainActor
+    private static func refreshVisibleChrome(
+        in controller: UIViewController?,
+        navigation: UINavigationBarAppearance,
+        tab: UITabBarAppearance,
+        navigationTint: UIColor,
+        tabTint: UIColor,
+        isDark: Bool
+    ) {
+        guard let controller else { return }
+
+        if let navigationController = controller as? UINavigationController {
+            let bar = navigationController.navigationBar
+            bar.standardAppearance = navigation
+            bar.compactAppearance = navigation
+            bar.scrollEdgeAppearance = navigation
+            bar.tintColor = navigationTint
+            bar.barStyle = isDark ? .black : .default
+        }
+
+        if let tabController = controller as? UITabBarController {
+            tabController.tabBar.standardAppearance = tab
+            tabController.tabBar.scrollEdgeAppearance = tab
+            tabController.tabBar.tintColor = tabTint
+            tabController.tabBar.barStyle = isDark ? .black : .default
+        }
+
+        controller.children.forEach {
+            refreshVisibleChrome(
+                in: $0,
+                navigation: navigation,
+                tab: tab,
+                navigationTint: navigationTint,
+                tabTint: tabTint,
+                isDark: isDark
+            )
+        }
+        if let presented = controller.presentedViewController {
+            refreshVisibleChrome(
+                in: presented,
+                navigation: navigation,
+                tab: tab,
+                navigationTint: navigationTint,
+                tabTint: tabTint,
+                isDark: isDark
+            )
+        }
     }
 }
 
