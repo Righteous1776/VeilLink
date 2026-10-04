@@ -1,0 +1,1212 @@
+diff --git a/VeilLink/Core/RainlineLastTrainGame.swift b/VeilLink/Core/RainlineLastTrainGame.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/RainlineLastTrainGame.swift
+@@ -0,0 +1,265 @@
++import Foundation
++
++enum RainlineOutcome: Equatable, Sendable {
++    case running
++    case arrived
++    case blackout
++    case stalled
++}
++
++struct RainlineInput: Equatable, Sendable {
++    var move: Double
++    var repairing: Bool
++    var boostGrid: Bool
++
++    init(move: Double = 0, repairing: Bool = false, boostGrid: Bool = false) {
++        self.move = min(1, max(-1, move))
++        self.repairing = repairing
++        self.boostGrid = boostGrid
++    }
++}
++
++struct RainlineFault: Equatable, Sendable {
++    let id: Int
++    let car: Int
++    let severity: Double
++    let repairTicks: Int
++}
++
++struct RainlineStoryBeat: Equatable, Sendable {
++    let progress: Double
++    let line: String
++}
++
++struct RainlineSnapshot: Equatable, Sendable {
++    let tick: Int
++    let progress: Double
++    let playerCar: Int
++    let playerOffset: Double
++    let trainPower: Double
++    let traction: Double
++    let litCars: Int
++    let activeFaults: Int
++    let repairedFaults: Int
++    let rain: Double
++    let outcome: RainlineOutcome
++    let activeLine: String?
++}
++
++struct RainlineState: Equatable, Sendable {
++    static let fixedDelta = 1.0 / 60.0
++    static let carCount = 8
++    static let routeTicks = 60 * 180
++
++    let seed: UInt64
++
++    private(set) var tick = 0
++    private(set) var progress = 0.0
++    private(set) var playerPosition = 1.4
++    private(set) var playerVelocity = 0.0
++    private(set) var trainPower = 100.0
++    private(set) var traction = 100.0
++    private(set) var carPower = Array(repeating: 1.0, count: carCount)
++    private(set) var faults: [RainlineFault] = []
++    private(set) var repairedFaultIDs: Set<Int> = []
++    private(set) var repairTicks = 0
++    private(set) var repairingFaultID: Int?
++    private(set) var lastStoryIndex = -1
++    private(set) var activeLine: String?
++    private(set) var outcome: RainlineOutcome = .running
++
++    init(seed: UInt64) {
++        self.seed = seed
++    }
++
++    var isFinished: Bool { outcome != .running }
++
++    var rainIntensity: Double {
++        let a = (sin(Double(tick) * 0.006 + Double(seed % 79) * 0.041) + 1) * 0.5
++        let b = (sin(Double(tick) * 0.0017 + Double(seed % 43) * 0.097) + 1) * 0.5
++        return min(1, max(0, 0.28 + a * 0.38 + b * 0.24))
++    }
++
++    var playerCar: Int {
++        min(Self.carCount - 1, max(0, Int(playerPosition.rounded(.down))))
++    }
++
++    var playerOffset: Double {
++        playerPosition - Double(playerCar)
++    }
++
++    mutating func step(input: RainlineInput) {
++        guard outcome == .running else { return }
++        tick += 1
++
++        spawnFaultIfNeeded()
++        updatePlayer(input: input)
++        updateRepair(input: input)
++        updatePower(input: input)
++        updateRoute()
++        updateStory()
++        resolveOutcome()
++    }
++
++    func fault(for car: Int) -> RainlineFault? {
++        faults.first { $0.car == car && !repairedFaultIDs.contains($0.id) }
++    }
++
++    func snapshot() -> RainlineSnapshot {
++        RainlineSnapshot(
++            tick: tick,
++            progress: progress,
++            playerCar: playerCar,
++            playerOffset: playerOffset,
++            trainPower: trainPower,
++            traction: traction,
++            litCars: carPower.filter { $0 > 0.22 }.count,
++            activeFaults: faults.filter { !repairedFaultIDs.contains($0.id) }.count,
++            repairedFaults: repairedFaultIDs.count,
++            rain: rainIntensity,
++            outcome: outcome,
++            activeLine: activeLine
++        )
++    }
++
++    private mutating func updatePlayer(input: RainlineInput) {
++        let targetVelocity = input.move * 2.7
++        playerVelocity += (targetVelocity - playerVelocity) * 0.18
++        playerPosition += playerVelocity * Self.fixedDelta
++        playerPosition = min(Double(Self.carCount) - 0.001, max(0, playerPosition))
++
++        if playerPosition <= 0 || playerPosition >= Double(Self.carCount) - 0.001 {
++            playerVelocity *= 0.25
++        }
++    }
++
++    private mutating func updateRepair(input: RainlineInput) {
++        guard let fault = fault(for: playerCar), input.repairing, abs(playerVelocity) < 0.9 else {
++            repairTicks = 0
++            repairingFaultID = nil
++            return
++        }
++
++        if repairingFaultID != fault.id {
++            repairingFaultID = fault.id
++            repairTicks = 0
++        }
++
++        repairTicks += 1
++        if repairTicks >= fault.repairTicks {
++            repairedFaultIDs.insert(fault.id)
++            trainPower = min(100, trainPower + 4 + fault.severity * 2.5)
++            carPower[fault.car] = min(1, carPower[fault.car] + 0.42)
++            repairTicks = 0
++            repairingFaultID = nil
++            activeLine = repairLine(for: fault.car)
++        }
++    }
++
++    private mutating func updatePower(input: RainlineInput) {
++        let rain = rainIntensity
++        let activeFaults = faults.filter { !repairedFaultIDs.contains($0.id) }
++        let faultLoad = activeFaults.reduce(0.0) { $0 + $1.severity }
++        let boostDrain = input.boostGrid ? 1.9 : 0
++        let baseDrain = 0.36 + rain * 0.32 + faultLoad * 0.11 + boostDrain
++        trainPower = max(0, trainPower - baseDrain * Self.fixedDelta)
++
++        traction = max(0, min(100,
++            traction + (input.boostGrid ? 4.8 : -0.25 - faultLoad * 0.03) * Self.fixedDelta
++        ))
++
++        for car in 0..<Self.carCount {
++            let hasFault = activeFaults.contains { $0.car == car }
++            let target = hasFault ? 0.08 : (trainPower > 22 ? 1.0 : max(0.08, trainPower / 22))
++            let response = input.boostGrid ? 0.055 : 0.032
++            carPower[car] += (target - carPower[car]) * response
++            carPower[car] = min(1, max(0, carPower[car]))
++        }
++    }
++
++    private mutating func updateRoute() {
++        let tractionFactor = 0.42 + traction / 100 * 0.58
++        progress = min(1, progress + tractionFactor / Double(Self.routeTicks))
++    }
++
++    private mutating func spawnFaultIfNeeded() {
++        guard tick > 0, tick % 480 == Int(seed % 97) else { return }
++        let id = tick / 8 + Int(seed % 1_000)
++        let car = deterministicInt(salt: UInt64(id) ^ 0xA55A, upperBound: Self.carCount)
++        guard fault(for: car) == nil else { return }
++        let severity = 0.75 + deterministicUnit(salt: UInt64(id) ^ 0x91E1) * 1.45
++        let repairTicks = 78 + deterministicInt(salt: UInt64(id) ^ 0xCAFE, upperBound: 88)
++        faults.append(.init(id: id, car: car, severity: severity, repairTicks: repairTicks))
++    }
++
++    private mutating func updateStory() {
++        let beats = Self.storyBeats
++        guard lastStoryIndex + 1 < beats.count else { return }
++        let next = lastStoryIndex + 1
++        if progress >= beats[next].progress {
++            lastStoryIndex = next
++            activeLine = beats[next].line
++        }
++    }
++
++    private mutating func resolveOutcome() {
++        if progress >= 1 {
++            outcome = .arrived
++            activeLine = litCarsEndingLine()
++        } else if trainPower <= 0 {
++            outcome = .blackout
++            activeLine = "列车广播：主电网熄灭。车内只剩下应急灯。"
++        } else if traction <= 0 {
++            outcome = .stalled
++            activeLine = "司机：牵引断了。我们停在雨里。"
++        }
++    }
++
++    private func litCarsEndingLine() -> String {
++        let lit = carPower.filter { $0 > 0.22 }.count
++        if lit == Self.carCount {
++            return "终点站：八节车厢，全灯抵达。雨还在，但门已经打开。"
++        } else if lit >= 5 {
++            return "终点站：多数车厢亮着。有人开始从窗口看见站台。"
++        } else {
++            return "终点站：列车到了。后面的车厢一路都很安静。"
++        }
++    }
++
++    private func repairLine(for car: Int) -> String {
++        switch car {
++        case 0: return "司机：驾驶台电压回来了。"
++        case 1: return "一号车厢：灯亮了，谢谢。"
++        case 2: return "二号车厢：别急着走，前面还有人。"
++        case 3: return "三号车厢：孩子不哭了。"
++        case 4: return "四号车厢：窗外全是雨，里面终于能看清人。"
++        case 5: return "五号车厢：暖气也恢复了一点。"
++        case 6: return "六号车厢：我们还能听见广播。"
++        default: return "尾车：最后一盏灯重新亮了。"
++        }
++    }
++
++    private func deterministicInt(salt: UInt64, upperBound: Int) -> Int {
++        guard upperBound > 0 else { return 0 }
++        return Int(mix(seed ^ salt) % UInt64(upperBound))
++    }
++
++    private func deterministicUnit(salt: UInt64) -> Double {
++        Double(mix(seed ^ salt) & 0xFFFF) / Double(0xFFFF)
++    }
++
++    private func mix(_ input: UInt64) -> UInt64 {
++        var z = input &+ 0x9E3779B97F4A7C15
++        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
++        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
++        return z ^ (z >> 31)
++    }
++
++    static let storyBeats: [RainlineStoryBeat] = [
++        .init(progress: 0.05, line: "广播：雨线已经压到高架桥。末班车不停站。"),
++        .init(progress: 0.22, line: "司机：后面有一节车厢掉电了。能过去看看吗？"),
++        .init(progress: 0.44, line: "乘客：窗外的楼都黑了，只有我们还在动。"),
++        .init(progress: 0.68, line: "广播：下一段隧道没有市电。保持车内照明。"),
++        .init(progress: 0.88, line: "司机：前面能看到终点站的灯了。把后面的车厢也带过去。")
++    ]
++}
+
+diff --git a/VeilLink/UI/RainlineLastTrainScene.swift b/VeilLink/UI/RainlineLastTrainScene.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/RainlineLastTrainScene.swift
+@@ -0,0 +1,522 @@
++import SpriteKit
++import CoreImage
++import UIKit
++
++final class RainlineLastTrainScene: SKScene {
++    var onSnapshot: ((RainlineSnapshot) -> Void)?
++
++    private var state: RainlineState
++    private var input = RainlineInput()
++    private var lastUpdateTime: TimeInterval = 0
++    private var accumulator: TimeInterval = 0
++
++    private let cameraNode = SKCameraNode()
++    private let skylineFar = SKNode()
++    private let skylineNear = SKNode()
++    private let roadReflectionLayer = SKNode()
++    private let trainLayer = SKNode()
++    private let trainGlowLayer = SKEffectNode()
++    private let weatherLayer = SKNode()
++    private let glassLayer = SKNode()
++    private let stormOverlay = SKShapeNode()
++    private let lightningOverlay = SKShapeNode()
++
++    private let playerNode = SKNode()
++    private var carNodes: [SKNode] = []
++    private var carLightNodes: [SKShapeNode] = []
++    private var faultEmitters: [Int: SKEmitterNode] = [:]
++    private var rainEmitter: SKEmitterNode?
++    private let glassRain = SKSpriteNode()
++
++    init(seed: UInt64) {
++        state = RainlineState(seed: seed)
++        super.init(size: CGSize(width: 390, height: 844))
++        scaleMode = .resizeFill
++        backgroundColor = UIColor(red: 0.018, green: 0.024, blue: 0.042, alpha: 1)
++    }
++
++    required init?(coder: NSCoder) {
++        fatalError("init(coder:) has not been implemented")
++    }
++
++    var snapshot: RainlineSnapshot { state.snapshot() }
++
++    override func didMove(to view: SKView) {
++        view.ignoresSiblingOrder = true
++        view.preferredFramesPerSecond = 60
++        if children.isEmpty { configureHierarchy() }
++        rebuildForSize()
++        publishSnapshot()
++    }
++
++    override func didChangeSize(_ oldSize: CGSize) {
++        super.didChangeSize(oldSize)
++        rebuildForSize()
++    }
++
++    override func update(_ currentTime: TimeInterval) {
++        if lastUpdateTime == 0 {
++            lastUpdateTime = currentTime
++            updateVisuals()
++            return
++        }
++
++        accumulator += min(0.12, max(0, currentTime - lastUpdateTime))
++        lastUpdateTime = currentTime
++
++        var catchup = 0
++        while accumulator >= RainlineState.fixedDelta && catchup < 6 {
++            state.step(input: input)
++            accumulator -= RainlineState.fixedDelta
++            catchup += 1
++        }
++        if catchup == 6 && accumulator >= RainlineState.fixedDelta {
++            accumulator = 0
++        }
++
++        updateVisuals()
++        publishSnapshot()
++    }
++
++    func setMove(_ value: Double) {
++        input.move = min(1, max(-1, value))
++    }
++
++    func setRepairing(_ active: Bool) {
++        input.repairing = active
++    }
++
++    func setGridBoost(_ active: Bool) {
++        input.boostGrid = active
++    }
++
++    func restart(seed: UInt64) {
++        state = RainlineState(seed: seed)
++        input = RainlineInput()
++        lastUpdateTime = 0
++        accumulator = 0
++        faultEmitters.values.forEach { $0.removeFromParent() }
++        faultEmitters.removeAll()
++        updateVisuals()
++        publishSnapshot()
++    }
++
++    private func configureHierarchy() {
++        addChild(skylineFar)
++        addChild(skylineNear)
++        addChild(roadReflectionLayer)
++
++        trainGlowLayer.shouldRasterize = false
++        trainGlowLayer.filter = CIFilter(name: "CIBloom", parameters: [
++            kCIInputRadiusKey: 9.0,
++            kCIInputIntensityKey: 0.58
++        ])
++        addChild(trainGlowLayer)
++        trainGlowLayer.addChild(trainLayer)
++
++        addChild(weatherLayer)
++        addChild(glassLayer)
++
++        addChild(cameraNode)
++        camera = cameraNode
++        cameraNode.addChild(stormOverlay)
++        cameraNode.addChild(lightningOverlay)
++
++        configurePlayer()
++        trainLayer.addChild(playerNode)
++    }
++
++    private func rebuildForSize() {
++        guard size.width > 1, size.height > 1 else { return }
++        cameraNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
++        rebuildCity()
++        rebuildTrain()
++        rebuildWeather()
++        rebuildGlass()
++        rebuildOverlays()
++        updateVisuals()
++    }
++
++    private func configurePlayer() {
++        let body = SKShapeNode(roundedRectOf: CGSize(width: 13, height: 26), cornerRadius: 5)
++        body.fillColor = UIColor(red: 0.72, green: 0.82, blue: 0.90, alpha: 1)
++        body.strokeColor = UIColor.white.withAlphaComponent(0.65)
++        playerNode.addChild(body)
++
++        let lamp = SKShapeNode(circleOfRadius: 2.7)
++        lamp.position = CGPoint(x: 5, y: 7)
++        lamp.fillColor = UIColor(red: 1, green: 0.73, blue: 0.27, alpha: 1)
++        lamp.strokeColor = .clear
++        lamp.glowWidth = 4
++        playerNode.addChild(lamp)
++    }
++
++    private func rebuildCity() {
++        skylineFar.removeAllChildren()
++        skylineNear.removeAllChildren()
++        roadReflectionLayer.removeAllChildren()
++
++        buildSkyline(
++            parent: skylineFar,
++            count: 36,
++            baseY: size.height * 0.58,
++            minHeight: 70,
++            maxHeight: 260,
++            color: UIColor(red: 0.04, green: 0.055, blue: 0.09, alpha: 0.76),
++            lightAlpha: 0.16,
++            salt: 21
++        )
++
++        buildSkyline(
++            parent: skylineNear,
++            count: 24,
++            baseY: size.height * 0.48,
++            minHeight: 110,
++            maxHeight: 360,
++            color: UIColor(red: 0.025, green: 0.035, blue: 0.058, alpha: 0.96),
++            lightAlpha: 0.28,
++            salt: 55
++        )
++
++        for index in 0..<18 {
++            let stripe = SKShapeNode(rectOf: CGSize(width: 5, height: 80), cornerRadius: 2)
++            let hues: [UIColor] = [.systemPink, .systemCyan, .systemPurple, .systemOrange]
++            stripe.fillColor = hues[index % hues.count].withAlphaComponent(0.06)
++            stripe.strokeColor = .clear
++            stripe.position = CGPoint(
++                x: CGFloat(index) * size.width / 8 - size.width,
++                y: size.height * 0.32
++            )
++            stripe.zRotation = 0.35
++            roadReflectionLayer.addChild(stripe)
++        }
++    }
++
++    private func buildSkyline(
++        parent: SKNode,
++        count: Int,
++        baseY: CGFloat,
++        minHeight: CGFloat,
++        maxHeight: CGFloat,
++        color: UIColor,
++        lightAlpha: CGFloat,
++        salt: UInt64
++    ) {
++        let span = size.width * 3.4
++        let step = span / CGFloat(count)
++
++        for index in 0..<count {
++            let h = minHeight + CGFloat(procedural(index: index, salt: salt)) * (maxHeight - minHeight)
++            let w = step * (0.60 + CGFloat(procedural(index: index, salt: salt + 17)) * 0.52)
++            let building = SKShapeNode(rectOf: CGSize(width: w, height: h), cornerRadius: 2)
++            building.fillColor = color
++            building.strokeColor = .clear
++            building.position = CGPoint(
++                x: -size.width + CGFloat(index) * step + w / 2,
++                y: baseY + h / 2
++            )
++            parent.addChild(building)
++
++            let windowCount = 2 + Int(procedural(index: index, salt: salt + 31) * 5)
++            for lightIndex in 0..<windowCount {
++                let light = SKShapeNode(rectOf: CGSize(width: 3, height: 5), cornerRadius: 1)
++                let colors: [UIColor] = [.systemYellow, .systemCyan, .systemPink]
++                light.fillColor = colors[(index + lightIndex) % colors.count].withAlphaComponent(lightAlpha)
++                light.strokeColor = .clear
++                light.position = CGPoint(
++                    x: building.position.x + CGFloat(lightIndex % 2) * 10 - 5,
++                    y: baseY + 18 + CGFloat(lightIndex) * min(18, h / CGFloat(windowCount + 1))
++                )
++                parent.addChild(light)
++            }
++        }
++    }
++
++    private func rebuildTrain() {
++        trainLayer.removeAllChildren()
++        carNodes.removeAll()
++        carLightNodes.removeAll()
++        trainLayer.addChild(playerNode)
++
++        let trainWidth = size.width * 0.94
++        let carWidth = trainWidth / CGFloat(RainlineState.carCount)
++        let trainY = size.height * 0.22
++
++        for car in 0..<RainlineState.carCount {
++            let node = SKNode()
++            node.position = CGPoint(
++                x: size.width * 0.03 + carWidth * (CGFloat(car) + 0.5),
++                y: trainY
++            )
++
++            let shell = SKShapeNode(
++                roundedRectOf: CGSize(width: carWidth - 3, height: 126),
++                cornerRadius: 7
++            )
++            shell.fillColor = UIColor(red: 0.055, green: 0.07, blue: 0.085, alpha: 0.98)
++            shell.strokeColor = UIColor.white.withAlphaComponent(0.11)
++            shell.lineWidth = 0.8
++            node.addChild(shell)
++
++            let interior = SKShapeNode(
++                roundedRectOf: CGSize(width: carWidth - 10, height: 88),
++                cornerRadius: 5
++            )
++            interior.fillColor = UIColor(red: 0.80, green: 0.64, blue: 0.32, alpha: 0.92)
++            interior.strokeColor = UIColor.white.withAlphaComponent(0.12)
++            node.addChild(interior)
++            carLightNodes.append(interior)
++
++            let floor = SKShapeNode(rectOf: CGSize(width: carWidth - 9, height: 5))
++            floor.position = CGPoint(x: 0, y: -44)
++            floor.fillColor = UIColor(white: 0.12, alpha: 1)
++            floor.strokeColor = .clear
++            node.addChild(floor)
++
++            for passenger in 0..<3 {
++                let silhouette = SKShapeNode(roundedRectOf: CGSize(width: 7, height: 18), cornerRadius: 3)
++                silhouette.position = CGPoint(
++                    x: CGFloat(passenger - 1) * max(8, carWidth * 0.18),
++                    y: -15 + CGFloat(passenger % 2) * 5
++                )
++                silhouette.fillColor = UIColor(white: 0.05, alpha: 0.72)
++                silhouette.strokeColor = .clear
++                node.addChild(silhouette)
++            }
++
++            trainLayer.addChild(node)
++            carNodes.append(node)
++        }
++    }
++
++    private func rebuildWeather() {
++        weatherLayer.removeAllChildren()
++        rainEmitter = nil
++
++        let rain = SKEmitterNode()
++        rain.particleTexture = makeRainTexture()
++        rain.particleBirthRate = 320
++        rain.particleLifetime = 1.05
++        rain.particleLifetimeRange = 0.18
++        rain.position = CGPoint(x: size.width / 2, y: size.height + 20)
++        rain.particlePositionRange = CGVector(dx: size.width * 1.5, dy: 20)
++        rain.particleSpeed = 900
++        rain.particleSpeedRange = 220
++        rain.emissionAngle = -.pi / 2.08
++        rain.emissionAngleRange = 0.045
++        rain.particleAlpha = 0.34
++        rain.particleScale = 0.82
++        rain.particleColor = UIColor(red: 0.67, green: 0.80, blue: 0.94, alpha: 1)
++        rain.particleColorBlendFactor = 1
++        weatherLayer.addChild(rain)
++        rainEmitter = rain
++    }
++
++    private func rebuildGlass() {
++        glassLayer.removeAllChildren()
++        glassRain.size = size
++        glassRain.anchorPoint = CGPoint(x: 0, y: 0)
++        glassRain.position = .zero
++        glassRain.color = .clear
++        glassRain.colorBlendFactor = 0
++        glassRain.shader = SKShader(source: Self.glassRainShader)
++        glassRain.shader?.uniforms = [
++            SKUniform(name: "u_rain", float: 0.5),
++            SKUniform(name: "u_power", float: 1.0)
++        ]
++        glassRain.zPosition = 70
++        glassLayer.addChild(glassRain)
++    }
++
++    private func rebuildOverlays() {
++        let rect = CGRect(
++            x: -size.width / 2,
++            y: -size.height / 2,
++            width: size.width,
++            height: size.height
++        )
++        stormOverlay.path = CGPath(rect: rect, transform: nil)
++        stormOverlay.fillColor = UIColor(red: 0.03, green: 0.055, blue: 0.11, alpha: 1)
++        stormOverlay.strokeColor = .clear
++        stormOverlay.zPosition = 100
++
++        lightningOverlay.path = CGPath(rect: rect, transform: nil)
++        lightningOverlay.fillColor = .white
++        lightningOverlay.strokeColor = .clear
++        lightningOverlay.blendMode = .add
++        lightningOverlay.alpha = 0
++        lightningOverlay.zPosition = 110
++    }
++
++    private func updateVisuals() {
++        let snapshot = state.snapshot()
++        updateParallax(snapshot: snapshot)
++        updateTrain(snapshot: snapshot)
++        updateFaultEffects(snapshot: snapshot)
++        updateWeather(snapshot: snapshot)
++    }
++
++    private func updateParallax(snapshot: RainlineSnapshot) {
++        let speed = 1.4 + snapshot.traction / 100 * 3.2
++        skylineFar.position.x -= CGFloat(speed * 0.45)
++        skylineNear.position.x -= CGFloat(speed * 1.05)
++        roadReflectionLayer.position.x -= CGFloat(speed * 1.5)
++
++        wrap(layer: skylineFar, width: size.width * 1.7)
++        wrap(layer: skylineNear, width: size.width * 1.7)
++        wrap(layer: roadReflectionLayer, width: size.width * 1.7)
++    }
++
++    private func updateTrain(snapshot: RainlineSnapshot) {
++        let trainWidth = size.width * 0.94
++        let carWidth = trainWidth / CGFloat(RainlineState.carCount)
++        let baseX = size.width * 0.03
++
++        for car in 0..<min(carNodes.count, state.carPower.count) {
++            let power = CGFloat(state.carPower[car])
++            let fault = state.fault(for: car)
++            let warm = UIColor(red: 0.96, green: 0.73, blue: 0.34, alpha: 1)
++            let dim = UIColor(red: 0.11, green: 0.12, blue: 0.16, alpha: 1)
++            carLightNodes[car].fillColor = blend(dim, warm, factor: power)
++            carLightNodes[car].alpha = 0.30 + power * 0.70
++
++            if fault != nil {
++                carNodes[car].xScale = 1 + CGFloat(sin(Double(state.tick) * 0.31 + Double(car))) * 0.002
++            } else {
++                carNodes[car].xScale = 1
++            }
++        }
++
++        let px = baseX + carWidth * (CGFloat(snapshot.playerCar) + CGFloat(snapshot.playerOffset))
++        playerNode.position = CGPoint(x: px, y: size.height * 0.22 - 18)
++        playerNode.xScale = input.move < -0.05 ? -1 : 1
++    }
++
++    private func updateFaultEffects(snapshot: RainlineSnapshot) {
++        let active = state.faults.filter { !state.repairedFaultIDs.contains($0.id) }
++        let activeIDs = Set(active.map(.id))
++
++        for id in faultEmitters.keys where !activeIDs.contains(id) {
++            faultEmitters.removeValue(forKey: id)?.removeFromParent()
++        }
++
++        for fault in active where fault.car < carNodes.count {
++            if faultEmitters[fault.id] == nil {
++                let emitter = makeSparkEmitter()
++                emitter.position = CGPoint(x: 0, y: 35)
++                carNodes[fault.car].addChild(emitter)
++                faultEmitters[fault.id] = emitter
++            }
++        }
++    }
++
++    private func updateWeather(snapshot: RainlineSnapshot) {
++        let rain = CGFloat(snapshot.rain)
++        rainEmitter?.particleBirthRate = 260 + rain * 260
++        stormOverlay.alpha = 0.04 + rain * 0.16
++        glassRain.shader?.uniformNamed("u_rain")?.floatValue = Float(rain)
++        glassRain.shader?.uniformNamed("u_power")?.floatValue = Float(snapshot.trainPower / 100)
++
++        let period = 430
++        let phase = Int(state.seed % UInt64(period))
++        if snapshot.rain > 0.72 && state.tick % period == phase {
++            lightningOverlay.removeAllActions()
++            lightningOverlay.run(.sequence([
++                .fadeAlpha(to: 0.56, duration: 0.02),
++                .fadeAlpha(to: 0.05, duration: 0.055),
++                .fadeAlpha(to: 0.31, duration: 0.03),
++                .fadeOut(withDuration: 0.15)
++            ]))
++        }
++    }
++
++    private func wrap(layer: SKNode, width: CGFloat) {
++        if layer.position.x <= -width {
++            layer.position.x += width
++        }
++    }
++
++    private func makeSparkEmitter() -> SKEmitterNode {
++        let emitter = SKEmitterNode()
++        emitter.particleTexture = makeDotTexture(diameter: 5)
++        emitter.particleBirthRate = 26
++        emitter.particleLifetime = 0.42
++        emitter.particleLifetimeRange = 0.16
++        emitter.particleSpeed = 70
++        emitter.particleSpeedRange = 45
++        emitter.emissionAngleRange = .pi * 2
++        emitter.particleAlpha = 0.92
++        emitter.particleAlphaSpeed = -1.9
++        emitter.particleColor = .systemOrange
++        emitter.particleColorBlendFactor = 1
++        emitter.particleBlendMode = .add
++        return emitter
++    }
++
++    private func makeRainTexture() -> SKTexture {
++        let image = UIGraphicsImageRenderer(size: CGSize(width: 3, height: 24)).image { context in
++            context.cgContext.setFillColor(UIColor.white.withAlphaComponent(0.92).cgColor)
++            context.cgContext.fill(CGRect(x: 1, y: 0, width: 1, height: 24))
++        }
++        return SKTexture(image: image)
++    }
++
++    private func makeDotTexture(diameter: CGFloat) -> SKTexture {
++        let image = UIGraphicsImageRenderer(size: CGSize(width: diameter, height: diameter)).image { _ in
++            UIColor.white.setFill()
++            UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: diameter, height: diameter)).fill()
++        }
++        return SKTexture(image: image)
++    }
++
++    private func procedural(index: Int, salt: UInt64) -> Double {
++        var z = UInt64(bitPattern: Int64(index)) &+ salt &* 0x9E3779B97F4A7C15
++        z ^= z >> 30
++        z &*= 0xBF58476D1CE4E5B9
++        z ^= z >> 27
++        z &*= 0x94D049BB133111EB
++        z ^= z >> 31
++        return Double(z & 0xFFFF) / Double(0xFFFF)
++    }
++
++    private func blend(_ a: UIColor, _ b: UIColor, factor: CGFloat) -> UIColor {
++        let f = min(1, max(0, factor))
++        var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0, aa: CGFloat = 0
++        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
++        a.getRed(&ar, green: &ag, blue: &ab, alpha: &aa)
++        b.getRed(&br, green: &bg, blue: &bb, alpha: &ba)
++        return UIColor(
++            red: ar + (br - ar) * f,
++            green: ag + (bg - ag) * f,
++            blue: ab + (bb - ab) * f,
++            alpha: aa + (ba - aa) * f
++        )
++    }
++
++    private func publishSnapshot() {
++        onSnapshot?(state.snapshot())
++    }
++
++    private static let glassRainShader = """
++    void main() {
++        vec2 uv = v_tex_coord;
++        float rain = u_rain;
++        float power = u_power;
++
++        float column = floor(uv.x * 23.0);
++        float drift = sin(column * 12.9898) * 43758.5453;
++        float phase = fract(drift) * 6.28318;
++        float y = fract(uv.y + u_time * (0.09 + rain * 0.16) + sin(uv.x * 31.0 + phase) * 0.028);
++        float drop = smoothstep(0.034, 0.0, abs(y - 0.78)) * smoothstep(0.55, 0.0, abs(fract(uv.x * 23.0) - 0.5));
++
++        float streak = smoothstep(0.015, 0.0, abs(fract(uv.x * 37.0 + phase) - 0.52));
++        streak *= smoothstep(0.95, 0.10, y);
++
++        float alpha = (drop * 0.24 + streak * 0.08) * rain;
++        vec3 cold = vec3(0.44, 0.63, 0.82);
++        vec3 emergency = vec3(0.95, 0.22, 0.12);
++        vec3 color = mix(emergency, cold, power);
++        gl_FragColor = vec4(color, alpha);
++    }
++    """
++}
+
+diff --git a/VeilLink/UI/RainlineLastTrainLabView.swift b/VeilLink/UI/RainlineLastTrainLabView.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/RainlineLastTrainLabView.swift
+@@ -0,0 +1,302 @@
++import SwiftUI
++import SpriteKit
++
++@MainActor
++final class RainlineViewModel: ObservableObject {
++    @Published private(set) var snapshot: RainlineSnapshot
++    @Published private(set) var line = "广播：雨线已经压到高架桥。末班车不停站。"
++
++    let scene: RainlineLastTrainScene
++    private var seed: UInt64
++
++    init() {
++        seed = Self.seed(from: UUID().uuidString)
++        let scene = RainlineLastTrainScene(seed: seed)
++        self.scene = scene
++        snapshot = scene.snapshot
++
++        scene.onSnapshot = { [weak self] value in
++            Task { @MainActor [weak self] in
++                guard let self else { return }
++                snapshot = value
++                if let active = value.activeLine, active != line {
++                    line = active
++                }
++            }
++        }
++    }
++
++    func move(_ value: Double) { scene.setMove(value) }
++    func repair(_ active: Bool) { scene.setRepairing(active) }
++    func boost(_ active: Bool) { scene.setGridBoost(active) }
++
++    func restart() {
++        seed &+= 0x9E3779B97F4A7C15
++        line = "广播：雨线重启。把八节车厢带到终点。"
++        scene.restart(seed: seed)
++    }
++
++    private static func seed(from text: String) -> UInt64 {
++        var hash: UInt64 = 1469598103934665603
++        for byte in text.utf8 {
++            hash ^= UInt64(byte)
++            hash &*= 1099511628211
++        }
++        return hash
++    }
++}
++
++struct RainlineLastTrainLabView: View {
++    @StateObject private var model = RainlineViewModel()
++
++    var body: some View {
++        ZStack {
++            SpriteView(scene: model.scene)
++                .ignoresSafeArea()
++
++            VStack(spacing: 0) {
++                hud
++                Spacer()
++                lineCard
++                controls
++            }
++            .padding(.horizontal, 14)
++            .padding(.top, 10)
++            .padding(.bottom, 14)
++
++            if model.snapshot.outcome != .running {
++                resultOverlay
++            }
++        }
++        .background(Color.black)
++        .navigationTitle("雨线末班车")
++        .navigationBarTitleDisplayMode(.inline)
++    }
++
++    private var hud: some View {
++        HStack(spacing: 8) {
++            meter("GRID", model.snapshot.trainPower, .yellow)
++            meter("DRIVE", model.snapshot.traction, .cyan)
++            metric("LIGHT", "(model.snapshot.litCars)/8")
++            metric("FAULT", "(model.snapshot.activeFaults)")
++            metric("ROUTE", "(Int(model.snapshot.progress * 100))%")
++        }
++        .padding(10)
++        .background(Color.black.opacity(0.34))
++        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
++        .overlay(
++            RoundedRectangle(cornerRadius: 14, style: .continuous)
++                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
++        )
++    }
++
++    private var lineCard: some View {
++        HStack(alignment: .top, spacing: 8) {
++            Image(systemName: "tram.fill")
++                .foregroundColor(.yellow.opacity(0.85))
++            Text(model.line)
++                .font(.caption.weight(.medium))
++                .foregroundColor(.white.opacity(0.87))
++                .fixedSize(horizontal: false, vertical: true)
++            Spacer(minLength: 0)
++        }
++        .padding(11)
++        .background(Color.black.opacity(0.46))
++        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
++        .padding(.bottom, 9)
++    }
++
++    private var controls: some View {
++        VStack(spacing: 10) {
++            HStack(spacing: 10) {
++                controlButton("向前", icon: "arrow.right") {
++                    model.move(1)
++                } end: {
++                    model.move(0)
++                }
++
++                controlButton("向后", icon: "arrow.left") {
++                    model.move(-1)
++                } end: {
++                    model.move(0)
++                }
++            }
++
++            HStack(spacing: 10) {
++                controlButton(
++                    "按住抢修",
++                    icon: "wrench.and.screwdriver.fill",
++                    accent: .orange
++                ) {
++                    model.repair(true)
++                } end: {
++                    model.repair(false)
++                }
++
++                controlButton(
++                    "电网超载",
++                    icon: "bolt.fill",
++                    accent: .cyan
++                ) {
++                    model.boost(true)
++                } end: {
++                    model.boost(false)
++                }
++            }
++
++            HStack {
++                Text("当前位置：第 (model.snapshot.playerCar + 1) 节")
++                Spacer()
++                Text("已修复 (model.snapshot.repairedFaults)")
++            }
++            .font(.caption2.monospacedDigit())
++            .foregroundColor(.white.opacity(0.48))
++        }
++        .padding(12)
++        .background(Color.black.opacity(0.38))
++        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
++    }
++
++    private func controlButton(
++        _ title: String,
++        icon: String,
++        accent: Color = .white,
++        began: @escaping () -> Void,
++        end: @escaping () -> Void
++    ) -> some View {
++        Label(title, systemImage: icon)
++            .font(.caption.weight(.semibold))
++            .foregroundColor(.white.opacity(0.90))
++            .frame(maxWidth: .infinity)
++            .padding(.vertical, 12)
++            .background(accent.opacity(0.12))
++            .overlay(
++                RoundedRectangle(cornerRadius: 12, style: .continuous)
++                    .stroke(accent.opacity(0.34), lineWidth: 1)
++            )
++            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
++            .contentShape(Rectangle())
++            .gesture(
++                DragGesture(minimumDistance: 0)
++                    .onChanged { _ in began() }
++                    .onEnded { _ in end() }
++            )
++    }
++
++    private func meter(
++        _ title: String,
++        _ value: Double,
++        _ color: Color
++    ) -> some View {
++        VStack(alignment: .leading, spacing: 4) {
++            Text(title)
++                .font(.system(size: 8, weight: .bold, design: .monospaced))
++                .foregroundColor(.white.opacity(0.42))
++
++            GeometryReader { geometry in
++                ZStack(alignment: .leading) {
++                    Capsule()
++                        .fill(Color.white.opacity(0.08))
++
++                    Capsule()
++                        .fill(color.opacity(0.84))
++                        .frame(
++                            width: geometry.size.width *
++                                CGFloat(max(0, min(1, value / 100)))
++                        )
++                }
++            }
++            .frame(height: 4)
++
++            Text("(Int(value.rounded()))")
++                .font(.caption2.bold().monospacedDigit())
++                .foregroundColor(.white.opacity(0.76))
++        }
++        .frame(maxWidth: .infinity)
++    }
++
++    private func metric(
++        _ title: String,
++        _ value: String
++    ) -> some View {
++        VStack(spacing: 3) {
++            Text(title)
++                .font(.system(size: 8, weight: .bold, design: .monospaced))
++                .foregroundColor(.white.opacity(0.42))
++
++            Text(value)
++                .font(.caption.bold().monospacedDigit())
++                .foregroundColor(.white.opacity(0.80))
++        }
++        .frame(maxWidth: .infinity)
++    }
++
++    private var resultOverlay: some View {
++        VStack(spacing: 12) {
++            Image(systemName: resultIcon)
++                .font(.system(size: 34, weight: .semibold))
++                .foregroundColor(resultColor)
++
++            Text(resultTitle)
++                .font(.title3.weight(.semibold))
++                .foregroundColor(.white)
++
++            Text("亮灯车厢 (model.snapshot.litCars)/8 · 修复 (model.snapshot.repairedFaults) 次")
++                .font(.caption.monospacedDigit())
++                .foregroundColor(.white.opacity(0.60))
++
++            Button("再发一班") {
++                model.restart()
++            }
++            .font(.caption.weight(.semibold))
++            .foregroundColor(.black.opacity(0.82))
++            .padding(.horizontal, 18)
++            .padding(.vertical, 10)
++            .background(resultColor)
++            .clipShape(Capsule())
++        }
++        .padding(22)
++        .frame(maxWidth: 300)
++        .background(Color.black.opacity(0.86))
++        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
++    }
++
++    private var resultTitle: String {
++        switch model.snapshot.outcome {
++        case .running:
++            return ""
++        case .arrived:
++            return "末班车到站"
++        case .blackout:
++            return "全车断电"
++        case .stalled:
++            return "列车停在雨里"
++        }
++    }
++
++    private var resultIcon: String {
++        switch model.snapshot.outcome {
++        case .running:
++            return "circle"
++        case .arrived:
++            return "tram.circle.fill"
++        case .blackout:
++            return "lightbulb.slash.fill"
++        case .stalled:
++            return "exclamationmark.triangle.fill"
++        }
++    }
++
++    private var resultColor: Color {
++        switch model.snapshot.outcome {
++        case .running:
++            return .white
++        case .arrived:
++            return .yellow
++        case .blackout:
++            return .orange
++        case .stalled:
++            return .cyan
++        }
++    }
++}
+
+diff --git a/VeilLinkTests/RainlineLastTrainGameTests.swift b/VeilLinkTests/RainlineLastTrainGameTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/RainlineLastTrainGameTests.swift
+@@ -0,0 +1,99 @@
++import XCTest
++@testable import VeilLink
++
++final class RainlineLastTrainGameTests: XCTestCase {
++    func testDeterministicReplay() {
++        var first = RainlineState(seed: 77)
++        var second = RainlineState(seed: 77)
++
++        for tick in 0..<3_000 {
++            let input = RainlineInput(
++                move: sin(Double(tick) * 0.015),
++                repairing: tick % 250 < 90,
++                boostGrid: tick % 420 < 70
++            )
++
++            first.step(input: input)
++            second.step(input: input)
++            XCTAssertEqual(first, second)
++
++            if first.isFinished {
++                break
++            }
++        }
++    }
++
++    func testResourceBounds() {
++        var state = RainlineState(seed: 91)
++
++        for tick in 0..<7_000 where !state.isFinished {
++            state.step(
++                input: RainlineInput(
++                    move: cos(Double(tick) * 0.018),
++                    repairing: tick % 240 < 80,
++                    boostGrid: tick % 600 < 120
++                )
++            )
++
++            XCTAssertTrue((0...100).contains(state.trainPower))
++            XCTAssertTrue((0...100).contains(state.traction))
++            XCTAssertEqual(state.carPower.count, RainlineState.carCount)
++            XCTAssertTrue(
++                state.carPower.allSatisfy { (0...1).contains($0) }
++            )
++        }
++    }
++
++    func testFinishedStateIsImmutable() {
++        var state = RainlineState(seed: 5)
++
++        for _ in 0..<20_000 where !state.isFinished {
++            state.step(
++                input: RainlineInput(
++                    move: 0,
++                    repairing: false,
++                    boostGrid: false
++                )
++            )
++        }
++
++        XCTAssertTrue(state.isFinished)
++        let frozen = state
++
++        state.step(
++            input: RainlineInput(
++                move: 1,
++                repairing: true,
++                boostGrid: true
++            )
++        )
++
++        XCTAssertEqual(state, frozen)
++    }
++
++    func testStoryProgressesWithRoute() {
++        var state = RainlineState(seed: 12)
++
++        for _ in 0..<700 where !state.isFinished {
++            state.step(
++                input: RainlineInput(
++                    boostGrid: true
++                )
++            )
++        }
++
++        XCTAssertNotNil(state.activeLine)
++    }
++
++    func testFaultGenerationIsSeedStable() {
++        var first = RainlineState(seed: 123)
++        var second = RainlineState(seed: 123)
++
++        for _ in 0..<1_500 {
++            first.step(input: RainlineInput())
++            second.step(input: RainlineInput())
++        }
++
++        XCTAssertEqual(first.faults, second.faults)
++    }
++}
+
