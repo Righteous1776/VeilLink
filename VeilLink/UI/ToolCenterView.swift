@@ -703,7 +703,7 @@ struct VeilColorLabToolView: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(Color(red: Double(preview.red) / 255, green: Double(preview.green) / 255, blue: Double(preview.blue) / 255))
                     .frame(height: 150)
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(VeilTheme.subtleStroke, lineWidth: 1))
                     .accessibilityLabel("颜色预览 \(hex)")
                 VStack(spacing: 10) {
                     TextField("#RRGGBB", text: $hex)

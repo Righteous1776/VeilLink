@@ -262,7 +262,7 @@ struct GameLobbyView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8).padding(.vertical, 7)
-        .background(Color.white.opacity(0.035))
+        .background(VeilTheme.subtleFill)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .accessibilityElement(children: .combine)
     }
@@ -526,7 +526,7 @@ struct LocalAIGameView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 7)
                             .frame(minHeight: 34)
-                            .background((controller.tacticalScenario == scenario ? VeilTheme.gold : Color.white).opacity(controller.tacticalScenario == scenario ? 0.12 : 0.035))
+                            .background(controller.tacticalScenario == scenario ? VeilTheme.gold.opacity(0.12) : VeilTheme.subtleFill)
                             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     }
                     .buttonStyle(.plain)
@@ -562,7 +562,7 @@ struct LocalAIGameView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8).padding(.vertical, 7)
-        .background(Color.white.opacity(0.035))
+        .background(VeilTheme.subtleFill)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .accessibilityElement(children: .combine)
     }

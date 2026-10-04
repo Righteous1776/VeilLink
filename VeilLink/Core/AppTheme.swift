@@ -24,6 +24,11 @@ enum VeilTheme {
     static var secondaryText: Color { p.secondaryText }
     static var tertiaryText: Color { p.tertiaryText }
     static var hairline: Color { p.hairline }
+    /// Low-emphasis fills and strokes must invert with the active palette. Using translucent
+    /// white directly made controls disappear in Day mode while looking correct at night.
+    static var subtleFill: Color { text.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.045 : 0.060) }
+    static var subtleFillStrong: Color { text.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.075 : 0.095) }
+    static var subtleStroke: Color { text.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.105 : 0.125) }
     static var danger: Color { p.danger }
     static var success: Color { p.success }
     static var goldGradient: LinearGradient {
@@ -558,7 +563,7 @@ struct VeilIconDisc: View {
         } else {
             ZStack {
                 Circle()
-                    .fill(highlighted ? VeilTheme.gold.opacity(0.14) : Color.white.opacity(0.038))
+                    .fill(highlighted ? VeilTheme.gold.opacity(0.14) : VeilTheme.subtleFill)
                 Circle()
                     .stroke(highlighted ? VeilTheme.gold.opacity(0.30) : VeilTheme.hairline, lineWidth: 1)
                 if highlighted {

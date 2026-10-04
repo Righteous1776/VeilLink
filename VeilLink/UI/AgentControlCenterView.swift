@@ -110,7 +110,7 @@ struct AgentControlCenterView: View {
                     detailRow("最低系统", "iOS \(manifest.minimumOS)+")
                 }
                 .padding(10)
-                .background(Color.white.opacity(0.03))
+                .background(VeilTheme.subtleFill)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
@@ -373,7 +373,7 @@ struct AgentControlCenterView: View {
                 Spacer(minLength: 4)
             }
             .padding(10)
-            .background(selected ? VeilTheme.gold.opacity(0.08) : Color.white.opacity(0.025))
+            .background(selected ? VeilTheme.gold.opacity(0.08) : VeilTheme.subtleFill)
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(selected ? VeilTheme.gold.opacity(0.28) : VeilTheme.hairline, lineWidth: 1))
         }
@@ -435,7 +435,7 @@ struct AgentControlCenterView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
-        .background(Color.white.opacity(0.035))
+        .background(VeilTheme.subtleFill)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 

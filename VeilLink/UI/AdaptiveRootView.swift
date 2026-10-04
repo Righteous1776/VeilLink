@@ -146,7 +146,7 @@ private struct TabletLayout: View {
                 }
                 .padding(12)
 
-                Divider().background(Color.white.opacity(0.08))
+                Divider().background(VeilTheme.hairline)
                 if model.selectedSection == .chats {
                     ConversationListView(model: model, usesNavigationLinks: false)
                 } else {
@@ -160,7 +160,7 @@ private struct TabletLayout: View {
                     .frame(width: 1)
             }
 
-            Divider().background(Color.white.opacity(0.08))
+            Divider().background(VeilTheme.hairline)
 
             Group {
                 switch model.selectedSection {

@@ -161,7 +161,7 @@ struct VeilRemotePairingView: View {
                     .font(.system(size: 8, weight: .heavy, design: .monospaced))
                     .foregroundColor(VeilTheme.mutedGold)
             }
-            Divider().background(Color.white.opacity(0.07))
+            Divider().background(VeilTheme.hairline)
             VStack(spacing: 4) {
                 Text("双方应显示完全相同的六码")
                     .font(.caption)

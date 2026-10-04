@@ -196,7 +196,7 @@ private struct AgentQuickToolsView: View {
             .foregroundColor(VeilTheme.secondaryText)
             .padding(.horizontal, 9)
             .frame(height: 28)
-            .background(Color.white.opacity(0.035))
+            .background(VeilTheme.subtleFill)
             .clipShape(Capsule())
             .overlay(Capsule().stroke(VeilTheme.hairline, lineWidth: 1))
         }
