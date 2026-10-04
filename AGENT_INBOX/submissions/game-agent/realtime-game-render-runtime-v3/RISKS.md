@@ -11,7 +11,7 @@ Governor should not combine those three V2 product patches with V3 file-by-file.
 
 ## SceneKit bridge
 
-SceneKit snapshot APIs are deprecated in the current SDK. V3 uses them only as a temporary local fallback when an optimized 2D alias is absent.
+SceneKit SCNRenderer snapshot APIs are deprecated in the current SDK. V3 uses the viewless renderer only as a temporary local fallback when an optimized 2D alias is absent.
 
 Mitigation:
 - final alias remains highest priority;
@@ -24,7 +24,7 @@ Mitigation:
 Loading an OBJ and taking the first snapshot may cause a one-time hitch.
 
 Mitigation:
-- one snapshot per asset/size cache key;
+- one snapshot per asset/size cache key inside the owning scene;
 - repeated Rainline cars reuse one texture;
 - Governor may pre-bake aliases before release.
 
