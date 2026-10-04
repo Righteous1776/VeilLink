@@ -2474,7 +2474,7 @@ diff --git a/VeilLink/UI/BlackoutDistrictScene.swift b/VeilLink/UI/BlackoutDistr
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/BlackoutDistrictScene.swift
-@@ -0,0 +1,1663 @@
+@@ -0,0 +1,1672 @@
 +import SpriteKit
 +import CoreImage
 +import UIKit
@@ -2859,6 +2859,15 @@ new file mode 100644
 +        worldRoot.setScale(
 +            worldScale
 +        )
++
++        lightBloom.filter?
++            .setValue(
++                0.82 *
++                renderProfile
++                    .bloomMultiplier,
++                forKey:
++                    kCIInputIntensityKey
++            )
 +
 +        cameraNode.setScale(
 +            (
@@ -4453,7 +4462,7 @@ diff --git a/VeilLink/UI/RainlineLastTrainScene.swift b/VeilLink/UI/RainlineLast
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/RainlineLastTrainScene.swift
-@@ -0,0 +1,638 @@
+@@ -0,0 +1,647 @@
 +import SpriteKit
 +import CoreImage
 +import UIKit
@@ -4620,6 +4629,15 @@ new file mode 100644
 +                    reduceMotion:
 +                        reduceMotion
 +                )
++
++        trainGlowLayer.filter?
++            .setValue(
++                0.58 *
++                renderProfile
++                    .bloomMultiplier,
++                forKey:
++                    kCIInputIntensityKey
++            )
 +
 +        cameraNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
 +        cameraNode.setScale(
@@ -6948,7 +6966,7 @@ diff --git a/VeilLink/UI/SignalDiveScene.swift b/VeilLink/UI/SignalDiveScene.swi
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/SignalDiveScene.swift
-@@ -0,0 +1,1910 @@
+@@ -0,0 +1,1919 @@
 +import SpriteKit
 +import CoreImage
 +import UIKit
@@ -7317,6 +7335,15 @@ new file mode 100644
 +                    reduceMotion:
 +                        reduceMotion
 +                )
++
++        floodlightBloom.filter?
++            .setValue(
++                0.78 *
++                renderProfile
++                    .bloomMultiplier,
++                forKey:
++                    kCIInputIntensityKey
++            )
 +
 +        cameraNode.position = CGPoint(
 +            x: size.width / 2,
@@ -9236,7 +9263,7 @@ diff --git a/VeilLinkTests/RealtimeGameAssetRuntimeTests.swift b/VeilLinkTests/R
 new file mode 100644
 --- /dev/null
 +++ b/VeilLinkTests/RealtimeGameAssetRuntimeTests.swift
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,154 @@
 +import XCTest
 +import CoreGraphics
 +@testable import VeilLink
@@ -9345,6 +9372,49 @@ new file mode 100644
 +        XCTAssertEqual(
 +            resources.count,
 +            Set(resources).count
++        )
++    }
++
++    func testMissingImageAliasIsSafe() {
++        let runtime =
++            RealtimeGameAssetRuntime()
++
++        XCTAssertNil(
++            runtime.image(
++                named:
++                    "__veillink_missing_asset__"
++            )
++        )
++    }
++
++    func testMissingShaderIsSafe() {
++        let runtime =
++            RealtimeGameAssetRuntime()
++
++        XCTAssertNil(
++            runtime.shader(
++                named:
++                    "__veillink_missing_shader__"
++            )
++        )
++    }
++
++    func testCacheResetIsSafe() {
++        let runtime =
++            RealtimeGameAssetRuntime()
++
++        _ = runtime.image(
++            named:
++                "__veillink_missing_asset__"
++        )
++
++        runtime.clearCaches()
++
++        XCTAssertNil(
++            runtime.image(
++                named:
++                    "__veillink_missing_asset__"
++            )
 +        )
 +    }
 +}
