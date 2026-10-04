@@ -367,6 +367,15 @@ final class SignalDiveScene: SKScene {
                         reduceMotion
                 )
 
+        floodlightBloom.filter?
+            .setValue(
+                0.78 *
+                renderProfile
+                    .bloomMultiplier,
+                forKey:
+                    kCIInputIntensityKey
+            )
+
         cameraNode.position = CGPoint(
             x: size.width / 2,
             y: size.height / 2
