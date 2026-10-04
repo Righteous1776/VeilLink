@@ -56,8 +56,13 @@ jobs:
           if not is_drop:
               if not is_admin:
                   fail(f'AGENT_INBOX changes require agent-drop/* or admin/* branch: {head_ref}')
-              if any(p.startswith('AGENT_INBOX/submissions/') for p in changed):
-                  fail('admin governance PR must not write agent submission payloads')
+              forbidden_admin_payloads = []
+              for p in changed:
+                  parts = Path(p).parts
+                  if len(parts) >= 4 and parts[0:2] == ('AGENT_INBOX', 'submissions'):
+                      forbidden_admin_payloads.append(p)
+              if forbidden_admin_payloads:
+                  fail(f'admin governance PR must not write agent submission payloads: {forbidden_admin_payloads}')
               print('VEILLINK_AGENT_INBOX_ADMIN_GATE_PASS')
               print(f'BRANCH={head_ref}')
               print(f'CHANGED_FILES={len(changed)}')
