@@ -1,6 +1,7 @@
 import SpriteKit
 import CoreImage
 import UIKit
+import simd
 
 final class BlackoutDistrictScene: SKScene {
     var onSnapshot: ((BlackoutSnapshot) -> Void)?
@@ -421,7 +422,6 @@ final class BlackoutDistrictScene: SKScene {
                 alpha: 0.13
             )
             lane.lineWidth = 3
-            lane.lineDashPattern = [14, 15]
 
             roadLayer.addChild(lane)
         }
