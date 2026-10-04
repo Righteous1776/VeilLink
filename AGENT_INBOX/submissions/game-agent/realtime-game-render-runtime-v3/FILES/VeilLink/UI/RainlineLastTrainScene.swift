@@ -2,6 +2,7 @@ import SpriteKit
 import CoreImage
 import UIKit
 
+@MainActor
 final class RainlineLastTrainScene: SKScene {
     var onSnapshot: ((RainlineSnapshot) -> Void)?
 
