@@ -2,7 +2,6 @@ import SpriteKit
 import CoreImage
 import UIKit
 
-@MainActor
 final class RainlineLastTrainScene: SKScene {
     var onSnapshot: ((RainlineSnapshot) -> Void)?
 
@@ -11,6 +10,9 @@ final class RainlineLastTrainScene: SKScene {
     private var lastUpdateTime: TimeInterval = 0
     private var accumulator: TimeInterval = 0
     private var reduceMotion = false
+    private let assetRuntime =
+        RealtimeGameAssetRuntime()
+
     private var renderProfile =
         RealtimeGameRenderProfile.resolve(
             sceneSize: CGSize(
@@ -289,8 +291,7 @@ final class RainlineLastTrainScene: SKScene {
             )
 
             if let texture =
-                RealtimeGameAssetRuntime
-                    .texture(
+                assetRuntime.texture(
                         for:
                             .rainlineTrainCar,
                         targetSize:
@@ -311,8 +312,7 @@ final class RainlineLastTrainScene: SKScene {
                     )
                 shell.alpha = 0.92
 
-                RealtimeGameAssetRuntime
-                    .applyNightGrade(
+                assetRuntime.applyNightGrade(
                         to: shell,
                         scene: .rainline,
                         intensity: 1.0
@@ -414,8 +414,7 @@ final class RainlineLastTrainScene: SKScene {
         thirdPartyNoise.blendMode = .add
         thirdPartyNoise.zPosition = 71
         thirdPartyNoise.shader =
-            RealtimeGameAssetRuntime
-                .shader(
+            assetRuntime.shader(
                     named:
                         "SHKDynamicGrayNoise"
                 )
