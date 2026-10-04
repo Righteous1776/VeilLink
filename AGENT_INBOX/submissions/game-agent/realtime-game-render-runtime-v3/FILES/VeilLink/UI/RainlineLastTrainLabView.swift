@@ -70,6 +70,12 @@ struct RainlineLastTrainLabView: View {
                 resultOverlay
             }
         }
+        .onAppear {
+            model.setReduceMotion(reduceMotion)
+        }
+        .onChange(of: reduceMotion) {
+            model.setReduceMotion($0)
+        }
         .background(Color.black)
         .navigationTitle("雨线末班车")
         .navigationBarTitleDisplayMode(.inline)
