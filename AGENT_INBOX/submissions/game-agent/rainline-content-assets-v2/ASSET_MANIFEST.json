@@ -1,0 +1,25 @@
+{
+  "grant_id": "VEILLINK-ASSET-GAME-001",
+  "assets": [
+    {
+      "path": "ASSETS/rainline_kenney_train_diesel_a.glb",
+      "alias": "rainline_kenney_train_diesel_a",
+      "source_url": "https://github.com/Matias-Sanmiguel/fly-crossy-connectome/blob/main/public/assets/kenney/train-kit/train-diesel-a.glb",
+      "license": "CC0-1.0",
+      "sha256": "20c6c7c23c005e8cda1c1e922473c0fc9c93fc7c1d1bc5a637d640424f811cc3",
+      "bytes": 156432,
+      "purpose": "Kenney Train Kit locomotive source model for offline side-view sprite baking and carriage visual reference.",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/rainline_kenney_track_detailed.glb",
+      "alias": "rainline_kenney_track_detailed",
+      "source_url": "https://github.com/Matias-Sanmiguel/fly-crossy-connectome/blob/main/public/assets/kenney/train-kit/track-detailed.glb",
+      "license": "CC0-1.0",
+      "sha256": "b56cab0c6cf54ea1e3e3dbdffc06995b7a432db41ee39bf063d54b171f937351",
+      "bytes": 13228,
+      "purpose": "Kenney Train Kit detailed track source model for offline rail/background sprite baking.",
+      "attribution": ""
+    }
+  ]
+}
