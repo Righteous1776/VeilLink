@@ -165,6 +165,15 @@ final class RainlineLastTrainScene: SKScene {
                         reduceMotion
                 )
 
+        trainGlowLayer.filter?
+            .setValue(
+                0.58 *
+                renderProfile
+                    .bloomMultiplier,
+                forKey:
+                    kCIInputIntensityKey
+            )
+
         cameraNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
         cameraNode.setScale(
             renderProfile.cameraScale
