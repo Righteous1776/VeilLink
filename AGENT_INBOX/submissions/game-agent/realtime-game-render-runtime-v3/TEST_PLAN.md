@@ -44,3 +44,11 @@
 - full XCTest;
 - real-device first-load model snapshot smoke;
 - memory/cache reset smoke via a scene-owned RealtimeGameAssetRuntime instance.
+
+
+## Mobile touch-control audit
+
+- Rainline: press-and-hold forward/backward, repair, and grid boost; verify release returns the corresponding input to neutral and two controls can be held on separate fingers.
+- Signal Dive: drag the gameplay surface in all four directions; verify screen drag direction matches submarine movement, release zeros thrust, and sonar/floodlight buttons remain independently tappable.
+- Blackout District: drag up/down for forward/reverse throttle and left/right for matching vehicle steering; verify release zeros throttle/steering and repair can be held independently while the drive pad is idle or lightly engaged.
+- Navigate away / present result overlay after active input and confirm restart begins from neutral input state.
