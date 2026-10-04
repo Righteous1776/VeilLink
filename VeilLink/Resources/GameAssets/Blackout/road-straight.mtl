@@ -1,0 +1,7 @@
+# VeilLink CC0 fallback material derived from Kenney City Kit (Roads)
+newmtl colormap
+Ka 0.04 0.045 0.05
+Kd 0.19 0.21 0.23
+Ks 0.07 0.08 0.09
+Ns 12
+illum 2

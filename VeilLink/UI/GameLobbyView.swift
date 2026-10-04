@@ -154,23 +154,47 @@ struct GameLobbyView: View {
 
     private var realtimeArcadeSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("实时街机", subtitle: "SpriteKit 实时 2D · 单机运行，不接入对局传输")
+            sectionTitle("实时渲染游戏", subtitle: "SpriteKit 2D + SceneKit 3D · 稳定帧循环 · 自适应画质")
+            NavigationLink(destination: PrismRift3DGameView()) {
+                realtimeGameRow(title: "棱镜裂隙 3D", detail: "动态灯光 · 三维隧道 · 3 阶 Boss · 能量与舰体管理", motif: .circuit, badge: "3D")
+            }
+            .buttonStyle(.plain)
+            NavigationLink(destination: AfterglowConvoyLabView()) {
+                realtimeGameRow(title: "余烬护航", detail: "雨夜视差 · 信标伙伴 · 风暴护盾 · 程序化航线", motif: .tide, badge: "2D")
+            }
+            .buttonStyle(.plain)
+            NavigationLink(destination: AshHarborLabView()) {
+                realtimeGameRow(title: "灰港", detail: "暴风救援 · 探照灯与船体管理 · 四组求救信号", motif: .tide, badge: "2D")
+            }
+            .buttonStyle(.plain)
+            NavigationLink(destination: RainlineLastTrainLabView()) {
+                realtimeGameRow(title: "雨线末班车", detail: "实时列车调度 · 四类故障 · 夜雨材质与本地模型", motif: .comet, badge: "2D+")
+            }
+            .buttonStyle(.plain)
+            NavigationLink(destination: SignalDiveLabView()) {
+                realtimeGameRow(title: "深潜信号", detail: "深海探索 · 主动声呐 · 生物回波与压力管理", motif: .pulse, badge: "2D+")
+            }
+            .buttonStyle(.plain)
+            NavigationLink(destination: BlackoutDistrictLabView()) {
+                realtimeGameRow(title: "熄灯街区", detail: "实时抢修驾驶 · 12 节点电网 · 130+ 建筑单元", motif: .circuit, badge: "2D+")
+            }
+            .buttonStyle(.plain)
             NavigationLink(destination: VeilPulseRunnerView()) {
-                realtimeGameRow(title: "星隙快递", detail: "三段式横版平台跳跃 · 收集星核 · 冲刺", motif: .comet)
+                realtimeGameRow(title: "星隙快递", detail: "三段式横版平台跳跃 · 收集星核 · 冲刺", motif: .comet, badge: "2D")
             }
             .buttonStyle(.plain)
             NavigationLink(destination: VeilVoidSwarmView()) {
-                realtimeGameRow(title: "虚空蜂群", detail: "触控移动 · 自动射击 · 波次生存", motif: .guardian)
+                realtimeGameRow(title: "虚空蜂群", detail: "触控移动 · 自动射击 · 波次生存", motif: .guardian, badge: "2D")
             }
             .buttonStyle(.plain)
             NavigationLink(destination: RhythmNeonView()) {
-                realtimeGameRow(title: "霓虹节拍", detail: "节拍闪避 · 连击得分 · 超载冲刺", motif: .pulse)
+                realtimeGameRow(title: "霓虹节拍", detail: "节拍闪避 · 连击得分 · 超载冲刺", motif: .pulse, badge: "2D")
             }
             .buttonStyle(.plain)
         }
     }
 
-    private func realtimeGameRow(title: String, detail: String, motif: ArcadeVisualMotif) -> some View {
+    private func realtimeGameRow(title: String, detail: String, motif: ArcadeVisualMotif, badge: String = "实时") -> some View {
         HStack(spacing: 12) {
             ArcadeVisualIcon(motif: motif, animated: false)
                 .frame(width: 52, height: 52)
@@ -179,7 +203,7 @@ struct GameLobbyView: View {
                 Text(detail).font(.caption).foregroundColor(VeilTheme.secondaryText).lineLimit(2)
             }
             Spacer(minLength: 4)
-            Text("实时")
+            Text(badge)
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundColor(VeilTheme.goldBright)
             Image(systemName: "chevron.right").font(.caption.bold()).foregroundColor(VeilTheme.tertiaryText)
