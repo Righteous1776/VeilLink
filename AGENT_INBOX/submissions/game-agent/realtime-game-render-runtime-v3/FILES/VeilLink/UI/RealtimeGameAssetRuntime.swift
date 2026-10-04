@@ -261,7 +261,7 @@ final class RealtimeGameAssetRuntime {
         guard let url =
                 resourceURL(
                     named:
-                        "(name).fsh"
+                        "\(name).fsh"
                 ),
               let source =
                 try? String(
