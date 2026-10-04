@@ -291,7 +291,7 @@ struct RainlineState: Equatable, Sendable {
         default: line = "尾车：最后一盏灯重新亮了。"
         }
 
-        return "(system)恢复。(line)"
+        return "\(system)恢复。\(line)"
     }
 
     private func deterministicInt(salt: UInt64, upperBound: Int) -> Int {
