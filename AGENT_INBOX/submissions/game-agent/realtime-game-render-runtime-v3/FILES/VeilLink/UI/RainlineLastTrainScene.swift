@@ -10,6 +10,14 @@ final class RainlineLastTrainScene: SKScene {
     private var lastUpdateTime: TimeInterval = 0
     private var accumulator: TimeInterval = 0
     private var reduceMotion = false
+    private var renderProfile =
+        RealtimeGameRenderProfile.resolve(
+            sceneSize: CGSize(
+                width: 390,
+                height: 844
+            ),
+            reduceMotion: false
+        )
 
     private let cameraNode = SKCameraNode()
     private let skylineFar = SKNode()
@@ -94,7 +102,18 @@ final class RainlineLastTrainScene: SKScene {
 
     func setReduceMotion(_ enabled: Bool) {
         reduceMotion = enabled
-        rainEmitter?.particleBirthRate = enabled ? 170 : 320
+        renderProfile =
+            RealtimeGameRenderProfile
+                .resolve(
+                    sceneSize: size,
+                    reduceMotion:
+                        reduceMotion
+                )
+
+        rainEmitter?.particleBirthRate =
+            CGFloat(320) *
+            renderProfile
+                .particleMultiplier
     }
 
     func restart(seed: UInt64) {
@@ -135,7 +154,19 @@ final class RainlineLastTrainScene: SKScene {
 
     private func rebuildForSize() {
         guard size.width > 1, size.height > 1 else { return }
+        renderProfile =
+            RealtimeGameRenderProfile
+                .resolve(
+                    sceneSize: size,
+                    reduceMotion:
+                        reduceMotion
+                )
+
         cameraNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        cameraNode.setScale(
+            renderProfile.cameraScale
+        )
+
         rebuildCity()
         rebuildTrain()
         rebuildWeather()
@@ -256,10 +287,36 @@ final class RainlineLastTrainScene: SKScene {
                 y: trainY
             )
 
-            if let trainImage = UIImage(named: "rainline_kenney_train_car") {
-                let shell = SKSpriteNode(texture: SKTexture(image: trainImage))
-                shell.size = CGSize(width: carWidth - 3, height: 126)
+            if let texture =
+                RealtimeGameAssetRuntime
+                    .texture(
+                        for:
+                            .rainlineTrainCar,
+                        targetSize:
+                            CGSize(
+                                width: 360,
+                                height: 180
+                            )
+                    ) {
+                let shell =
+                    SKSpriteNode(
+                        texture: texture
+                    )
+                shell.size =
+                    CGSize(
+                        width:
+                            carWidth - 3,
+                        height: 126
+                    )
                 shell.alpha = 0.92
+
+                RealtimeGameAssetRuntime
+                    .applyNightGrade(
+                        to: shell,
+                        scene: .rainline,
+                        intensity: 1.0
+                    )
+
                 node.addChild(shell)
             } else {
                 let shell = SKShapeNode(
@@ -309,7 +366,10 @@ final class RainlineLastTrainScene: SKScene {
 
         let rain = SKEmitterNode()
         rain.particleTexture = makeRainTexture()
-        rain.particleBirthRate = 320
+        rain.particleBirthRate =
+            320 *
+            renderProfile
+                .particleMultiplier
         rain.particleLifetime = 1.05
         rain.particleLifetimeRange = 0.18
         rain.position = CGPoint(x: size.width / 2, y: size.height + 20)
@@ -346,10 +406,18 @@ final class RainlineLastTrainScene: SKScene {
         thirdPartyNoise.position = .zero
         thirdPartyNoise.color = UIColor(white: 0.12, alpha: 1)
         thirdPartyNoise.colorBlendFactor = 1
-        thirdPartyNoise.alpha = reduceMotion ? 0.012 : 0.035
+        thirdPartyNoise.alpha =
+            0.035 *
+            renderProfile
+                .noiseMultiplier
         thirdPartyNoise.blendMode = .add
         thirdPartyNoise.zPosition = 71
-        thirdPartyNoise.shader = shaderIfAvailable(named: "SHKDynamicGrayNoise")
+        thirdPartyNoise.shader =
+            RealtimeGameAssetRuntime
+                .shader(
+                    named:
+                        "SHKDynamicGrayNoise"
+                )
         glassLayer.addChild(thirdPartyNoise)
     }
 
@@ -437,7 +505,13 @@ final class RainlineLastTrainScene: SKScene {
 
     private func updateWeather(snapshot: RainlineSnapshot) {
         let rain = CGFloat(snapshot.rain)
-        rainEmitter?.particleBirthRate = (reduceMotion ? 150 : 260) + rain * (reduceMotion ? 120 : 260)
+        rainEmitter?.particleBirthRate =
+            (
+                260 +
+                rain * 260
+            ) *
+            renderProfile
+                .particleMultiplier
         stormOverlay.alpha = 0.04 + rain * 0.16
         glassRain.shader?.uniformNamed("u_rain")?.floatValue = Float(rain)
         glassRain.shader?.uniformNamed("u_power")?.floatValue = Float(snapshot.trainPower / 100)
@@ -509,15 +583,6 @@ final class RainlineLastTrainScene: SKScene {
             UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: diameter, height: diameter)).fill()
         }
         return SKTexture(image: image)
-    }
-
-    private func shaderIfAvailable(named name: String) -> SKShader? {
-        guard let path = Bundle.main.path(forResource: name, ofType: "fsh"),
-              let source = try? String(contentsOfFile: path) else {
-            return nil
-        }
-
-        return SKShader(source: source)
     }
 
     private func procedural(index: Int, salt: UInt64) -> Double {
