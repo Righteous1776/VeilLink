@@ -9167,3 +9167,434 @@ new file mode 100644
 +    }
 +}
 
+diff --git a/VeilLinkTests/BlackoutDistrictGameTests.swift b/VeilLinkTests/BlackoutDistrictGameTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/BlackoutDistrictGameTests.swift
+@@ -0,0 +1,230 @@
++import XCTest
++@testable import VeilLink
++
++final class BlackoutDistrictGameTests: XCTestCase {
++    func testDeterministicReplay() {
++        var first =
++            BlackoutDistrictState(
++                seed: 77
++            )
++
++        var second =
++            BlackoutDistrictState(
++                seed: 77
++            )
++
++        for tick in 0..<4_000 {
++            let input =
++                BlackoutInput(
++                    throttle:
++                        sin(
++                            Double(tick) *
++                            0.013
++                        ),
++                    steering:
++                        cos(
++                            Double(tick) *
++                            0.017
++                        ) * 0.75,
++                    repairing:
++                        tick % 240 < 80
++                )
++
++            first.step(
++                input: input
++            )
++
++            second.step(
++                input: input
++            )
++
++            XCTAssertEqual(
++                first,
++                second
++            )
++
++            if first.isFinished {
++                break
++            }
++        }
++    }
++
++    func testGridMetricsStayBounded() {
++        var state =
++            BlackoutDistrictState(
++                seed: 19
++            )
++
++        for tick in 0..<5_000
++        where !state.isFinished {
++            state.step(
++                input:
++                    BlackoutInput(
++                        throttle:
++                            tick % 400 < 250
++                            ? 0.7
++                            : -0.2,
++                        steering:
++                            sin(
++                                Double(tick) *
++                                0.021
++                            ),
++                        repairing:
++                            false
++                    )
++            )
++
++            let snapshot =
++                state.snapshot()
++
++            XCTAssertTrue(
++                (0...1)
++                    .contains(
++                        snapshot.gridStability
++                    )
++            )
++
++            XCTAssertTrue(
++                (0...snapshot.totalNodes)
++                    .contains(
++                        snapshot.poweredNodes
++                    )
++            )
++
++            XCTAssertTrue(
++                (0...snapshot.totalBuildings)
++                    .contains(
++                        snapshot.litBuildings
++                    )
++            )
++
++            XCTAssertGreaterThanOrEqual(
++                snapshot.timeRemaining,
++                0
++            )
++        }
++    }
++
++    func testStormEventuallyCreatesFaults() {
++        var state =
++            BlackoutDistrictState(
++                seed: 5
++            )
++
++        var observedFault = false
++
++        for _ in 0..<8_000
++        where !state.isFinished {
++            state.step(
++                input:
++                    BlackoutInput()
++            )
++
++            if state.snapshot().activeFaults > 0 {
++                observedFault = true
++                break
++            }
++        }
++
++        XCTAssertTrue(
++            observedFault
++        )
++    }
++
++    func testDifferentSeedsDivergeUnderStorm() {
++        var first =
++            BlackoutDistrictState(
++                seed: 1
++            )
++
++        var second =
++            BlackoutDistrictState(
++                seed: 2
++            )
++
++        for _ in 0..<2_000 {
++            first.step(
++                input:
++                    BlackoutInput()
++            )
++
++            second.step(
++                input:
++                    BlackoutInput()
++            )
++        }
++
++        XCTAssertNotEqual(
++            first.nodes,
++            second.nodes
++        )
++    }
++
++    func testTimeExpiryFreezesState() {
++        var state =
++            BlackoutDistrictState(
++                seed: 101
++            )
++
++        for _ in 0...BlackoutDistrictState.timeLimitTicks
++        where !state.isFinished {
++            state.step(
++                input:
++                    BlackoutInput()
++            )
++        }
++
++        XCTAssertNotEqual(
++            state.outcome,
++            .running
++        )
++
++        let frozen = state
++
++        state.step(
++            input:
++                BlackoutInput(
++                    throttle: 1,
++                    steering: 1,
++                    repairing: true
++                )
++        )
++
++        XCTAssertEqual(
++            state,
++            frozen
++        )
++    }
++
++    func testInitialCityHasAllDeclaredBuildings() {
++        let state =
++            BlackoutDistrictState(
++                seed: 42
++            )
++
++        let snapshot =
++            state.snapshot()
++
++        XCTAssertEqual(
++            snapshot.totalNodes,
++            12
++        )
++
++        XCTAssertEqual(
++            snapshot.totalBuildings,
++            state.nodes.reduce(0) {
++                $0 + $1.buildingCount
++            }
++        )
++
++        XCTAssertGreaterThan(
++            snapshot.totalBuildings,
++            130
++        )
++
++        XCTAssertEqual(
++            state.nodes.filter(\.critical).count,
++            4
++        )
++    }
++}
+
+diff --git a/VeilLink/ThirdParty/ShaderKit/ShaderKitExtensions.swift b/VeilLink/ThirdParty/ShaderKit/ShaderKitExtensions.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/ThirdParty/ShaderKit/ShaderKitExtensions.swift
+@@ -0,0 +1,93 @@
++//
++// MIT License
++//
++// Copyright (c) 2019 Paul Hudson
++// https://www.github.com/twostraws/ShaderKit
++//
++// Permission is hereby granted, free of charge, to any person obtaining a copy
++// of this software and associated documentation files (the "Software"), to deal
++// in the Software without restriction, including without limitation the rights
++// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++// copies of the Software, and to permit persons to whom the Software is
++// furnished to do so, subject to the following conditions:
++//
++// The above copyright notice and this permission notice shall be included in all
++// copies or substantial portions of the Software.
++//
++// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++// SOFTWARE.
++//
++
++import Foundation
++import SpriteKit
++
++extension SKAttributeValue {
++    public convenience init(size: CGSize) {
++        let size = vector_float2(Float(size.width), Float(size.height))
++        self.init(vectorFloat2: size)
++    }
++}
++
++extension SKShader {
++    convenience init(fromFile filename: String, uniforms: [SKUniform]? = nil, attributes: [SKAttribute]? = nil) {
++        guard let path = Bundle.main.path(forResource: filename, ofType: "fsh") else {
++            fatalError("Unable to find shader \(filename).fsh in bundle")
++        }
++
++        guard let source = try? String(contentsOfFile: path) else {
++            fatalError("Unable to load shader \(filename).fsh")
++        }
++
++        if let uniforms = uniforms {
++            self.init(source: source as String, uniforms: uniforms)
++        } else {
++            self.init(source: source as String)
++        }
++
++        if let attributes = attributes {
++            self.attributes = attributes
++        }
++    }
++}
++
++extension SKUniform {
++    public convenience init(name: String, color: SKColor) {
++        #if os(macOS)
++        guard let converted = color.usingColorSpace(.deviceRGB) else {
++            fatalError("Attempted to use a color that is not expressible in RGB.")
++        }
++
++        let colors = vector_float4([
++            Float(converted.redComponent),
++            Float(converted.greenComponent),
++            Float(converted.blueComponent),
++            Float(converted.alphaComponent)
++        ])
++        #else
++        var r: CGFloat = 0
++        var g: CGFloat = 0
++        var b: CGFloat = 0
++        var a: CGFloat = 0
++
++        color.getRed(&r, green: &g, blue: &b, alpha: &a)
++        let colors = vector_float4([Float(r), Float(g), Float(b), Float(a)])
++        #endif
++
++        self.init(name: name, vectorFloat4: colors)
++    }
++
++    public convenience init(name: String, size: CGSize) {
++        let size = vector_float2(Float(size.width), Float(size.height))
++        self.init(name: name, vectorFloat2: size)
++    }
++
++    public convenience init(name: String, point: CGPoint) {
++        let point = vector_float2(Float(point.x), Float(point.y))
++        self.init(name: name, vectorFloat2: point)
++    }
++}
+
+diff --git a/VeilLink/Resources/ThirdParty/ShaderKit/SHKDynamicGrayNoise.fsh b/VeilLink/Resources/ThirdParty/ShaderKit/SHKDynamicGrayNoise.fsh
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Resources/ThirdParty/ShaderKit/SHKDynamicGrayNoise.fsh
+@@ -0,0 +1,45 @@
++//
++// Creates moving grayscale noise.
++//
++// MIT License
++//
++// Copyright (c) 2017 Paul Hudson
++// https://www.github.com/twostraws/ShaderKit
++//
++// Permission is hereby granted, free of charge, to any person obtaining a copy
++// of this software and associated documentation files (the "Software"), to deal
++// in the Software without restriction, including without limitation the rights
++// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++// copies of the Software, and to permit persons to whom the Software is
++// furnished to do so, subject to the following conditions:
++//
++// The above copyright notice and this permission notice shall be included in all
++// copies or substantial portions of the Software.
++//
++// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++// SOFTWARE.
++//
++
++float random(float offset, vec2 tex_coord, float time) {
++    vec2 non_repeating = vec2(12.9898 * time, 78.233 * time);
++    float sum = dot(tex_coord, non_repeating);
++    float sine = sin(sum);
++    float huge_number = sine * 43758.5453 * offset;
++    float fraction = fract(huge_number);
++    return fraction;
++}
++
++void main() {
++    vec4 current_color = SKDefaultShading();
++
++    if (current_color.a > 0.0) {
++        gl_FragColor = vec4(vec3(random(1.0, v_tex_coord, u_time)), 1) * current_color.a * v_color_mix.a;
++    } else {
++        gl_FragColor = current_color;
++    }
++}
+
+diff --git a/VeilLink/Resources/ThirdParty/ShaderKit/SHKRadialGradient.fsh b/VeilLink/Resources/ThirdParty/ShaderKit/SHKRadialGradient.fsh
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Resources/ThirdParty/ShaderKit/SHKRadialGradient.fsh
+@@ -0,0 +1,39 @@
++//
++// Creates a radial gradient over the node.
++//
++// MIT License
++//
++// Copyright (c) 2017 Paul Hudson
++// https://www.github.com/twostraws/ShaderKit
++//
++// Permission is hereby granted, free of charge, to any person obtaining a copy
++// of this software and associated documentation files (the "Software"), to deal
++// in the Software without restriction, including without limitation the rights
++// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++// copies of the Software, and to permit persons to whom the Software is
++// furnished to do so, subject to the following conditions:
++//
++// The above copyright notice and this permission notice shall be included in all
++// copies or substantial portions of the Software.
++//
++// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++// SOFTWARE.
++//
++
++void main() {
++    vec4 current_color = texture2D(u_texture, v_tex_coord);
++    vec2 circle_center = u_center;
++    float pixel_distance = min(1.0, distance(v_tex_coord, circle_center) * 2.0);
++
++    if (current_color.a > 0.0) {
++        vec4 new_color = mix(u_first_color, u_second_color, pixel_distance);
++        gl_FragColor = vec4(mix(current_color, new_color, new_color.a)) * current_color.a * v_color_mix.a;
++    } else {
++        gl_FragColor = current_color;
++    }
++}
+
