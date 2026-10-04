@@ -10,7 +10,7 @@
 - missing alias/model returns nil rather than crashing;
 - missing shader returns nil rather than crashing;
 - recursive resource lookup finds nested staged resources after Governor import;
-- one successful model bake is cached and reused;
+- one successful model bake is cached and reused inside the owning game scene;
 - night grading stays within 0...0.34 color blend.
 
 ## Rainline
@@ -18,7 +18,7 @@
 - retain V2 deterministic replay and fault-kind coverage;
 - 4 fault classes remain seed-stable;
 - train model/alias failure returns to procedural shell;
-- render profile affects only particles/noise/camera.
+- render profile affects only presentation: particles/noise/Bloom/camera.
 
 ## Signal Dive
 
@@ -43,4 +43,4 @@
 - simulator launch;
 - full XCTest;
 - real-device first-load model snapshot smoke;
-- memory/cache reset smoke via RealtimeGameAssetRuntime.clearCaches().
+- memory/cache reset smoke via a scene-owned RealtimeGameAssetRuntime instance.
