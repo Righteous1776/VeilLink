@@ -378,4 +378,19 @@ final class SignalDiveGameTests: XCTestCase {
             }
         )
     }
+    func testKenneyVectorFishBuilds() {
+        XCTAssertNotNil(
+            SignalDiveKenneyVectorArt
+                .makeNode(
+                    variant: 0
+                )
+        )
+
+        XCTAssertNotNil(
+            SignalDiveKenneyVectorArt
+                .makeNode(
+                    variant: 1
+                )
+        )
+    }
 }
