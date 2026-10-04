@@ -507,7 +507,7 @@ struct BlackoutDistrictLabView: View {
                             -1,
                             min(
                                 1,
-                                dx / 70
+                                -dx / 70
                             )
                         )
                     )
