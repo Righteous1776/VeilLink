@@ -233,7 +233,9 @@ final class PrismRift3DController: NSObject, ObservableObject {
     }
 
     private func configureBoss() {
-        let shell = SCNNode(geometry: SCNIcosahedron(radius: 1.15))
+        let shellGeometry = SCNSphere(radius: 1.15)
+        shellGeometry.segmentCount = tier == .minimal ? 8 : 12
+        let shell = SCNNode(geometry: shellGeometry)
         shell.geometry?.firstMaterial = material(
             diffuse: UIColor(red: 0.22, green: 0.015, blue: 0.12, alpha: 1),
             emission: UIColor(red: 0.65, green: 0.01, blue: 0.28, alpha: 1),
@@ -356,7 +358,9 @@ final class PrismRift3DController: NSObject, ObservableObject {
         let node: SCNNode
         switch encounter.kind {
         case .asteroid:
-            node = SCNNode(geometry: SCNIcosahedron(radius: CGFloat(0.42 + encounter.radius * 0.8)))
+            let asteroid = SCNSphere(radius: CGFloat(0.42 + encounter.radius * 0.8))
+            asteroid.segmentCount = tier == .minimal ? 6 : 8
+            node = SCNNode(geometry: asteroid)
             node.name = "asteroid"
             node.scale = SCNVector3(1, 0.78, 1.25)
             node.geometry?.firstMaterial = material(diffuse: UIColor(white: 0.16, alpha: 1), emission: UIColor(red: 0.04, green: 0.01, blue: 0.08, alpha: 1), metalness: 0.35, roughness: 0.82)
@@ -377,7 +381,7 @@ final class PrismRift3DController: NSObject, ObservableObject {
             node.geometry?.firstMaterial = material(diffuse: UIColor(red: 0.12, green: 0.05, blue: 0.22, alpha: 1), emission: .purple, metalness: 0.9, roughness: 0.18)
             node.eulerAngles.z = .pi / 2
         case .energy, .repair:
-            node = SCNNode(geometry: SCNOctahedron(radius: 0.28))
+            node = SCNNode(geometry: SCNPyramid(width: 0.46, height: 0.62, length: 0.46))
             node.name = "pickup"
             let color: UIColor = encounter.kind == .energy ? .cyan : .green
             node.geometry?.firstMaterial = material(diffuse: .white, emission: color, metalness: 0.25, roughness: 0.1)
@@ -393,10 +397,10 @@ final class PrismRift3DController: NSObject, ObservableObject {
             switch event.kind {
             case .impact:
                 message = "护盾受击 · 重新校准航向"
-                cameraNode.run(.sequence([
-                    .moveBy(x: 0.13, y: -0.08, z: 0, duration: 0.035),
-                    .moveBy(x: -0.24, y: 0.15, z: 0, duration: 0.05),
-                    .moveBy(x: 0.11, y: -0.07, z: 0, duration: 0.06)
+                cameraNode.runAction(SCNAction.sequence([
+                    SCNAction.moveBy(x: 0.13, y: -0.08, z: 0, duration: 0.035),
+                    SCNAction.moveBy(x: -0.24, y: 0.15, z: 0, duration: 0.05),
+                    SCNAction.moveBy(x: 0.11, y: -0.07, z: 0, duration: 0.06)
                 ]))
                 burst(at: shipNode.position, color: .orange, count: tier == .minimal ? 12 : 34)
             case .collected(let kind):
@@ -426,7 +430,10 @@ final class PrismRift3DController: NSObject, ObservableObject {
         laser.position = shipNode.position
         laser.position.z -= 0.8
         effectsNode.addChildNode(laser)
-        laser.run(.sequence([.moveBy(x: 0, y: 0, z: -18, duration: 0.24), .removeFromParentNode()]))
+        laser.runAction(SCNAction.sequence([
+            SCNAction.moveBy(x: 0, y: 0, z: -18, duration: 0.24),
+            SCNAction.removeFromParentNode()
+        ]))
     }
 
     private func burst(at position: SCNVector3, color: UIColor, count: CGFloat) {
@@ -447,7 +454,10 @@ final class PrismRift3DController: NSObject, ObservableObject {
         node.position = position
         node.addParticleSystem(system)
         effectsNode.addChildNode(node)
-        node.run(.sequence([.wait(duration: 1.2), .removeFromParentNode()]))
+        node.runAction(SCNAction.sequence([
+            SCNAction.wait(duration: 1.2),
+            SCNAction.removeFromParentNode()
+        ]))
     }
 
     private func material(diffuse: UIColor, emission: UIColor, metalness: CGFloat, roughness: CGFloat) -> SCNMaterial {
