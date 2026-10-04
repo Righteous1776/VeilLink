@@ -1,0 +1,15 @@
+{
+  "grant_id": "",
+  "assets": [
+    {
+      "path": "ASSETS/example.glb",
+      "alias": "example-model",
+      "source_url": "https://example.invalid/source",
+      "license": "CC0-1.0",
+      "sha256": "",
+      "bytes": 0,
+      "purpose": "",
+      "attribution": ""
+    }
+  ]
+}
