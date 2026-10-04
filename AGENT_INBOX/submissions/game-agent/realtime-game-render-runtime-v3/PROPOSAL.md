@@ -19,12 +19,12 @@ The game never requires a network fetch.
 `RealtimeGameAssetRuntime` provides:
 
 - stable asset IDs and aliases;
-- cached image/texture lookup;
+- per-scene image/texture cache with no global mutable runtime state;
 - recursive bundle resource discovery;
 - safe shader loading;
-- SceneKit OBJ snapshot fallback into SpriteKit textures;
+- viewless SCNRenderer OBJ snapshot fallback into SpriteKit textures;
 - per-game night grading;
-- shared standard / cinematic / Reduce Motion render profiles.
+- shared standard / cinematic / Reduce Motion render profiles, including particle, Bloom, noise and camera scaling.
 
 OBJ snapshotting is a compatibility bridge. Governor integration should prefer an optimized 2D atlas when one exists.
 
@@ -32,7 +32,7 @@ OBJ snapshotting is a compatibility bridge. Governor integration should prefer a
 
 - carries V2 four fault classes and richer route story;
 - train shell now resolves through the shared pipeline;
-- one model snapshot is cached and reused across the train;
+- one SCNRenderer model snapshot is cached inside the Rainline scene and reused across the train;
 - ShaderKit storm noise uses the shared safe loader;
 - particle/noise/camera policy uses the shared render profile.
 
