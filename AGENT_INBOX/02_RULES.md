@@ -39,6 +39,8 @@ Every submission must include:
 
 Optional complete proposed new-file contents may be placed under a local `FILES/` directory.
 
+Binary resources remain forbidden unless the agent has an active Asset Drop grant. Granted assets must live under `ASSETS/` and require a root `ASSET_MANIFEST.json`. See `06_ASSET_DROP_POLICY.md` and `ASSET_GRANTS.json`.
+
 ## 5. Patch discipline
 
 A patch is advisory. The Integration Governor may apply it unchanged, rewrite it, combine it, split it, defer it, or reject it.
@@ -57,7 +59,9 @@ Formal product CI runs only after the Integration Governor applies a selected ba
 
 ## 8. Secrets and artifacts
 
-Never put passwords, tokens, signing keys, provisioning profiles, private logs, build products, DerivedData, IPA files, large binary archives, or model weights into the Inbox.
+Never put passwords, tokens, signing keys, provisioning profiles, private logs, build products, DerivedData, IPA files, executable/object binaries, large opaque archives, or model weights into the Inbox.
+
+An active Asset Drop grant is the only binary-resource exception. It permits only approved art/model extensions, licenses, quotas and provenance records under the agent's own `ASSETS/` directory. ZIP/7z/RAR/tar archives remain forbidden.
 
 ## 9. Completion
 
