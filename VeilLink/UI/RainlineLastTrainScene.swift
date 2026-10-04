@@ -188,7 +188,7 @@ final class RainlineLastTrainScene: SKScene {
     }
 
     private func configurePlayer() {
-        let body = SKShapeNode(roundedRectOf: CGSize(width: 13, height: 26), cornerRadius: 5)
+        let body = SKShapeNode(rectOf: CGSize(width: 13, height: 26), cornerRadius: 5)
         body.fillColor = UIColor(red: 0.72, green: 0.82, blue: 0.90, alpha: 1)
         body.strokeColor = UIColor.white.withAlphaComponent(0.65)
         playerNode.addChild(body)
@@ -330,7 +330,7 @@ final class RainlineLastTrainScene: SKScene {
                 node.addChild(shell)
             } else {
                 let shell = SKShapeNode(
-                    roundedRectOf: CGSize(width: carWidth - 3, height: 126),
+                    rectOf: CGSize(width: carWidth - 3, height: 126),
                     cornerRadius: 7
                 )
                 shell.fillColor = UIColor(red: 0.055, green: 0.07, blue: 0.085, alpha: 0.98)
@@ -340,7 +340,7 @@ final class RainlineLastTrainScene: SKScene {
             }
 
             let interior = SKShapeNode(
-                roundedRectOf: CGSize(width: carWidth - 10, height: 88),
+                rectOf: CGSize(width: carWidth - 10, height: 88),
                 cornerRadius: 5
             )
             interior.fillColor = UIColor(red: 0.80, green: 0.64, blue: 0.32, alpha: 0.92)
@@ -355,13 +355,13 @@ final class RainlineLastTrainScene: SKScene {
             node.addChild(floor)
 
             for passenger in 0..<3 {
-                let silhouette = SKShapeNode(roundedRectOf: CGSize(width: 7, height: 18), cornerRadius: 3)
+                let silhouette = SKShapeNode(rectOf: CGSize(width: 7, height: 18), cornerRadius: 3)
                 silhouette.position = CGPoint(
                     x: CGFloat(passenger - 1) * max(8, carWidth * 0.18),
                     y: -15 + CGFloat(passenger % 2) * 5
                 )
                 silhouette.fillColor = UIColor(white: 0.05, alpha: 0.72)
-                silhouette.strokeColor = .clear
+                silhouette.strokeColor = UIColor.clear
                 node.addChild(silhouette)
             }
 

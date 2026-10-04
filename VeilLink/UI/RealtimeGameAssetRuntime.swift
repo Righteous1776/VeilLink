@@ -378,18 +378,12 @@ final class RealtimeGameAssetRuntime {
             modelRoot
         )
 
-        var minimum =
-            SCNVector3Zero
-        var maximum =
-            SCNVector3Zero
-
-        guard modelRoot
-            .getBoundingBoxMin(
-                &minimum,
-                max: &maximum
-            ) else {
+        guard let bounds = modelRoot.boundingBox else {
             return nil
         }
+
+        let minimum = bounds.min
+        let maximum = bounds.max
 
         let width =
             max(

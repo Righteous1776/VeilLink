@@ -1274,7 +1274,7 @@ final class SignalDiveScene: SKScene {
         for finIndex in 0..<3 {
             let fin =
                 SKShapeNode(
-                    roundedRectOf:
+                    rectOf:
                         CGSize(
                             width:
                                 width * 0.24,
@@ -1303,7 +1303,7 @@ final class SignalDiveScene: SKScene {
 
             fin.fillColor =
                 body.fillColor
-            fin.strokeColor = .clear
+            fin.strokeColor = UIColor.clear
 
             root.addChild(fin)
         }
@@ -1908,9 +1908,9 @@ private extension CGFloat {
     func clamped(
         to range: ClosedRange<CGFloat>
     ) -> CGFloat {
-        min(
+        Swift.min(
             range.upperBound,
-            max(
+            Swift.max(
                 range.lowerBound,
                 self
             )
