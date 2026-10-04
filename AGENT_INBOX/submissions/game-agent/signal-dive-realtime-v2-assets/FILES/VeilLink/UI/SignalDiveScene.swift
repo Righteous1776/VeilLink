@@ -892,6 +892,15 @@ final class SignalDiveScene: SKScene {
                 fish.addChild(
                     sprite
                 )
+            } else if let vector =
+                SignalDiveKenneyVectorArt
+                    .makeNode(
+                        variant:
+                            (id + index) % 2
+                    ) {
+                fish.addChild(
+                    vector
+                )
             } else {
                 let body =
                     SKShapeNode(
