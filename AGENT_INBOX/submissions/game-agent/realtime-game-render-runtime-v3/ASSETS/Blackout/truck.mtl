@@ -1,0 +1,7 @@
+# VeilLink CC0 fallback material derived from Kenney Car Kit
+newmtl colormap
+Ka 0.04 0.10 0.12
+Kd 0.10 0.42 0.50
+Ks 0.18 0.25 0.28
+Ns 28
+illum 2
