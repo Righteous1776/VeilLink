@@ -378,10 +378,7 @@ final class RealtimeGameAssetRuntime {
             modelRoot
         )
 
-        guard let bounds = modelRoot.boundingBox else {
-            return nil
-        }
-
+        let bounds = modelRoot.boundingBox
         let minimum = bounds.min
         let maximum = bounds.max
 
