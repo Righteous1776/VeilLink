@@ -12,6 +12,14 @@ final class BlackoutDistrictScene: SKScene {
     private var lastUpdateTime: TimeInterval = 0
     private var accumulator: TimeInterval = 0
     private var reduceMotion = false
+    private var renderProfile =
+        RealtimeGameRenderProfile.resolve(
+            sceneSize: CGSize(
+                width: 390,
+                height: 844
+            ),
+            reduceMotion: false
+        )
 
     private let worldRoot = SKNode()
     private let groundLayer = SKNode()
@@ -125,7 +133,18 @@ final class BlackoutDistrictScene: SKScene {
 
     func setReduceMotion(_ enabled: Bool) {
         reduceMotion = enabled
-        rainEmitter?.particleBirthRate = enabled ? 190 : 420
+        renderProfile =
+            RealtimeGameRenderProfile
+                .resolve(
+                    sceneSize: size,
+                    reduceMotion:
+                        reduceMotion
+                )
+
+        rainEmitter?.particleBirthRate =
+            420 *
+            renderProfile
+                .particleMultiplier
     }
 
     func restart(seed: UInt64) {
@@ -200,17 +219,31 @@ final class BlackoutDistrictScene: SKScene {
     private func configureTruck() {
         serviceTruck.removeAllChildren()
 
-        if let image = UIImage(
-            named: "blackout_kenney_service_truck"
-        ) {
-            let sprite = SKSpriteNode(
-                texture: SKTexture(image: image)
-            )
+        if let texture =
+            RealtimeGameAssetRuntime
+                .texture(
+                    for:
+                        .blackoutServiceTruck
+                ) {
+            let sprite =
+                SKSpriteNode(
+                    texture: texture
+                )
             sprite.size = CGSize(
                 width: 86,
                 height: 46
             )
-            serviceTruck.addChild(sprite)
+
+            RealtimeGameAssetRuntime
+                .applyNightGrade(
+                    to: sprite,
+                    scene: .blackout,
+                    intensity: 0.82
+                )
+
+            serviceTruck.addChild(
+                sprite
+            )
         } else {
             let body = SKShapeNode(
                 rectOf: CGSize(
@@ -326,6 +359,14 @@ final class BlackoutDistrictScene: SKScene {
             return
         }
 
+        renderProfile =
+            RealtimeGameRenderProfile
+                .resolve(
+                    sceneSize: size,
+                    reduceMotion:
+                        reduceMotion
+                )
+
         worldScale = max(
             0.22,
             min(
@@ -342,9 +383,13 @@ final class BlackoutDistrictScene: SKScene {
         )
 
         cameraNode.setScale(
-            size.width >= 700
-            ? 1.18
-            : 1.0
+            (
+                size.width >= 700
+                ? 1.10
+                : 1.0
+            ) *
+            renderProfile
+                .cameraScale
         )
 
         rebuildWeather()
@@ -579,14 +624,36 @@ final class BlackoutDistrictScene: SKScene {
                 : "blackout_kenney_urban_building"
             )
 
-        if let image = UIImage(
-            named: textureName
-        ) {
-            let sprite = SKSpriteNode(
-                texture: SKTexture(
+        let resolvedTexture:
+            SKTexture?
+
+        if buildingIndex % 3 == 0 {
+            resolvedTexture =
+                RealtimeGameAssetRuntime
+                    .texture(
+                        for:
+                            .blackoutCommercialBuilding
+                    )
+        } else if let image =
+                    RealtimeGameAssetRuntime
+                        .image(
+                            named:
+                                textureName
+                        ) {
+            resolvedTexture =
+                SKTexture(
                     image: image
                 )
-            )
+        } else {
+            resolvedTexture = nil
+        }
+
+        if let texture =
+                resolvedTexture {
+            let sprite =
+                SKSpriteNode(
+                    texture: texture
+                )
 
             let width: CGFloat =
                 86 +
@@ -602,6 +669,13 @@ final class BlackoutDistrictScene: SKScene {
                 width: width,
                 height: width * 0.86
             )
+
+            RealtimeGameAssetRuntime
+                .applyNightGrade(
+                    to: sprite,
+                    scene: .blackout,
+                    intensity: 0.94
+                )
 
             root.addChild(sprite)
 
@@ -776,10 +850,11 @@ final class BlackoutDistrictScene: SKScene {
         sprite.blendMode = .add
 
         if let shader =
-            shaderIfAvailable(
-                named:
-                    "SHKRadialGradient"
-            ) {
+            RealtimeGameAssetRuntime
+                .shader(
+                    named:
+                        "SHKRadialGradient"
+                ) {
             shader.uniforms = [
                 SKUniform(
                     name: "u_first_color",
@@ -887,7 +962,10 @@ final class BlackoutDistrictScene: SKScene {
         let rain = SKEmitterNode()
         rain.particleTexture =
             makeRainTexture()
-        rain.particleBirthRate = 420
+        rain.particleBirthRate =
+            420 *
+            renderProfile
+                .particleMultiplier
         rain.particleLifetime = 1.0
         rain.particleLifetimeRange = 0.26
         rain.position = CGPoint(
@@ -933,14 +1011,17 @@ final class BlackoutDistrictScene: SKScene {
         noiseOverlay.blendMode = .add
         noiseOverlay.zPosition = 90
         noiseOverlay.shader =
-            shaderIfAvailable(
-                named:
-                    "SHKDynamicGrayNoise"
-            )
+            RealtimeGameAssetRuntime
+                .shader(
+                    named:
+                        "SHKDynamicGrayNoise"
+                )
         noiseOverlay.alpha =
             noiseOverlay.shader == nil
             ? 0
-            : (reduceMotion ? 0.018 : 0.055)
+            : 0.055 *
+                renderProfile
+                    .noiseMultiplier
 
         let rect = CGRect(
             x: -size.width / 2,
@@ -1204,18 +1285,22 @@ final class BlackoutDistrictScene: SKScene {
     ) {
         rainEmitter?.particleBirthRate =
             CGFloat(
-                (reduceMotion ? 170 : 310) +
+                310 +
                 snapshot.storm *
-                (reduceMotion ? 120 : 260)
-            )
+                260
+            ) *
+            renderProfile
+                .particleMultiplier
 
         if noiseOverlay.shader != nil {
             noiseOverlay.alpha =
                 CGFloat(
-                    (reduceMotion ? 0.014 : 0.035) +
+                    0.035 +
                     snapshot.storm *
-                    (reduceMotion ? 0.018 : 0.055)
-                )
+                    0.055
+                ) *
+                renderProfile
+                    .noiseMultiplier
         }
     }
 
@@ -1414,26 +1499,6 @@ final class BlackoutDistrictScene: SKScene {
     private func publishSnapshot() {
         onSnapshot?(
             state.snapshot()
-        )
-    }
-
-    private func shaderIfAvailable(
-        named name: String
-    ) -> SKShader? {
-        guard let path =
-                Bundle.main.path(
-                    forResource: name,
-                    ofType: "fsh"
-                ),
-              let source =
-                try? String(
-                    contentsOfFile: path
-                ) else {
-            return nil
-        }
-
-        return SKShader(
-            source: source
         )
     }
 
