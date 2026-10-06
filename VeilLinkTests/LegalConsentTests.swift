@@ -15,6 +15,41 @@ final class LegalConsentTests: XCTestCase {
         XCTAssertTrue(VeilLegalDocuments.canonicalText.contains(VeilLegalDocuments.terms))
     }
 
+    func testSigningRequiresAllThreeConfirmationsAndExactAcknowledgment() {
+        let phrase = VeilLegalConsentController.requiredAcknowledgment
+
+        XCTAssertFalse(VeilLegalConsentRequirements.canSign(
+            confirmsPermissions: false,
+            confirmsRisk: true,
+            confirmsVersionRule: true,
+            acknowledgment: phrase
+        ))
+        XCTAssertFalse(VeilLegalConsentRequirements.canSign(
+            confirmsPermissions: true,
+            confirmsRisk: true,
+            confirmsVersionRule: true,
+            acknowledgment: "不同意"
+        ))
+        XCTAssertTrue(VeilLegalConsentRequirements.canSign(
+            confirmsPermissions: true,
+            confirmsRisk: true,
+            confirmsVersionRule: true,
+            acknowledgment: "  \(phrase)\n"
+        ))
+    }
+
+    func testSigningControlsHaveDistinctAutomationIdentifiers() {
+        let identifiers = [
+            VeilLegalConsentAccessibility.permissionsDocument,
+            VeilLegalConsentAccessibility.boundaryDocument,
+            VeilLegalConsentAccessibility.permissionsConfirmation,
+            VeilLegalConsentAccessibility.riskConfirmation,
+            VeilLegalConsentAccessibility.versionConfirmation,
+            VeilLegalAcknowledgmentInput.accessibilityIdentifier
+        ]
+        XCTAssertEqual(Set(identifiers).count, identifiers.count)
+    }
+
     @MainActor
     func testAcknowledgmentFieldHasStableTelemetryExclusionIdentifier() {
         XCTAssertEqual(
