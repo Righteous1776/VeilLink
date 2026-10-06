@@ -6,6 +6,28 @@ enum VeilLegalGatePresentation {
     case firstActivation
 }
 
+enum VeilLegalConsentRequirements {
+    static func canSign(
+        confirmsPermissions: Bool,
+        confirmsRisk: Bool,
+        confirmsVersionRule: Bool,
+        acknowledgment: String
+    ) -> Bool {
+        confirmsPermissions &&
+        confirmsRisk &&
+        confirmsVersionRule &&
+        acknowledgment.trimmingCharacters(in: .whitespacesAndNewlines) == VeilLegalConsentController.requiredAcknowledgment
+    }
+}
+
+enum VeilLegalConsentAccessibility {
+    static let permissionsDocument = "legal.consent.document.permissions"
+    static let boundaryDocument = "legal.consent.document.boundary"
+    static let permissionsConfirmation = "legal.consent.confirm.permissions"
+    static let riskConfirmation = "legal.consent.confirm.risk"
+    static let versionConfirmation = "legal.consent.confirm.version"
+}
+
 struct LegalConsentGateView: View {
     @ObservedObject var controller: VeilLegalConsentController
     var presentation: VeilLegalGatePresentation = .standalone
@@ -22,10 +44,12 @@ struct LegalConsentGateView: View {
     @State private var copiedHash = false
 
     private var canSign: Bool {
-        confirmsPermissions &&
-        confirmsRisk &&
-        confirmsVersionRule &&
-        acknowledgment.trimmingCharacters(in: .whitespacesAndNewlines) == VeilLegalConsentController.requiredAcknowledgment
+        VeilLegalConsentRequirements.canSign(
+            confirmsPermissions: confirmsPermissions,
+            confirmsRisk: confirmsRisk,
+            confirmsVersionRule: confirmsVersionRule,
+            acknowledgment: acknowledgment
+        )
     }
 
     var body: some View {
@@ -80,7 +104,11 @@ struct LegalConsentGateView: View {
         .padding(4)
         .background(VeilTheme.obsidian.opacity(0.72))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(VeilTheme.hairline, lineWidth: 0.8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(VeilTheme.hairline, lineWidth: 0.8)
+                .allowsHitTesting(false)
+        )
     }
 
     private func legalSegment(title: String, icon: String, index: Int) -> some View {
@@ -105,9 +133,12 @@ struct LegalConsentGateView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(selectedDocument == index ? VeilTheme.gold.opacity(0.18) : Color.clear, lineWidth: 0.8)
+                    .allowsHitTesting(false)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(VeilPressStyle())
+        .accessibilityIdentifier(index == 0 ? VeilLegalConsentAccessibility.permissionsDocument : VeilLegalConsentAccessibility.boundaryDocument)
     }
 
     private var documentCard: some View {
@@ -150,15 +181,18 @@ struct LegalConsentGateView: View {
 
                 confirmationRow(
                     "我理解系统权限仍由 iOS 单独控制，本协议不能代替系统授权。",
-                    isOn: $confirmsPermissions
+                    isOn: $confirmsPermissions,
+                    accessibilityIdentifier: VeilLegalConsentAccessibility.permissionsConfirmation
                 )
                 confirmationRow(
                     "我已阅读风险告知与责任边界，理解 VeilLink 不适用于紧急或生命安全通信。",
-                    isOn: $confirmsRisk
+                    isOn: $confirmsRisk,
+                    accessibilityIdentifier: VeilLegalConsentAccessibility.riskConfirmation
                 )
                 confirmationRow(
                     "我理解每次版本、Build 或协议正文变化后都需要重新签署。",
-                    isOn: $confirmsVersionRule
+                    isOn: $confirmsVersionRule,
+                    accessibilityIdentifier: VeilLegalConsentAccessibility.versionConfirmation
                 )
             }
         }
@@ -190,7 +224,11 @@ struct LegalConsentGateView: View {
                 .frame(height: 48)
                 .background(VeilTheme.obsidian.opacity(0.58))
                 .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(canSign ? VeilTheme.gold.opacity(0.30) : VeilTheme.hairline, lineWidth: 0.9))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .stroke(canSign ? VeilTheme.gold.opacity(0.30) : VeilTheme.hairline, lineWidth: 0.9)
+                        .allowsHitTesting(false)
+                )
 
                 if let errorText {
                     Text(errorText)
@@ -225,7 +263,11 @@ struct LegalConsentGateView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func confirmationRow(_ title: String, isOn: Binding<Bool>) -> some View {
+    private func confirmationRow(
+        _ title: String,
+        isOn: Binding<Bool>,
+        accessibilityIdentifier: String
+    ) -> some View {
         Button {
             isOn.wrappedValue.toggle()
             VeilOnboardingHaptics.selection()
@@ -250,8 +292,11 @@ struct LegalConsentGateView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(VeilPressStyle())
+        .accessibilityIdentifier(accessibilityIdentifier)
         .animation(VeilMotionPolicy.animation(.reveal, reduceMotionRequested: reduceMotion), value: isOn.wrappedValue)
     }
 
@@ -309,7 +354,11 @@ private struct VeilLegalAcknowledgmentField: UIViewRepresentable {
     }
 
     func updateUIView(_ field: UITextField, context: Context) {
+        // UIViewRepresentable values are recreated as SwiftUI state changes. Keep the coordinator
+        // attached to the current binding so older iOS releases never write through a stale value.
+        context.coordinator.update(text: $text)
         field.placeholder = placeholder
+        field.keyboardAppearance = VeilAppearanceController.shared.isDarkAppearance ? .dark : .light
         guard field.markedTextRange == nil, field.text != text else { return }
         field.text = text
     }
@@ -318,6 +367,10 @@ private struct VeilLegalAcknowledgmentField: UIViewRepresentable {
         private var text: Binding<String>
 
         init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func update(text: Binding<String>) {
             self.text = text
         }
 

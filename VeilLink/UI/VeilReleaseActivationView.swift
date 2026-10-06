@@ -1,5 +1,13 @@
 import SwiftUI
 
+enum VeilReleaseActivationInteractionPolicy {
+    static let legalPage = 4
+
+    static func allowsOnboardingSwipe(on page: Int) -> Bool {
+        page < legalPage
+    }
+}
+
 struct VeilReleaseActivationView: View {
     @ObservedObject var controller: VeilFirstRunOnboardingController
     @ObservedObject var legal: VeilLegalConsentController
@@ -36,16 +44,7 @@ struct VeilReleaseActivationView: View {
                         .padding(.horizontal, 18)
                         .padding(.top, 8)
 
-                    ZStack {
-                        pageContent(proxy: proxy)
-                            .id(page)
-                            .opacity(contentVisible ? 1 : 0)
-                            .scaleEffect(contentVisible || motionReduced ? 1 : 0.975)
-                            .offset(x: motionReduced ? 0 : dragX * 0.12, y: contentVisible || motionReduced ? 0 : 12)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .gesture(swipeGesture, including: page < 4 ? .all : .none)
+                    pageHost(proxy: proxy)
 
                     if page < 4 {
                         bottomNavigation
@@ -111,6 +110,32 @@ struct VeilReleaseActivationView: View {
         default:
             legalPage
         }
+    }
+
+    /// The agreement page must not merely disable the onboarding swipe gesture with a dynamic
+    /// mask. On iOS 15 that still leaves the parent recognizer in the hierarchy where it can win
+    /// arbitration against nested SwiftUI buttons and the UIKit-backed acknowledgment field.
+    /// Build a gesture-free branch instead so signing controls own their touches end to end.
+    @ViewBuilder
+    private func pageHost(proxy: GeometryProxy) -> some View {
+        if VeilReleaseActivationInteractionPolicy.allowsOnboardingSwipe(on: page) {
+            pageSurface(proxy: proxy)
+                .contentShape(Rectangle())
+                .gesture(swipeGesture)
+        } else {
+            pageSurface(proxy: proxy)
+        }
+    }
+
+    private func pageSurface(proxy: GeometryProxy) -> some View {
+        ZStack {
+            pageContent(proxy: proxy)
+                .id(page)
+                .opacity(contentVisible ? 1 : 0)
+                .scaleEffect(contentVisible || motionReduced ? 1 : 0.975)
+                .offset(x: motionReduced ? 0 : dragX * 0.12, y: contentVisible || motionReduced ? 0 : 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func activationPage(proxy: GeometryProxy) -> some View {

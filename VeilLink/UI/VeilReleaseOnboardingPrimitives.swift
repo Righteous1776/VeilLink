@@ -61,6 +61,7 @@ struct VeilReleaseNeumorphicPlate<Content: View>: View {
                         ),
                         lineWidth: 0.9
                     )
+                    .allowsHitTesting(false)
             )
             .overlay(alignment: .topLeading) {
                 Capsule()
@@ -68,6 +69,7 @@ struct VeilReleaseNeumorphicPlate<Content: View>: View {
                     .frame(width: emphasized ? 76 : 46, height: 1)
                     .padding(.top, 1)
                     .padding(.leading, 24)
+                    .allowsHitTesting(false)
             }
             .shadow(
                 color: Color.black.opacity(VeilRenderProfile.usesLegacyCompositorPath ? 0.20 : 0.42),
@@ -101,6 +103,7 @@ struct VeilReleaseNeumorphicPlate<Content: View>: View {
                     .stroke(VeilTheme.subtleFill, lineWidth: 3)
                     .padding(2)
                     .blendMode(.screen)
+                    .allowsHitTesting(false)
             )
     }
 }

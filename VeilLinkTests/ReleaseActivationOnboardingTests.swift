@@ -52,4 +52,10 @@ final class ReleaseActivationOnboardingTests: XCTestCase {
         controller.remember(page: 99)
         XCTAssertEqual(controller.resumePage, 4)
     }
+
+    func testLegalPageIsOutsideOnboardingSwipeGestureHierarchy() {
+        XCTAssertTrue(VeilReleaseActivationInteractionPolicy.allowsOnboardingSwipe(on: 3))
+        XCTAssertFalse(VeilReleaseActivationInteractionPolicy.allowsOnboardingSwipe(on: 4))
+        XCTAssertFalse(VeilReleaseActivationInteractionPolicy.allowsOnboardingSwipe(on: 5))
+    }
 }
