@@ -1,9 +1,6 @@
 # CURRENT CHECKPOINT
 
-VeilLink **26.13 (Build 59)** is the current cumulative release checkpoint. Build 58 adds
-six substantial real-time 2D/3D games, deterministic gameplay cores, adaptive render profiles,
-local model/vector asset fallbacks and expanded regression coverage while preserving the complete
-26.11 Build 57 release line.
+VeilLink **26.13 (Build 59)** is the current cumulative release checkpoint. Build 59 preserves the complete 26.12 Build 58 release line and adds unified rhythm/type tokens, the legal-consent IME input fix, two appearance experiences (Plainline authorization-gated and Islet selectable), and an updated Linux local-CI simulator aligned with the current workflow graph.
 
 The branch is based on the complete 26.11 Build 57 release tree and carries
 the I12/A10 Ultra M5 overlay plus the subsequent compile and release-gate fixes.
