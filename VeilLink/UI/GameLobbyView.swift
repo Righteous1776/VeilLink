@@ -42,7 +42,7 @@ struct GameLobbyView: View {
                 .frame(width: 58, height: 58)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("LOCAL GAME HUB")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(VeilType.terminalLabel)
                         .tracking(1.3)
                         .foregroundColor(VeilTheme.mutedGold)
                     Text("游戏大厅")
@@ -140,7 +140,7 @@ struct GameLobbyView: View {
                                 .font(.caption.bold())
                                 .foregroundColor(VeilTheme.tertiaryText)
                         }
-                        .padding(13)
+                        .padding(VeilSpacing.sm)
                         .background(VeilTheme.elevated.opacity(0.82))
                         .clipShape(VeilPanelShape(cut: 12, radius: 7))
                         .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
@@ -217,7 +217,7 @@ struct GameLobbyView: View {
 
     private func sectionTitle(_ title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.headline).foregroundColor(VeilTheme.goldBright)
+            Text(title).font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             Text(subtitle).font(.caption).foregroundColor(VeilTheme.secondaryText)
         }
     }
@@ -241,13 +241,13 @@ struct GameLobbyView: View {
             }
             Spacer()
             Text(enabled ? "人机" : "待开发")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(VeilType.terminalLabel)
                 .foregroundColor(enabled ? VeilTheme.gold : VeilTheme.tertiaryText)
             if enabled {
                 Image(systemName: "chevron.right").font(.caption.bold()).foregroundColor(VeilTheme.tertiaryText)
             }
         }
-        .padding(13)
+        .padding(VeilSpacing.sm)
         .background(VeilTheme.elevated.opacity(enabled ? 0.86 : 0.52))
         .clipShape(VeilPanelShape(cut: 12, radius: 7))
         .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
