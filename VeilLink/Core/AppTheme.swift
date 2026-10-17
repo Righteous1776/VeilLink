@@ -34,6 +34,8 @@ enum VeilTheme {
     static var goldGradient: LinearGradient {
         VeilAppearanceController.shared.isPlainline
             ? LinearGradient(colors: [gold, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
+            : VeilAppearanceController.shared.isIslet
+            ? LinearGradient(colors: [goldBright, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
             : VeilAppearanceController.shared.isAppleSoft
             ? LinearGradient(colors: [goldBright, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
             : LinearGradient(colors: [goldBright, gold, goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -41,6 +43,8 @@ enum VeilTheme {
     static var metalGradient: LinearGradient {
         VeilAppearanceController.shared.isPlainline
             ? LinearGradient(colors: [panel, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
+            : VeilAppearanceController.shared.isIslet
+            ? LinearGradient(colors: [panelSoft, panel], startPoint: .top, endPoint: .bottom)
             : VeilAppearanceController.shared.isAppleSoft
             ? LinearGradient(colors: [panelSoft, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
             : LinearGradient(colors: [Color.white.opacity(0.72), paleMetal, gold.opacity(0.78), goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -48,6 +52,8 @@ enum VeilTheme {
     static var surfaceGradient: LinearGradient {
         VeilAppearanceController.shared.isPlainline
             ? LinearGradient(colors: [Color.clear, Color.clear], startPoint: .top, endPoint: .bottom)
+            : VeilAppearanceController.shared.isIslet
+            ? LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.02)], startPoint: .top, endPoint: .bottom)
             : VeilAppearanceController.shared.isAppleSoft
             ? LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.015)], startPoint: .top, endPoint: .bottom)
             : LinearGradient(colors: [Color.white.opacity(0.040), Color.white.opacity(0.010)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -233,6 +239,9 @@ struct VeilAmbientBackground: View {
             if VeilAppearanceController.shared.isPlainline {
                 // 白描：纯底色，无材质、无渐变、无帘形。
                 VeilTheme.background
+            } else if VeilAppearanceController.shared.isIslet {
+                // 浮屿：深海极光底——径向微光浮于靛海之上。
+                VeilIsletBackground()
             } else if VeilAppearanceController.shared.isAppleSoft {
                 VeilAppleSoftBackground()
             } else if VeilAppearanceController.shared.isInstrument {
@@ -361,6 +370,19 @@ struct VeilCardModifier: ViewModifier {
                         .frame(height: 0.5)
                         .allowsHitTesting(false)
                 }
+        } else if VeilAppearanceController.shared.isIslet {
+            // 浮屿：内容浮起为岛——圆角岛面、微光描边、悬浮投影。
+            content
+                .padding(VeilSpacing.md)
+                .background(
+                    RoundedRectangle(cornerRadius: emphasized ? 24 : 20, style: .continuous)
+                        .fill(emphasized ? VeilTheme.panel : VeilTheme.elevated)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: emphasized ? 24 : 20, style: .continuous)
+                        .stroke(VeilTheme.hairline, lineWidth: 0.5)
+                )
+                .shadow(color: Color.black.opacity(0.24), radius: 18, x: 0, y: 10)
         } else if VeilAppearanceController.shared.isAppleSoft {
             content
                 .padding(VeilSpacing.md)
@@ -430,14 +452,15 @@ struct VeilPressStyle: ButtonStyle {
         let pressed = configuration.isPressed
         let appleSoft = VeilAppearanceController.shared.isAppleSoft
         let plainline = VeilAppearanceController.shared.isPlainline
+        let islet = VeilAppearanceController.shared.isIslet
         configuration.label
-            .scaleEffect(pressed && !plainline && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : VeilMotionPolicy.pressScale) : 1)
-            .offset(y: pressed && !plainline ? (appleSoft ? 0.8 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4)) : 0)
-            .brightness(pressed ? (plainline ? -0.05 : (appleSoft ? -0.018 : -0.035)) : 0)
-            .opacity(pressed ? (plainline ? 0.72 : (appleSoft ? 0.90 : 0.96)) : 1)
+            .scaleEffect(pressed && !plainline && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : (islet ? 0.975 : VeilMotionPolicy.pressScale)) : 1)
+            .offset(y: pressed && !plainline ? (appleSoft ? 0.8 : (islet ? 0.6 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4))) : 0)
+            .brightness(pressed ? (plainline ? -0.05 : (islet ? 0.045 : (appleSoft ? -0.018 : -0.035))) : 0)
+            .opacity(pressed ? (plainline ? 0.72 : (islet ? 1.0 : (appleSoft ? 0.90 : 0.96))) : 1)
             .shadow(
-                color: plainline ? .clear : Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12))),
-                radius: pressed ? 2 : (appleSoft ? 5 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3)),
+                color: plainline ? .clear : (islet ? VeilTheme.gold.opacity(pressed ? 0.32 : 0.0) : Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12)))),
+                radius: islet ? (pressed ? 12 : 0.1) : (pressed ? 2 : (appleSoft ? 5 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3))),
                 x: 0,
                 y: pressed ? 1 : (appleSoft ? 3 : (VeilMotionPolicy.allowsFullSpatialEffects ? 4 : 2))
             )
