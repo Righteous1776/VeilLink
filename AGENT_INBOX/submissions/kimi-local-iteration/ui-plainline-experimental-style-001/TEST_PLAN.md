@@ -11,7 +11,7 @@
 | 3 | 补丁反向校验 | 干净基线克隆上 `git apply --check -R PATCH.diff` | PASS（6 文件块与目标树严格对应） |
 | 4 | 基线组成核验 | base 未提交改动与 PR #43 PATCH.diff 逐字节 diff | PASS（完全一致，#40 已独立提交于基线历史） |
 | 5 | 模拟断言字面量 | AdaptiveRootView 内 `.tabItem { Label("灵核"`、`AgentHomeView(model: model)`；SettingsView 内 `model.runA9StorageCheck()`；Models.swift `case agent = "灵核"` | PASS（逐字保留） |
-| 6 | local-ci-sim.sh（修复版，26 阶段） | `bash scripts/local-ci-sim.sh` | 见下方结果 |
+| 6 | local-ci-sim.sh（修复版，26 阶段） | `bash scripts/local-ci-sim.sh` | PASS（26/26，`LOCAL CI SIMULATION: PASS`，0 FAIL；xcodebuild/xcodegen 阶段按预期标注为 macOS/GitHub CI 门禁） |
 | 7 | 授权 API 语义核读 | `AppLockController.unlock(pin:)` 源码逐行核对：未启用→安全 false；错误→计数+锁定（5→30s/8→300s）；成功→清锁定 | PASS（仅核读，零修改） |
 
 ## 未执行（如实声明）
