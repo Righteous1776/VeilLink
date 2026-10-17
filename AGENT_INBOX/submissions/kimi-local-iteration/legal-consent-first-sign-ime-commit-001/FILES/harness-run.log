@@ -1,0 +1,18 @@
+== Scenario A: pre-fix wiring, pinyin candidate bar open at sign tap ==
+PASS  A1 pre-fix: polluted state disables the gate
+PASS  A2 pre-fix: FIRST tap on sign is silently swallowed
+PASS  A3 pre-fix: only AFTER committing the composition does a tap succeed (matches report)
+== Scenario B: post-fix wiring, same event stream ==
+PASS  B1 post-fix: marked composition never pollutes state
+PASS  B2 post-fix: FIRST tap signs successfully (bug fixed)
+== Scenario C: post-fix, plain committed typing (regression) ==
+PASS  C1 committed text signs fine
+PASS  C2 sign proceeds on first tap
+== Scenario D: invariants unchanged ==
+PASS  D1 missing confirmation still blocks signing
+PASS  D2 wrong acknowledgement still rejected with error
+== Scenario E: publishableText unit matrix ==
+PASS  E1 marked composition -> nil (not publishable)
+PASS  E2 committed text -> published verbatim
+PASS  E3 nil field text -> normalised to empty string
+HARNESS_RESULT: PASS (all scenarios)
