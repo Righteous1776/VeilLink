@@ -118,7 +118,6 @@ index ea9da65..f84a04c 100644
      }
  
 @@ -96,6 +100,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
-         case .veilOriginal: return Color(red: 0.02, green: 0.02, blue: 0.03)
          case .appleSoft: return Color(red: 0.91, green: 0.93, blue: 0.97)
          case .instrumentAuto: return Color(red: 0.38, green: 0.38, blue: 0.40)
          case .plainline: return Color(red: 0.96, green: 0.955, blue: 0.94)
