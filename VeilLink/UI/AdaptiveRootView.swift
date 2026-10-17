@@ -11,6 +11,8 @@ struct AdaptiveRootView: View {
             Group {
                 if appearance.isPlainline {
                     VeilPlainlineRootView(model: model)
+                } else if appearance.isIslet {
+                    VeilIsletRootView(model: model)
                 } else if appearance.isAppleSoft {
                     VeilAppleSoftRootView(model: model)
                 } else if VeilUILayoutPolicy.usesTabletTwoPane(
