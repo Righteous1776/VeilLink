@@ -4,6 +4,7 @@
 - task_id: ui-plainline-experimental-style-001
 - status: DROPPED（≠ ACCEPTED ≠ APPLIED ≠ VERIFIED ≠ MERGED）
 - date: 2026-10-17
+- base_main_sha: a48be364f2104ac2532d436ac0f4c1ed45d90e89 (verified against main on 2026-10-17)
 - lane: INBOX_ONLY（五件套投递，无产品树直接修改）
 
 ## 基线与依赖（顺序重要）
