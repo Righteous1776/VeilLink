@@ -6,7 +6,7 @@ checks = {
     'VeilLink/Core/SkeuomorphicComponents.swift': ['VeilPhysicalButtonStyle', 'VeilLCDDisplay', 'VeilSpeakerGrille', 'VeilInstrumentKnob'],
     'VeilLink/UI/ToolCenterView.swift': ['VeilToolCenterView', 'VeilWalkieTalkieView', 'PTT'],
     'VeilLink/UI/ConversationViews.swift': ['VeilToolCenterView(model: model)', '打开工具中心'],
-    'VeilLink/UI/SettingsView.swift': ['appearanceCard', 'VeilAppearanceSelection.allCases'],
+    'VeilLink/UI/SettingsView.swift': ['appearanceCard', 'VeilAppearanceSelection.switchableCases'],
     'VeilLink/Core/AppTheme.swift': ['VeilThemePalette', 'VeilInstrumentBackground', 'VeilAppearanceController.shared.isInstrument'],
 }
 for rel, needles in checks.items():
