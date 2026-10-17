@@ -25,7 +25,7 @@ struct ConversationListView: View {
                     Spacer()
                     VeilIdentityGlyph(seed: "VeilLink/NoConversation", size: 76, active: false)
                     Text("NO ACTIVE LINK")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(VeilType.terminalLabel)
                         .tracking(1.6)
                         .foregroundColor(VeilTheme.mutedGold)
                     Text("还没有对话")
@@ -232,7 +232,7 @@ private struct ConversationRow: View {
                     Spacer(minLength: 6)
                     if conversation.unreadCount > 0 {
                         Text(conversation.unreadCount > 99 ? "99+" : "\(conversation.unreadCount)")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(VeilType.terminalLabel)
                             .foregroundColor(Color.black.opacity(0.88))
                             .padding(.horizontal, 6)
                             .frame(minWidth: 20, minHeight: 18)
@@ -247,7 +247,7 @@ private struct ConversationRow: View {
 
                 HStack(spacing: 7) {
                     Text("E2EE")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(VeilType.terminalLabel)
                         .tracking(0.8)
                         .foregroundColor(VeilTheme.mutedGold)
                     VeilLinkTrace(active: isSelected, width: 28)
@@ -979,7 +979,7 @@ private struct VeilChatIdentityTitle: View {
                     .lineLimit(1)
                 HStack(spacing: 5) {
                     Text("SECURE LINK")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(VeilType.terminalLabel)
                         .tracking(0.9)
                         .foregroundColor(VeilTheme.mutedGold)
                     VeilLinkTrace(active: false, width: 26)
@@ -1385,7 +1385,7 @@ private struct ContactDetailsSheet: View {
                     VStack(spacing: 10) {
                         VeilIdentityGlyph(seed: conversation.peerIdentityID, size: 76, active: true)
                         Text("PEER IDENTITY")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(VeilType.terminalLabel)
                             .tracking(1.4)
                             .foregroundColor(VeilTheme.mutedGold)
                         Text(conversation.title)
@@ -1405,7 +1405,7 @@ private struct ContactDetailsSheet: View {
 
                     VStack(alignment: .leading, spacing: 7) {
                         Text("IDENTITY ID")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(VeilType.terminalLabel)
                             .tracking(1.1)
                             .foregroundColor(VeilTheme.mutedGold)
                         Text(conversation.peerIdentityID)
