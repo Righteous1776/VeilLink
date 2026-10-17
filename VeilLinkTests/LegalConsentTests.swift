@@ -63,4 +63,33 @@ final class LegalConsentTests: XCTestCase {
         )
         XCTAssertTrue(DeepTelemetry.shouldCaptureTextField(identifier: "chat.composer"))
     }
+
+    func testAcknowledgmentInputDoesNotPublishMarkedCompositionText() {
+        // An in-flight IME composition (e.g. an open pinyin candidate bar) must not pollute
+        // the signing acknowledgement state, or the primary signing button becomes disabled
+        // and the first tap silently does nothing.
+        XCTAssertNil(
+            VeilLegalAcknowledgmentInput.publishableText(
+                fieldText: "woyiyuedu",
+                hasMarkedText: true
+            )
+        )
+    }
+
+    func testAcknowledgmentInputPublishesCommittedText() {
+        XCTAssertEqual(
+            VeilLegalAcknowledgmentInput.publishableText(
+                fieldText: "我已阅读并同意",
+                hasMarkedText: false
+            ),
+            "我已阅读并同意"
+        )
+        XCTAssertEqual(
+            VeilLegalAcknowledgmentInput.publishableText(
+                fieldText: nil,
+                hasMarkedText: false
+            ),
+            ""
+        )
+    }
 }
