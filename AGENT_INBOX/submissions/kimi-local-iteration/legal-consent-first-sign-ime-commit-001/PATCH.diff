@@ -1,0 +1,163 @@
+diff --git a/VeilLink/Core/LegalConsentInputPolicy.swift b/VeilLink/Core/LegalConsentInputPolicy.swift
+new file mode 100644
+index 0000000..61d48b7
+--- /dev/null
++++ b/VeilLink/Core/LegalConsentInputPolicy.swift
+@@ -0,0 +1,30 @@
++import Foundation
++
++/// Signing-gate decision policy for the legal consent gate.
++///
++/// Deliberately UIKit-free so the entire signing-gate evaluation (acknowledgement
++/// publishing rules + canSign) can be compiled and tested without an iOS runtime.
++enum VeilLegalConsentRequirements {
++    static func canSign(
++        confirmsPermissions: Bool,
++        confirmsRisk: Bool,
++        confirmsVersionRule: Bool,
++        acknowledgment: String
++    ) -> Bool {
++        confirmsPermissions &&
++        confirmsRisk &&
++        confirmsVersionRule &&
++        acknowledgment.trimmingCharacters(in: .whitespacesAndNewlines) == VeilLegalConsentController.requiredAcknowledgment
++    }
++}
++
++enum VeilLegalAcknowledgmentInput {
++    static let accessibilityIdentifier = "legal.consent.acknowledgment"
++
++    /// Returns the text that may be published into signing state for a field snapshot, or nil
++    /// when an IME composition is still in flight and must not pollute the acknowledgement.
++    static func publishableText(fieldText: String?, hasMarkedText: Bool) -> String? {
++        guard !hasMarkedText else { return nil }
++        return fieldText ?? ""
++    }
++}
+diff --git a/VeilLink/UI/LegalConsentGateView.swift b/VeilLink/UI/LegalConsentGateView.swift
+index 82a9e51..8ce6d3e 100644
+--- a/VeilLink/UI/LegalConsentGateView.swift
++++ b/VeilLink/UI/LegalConsentGateView.swift
+@@ -6,20 +6,6 @@ enum VeilLegalGatePresentation {
+     case firstActivation
+ }
+ 
+-enum VeilLegalConsentRequirements {
+-    static func canSign(
+-        confirmsPermissions: Bool,
+-        confirmsRisk: Bool,
+-        confirmsVersionRule: Bool,
+-        acknowledgment: String
+-    ) -> Bool {
+-        confirmsPermissions &&
+-        confirmsRisk &&
+-        confirmsVersionRule &&
+-        acknowledgment.trimmingCharacters(in: .whitespacesAndNewlines) == VeilLegalConsentController.requiredAcknowledgment
+-    }
+-}
+-
+ enum VeilLegalConsentAccessibility {
+     static let permissionsDocument = "legal.consent.document.permissions"
+     static let boundaryDocument = "legal.consent.document.boundary"
+@@ -52,6 +38,15 @@ struct LegalConsentGateView: View {
+         )
+     }
+ 
++    /// The primary signing action must stay reachable regardless of the acknowledgement field's
++    /// transient IME state. Binding the button to `canSign` lets an open pinyin candidate bar
++    /// (uncommitted marked text) disable it, so the first tap on "签署并进入" silently does
++    /// nothing — the reported "首次无法签约". The acknowledgement itself is validated inside
++    /// `sign()` after any in-flight composition is committed.
++    private var confirmationsReady: Bool {
++        confirmsPermissions && confirmsRisk && confirmsVersionRule
++    }
++
+     var body: some View {
+         ZStack {
+             VeilAmbientBackground()
+@@ -237,7 +232,7 @@ struct LegalConsentGateView: View {
+                         .transition(.opacity)
+                 }
+ 
+-                VeilReleasePrimaryButton(title: "签署并进入 VeilLink", systemImage: "checkmark.shield.fill", enabled: canSign) {
++                VeilReleasePrimaryButton(title: "签署并进入 VeilLink", systemImage: "checkmark.shield.fill", enabled: confirmationsReady) {
+                     sign()
+                 }
+ 
+@@ -301,6 +296,11 @@ struct LegalConsentGateView: View {
+     }
+ 
+     private func sign() {
++        // Commit any in-flight IME composition (e.g. a pinyin candidate bar that is still open)
++        // before evaluating the gate. Without this, the acknowledgement state still holds the
++        // intermediate composition text, canSign stays false and the disabled primary button
++        // silently swallows the first tap — the classic "first signing attempt does nothing".
++        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+         guard canSign else {
+             errorText = "请完成三项确认，并准确输入签署确认语。"
+             return
+@@ -315,10 +315,6 @@ struct LegalConsentGateView: View {
+     }
+ }
+ 
+-enum VeilLegalAcknowledgmentInput {
+-    static let accessibilityIdentifier = "legal.consent.acknowledgment"
+-}
+-
+ /// A deliberately small UIKit-backed field for the mandatory legal gate. Its input traits are
+ /// configured on the instance instead of through UIAppearance/SwiftUI environment propagation,
+ /// keeping first-responder creation deterministic across iOS releases.
+@@ -375,7 +371,14 @@ private struct VeilLegalAcknowledgmentField: UIViewRepresentable {
+         }
+ 
+         @objc func textChanged(_ field: UITextField) {
+-            text.wrappedValue = field.text ?? ""
++            // Ignore intermediate IME composition (marked) text. Publishing pinyin fragments
++            // into the acknowledgement state would flip canSign to false mid-typing and disable
++            // the primary signing button, so the first tap on it silently does nothing.
++            guard let publishable = VeilLegalAcknowledgmentInput.publishableText(
++                fieldText: field.text,
++                hasMarkedText: field.markedTextRange != nil
++            ) else { return }
++            text.wrappedValue = publishable
+         }
+ 
+         func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+diff --git a/VeilLinkTests/LegalConsentTests.swift b/VeilLinkTests/LegalConsentTests.swift
+index 6958b01..a2125bb 100644
+--- a/VeilLinkTests/LegalConsentTests.swift
++++ b/VeilLinkTests/LegalConsentTests.swift
+@@ -63,4 +63,33 @@ final class LegalConsentTests: XCTestCase {
+         )
+         XCTAssertTrue(DeepTelemetry.shouldCaptureTextField(identifier: "chat.composer"))
+     }
++
++    func testAcknowledgmentInputDoesNotPublishMarkedCompositionText() {
++        // An in-flight IME composition (e.g. an open pinyin candidate bar) must not pollute
++        // the signing acknowledgement state, or the primary signing button becomes disabled
++        // and the first tap silently does nothing.
++        XCTAssertNil(
++            VeilLegalAcknowledgmentInput.publishableText(
++                fieldText: "woyiyuedu",
++                hasMarkedText: true
++            )
++        )
++    }
++
++    func testAcknowledgmentInputPublishesCommittedText() {
++        XCTAssertEqual(
++            VeilLegalAcknowledgmentInput.publishableText(
++                fieldText: "我已阅读并同意",
++                hasMarkedText: false
++            ),
++            "我已阅读并同意"
++        )
++        XCTAssertEqual(
++            VeilLegalAcknowledgmentInput.publishableText(
++                fieldText: nil,
++                hasMarkedText: false
++            ),
++            ""
++        )
++    }
+ }
