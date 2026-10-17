@@ -1,7 +1,7 @@
 # VeilLink
 
 > **Current cumulative checkpoint:** VeilLink **26.13 (Build 59)**. This release keeps
-> the complete 26.11 release line and adds six substantial real-time 2D/3D games, unified UI rhythm tokens,
+> the complete 26.12 release line and adds six substantial real-time 2D/3D games, unified UI rhythm tokens,
 > deterministic game cores, adaptive rendering, two new appearance styles, and audited offline art assets.
 > See [the Build 59 release notes](docs/RELEASE_26_13_BUILD_59.md) and
 > [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
