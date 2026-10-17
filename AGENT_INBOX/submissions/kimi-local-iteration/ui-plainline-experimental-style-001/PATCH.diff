@@ -1,1 +1,588 @@
-PATCH_CONTENT_FILE
+diff --git a/VeilLink/Core/AppTheme.swift b/VeilLink/Core/AppTheme.swift
+index de54a0d..207ea15 100644
+--- a/VeilLink/Core/AppTheme.swift
++++ b/VeilLink/Core/AppTheme.swift
+@@ -32,17 +32,23 @@ enum VeilTheme {
+     static var danger: Color { p.danger }
+     static var success: Color { p.success }
+     static var goldGradient: LinearGradient {
+-        VeilAppearanceController.shared.isAppleSoft
++        VeilAppearanceController.shared.isPlainline
++            ? LinearGradient(colors: [gold, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
++            : VeilAppearanceController.shared.isAppleSoft
+             ? LinearGradient(colors: [goldBright, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
+             : LinearGradient(colors: [goldBright, gold, goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+     }
+     static var metalGradient: LinearGradient {
+-        VeilAppearanceController.shared.isAppleSoft
++        VeilAppearanceController.shared.isPlainline
++            ? LinearGradient(colors: [panel, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
++            : VeilAppearanceController.shared.isAppleSoft
+             ? LinearGradient(colors: [panelSoft, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
+             : LinearGradient(colors: [Color.white.opacity(0.72), paleMetal, gold.opacity(0.78), goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+     }
+     static var surfaceGradient: LinearGradient {
+-        VeilAppearanceController.shared.isAppleSoft
++        VeilAppearanceController.shared.isPlainline
++            ? LinearGradient(colors: [Color.clear, Color.clear], startPoint: .top, endPoint: .bottom)
++            : VeilAppearanceController.shared.isAppleSoft
+             ? LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.015)], startPoint: .top, endPoint: .bottom)
+             : LinearGradient(colors: [Color.white.opacity(0.040), Color.white.opacity(0.010)], startPoint: .topLeading, endPoint: .bottomTrailing)
+     }
+@@ -224,7 +230,10 @@ private struct VeilCurtainShape: Shape {
+ struct VeilAmbientBackground: View {
+     var body: some View {
+         Group {
+-            if VeilAppearanceController.shared.isAppleSoft {
++            if VeilAppearanceController.shared.isPlainline {
++                // 白描：纯底色，无材质、无渐变、无帘形。
++                VeilTheme.background
++            } else if VeilAppearanceController.shared.isAppleSoft {
+                 VeilAppleSoftBackground()
+             } else if VeilAppearanceController.shared.isInstrument {
+                 VeilInstrumentBackground()
+@@ -342,7 +351,17 @@ struct VeilCardModifier: ViewModifier {
+ 
+     @ViewBuilder
+     func body(content: Content) -> some View {
+-        if VeilAppearanceController.shared.isAppleSoft {
++        if VeilAppearanceController.shared.isPlainline {
++            // 白描：卡片消解为分区——无填充、无描边、无阴影，仅以发丝线收尾。
++            content
++                .padding(.vertical, VeilSpacing.sm)
++                .overlay(alignment: .bottom) {
++                    Rectangle()
++                        .fill(VeilTheme.hairline)
++                        .frame(height: 0.5)
++                        .allowsHitTesting(false)
++                }
++        } else if VeilAppearanceController.shared.isAppleSoft {
+             content
+                 .padding(VeilSpacing.md)
+                 .background(VeilAppleSoftSurface(cornerRadius: emphasized ? 28 : 23, emphasized: emphasized))
+@@ -410,13 +429,14 @@ struct VeilPressStyle: ButtonStyle {
+     func makeBody(configuration: Configuration) -> some View {
+         let pressed = configuration.isPressed
+         let appleSoft = VeilAppearanceController.shared.isAppleSoft
++        let plainline = VeilAppearanceController.shared.isPlainline
+         configuration.label
+-            .scaleEffect(pressed && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : VeilMotionPolicy.pressScale) : 1)
+-            .offset(y: pressed ? (appleSoft ? 0.8 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4)) : 0)
+-            .brightness(pressed ? (appleSoft ? -0.018 : -0.035) : 0)
+-            .opacity(pressed ? (appleSoft ? 0.90 : 0.96) : 1)
++            .scaleEffect(pressed && !plainline && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : VeilMotionPolicy.pressScale) : 1)
++            .offset(y: pressed && !plainline ? (appleSoft ? 0.8 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4)) : 0)
++            .brightness(pressed ? (plainline ? -0.05 : (appleSoft ? -0.018 : -0.035)) : 0)
++            .opacity(pressed ? (plainline ? 0.72 : (appleSoft ? 0.90 : 0.96)) : 1)
+             .shadow(
+-                color: Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12))),
++                color: plainline ? .clear : Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12))),
+                 radius: pressed ? 2 : (appleSoft ? 5 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3)),
+                 x: 0,
+                 y: pressed ? 1 : (appleSoft ? 3 : (VeilMotionPolicy.allowsFullSpatialEffects ? 4 : 2))
+diff --git a/VeilLink/Core/AppearanceTheme.swift b/VeilLink/Core/AppearanceTheme.swift
+index a5c00ce..ea9da65 100644
+--- a/VeilLink/Core/AppearanceTheme.swift
++++ b/VeilLink/Core/AppearanceTheme.swift
+@@ -54,13 +54,22 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
+     case veilOriginal
+     case appleSoft
+     case instrumentAuto
++    case plainline
+ 
+     var id: String { rawValue }
++
++    /// Experimental styles are gated behind an authorization row in Settings and stay
++    /// out of the regular picker.
++    var isExperimental: Bool { self == .plainline }
++
++    /// The styles offered directly in the appearance picker.
++    static var switchableCases: [VeilAppearanceSelection] { allCases.filter { !$0.isExperimental } }
+     var title: String {
+         switch self {
+         case .veilOriginal: return "Veil 原生"
+         case .appleSoft: return "Apple Soft"
+         case .instrumentAuto: return "拟物仪器"
++        case .plainline: return "白描"
+         }
+     }
+     var subtitle: String {
+@@ -68,6 +77,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
+         case .veilOriginal: return "保留现有黑金、切角面板与 Veil 动效。"
+         case .appleSoft: return "苹果式软质拟物；iOS 26 自动接入底层 Liquid Glass。"
+         case .instrumentAuto: return "柔和仪器拟物；完整支持浅色、深色与跟随系统。"
++        case .plainline: return "极简字排版面：无材质无阴影，仅留白、发丝线与文字。"
+         }
+     }
+ 
+@@ -76,6 +86,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
+         case .veilOriginal: return "sparkles"
+         case .appleSoft: return "circle.grid.2x2.fill"
+         case .instrumentAuto: return "dial.medium.fill"
++        case .plainline: return "text.alignleft"
+         }
+     }
+ 
+@@ -84,6 +95,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
+         case .veilOriginal: return Color(red: 0.02, green: 0.02, blue: 0.03)
+         case .appleSoft: return Color(red: 0.91, green: 0.93, blue: 0.97)
+         case .instrumentAuto: return Color(red: 0.38, green: 0.38, blue: 0.40)
++        case .plainline: return Color(red: 0.96, green: 0.955, blue: 0.94)
+         }
+     }
+ }
+@@ -167,12 +179,14 @@ final class VeilAppearanceController: ObservableObject {
+     var isDarkAppearance: Bool { colorMode.resolvesDark(systemIsDark: systemIsDark) }
+     var isInstrument: Bool { selection == .instrumentAuto }
+     var isAppleSoft: Bool { selection == .appleSoft }
++    var isPlainline: Bool { selection == .plainline }
+     var appearanceLabel: String {
+         let phase = isDarkAppearance ? "NIGHT" : "DAY"
+         switch selection {
+         case .veilOriginal: return "VEIL ORIGINAL · \(phase)"
+         case .appleSoft: return "APPLE SOFT · \(phase)"
+         case .instrumentAuto: return "INSTRUMENT · \(phase)"
++        case .plainline: return "PLAINLINE · \(phase)"
+         }
+     }
+ 
+@@ -181,6 +195,7 @@ final class VeilAppearanceController: ObservableObject {
+         case .veilOriginal: return isDarkAppearance ? Self.original : Self.originalDay
+         case .appleSoft: return isDarkAppearance ? Self.appleSoftNight : Self.appleSoftDay
+         case .instrumentAuto: return isDarkAppearance ? Self.instrumentNight : Self.instrumentDay
++        case .plainline: return isDarkAppearance ? Self.plainlineNight : Self.plainlineDay
+         }
+     }
+ 
+@@ -345,4 +360,60 @@ final class VeilAppearanceController: ObservableObject {
+         keycapBottom: Color(red: 0.10, green: 0.10, blue: 0.11),
+         indicator: Color(red: 1.0, green: 0.31, blue: 0.04)
+     )
++
++    /// Plainline （白描）: ink-on-paper minimalism. Depth channels collapse to flat values so
++    /// material gradients render as solid color; a single gold carries all trust/action weight.
++    static let plainlineDay = VeilThemePalette(
++        background: Color(red: 0.972, green: 0.968, blue: 0.952),
++        backgroundLift: Color(red: 0.988, green: 0.985, blue: 0.972),
++        elevated: Color(red: 0.955, green: 0.950, blue: 0.932),
++        panel: Color(red: 0.945, green: 0.940, blue: 0.920),
++        panelSoft: Color(red: 0.965, green: 0.960, blue: 0.944),
++        obsidian: Color(red: 0.930, green: 0.924, blue: 0.902),
++        veil: Color(red: 0.950, green: 0.945, blue: 0.926),
++        gold: Color(red: 0.72, green: 0.48, blue: 0.12),
++        goldBright: Color(red: 0.80, green: 0.55, blue: 0.15),
++        goldDeep: Color(red: 0.72, green: 0.48, blue: 0.12),
++        mutedGold: Color(red: 0.45, green: 0.36, blue: 0.22),
++        paleMetal: Color(red: 0.55, green: 0.52, blue: 0.46),
++        text: Color.black.opacity(0.86),
++        secondaryText: Color.black.opacity(0.54),
++        tertiaryText: Color.black.opacity(0.32),
++        hairline: Color.black.opacity(0.065),
++        danger: Color(red: 0.80, green: 0.16, blue: 0.18),
++        success: Color(red: 0.08, green: 0.56, blue: 0.30),
++        metalTop: Color(red: 0.955, green: 0.950, blue: 0.932),
++        metalBottom: Color(red: 0.955, green: 0.950, blue: 0.932),
++        recess: Color.black.opacity(0.05),
++        keycapTop: Color(red: 0.955, green: 0.950, blue: 0.932),
++        keycapBottom: Color(red: 0.945, green: 0.940, blue: 0.920),
++        indicator: Color(red: 0.72, green: 0.48, blue: 0.12)
++    )
++
++    static let plainlineNight = VeilThemePalette(
++        background: Color(red: 0.028, green: 0.028, blue: 0.030),
++        backgroundLift: Color(red: 0.050, green: 0.050, blue: 0.054),
++        elevated: Color(red: 0.070, green: 0.070, blue: 0.075),
++        panel: Color(red: 0.085, green: 0.085, blue: 0.090),
++        panelSoft: Color(red: 0.100, green: 0.100, blue: 0.105),
++        obsidian: Color(red: 0.018, green: 0.018, blue: 0.020),
++        veil: Color(red: 0.045, green: 0.045, blue: 0.048),
++        gold: Color(red: 0.86, green: 0.64, blue: 0.24),
++        goldBright: Color(red: 0.98, green: 0.82, blue: 0.46),
++        goldDeep: Color(red: 0.86, green: 0.64, blue: 0.24),
++        mutedGold: Color(red: 0.50, green: 0.42, blue: 0.28),
++        paleMetal: Color(red: 0.72, green: 0.70, blue: 0.65),
++        text: Color.white.opacity(0.94),
++        secondaryText: Color.white.opacity(0.55),
++        tertiaryText: Color.white.opacity(0.30),
++        hairline: Color.white.opacity(0.055),
++        danger: Color(red: 0.91, green: 0.28, blue: 0.28),
++        success: Color(red: 0.35, green: 0.80, blue: 0.55),
++        metalTop: Color(red: 0.070, green: 0.070, blue: 0.075),
++        metalBottom: Color(red: 0.070, green: 0.070, blue: 0.075),
++        recess: Color.black.opacity(0.40),
++        keycapTop: Color(red: 0.070, green: 0.070, blue: 0.075),
++        keycapBottom: Color(red: 0.085, green: 0.085, blue: 0.090),
++        indicator: Color(red: 0.86, green: 0.64, blue: 0.24)
++    )
+ }
+diff --git a/VeilLink/UI/AdaptiveRootView.swift b/VeilLink/UI/AdaptiveRootView.swift
+index a841f68..b186963 100644
+--- a/VeilLink/UI/AdaptiveRootView.swift
++++ b/VeilLink/UI/AdaptiveRootView.swift
+@@ -9,7 +9,9 @@ struct AdaptiveRootView: View {
+     var body: some View {
+         GeometryReader { proxy in
+             Group {
+-                if appearance.isAppleSoft {
++                if appearance.isPlainline {
++                    VeilPlainlineRootView(model: model)
++                } else if appearance.isAppleSoft {
+                     VeilAppleSoftRootView(model: model)
+                 } else if VeilUILayoutPolicy.usesTabletTwoPane(
+                     horizontalSizeClassRegular: horizontalSizeClass == .regular,
+diff --git a/VeilLink/UI/PlainlineRootView.swift b/VeilLink/UI/PlainlineRootView.swift
+new file mode 100644
+index 0000000..99a87b8
+--- /dev/null
++++ b/VeilLink/UI/PlainlineRootView.swift
+@@ -0,0 +1,250 @@
++import SwiftUI
++import UIKit
++
++/// 白描（Plainline）实验风格的根容器。
++///
++/// 设计语言：一页纸。无卡片、无图标栏、无材质与阴影——
++/// 只由排版、留白与发丝线组织界面。底部系统 TabView 被
++/// 替换为发丝文字通道，顶部保留一枚字标。内容与遥测完全
++/// 复用既有五个分区视图，本视图只负责框架（chrome）。
++struct VeilPlainlineRootView: View {
++    @ObservedObject var model: AppModel
++
++    var body: some View {
++        VStack(spacing: 0) {
++            wordmarkHeader
++            sectionContent
++                .frame(maxWidth: .infinity, maxHeight: .infinity)
++            navRail
++        }
++        .onChange(of: model.selectedSection) { section in
++            RuntimeDiagnosticsBridge.shared.recordSemanticAction(
++                "navigation.tab",
++                metadata: ["section": section.rawValue, "chrome": "plainline"]
++            )
++        }
++    }
++
++    /// 顶部字标：产品名 + 当前分区名 + 风格记，底部一根发丝线。
++    private var wordmarkHeader: some View {
++        VStack(spacing: 0) {
++            HStack(alignment: .firstTextBaseline, spacing: VeilSpacing.sm) {
++                Text("VeilLink")
++                    .font(.system(size: 18, weight: .semibold, design: .serif))
++                    .foregroundColor(VeilTheme.text)
++                Text(model.selectedSection.rawValue)
++                    .font(.system(size: 12, weight: .medium))
++                    .foregroundColor(VeilTheme.secondaryText)
++                Spacer()
++                Text("白描 · PLAINLINE")
++                    .font(.system(size: 9, weight: .medium, design: .monospaced))
++                    .tracking(2)
++                    .foregroundColor(VeilTheme.gold)
+            }
++            .padding(.horizontal, VeilSpacing.lg)
++            .padding(.vertical, VeilSpacing.sm)
++            Rectangle()
++                .fill(VeilTheme.hairline)
++                .frame(height: 0.5)
++        }
++    }
++
++    /// 内容区：五个既有分区视图原样复用（含各自遥测），保持导航栈行为一致。
++    private var sectionContent: some View {
++        Group {
++            switch model.selectedSection {
++            case .chats:
++                NavigationView {
++                    ConversationListView(model: model, usesNavigationLinks: true)
++                        .telemetryScreen("chats.list")
++                }
++                .navigationViewStyle(StackNavigationViewStyle())
++            case .nearby:
++                NavigationView {
++                    NearbyView(model: model)
++                        .telemetryScreen("nearby")
++                }
++                .navigationViewStyle(StackNavigationViewStyle())
++            case .games:
++                NavigationView {
++                    GameLobbyView(model: model)
++                        .telemetryScreen("games.lobby")
++                }
++                .navigationViewStyle(StackNavigationViewStyle())
++            case .agent:
++                NavigationView {
++                    AgentHomeView(model: model)
++                        .telemetryScreen("agent.home")
++                }
++                .navigationViewStyle(StackNavigationViewStyle())
++            case .settings:
++                NavigationView {
++                    SettingsView(model: model)
++                        .telemetryScreen("settings")
++                }
++                .navigationViewStyle(StackNavigationViewStyle())
++            }
++        }
++    }
++
++    /// 底部导航：发丝线 + 五枚文字通道。选中项以金色短画线标记，
++    /// 未读数以金色小号上标呈现。无图标、无胶囊、无背景填充。
++    private var navRail: some View {
++        VStack(spacing: 0) {
++            Rectangle()
++                .fill(VeilTheme.hairline)
++                .frame(height: 0.5)
++            HStack(spacing: 0) {
++                ForEach(SidebarSection.allCases) { section in
++                    Button {
++                        guard model.selectedSection != section else { return }
++                        model.selectedSection = section
++                    } label: {
++                        VStack(spacing: 5) {
++                            Rectangle()
++                                .fill(model.selectedSection == section ? VeilTheme.gold : Color.clear)
++                                .frame(width: 20, height: 2)
++                            HStack(alignment: .firstTextBaseline, spacing: 2) {
++                                Text(section.rawValue)
++                                    .font(.system(
++                                        size: 13,
++                                        weight: model.selectedSection == section ? .semibold : .regular
++                                    ))
++                                if section == .chats, model.totalUnreadCount > 0 {
++                                    Text(model.totalUnreadCount > 99 ? "99+" : "\(model.totalUnreadCount)")
++                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
++                                        .foregroundColor(VeilTheme.gold)
++                                }
++                            }
++                            .foregroundColor(
++                                model.selectedSection == section ? VeilTheme.text : VeilTheme.secondaryText
++                            )
++                        }
++                        .frame(maxWidth: .infinity)
++                        .padding(.vertical, VeilSpacing.xs)
++                        .contentShape(Rectangle())
++                    }
++                    .buttonStyle(.plain)
++                    .accessibilityLabel(Text(section.rawValue))
++                    .accessibilityAddTraits(model.selectedSection == section ? .isSelected : [])
++                }
++            }
++            .padding(.horizontal, VeilSpacing.xs)
++            .padding(.bottom, VeilSpacing.xxs)
++        }
++    }
++}
++
++/// 白描风格的授权闸门。
++///
++/// 复用应用锁密码（AppLockController.unlock(pin:)）做身份验证：
++/// 只消费既有公开 API，不触碰 keychain、PasswordKDF 等任何密钥/校验面。
++/// 未启用应用锁时不允许直接开启，引导先前往“安全 → 应用锁”设置密码。
++struct PlainlineUnlockSheet: View {
++    @ObservedObject var controller: AppLockController
++    var onAuthorized: () -> Void
++    var onConfigureLock: () -> Void
++
++    @Environment(\.dismiss) private var dismiss
++    @State private var pin = ""
++    @State private var localError: String?
++
++    var body: some View {
++        NavigationView {
++            VStack(alignment: .leading, spacing: VeilSpacing.lg) {
++                if controller.isEnabled {
++                    unlockForm
++                } else {
++                    lockRequired
++                }
++                Spacer()
++            }
++            .padding(VeilSpacing.lg)
++            .background(VeilTheme.background.ignoresSafeArea())
++            .navigationTitle("白描授权")
++            .toolbar {
++                ToolbarItem(placement: .cancellationAction) {
++                    Button("取消") { dismiss() }
++                }
++            }
++        }
++        .navigationViewStyle(StackNavigationViewStyle())
++    }
++
++    private var unlockForm: some View {
++        Group {
++            VStack(alignment: .leading, spacing: VeilSpacing.xs) {
++                Text("输入应用锁密码以启用白描")
++                    .font(.headline)
++                    .foregroundColor(VeilTheme.text)
++                Text("白描是一套极简字排版面：无材质、无阴影，仅留白、发丝线与文字。验证通过后立即切换；切回原来的风格无需再次验证。")
++                    .font(.subheadline)
++                    .foregroundColor(VeilTheme.secondaryText)
++            }
++            SecureField("6 位数字密码", text: $pin)
++                .keyboardType(.numberPad)
++                .textContentType(.oneTimeCode)
++                .font(.system(size: 17, weight: .medium, design: .monospaced))
++                .padding(VeilSpacing.sm)
++                .overlay(
++                    Rectangle()
++                        .fill(VeilTheme.hairline)
++                        .frame(height: 0.5)
++                        .padding(.horizontal, VeilSpacing.xxs),
++                    alignment: .bottom
++                )
++                .onChange(of: pin) { _ in localError = nil }
++            if let message = localError ?? controller.errorMessage {
++                Text(message)
++                    .font(.caption)
++                    .foregroundColor(.red)
++            }
++            Button(action: attemptUnlock) {
++                Text("验证并切换")
++                    .font(.system(size: 15, weight: .semibold))
++                    .foregroundColor(VeilTheme.gold)
++                    .frame(maxWidth: .infinity)
++                    .padding(.vertical, VeilSpacing.sm)
++            }
++            .buttonStyle(.plain)
++            .disabled(pin.utf8.count != 6)
++            .opacity(pin.utf8.count == 6 ? 1 : 0.45)
++        }
++    }
++
++    private var lockRequired: some View {
++        Group {
++            VStack(alignment: .leading, spacing: VeilSpacing.xs) {
++                Text("需要先设置应用锁密码")
++                    .font(.headline)
++                    .foregroundColor(VeilTheme.text)
++                Text("白描属于实验风格，需凭密码授权开启。请先在“设置 → 安全 → 应用锁”中设置 6 位数字密码，然后再回来切换。")
++                    .font(.subheadline)
++                    .foregroundColor(VeilTheme.secondaryText)
++            }
++            Button {
++                dismiss()
++                onConfigureLock()
++            } label: {
++                Text("去设置应用锁")
++                    .font(.system(size: 15, weight: .semibold))
++                    .foregroundColor(VeilTheme.gold)
++                    .frame(maxWidth: .infinity)
++                    .padding(.vertical, VeilSpacing.sm)
++            }
++            .buttonStyle(.plain)
++        }
++    }
++
++    private func attemptUnlock() {
++        guard pin.utf8.count == 6, pin.utf8.allSatisfy({ (48...57).contains($0) }) else {
++            localError = "请输入 6 位数字。"
++            return
++        }
++        if controller.unlock(pin: pin) {
++            localError = nil
++            onAuthorized()
++            dismiss()
++        }
++    }
++}
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+index 9171d7b..d8d413f 100644
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -15,6 +15,7 @@ struct SettingsView: View {
+     @ObservedObject var legalConsent: VeilLegalConsentController
+     @State private var versionTapCount = 0
+     @State private var showsLockSheet = false
++    @State private var showsPlainlineUnlock = false
+     @State private var showsIdentityManager = false
+     @State private var showsBackupSheet = false
+     @State private var showsImporter = false
+@@ -79,6 +80,18 @@ struct SettingsView: View {
+         .sheet(isPresented: $showsLockSheet) {
+             LockConfigurationSheet(controller: model.appLock)
+         }
++        .sheet(isPresented: $showsPlainlineUnlock) {
++            PlainlineUnlockSheet(
++                controller: model.appLock,
++                onAuthorized: {
++                    appearance.selection = .plainline
++                    appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
++                    VeilChrome.configure()
++                    haptics.selection()
++                },
++                onConfigureLock: { showsLockSheet = true }
++            )
++        }
+         .sheet(isPresented: $showsIdentityManager) {
+             IdentityManagementSheet(model: model)
+         }
+@@ -225,7 +238,7 @@ struct SettingsView: View {
+             Label("外观主题", systemImage: "circle.lefthalf.filled")
+                 .font(VeilType.cardTitle)
+                 .foregroundColor(VeilTheme.goldBright)
+-            ForEach(VeilAppearanceSelection.allCases) { choice in
++            ForEach(VeilAppearanceSelection.switchableCases) { choice in
+                 Button {
+                     appearance.selection = choice
+                     appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
+@@ -252,11 +265,45 @@ struct SettingsView: View {
+                 }
+                 .buttonStyle(VeilPressStyle())
+                 .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 14, highlightColor: VeilTheme.goldBright)
+-                if choice != VeilAppearanceSelection.allCases.last {
++                if choice != VeilAppearanceSelection.switchableCases.last {
+                     Divider().background(VeilTheme.hairline)
+                 }
+             }
+             Divider().background(VeilTheme.hairline)
++            Button {
++                if appearance.isPlainline {
++                    appearance.selection = .veilOriginal
++                    appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
++                    VeilChrome.configure()
++                    haptics.selection()
++                } else {
++                    showsPlainlineUnlock = true
++                }
++            } label: {
++                HStack(spacing: 12) {
++                    ZStack {
++                        RoundedRectangle(cornerRadius: 9)
++                            .fill(VeilAppearanceSelection.plainline.previewSurfaceColor)
++                        Image(systemName: appearance.isPlainline ? "arrow.uturn.left" : VeilAppearanceSelection.plainline.previewSystemImage)
++                            .foregroundColor(VeilTheme.secondaryText)
++                    }
++                    .frame(width: 42, height: 42)
++                    VStack(alignment: .leading, spacing: 3) {
++                        Text(appearance.isPlainline ? "退出白描" : "白描 · 实验风格")
++                            .fontWeight(.semibold)
++                            .foregroundColor(VeilTheme.text)
++                        Text(appearance.isPlainline ? "切回默认风格，无需再次验证" : "输入应用锁密码后启用极简字排版面")
++                            .font(.caption)
++                            .foregroundColor(VeilTheme.secondaryText)
++                    }
++                    Spacer()
++                    Image(systemName: appearance.isPlainline ? "checkmark.circle.fill" : "lock.fill")
++                        .foregroundColor(appearance.isPlainline ? VeilTheme.gold : VeilTheme.secondaryText)
++                }
++                .padding(.vertical, 3)
++            }
++            .buttonStyle(VeilPressStyle())
++            Divider().background(VeilTheme.hairline)
+             VStack(alignment: .leading, spacing: 9) {
+                 Text("显示模式")
+                     .font(.caption.weight(.semibold))
+diff --git a/scripts/verify-ui-theme-r9.py b/scripts/verify-ui-theme-r9.py
+index a8104c0..5d13c0b 100644
+--- a/scripts/verify-ui-theme-r9.py
++++ b/scripts/verify-ui-theme-r9.py
+@@ -6,7 +6,7 @@ checks = {
+     'VeilLink/Core/SkeuomorphicComponents.swift': ['VeilPhysicalButtonStyle', 'VeilLCDDisplay', 'VeilSpeakerGrille', 'VeilInstrumentKnob'],
+     'VeilLink/UI/ToolCenterView.swift': ['VeilToolCenterView', 'VeilWalkieTalkieView', 'PTT'],
+     'VeilLink/UI/ConversationViews.swift': ['VeilToolCenterView(model: model)', '打开工具中心'],
+-    'VeilLink/UI/SettingsView.swift': ['appearanceCard', 'VeilAppearanceSelection.allCases'],
++    'VeilLink/UI/SettingsView.swift': ['appearanceCard', 'VeilAppearanceSelection.switchableCases'],
+     'VeilLink/Core/AppTheme.swift': ['VeilThemePalette', 'VeilInstrumentBackground', 'VeilAppearanceController.shared.isInstrument'],
+ }
+ for rel, needles in checks.items():
