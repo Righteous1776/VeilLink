@@ -6,20 +6,6 @@ enum VeilLegalGatePresentation {
     case firstActivation
 }
 
-enum VeilLegalConsentRequirements {
-    static func canSign(
-        confirmsPermissions: Bool,
-        confirmsRisk: Bool,
-        confirmsVersionRule: Bool,
-        acknowledgment: String
-    ) -> Bool {
-        confirmsPermissions &&
-        confirmsRisk &&
-        confirmsVersionRule &&
-        acknowledgment.trimmingCharacters(in: .whitespacesAndNewlines) == VeilLegalConsentController.requiredAcknowledgment
-    }
-}
-
 enum VeilLegalConsentAccessibility {
     static let permissionsDocument = "legal.consent.document.permissions"
     static let boundaryDocument = "legal.consent.document.boundary"
@@ -50,6 +36,15 @@ struct LegalConsentGateView: View {
             confirmsVersionRule: confirmsVersionRule,
             acknowledgment: acknowledgment
         )
+    }
+
+    /// The primary signing action must stay reachable regardless of the acknowledgement field's
+    /// transient IME state. Binding the button to `canSign` lets an open pinyin candidate bar
+    /// (uncommitted marked text) disable it, so the first tap on "签署并进入" silently does
+    /// nothing — the reported "首次无法签约". The acknowledgement itself is validated inside
+    /// `sign()` after any in-flight composition is committed.
+    private var confirmationsReady: Bool {
+        confirmsPermissions && confirmsRisk && confirmsVersionRule
     }
 
     var body: some View {
@@ -146,7 +141,7 @@ struct LegalConsentGateView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Label(selectedDocument == 0 ? "权限授权说明" : "使用须知与责任边界", systemImage: selectedDocument == 0 ? "shield.lefthalf.filled" : "doc.text.magnifyingglass")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(VeilType.cardTitle)
                         .foregroundColor(VeilTheme.goldBright)
                     Spacer()
                     Button {
@@ -176,7 +171,7 @@ struct LegalConsentGateView: View {
         VeilReleaseNeumorphicPlate(cornerRadius: 22) {
             VStack(alignment: .leading, spacing: 13) {
                 Label("签署确认", systemImage: "checkmark.seal")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(VeilType.cardTitle)
                     .foregroundColor(VeilTheme.goldBright)
 
                 confirmationRow(
@@ -237,7 +232,7 @@ struct LegalConsentGateView: View {
                         .transition(.opacity)
                 }
 
-                VeilReleasePrimaryButton(title: "签署并进入 VeilLink", systemImage: "checkmark.shield.fill", enabled: canSign) {
+                VeilReleasePrimaryButton(title: "签署并进入 VeilLink", systemImage: "checkmark.shield.fill", enabled: confirmationsReady) {
                     sign()
                 }
 
@@ -301,6 +296,11 @@ struct LegalConsentGateView: View {
     }
 
     private func sign() {
+        // Commit any in-flight IME composition (e.g. a pinyin candidate bar that is still open)
+        // before evaluating the gate. Without this, the acknowledgement state still holds the
+        // intermediate composition text, canSign stays false and the disabled primary button
+        // silently swallows the first tap — the classic "first signing attempt does nothing".
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         guard canSign else {
             errorText = "请完成三项确认，并准确输入签署确认语。"
             return
@@ -313,10 +313,6 @@ struct LegalConsentGateView: View {
             errorText = "签署记录未能安全保存，请重试。"
         }
     }
-}
-
-enum VeilLegalAcknowledgmentInput {
-    static let accessibilityIdentifier = "legal.consent.acknowledgment"
 }
 
 /// A deliberately small UIKit-backed field for the mandatory legal gate. Its input traits are
@@ -375,7 +371,14 @@ private struct VeilLegalAcknowledgmentField: UIViewRepresentable {
         }
 
         @objc func textChanged(_ field: UITextField) {
-            text.wrappedValue = field.text ?? ""
+            // Ignore intermediate IME composition (marked) text. Publishing pinyin fragments
+            // into the acknowledgement state would flip canSign to false mid-typing and disable
+            // the primary signing button, so the first tap on it silently does nothing.
+            guard let publishable = VeilLegalAcknowledgmentInput.publishableText(
+                fieldText: field.text,
+                hasMarkedText: field.markedTextRange != nil
+            ) else { return }
+            text.wrappedValue = publishable
         }
 
         func textFieldShouldReturn(_ textField: UITextField) -> Bool {
