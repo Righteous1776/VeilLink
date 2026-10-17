@@ -49,6 +49,29 @@ enum VeilTheme {
     static var incomingBubbleGradient: LinearGradient { LinearGradient(colors: [panelSoft, panel, obsidian], startPoint: .topLeading, endPoint: .bottomTrailing) }
 }
 
+/// Rhythm tokens: the 4pt baseline grid observed across the shipping surfaces. The visual
+/// language itself is already tokenized (color/motion/shape); spacing and type were not, which
+/// let one-off values (padding 9/13/14, font 9.5/10.5/13.5) drift between sibling components.
+/// Additive layer: call sites migrate one by one so every adoption stays individually reviewable.
+enum VeilSpacing {
+    static let xxs: CGFloat = 4
+    static let xs: CGFloat = 8
+    static let sm: CGFloat = 12
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+    static let xl: CGFloat = 24
+    static let xxl: CGFloat = 32
+}
+
+/// Type scale anchored on the dominant pattern already shipping: section headers and terminal
+/// readouts across chats/games/settings/tools are 10pt bold monospaced. Further ranks (values,
+/// titles) are deliberately not tokenized yet — current 11pt/15pt usages disagree on weight and
+/// design across surfaces, so they need an on-device review before a scale rank is fixed.
+enum VeilType {
+    /// De-facto section header / terminal label style (chats, lobby, settings, tools).
+    static var terminalLabel: Font { .system(size: 10, weight: .bold, design: .monospaced) }
+}
+
 /// Centralized geometry policy for the two device families that repeatedly exposed layout bugs:
 /// iPhone 7 / iOS 15 and iPad split-window layouts. Keeping the thresholds here makes them unit
 /// testable and prevents individual screens from reintroducing ad-hoc fixed widths.
@@ -278,8 +301,8 @@ struct VeilStableScrollView<Content: View>: View {
 
     init(
         maxContentWidth: CGFloat = 760,
-        horizontalPadding: CGFloat = 16,
-        verticalPadding: CGFloat = 16,
+        horizontalPadding: CGFloat = VeilSpacing.md,
+        verticalPadding: CGFloat = VeilSpacing.md,
         @ViewBuilder content: () -> Content
     ) {
         self.maxContentWidth = maxContentWidth
@@ -318,17 +341,17 @@ struct VeilCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         if VeilAppearanceController.shared.isAppleSoft {
             content
-                .padding(16)
+                .padding(VeilSpacing.md)
                 .background(VeilAppleSoftSurface(cornerRadius: emphasized ? 28 : 23, emphasized: emphasized))
         } else if VeilAppearanceController.shared.isInstrument {
             content
-                .padding(16)
+                .padding(VeilSpacing.md)
                 .background(VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: emphasized ? 22 : 18, style: .continuous), emphasized: emphasized))
         } else if VeilRenderProfile.usesLegacyCompositorPath {
             // Preserve the cut-panel identity, but avoid clip + duplicate-shape + large shadow
             // off-screen rendering inside ScrollView/Sheet on iPhone 7.
             content
-                .padding(16)
+                .padding(VeilSpacing.md)
                 .background(
                     VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8)
                         .fill(emphasized ? VeilTheme.panel : VeilTheme.elevated)
@@ -345,7 +368,7 @@ struct VeilCardModifier: ViewModifier {
                 }
         } else {
             content
-                .padding(16)
+                .padding(VeilSpacing.md)
                 .background(
                     ZStack {
                         VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8)
