@@ -278,7 +278,7 @@ index 0000000..99a87b8
 +                    .font(.system(size: 9, weight: .medium, design: .monospaced))
 +                    .tracking(2)
 +                    .foregroundColor(VeilTheme.gold)
-            }
++            }
 +            .padding(.horizontal, VeilSpacing.lg)
 +            .padding(.vertical, VeilSpacing.sm)
 +            Rectangle()
