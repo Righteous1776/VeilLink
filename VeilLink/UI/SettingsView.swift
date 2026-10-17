@@ -15,6 +15,7 @@ struct SettingsView: View {
     @ObservedObject var legalConsent: VeilLegalConsentController
     @State private var versionTapCount = 0
     @State private var showsLockSheet = false
+    @State private var showsPlainlineUnlock = false
     @State private var showsIdentityManager = false
     @State private var showsBackupSheet = false
     @State private var showsImporter = false
@@ -78,6 +79,18 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showsLockSheet) {
             LockConfigurationSheet(controller: model.appLock)
+        }
+        .sheet(isPresented: $showsPlainlineUnlock) {
+            PlainlineUnlockSheet(
+                controller: model.appLock,
+                onAuthorized: {
+                    appearance.selection = .plainline
+                    appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
+                    VeilChrome.configure()
+                    haptics.selection()
+                },
+                onConfigureLock: { showsLockSheet = true }
+            )
         }
         .sheet(isPresented: $showsIdentityManager) {
             IdentityManagementSheet(model: model)
@@ -225,7 +238,7 @@ struct SettingsView: View {
             Label("外观主题", systemImage: "circle.lefthalf.filled")
                 .font(VeilType.cardTitle)
                 .foregroundColor(VeilTheme.goldBright)
-            ForEach(VeilAppearanceSelection.allCases) { choice in
+            ForEach(VeilAppearanceSelection.switchableCases) { choice in
                 Button {
                     appearance.selection = choice
                     appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
@@ -252,10 +265,44 @@ struct SettingsView: View {
                 }
                 .buttonStyle(VeilPressStyle())
                 .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 14, highlightColor: VeilTheme.goldBright)
-                if choice != VeilAppearanceSelection.allCases.last {
+                if choice != VeilAppearanceSelection.switchableCases.last {
                     Divider().background(VeilTheme.hairline)
                 }
             }
+            Divider().background(VeilTheme.hairline)
+            Button {
+                if appearance.isPlainline {
+                    appearance.selection = .veilOriginal
+                    appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
+                    VeilChrome.configure()
+                    haptics.selection()
+                } else {
+                    showsPlainlineUnlock = true
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(VeilAppearanceSelection.plainline.previewSurfaceColor)
+                        Image(systemName: appearance.isPlainline ? "arrow.uturn.left" : VeilAppearanceSelection.plainline.previewSystemImage)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    .frame(width: 42, height: 42)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(appearance.isPlainline ? "退出白描" : "白描 · 实验风格")
+                            .fontWeight(.semibold)
+                            .foregroundColor(VeilTheme.text)
+                        Text(appearance.isPlainline ? "切回默认风格，无需再次验证" : "输入应用锁密码后启用极简字排版面")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                    Image(systemName: appearance.isPlainline ? "checkmark.circle.fill" : "lock.fill")
+                        .foregroundColor(appearance.isPlainline ? VeilTheme.gold : VeilTheme.secondaryText)
+                }
+                .padding(.vertical, 3)
+            }
+            .buttonStyle(VeilPressStyle())
             Divider().background(VeilTheme.hairline)
             VStack(alignment: .leading, spacing: 9) {
                 Text("显示模式")
