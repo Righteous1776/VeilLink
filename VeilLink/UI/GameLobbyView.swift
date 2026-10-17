@@ -217,7 +217,7 @@ struct GameLobbyView: View {
 
     private func sectionTitle(_ title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.headline).foregroundColor(VeilTheme.goldBright)
+            Text(title).font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             Text(subtitle).font(.caption).foregroundColor(VeilTheme.secondaryText)
         }
     }
