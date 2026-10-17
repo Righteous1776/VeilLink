@@ -1,6 +1,6 @@
 # CURRENT CHECKPOINT
 
-VeilLink **26.12 (Build 58)** is the current cumulative release checkpoint. Build 58 adds
+VeilLink **26.13 (Build 59)** is the current cumulative release checkpoint. Build 58 adds
 six substantial real-time 2D/3D games, deterministic gameplay cores, adaptive render profiles,
 local model/vector asset fallbacks and expanded regression coverage while preserving the complete
 26.11 Build 57 release line.
@@ -31,7 +31,7 @@ motion quality, and three deterministic 2D games (弧光炮战、光轨突围、
 rule state across local Bot and nearby encrypted multiplayer. These additions do
 not change Protocol 4, VLGM1 v1 or SQLite Schema V8.
 
-Build 58 expands the real-time game collection with Prism Rift 3D, Afterglow Convoy,
+Build 58 (retained from the prior release) expanded the real-time game collection with Prism Rift 3D, Afterglow Convoy,
 Ash Harbor, Rainline Last Train, Signal Dive and Blackout District. Render quality adapts
 to device and Reduce Motion settings, while authenticated God Mode can retain the existing
 high-refresh/full-effects override. Imported Kenney assets are CC0 and ShaderKit components
