@@ -1,0 +1,443 @@
+diff --git a/VeilLink/Core/AppTheme.swift b/VeilLink/Core/AppTheme.swift
+index 207ea15..e98d436 100644
+--- a/VeilLink/Core/AppTheme.swift
++++ b/VeilLink/Core/AppTheme.swift
+@@ -34,6 +34,8 @@ enum VeilTheme {
+     static var goldGradient: LinearGradient {
+         VeilAppearanceController.shared.isPlainline
+             ? LinearGradient(colors: [gold, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
++            : VeilAppearanceController.shared.isIslet
++            ? LinearGradient(colors: [goldBright, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
+             : VeilAppearanceController.shared.isAppleSoft
+             ? LinearGradient(colors: [goldBright, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
+             : LinearGradient(colors: [goldBright, gold, goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+@@ -41,6 +43,8 @@ enum VeilTheme {
+     static var metalGradient: LinearGradient {
+         VeilAppearanceController.shared.isPlainline
+             ? LinearGradient(colors: [panel, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
++            : VeilAppearanceController.shared.isIslet
++            ? LinearGradient(colors: [panelSoft, panel], startPoint: .top, endPoint: .bottom)
+             : VeilAppearanceController.shared.isAppleSoft
+             ? LinearGradient(colors: [panelSoft, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
+             : LinearGradient(colors: [Color.white.opacity(0.72), paleMetal, gold.opacity(0.78), goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+@@ -48,6 +52,8 @@ enum VeilTheme {
+     static var surfaceGradient: LinearGradient {
+         VeilAppearanceController.shared.isPlainline
+             ? LinearGradient(colors: [Color.clear, Color.clear], startPoint: .top, endPoint: .bottom)
++            : VeilAppearanceController.shared.isIslet
++            ? LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.02)], startPoint: .top, endPoint: .bottom)
+             : VeilAppearanceController.shared.isAppleSoft
+             ? LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.015)], startPoint: .top, endPoint: .bottom)
+             : LinearGradient(colors: [Color.white.opacity(0.040), Color.white.opacity(0.010)], startPoint: .topLeading, endPoint: .bottomTrailing)
+@@ -233,6 +239,9 @@ struct VeilAmbientBackground: View {
+             if VeilAppearanceController.shared.isPlainline {
+                 // 白描：纯底色，无材质、无渐变、无帘形。
+                 VeilTheme.background
++            } else if VeilAppearanceController.shared.isIslet {
++                // 浮屿：深海极光底——径向微光浮于靛海之上。
++                VeilIsletBackground()
+             } else if VeilAppearanceController.shared.isAppleSoft {
+                 VeilAppleSoftBackground()
+             } else if VeilAppearanceController.shared.isInstrument {
+@@ -361,6 +370,19 @@ struct VeilCardModifier: ViewModifier {
+                         .frame(height: 0.5)
+                         .allowsHitTesting(false)
+                 }
++        } else if VeilAppearanceController.shared.isIslet {
++            // 浮屿：内容浮起为岛——圆角岛面、微光描边、悬浮投影。
++            content
++                .padding(VeilSpacing.md)
++                .background(
++                    RoundedRectangle(cornerRadius: emphasized ? 24 : 20, style: .continuous)
++                        .fill(emphasized ? VeilTheme.panel : VeilTheme.elevated)
++                )
++                .overlay(
++                    RoundedRectangle(cornerRadius: emphasized ? 24 : 20, style: .continuous)
++                        .stroke(VeilTheme.hairline, lineWidth: 0.5)
++                )
++                .shadow(color: Color.black.opacity(0.24), radius: 18, x: 0, y: 10)
+         } else if VeilAppearanceController.shared.isAppleSoft {
+             content
+                 .padding(VeilSpacing.md)
+@@ -430,14 +452,15 @@ struct VeilPressStyle: ButtonStyle {
+         let pressed = configuration.isPressed
+         let appleSoft = VeilAppearanceController.shared.isAppleSoft
+         let plainline = VeilAppearanceController.shared.isPlainline
++        let islet = VeilAppearanceController.shared.isIslet
+         configuration.label
+-            .scaleEffect(pressed && !plainline && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : VeilMotionPolicy.pressScale) : 1)
+-            .offset(y: pressed && !plainline ? (appleSoft ? 0.8 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4)) : 0)
+-            .brightness(pressed ? (plainline ? -0.05 : (appleSoft ? -0.018 : -0.035)) : 0)
+-            .opacity(pressed ? (plainline ? 0.72 : (appleSoft ? 0.90 : 0.96)) : 1)
++            .scaleEffect(pressed && !plainline && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : (islet ? 0.975 : VeilMotionPolicy.pressScale)) : 1)
++            .offset(y: pressed && !plainline ? (appleSoft ? 0.8 : (islet ? 0.6 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4))) : 0)
++            .brightness(pressed ? (plainline ? -0.05 : (islet ? 0.045 : (appleSoft ? -0.018 : -0.035))) : 0)
++            .opacity(pressed ? (plainline ? 0.72 : (islet ? 1.0 : (appleSoft ? 0.90 : 0.96))) : 1)
+             .shadow(
+-                color: plainline ? .clear : Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12))),
+-                radius: pressed ? 2 : (appleSoft ? 5 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3)),
++                color: plainline ? .clear : (islet ? VeilTheme.gold.opacity(pressed ? 0.32 : 0.0) : Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12)))),
++                radius: islet ? (pressed ? 12 : 0.1) : (pressed ? 2 : (appleSoft ? 5 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3))),
+                 x: 0,
+                 y: pressed ? 1 : (appleSoft ? 3 : (VeilMotionPolicy.allowsFullSpatialEffects ? 4 : 2))
+             )
+diff --git a/VeilLink/Core/AppearanceTheme.swift b/VeilLink/Core/AppearanceTheme.swift
+index ea9da65..f84a04c 100644
+--- a/VeilLink/Core/AppearanceTheme.swift
++++ b/VeilLink/Core/AppearanceTheme.swift
+@@ -55,6 +55,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
+     case appleSoft
+     case instrumentAuto
+     case plainline
++    case islet
+ 
+     var id: String { rawValue }
+ 
+@@ -70,6 +71,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
+         case .appleSoft: return "Apple Soft"
+         case .instrumentAuto: return "拟物仪器"
+         case .plainline: return "白描"
++        case .islet: return "浮屿"
+         }
+     }
+     var subtitle: String {
+@@ -78,6 +80,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
+         case .appleSoft: return "苹果式软质拟物；iOS 26 自动接入底层 Liquid Glass。"
+         case .instrumentAuto: return "柔和仪器拟物；完整支持浅色、深色与跟随系统。"
+         case .plainline: return "极简字排版面：无材质无阴影，仅留白、发丝线与文字。"
++        case .islet: return "深海极光上的浮岛：内容浮起，导航收成一枚罗经胶囊。"
+         }
+     }
+ 
+@@ -87,6 +90,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
+         case .appleSoft: return "circle.grid.2x2.fill"
+         case .instrumentAuto: return "dial.medium.fill"
+         case .plainline: return "text.alignleft"
++        case .islet: return "circle.hexagongrid"
+         }
+     }
+ 
+@@ -96,6 +100,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
+         case .appleSoft: return Color(red: 0.91, green: 0.93, blue: 0.97)
+         case .instrumentAuto: return Color(red: 0.38, green: 0.38, blue: 0.40)
+         case .plainline: return Color(red: 0.96, green: 0.955, blue: 0.94)
++        case .islet: return Color(red: 0.05, green: 0.09, blue: 0.14)
+         }
+     }
+ }
+@@ -180,6 +185,7 @@ final class VeilAppearanceController: ObservableObject {
+     var isInstrument: Bool { selection == .instrumentAuto }
+     var isAppleSoft: Bool { selection == .appleSoft }
+     var isPlainline: Bool { selection == .plainline }
++    var isIslet: Bool { selection == .islet }
+     var appearanceLabel: String {
+         let phase = isDarkAppearance ? "NIGHT" : "DAY"
+         switch selection {
+@@ -187,6 +193,7 @@ final class VeilAppearanceController: ObservableObject {
+         case .appleSoft: return "APPLE SOFT · \(phase)"
+         case .instrumentAuto: return "INSTRUMENT · \(phase)"
+         case .plainline: return "PLAINLINE · \(phase)"
++        case .islet: return "ISLET · \(phase)"
+         }
+     }
+ 
+@@ -196,6 +203,7 @@ final class VeilAppearanceController: ObservableObject {
+         case .appleSoft: return isDarkAppearance ? Self.appleSoftNight : Self.appleSoftDay
+         case .instrumentAuto: return isDarkAppearance ? Self.instrumentNight : Self.instrumentDay
+         case .plainline: return isDarkAppearance ? Self.plainlineNight : Self.plainlineDay
++        case .islet: return isDarkAppearance ? Self.isletNight : Self.isletDay
+         }
+     }
+ 
+@@ -416,4 +424,61 @@ final class VeilAppearanceController: ObservableObject {
+         keycapBottom: Color(red: 0.085, green: 0.085, blue: 0.090),
+         indicator: Color(red: 0.86, green: 0.64, blue: 0.24)
+     )
++
++    /// Islet （浮屿）: deep-sea night with aurora glow. Content floats as islets on a dark
++    /// indigo sea; a warm amber carries action, a teal aurora tint cools the depth channels.
++    static let isletNight = VeilThemePalette(
++        background: Color(red: 0.020, green: 0.032, blue: 0.052),
++        backgroundLift: Color(red: 0.040, green: 0.058, blue: 0.088),
++        elevated: Color(red: 0.055, green: 0.078, blue: 0.115),
++        panel: Color(red: 0.068, green: 0.094, blue: 0.135),
++        panelSoft: Color(red: 0.080, green: 0.108, blue: 0.152),
++        obsidian: Color(red: 0.012, green: 0.020, blue: 0.036),
++        veil: Color(red: 0.032, green: 0.048, blue: 0.075),
++        gold: Color(red: 0.94, green: 0.66, blue: 0.24),
++        goldBright: Color(red: 1.00, green: 0.78, blue: 0.38),
++        goldDeep: Color(red: 0.72, green: 0.47, blue: 0.15),
++        mutedGold: Color(red: 0.42, green: 0.46, blue: 0.52),
++        paleMetal: Color(red: 0.36, green: 0.48, blue: 0.55),
++        text: Color.white.opacity(0.94),
++        secondaryText: Color(red: 0.62, green: 0.70, blue: 0.78),
++        tertiaryText: Color(red: 0.42, green: 0.50, blue: 0.58),
++        hairline: Color(red: 0.45, green: 0.85, blue: 0.80).opacity(0.10),
++        danger: Color(red: 0.95, green: 0.33, blue: 0.36),
++        success: Color(red: 0.20, green: 0.83, blue: 0.62),
++        metalTop: Color(red: 0.080, green: 0.108, blue: 0.152),
++        metalBottom: Color(red: 0.055, green: 0.078, blue: 0.115),
++        recess: Color.black.opacity(0.42),
++        keycapTop: Color(red: 0.080, green: 0.108, blue: 0.152),
++        keycapBottom: Color(red: 0.068, green: 0.094, blue: 0.135),
++        indicator: Color(red: 0.30, green: 0.85, blue: 0.75)
++    )
++
++    /// Islet day: misty pearl sea — same floating structure, daylight surface values.
++    static let isletDay = VeilThemePalette(
++        background: Color(red: 0.920, green: 0.940, blue: 0.955),
++        backgroundLift: Color(red: 0.955, green: 0.968, blue: 0.978),
++        elevated: Color(red: 0.975, green: 0.983, blue: 0.990),
++        panel: Color(red: 0.985, green: 0.990, blue: 0.995),
++        panelSoft: Color(red: 0.965, green: 0.975, blue: 0.985),
++        obsidian: Color(red: 0.880, green: 0.905, blue: 0.925),
++        veil: Color(red: 0.940, green: 0.955, blue: 0.968),
++        gold: Color(red: 0.78, green: 0.52, blue: 0.14),
++        goldBright: Color(red: 0.86, green: 0.60, blue: 0.18),
++        goldDeep: Color(red: 0.62, green: 0.40, blue: 0.10),
++        mutedGold: Color(red: 0.42, green: 0.44, blue: 0.47),
++        paleMetal: Color(red: 0.52, green: 0.60, blue: 0.65),
++        text: Color(red: 0.07, green: 0.10, blue: 0.14).opacity(0.92),
++        secondaryText: Color(red: 0.07, green: 0.10, blue: 0.14).opacity(0.56),
++        tertiaryText: Color(red: 0.07, green: 0.10, blue: 0.14).opacity(0.34),
++        hairline: Color(red: 0.10, green: 0.45, blue: 0.45).opacity(0.10),
++        danger: Color(red: 0.82, green: 0.18, blue: 0.22),
++        success: Color(red: 0.05, green: 0.60, blue: 0.42),
++        metalTop: Color(red: 0.965, green: 0.975, blue: 0.985),
++        metalBottom: Color(red: 0.975, green: 0.983, blue: 0.990),
++        recess: Color.black.opacity(0.05),
++        keycapTop: Color(red: 0.965, green: 0.975, blue: 0.985),
++        keycapBottom: Color(red: 0.985, green: 0.990, blue: 0.995),
++        indicator: Color(red: 0.10, green: 0.62, blue: 0.55)
++    )
+ }
+diff --git a/VeilLink/UI/AdaptiveRootView.swift b/VeilLink/UI/AdaptiveRootView.swift
+index b186963..d13e966 100644
+--- a/VeilLink/UI/AdaptiveRootView.swift
++++ b/VeilLink/UI/AdaptiveRootView.swift
+@@ -11,6 +11,8 @@ struct AdaptiveRootView: View {
+             Group {
+                 if appearance.isPlainline {
+                     VeilPlainlineRootView(model: model)
++                } else if appearance.isIslet {
++                    VeilIsletRootView(model: model)
+                 } else if appearance.isAppleSoft {
+                     VeilAppleSoftRootView(model: model)
+                 } else if VeilUILayoutPolicy.usesTabletTwoPane(
+diff --git a/VeilLink/UI/IsletRootView.swift b/VeilLink/UI/IsletRootView.swift
+new file mode 100644
+index 0000000..5cb6f67
+--- /dev/null
++++ b/VeilLink/UI/IsletRootView.swift
+@@ -0,0 +1,211 @@
++import SwiftUI
++
++/// 浮屿（Islet）风格的深海极光底色。
++/// 靛海之上三团径向微光：金在左上、极光青在右下、月晕在中顶。
++struct VeilIsletBackground: View {
++    var body: some View {
++        ZStack {
++            VeilTheme.background
++            RadialGradient(
++                colors: [VeilTheme.gold.opacity(0.10), Color.clear],
++                center: .topLeading,
++                startRadius: 0,
++                endRadius: 420
++            )
++            RadialGradient(
++                colors: [Color(red: 0.18, green: 0.75, blue: 0.70).opacity(0.12), Color.clear],
++                center: .bottomTrailing,
++                startRadius: 0,
++                endRadius: 460
++            )
++            RadialGradient(
++                colors: [VeilTheme.elevated.opacity(0.55), Color.clear],
++                center: .top,
++                startRadius: 0,
++                endRadius: 300
++            )
++        }
++    }
++}
++
++/// 浮屿（Islet）风格的根容器。
++///
++/// 导航不做常驻栏：收缩为一枚悬浮「罗经胶囊」停在底部中央，
++/// 点按向上展开成浮岛选单（大号编辑排版 + 圆形图标章），选定即合。
++/// 内容区与遥测完全复用既有五个分区视图，本视图只负责框架（chrome）。
++struct VeilIsletRootView: View {
++    @ObservedObject var model: AppModel
++    @State private var isNavExpanded = false
++
++    var body: some View {
++        sectionContent
++            .frame(maxWidth: .infinity, maxHeight: .infinity)
++            .safeAreaInset(edge: .bottom, spacing: VeilSpacing.sm) {
++                compassCapsule
++            }
++            .overlay {
++                if isNavExpanded {
++                    expansionOverlay
++                }
++            }
++            .onChange(of: model.selectedSection) { section in
++                RuntimeDiagnosticsBridge.shared.recordSemanticAction(
++                    "navigation.tab",
++                    metadata: ["section": section.rawValue, "chrome": "islet"]
++                )
++                withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
++                    isNavExpanded = false
++                }
++            }
++    }
++
++    /// 内容区：五个既有分区视图原样复用（含各自遥测），保持导航栈行为一致。
++    private var sectionContent: some View {
++        Group {
++            switch model.selectedSection {
++            case .chats:
++                NavigationView {
++                    ConversationListView(model: model, usesNavigationLinks: true)
++                        .telemetryScreen("chats.list")
++                }
++                .navigationViewStyle(StackNavigationViewStyle())
++            case .nearby:
++                NavigationView {
++                    NearbyView(model: model)
++                        .telemetryScreen("nearby")
++                }
++                .navigationViewStyle(StackNavigationViewStyle())
++            case .games:
++                NavigationView {
++                    GameLobbyView(model: model)
++                        .telemetryScreen("games.lobby")
++                }
++                .navigationViewStyle(StackNavigationViewStyle())
++            case .agent:
++                NavigationView {
++                    AgentHomeView(model: model)
++                        .telemetryScreen("agent.home")
++                }
++                .navigationViewStyle(StackNavigationViewStyle())
++            case .settings:
++                NavigationView {
++                    SettingsView(model: model)
++                        .telemetryScreen("settings")
++                }
++                .navigationViewStyle(StackNavigationViewStyle())
++            }
++        }
++    }
++
++    /// 罗经胶囊：当前分区 + 未读微记 + 展开指示。点按开合浮岛选单。
++    private var compassCapsule: some View {
++        Button {
++            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
++                isNavExpanded.toggle()
++            }
++        } label: {
++            HStack(spacing: VeilSpacing.xs) {
++                Image(systemName: model.selectedSection.icon)
++                    .font(.system(size: 13, weight: .semibold))
++                    .foregroundColor(VeilTheme.gold)
++                Text(model.selectedSection.rawValue)
++                    .font(.system(size: 14, weight: .semibold))
++                    .foregroundColor(VeilTheme.text)
++                if model.totalUnreadCount > 0 {
++                    Text(model.totalUnreadCount > 99 ? "99+" : "\(model.totalUnreadCount)")
++                        .font(.system(size: 10, weight: .bold, design: .monospaced))
++                        .foregroundColor(VeilTheme.gold)
++                        .padding(.horizontal, 6)
++                        .frame(minHeight: 18)
++                        .background(VeilTheme.gold.opacity(0.14))
++                        .clipShape(Capsule())
++                }
++                Image(systemName: "chevron.up")
++                    .font(.system(size: 9, weight: .bold))
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .rotationEffect(.degrees(isNavExpanded ? 180 : 0))
++            }
++            .padding(.horizontal, VeilSpacing.lg)
++            .frame(height: 46)
++            .background(
++                Capsule()
++                    .fill(VeilTheme.panel)
++            )
++            .overlay(
++                Capsule()
++                    .stroke(VeilTheme.hairline, lineWidth: 0.5)
++            )
++            .shadow(color: Color.black.opacity(0.30), radius: 16, x: 0, y: 8)
++        }
++        .buttonStyle(.plain)
++        .accessibilityLabel(isNavExpanded ? "收起导航" : "打开导航")
++        .accessibilityHint("展开后选择要前往的分区")
++    }
++
++    /// 展开态：压暗层 + 浮岛选单（点空白或选定后收起）。
++    private var expansionOverlay: some View {
++        ZStack(alignment: .bottom) {
++            Color.black.opacity(0.38)
++                .ignoresSafeArea()
++                .onTapGesture {
++                    withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
++                        isNavExpanded = false
++                    }
++                }
++            VStack(spacing: 2) {
++                ForEach(SidebarSection.allCases) { section in
++                    Button {
++                        model.selectedSection = section
++                    } label: {
++                        HStack(spacing: 14) {
++                            ZStack {
++                                Circle()
++                                    .fill(model.selectedSection == section ? VeilTheme.gold.opacity(0.16) : VeilTheme.elevated)
++                                Image(systemName: section.icon)
++                                    .font(.system(size: 14, weight: .semibold))
++                                    .foregroundColor(model.selectedSection == section ? VeilTheme.gold : VeilTheme.secondaryText)
++                            }
++                            .frame(width: 34, height: 34)
++                            Text(section.rawValue)
++                                .font(.system(size: 17, weight: model.selectedSection == section ? .bold : .medium))
++                                .foregroundColor(model.selectedSection == section ? VeilTheme.text : VeilTheme.secondaryText)
++                            Spacer()
++                            if section == .chats, model.totalUnreadCount > 0 {
++                                Text(model.totalUnreadCount > 99 ? "99+" : "\(model.totalUnreadCount)")
++                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
++                                    .foregroundColor(VeilTheme.gold)
++                            }
++                            if model.selectedSection == section {
++                                Image(systemName: "checkmark")
++                                    .font(.system(size: 12, weight: .bold))
++                                    .foregroundColor(VeilTheme.gold)
++                            }
++                        }
++                        .padding(.horizontal, VeilSpacing.md)
++                        .frame(height: 52)
++                        .background(
++                            RoundedRectangle(cornerRadius: 16, style: .continuous)
++                                .fill(model.selectedSection == section ? VeilTheme.gold.opacity(0.10) : Color.clear)
++                        )
++                        .contentShape(Rectangle())
++                    }
++                    .buttonStyle(.plain)
++                    .accessibilityAddTraits(model.selectedSection == section ? .isSelected : [])
++                }
++            }
++            .padding(VeilSpacing.xs)
++            .background(
++                RoundedRectangle(cornerRadius: 24, style: .continuous)
++                    .fill(VeilTheme.panel)
++            )
++            .overlay(
++                RoundedRectangle(cornerRadius: 24, style: .continuous)
++                    .stroke(VeilTheme.hairline, lineWidth: 0.5)
++            )
++            .shadow(color: Color.black.opacity(0.34), radius: 24, x: 0, y: 14)
++            .padding(.horizontal, VeilSpacing.lg)
++            .padding(.bottom, 88)
++            .transition(.move(edge: .bottom).combined(with: .opacity))
++        }
++    }
++}
