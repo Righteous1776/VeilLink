@@ -3,7 +3,7 @@ import XCTest
 
 final class VeilAppearanceThemeTests: XCTestCase {
     func testThemeCatalogKeepsExistingChoicesAndGatesExperimentalStyles() {
-        XCTAssertEqual(VeilAppearanceSelection.switchableCases, [.veilOriginal, .appleSoft, .instrumentAuto])
+        XCTAssertEqual(VeilAppearanceSelection.switchableCases, [.veilOriginal, .appleSoft, .instrumentAuto, .islet])
         XCTAssertEqual(VeilAppearanceSelection.allCases, [.veilOriginal, .appleSoft, .instrumentAuto, .plainline, .islet])
         XCTAssertTrue(VeilAppearanceSelection.plainline.isExperimental)
         XCTAssertFalse(VeilAppearanceSelection.islet.isExperimental)
