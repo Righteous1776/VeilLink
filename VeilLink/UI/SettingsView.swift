@@ -15,6 +15,7 @@ struct SettingsView: View {
     @ObservedObject var legalConsent: VeilLegalConsentController
     @State private var versionTapCount = 0
     @State private var showsLockSheet = false
+    @State private var showsPlainlineUnlock = false
     @State private var showsIdentityManager = false
     @State private var showsBackupSheet = false
     @State private var showsImporter = false
@@ -78,6 +79,18 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showsLockSheet) {
             LockConfigurationSheet(controller: model.appLock)
+        }
+        .sheet(isPresented: $showsPlainlineUnlock) {
+            PlainlineUnlockSheet(
+                controller: model.appLock,
+                onAuthorized: {
+                    appearance.selection = .plainline
+                    appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
+                    VeilChrome.configure()
+                    haptics.selection()
+                },
+                onConfigureLock: { showsLockSheet = true }
+            )
         }
         .sheet(isPresented: $showsIdentityManager) {
             IdentityManagementSheet(model: model)
@@ -182,7 +195,7 @@ struct SettingsView: View {
                 VeilIdentityGlyph(seed: identity.activeIdentity?.id ?? "veillink-unset", size: 54, active: true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("LOCAL IDENTITY")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(VeilType.terminalLabel)
                         .tracking(1.25)
                         .foregroundColor(VeilTheme.mutedGold)
                     Text(identity.activeIdentity?.displayName ?? "未创建")
@@ -223,9 +236,9 @@ struct SettingsView: View {
     private var appearanceCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("外观主题", systemImage: "circle.lefthalf.filled")
-                .font(.headline)
+                .font(VeilType.cardTitle)
                 .foregroundColor(VeilTheme.goldBright)
-            ForEach(VeilAppearanceSelection.allCases) { choice in
+            ForEach(VeilAppearanceSelection.switchableCases) { choice in
                 Button {
                     appearance.selection = choice
                     appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
@@ -252,10 +265,44 @@ struct SettingsView: View {
                 }
                 .buttonStyle(VeilPressStyle())
                 .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 14, highlightColor: VeilTheme.goldBright)
-                if choice != VeilAppearanceSelection.allCases.last {
+                if choice != VeilAppearanceSelection.switchableCases.last {
                     Divider().background(VeilTheme.hairline)
                 }
             }
+            Divider().background(VeilTheme.hairline)
+            Button {
+                if appearance.isPlainline {
+                    appearance.selection = .veilOriginal
+                    appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
+                    VeilChrome.configure()
+                    haptics.selection()
+                } else {
+                    showsPlainlineUnlock = true
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(VeilAppearanceSelection.plainline.previewSurfaceColor)
+                        Image(systemName: appearance.isPlainline ? "arrow.uturn.left" : VeilAppearanceSelection.plainline.previewSystemImage)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    .frame(width: 42, height: 42)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(appearance.isPlainline ? "退出白描" : "白描 · 实验风格")
+                            .fontWeight(.semibold)
+                            .foregroundColor(VeilTheme.text)
+                        Text(appearance.isPlainline ? "切回默认风格，无需再次验证" : "输入应用锁密码后启用极简字排版面")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                    Image(systemName: appearance.isPlainline ? "checkmark.circle.fill" : "lock.fill")
+                        .foregroundColor(appearance.isPlainline ? VeilTheme.gold : VeilTheme.secondaryText)
+                }
+                .padding(.vertical, 3)
+            }
+            .buttonStyle(VeilPressStyle())
             Divider().background(VeilTheme.hairline)
             VStack(alignment: .leading, spacing: 9) {
                 Text("显示模式")
@@ -312,7 +359,7 @@ struct SettingsView: View {
     private var securityCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("安全", systemImage: "lock.shield")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             settingButton(
                 title: "应用锁",
                 detail: model.appLock.isEnabled ? "六位密码与生物识别已启用" : "尚未启用",
@@ -335,7 +382,7 @@ struct SettingsView: View {
     private var legalCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("协议与授权", systemImage: "signature")
-                .font(.headline)
+                .font(VeilType.cardTitle)
                 .foregroundColor(VeilTheme.goldBright)
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
@@ -367,7 +414,7 @@ struct SettingsView: View {
     private var storageCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("数据与备份", systemImage: "externaldrive")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             settingButton(title: "导出加密ZIP", detail: "保存到文件或分享", icon: "square.and.arrow.up") {
                 showsBackupSheet = true
             }
@@ -391,7 +438,7 @@ struct SettingsView: View {
                     Text("运行本地完整性自检")
                     Spacer()
                     Text("A9")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(VeilType.terminalLabel)
                         .foregroundColor(VeilTheme.mutedGold)
                 }
             }
@@ -403,7 +450,7 @@ struct SettingsView: View {
     private var mediaCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("图片", systemImage: "photo.on.rectangle")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("自动保存收到的图片").fontWeight(.medium)
@@ -427,7 +474,7 @@ struct SettingsView: View {
     private var agentCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("AI 与灵核", systemImage: "sparkles")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
 
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -452,7 +499,7 @@ struct SettingsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(9)
+            .padding(VeilSpacing.xs)
             .background(VeilTheme.subtleFill)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
@@ -478,7 +525,7 @@ struct SettingsView: View {
     private var feedbackCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("触感反馈", systemImage: "waveform.path")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             Toggle(isOn: $haptics.isEnabled) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("震动反馈").fontWeight(.medium)
@@ -522,7 +569,7 @@ struct SettingsView: View {
                         Text("测试一次触感")
                         Spacer()
                         Text("RESOLVE")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(VeilType.terminalLabel)
                             .tracking(0.8)
                             .foregroundColor(VeilTheme.mutedGold)
                     }
@@ -536,7 +583,7 @@ struct SettingsView: View {
     private var bluetoothCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("蓝牙与链路", systemImage: "antenna.radiowaves.left.and.right")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(bluetooth.statusText).fontWeight(.medium)
@@ -585,7 +632,7 @@ struct SettingsView: View {
                         }
                         Spacer()
                         Text("H\(snapshot.healthScore)")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(VeilType.terminalLabel)
                             .foregroundColor(VeilTheme.gold)
                     }
                 }
@@ -611,7 +658,7 @@ struct SettingsView: View {
                     Text(diagnosticsCopied ? "已复制连接诊断" : "复制连接诊断")
                     Spacer()
                     Text("不含消息/密钥")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(VeilType.terminalLabel)
                         .foregroundColor(VeilTheme.mutedGold)
                 }
             }
@@ -689,7 +736,7 @@ struct SettingsView: View {
                     .frame(width: 9, height: 9)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("A9 健康晶格")
-                        .font(.headline)
+                        .font(VeilType.cardTitle)
                         .foregroundColor(VeilTheme.goldBright)
                     Text("本地采集 · 144 状态裁决 · Advisory Only")
                         .font(.caption2)
@@ -774,7 +821,7 @@ struct SettingsView: View {
     private func a9Metric(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(VeilType.terminalLabel)
                 .foregroundColor(VeilTheme.tertiaryText)
             Text(value)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -812,7 +859,7 @@ struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("内核运行模式", systemImage: "cpu")
-                    .font(.headline)
+                    .font(VeilType.cardTitle)
                     .foregroundColor(VeilTheme.goldBright)
                 Spacer()
                 Text(environment.mode.isExperimental ? "LAB" : "CONTROLLED")
