@@ -32,21 +32,59 @@ enum VeilTheme {
     static var danger: Color { p.danger }
     static var success: Color { p.success }
     static var goldGradient: LinearGradient {
-        VeilAppearanceController.shared.isAppleSoft
+        VeilAppearanceController.shared.isPlainline
+            ? LinearGradient(colors: [gold, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
+            : VeilAppearanceController.shared.isIslet
+            ? LinearGradient(colors: [goldBright, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
+            : VeilAppearanceController.shared.isAppleSoft
             ? LinearGradient(colors: [goldBright, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
             : LinearGradient(colors: [goldBright, gold, goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     static var metalGradient: LinearGradient {
-        VeilAppearanceController.shared.isAppleSoft
+        VeilAppearanceController.shared.isPlainline
+            ? LinearGradient(colors: [panel, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
+            : VeilAppearanceController.shared.isIslet
+            ? LinearGradient(colors: [panelSoft, panel], startPoint: .top, endPoint: .bottom)
+            : VeilAppearanceController.shared.isAppleSoft
             ? LinearGradient(colors: [panelSoft, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
             : LinearGradient(colors: [Color.white.opacity(0.72), paleMetal, gold.opacity(0.78), goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     static var surfaceGradient: LinearGradient {
-        VeilAppearanceController.shared.isAppleSoft
+        VeilAppearanceController.shared.isPlainline
+            ? LinearGradient(colors: [Color.clear, Color.clear], startPoint: .top, endPoint: .bottom)
+            : VeilAppearanceController.shared.isIslet
+            ? LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.02)], startPoint: .top, endPoint: .bottom)
+            : VeilAppearanceController.shared.isAppleSoft
             ? LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.015)], startPoint: .top, endPoint: .bottom)
             : LinearGradient(colors: [Color.white.opacity(0.040), Color.white.opacity(0.010)], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     static var incomingBubbleGradient: LinearGradient { LinearGradient(colors: [panelSoft, panel, obsidian], startPoint: .topLeading, endPoint: .bottomTrailing) }
+}
+
+/// Rhythm tokens: the 4pt baseline grid observed across the shipping surfaces. The visual
+/// language itself is already tokenized (color/motion/shape); spacing and type were not, which
+/// let one-off values (padding 9/13/14, font 9.5/10.5/13.5) drift between sibling components.
+/// Additive layer: call sites migrate one by one so every adoption stays individually reviewable.
+enum VeilSpacing {
+    static let xxs: CGFloat = 4
+    static let xs: CGFloat = 8
+    static let sm: CGFloat = 12
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+    static let xl: CGFloat = 24
+    static let xxl: CGFloat = 32
+}
+
+/// Type scale anchored on the dominant pattern already shipping: section headers and terminal
+/// readouts across chats/games/settings/tools are 10pt bold monospaced. Further ranks (values,
+/// titles) are deliberately not tokenized yet — current 11pt/15pt usages disagree on weight and
+/// design across surfaces, so they need an on-device review before a scale rank is fixed.
+enum VeilType {
+    /// De-facto section header / terminal label style (chats, lobby, settings, tools).
+    static var terminalLabel: Font { .system(size: 10, weight: .bold, design: .monospaced) }
+    /// Gold-accented card / section title (settings cards, lobby sections, legal gate).
+    /// Anchored on the legal gate's 15pt semibold rounded — the newest formal surface.
+    static var cardTitle: Font { .system(size: 15, weight: .semibold, design: .rounded) }
 }
 
 /// Centralized geometry policy for the two device families that repeatedly exposed layout bugs:
@@ -198,7 +236,13 @@ private struct VeilCurtainShape: Shape {
 struct VeilAmbientBackground: View {
     var body: some View {
         Group {
-            if VeilAppearanceController.shared.isAppleSoft {
+            if VeilAppearanceController.shared.isPlainline {
+                // 白描：纯底色，无材质、无渐变、无帘形。
+                VeilTheme.background
+            } else if VeilAppearanceController.shared.isIslet {
+                // 浮屿：深海极光底——径向微光浮于靛海之上。
+                VeilIsletBackground()
+            } else if VeilAppearanceController.shared.isAppleSoft {
                 VeilAppleSoftBackground()
             } else if VeilAppearanceController.shared.isInstrument {
                 VeilInstrumentBackground()
@@ -278,8 +322,8 @@ struct VeilStableScrollView<Content: View>: View {
 
     init(
         maxContentWidth: CGFloat = 760,
-        horizontalPadding: CGFloat = 16,
-        verticalPadding: CGFloat = 16,
+        horizontalPadding: CGFloat = VeilSpacing.md,
+        verticalPadding: CGFloat = VeilSpacing.md,
         @ViewBuilder content: () -> Content
     ) {
         self.maxContentWidth = maxContentWidth
@@ -316,19 +360,42 @@ struct VeilCardModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if VeilAppearanceController.shared.isAppleSoft {
+        if VeilAppearanceController.shared.isPlainline {
+            // 白描：卡片消解为分区——无填充、无描边、无阴影，仅以发丝线收尾。
             content
-                .padding(16)
+                .padding(.vertical, VeilSpacing.sm)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(VeilTheme.hairline)
+                        .frame(height: 0.5)
+                        .allowsHitTesting(false)
+                }
+        } else if VeilAppearanceController.shared.isIslet {
+            // 浮屿：内容浮起为岛——圆角岛面、微光描边、悬浮投影。
+            content
+                .padding(VeilSpacing.md)
+                .background(
+                    RoundedRectangle(cornerRadius: emphasized ? 24 : 20, style: .continuous)
+                        .fill(emphasized ? VeilTheme.panel : VeilTheme.elevated)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: emphasized ? 24 : 20, style: .continuous)
+                        .stroke(VeilTheme.hairline, lineWidth: 0.5)
+                )
+                .shadow(color: Color.black.opacity(0.24), radius: 18, x: 0, y: 10)
+        } else if VeilAppearanceController.shared.isAppleSoft {
+            content
+                .padding(VeilSpacing.md)
                 .background(VeilAppleSoftSurface(cornerRadius: emphasized ? 28 : 23, emphasized: emphasized))
         } else if VeilAppearanceController.shared.isInstrument {
             content
-                .padding(16)
+                .padding(VeilSpacing.md)
                 .background(VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: emphasized ? 22 : 18, style: .continuous), emphasized: emphasized))
         } else if VeilRenderProfile.usesLegacyCompositorPath {
             // Preserve the cut-panel identity, but avoid clip + duplicate-shape + large shadow
             // off-screen rendering inside ScrollView/Sheet on iPhone 7.
             content
-                .padding(16)
+                .padding(VeilSpacing.md)
                 .background(
                     VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8)
                         .fill(emphasized ? VeilTheme.panel : VeilTheme.elevated)
@@ -345,7 +412,7 @@ struct VeilCardModifier: ViewModifier {
                 }
         } else {
             content
-                .padding(16)
+                .padding(VeilSpacing.md)
                 .background(
                     ZStack {
                         VeilPanelShape(cut: emphasized ? 18 : 14, radius: 8)
@@ -384,14 +451,16 @@ struct VeilPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
         let appleSoft = VeilAppearanceController.shared.isAppleSoft
+        let plainline = VeilAppearanceController.shared.isPlainline
+        let islet = VeilAppearanceController.shared.isIslet
         configuration.label
-            .scaleEffect(pressed && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : VeilMotionPolicy.pressScale) : 1)
-            .offset(y: pressed ? (appleSoft ? 0.8 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4)) : 0)
-            .brightness(pressed ? (appleSoft ? -0.018 : -0.035) : 0)
-            .opacity(pressed ? (appleSoft ? 0.90 : 0.96) : 1)
+            .scaleEffect(pressed && !plainline && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : (islet ? 0.975 : VeilMotionPolicy.pressScale)) : 1)
+            .offset(y: pressed && !plainline ? (appleSoft ? 0.8 : (islet ? 0.6 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4))) : 0)
+            .brightness(pressed ? (plainline ? -0.05 : (islet ? 0.045 : (appleSoft ? -0.018 : -0.035))) : 0)
+            .opacity(pressed ? (plainline ? 0.72 : (islet ? 1.0 : (appleSoft ? 0.90 : 0.96))) : 1)
             .shadow(
-                color: Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12))),
-                radius: pressed ? 2 : (appleSoft ? 5 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3)),
+                color: plainline ? .clear : (islet ? VeilTheme.gold.opacity(pressed ? 0.32 : 0.0) : Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12)))),
+                radius: islet ? (pressed ? 12 : 0.1) : (pressed ? 2 : (appleSoft ? 5 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3))),
                 x: 0,
                 y: pressed ? 1 : (appleSoft ? 3 : (VeilMotionPolicy.allowsFullSpatialEffects ? 4 : 2))
             )

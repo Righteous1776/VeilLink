@@ -1,9 +1,11 @@
 # CURRENT CHECKPOINT
 
-VeilLink **26.12 (Build 58)** is the current cumulative release checkpoint. Build 58 adds
-six substantial real-time 2D/3D games, deterministic gameplay cores, adaptive render profiles,
-local model/vector asset fallbacks and expanded regression coverage while preserving the complete
-26.11 Build 57 release line.
+VeilLink **26.13 (Build 59)** is the current cumulative release checkpoint. It retains
+the six-game real-time 2D/3D collection and adaptive render runtime from Build 58, and adds
+shared 4pt spacing/type tokens, an IME-safe legal-signing input policy, and two optional
+experimental appearance styles (白描 and 浮屿). The local CI simulator now follows current
+workflow, version-inheritance, game-navigation, replay and A10/MaleCNS shadow contracts.
+Build 59 keeps iOS 15 minimum deployment, Protocol 4, VLGM1 v1, and SQLite Schema V8 unchanged.
 
 The branch is based on the complete 26.11 Build 57 release tree and carries
 the I12/A10 Ultra M5 overlay plus the subsequent compile and release-gate fixes.

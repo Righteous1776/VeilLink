@@ -380,7 +380,7 @@ private struct MiniGameLinkStatusView: View {
                 MiniGameDeliveryBadge(state: latestGameMessage.deliveryState)
             } else if let snapshot, linkReady {
                 Text("H\(snapshot.healthScore)")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(VeilType.terminalLabel)
                     .foregroundColor(VeilTheme.gold)
                     .accessibilityLabel("链路健康度 \(snapshot.healthScore)")
             }

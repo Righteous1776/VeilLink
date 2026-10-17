@@ -9,7 +9,11 @@ struct AdaptiveRootView: View {
     var body: some View {
         GeometryReader { proxy in
             Group {
-                if appearance.isAppleSoft {
+                if appearance.isPlainline {
+                    VeilPlainlineRootView(model: model)
+                } else if appearance.isIslet {
+                    VeilIsletRootView(model: model)
+                } else if appearance.isAppleSoft {
                     VeilAppleSoftRootView(model: model)
                 } else if VeilUILayoutPolicy.usesTabletTwoPane(
                     horizontalSizeClassRegular: horizontalSizeClass == .regular,

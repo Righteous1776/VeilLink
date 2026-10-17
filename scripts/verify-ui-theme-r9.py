@@ -6,7 +6,7 @@ checks = {
     'VeilLink/Core/SkeuomorphicComponents.swift': ['VeilPhysicalButtonStyle', 'VeilLCDDisplay', 'VeilSpeakerGrille', 'VeilInstrumentKnob'],
     'VeilLink/UI/ToolCenterView.swift': ['VeilToolCenterView', 'VeilWalkieTalkieView', 'PTT'],
     'VeilLink/UI/ConversationViews.swift': ['VeilToolCenterView(model: model)', '打开工具中心'],
-    'VeilLink/UI/SettingsView.swift': ['appearanceCard', 'VeilAppearanceSelection.allCases'],
+    'VeilLink/UI/SettingsView.swift': ['appearanceCard', 'VeilAppearanceSelection.switchableCases'],
     'VeilLink/Core/AppTheme.swift': ['VeilThemePalette', 'VeilInstrumentBackground', 'VeilAppearanceController.shared.isInstrument'],
 }
 for rel, needles in checks.items():
@@ -21,7 +21,7 @@ info = (root / 'VeilLink/Resources/Info.plist').read_text(encoding='utf-8')
 if '<string>$(MARKETING_VERSION)</string>' not in info or '<string>$(CURRENT_PROJECT_VERSION)</string>' not in info:
     raise SystemExit('FAIL release identity placeholders')
 project = (root / 'project.yml').read_text(encoding='utf-8')
-if 'MARKETING_VERSION: "26.12"' not in project or 'CURRENT_PROJECT_VERSION: "58"' not in project:
+if 'MARKETING_VERSION: "26.13"' not in project or 'CURRENT_PROJECT_VERSION: "59"' not in project:
     raise SystemExit('FAIL current release identity')
 if not (root / 'docs/history/ui/V0106_R8_ORIGINAL_THEME/manifest.sha256').is_file():
     raise SystemExit('FAIL history manifest')
