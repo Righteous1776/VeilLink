@@ -185,7 +185,11 @@ final class VeilVoicePlaybackController: NSObject, ObservableObject, AVAudioPlay
         isPlaying = false; progress = 0
     }
 
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { stop() }
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor [weak self] in
+            self?.stop()
+        }
+    }
 
     private func refresh() {
         guard let player, player.duration > 0 else { stop(); return }
