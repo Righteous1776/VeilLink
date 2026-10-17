@@ -1,5 +1,5 @@
 diff --git a/scripts/local-ci-sim.sh b/scripts/local-ci-sim.sh
-index 01c6544..af67234 100644
+index 01c6544..af67234
 --- a/scripts/local-ci-sim.sh
 +++ b/scripts/local-ci-sim.sh
 @@ -25,20 +25,30 @@ with open(root/'VeilLink/Resources/Info.plist', 'rb') as fh:
