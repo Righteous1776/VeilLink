@@ -223,7 +223,7 @@ struct SettingsView: View {
     private var appearanceCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("外观主题", systemImage: "circle.lefthalf.filled")
-                .font(.headline)
+                .font(VeilType.cardTitle)
                 .foregroundColor(VeilTheme.goldBright)
             ForEach(VeilAppearanceSelection.allCases) { choice in
                 Button {
@@ -312,7 +312,7 @@ struct SettingsView: View {
     private var securityCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("安全", systemImage: "lock.shield")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             settingButton(
                 title: "应用锁",
                 detail: model.appLock.isEnabled ? "六位密码与生物识别已启用" : "尚未启用",
@@ -335,7 +335,7 @@ struct SettingsView: View {
     private var legalCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("协议与授权", systemImage: "signature")
-                .font(.headline)
+                .font(VeilType.cardTitle)
                 .foregroundColor(VeilTheme.goldBright)
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
@@ -367,7 +367,7 @@ struct SettingsView: View {
     private var storageCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("数据与备份", systemImage: "externaldrive")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             settingButton(title: "导出加密ZIP", detail: "保存到文件或分享", icon: "square.and.arrow.up") {
                 showsBackupSheet = true
             }
@@ -403,7 +403,7 @@ struct SettingsView: View {
     private var mediaCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("图片", systemImage: "photo.on.rectangle")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("自动保存收到的图片").fontWeight(.medium)
@@ -427,7 +427,7 @@ struct SettingsView: View {
     private var agentCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("AI 与灵核", systemImage: "sparkles")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
 
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -478,7 +478,7 @@ struct SettingsView: View {
     private var feedbackCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("触感反馈", systemImage: "waveform.path")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             Toggle(isOn: $haptics.isEnabled) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("震动反馈").fontWeight(.medium)
@@ -536,7 +536,7 @@ struct SettingsView: View {
     private var bluetoothCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("蓝牙与链路", systemImage: "antenna.radiowaves.left.and.right")
-                .font(.headline).foregroundColor(VeilTheme.goldBright)
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(bluetooth.statusText).fontWeight(.medium)
@@ -689,7 +689,7 @@ struct SettingsView: View {
                     .frame(width: 9, height: 9)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("A9 健康晶格")
-                        .font(.headline)
+                        .font(VeilType.cardTitle)
                         .foregroundColor(VeilTheme.goldBright)
                     Text("本地采集 · 144 状态裁决 · Advisory Only")
                         .font(.caption2)
@@ -812,7 +812,7 @@ struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("内核运行模式", systemImage: "cpu")
-                    .font(.headline)
+                    .font(VeilType.cardTitle)
                     .foregroundColor(VeilTheme.goldBright)
                 Spacer()
                 Text(environment.mode.isExperimental ? "LAB" : "CONTROLLED")
