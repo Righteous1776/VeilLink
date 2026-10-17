@@ -182,7 +182,7 @@ struct SettingsView: View {
                 VeilIdentityGlyph(seed: identity.activeIdentity?.id ?? "veillink-unset", size: 54, active: true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("LOCAL IDENTITY")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(VeilType.terminalLabel)
                         .tracking(1.25)
                         .foregroundColor(VeilTheme.mutedGold)
                     Text(identity.activeIdentity?.displayName ?? "未创建")
@@ -391,7 +391,7 @@ struct SettingsView: View {
                     Text("运行本地完整性自检")
                     Spacer()
                     Text("A9")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(VeilType.terminalLabel)
                         .foregroundColor(VeilTheme.mutedGold)
                 }
             }
@@ -452,7 +452,7 @@ struct SettingsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(9)
+            .padding(VeilSpacing.xs)
             .background(VeilTheme.subtleFill)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
@@ -522,7 +522,7 @@ struct SettingsView: View {
                         Text("测试一次触感")
                         Spacer()
                         Text("RESOLVE")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(VeilType.terminalLabel)
                             .tracking(0.8)
                             .foregroundColor(VeilTheme.mutedGold)
                     }
@@ -585,7 +585,7 @@ struct SettingsView: View {
                         }
                         Spacer()
                         Text("H\(snapshot.healthScore)")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(VeilType.terminalLabel)
                             .foregroundColor(VeilTheme.gold)
                     }
                 }
@@ -611,7 +611,7 @@ struct SettingsView: View {
                     Text(diagnosticsCopied ? "已复制连接诊断" : "复制连接诊断")
                     Spacer()
                     Text("不含消息/密钥")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(VeilType.terminalLabel)
                         .foregroundColor(VeilTheme.mutedGold)
                 }
             }
@@ -774,7 +774,7 @@ struct SettingsView: View {
     private func a9Metric(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(VeilType.terminalLabel)
                 .foregroundColor(VeilTheme.tertiaryText)
             Text(value)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
