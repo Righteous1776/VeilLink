@@ -1,10 +1,10 @@
 # VeilLink
 
-> **Current cumulative checkpoint:** VeilLink **26.12 (Build 58)**. This release keeps
-> the complete 26.11 release line and adds six substantial real-time 2D/3D games,
-> deterministic game cores, adaptive rendering and audited offline art assets.
-> See [the Build 58 release notes](docs/RELEASE_26_12_BUILD_58.md) and
-> [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
+> **Current cumulative checkpoint:** VeilLink **26.13 (Build 59)**. This release
+> preserves the complete 26.12 game/runtime line and adds shared UI rhythm tokens,
+> an IME-safe legal-signing fix, plus the optional 白描 and 浮屿 appearance styles.
+> See [the Build 59 release notes](docs/RELEASE_26_13_BUILD_59.md), [the Build 58 release notes](docs/RELEASE_26_12_BUILD_58.md),
+> and [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
 
 VeilLink is a GitHub-buildable iOS 15+ prototype for nearby, serverless encrypted
 messaging over Bluetooth Low Energy. The UI is Chinese-first and adapts separately
