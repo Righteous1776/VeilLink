@@ -55,6 +55,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
     case appleSoft
     case instrumentAuto
     case plainline
+    case islet
 
     var id: String { rawValue }
 
@@ -70,6 +71,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
         case .appleSoft: return "Apple Soft"
         case .instrumentAuto: return "拟物仪器"
         case .plainline: return "白描"
+        case .islet: return "浮屿"
         }
     }
     var subtitle: String {
@@ -78,6 +80,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
         case .appleSoft: return "苹果式软质拟物；iOS 26 自动接入底层 Liquid Glass。"
         case .instrumentAuto: return "柔和仪器拟物；完整支持浅色、深色与跟随系统。"
         case .plainline: return "极简字排版面：无材质无阴影，仅留白、发丝线与文字。"
+        case .islet: return "深海极光上的浮岛：内容浮起，导航收成一枚罗经胶囊。"
         }
     }
 
@@ -87,6 +90,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
         case .appleSoft: return "circle.grid.2x2.fill"
         case .instrumentAuto: return "dial.medium.fill"
         case .plainline: return "text.alignleft"
+        case .islet: return "circle.hexagongrid"
         }
     }
 
@@ -96,6 +100,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
         case .appleSoft: return Color(red: 0.91, green: 0.93, blue: 0.97)
         case .instrumentAuto: return Color(red: 0.38, green: 0.38, blue: 0.40)
         case .plainline: return Color(red: 0.96, green: 0.955, blue: 0.94)
+        case .islet: return Color(red: 0.05, green: 0.09, blue: 0.14)
         }
     }
 }
@@ -180,6 +185,7 @@ final class VeilAppearanceController: ObservableObject {
     var isInstrument: Bool { selection == .instrumentAuto }
     var isAppleSoft: Bool { selection == .appleSoft }
     var isPlainline: Bool { selection == .plainline }
+    var isIslet: Bool { selection == .islet }
     var appearanceLabel: String {
         let phase = isDarkAppearance ? "NIGHT" : "DAY"
         switch selection {
@@ -187,6 +193,7 @@ final class VeilAppearanceController: ObservableObject {
         case .appleSoft: return "APPLE SOFT · \(phase)"
         case .instrumentAuto: return "INSTRUMENT · \(phase)"
         case .plainline: return "PLAINLINE · \(phase)"
+        case .islet: return "ISLET · \(phase)"
         }
     }
 
@@ -196,6 +203,7 @@ final class VeilAppearanceController: ObservableObject {
         case .appleSoft: return isDarkAppearance ? Self.appleSoftNight : Self.appleSoftDay
         case .instrumentAuto: return isDarkAppearance ? Self.instrumentNight : Self.instrumentDay
         case .plainline: return isDarkAppearance ? Self.plainlineNight : Self.plainlineDay
+        case .islet: return isDarkAppearance ? Self.isletNight : Self.isletDay
         }
     }
 
@@ -415,5 +423,62 @@ final class VeilAppearanceController: ObservableObject {
         keycapTop: Color(red: 0.070, green: 0.070, blue: 0.075),
         keycapBottom: Color(red: 0.085, green: 0.085, blue: 0.090),
         indicator: Color(red: 0.86, green: 0.64, blue: 0.24)
+    )
+
+    /// Islet （浮屿）: deep-sea night with aurora glow. Content floats as islets on a dark
+    /// indigo sea; a warm amber carries action, a teal aurora tint cools the depth channels.
+    static let isletNight = VeilThemePalette(
+        background: Color(red: 0.020, green: 0.032, blue: 0.052),
+        backgroundLift: Color(red: 0.040, green: 0.058, blue: 0.088),
+        elevated: Color(red: 0.055, green: 0.078, blue: 0.115),
+        panel: Color(red: 0.068, green: 0.094, blue: 0.135),
+        panelSoft: Color(red: 0.080, green: 0.108, blue: 0.152),
+        obsidian: Color(red: 0.012, green: 0.020, blue: 0.036),
+        veil: Color(red: 0.032, green: 0.048, blue: 0.075),
+        gold: Color(red: 0.94, green: 0.66, blue: 0.24),
+        goldBright: Color(red: 1.00, green: 0.78, blue: 0.38),
+        goldDeep: Color(red: 0.72, green: 0.47, blue: 0.15),
+        mutedGold: Color(red: 0.42, green: 0.46, blue: 0.52),
+        paleMetal: Color(red: 0.36, green: 0.48, blue: 0.55),
+        text: Color.white.opacity(0.94),
+        secondaryText: Color(red: 0.62, green: 0.70, blue: 0.78),
+        tertiaryText: Color(red: 0.42, green: 0.50, blue: 0.58),
+        hairline: Color(red: 0.45, green: 0.85, blue: 0.80).opacity(0.10),
+        danger: Color(red: 0.95, green: 0.33, blue: 0.36),
+        success: Color(red: 0.20, green: 0.83, blue: 0.62),
+        metalTop: Color(red: 0.080, green: 0.108, blue: 0.152),
+        metalBottom: Color(red: 0.055, green: 0.078, blue: 0.115),
+        recess: Color.black.opacity(0.42),
+        keycapTop: Color(red: 0.080, green: 0.108, blue: 0.152),
+        keycapBottom: Color(red: 0.068, green: 0.094, blue: 0.135),
+        indicator: Color(red: 0.30, green: 0.85, blue: 0.75)
+    )
+
+    /// Islet day: misty pearl sea — same floating structure, daylight surface values.
+    static let isletDay = VeilThemePalette(
+        background: Color(red: 0.920, green: 0.940, blue: 0.955),
+        backgroundLift: Color(red: 0.955, green: 0.968, blue: 0.978),
+        elevated: Color(red: 0.975, green: 0.983, blue: 0.990),
+        panel: Color(red: 0.985, green: 0.990, blue: 0.995),
+        panelSoft: Color(red: 0.965, green: 0.975, blue: 0.985),
+        obsidian: Color(red: 0.880, green: 0.905, blue: 0.925),
+        veil: Color(red: 0.940, green: 0.955, blue: 0.968),
+        gold: Color(red: 0.78, green: 0.52, blue: 0.14),
+        goldBright: Color(red: 0.86, green: 0.60, blue: 0.18),
+        goldDeep: Color(red: 0.62, green: 0.40, blue: 0.10),
+        mutedGold: Color(red: 0.42, green: 0.44, blue: 0.47),
+        paleMetal: Color(red: 0.52, green: 0.60, blue: 0.65),
+        text: Color(red: 0.07, green: 0.10, blue: 0.14).opacity(0.92),
+        secondaryText: Color(red: 0.07, green: 0.10, blue: 0.14).opacity(0.56),
+        tertiaryText: Color(red: 0.07, green: 0.10, blue: 0.14).opacity(0.34),
+        hairline: Color(red: 0.10, green: 0.45, blue: 0.45).opacity(0.10),
+        danger: Color(red: 0.82, green: 0.18, blue: 0.22),
+        success: Color(red: 0.05, green: 0.60, blue: 0.42),
+        metalTop: Color(red: 0.965, green: 0.975, blue: 0.985),
+        metalBottom: Color(red: 0.975, green: 0.983, blue: 0.990),
+        recess: Color.black.opacity(0.05),
+        keycapTop: Color(red: 0.965, green: 0.975, blue: 0.985),
+        keycapBottom: Color(red: 0.985, green: 0.990, blue: 0.995),
+        indicator: Color(red: 0.10, green: 0.62, blue: 0.55)
     )
 }
