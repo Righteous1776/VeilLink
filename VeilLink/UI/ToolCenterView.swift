@@ -1210,7 +1210,7 @@ struct VeilWalkieTalkieView: View {
     private func meterTile(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.system(size: 6.5, weight: .bold, design: .monospaced)).foregroundColor(VeilTheme.tertiaryText)
-            Text(value).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(VeilTheme.text)
+            Text(value).font(VeilType.terminalLabel).foregroundColor(VeilTheme.text)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8).padding(.vertical, 7)
