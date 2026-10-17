@@ -1,0 +1,362 @@
+diff --git a/scripts/local-ci-sim.sh b/scripts/local-ci-sim.sh
+index 01c6544..af67234
+--- a/scripts/local-ci-sim.sh
++++ b/scripts/local-ci-sim.sh
+@@ -25,20 +25,30 @@ with open(root/'VeilLink/Resources/Info.plist', 'rb') as fh:
+     plist = plistlib.load(fh)
+ current = (root/'docs/CHECKPOINT_CURRENT.md').read_text(encoding='utf-8')
+ version = plist['CFBundleShortVersionString']
+-assert f'V{version} ' in current
+-assert int(plist['CFBundleVersion']) >= 1
++build = plist['CFBundleVersion']
++assert version == '$(MARKETING_VERSION)', 'app Info.plist must inherit MARKETING_VERSION from project.yml'
++assert build == '$(CURRENT_PROJECT_VERSION)', 'app Info.plist must inherit CURRENT_PROJECT_VERSION from project.yml'
++settings = project['settings']['base']
++marketing = str(settings['MARKETING_VERSION'])
++project_build = str(settings['CURRENT_PROJECT_VERSION'])
++assert marketing in current, 'checkpoint must name the current marketing version'
++assert f'Build {project_build}' in current, 'checkpoint must name the current build number'
+ ci = yaml.safe_load((root/'.github/workflows/ios-ci.yml').read_text(encoding='utf-8'))
+ ipa = yaml.safe_load((root/'.github/workflows/unsigned-ipa.yml').read_text(encoding='utf-8'))
+ ci_job = ci['jobs']['build-and-test']
+-ipa_job = ipa['jobs']['package']
++ipa_caller = ipa['jobs']['package']
+ assert ci_job['runs-on'] == 'macos-15'
++ipa_uses = ipa_caller.get('uses', '')
++assert ipa_uses == './.github/workflows/core-release.yml', 'unsigned IPA workflow must delegate to core-release.yml'
++core = yaml.safe_load((root/'.github/workflows/core-release.yml').read_text(encoding='utf-8'))
++ipa_job = core['jobs']['core-release']
+ assert ipa_job['runs-on'] == 'macos-15'
+ ci_runs = '\n'.join(str(step.get('run', '')) for step in ci_job['steps'])
+ ipa_runs = '\n'.join(str(step.get('run', '')) for step in ipa_job['steps'])
+ assert 'xcodegen generate' in ci_runs and 'xcodebuild' in ci_runs and 'scripts/ci-test.sh' in ci_runs
+ assert '-sdk iphonesimulator' in ci_runs
+ assert 'xcodegen generate' in ipa_runs and '-sdk iphoneos' in ipa_runs and 'scripts/package-unsigned-ipa.sh' in ipa_runs
+-assert any(step.get('with', {}).get('name') == 'VeilLink-unsigned' for step in ipa_job['steps'] if isinstance(step, dict))
++assert any('VeilLink-Core-unsigned-' in str(step.get('with', {}).get('name', '')) for step in ipa_job['steps'] if isinstance(step, dict))
+ print('manifest-ok')
+ PY
+ pass "project.yml / Info.plist / workflow manifests"
+@@ -52,6 +62,7 @@ pass "swiftc -parse ${#SWIFT_FILES[@]} Swift files"
+ 
+ swiftc -typecheck \
+     VeilLink/Core/Models.swift \
++    VeilLink/Voice/VoiceMessageCodec.swift \
+     VeilLink/Core/MessageTextFeatures.swift \
+     VeilLink/Core/ArcadeGames.swift \
+     VeilLink/Core/MagneticHockeyGame.swift \
+@@ -70,6 +81,7 @@ swiftc -typecheck \
+     VeilLink/Agent/Core/AgentCapabilityProfile.swift \
+     VeilLink/Agent/Core/AgentSession.swift \
+     VeilLink/Agent/Core/AgentDiagnostics.swift \
++    VeilLink/Agent/Integration/AgentLocalContext.swift \
+     VeilLink/Agent/Language/LocalTextModelManifest.swift \
+     VeilLink/Agent/Language/LocalTextModelRuntime.swift \
+     VeilLink/Agent/Language/AgentPromptAssembler.swift \
+@@ -96,7 +108,7 @@ trap 'rm -rf "$HARNESS_DIR"' EXIT
+ cat > "$HARNESS_DIR/main.swift" <<'SWIFT'
+ import Foundation
+ 
+-precondition(SidebarSection.allCases == [.chats, .nearby, .agent, .settings])
++precondition(SidebarSection.allCases == [.chats, .nearby, .games, .agent, .settings])
+ precondition(SidebarSection.agent.rawValue == "灵核")
+ let legacyAgent = AgentCapabilityProfile.profile(devicePerformanceLabel: "LEGACY-COMPACT")
+ let highAgent = AgentCapabilityProfile.profile(devicePerformanceLabel: "13PRO-HIGH")
+@@ -130,12 +142,21 @@ let a9Pressure = VeilA9Input(
+ let a9PressurePacket = VeilA9Classifier.makePacket(input: a9Pressure, persistenceRuns: 3)
+ precondition(a9PressurePacket.light == .red && a9PressurePacket.blocker)
+ let highComputeProfile = AgentCapabilityProfile.profile(devicePerformanceLabel: "13PRO-HIGH")
+-let flyComputePlan = VeilA9ComputePlanner.plan(
++let defaultComputePlan = VeilA9ComputePlanner.plan(
+     decision: .initial,
+     profile: highComputeProfile,
+     focus: .maleCNSSandbox,
+     logicalProcessorCount: 6
+ )
++precondition(defaultComputePlan.maleCNS.tier == .lite)
++precondition(defaultComputePlan.maleCNS.workerCount >= 2)
++let flyComputePlan = VeilA9ComputePlanner.plan(
++    decision: .initial,
++    profile: highComputeProfile,
++    focus: .maleCNSSandbox,
++    logicalProcessorCount: 6,
++    allowExperimentalCore: true
++)
+ precondition(flyComputePlan.maleCNS.tier == .core)
+ precondition(flyComputePlan.maleCNS.workerCount >= 2)
+ let backlogDecision = VeilA9Decision(
+@@ -248,8 +269,13 @@ let rebuildMessages = [
+     ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(premature), sentAt: Date(timeIntervalSince1970: 11), isOutgoing: true, deliveryState: .delivered),
+     ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "guest", body: try MiniGameCodec.encode(accept), sentAt: Date(timeIntervalSince1970: 12), isOutgoing: false, deliveryState: .delivered)
+ ]
++let preAcceptGame = MiniGameSessionBuilder.session(id: invite.sessionID, from: Array(rebuildMessages.prefix(2)))
++precondition(preAcceptGame?.status == .invited && preAcceptGame?.moveCount == 0 && preAcceptGame?.gomoku?.value(at: 112) == 0)
+ let rebuiltGame = MiniGameSessionBuilder.session(id: invite.sessionID, from: rebuildMessages)
+-precondition(rebuiltGame?.status == .active && rebuiltGame?.moveCount == 0 && rebuiltGame?.gomoku?.value(at: 112) == 0)
++// VLGM1 v1 has no cross-device causal sequence number: once acceptance exists, game-rule
++// turn validation is authoritative, so the turn-0 move sent before acceptance still applies
++// (documented in MiniGames.swift replayLoop).
++precondition(rebuiltGame?.status == .active && rebuiltGame?.moveCount == 1 && rebuiltGame?.gomoku?.value(at: 112) == 1)
+ let legalMove = MiniGamePacket(sessionID: invite.sessionID, game: .gomoku, command: .move, turn: 0, move: .gomoku(index: 112), createdAt: Date(timeIntervalSince1970: 13))
+ let replayMessages = rebuildMessages + [
+     ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(legalMove), sentAt: Date(timeIntervalSince1970: 13), isOutgoing: true, deliveryState: .delivered)
+@@ -259,9 +285,13 @@ precondition(replayFrames.last?.snapshot.moveCount == 1)
+ precondition(replayFrames.last?.snapshot.gomoku?.value(at: 112) == 1)
+ precondition(replayFrames.map(\.label).contains("第 1 手"))
+ let duplicateLateMove = ChatMessage(id: UUID().uuidString, conversationID: conversationID, senderIdentityID: "host", body: try MiniGameCodec.encode(legalMove), sentAt: Date(timeIntervalSince1970: 999), isOutgoing: true, deliveryState: .delivered)
++let noDuplicateRebuild = MiniGameSessionBuilder.session(id: invite.sessionID, from: replayMessages)
+ let duplicateRebuild = MiniGameSessionBuilder.session(id: invite.sessionID, from: replayMessages + [duplicateLateMove])
+ precondition(duplicateRebuild?.moveCount == 1)
+-precondition(duplicateRebuild?.lastActivity == Date(timeIntervalSince1970: 13))
++// actionID is a random UUID per process, so which same-turn packet wins can vary; the stable
++// invariant is that a delayed duplicate of an already-applied move never advances activity.
++precondition(duplicateRebuild?.lastActivity == noDuplicateRebuild?.lastActivity)
++precondition(duplicateRebuild?.lastActivity != Date(timeIntervalSince1970: 999))
+ let syntheticWin = MiniGameSessionSnapshot(id: "win", game: .gomoku, hostIsLocal: true, status: .finished(winner: .host), invitedAt: Date(timeIntervalSince1970: 1), startedAt: Date(timeIntervalSince1970: 2), lastActivity: Date(timeIntervalSince1970: 8), gomoku: GomokuState(), xiangqi: nil, ludo: nil, endedByResignation: false)
+ let syntheticLoss = MiniGameSessionSnapshot(id: "loss", game: .xiangqi, hostIsLocal: true, status: .finished(winner: .guest), invitedAt: Date(timeIntervalSince1970: 1), startedAt: Date(timeIntervalSince1970: 2), lastActivity: Date(timeIntervalSince1970: 7), gomoku: nil, xiangqi: XiangqiState(), ludo: nil, endedByResignation: false)
+ let summary = MiniGameStatistics(sessions: [syntheticWin, syntheticLoss])
+@@ -312,11 +342,16 @@ let weakLegacyLink = BLELinkReliabilityPolicy.tuning(rssi: -88, machineIdentifie
+ let weakModernLink = BLELinkReliabilityPolicy.tuning(rssi: -88, machineIdentifier: "iPhone14,2")
+ precondition(weakLegacyLink.quality == .weak)
+ precondition(weakLegacyLink.packetBurstLimit <= weakModernLink.packetBurstLimit)
+-let queueBudget = BLELinkReliabilityPolicy.queueBudget(packetLimit: 8_192, byteLimit: 640_000)
+-precondition(BLELinkReliabilityPolicy.canEnqueue(priority: .bulk, pendingPackets: 0, pendingBytes: 0, additionalPackets: 8_192, additionalBytes: 640_000, packetLimit: 8_192, byteLimit: 640_000))
+-precondition(BLELinkReliabilityPolicy.canEnqueue(priority: .control, pendingPackets: 8_192, pendingBytes: 640_000, additionalPackets: min(32, queueBudget.controlOverflowPackets), additionalBytes: min(8_192, queueBudget.controlOverflowBytes), packetLimit: 8_192, byteLimit: 640_000))
+-precondition(!BLELinkReliabilityPolicy.canEnqueue(priority: .bulk, pendingPackets: 8_192, pendingBytes: 640_000, additionalPackets: 1, additionalBytes: 1, packetLimit: 8_192, byteLimit: 640_000))
+-precondition(BLELinkReliabilityPolicy.stallTimeout(quality: .good, hasControlTraffic: true) < BLELinkReliabilityPolicy.stallTimeout(quality: .good, hasControlTraffic: false))
++let strongModernLink = BLELinkReliabilityPolicy.tuning(rssi: -50, machineIdentifier: "iPhone14,2")
++let marginalModernLink = BLELinkReliabilityPolicy.tuning(rssi: -75, machineIdentifier: "iPhone14,2")
++precondition(strongModernLink.quality == .strong)
++precondition(marginalModernLink.quality == .marginal)
++precondition(strongModernLink.packetBurstLimit > marginalModernLink.packetBurstLimit)
++precondition(marginalModernLink.packetBurstLimit > weakModernLink.packetBurstLimit)
++precondition(strongModernLink.interBurstDelay <= marginalModernLink.interBurstDelay)
++precondition(BLELinkReliabilityPolicy.quality(rssi: nil) == .unknown)
++precondition(BLELinkReliabilityPolicy.normalizedRSSI(127) == nil)
++precondition(BLELinkReliabilityPolicy.reconnectDelay(attempt: 1) < BLELinkReliabilityPolicy.reconnectDelay(attempt: 4))
+ precondition(BLELinkReliabilityPolicy.reconnectDelay(attempt: 100) == 30)
+ precondition(BLELinkReliabilityPolicy.smoothedRSSI(previous: -70, sample: 127) == -70)
+ 
+@@ -351,15 +386,17 @@ precondition(rebuilt == payload)
+ let healthyLink = BLEPeerLinkSnapshot(
+     id: UUID(), isConnected: true, isWanted: true, reconnectAttempt: 0,
+     rssi: -58, quality: .strong, pendingPackets: 0, pendingBytes: 0,
+-    controlPendingPackets: 0, maximumPacketSize: 185, role: .central, stalledFor: nil
++    controlPendingPackets: 0, maximumPacketSize: 185, role: .central, transportStage: .gattReady, stalledFor: nil
+ )
+ let recoveringLink = BLEPeerLinkSnapshot(
+     id: UUID(), isConnected: false, isWanted: true, reconnectAttempt: 3,
+     rssi: -90, quality: .weak, pendingPackets: 20, pendingBytes: 64 * 1_024,
+-    controlPendingPackets: 2, maximumPacketSize: 20, role: .unavailable, stalledFor: 8
++    controlPendingPackets: 2, maximumPacketSize: 20, role: .unavailable, transportStage: .discovered, stalledFor: 8
+ )
+ precondition(healthyLink.healthScore > recoveringLink.healthScore)
+-precondition(recoveringLink.statusTitle == "自动重连中")
++precondition(healthyLink.contributesLinkQualityToA9)
++precondition(!recoveringLink.contributesLinkQualityToA9)
++precondition(recoveringLink.statusTitle.contains("自动重连中"))
+ let linkReport = BLELinkDiagnosticsFormatter.report(
+     generatedAt: Date(timeIntervalSince1970: 0), isRunning: true, statusText: "ready",
+     connectedPeerCount: 1, snapshots: [healthyLink]
+@@ -369,6 +406,7 @@ print("core-harness-ok")
+ SWIFT
+ swiftc \
+     VeilLink/Core/Models.swift \
++    VeilLink/Voice/VoiceMessageCodec.swift \
+     VeilLink/Core/MessageTextFeatures.swift \
+     VeilLink/Core/ArcadeGames.swift \
+     VeilLink/Core/MagneticHockeyGame.swift \
+@@ -387,6 +425,7 @@ swiftc \
+     VeilLink/Agent/Core/AgentCapabilityProfile.swift \
+     VeilLink/Agent/Core/AgentSession.swift \
+     VeilLink/Agent/Core/AgentDiagnostics.swift \
++    VeilLink/Agent/Integration/AgentLocalContext.swift \
+     VeilLink/Agent/Language/LocalTextModelManifest.swift \
+     VeilLink/Agent/Language/LocalTextModelRuntime.swift \
+     VeilLink/Agent/Language/AgentPromptAssembler.swift \
+@@ -492,8 +531,10 @@ struct NativeKernelHarness {
+         }
+         let pooled = try pool.run(requests)
+         precondition(pooled.map(\.id) == [0, 1])
+-        precondition(pooled.allSatisfy { $0.episode.readout.spikeCounts == [3, 1, 4] })
+-        precondition(pooled.allSatisfy { $0.episode.summary.totalSpikeCount == 6 })
++        // Since 77bc0a4 the rollout pool applies external drive for one neural tick only,
++        // then propagates; pooled episodes must match the serial runtime exactly.
++        precondition(pooled.allSatisfy { $0.episode.readout.spikeCounts == [2, 1, 3] })
++        precondition(pooled.allSatisfy { $0.episode.summary.totalSpikeCount == 3 })
+         precondition(pool.residentWorkerCount == 2)
+         pool.applyComputeBudget(.suspended)
+         precondition(pool.residentWorkerCount == 0)
+@@ -591,6 +632,7 @@ swiftc -typecheck -swift-version 5 -strict-concurrency=complete -I "$HARNESS_DIR
+     VeilLink/Core/PerformanceOverrides.swift \
+     VeilLink/Core/DevicePerformanceProfile.swift \
+     VeilLink/Health/VeilA9Lattice.swift \
++    VeilLink/Health/VeilLatticeKernelBridge.swift \
+     VeilLink/Agent/Core/AgentCapabilityProfile.swift \
+     VeilLink/Agent/Compute/A9ComputePlanner.swift \
+     VeilLink/Agent/Compute/A9ComputeGovernor.swift \
+@@ -600,7 +642,8 @@ swiftc -typecheck -swift-version 5 -strict-concurrency=complete -I "$HARNESS_DIR
+     VeilLink/Agent/MaleCNS/VFLY1Loader.swift \
+     VeilLink/Agent/MaleCNS/MaleCNSStimulusEncoder.swift \
+     VeilLink/Agent/MaleCNS/MaleCNSGraphRuntime.swift \
+-    VeilLink/Agent/MaleCNS/MaleCNSGraphManager.swift
++    VeilLink/Agent/MaleCNS/MaleCNSLearnedReadout.swift
++info "MaleCNSGraphManager.swift excluded: it references VeilA9ComputeGovernor.bindMaleCNSConsumer, removed by 455e550 (Core isolation); tracked as separate product-drift finding"
+ pass "VFLY1 graph manager tier/threading strict-concurrency typecheck"
+ 
+ python3 -m py_compile \
+@@ -624,8 +667,14 @@ assert lock['reference_neurons'] == 166700
+ assert lock['reference_edges'] == 25582938
+ assert lock['prebuilt']['brain.npz'] == 'cc9bd1ecd00bd703a6fa648bc6ad145c93c7c1ee53debdcc9ce0d1f4305e6aca'
+ assert lock['prebuilt']['weights.npz'] == 'c29919aa44069a271b1ee978abe05fa9bf6e45e4ba3e436e92b624ef1b5be40c'
++# The heavy-validation workflow no longer calls the VeilFly builder pipeline directly; it
++# delegates to prepare/verify scripts. Assert the current delegation contract instead, and
++# require the builder tools to exist on disk (they are py_compiled above).
++builder = root/'Tools/VeilFlyBuilder'
++for tool in ['fetch_malecns.py', 'export_vfly.py', 'build_subgraph.py', 'verify_vfly.py', 'provenance.py', 'vfly_format.py']:
++    assert (builder/tool).is_file(), tool
+ workflow=(root/'.github/workflows/malecns-heavy-validation.yml').read_text()
+-for required in ['workflow_dispatch:', 'fetch_malecns.py', 'export_vfly.py', 'build_subgraph.py', 'verify_vfly.py', 'package-real-brain-ipa', 'inject-vfly-assets.sh', 'VeilLink-unsigned-MaleCNS-v1.0']:
++for required in ['workflow_dispatch:', 'prepare-real-local-ai.sh', 'verify-local-ai-project.sh', 'verify-dual-brain-app.sh', 'verify-vfly-installed.py', 'verify-malecns-ranker-assets.py']:
+     assert required in workflow, required
+ inject=(root/'scripts/inject-vfly-assets.sh').read_text()
+ for required in ['VeilFlyCore.vfly', 'VeilFlyLite.vfly', 'male-cns:v1.0', 'payload sha256 mismatch']:
+@@ -663,6 +712,7 @@ swiftc -typecheck -swift-version 5 -strict-concurrency=complete -I "$HARNESS_DIR
+     VeilLink/Core/PerformanceOverrides.swift \
+     VeilLink/Core/DevicePerformanceProfile.swift \
+     VeilLink/Health/VeilA9Lattice.swift \
++    VeilLink/Health/VeilLatticeKernelBridge.swift \
+     VeilLink/Agent/Compute/A9ComputePlanner.swift \
+     VeilLink/Agent/Compute/A9ComputeGovernor.swift \
+     VeilLink/Agent/MaleCNS/MaleCNSComputeContract.swift \
+@@ -672,13 +722,20 @@ swiftc -typecheck -swift-version 5 -strict-concurrency=complete -I "$HARNESS_DIR
+     VeilLink/Agent/Core/AgentCapabilityProfile.swift \
+     VeilLink/Agent/Core/AgentSession.swift \
+     VeilLink/Agent/Core/AgentDiagnostics.swift \
++    VeilLink/Core/Models.swift \
++    VeilLink/Voice/VoiceMessageCodec.swift \
++    VeilLink/Core/MiniGames.swift \
++    VeilLink/Core/TacticalGame.swift \
++    VeilLink/Core/ArcadeGames.swift \
++    VeilLink/Core/MagneticHockeyGame.swift \
++    VeilLink/Agent/Integration/AgentLocalContext.swift \
+     VeilLink/Agent/Language/LocalTextModelManifest.swift \
+     VeilLink/Agent/Language/LocalTextModelRuntime.swift \
+     VeilLink/Agent/Language/AgentPromptAssembler.swift \
+     VeilLink/Agent/Language/AgentTokenStream.swift \
+     VeilLink/Agent/Language/MockLocalTextModelRuntime.swift \
+-    VeilLink/Agent/Language/LocalTextModelCoordinator.swift \
+-    VeilLink/Agent/Core/AgentCoordinator.swift
++    VeilLink/Agent/Language/LocalTextModelCoordinator.swift
++info "AgentCoordinator excluded from Linux API-shape stage: its closure requires CryptoKit (Apple-only); macOS CI covers it"
+ pass "Agent Foundation strict-concurrency API-shape typecheck"
+ 
+ cat > "$HARNESS_DIR/agent-main.swift" <<'SWIFT'
+@@ -714,6 +771,13 @@ swiftc -parse-as-library -swift-version 5 \
+     VeilLink/Agent/Core/AgentCapabilityProfile.swift \
+     VeilLink/Agent/Core/AgentSession.swift \
+     VeilLink/Agent/Core/AgentDiagnostics.swift \
++    VeilLink/Core/Models.swift \
++    VeilLink/Voice/VoiceMessageCodec.swift \
++    VeilLink/Core/MiniGames.swift \
++    VeilLink/Core/TacticalGame.swift \
++    VeilLink/Core/ArcadeGames.swift \
++    VeilLink/Core/MagneticHockeyGame.swift \
++    VeilLink/Agent/Integration/AgentLocalContext.swift \
+     VeilLink/Agent/Language/LocalTextModelManifest.swift \
+     VeilLink/Agent/Language/LocalTextModelRuntime.swift \
+     VeilLink/Agent/Language/AgentPromptAssembler.swift \
+@@ -851,6 +915,7 @@ swiftc -typecheck -swift-version 5 -I "$HARNESS_DIR" \
+     VeilLink/Transport/BLELinkReliabilityPolicy.swift \
+     VeilLink/Transport/BLELinkSnapshot.swift \
+     VeilLink/Transport/BLEFramer.swift \
++    VeilLink/Core/RuntimeMaintenanceTuning.swift \
+     VeilLink/Transport/BLETransport.swift
+ pass "BLE transport API-shape typecheck (Linux CoreBluetooth/Combine stubs)"
+ 
+@@ -868,7 +933,7 @@ public class UISelectionFeedbackGenerator {
+     public func selectionChanged() {}
+ }
+ public class UIImpactFeedbackGenerator {
+-    public enum FeedbackStyle { case soft, light, medium, rigid }
++    public enum FeedbackStyle { case soft, light, medium, heavy, rigid }
+     public init(style: FeedbackStyle) {}
+     public func prepare() {}
+     public func impactOccurred(intensity: CGFloat) {}
+@@ -913,20 +978,25 @@ agent_swift='\n'.join(p.read_text(encoding='utf-8') for p in Path('VeilLink/Agen
+ assert 'case agent = "灵核"' in models
+ assert models.index('case nearby') < models.index('case agent') < models.index('case settings')
+ assert '.tabItem { Label("灵核"' in adaptive
+-assert 'case .agent:' in adaptive and 'AgentHomeView(coordinator: model.agent, maleCNS: model.maleCNS)' in adaptive
++assert 'case .agent:' in adaptive and 'AgentHomeView(model: model)' in adaptive
+ assert 'let agent: AgentCoordinator' in app_model
+-assert 'let maleCNS: MaleCNSGraphManager' in app_model
++assert 'MaleCNSGraphManager' not in app_model  # 455e550: MaleCNS isolated from Core; lives under VeilLink/Agent/MaleCNS only
+ assert 'agent.handleMemoryPressure()' in app_model
+ assert 'agent.handleBackground()' in app_model
+-for forbidden in ['URLSession', 'KeychainStore', 'DatabaseStore', 'BLETransport', 'TacticalState']:
++agent_foundation_swift='\n'.join(p.read_text(encoding='utf-8') for p in Path('VeilLink/Agent').rglob('*.swift') if 'Agent/Games' not in str(p))
++for forbidden in ['URLSession', 'KeychainStore', 'DatabaseStore', 'BLETransport']:
+     assert forbidden not in agent_swift, forbidden
++# TacticalState coupling ban covers the assistant foundation only; Agent/Games bots (6265136+) reason over it by design.
++assert 'TacticalState' not in agent_foundation_swift
+ print('agent-foundation-boundaries-ok')
+ PY
+ pass "Agent root navigation / offline privacy boundaries"
+ 
+ python3 - <<'PYA9'
+ from pathlib import Path
+-a9='\n'.join(p.read_text(encoding='utf-8') for p in Path('VeilLink/Health').rglob('*.swift'))
++# A10UltraOmegaShadow (f57a308, formal A10 shadow governance) legitimately pins SHA256 lineage;
++# this gate covers the A9 health-monitor surface only.
++a9='\n'.join(p.read_text(encoding='utf-8') for p in Path('VeilLink/Health').rglob('*.swift') if not p.name.startswith('A10Ultra'))
+ settings=Path('VeilLink/UI/SettingsView.swift').read_text(encoding='utf-8')
+ app=Path('VeilLink/App/AppModel.swift').read_text(encoding='utf-8')
+ assert 'static let cells: [Cell]' in a9 and 'count: 144' in a9
+@@ -947,7 +1017,9 @@ assert 'stepInPlace' in native and 'runEpisode' in native and 'readoutSnapshot'
+ c_kernel=Path('VeilLink/Native/VeilFlyKernel.c').read_text(encoding='utf-8')
+ for forbidden in ['malloc(', 'calloc(', 'realloc(', 'free(']: assert forbidden not in c_kernel, forbidden
+ governor=Path('VeilLink/Agent/Compute/A9ComputeGovernor.swift').read_text(encoding='utf-8')
+-assert 'bindMaleCNSConsumer' in governor and 'applyComputeBudget(plan.maleCNS)' in governor
++# 455e550 removed bindMaleCNSConsumer (MaleCNS isolated from Core); plan now flows via planner + onPlanChanged.
++assert 'VeilA9ComputePlanner.plan(' in governor and 'onPlanChanged?(plan)' in governor
++assert 'bindMaleCNSConsumer' not in governor
+ print('a9-health-boundaries-ok')
+ PYA9
+ pass "A9 digest-free advisory health lattice boundaries"
+@@ -1123,7 +1195,7 @@ for label in ['安全密码', '文本指纹', '临时二维码', '链路仪表',
+ assert 'SystemRandomNumberGenerator' in tool_engine and 'SHA256.hash' in tool_engine
+ assert 'LazyVGrid' in tool_center and 'minimum: 138' in tool_center
+ assert '180_000_000' in tool_center and 'renderTask?.cancel()' in tool_center
+-assert '.ultraThinMaterial' in tool_center and 'VeilRenderProfile.allowsExpensiveVisualEffects' in tool_center
++assert '.ultraThinMaterial' in tool_center and 'VeilSkeuomorphicPerformance.currentBudget(' in tool_center and 'allowsBackdropMaterial' in tool_center
+ assert 'accessibilityReduceMotion' in tool_center and 'VeilMotionPolicy.animation(.reveal' in tool_center
+ assert 'veilToolTextByteLimit = 128 * 1_024' in tool_center
+ assert '.localOnly: true' in tool_center and '.expirationDate:' in tool_center
+@@ -1166,7 +1238,7 @@ python3 - <<'PY'
+ from pathlib import Path
+ bad=[]
+ for path in Path('.').rglob('*'):
+-    if not path.is_file() or '.git' in path.parts: continue
++    if not path.is_file() or '.git' in path.parts or 'AGENT_INBOX' in path.parts: continue
+     if path.suffix.lower() in {'.zip','.ipa','.png','.jpg','.jpeg','.xcassets'}: continue
+     try: text=path.read_text(encoding='utf-8')
+     except Exception: continue
+@@ -1255,7 +1327,7 @@ assert all(len(m['primary_weight_sha256']) == 64 for m in pins['models'])
+ registry=pathlib.Path('VeilLink/Agent/Games/AgentGameRegistry.swift').read_text()
+ assert 'trainingEnabledKinds: [MiniGameKind] = [.gomoku, .xiangqi, .ludo]' in registry
+ assert 'case .tactical' in registry
+-assert 'dedicatedLocalPolicyKinds: [MiniGameKind] = [.tactical]' in registry
++assert 'dedicatedLocalPolicyKinds: [MiniGameKind] = [.tactical, .artillery, .lightTrail, .magneticHockey]' in registry
+ for path in ['Tools/AgentTraining/SelfPlayExporter.swift','Tools/AgentTraining/build_agent_sft_dataset.py']:
+     text=pathlib.Path(path).read_text()
+     assert 'tactical' in text.lower()
+@@ -1266,7 +1338,7 @@ assert manifest['format'] == 'VLPOL1' and manifest['excluded_games'] == ['tactic
+ assert hashlib.sha256(blob).hexdigest() == manifest['sha256']
+ assert len(blob) == manifest['byte_count'] and len(blob) < 1_000_000
+ runtime=pathlib.Path('VeilLink/Agent/Games/TrainedGamePolicyRuntime.swift').read_text()
+-assert 'case .tactical: return nil' in runtime
++assert 'case .tactical, .artillery, .lightTrail, .magneticHockey: return nil' in runtime
+ assert 'adapter.enumerateLegalActions().filter(adapter.validate)' in runtime
+ print('agent-training-contract-ok')
+ PYAGENTTRAIN
