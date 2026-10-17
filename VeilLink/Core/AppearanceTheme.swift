@@ -54,13 +54,22 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
     case veilOriginal
     case appleSoft
     case instrumentAuto
+    case plainline
 
     var id: String { rawValue }
+
+    /// Experimental styles are gated behind an authorization row in Settings and stay
+    /// out of the regular picker.
+    var isExperimental: Bool { self == .plainline }
+
+    /// The styles offered directly in the appearance picker.
+    static var switchableCases: [VeilAppearanceSelection] { allCases.filter { !$0.isExperimental } }
     var title: String {
         switch self {
         case .veilOriginal: return "Veil 原生"
         case .appleSoft: return "Apple Soft"
         case .instrumentAuto: return "拟物仪器"
+        case .plainline: return "白描"
         }
     }
     var subtitle: String {
@@ -68,6 +77,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
         case .veilOriginal: return "保留现有黑金、切角面板与 Veil 动效。"
         case .appleSoft: return "苹果式软质拟物；iOS 26 自动接入底层 Liquid Glass。"
         case .instrumentAuto: return "柔和仪器拟物；完整支持浅色、深色与跟随系统。"
+        case .plainline: return "极简字排版面：无材质无阴影，仅留白、发丝线与文字。"
         }
     }
 
@@ -76,6 +86,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
         case .veilOriginal: return "sparkles"
         case .appleSoft: return "circle.grid.2x2.fill"
         case .instrumentAuto: return "dial.medium.fill"
+        case .plainline: return "text.alignleft"
         }
     }
 
@@ -84,6 +95,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
         case .veilOriginal: return Color(red: 0.02, green: 0.02, blue: 0.03)
         case .appleSoft: return Color(red: 0.91, green: 0.93, blue: 0.97)
         case .instrumentAuto: return Color(red: 0.38, green: 0.38, blue: 0.40)
+        case .plainline: return Color(red: 0.96, green: 0.955, blue: 0.94)
         }
     }
 }
@@ -167,12 +179,14 @@ final class VeilAppearanceController: ObservableObject {
     var isDarkAppearance: Bool { colorMode.resolvesDark(systemIsDark: systemIsDark) }
     var isInstrument: Bool { selection == .instrumentAuto }
     var isAppleSoft: Bool { selection == .appleSoft }
+    var isPlainline: Bool { selection == .plainline }
     var appearanceLabel: String {
         let phase = isDarkAppearance ? "NIGHT" : "DAY"
         switch selection {
         case .veilOriginal: return "VEIL ORIGINAL · \(phase)"
         case .appleSoft: return "APPLE SOFT · \(phase)"
         case .instrumentAuto: return "INSTRUMENT · \(phase)"
+        case .plainline: return "PLAINLINE · \(phase)"
         }
     }
 
@@ -181,6 +195,7 @@ final class VeilAppearanceController: ObservableObject {
         case .veilOriginal: return isDarkAppearance ? Self.original : Self.originalDay
         case .appleSoft: return isDarkAppearance ? Self.appleSoftNight : Self.appleSoftDay
         case .instrumentAuto: return isDarkAppearance ? Self.instrumentNight : Self.instrumentDay
+        case .plainline: return isDarkAppearance ? Self.plainlineNight : Self.plainlineDay
         }
     }
 
@@ -344,5 +359,61 @@ final class VeilAppearanceController: ObservableObject {
         keycapTop: Color(red: 0.27, green: 0.27, blue: 0.28),
         keycapBottom: Color(red: 0.10, green: 0.10, blue: 0.11),
         indicator: Color(red: 1.0, green: 0.31, blue: 0.04)
+    )
+
+    /// Plainline （白描）: ink-on-paper minimalism. Depth channels collapse to flat values so
+    /// material gradients render as solid color; a single gold carries all trust/action weight.
+    static let plainlineDay = VeilThemePalette(
+        background: Color(red: 0.972, green: 0.968, blue: 0.952),
+        backgroundLift: Color(red: 0.988, green: 0.985, blue: 0.972),
+        elevated: Color(red: 0.955, green: 0.950, blue: 0.932),
+        panel: Color(red: 0.945, green: 0.940, blue: 0.920),
+        panelSoft: Color(red: 0.965, green: 0.960, blue: 0.944),
+        obsidian: Color(red: 0.930, green: 0.924, blue: 0.902),
+        veil: Color(red: 0.950, green: 0.945, blue: 0.926),
+        gold: Color(red: 0.72, green: 0.48, blue: 0.12),
+        goldBright: Color(red: 0.80, green: 0.55, blue: 0.15),
+        goldDeep: Color(red: 0.72, green: 0.48, blue: 0.12),
+        mutedGold: Color(red: 0.45, green: 0.36, blue: 0.22),
+        paleMetal: Color(red: 0.55, green: 0.52, blue: 0.46),
+        text: Color.black.opacity(0.86),
+        secondaryText: Color.black.opacity(0.54),
+        tertiaryText: Color.black.opacity(0.32),
+        hairline: Color.black.opacity(0.065),
+        danger: Color(red: 0.80, green: 0.16, blue: 0.18),
+        success: Color(red: 0.08, green: 0.56, blue: 0.30),
+        metalTop: Color(red: 0.955, green: 0.950, blue: 0.932),
+        metalBottom: Color(red: 0.955, green: 0.950, blue: 0.932),
+        recess: Color.black.opacity(0.05),
+        keycapTop: Color(red: 0.955, green: 0.950, blue: 0.932),
+        keycapBottom: Color(red: 0.945, green: 0.940, blue: 0.920),
+        indicator: Color(red: 0.72, green: 0.48, blue: 0.12)
+    )
+
+    static let plainlineNight = VeilThemePalette(
+        background: Color(red: 0.028, green: 0.028, blue: 0.030),
+        backgroundLift: Color(red: 0.050, green: 0.050, blue: 0.054),
+        elevated: Color(red: 0.070, green: 0.070, blue: 0.075),
+        panel: Color(red: 0.085, green: 0.085, blue: 0.090),
+        panelSoft: Color(red: 0.100, green: 0.100, blue: 0.105),
+        obsidian: Color(red: 0.018, green: 0.018, blue: 0.020),
+        veil: Color(red: 0.045, green: 0.045, blue: 0.048),
+        gold: Color(red: 0.86, green: 0.64, blue: 0.24),
+        goldBright: Color(red: 0.98, green: 0.82, blue: 0.46),
+        goldDeep: Color(red: 0.86, green: 0.64, blue: 0.24),
+        mutedGold: Color(red: 0.50, green: 0.42, blue: 0.28),
+        paleMetal: Color(red: 0.72, green: 0.70, blue: 0.65),
+        text: Color.white.opacity(0.94),
+        secondaryText: Color.white.opacity(0.55),
+        tertiaryText: Color.white.opacity(0.30),
+        hairline: Color.white.opacity(0.055),
+        danger: Color(red: 0.91, green: 0.28, blue: 0.28),
+        success: Color(red: 0.35, green: 0.80, blue: 0.55),
+        metalTop: Color(red: 0.070, green: 0.070, blue: 0.075),
+        metalBottom: Color(red: 0.070, green: 0.070, blue: 0.075),
+        recess: Color.black.opacity(0.40),
+        keycapTop: Color(red: 0.070, green: 0.070, blue: 0.075),
+        keycapBottom: Color(red: 0.085, green: 0.085, blue: 0.090),
+        indicator: Color(red: 0.86, green: 0.64, blue: 0.24)
     )
 }
