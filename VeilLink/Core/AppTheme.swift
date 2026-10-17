@@ -70,6 +70,9 @@ enum VeilSpacing {
 enum VeilType {
     /// De-facto section header / terminal label style (chats, lobby, settings, tools).
     static var terminalLabel: Font { .system(size: 10, weight: .bold, design: .monospaced) }
+    /// Gold-accented card / section title (settings cards, lobby sections, legal gate).
+    /// Anchored on the legal gate's 15pt semibold rounded — the newest formal surface.
+    static var cardTitle: Font { .system(size: 15, weight: .semibold, design: .rounded) }
 }
 
 /// Centralized geometry policy for the two device families that repeatedly exposed layout bugs:
