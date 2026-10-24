@@ -1,7 +1,7 @@
 diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
 --- a/VeilLink/UI/ConversationViews.swift
 +++ b/VeilLink/UI/ConversationViews.swift
-@@ -304,6 +304,10 @@ struct ChatView: View {
+@@ -304,6 +304,11 @@ struct ChatView: View {
      @State private var replyingTo: ChatMessage?
      @State private var showsSearchBar = false
      @State private var searchQuery = ""
@@ -9,10 +9,11 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
 +    @State private var isPreparingConversationWorkspace = false
 +    @State private var conversationWorkspaceSnapshot: ConversationWorkspaceSnapshot?
 +    @State private var pendingWorkspaceJumpID: String?
++    @State private var showsMessageForge = false
      @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
      @State private var hasOlderMessages = false
      @State private var messageReloadGeneration = 0
-@@ -487,6 +491,18 @@ struct ChatView: View {
+@@ -487,6 +492,18 @@ struct ChatView: View {
                  .onChange(of: messages.last?.id) { _ in
                      if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
                  }
@@ -31,7 +32,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
              }
  
              VStack(spacing: 0) {
-@@ -655,6 +671,12 @@ struct ChatView: View {
+@@ -655,6 +672,17 @@ struct ChatView: View {
                      } label: {
                          Label("搜索聊天", systemImage: "magnifyingglass")
                      }
@@ -41,10 +42,15 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
 +                        Label(isPreparingConversationWorkspace ? "正在整理会话…" : "会话工作台", systemImage: "tray.full.fill")
 +                    }
 +                    .disabled(isPreparingConversationWorkspace)
++                    Button {
++                        showsMessageForge = true
++                    } label: {
++                        Label("消息锻造台", systemImage: "hammer.fill")
++                    }
                      Button { showsAgentAssistant = true } label: {
                          Label("灵核助手", systemImage: "sparkles")
                      }
-@@ -676,7 +698,10 @@ struct ChatView: View {
+@@ -676,7 +704,10 @@ struct ChatView: View {
          .onDisappear {
              model.setConversationVisible(conversation.id, visible: false)
          }
@@ -56,7 +62,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
          .onChange(of: searchQuery) { value in
              let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
              if showsSearchBar, !query.isEmpty, !loadedFullHistoryForSearch {
-@@ -692,6 +717,18 @@ struct ChatView: View {
+@@ -692,6 +723,28 @@ struct ChatView: View {
          .sheet(isPresented: $showsAgentAssistant) {
              AgentConversationAssistantSheet(model: model, conversation: conversation, messages: messages)
          }
@@ -72,10 +78,20 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
 +                )
 +            }
 +        }
++        .sheet(isPresented: $showsMessageForge) {
++            VeilMessageForgeView(
++                initialText: draft,
++                onApply: { forged in
++                    draft = forged
++                    composerMode = .text
++                    model.haptics.resolved()
++                }
++            )
++        }
          .sheet(isPresented: $showsMiniGames, onDismiss: { miniGameInitialSessionID = nil }) {
              MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
          }
-@@ -765,6 +802,52 @@ struct ChatView: View {
+@@ -765,6 +818,52 @@ struct ChatView: View {
          }
      }
  
@@ -130,7 +146,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
          let generation = messageReloadGeneration
 diff --git a/VeilLink/Core/ConversationWorkspace.swift b/VeilLink/Core/ConversationWorkspace.swift
 new file mode 100644
-index 0000000..5bfe0f9
+index 0000000..19ab8d7
 --- /dev/null
 +++ b/VeilLink/Core/ConversationWorkspace.swift
 @@ -0,0 +1,197 @@
@@ -331,6 +347,180 @@ index 0000000..5bfe0f9
 +        return String(text[..<end]) + "…"
 +    }
 +}
+diff --git a/VeilLink/Core/VeilMessageForge.swift b/VeilLink/Core/VeilMessageForge.swift
+new file mode 100644
+index 0000000..b796f1a
+--- /dev/null
++++ b/VeilLink/Core/VeilMessageForge.swift
+@@ -0,0 +1,168 @@
++import Foundation
++
++enum VeilMessageForgeStyle: String, CaseIterable, Identifiable, Hashable, Sendable {
++    case original
++    case compact
++    case bullets
++    case politeRequest
++
++    var id: String { rawValue }
++    var title: String {
++        switch self {
++        case .original: return "原文"
++        case .compact: return "紧凑"
++        case .bullets: return "要点"
++        case .politeRequest: return "礼貌请求"
++        }
++    }
++}
++
++enum VeilMessageForgeTemplate: String, CaseIterable, Identifiable, Sendable {
++    case status
++    case request
++    case meeting
++    case checklist
++    case incident
++
++    var id: String { rawValue }
++    var title: String {
++        switch self {
++        case .status: return "进展同步"
++        case .request: return "明确请求"
++        case .meeting: return "会议约定"
++        case .checklist: return "待办清单"
++        case .incident: return "问题报告"
++        }
++    }
++
++    var text: String {
++        switch self {
++        case .status: return "进展：\n- 已完成：\n- 进行中：\n- 下一步：\n- 阻塞："
++        case .request: return "你好，我需要你协助：\n\n目标：\n期望结果：\n截止时间：\n补充信息：\n\n谢谢。"
++        case .meeting: return "主题：\n建议时间：\n预计时长：\n需要准备：\n确认方式："
++        case .checklist: return "待办：\n☐ \n☐ \n☐ "
++        case .incident: return "问题：\n影响：\n复现步骤：\n1. \n2. \n当前状态：\n需要协助："
++        }
++    }
++}
++
++enum VeilMessageSafetySeverity: Int, Comparable, Sendable {
++    case notice = 0
++    case warning = 1
++    case critical = 2
++    static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
++}
++
++struct VeilMessageSafetyFinding: Identifiable, Equatable, Sendable {
++    enum Kind: String, Hashable, Sendable {
++        case privateKey
++        case accessToken
++        case passwordAssignment
++        case emailAddress
++        case phoneNumber
++    }
++
++    var id: String { kind.rawValue }
++    let kind: Kind
++    let severity: VeilMessageSafetySeverity
++    let title: String
++    let guidance: String
++}
++
++struct VeilMessageForgeAnalysis: Equatable, Sendable {
++    let characters: Int
++    let utf8Bytes: Int
++    let lines: Int
++    let segments: [String]
++    let findings: [VeilMessageSafetyFinding]
++    let withinSingleMessageLimit: Bool
++}
++
++enum VeilMessageForge {
++    static let maximumMessageBytes = 16_384
++
++    static func render(_ source: String, style: VeilMessageForgeStyle) -> String {
++        let normalized = source.replacingOccurrences(of: "\r\n", with: "\n")
++            .replacingOccurrences(of: "\r", with: "\n")
++            .trimmingCharacters(in: .whitespacesAndNewlines)
++        guard !normalized.isEmpty else { return "" }
++        switch style {
++        case .original:
++            return normalized
++        case .compact:
++            return normalized
++                .split(separator: "\n", omittingEmptySubsequences: false)
++                .map { $0.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
++                .reduce(into: [String]()) { lines, line in
++                    if !line.isEmpty || lines.last?.isEmpty == false { lines.append(line) }
++                }
++                .joined(separator: "\n")
++        case .bullets:
++            let lines = normalized.split(separator: "\n").flatMap { line in
++                line.split(whereSeparator: { ".。;；".contains($0) })
++            }
++            return lines.map { "• " + $0.trimmingCharacters(in: .whitespacesAndNewlines) }
++                .filter { $0 != "• " }.joined(separator: "\n")
++        case .politeRequest:
++            let hasGreeting = normalized.hasPrefix("你好") || normalized.hasPrefix("您好")
++            let hasThanks = normalized.hasSuffix("谢谢") || normalized.hasSuffix("谢谢。")
++            return (hasGreeting ? "" : "你好，\n") + normalized + (hasThanks ? "" : "\n谢谢。")
++        }
++    }
++
++    static func analyze(_ text: String, maximumBytes: Int = maximumMessageBytes) -> VeilMessageForgeAnalysis {
++        let segments = split(text, maximumBytes: maximumBytes)
++        return VeilMessageForgeAnalysis(
++            characters: text.count,
++            utf8Bytes: text.utf8.count,
++            lines: text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count,
++            segments: segments,
++            findings: safetyFindings(in: text),
++            withinSingleMessageLimit: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
++                && text.utf8.count <= maximumBytes
++        )
++    }
++
++    static func split(_ text: String, maximumBytes: Int = maximumMessageBytes) -> [String] {
++        guard maximumBytes > 0 else { return [] }
++        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
++        guard !normalized.isEmpty else { return [] }
++        var segments: [String] = []
++        var current = ""
++
++        func flush() {
++            let value = current.trimmingCharacters(in: .whitespacesAndNewlines)
++            if !value.isEmpty { segments.append(value) }
++            current = ""
++        }
++
++        for character in normalized {
++            let candidate = current + String(character)
++            if candidate.utf8.count > maximumBytes {
++                flush()
++                current = String(character)
++                if current.utf8.count > maximumBytes { flush() }
++            } else {
++                current = candidate
++            }
++        }
++        flush()
++        return segments
++    }
++
++    static func safetyFindings(in text: String) -> [VeilMessageSafetyFinding] {
++        let patterns: [(VeilMessageSafetyFinding.Kind, VeilMessageSafetySeverity, String, String, String)] = [
++            (.privateKey, .critical, #"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:seed phrase|助记词)\b"#, "可能包含私钥或助记词", "不要通过聊天发送密钥材料；请删除后再发送。"),
++            (.accessToken, .critical, #"\b(?:Bearer\s+[A-Za-z0-9._~+/=-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"#, "可能包含访问令牌", "撤销已暴露令牌，并从消息中移除。"),
++            (.passwordAssignment, .warning, #"(?i)\b(?:password|passwd|pwd|密码)\s*[:=：]\s*\S{4,}"#, "可能包含密码", "确认对方和场景可信；建议改用专门的秘密传递方式。"),
++            (.emailAddress, .notice, #"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"#, "包含邮箱地址", "发送前确认是否需要暴露个人联系方式。"),
++            (.phoneNumber, .notice, #"(?<!\d)(?:\+?\d[\d -]{8,}\d)(?!\d)"#, "可能包含电话号码", "发送前确认是否需要暴露个人联系方式。")
++        ]
++        return patterns.compactMap { kind, severity, pattern, title, guidance in
++            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
++                  regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)) != nil else { return nil }
++            return VeilMessageSafetyFinding(kind: kind, severity: severity, title: title, guidance: guidance)
++        }
++        .sorted { $0.severity > $1.severity }
++    }
++}
 diff --git a/VeilLink/UI/ConversationWorkspaceView.swift b/VeilLink/UI/ConversationWorkspaceView.swift
 new file mode 100644
 index 0000000..51c58b8
@@ -508,9 +698,189 @@ index 0000000..51c58b8
 +        .buttonStyle(.plain)
 +    }
 +}
+diff --git a/VeilLink/UI/VeilMessageForgeView.swift b/VeilLink/UI/VeilMessageForgeView.swift
+new file mode 100644
+index 0000000..4737743
+--- /dev/null
++++ b/VeilLink/UI/VeilMessageForgeView.swift
+@@ -0,0 +1,174 @@
++import SwiftUI
++
++struct VeilMessageForgeView: View {
++    let initialText: String
++    let onApply: (String) -> Void
++
++    @Environment(\.dismiss) private var dismiss
++    @State private var source: String
++    @State private var style: VeilMessageForgeStyle = .original
++
++    init(initialText: String, onApply: @escaping (String) -> Void) {
++        self.initialText = initialText
++        self.onApply = onApply
++        _source = State(initialValue: initialText)
++    }
++
++    private var output: String { VeilMessageForge.render(source, style: style) }
++    private var analysis: VeilMessageForgeAnalysis { VeilMessageForge.analyze(output) }
++
++    var body: some View {
++        NavigationView {
++            VeilStableScrollView {
++                VStack(spacing: 14) {
++                    heroCard
++                    templatesCard
++                    editorCard
++                    styleCard
++                    safetyCard
++                    previewCard
++                }
++            }
++            .background(VeilAmbientBackground())
++            .navigationTitle("消息锻造台")
++            .navigationBarTitleDisplayMode(.inline)
++            .toolbar {
++                ToolbarItem(placement: .navigationBarLeading) { Button("取消") { dismiss() } }
++                ToolbarItem(placement: .navigationBarTrailing) {
++                    Button("回填") {
++                        onApply(output)
++                        dismiss()
++                    }
++                    .disabled(output.isEmpty || !analysis.withinSingleMessageLimit || analysis.findings.contains { $0.severity == .critical })
++                }
++            }
++        }
++    }
++
++    private var heroCard: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            HStack {
++                Label("LOCAL COMPOSE", systemImage: "hammer.fill")
++                    .font(VeilType.terminalLabel).foregroundColor(VeilTheme.mutedGold)
++                Spacer()
++                Text(analysis.withinSingleMessageLimit ? "READY" : "OVER LIMIT")
++                    .font(VeilType.terminalLabel)
++                    .foregroundColor(analysis.withinSingleMessageLimit ? VeilTheme.success : VeilTheme.danger)
++            }
++            Text("写得更清楚，发得更安全")
++                .font(.system(.title2, design: .rounded).weight(.bold))
++            Text("模板、格式、UTF-8 协议预算与敏感内容检查全部在本机完成。")
++                .font(.caption).foregroundColor(VeilTheme.secondaryText)
++            HStack(spacing: 8) {
++                metric("字符", analysis.characters)
++                metric("字节", analysis.utf8Bytes)
++                metric("行", analysis.lines)
++                metric("分段", analysis.segments.count)
++            }
++        }
++        .veilCard(emphasized: true)
++    }
++
++    private var templatesCard: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            Text("结构模板").font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
++            ScrollView(.horizontal, showsIndicators: false) {
++                HStack(spacing: 8) {
++                    ForEach(VeilMessageForgeTemplate.allCases) { template in
++                        Button(template.title) {
++                            source = template.text
++                            style = .original
++                        }
++                        .buttonStyle(VeilGameSecondaryButtonStyle())
++                    }
++                }
++            }
++        }
++        .veilCard()
++    }
++
++    private var editorCard: some View {
++        VStack(alignment: .leading, spacing: 9) {
++            HStack {
++                Text("原始内容").font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
++                Spacer()
++                if !source.isEmpty { Button("清空", role: .destructive) { source = "" }.font(.caption) }
++            }
++            TextEditor(text: $source)
++                .font(.body)
++                .frame(minHeight: 150)
++                .padding(8)
++                .background(VeilTheme.subtleFill)
++                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
++        }
++        .veilCard()
++    }
++
++    private var styleCard: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            Text("整理方式").font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
++            Picker("整理方式", selection: $style) {
++                ForEach(VeilMessageForgeStyle.allCases) { value in Text(value.title).tag(value) }
++            }
++            .pickerStyle(.segmented)
++            Text("所有变化都可在下方预览；不会自动发送。")
++                .font(.caption2).foregroundColor(VeilTheme.tertiaryText)
++        }
++        .veilCard()
++    }
++
++    private var safetyCard: some View {
++        VStack(alignment: .leading, spacing: 9) {
++            Label("发送前检查", systemImage: analysis.findings.isEmpty ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
++                .font(VeilType.cardTitle)
++                .foregroundColor(analysis.findings.isEmpty ? VeilTheme.success : VeilTheme.gold)
++            if analysis.findings.isEmpty {
++                Text("没有发现常见的密钥、令牌、密码或联系方式模式。启发式检查不能代替人工确认。")
++                    .font(.caption).foregroundColor(VeilTheme.secondaryText)
++            } else {
++                ForEach(analysis.findings) { finding in
++                    VStack(alignment: .leading, spacing: 2) {
++                        Text(finding.title).font(.subheadline.weight(.semibold))
++                        Text(finding.guidance).font(.caption).foregroundColor(VeilTheme.secondaryText)
++                    }
++                    .padding(.vertical, 4)
++                }
++            }
++        }
++        .veilCard()
++    }
++
++    private var previewCard: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            HStack {
++                Text("发送预览").font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
++                Spacer()
++                Text("\(analysis.utf8Bytes)/\(VeilMessageForge.maximumMessageBytes) B")
++                    .font(.caption.monospacedDigit())
++                    .foregroundColor(analysis.withinSingleMessageLimit ? VeilTheme.secondaryText : VeilTheme.danger)
++            }
++            Text(output.isEmpty ? "输入内容或选择模板" : output)
++                .font(.body)
++                .foregroundColor(output.isEmpty ? VeilTheme.tertiaryText : VeilTheme.text)
++                .textSelection(.enabled)
++                .frame(maxWidth: .infinity, alignment: .leading)
++                .padding(12)
++                .background(VeilTheme.subtleFill)
++                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
++            if analysis.segments.count > 1 {
++                Text("当前内容需要拆成 \(analysis.segments.count) 条消息。为避免部分发送，锻造台只提供预览，不会自动连发。")
++                    .font(.caption).foregroundColor(VeilTheme.gold)
++            }
++        }
++        .veilCard()
++    }
++
++    private func metric(_ title: String, _ value: Int) -> some View {
++        VStack(spacing: 2) {
++            Text("\(value)").font(.subheadline.bold().monospacedDigit())
++            Text(title).font(.caption2).foregroundColor(VeilTheme.secondaryText)
++        }
++        .frame(maxWidth: .infinity).padding(.vertical, 7)
++        .background(VeilTheme.subtleFill).clipShape(RoundedRectangle(cornerRadius: 8))
++    }
++}
 diff --git a/VeilLinkTests/ConversationWorkspaceTests.swift b/VeilLinkTests/ConversationWorkspaceTests.swift
 new file mode 100644
-index 0000000..91e3c88
+index 0000000..066d308
 --- /dev/null
 +++ b/VeilLinkTests/ConversationWorkspaceTests.swift
 @@ -0,0 +1,102 @@
@@ -614,6 +984,71 @@ index 0000000..91e3c88
 +        ])
 +        let result = ConversationWorkspaceEngine.filteredItems(in: snapshot, kind: .action, query: "发布")
 +        XCTAssertEqual(result.map(\.messageID), ["a"])
++    }
++}
+diff --git a/VeilLinkTests/VeilMessageForgeTests.swift b/VeilLinkTests/VeilMessageForgeTests.swift
+new file mode 100644
+index 0000000..db5529c
+--- /dev/null
++++ b/VeilLinkTests/VeilMessageForgeTests.swift
+@@ -0,0 +1,59 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilMessageForgeTests: XCTestCase {
++    func testOriginalOnlyNormalizesOuterWhitespaceAndCRLF() {
++        XCTAssertEqual(VeilMessageForge.render("  a\r\nb  ", style: .original), "a\nb")
++    }
++
++    func testCompactCollapsesWhitespaceWithoutDroppingWords() {
++        XCTAssertEqual(VeilMessageForge.render("a   b\n\n\n c", style: .compact), "a b\n\nc")
++    }
++
++    func testBulletsSplitLinesAndSentenceTerminators() {
++        XCTAssertEqual(VeilMessageForge.render("第一项。第二项\n第三项", style: .bullets), "• 第一项\n• 第二项\n• 第三项")
++    }
++
++    func testPoliteRequestDoesNotDuplicateGreetingOrThanks() {
++        XCTAssertEqual(VeilMessageForge.render("请处理", style: .politeRequest), "你好，\n请处理\n谢谢。")
++        XCTAssertEqual(VeilMessageForge.render("你好，请处理\n谢谢。", style: .politeRequest), "你好，请处理\n谢谢。")
++    }
++
++    func testUTF8BudgetUsesBytesNotCharacterCount() {
++        let analysis = VeilMessageForge.analyze(String(repeating: "中", count: 6), maximumBytes: 10)
++        XCTAssertEqual(analysis.utf8Bytes, 18)
++        XCTAssertFalse(analysis.withinSingleMessageLimit)
++        XCTAssertEqual(analysis.segments, ["中中中", "中中中"])
++    }
++
++    func testSplitNeverBreaksExtendedGraphemeCluster() {
++        let family = "👨‍👩‍👧‍👦"
++        XCTAssertEqual(VeilMessageForge.split(family + family, maximumBytes: family.utf8.count), [family, family])
++    }
++
++    func testPrivateKeyAndTokenAreCriticalWithoutReturningSecret() {
++        let text = "-----BEGIN PRIVATE KEY-----\nBearer abcdefghijklmnopqrstuvwxyz"
++        let findings = VeilMessageForge.safetyFindings(in: text)
++        XCTAssertEqual(Set(findings.map(\.kind)), Set([.privateKey, .accessToken]))
++        XCTAssertTrue(findings.allSatisfy { $0.severity == .critical })
++        XCTAssertFalse(findings.map(\.guidance).joined().contains("abcdefghijklmnopqrstuvwxyz"))
++    }
++
++    func testPasswordEmailAndPhoneWarnings() {
++        let findings = VeilMessageForge.safetyFindings(in: "password: secret123 user@example.com +86 138 0013 8000")
++        XCTAssertEqual(Set(findings.map(\.kind)), Set([.passwordAssignment, .emailAddress, .phoneNumber]))
++    }
++
++    func testEmptyMessageCannotPassSingleMessageLimit() {
++        let analysis = VeilMessageForge.analyze("   ")
++        XCTAssertFalse(analysis.withinSingleMessageLimit)
++        XCTAssertTrue(analysis.segments.isEmpty)
++    }
++
++    func testTemplatesStayWithinProtocolBudget() {
++        for template in VeilMessageForgeTemplate.allCases {
++            XCTAssertFalse(template.text.isEmpty)
++            XCTAssertLessThanOrEqual(template.text.utf8.count, VeilMessageForge.maximumMessageBytes)
++        }
 +    }
 +}
 
