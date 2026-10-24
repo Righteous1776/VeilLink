@@ -8,14 +8,22 @@
    - `VeilLink/Core/AppTheme.swift`
    - `VeilLink/Core/SkeuomorphicComponents.swift`
    - `VeilLink/Core/VeilMotionKit.swift`
+   - `VeilLink/Core/VeilAppleMaterialEngine.swift`
    - `VeilLinkTests/GlobalAppearanceModeTests.swift`
 4. Confirm no `.id(appearance...)`, timer, delay, DispatchQueue workaround or root navigation reconstruction was introduced.
-5. Confirm the five key rendering types own a live `@ObservedObject` dependency:
+5. Confirm all nine key rendering types own a live `@ObservedObject` dependency:
    - `VeilAmbientBackground`
    - `VeilCardModifier`
    - `VeilInstrumentBackground`
    - `VeilInstrumentPlate`
    - `VeilDynamicGlowBorder`
+   - `VeilPlatformGlassSurfaceModifier`
+   - `VeilAppleSoftSurface`
+   - `VeilAppleSoftBackground`
+   - `VeilAppleSoftTextFieldModifier`
+
+6. Check every unified diff hunk's old/new count and exact original lines against `base_main_sha`. Reject any malformed hunk; the first revision was invalid.
+7. When a macOS integration checkout is available, run actual `git apply --check` as well; JS range/context verification is not a substitute for `git apply --check` or Xcode.
 
 ## Unit tests
 
@@ -54,7 +62,7 @@ On Settings -> 外观主题:
 6. No old dark card may remain visible inside a light shell.
 
 ### Apple Soft
-Repeat the same Light/Dark alternation and verify the soft surface, text and system chrome do not split across modes.
+Repeat the same Light/Dark alternation and verify the soft surface, text and system chrome do not split across modes. Test both legacy Apple Soft fallback and the system-native iOS 26 glass path; native material may still change with OS trait propagation and requires visual confirmation.
 
 ### Veil Original / Islet
 Repeat a shorter 5-switch matrix and confirm card/background/text stay coherent.
