@@ -254,7 +254,71 @@ diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseSto
              ("DELETE FROM conversations WHERE local_identity_id = ?;", [.text(localIdentityID)]),
              ("DELETE FROM contacts WHERE local_identity_id = ?;", [.text(localIdentityID)]),
              ("DELETE FROM profiles WHERE id = ?;", [.text(localIdentityID)])
-@@ -1488,6 +1489,19 @@
+@@ -1386,9 +1387,17 @@
+                 """
+                 INSERT OR IGNORE INTO control_outbound_events(
+                     local_identity_id, event_id, payload_ciphertext, created_at, expires_at
+-                ) VALUES(?, ?, ?, ?, ?);
++                )
++                SELECT ?, ?, ?, ?, ?
++                WHERE (SELECT COUNT(*) FROM control_outbound_events WHERE local_identity_id = ?) < 512
++                   OR EXISTS (
++                       SELECT 1 FROM control_outbound_events
++                       WHERE local_identity_id = ? AND event_id = ?
++                   );
+                 """,
+-                [.text(localIdentityID), .text(event.eventID), .blob(sealed), .double(now), .double(expiration)]
++                [.text(localIdentityID), .text(event.eventID), .blob(sealed),
++                 .double(now), .double(expiration),
++                 .text(localIdentityID), .text(localIdentityID), .text(event.eventID)]
+             )
+         ]
+         for recipient in recipients {
+@@ -1423,6 +1432,7 @@
+             JOIN control_outbound_events e
+               ON t.local_identity_id = e.local_identity_id AND t.event_id = e.event_id
+             WHERE t.local_identity_id = ? AND t.peer_identity_id = ?
++              AND t.acknowledged_at IS NULL
+               AND t.next_attempt_at <= ? AND e.expires_at > ?
+             ORDER BY e.created_at ASC, e.event_id ASC
+             LIMIT \(safeLimit);
+@@ -1453,7 +1463,8 @@
+                     WHEN attempts = 3 THEN 32
+                     ELSE 60
+                 END
+-            WHERE local_identity_id = ? AND peer_identity_id = ? AND event_id = ?;
++            WHERE local_identity_id = ? AND peer_identity_id = ? AND event_id = ?
++              AND acknowledged_at IS NULL;
+             """,
+             bindings: [.double(now), .text(localIdentityID), .text(peerIdentityID), .text(eventID)]
+         )
+@@ -1471,8 +1482,14 @@
+         }
+         try writeBatch([
+             (
+-                "DELETE FROM control_outbound_targets WHERE local_identity_id = ? AND peer_identity_id = ? AND event_id = ?;",
+-                [.text(localIdentityID), .text(peerIdentityID), .text(eventID)]
++                """
++                UPDATE control_outbound_targets
++                SET acknowledged_at = ?
++                WHERE local_identity_id = ? AND peer_identity_id = ? AND event_id = ?
++                  AND acknowledged_at IS NULL;
++                """,
++                [.double(Date().timeIntervalSince1970), .text(localIdentityID),
++                 .text(peerIdentityID), .text(eventID)]
+             ),
+             (
+                 """
+@@ -1480,7 +1497,7 @@
+                 WHERE local_identity_id = ? AND event_id = ?
+                   AND NOT EXISTS (
+                       SELECT 1 FROM control_outbound_targets
+-                      WHERE local_identity_id = ? AND event_id = ?
++                      WHERE local_identity_id = ? AND event_id = ? AND acknowledged_at IS NULL
+                   );
+                 """,
+                 [.text(localIdentityID), .text(eventID), .text(localIdentityID), .text(eventID)]
+@@ -1488,6 +1505,19 @@
          ])
      }
  
@@ -265,7 +329,7 @@ diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseSto
 +            SELECT COUNT(*) FROM control_outbound_targets t
 +            JOIN control_outbound_events e
 +              ON e.local_identity_id = t.local_identity_id AND e.event_id = t.event_id
-+            WHERE t.local_identity_id = ? AND e.expires_at > ?;
++            WHERE t.local_identity_id = ? AND t.acknowledged_at IS NULL AND e.expires_at > ?;
 +            """,
 +            bindings: [.text(localIdentityID), .double(now)]
 +        ) { Int(sqlite3_column_int64($0, 0)) }.first ?? 0
@@ -274,6 +338,14 @@ diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseSto
      @discardableResult
      func cleanupExpiredDurableControlEvents(now: Date = Date()) throws -> Int {
          let cutOff = now.timeIntervalSince1970
+@@ -1680,6 +1710,7 @@
+                 peer_identity_id TEXT NOT NULL,
+                 next_attempt_at REAL NOT NULL,
+                 attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts BETWEEN 0 AND 30),
++                acknowledged_at REAL,
+                 PRIMARY KEY(local_identity_id, event_id, peer_identity_id),
+                 FOREIGN KEY(local_identity_id, event_id)
+                     REFERENCES control_outbound_events(local_identity_id, event_id) ON DELETE CASCADE,
 diff --git a/VeilLinkTests/DatabaseStoreTests.swift b/VeilLinkTests/DatabaseStoreTests.swift
 --- a/VeilLinkTests/DatabaseStoreTests.swift
 +++ b/VeilLinkTests/DatabaseStoreTests.swift
@@ -304,10 +376,14 @@ diff --git a/VeilLinkTests/DatabaseStoreTests.swift b/VeilLinkTests/DatabaseStor
      func testDurableControlOutboxOnePayloadTwoIndependentRecipients() throws {
          let (store, root) = try makeStore()
          defer { try? FileManager.default.removeItem(at: root) }
-@@ -30,12 +50,14 @@
+@@ -30,12 +50,18 @@
          )
          XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: a).isEmpty)
          XCTAssertEqual(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).map { $0.event }, [event])
++        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: local), 1)
++        // Idempotent re-enqueue must NOT resurrect an already acknowledged target A.
++        try store.enqueueDurableControlEvent(localIdentityID: local, recipientIdentityIDs: [a, b], event: event)
++        XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: a).isEmpty)
 +        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: local), 1)
          try store.recordDurableControlSendAttempt(localIdentityID: local, peerIdentityID: b, eventID: event.eventID)
          XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).isEmpty)
