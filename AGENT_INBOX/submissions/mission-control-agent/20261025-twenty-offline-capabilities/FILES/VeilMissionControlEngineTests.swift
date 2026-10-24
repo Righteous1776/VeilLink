@@ -62,7 +62,7 @@ final class VeilMissionControlEngineTests: XCTestCase {
 
     func testThermalPrivacyBatteryWarnings() {
         let poor = VeilMissionScenario.degraded.snapshot
-        for feature: VeilMissionFeature in [.thermalGuard, .batteryReserve, .privacyFootprint] {
+        for feature in [VeilMissionFeature.thermalGuard, .batteryReserve, .privacyFootprint] {
             XCTAssertEqual(VeilMissionControlEngine.analyze(feature, snapshot: poor).severity, .caution)
         }
     }
