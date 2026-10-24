@@ -1,0 +1,218 @@
+diff --git a/VeilLink/Security/SessionCoordinator.swift b/VeilLink/Security/SessionCoordinator.swift
+--- a/VeilLink/Security/SessionCoordinator.swift
++++ b/VeilLink/Security/SessionCoordinator.swift
+@@ -55,7 +55,7 @@
+     let attachmentChunkCount: Int?
+ }
+ 
+-private struct HelloPacket: Codable, Equatable {
++struct HelloPacket: Codable, Equatable {
+     let protocolVersion: Int
+     let identityID: String
+     let displayName: String
+@@ -63,12 +63,40 @@
+     let agreementPublicKey: Data
+     let nonce: Data
+     let signature: Data
++    // Optional, separately signed metadata. Old v4 decoders ignore these fields.
++    var capabilitySchema: Int? = nil
++    var capabilityBits: Int? = nil
++    var capabilitySignature: Data? = nil
+ 
+     var signedPayload: Data {
+         var value = Data("VeilLink/Hello/v4|\(protocolVersion)|\(identityID)|\(displayName)|".utf8)
+         value.append(identityPublicKey); value.append(agreementPublicKey); value.append(nonce)
+         return value
+     }
++
++    /// The v4 signature transcript above MUST remain bit-identical for legacy peers.
++    /// This separate v1 domain binds the optional extension to this exact v4 signed Hello.
++    var signedCapabilitiesPayload: Data? {
++        guard let schema = capabilitySchema, let bits = capabilityBits else { return nil }
++        var value = Data("VeilLink/HelloCapabilities/v1|".utf8)
++        value.append(signedPayload)
++        value.append(Data("|v4sig|".utf8))
++        value.append(signature)
++        value.append(Data("|\(schema)|\(bits)|".utf8))
++        return value
++    }
++
++    /// Failure to validate a *supplement* downgrades only optional capabilities, never v4 trust.
++    func verifiedCapabilityBits() -> Int? {
++        guard let schema = capabilitySchema, let bits = capabilityBits,
++              let signature = capabilitySignature, signature.count == 64,
++              let transcript = signedCapabilitiesPayload,
++              let recognized = VeilPeerCapabilityPolicy.validatedBits(schemaVersion: schema, bits: bits),
++              (try? CryptoEngine.verify(signature: signature, for: transcript, publicKey: identityPublicKey)) != nil else {
++            return nil
++        }
++        return recognized
++    }
+ }
+ 
+ private struct SessionContext {
+@@ -710,7 +738,14 @@
+         guard let local = identity.activeIdentity else { throw IdentityError.missingIdentity }
+         let ephemeral = Curve25519.KeyAgreement.PrivateKey(); let nonce = PasswordKDF.randomData(count: 16)
+         let unsigned = HelloPacket(protocolVersion: WireProtocol.version, identityID: local.id, displayName: local.displayName, identityPublicKey: local.publicKey, agreementPublicKey: ephemeral.publicKey.rawRepresentation, nonce: nonce, signature: Data())
+-        let hello = HelloPacket(protocolVersion: unsigned.protocolVersion, identityID: unsigned.identityID, displayName: unsigned.displayName, identityPublicKey: unsigned.identityPublicKey, agreementPublicKey: unsigned.agreementPublicKey, nonce: unsigned.nonce, signature: try identity.signingKey().signature(for: unsigned.signedPayload))
++        var hello = HelloPacket(protocolVersion: unsigned.protocolVersion, identityID: unsigned.identityID, displayName: unsigned.displayName, identityPublicKey: unsigned.identityPublicKey, agreementPublicKey: unsigned.agreementPublicKey, nonce: unsigned.nonce, signature: try identity.signingKey().signature(for: unsigned.signedPayload))
++        // Send only a backwards-compatible optional field set. Both signatures use
++        // the existing device identity; no new keypair or v5 transport is required.
++        hello.capabilitySchema = VeilPeerCapabilityPolicy.schemaVersion
++        hello.capabilityBits = VeilPeerCapabilityPolicy.advertisedFeatureBits
++        if let signedExtension = hello.signedCapabilitiesPayload {
++            hello.capabilitySignature = try identity.signingKey().signature(for: signedExtension)
++        }
+         sessions[transportID] = SessionContext(transportID: transportID, localEphemeral: ephemeral, localHello: hello)
+         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .hello, payload: try encoder.encode(hello))
+         let result = transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable
+@@ -756,6 +791,9 @@
+         let keys = try CryptoEngine.deriveSessionKeys(localPrivateKey: context.localEphemeral, remotePublicKey: remote.agreementPublicKey, transcript: transcript, localIdentityID: context.localHello.identityID, remoteIdentityID: remote.identityID)
+         context.remoteHello = remote
+         context.keys = keys
++        // Fresh Hello capabilities are signed and tied to this handshake ephemeral + nonce.
++        // With older peers, the capability stays nil until a real authenticated chat ACK.
++        context.negotiatedFeatureBits = remote.verifiedCapabilityBits()
+         context.replayWindow = ReplayWindow()
+         context.nextSendSequence = 1
+         sessions[transportID] = context
+@@ -977,9 +1015,12 @@
+         guard UUID(uuidString: payload.messageID) != nil, context.replayWindow.isPotentiallyFresh(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+         let ack = try decoder.decode(WireAcknowledgement.self, from: CryptoEngine.decrypt(payload, key: keys.receiveKey, context: "ack"))
+         guard ack.messageID == payload.messageID, context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+-        if let freshBits = VeilPeerCapabilityPolicy.validatedBits(
+-            schemaVersion: ack.capabilitySchema, bits: ack.capabilityBits
+-        ) {
++        if context.negotiatedFeatureBits == nil,
++           let freshBits = VeilPeerCapabilityPolicy.validatedBits(
++               schemaVersion: ack.capabilitySchema, bits: ack.capabilityBits
++           ) {
++            // Legacy v4/R4 peers may advertise only through a genuine chat ACK.
++            // Do not overwrite a stronger Hello-signed capability proof.
+             context.negotiatedFeatureBits = freshBits
+         }
+         sessions[transportID] = context
+diff --git a/VeilLinkTests/VeilHelloCapabilityTests.swift b/VeilLinkTests/VeilHelloCapabilityTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilHelloCapabilityTests.swift
+@@ -0,0 +1,118 @@
++import CryptoKit
++import Foundation
++import XCTest
++@testable import VeilLink
++
++final class VeilHelloCapabilityTests: XCTestCase {
++    private struct LegacyHello: Codable {
++        let protocolVersion: Int
++        let identityID: String
++        let displayName: String
++        let identityPublicKey: Data
++        let agreementPublicKey: Data
++        let nonce: Data
++        let signature: Data
++
++        var signedPayload: Data {
++            var bytes = Data("VeilLink/Hello/v4|\(protocolVersion)|\(identityID)|\(displayName)|".utf8)
++            bytes.append(identityPublicKey)
++            bytes.append(agreementPublicKey)
++            bytes.append(nonce)
++            return bytes
++        }
++    }
++
++    private func helloWithKey() throws -> (HelloPacket, Curve25519.Signing.PrivateKey) {
++        let key = Curve25519.Signing.PrivateKey()
++        let pub = key.publicKey.rawRepresentation
++        let ephemeral = Curve25519.KeyAgreement.PrivateKey().publicKey.rawRepresentation
++        let id = CryptoEngine.identityID(publicKey: pub)
++        let unsigned = HelloPacket(
++            protocolVersion: 4, identityID: id, displayName: "test peer",
++            identityPublicKey: pub, agreementPublicKey: ephemeral,
++            nonce: Data(repeating: 0x4D, count: 16), signature: Data()
++        )
++        let signature = try key.signature(for: unsigned.signedPayload)
++        return (
++            HelloPacket(protocolVersion: 4, identityID: id, displayName: "test peer",
++                        identityPublicKey: pub, agreementPublicKey: ephemeral,
++                        nonce: Data(repeating: 0x4D, count: 16), signature: signature),
++            key
++        )
++    }
++
++    func testLegacyHelloDecoderAcceptsSignedR5Metadata() throws {
++        var (hello, key) = try helloWithKey()
++        let oldSignedPayload = hello.signedPayload
++        hello.capabilitySchema = 1
++        hello.capabilityBits = 7
++        hello.capabilitySignature = try key.signature(for: XCTUnwrap(hello.signedCapabilitiesPayload))
++        let encoded = try JSONEncoder().encode(hello)
++
++        let legacy = try JSONDecoder().decode(LegacyHello.self, from: encoded)
++        XCTAssertEqual(legacy.signedPayload, oldSignedPayload)
++        try CryptoEngine.verify(signature: legacy.signature, for: legacy.signedPayload, publicKey: legacy.identityPublicKey)
++        let upgraded = try JSONDecoder().decode(HelloPacket.self, from: encoded)
++        XCTAssertEqual(upgraded.verifiedCapabilityBits(), 7)
++    }
++
++    func testLegacyWireV4HelloCanStillBeDecodedByR5() throws {
++        let (hello, _) = try helloWithKey()
++        let legacy = LegacyHello(
++            protocolVersion: hello.protocolVersion, identityID: hello.identityID,
++            displayName: hello.displayName, identityPublicKey: hello.identityPublicKey,
++            agreementPublicKey: hello.agreementPublicKey, nonce: hello.nonce, signature: hello.signature
++        )
++        let upgraded = try JSONDecoder().decode(HelloPacket.self, from: JSONEncoder().encode(legacy))
++        XCTAssertNil(upgraded.verifiedCapabilityBits())
++        XCTAssertNil(upgraded.capabilitySignature)
++        XCTAssertEqual(upgraded.signedPayload, legacy.signedPayload)
++    }
++
++    func testCapabilityTamperingOnlyDisablesOptionalFeatures() throws {
++        var (hello, key) = try helloWithKey()
++        hello.capabilitySchema = 1
++        hello.capabilityBits = 7
++        hello.capabilitySignature = try key.signature(for: XCTUnwrap(hello.signedCapabilitiesPayload))
++        XCTAssertEqual(hello.verifiedCapabilityBits(), 7)
++        hello.capabilityBits = 3
++        XCTAssertNil(hello.verifiedCapabilityBits())
++        try CryptoEngine.verify(signature: hello.signature, for: hello.signedPayload, publicKey: hello.identityPublicKey)
++    }
++
++    func testTamperedSessionEphemeralCannotReuseExtensionProof() throws {
++        var (hello, key) = try helloWithKey()
++        hello.capabilitySchema = 1
++        hello.capabilityBits = 7
++        hello.capabilitySignature = try key.signature(for: XCTUnwrap(hello.signedCapabilitiesPayload))
++        let original = hello.capabilitySignature
++        hello = HelloPacket(
++            protocolVersion: hello.protocolVersion,
++            identityID: hello.identityID,
++            displayName: hello.displayName,
++            identityPublicKey: hello.identityPublicKey,
++            agreementPublicKey: Data(repeating: 0x19, count: 32),
++            nonce: hello.nonce,
++            signature: hello.signature,
++            capabilitySchema: hello.capabilitySchema,
++            capabilityBits: hello.capabilityBits,
++            capabilitySignature: hello.capabilitySignature
++        )
++        // This would fail the original v4 Hello signature too; the R5 supplement
++        // is additionally cryptographically bound to the exact same v4 transcript.
++        XCTAssertEqual(hello.capabilitySignature, original)
++        XCTAssertNil(hello.verifiedCapabilityBits())
++    }
++
++    func testInvalidOrUnknownExtensionDoesNotGrantCapabilities() throws {
++        var (hello, key) = try helloWithKey()
++        hello.capabilitySchema = 1
++        hello.capabilityBits = 8
++        hello.capabilitySignature = try key.signature(for: XCTUnwrap(hello.signedCapabilitiesPayload))
++        XCTAssertNil(hello.verifiedCapabilityBits())
++        hello.capabilitySchema = 2
++        XCTAssertNil(hello.verifiedCapabilityBits())
++        hello.capabilitySignature = nil
++        XCTAssertNil(hello.verifiedCapabilityBits())
++    }
++}
