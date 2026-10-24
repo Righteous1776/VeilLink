@@ -1,0 +1,697 @@
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -26,4 +26,7 @@ struct SettingsView: View {
+     @ObservedObject private var appearance = VeilAppearanceController.shared
+     @ObservedObject private var backgroundContinuity = VeilBackgroundContinuityCenter.shared
++    @AppStorage("settings.section.appearanceAndData.expanded") private var appearanceAndDataExpanded = false
++    @AppStorage("settings.section.connectivity.expanded") private var connectivityExpanded = false
++    @AppStorage("settings.section.intelligence.expanded") private var intelligenceExpanded = false
+     @State private var diagnosticsCopied = false
+     @State private var requestedKernelMode: VeilKernelRuntimeMode?
+@@ -47,16 +50,29 @@ struct SettingsView: View {
+             VStack(spacing: 16) {
+-                profileCard.veilStaggeredEntrance(index: 0)
+-                appearanceCard.veilStaggeredEntrance(index: 1)
+-                securityCard.veilStaggeredEntrance(index: 2)
+-                legalCard.veilStaggeredEntrance(index: 3)
+-                storageCard.veilStaggeredEntrance(index: 4)
+-                mediaCard.veilStaggeredEntrance(index: 5)
+-                agentCard.veilStaggeredEntrance(index: 6)
+-                feedbackCard.veilStaggeredEntrance(index: 7)
+-                bluetoothCard.veilStaggeredEntrance(index: 8)
+-                backgroundContinuityCard.veilStaggeredEntrance(index: 9)
+-                internetRelayCard.veilStaggeredEntrance(index: 10)
+-                a9HealthCard.veilStaggeredEntrance(index: 11)
+-                kernelRuntimeCard.veilStaggeredEntrance(index: 12)
+-                versionFooter.veilStaggeredEntrance(index: 13)
++                profileCard.veilStaggeredEntrance(index: 0)
++                securityCard.veilStaggeredEntrance(index: 1)
++                VeilSettingsDisclosureSection(section: .appearanceAndData, isExpanded: $appearanceAndDataExpanded) {
++                    VStack(spacing: 12) {
++                        appearanceCard
++                        legalCard
++                        storageCard
++                        mediaCard
++                        feedbackCard
++                    }
++                }
++                VeilSettingsDisclosureSection(section: .connectivity, isExpanded: $connectivityExpanded) {
++                    VStack(spacing: 12) {
++                        bluetoothCard
++                        backgroundContinuityCard
++                        runtimeEnvironmentCard
++                        internetRelayCard
++                    }
++                }
++                VeilSettingsDisclosureSection(section: .intelligence, isExpanded: $intelligenceExpanded) {
++                    VStack(spacing: 12) {
++                        agentCard
++                        a9HealthCard
++                        kernelRuntimeCard
++                    }
++                }
++                versionFooter.veilStaggeredEntrance(index: 5)
+             }
+@@ -697,4 +713,35 @@ struct SettingsView: View {
+         .veilCard(emphasized: backgroundContinuity.continuityEnabled)
+     }
+ 
++    private var runtimeEnvironmentCard: some View {
++        let snapshot = VeilRuntimeEnvironment.current
++        return NavigationLink(destination: VeilRuntimeCapabilityView(snapshot: snapshot)) {
++            HStack(spacing: 12) {
++                Image(systemName: snapshot.isTrollStore ? "bolt.shield.fill" : "checkmark.shield.fill")
++                    .font(.system(size: 21, weight: .semibold))
++                    .foregroundColor(snapshot.isTrollStore ? VeilTheme.goldBright : VeilTheme.success)
++                VStack(alignment: .leading, spacing: 4) {
++                    Text("运行环境与能力")
++                        .font(.headline)
++                        .foregroundColor(VeilTheme.text)
++                    Text("\(snapshot.channel.title) · \(snapshot.profile.title)")
++                        .font(.caption)
++                        .foregroundColor(VeilTheme.secondaryText)
++                        .lineLimit(2)
++                }
++                Spacer()
++                if snapshot.isTrollStore {
++                    Text("TS")
++                        .font(VeilType.terminalLabel)
++                        .foregroundColor(VeilTheme.goldBright)
++                }
++                Image(systemName: "chevron.right")
++                    .font(.caption.weight(.bold))
++                    .foregroundColor(VeilTheme.tertiaryText)
++            }
++        }
++        .buttonStyle(VeilPressStyle())
++        .veilCard(emphasized: snapshot.isTrollStore)
++    }
++
+     private var internetRelayCard: some View {
+diff --git a/VeilLink/Core/VeilRuntimeEnvironment.swift b/VeilLink/Core/VeilRuntimeEnvironment.swift
+new file mode 100644
+index 0000000..0dce214
+--- /dev/null
++++ b/VeilLink/Core/VeilRuntimeEnvironment.swift
+@@ -0,0 +1,216 @@
++import Foundation
++
++enum VeilInstallChannel: String, Equatable, Sendable {
++    case simulator
++    case trollStore
++    case trollStoreLite
++    case appStore
++    case testFlight
++    case provisioned
++    case unknown
++
++    var title: String {
++        switch self {
++        case .simulator: return "模拟器"
++        case .trollStore: return "TrollStore"
++        case .trollStoreLite: return "TrollStore Lite"
++        case .appStore: return "App Store"
++        case .testFlight: return "TestFlight"
++        case .provisioned: return "普通签名安装"
++        case .unknown: return "未知签名来源"
++        }
++    }
++}
++
++enum VeilRuntimeProfile: String, Equatable, Sendable {
++    case standard
++    case persistentSandboxed
++    case enhancedCandidate
++
++    var title: String {
++        switch self {
++        case .standard: return "标准兼容模式"
++        case .persistentSandboxed: return "持久沙盒模式"
++        case .enhancedCandidate: return "TrollStore 增强候选"
++        }
++    }
++}
++
++enum VeilCapabilityState: Int, Comparable, Equatable, Sendable {
++    case unavailable = 0
++    case declared = 1
++    case candidate = 2
++    case available = 3
++
++    static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
++
++    var title: String {
++        switch self {
++        case .unavailable: return "不可用"
++        case .declared: return "已声明"
++        case .candidate: return "待验证"
++        case .available: return "可用"
++        }
++    }
++}
++
++struct VeilRuntimeCapability: Identifiable, Equatable, Sendable {
++    enum Kind: String, Sendable {
++        case persistentInstall
++        case backgroundBluetooth
++        case backgroundAudio
++        case backgroundRefresh
++        case localNetwork
++        case liveActivity
++        case elevatedEntitlements
++    }
++
++    var id: String { kind.rawValue }
++    let kind: Kind
++    let title: String
++    let state: VeilCapabilityState
++    let detail: String
++}
++
++struct VeilRuntimeEnvironmentInputs: Equatable, Sendable {
++    let isSimulator: Bool
++    let hasTrollStoreMarker: Bool
++    let hasTrollStoreLiteMarker: Bool
++    let receiptPresent: Bool
++    let receiptName: String?
++    let hasEmbeddedProvision: Bool
++    let backgroundModes: Set<String>
++    let hasBonjourServices: Bool
++    let supportsLiveActivities: Bool
++}
++
++struct VeilRuntimeEnvironmentSnapshot: Equatable, Sendable {
++    let channel: VeilInstallChannel
++    let profile: VeilRuntimeProfile
++    let confidence: String
++    let capabilities: [VeilRuntimeCapability]
++    let elevatedEntitlementsVerified: Bool
++
++    var isTrollStore: Bool { channel == .trollStore || channel == .trollStoreLite }
++
++    var diagnosticsReport: String {
++        let rows = capabilities.map { "\($0.kind.rawValue)=\($0.state.title)" }.joined(separator: "\n")
++        return """
++        VeilLink Runtime Capability
++        channel=\(channel.rawValue)
++        profile=\(profile.rawValue)
++        confidence=\(confidence)
++        elevated_entitlements_verified=\(elevatedEntitlementsVerified)
++        \(rows)
++        """
++    }
++}
++
++enum VeilRuntimeEnvironment {
++    private static let trollStoreMarker = "_TrollStore"
++    private static let trollStoreLiteMarker = "_TrollStoreLite"
++
++    static var current: VeilRuntimeEnvironmentSnapshot {
++        capture(bundle: .main, fileManager: .default)
++    }
++
++    static func capture(bundle: Bundle, fileManager: FileManager) -> VeilRuntimeEnvironmentSnapshot {
++        let container = bundle.bundleURL.deletingLastPathComponent()
++        let receiptURL = bundle.appStoreReceiptURL
++        let modes = Set(bundle.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? [])
++        let inputs = VeilRuntimeEnvironmentInputs(
++            isSimulator: isSimulatorBuild,
++            hasTrollStoreMarker: fileManager.fileExists(atPath: container.appendingPathComponent(trollStoreMarker).path),
++            hasTrollStoreLiteMarker: fileManager.fileExists(atPath: container.appendingPathComponent(trollStoreLiteMarker).path),
++            receiptPresent: receiptURL.map { fileManager.fileExists(atPath: $0.path) } ?? false,
++            receiptName: receiptURL?.lastPathComponent,
++            hasEmbeddedProvision: bundle.path(forResource: "embedded", ofType: "mobileprovision") != nil,
++            backgroundModes: modes,
++            hasBonjourServices: !(bundle.object(forInfoDictionaryKey: "NSBonjourServices") as? [String] ?? []).isEmpty,
++            supportsLiveActivities: bundle.object(forInfoDictionaryKey: "NSSupportsLiveActivities") as? Bool ?? false
++        )
++        return resolve(inputs)
++    }
++
++    static func resolve(_ inputs: VeilRuntimeEnvironmentInputs) -> VeilRuntimeEnvironmentSnapshot {
++        let channel: VeilInstallChannel
++        let confidence: String
++        if inputs.isSimulator {
++            channel = .simulator
++            confidence = "编译环境明确为 Simulator"
++        } else if inputs.hasTrollStoreLiteMarker {
++            channel = .trollStoreLite
++            confidence = "发现 TrollStore 官方 Lite 安装标记"
++        } else if inputs.hasTrollStoreMarker {
++            channel = .trollStore
++            confidence = "发现 TrollStore 官方安装标记"
++        } else if inputs.receiptPresent, inputs.receiptName == "sandboxReceipt" {
++            channel = .testFlight
++            confidence = "发现 TestFlight sandbox receipt"
++        } else if inputs.receiptPresent {
++            channel = .appStore
++            confidence = "发现 App Store receipt"
++        } else if inputs.hasEmbeddedProvision {
++            channel = .provisioned
++            confidence = "发现 embedded.mobileprovision"
++        } else {
++            channel = .unknown
++            confidence = "没有足够证据确认安装来源"
++        }
++
++        let isTrollStore = channel == .trollStore || channel == .trollStoreLite
++        let persistent = isTrollStore || channel == .appStore || channel == .testFlight
++        let profile: VeilRuntimeProfile = isTrollStore
++            ? .enhancedCandidate
++            : (persistent ? .persistentSandboxed : .standard)
++        let capabilities = [
++            VeilRuntimeCapability(
++                kind: .persistentInstall,
++                title: "持久安装",
++                state: persistent ? .available : .unavailable,
++                detail: persistent ? "当前来源不依赖普通侧载的短期签名周期。" : "普通签名可能需要续签。"
++            ),
++            declaredCapability(.backgroundBluetooth, "蓝牙后台", inputs.backgroundModes.contains("bluetooth-central") && inputs.backgroundModes.contains("bluetooth-peripheral")),
++            declaredCapability(.backgroundAudio, "音频后台", inputs.backgroundModes.contains("audio")),
++            declaredCapability(.backgroundRefresh, "后台刷新", inputs.backgroundModes.contains("fetch")),
++            declaredCapability(.localNetwork, "局域网直连", inputs.hasBonjourServices),
++            declaredCapability(.liveActivity, "实时活动", inputs.supportsLiveActivities),
++            VeilRuntimeCapability(
++                kind: .elevatedEntitlements,
++                title: "增强 entitlement",
++                state: isTrollStore ? .candidate : .unavailable,
++                detail: isTrollStore
++                    ? "安装来源已确认，但每项高权限仍需独立探测和用户启用。"
++                    : "标准包不会请求或假定 TrollStore 高权限。"
++            )
++        ]
++        return VeilRuntimeEnvironmentSnapshot(
++            channel: channel,
++            profile: profile,
++            confidence: confidence,
++            capabilities: capabilities,
++            elevatedEntitlementsVerified: false
++        )
++    }
++
++    private static func declaredCapability(
++        _ kind: VeilRuntimeCapability.Kind,
++        _ title: String,
++        _ declared: Bool
++    ) -> VeilRuntimeCapability {
++        VeilRuntimeCapability(
++            kind: kind,
++            title: title,
++            state: declared ? .declared : .unavailable,
++            detail: declared ? "包内已声明，最终可用性仍由 iOS 决定。" : "当前包没有声明。"
++        )
++    }
++
++    private static var isSimulatorBuild: Bool {
++        #if targetEnvironment(simulator)
++        true
++        #else
++        false
++        #endif
++    }
++}
+diff --git a/VeilLink/UI/VeilRuntimeCapabilityView.swift b/VeilLink/UI/VeilRuntimeCapabilityView.swift
+new file mode 100644
+index 0000000..fc2f0c5
+--- /dev/null
++++ b/VeilLink/UI/VeilRuntimeCapabilityView.swift
+@@ -0,0 +1,144 @@
++import SwiftUI
++import UIKit
++import UniformTypeIdentifiers
++
++struct VeilRuntimeCapabilityView: View {
++    let snapshot: VeilRuntimeEnvironmentSnapshot
++    @State private var copied = false
++
++    init(snapshot: VeilRuntimeEnvironmentSnapshot = VeilRuntimeEnvironment.current) {
++        self.snapshot = snapshot
++    }
++
++    var body: some View {
++        VeilStableScrollView {
++            VStack(spacing: 14) {
++                heroCard
++                capabilityCard
++                safetyCard
++                diagnosticsCard
++            }
++        }
++        .background(VeilAmbientBackground())
++        .navigationTitle("运行环境")
++        .navigationBarTitleDisplayMode(.inline)
++    }
++
++    private var heroCard: some View {
++        VStack(alignment: .leading, spacing: 12) {
++            HStack(spacing: 12) {
++                ZStack {
++                    Circle().fill(statusColor.opacity(0.14)).frame(width: 52, height: 52)
++                    Image(systemName: snapshot.isTrollStore ? "bolt.shield.fill" : "checkmark.shield.fill")
++                        .font(.system(size: 23, weight: .semibold))
++                        .foregroundColor(statusColor)
++                }
++                VStack(alignment: .leading, spacing: 3) {
++                    Text(snapshot.channel.title)
++                        .font(.system(.title3, design: .rounded).weight(.bold))
++                    Text(snapshot.profile.title)
++                        .font(VeilType.terminalLabel)
++                        .foregroundColor(VeilTheme.mutedGold)
++                }
++                Spacer()
++                Text("AUTO")
++                    .font(VeilType.terminalLabel)
++                    .foregroundColor(VeilTheme.success)
++            }
++            Text(snapshot.confidence)
++                .font(.caption)
++                .foregroundColor(VeilTheme.secondaryText)
++            Text("VeilLink 会按实际安装证据自动选择兼容档位，不会仅凭包名假定高权限。")
++                .font(.caption)
++                .foregroundColor(VeilTheme.tertiaryText)
++        }
++        .veilCard(emphasized: snapshot.isTrollStore)
++    }
++
++    private var capabilityCard: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            Label("能力矩阵", systemImage: "switch.2")
++                .font(VeilType.cardTitle)
++                .foregroundColor(VeilTheme.goldBright)
++            ForEach(snapshot.capabilities) { capability in
++                HStack(alignment: .top, spacing: 10) {
++                    Circle()
++                        .fill(color(for: capability.state))
++                        .frame(width: 7, height: 7)
++                        .padding(.top, 6)
++                    VStack(alignment: .leading, spacing: 2) {
++                        Text(capability.title).font(.subheadline.weight(.semibold))
++                        Text(capability.detail)
++                            .font(.caption2)
++                            .foregroundColor(VeilTheme.secondaryText)
++                    }
++                    Spacer(minLength: 8)
++                    Text(capability.state.title)
++                        .font(VeilType.terminalLabel)
++                        .foregroundColor(color(for: capability.state))
++                }
++                .padding(.vertical, 3)
++            }
++        }
++        .veilCard()
++    }
++
++    private var safetyCard: some View {
++        VStack(alignment: .leading, spacing: 9) {
++            Label("增强模式边界", systemImage: "lock.shield.fill")
++                .font(VeilType.cardTitle)
++                .foregroundColor(VeilTheme.goldBright)
++            boundary("来源识别不等于权限验证")
++            boundary("每项增强能力单独探测、单独启用、失败即回退")
++            boundary("不会自动读取沙盒外文件，也不会静默扩大数据范围")
++            boundary("普通签名包始终保持完整基础聊天与传输能力")
++        }
++        .veilCard()
++    }
++
++    private var diagnosticsCard: some View {
++        Button {
++            UIPasteboard.general.setItems(
++                [[UTType.plainText.identifier: snapshot.diagnosticsReport]],
++                options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(300)]
++            )
++            copied = true
++            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
++        } label: {
++            HStack(spacing: 11) {
++                Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc")
++                    .foregroundColor(copied ? VeilTheme.success : VeilTheme.goldBright)
++                VStack(alignment: .leading, spacing: 3) {
++                    Text(copied ? "已复制能力报告" : "复制能力报告")
++                        .font(.headline)
++                        .foregroundColor(VeilTheme.text)
++                    Text("不含文件路径、身份、消息或密钥；仅在本机剪贴板保留 5 分钟。")
++                        .font(.caption2)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++                Spacer()
++            }
++        }
++        .buttonStyle(VeilPressStyle())
++        .veilCard()
++    }
++
++    private func boundary(_ text: String) -> some View {
++        Label(text, systemImage: "checkmark.circle.fill")
++            .font(.caption)
++            .foregroundColor(VeilTheme.secondaryText)
++    }
++
++    private var statusColor: Color {
++        snapshot.isTrollStore ? VeilTheme.goldBright : VeilTheme.success
++    }
++
++    private func color(for state: VeilCapabilityState) -> Color {
++        switch state {
++        case .available: return VeilTheme.success
++        case .declared: return VeilTheme.goldBright
++        case .candidate: return VeilTheme.gold
++        case .unavailable: return VeilTheme.tertiaryText
++        }
++    }
++}
+diff --git a/VeilLink/UI/VeilSettingsDisclosureSection.swift b/VeilLink/UI/VeilSettingsDisclosureSection.swift
+new file mode 100644
+index 0000000..0fb1a42
+--- /dev/null
++++ b/VeilLink/UI/VeilSettingsDisclosureSection.swift
+@@ -0,0 +1,109 @@
++import SwiftUI
++
++enum VeilSettingsSection: String, CaseIterable, Identifiable, Sendable {
++    case appearanceAndData
++    case connectivity
++    case intelligence
++
++    var id: String { rawValue }
++
++    var title: String {
++        switch self {
++        case .appearanceAndData: return "外观与数据"
++        case .connectivity: return "连接与通信"
++        case .intelligence: return "智能与性能"
++        }
++    }
++
++    var subtitle: String {
++        switch self {
++        case .appearanceAndData: return "主题、协议、存储、媒体与反馈"
++        case .connectivity: return "蓝牙、后台、运行环境与互联网中继"
++        case .intelligence: return "灵核助手、A9 健康与内核运行时"
++        }
++    }
++
++    var systemImage: String {
++        switch self {
++        case .appearanceAndData: return "slider.horizontal.3"
++        case .connectivity: return "antenna.radiowaves.left.and.right"
++        case .intelligence: return "cpu"
++        }
++    }
++
++    var storageKey: String { "settings.section.\(rawValue).expanded" }
++    var defaultExpanded: Bool { false }
++}
++
++struct VeilSettingsDisclosureSection<Content: View>: View {
++    let section: VeilSettingsSection
++    @Binding var isExpanded: Bool
++    private let content: () -> Content
++
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    init(
++        section: VeilSettingsSection,
++        isExpanded: Binding<Bool>,
++        @ViewBuilder content: @escaping () -> Content
++    ) {
++        self.section = section
++        _isExpanded = isExpanded
++        self.content = content
++    }
++
++    var body: some View {
++        VStack(spacing: 11) {
++            Button(action: toggle) {
++                HStack(spacing: 12) {
++                    ZStack {
++                        RoundedRectangle(cornerRadius: 11, style: .continuous)
++                            .fill(VeilTheme.gold.opacity(isExpanded ? 0.16 : 0.08))
++                            .frame(width: 42, height: 42)
++                        Image(systemName: section.systemImage)
++                            .font(.system(size: 17, weight: .semibold))
++                            .foregroundColor(isExpanded ? VeilTheme.goldBright : VeilTheme.mutedGold)
++                    }
++                    VStack(alignment: .leading, spacing: 3) {
++                        Text(section.title)
++                            .font(.system(.headline, design: .rounded).weight(.semibold))
++                            .foregroundColor(VeilTheme.text)
++                        Text(section.subtitle)
++                            .font(.caption)
++                            .foregroundColor(VeilTheme.secondaryText)
++                            .lineLimit(2)
++                    }
++                    Spacer(minLength: 8)
++                    Image(systemName: "chevron.down")
++                        .font(.caption.weight(.bold))
++                        .foregroundColor(VeilTheme.tertiaryText)
++                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
++                }
++                .contentShape(Rectangle())
++            }
++            .buttonStyle(VeilPressStyle())
++            .veilCard(emphasized: isExpanded)
++            .accessibilityLabel(section.title)
++            .accessibilityValue(isExpanded ? "已展开" : "已折叠")
++            .accessibilityHint(isExpanded ? "轻点折叠" : "轻点展开")
++
++            if isExpanded {
++                content()
++                    .transition(.asymmetric(
++                        insertion: .opacity.combined(with: .move(edge: .top)),
++                        removal: .opacity
++                    ))
++            }
++        }
++    }
++
++    private func toggle() {
++        if reduceMotion {
++            isExpanded.toggle()
++        } else {
++            withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
++                isExpanded.toggle()
++            }
++        }
++    }
++}
+diff --git a/VeilLinkTests/VeilRuntimeEnvironmentTests.swift b/VeilLinkTests/VeilRuntimeEnvironmentTests.swift
+new file mode 100644
+index 0000000..6d830f3
+--- /dev/null
++++ b/VeilLinkTests/VeilRuntimeEnvironmentTests.swift
+@@ -0,0 +1,90 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilRuntimeEnvironmentTests: XCTestCase {
++    func testSimulatorWinsOverAllPackagingEvidence() {
++        let snapshot = resolve(simulator: true, troll: true, receipt: true, receiptName: "receipt", provision: true)
++        XCTAssertEqual(snapshot.channel, .simulator)
++    }
++
++    func testTrollStoreMarkerWinsOverReceiptAndProvision() {
++        let snapshot = resolve(troll: true, receipt: true, receiptName: "receipt", provision: true)
++        XCTAssertEqual(snapshot.channel, .trollStore)
++        XCTAssertEqual(snapshot.profile, .enhancedCandidate)
++        XCTAssertFalse(snapshot.elevatedEntitlementsVerified)
++    }
++
++    func testTrollStoreLiteMarkerIsDistinct() {
++        XCTAssertEqual(resolve(trollLite: true).channel, .trollStoreLite)
++    }
++
++    func testSandboxReceiptMeansTestFlight() {
++        XCTAssertEqual(resolve(receipt: true, receiptName: "sandboxReceipt").channel, .testFlight)
++    }
++
++    func testProductionReceiptMeansAppStore() {
++        XCTAssertEqual(resolve(receipt: true, receiptName: "receipt").channel, .appStore)
++    }
++
++    func testProvisionWithoutReceiptMeansOrdinarySignedInstall() {
++        let snapshot = resolve(provision: true)
++        XCTAssertEqual(snapshot.channel, .provisioned)
++        XCTAssertEqual(snapshot.profile, .standard)
++    }
++
++    func testNoEvidenceRemainsUnknownInsteadOfClaimingTrollStore() {
++        XCTAssertEqual(resolve().channel, .unknown)
++    }
++
++    func testDeclaredBackgroundAndNetworkCapabilitiesAreReported() {
++        let snapshot = resolve(modes: ["audio", "fetch", "bluetooth-central", "bluetooth-peripheral"], bonjour: true, live: true)
++        XCTAssertEqual(state(.backgroundBluetooth, in: snapshot), .declared)
++        XCTAssertEqual(state(.backgroundAudio, in: snapshot), .declared)
++        XCTAssertEqual(state(.backgroundRefresh, in: snapshot), .declared)
++        XCTAssertEqual(state(.localNetwork, in: snapshot), .declared)
++        XCTAssertEqual(state(.liveActivity, in: snapshot), .declared)
++    }
++
++    func testTrollStoreOnlyMakesElevatedEntitlementsCandidate() {
++        XCTAssertEqual(state(.elevatedEntitlements, in: resolve(troll: true)), .candidate)
++        XCTAssertEqual(state(.elevatedEntitlements, in: resolve(provision: true)), .unavailable)
++    }
++
++    func testDiagnosticsDoNotContainFilesystemPathsOrPersonalData() {
++        let report = resolve(troll: true).diagnosticsReport
++        XCTAssertFalse(report.contains("/var/"))
++        XCTAssertFalse(report.contains("bundle"))
++        XCTAssertTrue(report.contains("channel=trollStore"))
++    }
++
++    private func resolve(
++        simulator: Bool = false,
++        troll: Bool = false,
++        trollLite: Bool = false,
++        receipt: Bool = false,
++        receiptName: String? = nil,
++        provision: Bool = false,
++        modes: Set<String> = [],
++        bonjour: Bool = false,
++        live: Bool = false
++    ) -> VeilRuntimeEnvironmentSnapshot {
++        VeilRuntimeEnvironment.resolve(.init(
++            isSimulator: simulator,
++            hasTrollStoreMarker: troll,
++            hasTrollStoreLiteMarker: trollLite,
++            receiptPresent: receipt,
++            receiptName: receiptName,
++            hasEmbeddedProvision: provision,
++            backgroundModes: modes,
++            hasBonjourServices: bonjour,
++            supportsLiveActivities: live
++        ))
++    }
++
++    private func state(
++        _ kind: VeilRuntimeCapability.Kind,
++        in snapshot: VeilRuntimeEnvironmentSnapshot
++    ) -> VeilCapabilityState? {
++        snapshot.capabilities.first { $0.kind == kind }?.state
++    }
++}
+diff --git a/VeilLinkTests/VeilSettingsDisclosureTests.swift b/VeilLinkTests/VeilSettingsDisclosureTests.swift
+new file mode 100644
+index 0000000..ea39e1d
+--- /dev/null
++++ b/VeilLinkTests/VeilSettingsDisclosureTests.swift
+@@ -0,0 +1,16 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilSettingsDisclosureTests: XCTestCase {
++    func testSectionStorageKeysAreStableAndUnique() {
++        let keys = VeilSettingsSection.allCases.map(\.storageKey)
++        XCTAssertEqual(Set(keys).count, VeilSettingsSection.allCases.count)
++        XCTAssertEqual(VeilSettingsSection.appearanceAndData.storageKey, "settings.section.appearanceAndData.expanded")
++        XCTAssertEqual(VeilSettingsSection.connectivity.storageKey, "settings.section.connectivity.expanded")
++        XCTAssertEqual(VeilSettingsSection.intelligence.storageKey, "settings.section.intelligence.expanded")
++    }
++
++    func testAllSecondaryGroupsDefaultCollapsed() {
++        XCTAssertTrue(VeilSettingsSection.allCases.allSatisfy { !$0.defaultExpanded })
++    }
++}
+
