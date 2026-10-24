@@ -183,6 +183,7 @@ final class DatabaseStore {
         ) { text($0, 0) }
 
         try writeBatch([
+            ("DELETE FROM control_outbound_events WHERE local_identity_id = ?;", [.text(localIdentityID)]),
             ("DELETE FROM conversations WHERE local_identity_id = ?;", [.text(localIdentityID)]),
             ("DELETE FROM contacts WHERE local_identity_id = ?;", [.text(localIdentityID)]),
             ("DELETE FROM profiles WHERE id = ?;", [.text(localIdentityID)])
@@ -1258,6 +1259,281 @@ final class DatabaseStore {
         (try? databaseURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
     }
 
+    /// Non-authoritative capability cache, scoped to a previously trusted identity and key.
+    func cacheAuthenticatedPeerCapabilities(
+        localIdentityID: String, peerIdentityID: String, publicKey: Data, featureBits: Int
+    ) throws {
+        guard publicKey.count == 32, featureBits >= 0, featureBits <= 1_048_575,
+              trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID)?.publicKey == publicKey else { return }
+        let fingerprint = Data(SHA256.hash(data: publicKey))
+        try write(
+            """
+            INSERT INTO peer_capabilities(local_identity_id, peer_identity_id, public_key_sha256, capability_schema_version, feature_bits, observed_at)
+            VALUES(?, ?, ?, 1, ?, ?)
+            ON CONFLICT(local_identity_id, peer_identity_id) DO UPDATE SET
+                public_key_sha256 = excluded.public_key_sha256,
+                capability_schema_version = excluded.capability_schema_version,
+                feature_bits = excluded.feature_bits,
+                observed_at = excluded.observed_at;
+            """,
+            bindings: [.text(localIdentityID), .text(peerIdentityID), .blob(fingerprint),
+                       .int(featureBits), .double(Date().timeIntervalSince1970)]
+        )
+    }
+
+    func cachedAuthenticatedPeerFeatureBits(
+        localIdentityID: String, peerIdentityID: String, publicKey: Data
+    ) -> Int? {
+        guard publicKey.count == 32,
+              trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID)?.publicKey == publicKey else { return nil }
+        let fingerprint = Data(SHA256.hash(data: publicKey))
+        return read(
+            """
+            SELECT feature_bits FROM peer_capabilities
+            WHERE local_identity_id = ? AND peer_identity_id = ? AND public_key_sha256 = ?
+              AND capability_schema_version = 1 AND observed_at >= ?
+            LIMIT 1;
+            """,
+            bindings: [.text(localIdentityID), .text(peerIdentityID), .blob(fingerprint),
+                       .double(Date().timeIntervalSince1970 - VeilPeerCapabilityPolicy.cacheLifetime)]
+        ) { Int(sqlite3_column_int64($0, 0)) }.first
+    }
+
+    /// Encrypted, idempotent inbound control log for future sync, group and agent consumers.
+    @discardableResult
+    func saveInboundControlEvent(localIdentityID: String, peerIdentityID: String, publicKey: Data, event: VeilControlEvent) throws -> Bool {
+        guard publicKey.count == 32,
+              trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID)?.publicKey == publicKey else {
+            throw DatabaseError.statementFailed("未认证的对端不能持久化控制事件。")
+        }
+        let raw = try VeilControlEventCodec.encode(event)
+        let ciphertext = try ChaChaPoly.seal(raw, using: storageKey).combined
+        let inserted = try writeReturningChange(
+            """
+            INSERT OR IGNORE INTO control_event_inbox(local_identity_id, peer_identity_id, event_id, topic, payload_ciphertext, received_at)
+            VALUES(?, ?, ?, ?, ?, ?);
+            """,
+            bindings: [.text(localIdentityID), .text(peerIdentityID), .text(event.eventID), .text(event.topic),
+                       .blob(ciphertext), .double(Date().timeIntervalSince1970)]
+        )
+        if inserted {
+            try write(
+                """
+                DELETE FROM control_event_inbox WHERE local_identity_id = ? AND peer_identity_id = ?
+                AND event_id NOT IN (
+                    SELECT event_id FROM control_event_inbox WHERE local_identity_id = ? AND peer_identity_id = ?
+                    ORDER BY received_at DESC, event_id DESC LIMIT 256
+                );
+                """,
+                bindings: [.text(localIdentityID), .text(peerIdentityID), .text(localIdentityID), .text(peerIdentityID)]
+            )
+        }
+        return inserted
+    }
+
+    func recentInboundControlEvents(localIdentityID: String, peerIdentityID: String, publicKey: Data, limit: Int = 64) -> [VeilControlEvent] {
+        guard publicKey.count == 32,
+              trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID)?.publicKey == publicKey else { return [] }
+        let count = max(1, min(limit, 256))
+        let encryptedRows = read(
+            "SELECT payload_ciphertext FROM control_event_inbox WHERE local_identity_id = ? AND peer_identity_id = ? ORDER BY received_at DESC, event_id DESC LIMIT \(count);",
+            bindings: [.text(localIdentityID), .text(peerIdentityID)]
+        ) { data($0, 0) }
+        return encryptedRows.compactMap { bytes in
+            guard let box = try? ChaChaPoly.SealedBox(combined: bytes),
+                  let data = try? ChaChaPoly.open(box, using: storageKey) else { return nil }
+            return try? VeilControlEventCodec.decode(data)
+        }
+    }
+
+    /// Each event is encrypted only once; recipient rows track delivery independently.
+    /// Enqueue is atomic and does not alter the ordinary chat outbox.
+    func enqueueDurableControlEvent(
+        localIdentityID: String, recipientIdentityIDs: [String], event: VeilControlEvent
+    ) throws {
+        let recipients = Array(Set(recipientIdentityIDs)).sorted()
+        guard !recipients.isEmpty, recipients.count <= 16 else {
+            throw DatabaseError.statementFailed("单次控制事件最多可指定 16 个接收者。")
+        }
+        for recipient in recipients {
+            guard trustedContact(localIdentityID: localIdentityID, identityID: recipient) != nil else {
+                throw DatabaseError.statementFailed("控制事件不能发送给未认证的接收者。")
+            }
+        }
+        let encoded = try VeilControlEventCodec.encode(event)
+        let existingPayload = read(
+            "SELECT payload_ciphertext FROM control_outbound_events WHERE local_identity_id = ? AND event_id = ? LIMIT 1;",
+            bindings: [.text(localIdentityID), .text(event.eventID)]
+        ) { data($0, 0) }.first
+        if let existingPayload {
+            // JSONEncoder does not guarantee stable key ordering across calls.
+            // Compare the authenticated, decoded event rather than ciphertext or raw JSON bytes.
+            guard let box = try? ChaChaPoly.SealedBox(combined: existingPayload),
+                  let recovered = try? ChaChaPoly.open(box, using: storageKey),
+                  let recoveredEvent = try? VeilControlEventCodec.decode(recovered),
+                  recoveredEvent == event else {
+                throw DatabaseError.statementFailed("同一事件 ID 不能重复关联不同内容。")
+            }
+        }
+        let existingCount = read(
+            "SELECT COUNT(*) FROM control_outbound_events WHERE local_identity_id = ?;",
+            bindings: [.text(localIdentityID)]
+        ) { Int(sqlite3_column_int64($0, 0)) }.first ?? 0
+        guard existingCount < 512 || existingPayload != nil else {
+            throw DatabaseError.statementFailed("可靠控制队列容量已满，请先完成或清理过期事件。")
+        }
+        let sealed = try ChaChaPoly.seal(encoded, using: storageKey).combined
+        let now = Date().timeIntervalSince1970
+        let expiration = now + 7 * 24 * 60 * 60
+        var statements: [(String, [SQLiteValue])] = [
+            (
+                """
+                INSERT OR IGNORE INTO control_outbound_events(
+                    local_identity_id, event_id, payload_ciphertext, created_at, expires_at
+                )
+                SELECT ?, ?, ?, ?, ?
+                WHERE (SELECT COUNT(*) FROM control_outbound_events WHERE local_identity_id = ?) < 512
+                   OR EXISTS (
+                       SELECT 1 FROM control_outbound_events
+                       WHERE local_identity_id = ? AND event_id = ?
+                   );
+                """,
+                [.text(localIdentityID), .text(event.eventID), .blob(sealed),
+                 .double(now), .double(expiration),
+                 .text(localIdentityID), .text(localIdentityID), .text(event.eventID)]
+            )
+        ]
+        for recipient in recipients {
+            statements.append((
+                """
+                INSERT OR IGNORE INTO control_outbound_targets(
+                    local_identity_id, event_id, peer_identity_id, next_attempt_at, attempts
+                ) VALUES(?, ?, ?, ?, 0);
+                """,
+                [.text(localIdentityID), .text(event.eventID), .text(recipient), .double(now)]
+            ))
+        }
+        try writeBatch(statements)
+    }
+
+    struct DueControlEvent {
+        let event: VeilControlEvent
+        let peerIdentityID: String
+        let attemptCount: Int
+    }
+
+    func dueDurableControlEvents(
+        localIdentityID: String, peerIdentityID: String, limit: Int = 8
+    ) -> [DueControlEvent] {
+        guard trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID) != nil else { return [] }
+        let now = Date().timeIntervalSince1970
+        let safeLimit = max(1, min(limit, 32))
+        let rows = read(
+            """
+            SELECT e.payload_ciphertext, t.attempts
+            FROM control_outbound_targets t
+            JOIN control_outbound_events e
+              ON t.local_identity_id = e.local_identity_id AND t.event_id = e.event_id
+            WHERE t.local_identity_id = ? AND t.peer_identity_id = ?
+              AND t.acknowledged_at IS NULL
+              AND t.next_attempt_at <= ? AND e.expires_at > ?
+            ORDER BY e.created_at ASC, e.event_id ASC
+            LIMIT \(safeLimit);
+            """,
+            bindings: [.text(localIdentityID), .text(peerIdentityID), .double(now), .double(now)]
+        ) { (data($0, 0), Int(sqlite3_column_int64($0, 1))) }
+        return rows.compactMap { item in
+            guard let box = try? ChaChaPoly.SealedBox(combined: item.0),
+                  let clear = try? ChaChaPoly.open(box, using: storageKey),
+                  let event = try? VeilControlEventCodec.decode(clear) else { return nil }
+            return DueControlEvent(event: event, peerIdentityID: peerIdentityID, attemptCount: item.1)
+        }
+    }
+
+    /// Only call after an accepted transport enqueue, not after an unsupported/failed send.
+    func recordDurableControlSendAttempt(
+        localIdentityID: String, peerIdentityID: String, eventID: String
+    ) throws {
+        let now = Date().timeIntervalSince1970
+        try write(
+            """
+            UPDATE control_outbound_targets SET
+                attempts = MIN(attempts + 1, 30),
+                next_attempt_at = ? + CASE
+                    WHEN attempts <= 0 THEN 4
+                    WHEN attempts = 1 THEN 8
+                    WHEN attempts = 2 THEN 16
+                    WHEN attempts = 3 THEN 32
+                    ELSE 60
+                END
+            WHERE local_identity_id = ? AND peer_identity_id = ? AND event_id = ?
+              AND acknowledged_at IS NULL;
+            """,
+            bindings: [.double(now), .text(localIdentityID), .text(peerIdentityID), .text(eventID)]
+        )
+    }
+
+    /// A receipt must originate from an authenticated and trusted matching peer session.
+    /// One peer can never acknowledge another peer's outstanding target row.
+    func acknowledgeDurableControlEvent(
+        localIdentityID: String, peerIdentityID: String,
+        authenticatedPeerPublicKey: Data, eventID: String
+    ) throws {
+        guard authenticatedPeerPublicKey.count == 32,
+              trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID)?.publicKey == authenticatedPeerPublicKey else {
+            throw DatabaseError.statementFailed("控制回执身份验证失败。")
+        }
+        try writeBatch([
+            (
+                """
+                UPDATE control_outbound_targets
+                SET acknowledged_at = ?
+                WHERE local_identity_id = ? AND peer_identity_id = ? AND event_id = ?
+                  AND acknowledged_at IS NULL;
+                """,
+                [.double(Date().timeIntervalSince1970), .text(localIdentityID),
+                 .text(peerIdentityID), .text(eventID)]
+            ),
+            (
+                """
+                DELETE FROM control_outbound_events
+                WHERE local_identity_id = ? AND event_id = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM control_outbound_targets
+                      WHERE local_identity_id = ? AND event_id = ? AND acknowledged_at IS NULL
+                  );
+                """,
+                [.text(localIdentityID), .text(eventID), .text(localIdentityID), .text(eventID)]
+            )
+        ])
+    }
+
+    func pendingDurableControlCount(localIdentityID: String) -> Int {
+        let now = Date().timeIntervalSince1970
+        return read(
+            """
+            SELECT COUNT(*) FROM control_outbound_targets t
+            JOIN control_outbound_events e
+              ON e.local_identity_id = t.local_identity_id AND e.event_id = t.event_id
+            WHERE t.local_identity_id = ? AND t.acknowledged_at IS NULL AND e.expires_at > ?;
+            """,
+            bindings: [.text(localIdentityID), .double(now)]
+        ) { Int(sqlite3_column_int64($0, 0)) }.first ?? 0
+    }
+
+    @discardableResult
+    func cleanupExpiredDurableControlEvents(now: Date = Date()) throws -> Int {
+        let cutOff = now.timeIntervalSince1970
+        let count = read(
+            "SELECT COUNT(*) FROM control_outbound_events WHERE expires_at <= ?;",
+            bindings: [.double(cutOff)]
+        ) { Int(sqlite3_column_int64($0, 0)) }.first ?? 0
+        if count > 0 {
+            try write("DELETE FROM control_outbound_events WHERE expires_at <= ?;", bindings: [.double(cutOff)])
+        }
+        return count
+    }
+
     private func migrate() throws {
         try execute("PRAGMA journal_mode=WAL;")
         try execute("PRAGMA foreign_keys=ON;")
@@ -1386,6 +1662,71 @@ final class DatabaseStore {
         try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(7, strftime('%s','now'));")
         try migrateConversationControlsV8()
         try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(8, strftime('%s','now'));")
+        try migratePeerCapabilitiesV9()
+        try migrateDurableControlOutboxV10()
+    }
+
+    private func migratePeerCapabilitiesV9() throws {
+        // Additive, idempotent and atomic, including the migration marker.
+        try transaction("""
+            CREATE TABLE IF NOT EXISTS peer_capabilities(
+                local_identity_id TEXT NOT NULL,
+                peer_identity_id TEXT NOT NULL,
+                public_key_sha256 BLOB NOT NULL CHECK(length(public_key_sha256) = 32),
+                capability_schema_version INTEGER NOT NULL CHECK(capability_schema_version = 1),
+                feature_bits INTEGER NOT NULL CHECK(feature_bits BETWEEN 0 AND 1048575),
+                observed_at REAL NOT NULL,
+                PRIMARY KEY(local_identity_id, peer_identity_id),
+                FOREIGN KEY(local_identity_id, peer_identity_id)
+                    REFERENCES contacts(local_identity_id, identity_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_peer_capabilities_fresh_v9 ON peer_capabilities(observed_at);
+            CREATE TABLE IF NOT EXISTS control_event_inbox(
+                local_identity_id TEXT NOT NULL,
+                peer_identity_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                payload_ciphertext BLOB NOT NULL,
+                received_at REAL NOT NULL,
+                PRIMARY KEY(local_identity_id, peer_identity_id, event_id),
+                FOREIGN KEY(local_identity_id, peer_identity_id) REFERENCES contacts(local_identity_id, identity_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_control_event_inbox_v9 ON control_event_inbox(local_identity_id, peer_identity_id, received_at DESC);
+            INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(9, strftime('%s','now'));
+            """)
+    }
+
+    private func migrateDurableControlOutboxV10() throws {
+        // A v10 change adds tables only; conversations, messages, keys and ordinary outbox persist.
+        try transaction("""
+            CREATE TABLE IF NOT EXISTS control_outbound_events(
+                local_identity_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                payload_ciphertext BLOB NOT NULL,
+                created_at REAL NOT NULL,
+                expires_at REAL NOT NULL,
+                PRIMARY KEY(local_identity_id, event_id)
+            );
+            CREATE TABLE IF NOT EXISTS control_outbound_targets(
+                local_identity_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                peer_identity_id TEXT NOT NULL,
+                next_attempt_at REAL NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts BETWEEN 0 AND 30),
+                acknowledged_at REAL,
+                PRIMARY KEY(local_identity_id, event_id, peer_identity_id),
+                FOREIGN KEY(local_identity_id, event_id)
+                    REFERENCES control_outbound_events(local_identity_id, event_id) ON DELETE CASCADE,
+                FOREIGN KEY(local_identity_id, peer_identity_id)
+                    REFERENCES contacts(local_identity_id, identity_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_control_outbound_due_v10
+                ON control_outbound_targets(local_identity_id, peer_identity_id, next_attempt_at);
+            CREATE INDEX IF NOT EXISTS idx_control_outbound_expiry_v10
+                ON control_outbound_events(expires_at);
+            INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+                VALUES(10, strftime('%s','now'));
+            """)
     }
 
     private func migrateDeliveryLifecycleV5() throws {
@@ -1542,6 +1883,23 @@ final class DatabaseStore {
                 sqlite3_exec(db, "ROLLBACK;", nil, nil, nil)
                 throw error
             }
+        }
+    }
+
+    /// Return whether INSERT OR IGNORE committed a new row inside the serialized SQLite queue.
+    private func writeReturningChange(_ sql: String, bindings: [SQLiteValue]) throws -> Bool {
+        try queue.sync {
+            guard let db else { throw DatabaseError.openFailed("数据库尚未打开。") }
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+                throw DatabaseError.statementFailed(String(cString: sqlite3_errmsg(db)))
+            }
+            defer { sqlite3_finalize(statement) }
+            bind(bindings, to: statement)
+            guard sqlite3_step(statement) == SQLITE_DONE else {
+                throw DatabaseError.statementFailed(String(cString: sqlite3_errmsg(db)))
+            }
+            return sqlite3_changes(db) > 0
         }
     }
 

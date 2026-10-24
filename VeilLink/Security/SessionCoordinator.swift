@@ -12,7 +12,36 @@ private enum WireProtocol {
     static let maximumDisplayNameBytes = 128
 }
 
-private struct WireAcknowledgement: Codable { let messageID: String }
+struct WireAcknowledgement: Codable {
+    let messageID: String
+    let capabilitySchema: Int?
+    let capabilityBits: Int?
+
+    init(messageID: String, capabilitySchema: Int? = nil, capabilityBits: Int? = nil) {
+        self.messageID = messageID
+        self.capabilitySchema = capabilitySchema
+        self.capabilityBits = capabilityBits
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case messageID, capabilitySchema, capabilityBits
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        messageID = try container.decode(String.self, forKey: .messageID)
+        // Malformed optional extension fields cannot invalidate an authenticated v4 ACK.
+        capabilitySchema = try? container.decode(Int.self, forKey: .capabilitySchema)
+        capabilityBits = try? container.decode(Int.self, forKey: .capabilityBits)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(messageID, forKey: .messageID)
+        try container.encodeIfPresent(capabilitySchema, forKey: .capabilitySchema)
+        try container.encodeIfPresent(capabilityBits, forKey: .capabilityBits)
+    }
+}
 
 private struct WireChatContent: Codable {
     enum Kind: String, Codable { case text, image, voice }
@@ -26,7 +55,7 @@ private struct WireChatContent: Codable {
     let attachmentChunkCount: Int?
 }
 
-private struct HelloPacket: Codable, Equatable {
+struct HelloPacket: Codable, Equatable {
     let protocolVersion: Int
     let identityID: String
     let displayName: String
@@ -34,11 +63,39 @@ private struct HelloPacket: Codable, Equatable {
     let agreementPublicKey: Data
     let nonce: Data
     let signature: Data
+    // Optional, separately signed metadata. Old v4 decoders ignore these fields.
+    var capabilitySchema: Int? = nil
+    var capabilityBits: Int? = nil
+    var capabilitySignature: Data? = nil
 
     var signedPayload: Data {
         var value = Data("VeilLink/Hello/v4|\(protocolVersion)|\(identityID)|\(displayName)|".utf8)
         value.append(identityPublicKey); value.append(agreementPublicKey); value.append(nonce)
         return value
+    }
+
+    /// The v4 signature transcript above MUST remain bit-identical for legacy peers.
+    /// This separate v1 domain binds the optional extension to this exact v4 signed Hello.
+    var signedCapabilitiesPayload: Data? {
+        guard let schema = capabilitySchema, let bits = capabilityBits else { return nil }
+        var value = Data("VeilLink/HelloCapabilities/v1|".utf8)
+        value.append(signedPayload)
+        value.append(Data("|v4sig|".utf8))
+        value.append(signature)
+        value.append(Data("|\(schema)|\(bits)|".utf8))
+        return value
+    }
+
+    /// Failure to validate a *supplement* downgrades only optional capabilities, never v4 trust.
+    func verifiedCapabilityBits() -> Int? {
+        guard let schema = capabilitySchema, let bits = capabilityBits,
+              let signature = capabilitySignature, signature.count == 64,
+              let transcript = signedCapabilitiesPayload,
+              let recognized = VeilPeerCapabilityPolicy.validatedBits(schemaVersion: schema, bits: bits),
+              (try? CryptoEngine.verify(signature: signature, for: transcript, publicKey: identityPublicKey)) != nil else {
+            return nil
+        }
+        return recognized
     }
 }
 
@@ -50,6 +107,8 @@ private struct SessionContext {
     var keys: SessionKeyMaterial?
     var replayWindow = ReplayWindow()
     var nextSendSequence: UInt64 = 1
+    /// Authenticated advertisement from the CURRENT session only, never a stale database cache.
+    var negotiatedFeatureBits: Int?
 }
 
 enum VeilSessionTransportKind: Int, Sendable {
@@ -96,6 +155,7 @@ final class SessionCoordinator: ObservableObject {
     var onRelayProvisionReceived: ((String, VeilRelayProvisionPacket) -> Void)?
     var onCollaborativeStressFrame: ((CollaborativeStressFrame, String) -> Void)?
     var onCollaborativeStressBulkReceipt: ((CollaborativeStressBulkReceipt, String) -> Void)?
+    var onControlEventReceived: ((VeilControlEvent, String) -> Void)?
 
     private let identity: IdentityManager
     private let database: DatabaseStore
@@ -197,6 +257,7 @@ final class SessionCoordinator: ObservableObject {
                     try? database.wakeOutboundForPeer(targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
                 }
                 flushOutbound(for: peerIdentityID)
+                flushDurableControl(for: peerIdentityID)
             } else {
                 nearbyPeers.removeAll { $0.id == peerIdentityID }
             }
@@ -260,6 +321,8 @@ final class SessionCoordinator: ObservableObject {
             case .pttAudio: try handlePTTAudio(transportID: transportID, data: envelope.payload)
             case .meshOverlay: try handleMeshOverlay(transportID: transportID, data: envelope.payload)
             case .relayProvision: try handleRelayProvision(transportID: transportID, data: envelope.payload)
+            case .controlEvent: try handleControlEvent(transportID: transportID, data: envelope.payload)
+            case .controlReceipt: try handleControlReceipt(transportID: transportID, data: envelope.payload)
             }
             packetAbuseLimiter.reset(transportID)
         } catch {
@@ -421,6 +484,44 @@ final class SessionCoordinator: ObservableObject {
     /// Re-seeds the signed Hello on an already-known BLE transport without changing trust state.
     /// This gives the UI a safe recovery action when the physical link survived but the secure
     /// session was lost during backgrounding or a transient packet-loss window.
+    /// Persist an event once, then attach one independently acknowledged target per trusted peer.
+    /// Actual transmission is gated by the signed peer identity and feature-bit negotiation.
+    func enqueueReliableControlEvent(_ event: VeilControlEvent, recipientIdentityIDs: [String]) throws {
+        guard let local = identity.activeIdentity else { throw IdentityError.missingIdentity }
+        try database.enqueueDurableControlEvent(
+            localIdentityID: local.id, recipientIdentityIDs: recipientIdentityIDs, event: event
+        )
+        for peerIdentityID in Set(recipientIdentityIDs) {
+            flushDurableControl(for: peerIdentityID)
+        }
+        ensureRetryLoopIfNeeded()
+    }
+
+    /// One authenticated control packet attempt. Reliable callers use enqueueReliableControlEvent.
+    /// Never send new control frames to a peer that has not advertised capability bit 1.
+    @discardableResult
+    func sendControlEvent(_ event: VeilControlEvent, to peerIdentityID: String) -> TransportSendResult {
+        guard let transportID = peerTransport[peerIdentityID],
+              var session = sessions[transportID], let remote = session.remoteHello,
+              let keys = session.keys, remote.identityID == peerIdentityID,
+              database.trustedContact(localIdentityID: session.localHello.identityID, identityID: peerIdentityID)?.publicKey == remote.identityPublicKey,
+              let bits = session.negotiatedFeatureBits,
+              bits & 2 == 2 else { return .unsupportedLink }
+        do {
+            let clear = try VeilControlEventCodec.encode(event)
+            // Constrain control-plane cost on BLE; bulk media belongs in chunked transfer.
+            if transportKinds[transportID] == .ble && clear.count > 2_048 { return .unsupportedLink }
+            let encrypted = try CryptoEngine.encrypt(clear, key: keys.sendKey, messageID: event.eventID,
+                sequence: session.nextSendSequence, context: "control-event-v1")
+            let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version),
+                kind: .controlEvent, payload: try WireCodec.encodeEncryptedPayload(encrypted))
+            guard envelope.count <= WireProtocol.maximumEnvelopeBytes else { return .unsupportedLink }
+            session.nextSendSequence += 1
+            sessions[transportID] = session
+            return transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable
+        } catch { return .unsupportedLink }
+    }
+
     func recoverSecureSession(for peerIdentityID: String) {
         refreshPreferredTransport(for: peerIdentityID)
         guard let transportID = peerTransport[peerIdentityID] else {
@@ -453,6 +554,7 @@ final class SessionCoordinator: ObservableObject {
             onTrustEstablished?()
             onMessagesChanged?(true)
             flushOutbound(for: remote.identityID)
+            flushDurableControl(for: remote.identityID)
         } catch { lastError = error.localizedDescription }
     }
 
@@ -636,7 +738,14 @@ final class SessionCoordinator: ObservableObject {
         guard let local = identity.activeIdentity else { throw IdentityError.missingIdentity }
         let ephemeral = Curve25519.KeyAgreement.PrivateKey(); let nonce = PasswordKDF.randomData(count: 16)
         let unsigned = HelloPacket(protocolVersion: WireProtocol.version, identityID: local.id, displayName: local.displayName, identityPublicKey: local.publicKey, agreementPublicKey: ephemeral.publicKey.rawRepresentation, nonce: nonce, signature: Data())
-        let hello = HelloPacket(protocolVersion: unsigned.protocolVersion, identityID: unsigned.identityID, displayName: unsigned.displayName, identityPublicKey: unsigned.identityPublicKey, agreementPublicKey: unsigned.agreementPublicKey, nonce: unsigned.nonce, signature: try identity.signingKey().signature(for: unsigned.signedPayload))
+        var hello = HelloPacket(protocolVersion: unsigned.protocolVersion, identityID: unsigned.identityID, displayName: unsigned.displayName, identityPublicKey: unsigned.identityPublicKey, agreementPublicKey: unsigned.agreementPublicKey, nonce: unsigned.nonce, signature: try identity.signingKey().signature(for: unsigned.signedPayload))
+        // Send only a backwards-compatible optional field set. Both signatures use
+        // the existing device identity; no new keypair or v5 transport is required.
+        hello.capabilitySchema = VeilPeerCapabilityPolicy.schemaVersion
+        hello.capabilityBits = VeilPeerCapabilityPolicy.advertisedFeatureBits
+        if let signedExtension = hello.signedCapabilitiesPayload {
+            hello.capabilitySignature = try identity.signingKey().signature(for: signedExtension)
+        }
         sessions[transportID] = SessionContext(transportID: transportID, localEphemeral: ephemeral, localHello: hello)
         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .hello, payload: try encoder.encode(hello))
         let result = transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable
@@ -682,6 +791,9 @@ final class SessionCoordinator: ObservableObject {
         let keys = try CryptoEngine.deriveSessionKeys(localPrivateKey: context.localEphemeral, remotePublicKey: remote.agreementPublicKey, transcript: transcript, localIdentityID: context.localHello.identityID, remoteIdentityID: remote.identityID)
         context.remoteHello = remote
         context.keys = keys
+        // Fresh Hello capabilities are signed and tied to this handshake ephemeral + nonce.
+        // With older peers, the capability stays nil until a real authenticated chat ACK.
+        context.negotiatedFeatureBits = remote.verifiedCapabilityBits()
         context.replayWindow = ReplayWindow()
         context.nextSendSequence = 1
         sessions[transportID] = context
@@ -720,6 +832,7 @@ final class SessionCoordinator: ObservableObject {
             try? database.wakeOutboundForPeer(targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
             try? sendRelayProvisionIfNeeded(peerIdentityID: remote.identityID, transportID: transportID)
             flushOutbound(for: remote.identityID)
+            flushDurableControl(for: remote.identityID)
         }
     }
 
@@ -902,19 +1015,45 @@ final class SessionCoordinator: ObservableObject {
         guard UUID(uuidString: payload.messageID) != nil, context.replayWindow.isPotentiallyFresh(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
         let ack = try decoder.decode(WireAcknowledgement.self, from: CryptoEngine.decrypt(payload, key: keys.receiveKey, context: "ack"))
         guard ack.messageID == payload.messageID, context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
+        if context.negotiatedFeatureBits == nil,
+           let freshBits = VeilPeerCapabilityPolicy.validatedBits(
+               schemaVersion: ack.capabilitySchema, bits: ack.capabilityBits
+           ) {
+            // Legacy v4/R4 peers may advertise only through a genuine chat ACK.
+            // Do not overwrite a stronger Hello-signed capability proof.
+            context.negotiatedFeatureBits = freshBits
+        }
         sessions[transportID] = context
         let shouldNotifyDelivery = database.fetchMessage(id: ack.messageID).map { $0.isOutgoing && $0.deliveryState != .delivered } ?? false
         try database.markDelivered(messageID: ack.messageID, from: remote.identityID, localIdentityID: context.localHello.identityID)
         try database.completeOutbound(messageID: ack.messageID, targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
+        if let existing = database.fetchMessage(id: ack.messageID), existing.isOutgoing,
+           let bits = VeilPeerCapabilityPolicy.validatedBits(schemaVersion: ack.capabilitySchema, bits: ack.capabilityBits) {
+            // Advisory only. Missing/invalid extensions never impede delivery.
+            try? database.cacheAuthenticatedPeerCapabilities(
+                localIdentityID: context.localHello.identityID,
+                peerIdentityID: remote.identityID,
+                publicKey: remote.identityPublicKey,
+                featureBits: bits
+            )
+        }
         if shouldNotifyDelivery { onDeliveryConfirmed?() }
         onMessagesChanged?(false)
         flushOutbound(for: remote.identityID)
+        flushDurableControl(for: remote.identityID)
         stopRetryLoopIfIdle()
     }
 
     private func sendAcknowledgement(for messageID: String, transportID: UUID, context: inout SessionContext) throws {
         guard let keys = context.keys else { throw CryptoEngineError.invalidKeyMaterial }
-        let encrypted = try CryptoEngine.encrypt(try encoder.encode(WireAcknowledgement(messageID: messageID)), key: keys.sendKey, messageID: messageID, sequence: context.nextSendSequence, context: "ack")
+        let acknowledgement = WireAcknowledgement(
+            messageID: messageID,
+            capabilitySchema: VeilPeerCapabilityPolicy.schemaVersion,
+            capabilityBits: VeilPeerCapabilityPolicy.compatibleAckBits(
+                forPeerBits: context.negotiatedFeatureBits
+            )
+        )
+        let encrypted = try CryptoEngine.encrypt(try encoder.encode(acknowledgement), key: keys.sendKey, messageID: messageID, sequence: context.nextSendSequence, context: "ack")
         context.nextSendSequence += 1
         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .acknowledgement, payload: try WireCodec.encodeEncryptedPayload(encrypted))
         _ = transportSend?(transportID, envelope, .control)
@@ -1271,8 +1410,10 @@ final class SessionCoordinator: ObservableObject {
 
     private func retryDueOutbound() {
         try? database.expireOutboundMessages()
+        try? database.cleanupExpiredDurableControlEvents()
         for peerIdentityID in peerTransport.keys {
             flushOutbound(for: peerIdentityID)
+            flushDurableControl(for: peerIdentityID)
         }
     }
 
@@ -1280,7 +1421,8 @@ final class SessionCoordinator: ObservableObject {
         guard retryTask == nil,
               !peerTransport.isEmpty,
               let localIdentityID = identity.activeIdentity?.id,
-              database.pendingOutboundCount(localIdentityID: localIdentityID) > 0 else { return }
+              (database.pendingOutboundCount(localIdentityID: localIdentityID) > 0 ||
+               database.pendingDurableControlCount(localIdentityID: localIdentityID) > 0) else { return }
         let interval = maintenanceTuning.outboundRetryIntervalNanoseconds
         retryTaskGeneration &+= 1
         let generation = retryTaskGeneration
@@ -1291,7 +1433,8 @@ final class SessionCoordinator: ObservableObject {
                 guard !Task.isCancelled,
                       !self.peerTransport.isEmpty,
                       let localIdentityID = self.identity.activeIdentity?.id,
-                      self.database.pendingOutboundCount(localIdentityID: localIdentityID) > 0 else { break }
+                      (self.database.pendingOutboundCount(localIdentityID: localIdentityID) > 0 ||
+                       self.database.pendingDurableControlCount(localIdentityID: localIdentityID) > 0) else { break }
                 self.retryDueOutbound()
             }
             if self.retryTaskGeneration == generation { self.retryTask = nil }
@@ -1305,7 +1448,9 @@ final class SessionCoordinator: ObservableObject {
             retryTask = nil
             return
         }
-        if peerTransport.isEmpty || database.pendingOutboundCount(localIdentityID: localIdentityID) == 0 {
+        if peerTransport.isEmpty ||
+            (database.pendingOutboundCount(localIdentityID: localIdentityID) == 0 &&
+             database.pendingDurableControlCount(localIdentityID: localIdentityID) == 0) {
             retryTaskGeneration &+= 1
             retryTask?.cancel()
             retryTask = nil
@@ -1352,6 +1497,101 @@ final class SessionCoordinator: ObservableObject {
               context.replayWindow.accept(payload.sequence) else { throw CryptoEngineError.invalidCiphertext }
         sessions[transportID] = context
         onRelayProvisionReceived?(remote.identityID, packet)
+    }
+
+    private func handleControlEvent(transportID: UUID, data: Data) throws {
+        guard var session = sessions[transportID], let remote = session.remoteHello,
+              let keys = session.keys,
+              database.trustedContact(localIdentityID: session.localHello.identityID, identityID: remote.identityID)?.publicKey == remote.identityPublicKey else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        let encrypted = try WireCodec.decodeEncryptedPayload(data)
+        guard session.replayWindow.isPotentiallyFresh(encrypted.sequence) else { throw CryptoEngineError.invalidCiphertext }
+        let clear = try CryptoEngine.decrypt(encrypted, key: keys.receiveKey, context: "control-event-v1")
+        let event = try VeilControlEventCodec.decode(clear)
+        guard event.eventID == encrypted.messageID,
+              session.replayWindow.accept(encrypted.sequence) else { throw CryptoEngineError.invalidCiphertext }
+        let isNew = try database.saveInboundControlEvent(localIdentityID: session.localHello.identityID,
+            peerIdentityID: remote.identityID, publicKey: remote.identityPublicKey, event: event)
+        // A duplicate with a fresh authenticated sequence still needs an ACK: the old ACK
+        // might have been lost even though the first event was safely persisted.
+        if event.receiptRequested == true {
+            try sendControlReceipt(eventID: event.eventID, transportID: transportID, context: &session)
+        }
+        sessions[transportID] = session
+        if isNew { onControlEventReceived?(event, remote.identityID) }
+    }
+
+    private func sendControlReceipt(
+        eventID: String, transportID: UUID, context: inout SessionContext
+    ) throws {
+        guard let keys = context.keys else { throw CryptoEngineError.invalidKeyMaterial }
+        // The empty plaintext is protected by the dedicated AAD and the encrypted event UUID.
+        let encrypted = try CryptoEngine.encrypt(
+            Data(), key: keys.sendKey, messageID: eventID,
+            sequence: context.nextSendSequence, context: "control-receipt-v1"
+        )
+        let envelope = try WireCodec.encodeEnvelope(
+            version: UInt8(WireProtocol.version), kind: .controlReceipt,
+            payload: try WireCodec.encodeEncryptedPayload(encrypted)
+        )
+        context.nextSendSequence += 1
+        // If the queue rejects this ACK, the sender retries; the receiver deduplicates and ACKs again.
+        _ = transportSend?(transportID, envelope, .control)
+    }
+
+    private func handleControlReceipt(transportID: UUID, data: Data) throws {
+        guard var session = sessions[transportID], let remote = session.remoteHello,
+              let keys = session.keys,
+              database.trustedContact(
+                  localIdentityID: session.localHello.identityID, identityID: remote.identityID
+              )?.publicKey == remote.identityPublicKey else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        let encrypted = try WireCodec.decodeEncryptedPayload(data)
+        guard session.replayWindow.isPotentiallyFresh(encrypted.sequence) else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        let clear = try CryptoEngine.decrypt(encrypted, key: keys.receiveKey, context: "control-receipt-v1")
+        guard clear.isEmpty, session.replayWindow.accept(encrypted.sequence) else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        // Only this authenticated peer can remove its own target, never another recipient.
+        try database.acknowledgeDurableControlEvent(
+            localIdentityID: session.localHello.identityID,
+            peerIdentityID: remote.identityID,
+            authenticatedPeerPublicKey: remote.identityPublicKey,
+            eventID: encrypted.messageID
+        )
+        sessions[transportID] = session
+        flushDurableControl(for: remote.identityID)
+        stopRetryLoopIfIdle()
+    }
+
+    private func flushDurableControl(for peerIdentityID: String) {
+        guard let local = identity.activeIdentity,
+              let transportID = peerTransport[peerIdentityID],
+              let context = sessions[transportID],
+              let bits = context.negotiatedFeatureBits,
+              bits & 4 == 4 else { return }
+        // Reliable delivery requires fresh session-level evidence of the receipt decoder.
+        for item in database.dueDurableControlEvents(
+            localIdentityID: local.id, peerIdentityID: peerIdentityID, limit: 4
+        ) {
+            let status = sendControlEvent(item.event, to: peerIdentityID)
+            guard status == .accepted else { break }
+            // The transport queue accepted a frame; this is NOT proof of delivery.
+            do {
+                try database.recordDurableControlSendAttempt(
+                    localIdentityID: local.id,
+                    peerIdentityID: peerIdentityID,
+                    eventID: item.event.eventID
+                )
+            } catch {
+                lastError = "控制事件重试记录失败：\(error.localizedDescription)"
+                break
+            }
+        }
     }
 
     @discardableResult

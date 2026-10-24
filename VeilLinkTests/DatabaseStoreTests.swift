@@ -4,6 +4,108 @@ import XCTest
 @testable import VeilLink
 
 final class DatabaseStoreTests: XCTestCase {
+    func testIdentityDeletionClearsDurableControlPayloadAndTargets() throws {
+        let (store, root) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = Data(repeating: 50, count: 32)
+        let event = VeilControlEvent(topic: "sync.cursor", payload: Data([1]))
+        try store.trustPeer(localIdentityID: "deleted-owner", identityID: "peer", displayName: "Peer", publicKey: key)
+        try store.enqueueDurableControlEvent(localIdentityID: "deleted-owner", recipientIdentityIDs: ["peer"], event: event)
+        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: "deleted-owner"), 1)
+        try store.deleteLocalIdentityData(localIdentityID: "deleted-owner")
+        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: "deleted-owner"), 0)
+        try store.trustPeer(localIdentityID: "deleted-owner", identityID: "peer", displayName: "Peer", publicKey: key)
+        // If ciphertext remained after account deletion, this conflicting UUID would be rejected.
+        try store.enqueueDurableControlEvent(
+            localIdentityID: "deleted-owner", recipientIdentityIDs: ["peer"],
+            event: VeilControlEvent(eventID: event.eventID, topic: "sync.cursor", payload: Data([2]))
+        )
+        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: "deleted-owner"), 1)
+        XCTAssertEqual(store.integrityCheck().lowercased(), "ok")
+    }
+
+    func testDurableControlOutboxOnePayloadTwoIndependentRecipients() throws {
+        let (store, root) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let local = "sender"
+        let a = "recipient-a"; let b = "recipient-b"
+        let keyA = Data(repeating: 31, count: 32)
+        let keyB = Data(repeating: 32, count: 32)
+        try store.trustPeer(localIdentityID: local, identityID: a, displayName: "A", publicKey: keyA)
+        try store.trustPeer(localIdentityID: local, identityID: b, displayName: "B", publicKey: keyB)
+        let event = VeilControlEvent(topic: "group.member", payload: Data([1, 2, 3]))
+        try store.enqueueDurableControlEvent(localIdentityID: local, recipientIdentityIDs: [a, b, a], event: event)
+        try store.enqueueDurableControlEvent(localIdentityID: local, recipientIdentityIDs: [a, b], event: event)
+        XCTAssertThrowsError(try store.enqueueDurableControlEvent(
+            localIdentityID: local, recipientIdentityIDs: [a],
+            event: VeilControlEvent(eventID: event.eventID, topic: "group.member", payload: Data([9]))
+        ))
+        XCTAssertEqual(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: a).map { $0.event }, [event])
+        XCTAssertEqual(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).map { $0.event }, [event])
+        XCTAssertThrowsError(try store.acknowledgeDurableControlEvent(
+            localIdentityID: local, peerIdentityID: a, authenticatedPeerPublicKey: keyB, eventID: event.eventID
+        ))
+        try store.acknowledgeDurableControlEvent(
+            localIdentityID: local, peerIdentityID: a, authenticatedPeerPublicKey: keyA, eventID: event.eventID
+        )
+        XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: a).isEmpty)
+        XCTAssertEqual(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).map { $0.event }, [event])
+        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: local), 1)
+        // Idempotent re-enqueue must NOT resurrect an already acknowledged target A.
+        try store.enqueueDurableControlEvent(localIdentityID: local, recipientIdentityIDs: [a, b], event: event)
+        XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: a).isEmpty)
+        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: local), 1)
+        try store.recordDurableControlSendAttempt(localIdentityID: local, peerIdentityID: b, eventID: event.eventID)
+        XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).isEmpty)
+        try store.acknowledgeDurableControlEvent(
+            localIdentityID: local, peerIdentityID: b, authenticatedPeerPublicKey: keyB, eventID: event.eventID
+        )
+        XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).isEmpty)
+        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: local), 0)
+        XCTAssertEqual(store.integrityCheck().lowercased(), "ok")
+    }
+
+    func testUntrustedControlRecipientPreventsPartialEnqueue() throws {
+        let (store, root) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = Data(repeating: 40, count: 32)
+        try store.trustPeer(localIdentityID: "local", identityID: "allowed", displayName: "Allowed", publicKey: key)
+        let event = VeilControlEvent(topic: "sync.cursor", payload: Data([0x10]))
+        XCTAssertThrowsError(try store.enqueueDurableControlEvent(
+            localIdentityID: "local", recipientIdentityIDs: ["allowed", "untrusted"], event: event
+        ))
+        XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: "local", peerIdentityID: "allowed").isEmpty)
+    }
+
+    func testControlEventInboxAuthDedupAndReadback() throws {
+        let (store, root) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = Data(repeating: 0x43, count: 32)
+        let event = VeilControlEvent(topic: "sync.cursor", payload: Data("private payload".utf8))
+        XCTAssertThrowsError(try store.saveInboundControlEvent(localIdentityID: "a", peerIdentityID: "b", publicKey: key, event: event))
+        try store.trustPeer(localIdentityID: "a", identityID: "b", displayName: "B", publicKey: key)
+        XCTAssertTrue(try store.saveInboundControlEvent(localIdentityID: "a", peerIdentityID: "b", publicKey: key, event: event))
+        XCTAssertFalse(try store.saveInboundControlEvent(localIdentityID: "a", peerIdentityID: "b", publicKey: key, event: event))
+        XCTAssertEqual(store.recentInboundControlEvents(localIdentityID: "a", peerIdentityID: "b", publicKey: key), [event])
+        XCTAssertTrue(store.recentInboundControlEvents(localIdentityID: "a", peerIdentityID: "b", publicKey: Data(repeating: 1, count: 32)).isEmpty)
+        XCTAssertEqual(store.integrityCheck().lowercased(), "ok")
+    }
+
+    func testPeerCapabilitiesAreTrustedAndIdentityScoped() throws {
+        let (store, root) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = Data(repeating: 0x39, count: 32)
+        let wrong = Data(repeating: 0x42, count: 32)
+        try store.trustPeer(localIdentityID: "localA", identityID: "peer", displayName: "Peer", publicKey: key)
+        try store.cacheAuthenticatedPeerCapabilities(localIdentityID: "localA", peerIdentityID: "peer", publicKey: key, featureBits: 1)
+        XCTAssertEqual(store.cachedAuthenticatedPeerFeatureBits(localIdentityID: "localA", peerIdentityID: "peer", publicKey: key), 1)
+        XCTAssertNil(store.cachedAuthenticatedPeerFeatureBits(localIdentityID: "localB", peerIdentityID: "peer", publicKey: key))
+        XCTAssertNil(store.cachedAuthenticatedPeerFeatureBits(localIdentityID: "localA", peerIdentityID: "peer", publicKey: wrong))
+        try store.cacheAuthenticatedPeerCapabilities(localIdentityID: "localB", peerIdentityID: "peer", publicKey: key, featureBits: 1)
+        XCTAssertNil(store.cachedAuthenticatedPeerFeatureBits(localIdentityID: "localB", peerIdentityID: "peer", publicKey: key))
+        XCTAssertEqual(store.integrityCheck().lowercased(), "ok")
+    }
+
     func testKeychainProtectedDataStatusesAreTransientNotMissing() {
         XCTAssertTrue(KeychainStore.isTransientReadStatus(errSecInteractionNotAllowed))
         XCTAssertTrue(KeychainStore.isTransientReadStatus(errSecNotAvailable))
