@@ -17,7 +17,7 @@ struct ConversationListView: View {
     @ObservedObject var model: AppModel
     let usesNavigationLinks: Bool
     @State private var stressConversation: ConversationSummary?
-
+    @State private var conversationPendingClear: ConversationSummary?
     var body: some View {
         Group {
             if model.conversations.isEmpty {
@@ -58,7 +58,11 @@ struct ConversationListView: View {
                             }
                             .tint(VeilTheme.gold)
                         }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { conversationPendingClear = conversation } label: {
+                                Label("清空", systemImage: "trash.fill")
+                            }
+                            .tint(VeilTheme.danger)
                             Button {
                                 if conversation.unreadCount > 0 {
                                     _ = model.markConversationRead(conversation.id)
@@ -84,6 +88,10 @@ struct ConversationListView: View {
                                 }
                             } label: {
                                 Label(conversation.unreadCount > 0 ? "标为已读" : "标为未读", systemImage: conversation.unreadCount > 0 ? "envelope.open" : "envelope.badge")
+                            }
+                            Divider()
+                            Button("清空本地聊天记录", role: .destructive) {
+                                conversationPendingClear = conversation
                             }
                         }
                     } else {
@@ -106,7 +114,11 @@ struct ConversationListView: View {
                             }
                             .tint(VeilTheme.gold)
                         }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { conversationPendingClear = conversation } label: {
+                                Label("清空", systemImage: "trash.fill")
+                            }
+                            .tint(VeilTheme.danger)
                             Button {
                                 if conversation.unreadCount > 0 {
                                     _ = model.markConversationRead(conversation.id)
@@ -132,6 +144,10 @@ struct ConversationListView: View {
                                 }
                             } label: {
                                 Label(conversation.unreadCount > 0 ? "标为已读" : "标为未读", systemImage: conversation.unreadCount > 0 ? "envelope.open" : "envelope.badge")
+                            }
+                            Divider()
+                            Button("清空本地聊天记录", role: .destructive) {
+                                conversationPendingClear = conversation
                             }
                         }
                     }
@@ -159,6 +175,21 @@ struct ConversationListView: View {
                 .buttonStyle(VeilPressStyle())
                 .accessibilityLabel("打开工具中心")
             }
+        }
+        .alert("清空本地聊天记录？", isPresented: Binding(
+            get: { conversationPendingClear != nil },
+            set: { if !$0 { conversationPendingClear = nil } }
+        )) {
+            Button("取消", role: .cancel) { conversationPendingClear = nil }
+            Button("清空", role: .destructive) {
+                guard let conversation = conversationPendingClear else { return }
+                if model.clearConversationLocally(conversationID: conversation.id) {
+                    model.haptics.warning()
+                }
+                conversationPendingClear = nil
+            }
+        } message: {
+            Text("联系人与信任关系会保留，但本机这段对话的消息和附件会被删除。此操作不会影响对方设备。")
         }
         .background(VeilAmbientBackground())
         .background(
@@ -304,6 +335,11 @@ struct ChatView: View {
     @State private var replyingTo: ChatMessage?
     @State private var showsSearchBar = false
     @State private var searchQuery = ""
+    @State private var showsConversationWorkspace = false
+    @State private var isPreparingConversationWorkspace = false
+    @State private var conversationWorkspaceSnapshot: ConversationWorkspaceSnapshot?
+    @State private var pendingWorkspaceJumpID: String?
+    @State private var showsMessageForge = false
     @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
     @State private var hasOlderMessages = false
     @State private var messageReloadGeneration = 0
@@ -487,6 +523,18 @@ struct ChatView: View {
                 .onChange(of: messages.last?.id) { _ in
                     if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
+                .onChange(of: pendingWorkspaceJumpID) { target in
+                    guard let target else { return }
+                    if usesReducedInteractionMotion {
+                        proxy.scrollTo(target, anchor: .center)
+                    } else {
+                        withAnimation(.easeOut(duration: 0.28)) {
+                            proxy.scrollTo(target, anchor: .center)
+                        }
+                    }
+                    pendingWorkspaceJumpID = nil
+                    model.haptics.selection()
+                }
             }
 
             VStack(spacing: 0) {
@@ -650,6 +698,17 @@ struct ChatView: View {
                     } label: {
                         Label("搜索聊天", systemImage: "magnifyingglass")
                     }
+                    Button {
+                        prepareConversationWorkspace()
+                    } label: {
+                        Label(isPreparingConversationWorkspace ? "正在整理会话…" : "会话工作台", systemImage: "tray.full.fill")
+                    }
+                    .disabled(isPreparingConversationWorkspace)
+                    Button {
+                        showsMessageForge = true
+                    } label: {
+                        Label("消息锻造台", systemImage: "hammer.fill")
+                    }
                     Button { showsAgentAssistant = true } label: {
                         Label("灵核助手", systemImage: "sparkles")
                     }
@@ -675,7 +734,10 @@ struct ChatView: View {
         .onDisappear {
             model.setConversationVisible(conversation.id, visible: false)
         }
-        .onChange(of: model.messagesRevision) { _ in reload(loadAll: showsSearchBar && loadedFullHistoryForSearch) }
+        .onChange(of: model.messagesRevision) { _ in
+            if showsConversationWorkspace { prepareConversationWorkspace(presentWhenReady: false) }
+            else { reload(loadAll: showsSearchBar && loadedFullHistoryForSearch) }
+        }
         .onChange(of: searchQuery) { value in
             let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
             if showsSearchBar, !query.isEmpty, !loadedFullHistoryForSearch {
@@ -694,6 +756,28 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showsAgentAssistant) {
             AgentConversationAssistantSheet(model: model, conversation: conversation, messages: messages)
+        }
+        .sheet(isPresented: $showsConversationWorkspace) {
+            if let snapshot = conversationWorkspaceSnapshot {
+                ConversationWorkspaceView(
+                    conversationTitle: conversation.title,
+                    snapshot: snapshot,
+                    onJump: { messageID in
+                        showsConversationWorkspace = false
+                        DispatchQueue.main.async { pendingWorkspaceJumpID = messageID }
+                    }
+                )
+            }
+        }
+        .sheet(isPresented: $showsMessageForge) {
+            VeilMessageForgeView(
+                initialText: draft,
+                onApply: { forged in
+                    draft = forged
+                    composerMode = .text
+                    model.haptics.resolved()
+                }
+            )
         }
         .sheet(isPresented: $showsMiniGames, onDismiss: { miniGameInitialSessionID = nil }) {
             MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
@@ -749,6 +833,52 @@ struct ChatView: View {
             }
         } message: {
             Text("已经发送并被对方确认的分块无法远程撤回；取消只会停止后续发送。")
+        }
+    }
+
+    private func prepareConversationWorkspace(presentWhenReady: Bool = true) {
+        guard !isPreparingConversationWorkspace else { return }
+        isPreparingConversationWorkspace = true
+        messageReloadGeneration &+= 1
+        let generation = messageReloadGeneration
+        let store = model.database
+        let conversationID = conversation.id
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loadedMessages = store.fetchMessages(conversationID: conversationID)
+            let snapshot = ConversationWorkspaceEngine.analyze(loadedMessages)
+            let loadedGameSessions = MiniGameSessionBuilder.sessionsByID(from: loadedMessages)
+            DispatchQueue.main.async {
+                guard generation == messageReloadGeneration else {
+                    isPreparingConversationWorkspace = false
+                    return
+                }
+                messages = loadedMessages
+                gameSessionsByID = loadedGameSessions
+                hasOlderMessages = false
+                conversationWorkspaceSnapshot = snapshot
+                isPreparingConversationWorkspace = false
+                searchQuery = ""
+                loadedFullHistoryForSearch = false
+                if showsSearchBar {
+                    if usesReducedInteractionMotion {
+                        showsSearchBar = false
+                    } else {
+                        withAnimation(.easeIn(duration: 0.16)) { showsSearchBar = false }
+                    }
+                }
+                if presentWhenReady { showsConversationWorkspace = true }
+                RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                    "chat.workspace.ready",
+                    metadata: [
+                        "messages": String(snapshot.messageCount),
+                        "actions": String(snapshot.count(for: .action)),
+                        "questions": String(snapshot.count(for: .question)),
+                        "links": String(snapshot.count(for: .link)),
+                        "attachments": String(snapshot.attachmentCount)
+                    ]
+                )
+            }
         }
     }
 

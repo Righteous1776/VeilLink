@@ -10,6 +10,8 @@ enum WireKind: UInt8 {
     case pttAudio = 7
     case meshOverlay = 8
     case relayProvision = 9
+    case controlEvent = 10
+    case controlReceipt = 11
 }
 
 struct WireEnvelope {

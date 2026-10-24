@@ -25,6 +25,9 @@ struct SettingsView: View {
     @State private var showsOwnerConsole = false
     @ObservedObject private var appearance = VeilAppearanceController.shared
     @ObservedObject private var backgroundContinuity = VeilBackgroundContinuityCenter.shared
+    @AppStorage("settings.section.appearanceAndData.expanded") private var appearanceAndDataExpanded = false
+    @AppStorage("settings.section.connectivity.expanded") private var connectivityExpanded = false
+    @AppStorage("settings.section.intelligence.expanded") private var intelligenceExpanded = false
     @State private var diagnosticsCopied = false
     @State private var requestedKernelMode: VeilKernelRuntimeMode?
     @State private var showsA10OnlyLabWarning = false
@@ -46,19 +49,32 @@ struct SettingsView: View {
         VeilStableScrollView {
             VStack(spacing: 16) {
                 profileCard.veilStaggeredEntrance(index: 0)
-                appearanceCard.veilStaggeredEntrance(index: 1)
-                securityCard.veilStaggeredEntrance(index: 2)
-                legalCard.veilStaggeredEntrance(index: 3)
-                storageCard.veilStaggeredEntrance(index: 4)
-                mediaCard.veilStaggeredEntrance(index: 5)
-                agentCard.veilStaggeredEntrance(index: 6)
-                feedbackCard.veilStaggeredEntrance(index: 7)
-                bluetoothCard.veilStaggeredEntrance(index: 8)
-                backgroundContinuityCard.veilStaggeredEntrance(index: 9)
-                internetRelayCard.veilStaggeredEntrance(index: 10)
-                a9HealthCard.veilStaggeredEntrance(index: 11)
-                kernelRuntimeCard.veilStaggeredEntrance(index: 12)
-                versionFooter.veilStaggeredEntrance(index: 13)
+                securityCard.veilStaggeredEntrance(index: 1)
+                VeilSettingsDisclosureSection(section: .appearanceAndData, isExpanded: $appearanceAndDataExpanded) {
+                    VStack(spacing: 12) {
+                        appearanceCard
+                        legalCard
+                        storageCard
+                        mediaCard
+                        feedbackCard
+                    }
+                }
+                VeilSettingsDisclosureSection(section: .connectivity, isExpanded: $connectivityExpanded) {
+                    VStack(spacing: 12) {
+                        bluetoothCard
+                        backgroundContinuityCard
+                        runtimeEnvironmentCard
+                        internetRelayCard
+                    }
+                }
+                VeilSettingsDisclosureSection(section: .intelligence, isExpanded: $intelligenceExpanded) {
+                    VStack(spacing: 12) {
+                        agentCard
+                        a9HealthCard
+                        kernelRuntimeCard
+                    }
+                }
+                versionFooter.veilStaggeredEntrance(index: 5)
             }
         }
         .background(VeilAmbientBackground())
@@ -415,6 +431,19 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Label("数据与备份", systemImage: "externaldrive")
                 .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
+            NavigationLink(destination: StorageManagementView(model: model)) {
+                HStack {
+                    Image(systemName: "internaldrive")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("存储管理").fontWeight(.medium)
+                        Text("清理缓存、下载与过期导出；查看空间雷达")
+                            .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+            }.buttonStyle(VeilPressStyle())
+            Divider().background(VeilTheme.hairline)
             settingButton(title: "导出加密ZIP", detail: "保存到文件或分享", icon: "square.and.arrow.up") {
                 showsBackupSheet = true
             }
@@ -695,6 +724,37 @@ struct SettingsView: View {
         }
         .buttonStyle(VeilPressStyle())
         .veilCard(emphasized: backgroundContinuity.continuityEnabled)
+    }
+
+    private var runtimeEnvironmentCard: some View {
+        let snapshot = VeilRuntimeEnvironment.current
+        return NavigationLink(destination: VeilRuntimeCapabilityView(snapshot: snapshot)) {
+            HStack(spacing: 12) {
+                Image(systemName: snapshot.isTrollStore ? "bolt.shield.fill" : "checkmark.shield.fill")
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundColor(snapshot.isTrollStore ? VeilTheme.goldBright : VeilTheme.success)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("运行环境与能力")
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.text)
+                    Text("\(snapshot.channel.title) · \(snapshot.profile.title)")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(2)
+                }
+                Spacer()
+                if snapshot.isTrollStore {
+                    Text("TS")
+                        .font(VeilType.terminalLabel)
+                        .foregroundColor(VeilTheme.goldBright)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+        }
+        .buttonStyle(VeilPressStyle())
+        .veilCard(emphasized: snapshot.isTrollStore)
     }
 
     private var internetRelayCard: some View {

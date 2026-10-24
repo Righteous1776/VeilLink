@@ -325,6 +325,7 @@ struct VeilFluidCapsule<Compact: View, Expanded: View>: View {
 /// Rotating gradient edge plus a diffused back-glow. Continuous rotation is disabled on the
 /// legacy compositor; it keeps a static, brightened edge there instead.
 struct VeilDynamicGlowBorder: View {
+    @ObservedObject private var appearance = VeilAppearanceController.shared
     var active = true
     var emphasized = true
     @State private var rotates = false
@@ -369,7 +370,7 @@ struct VeilDynamicGlowBorder: View {
 
     @ViewBuilder
     private var baseStroke: some View {
-        if VeilAppearanceController.shared.isInstrument {
+        if appearance.isInstrument {
             RoundedRectangle(cornerRadius: emphasized ? 22 : 18, style: .continuous)
                 .stroke(active ? VeilTheme.gold.opacity(0.24) : VeilTheme.hairline, lineWidth: 1)
         } else {
@@ -380,7 +381,7 @@ struct VeilDynamicGlowBorder: View {
 
     @ViewBuilder
     private var glowMask: some View {
-        if VeilAppearanceController.shared.isInstrument {
+        if appearance.isInstrument {
             RoundedRectangle(cornerRadius: emphasized ? 22 : 18, style: .continuous)
                 .stroke(lineWidth: emphasized ? 1.7 : 1.2)
         } else {

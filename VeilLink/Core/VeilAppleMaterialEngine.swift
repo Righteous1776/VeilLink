@@ -26,7 +26,7 @@ struct VeilPlatformGlassSurfaceModifier: ViewModifier {
     let cornerRadius: CGFloat
     let interactive: Bool
 
-    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var appearance = VeilAppearanceController.shared
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -49,7 +49,7 @@ struct VeilPlatformGlassSurfaceModifier: ViewModifier {
     private func fallback(_ content: Content) -> some View {
         if VeilRenderProfile.usesLegacyCompositorPath {
             content
-                .background(VeilAppearanceController.shared.isAppleSoft ? VeilTheme.panel.opacity(0.98) : VeilTheme.elevated.opacity(0.96))
+                .background(appearance.isAppleSoft ? VeilTheme.panel.opacity(0.98) : VeilTheme.elevated.opacity(0.96))
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -60,14 +60,14 @@ struct VeilPlatformGlassSurfaceModifier: ViewModifier {
                 .background(.ultraThinMaterial)
                 .background(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(VeilAppearanceController.shared.isAppleSoft ? VeilTheme.panel.opacity(colorScheme == .dark ? 0.34 : 0.54) : VeilTheme.elevated.opacity(0.36))
+                        .fill(appearance.isAppleSoft ? VeilTheme.panel.opacity(appearance.isDarkAppearance ? 0.34 : 0.54) : VeilTheme.elevated.opacity(0.36))
                 )
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.10) : Color.white.opacity(0.72), lineWidth: 0.8)
+                        .stroke(appearance.isDarkAppearance ? Color.white.opacity(0.10) : Color.white.opacity(0.72), lineWidth: 0.8)
                 )
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.24 : 0.10), radius: 14, x: 0, y: 8)
+                .shadow(color: Color.black.opacity(appearance.isDarkAppearance ? 0.24 : 0.10), radius: 14, x: 0, y: 8)
         }
     }
 }
@@ -99,7 +99,7 @@ struct VeilAppleSoftSurface: View {
     var cornerRadius: CGFloat = 24
     var emphasized = false
 
-    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var appearance = VeilAppearanceController.shared
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -109,14 +109,14 @@ struct VeilAppleSoftSurface: View {
             .fill(emphasized ? VeilTheme.panelSoft : VeilTheme.panel)
             .overlay(
                 shape.stroke(
-                    colorScheme == .dark ? Color.white.opacity(emphasized ? 0.10 : 0.065) : Color.white.opacity(0.78),
+                    appearance.isDarkAppearance ? Color.white.opacity(emphasized ? 0.10 : 0.065) : Color.white.opacity(0.78),
                     lineWidth: 0.8
                 )
             )
             .overlay(alignment: .top) {
                 if !legacy {
                     LinearGradient(
-                        colors: [Color.white.opacity(colorScheme == .dark ? 0.09 : 0.72), Color.clear],
+                        colors: [Color.white.opacity(appearance.isDarkAppearance ? 0.09 : 0.72), Color.clear],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -126,13 +126,13 @@ struct VeilAppleSoftSurface: View {
                 }
             }
             .shadow(
-                color: Color.black.opacity(colorScheme == .dark ? (emphasized ? 0.32 : 0.24) : 0.12),
+                color: Color.black.opacity(appearance.isDarkAppearance ? (emphasized ? 0.32 : 0.24) : 0.12),
                 radius: legacy ? 3 : (emphasized ? 20 : 14),
                 x: 0,
                 y: legacy ? 2 : (emphasized ? 11 : 7)
             )
             .shadow(
-                color: legacy ? .clear : Color.white.opacity(colorScheme == .dark ? 0.025 : 0.86),
+                color: legacy ? .clear : Color.white.opacity(appearance.isDarkAppearance ? 0.025 : 0.86),
                 radius: emphasized ? 15 : 10,
                 x: -5,
                 y: -5
@@ -141,12 +141,12 @@ struct VeilAppleSoftSurface: View {
 }
 
 struct VeilAppleSoftBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var appearance = VeilAppearanceController.shared
 
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: colorScheme == .dark
+                colors: appearance.isDarkAppearance
                     ? [Color(red: 0.055, green: 0.057, blue: 0.064), Color(red: 0.095, green: 0.098, blue: 0.11)]
                     : [Color(red: 0.965, green: 0.968, blue: 0.982), Color(red: 0.91, green: 0.925, blue: 0.955)],
                 startPoint: .topLeading,
@@ -155,13 +155,13 @@ struct VeilAppleSoftBackground: View {
 
             if !VeilRenderProfile.usesLegacyCompositorPath {
                 RadialGradient(
-                    colors: [VeilTheme.gold.opacity(colorScheme == .dark ? 0.14 : 0.13), Color.clear],
+                    colors: [VeilTheme.gold.opacity(appearance.isDarkAppearance ? 0.14 : 0.13), Color.clear],
                     center: UnitPoint(x: 0.88, y: 0.08),
                     startRadius: 0,
                     endRadius: 360
                 )
                 RadialGradient(
-                    colors: [Color.white.opacity(colorScheme == .dark ? 0.035 : 0.62), Color.clear],
+                    colors: [Color.white.opacity(appearance.isDarkAppearance ? 0.035 : 0.62), Color.clear],
                     center: UnitPoint(x: 0.08, y: 0.72),
                     startRadius: 0,
                     endRadius: 300
@@ -174,7 +174,7 @@ struct VeilAppleSoftBackground: View {
 }
 
 struct VeilAppleSoftTextFieldModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var appearance = VeilAppearanceController.shared
 
     func body(content: Content) -> some View {
         content
@@ -184,9 +184,9 @@ struct VeilAppleSoftTextFieldModifier: ViewModifier {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.white.opacity(0.80), lineWidth: 0.8)
+                    .stroke(appearance.isDarkAppearance ? Color.white.opacity(0.08) : Color.white.opacity(0.80), lineWidth: 0.8)
             )
-            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: 8, x: 0, y: 4)
+            .shadow(color: Color.black.opacity(appearance.isDarkAppearance ? 0.20 : 0.08), radius: 8, x: 0, y: 4)
     }
 }
 

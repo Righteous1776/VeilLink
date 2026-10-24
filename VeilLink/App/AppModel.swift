@@ -464,6 +464,16 @@ final class AppModel: ObservableObject {
         refreshA9Health()
     }
 
+    func clearUserRequestedCaches() {
+        database.clearTransientCaches()
+        sessions.clearTransientCaches()
+        ImagePreviewCache.shared.removeAll()
+        agent.trimRuntimeMemory()
+        refreshA9Health()
+        performanceRevision &+= 1
+        DiagnosticLogStore.shared.log(.info, .performance, event: "storage.user_cache_cleanup")
+    }
+
     func a9DiagnosticsReport() -> String {
         a9Health.report()
             + "\n\n" + kernelRuntime.report()

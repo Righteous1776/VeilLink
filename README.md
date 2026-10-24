@@ -1,10 +1,10 @@
 # VeilLink
 
-> **Current cumulative checkpoint:** VeilLink **26.13 (Build 59)**. This release
-> preserves the complete 26.12 game/runtime line and adds shared UI rhythm tokens,
-> an IME-safe legal-signing fix, plus the optional 白描 and 浮屿 appearance styles.
-> See [the Build 59 release notes](docs/RELEASE_26_13_BUILD_59.md), [the Build 58 release notes](docs/RELEASE_26_12_BUILD_58.md),
-> and [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
+> **Integration candidate:** VeilLink **26.14 (Build 60)** unifies appearance, lifecycle,
+> SHA-256 file integrity, local conversation tooling, Wire v4 R1–R5 / SQLite v10,
+> safe storage management, TrollStore capability foundations and adaptive particles.
+> This candidate must still pass macOS CI, full XCTest and compatibility gates before release.
+> See [the Build 60 release notes](docs/RELEASE_26_14_BUILD_60.md) and [Build 59](docs/RELEASE_26_13_BUILD_59.md).
 
 VeilLink is a GitHub-buildable iOS 15+ prototype for nearby, serverless encrypted
 messaging over Bluetooth Low Energy. The UI is Chinese-first and adapts separately
