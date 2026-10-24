@@ -1,15 +1,14 @@
-# R4 Risk Register — protected communications and encrypted storage
+# VeilLink R5 security + compatibility review
 
-P0: Four sequential patches stage core source changes only inside Agent Inbox; no product sources may be changed by this Lane Agent. Governor arbitration required before applying.
-P0: Peer feature bit2 is needed to decode Wire kind11. A prior event-only v4 peer (bit1) cannot receive controlReceipt; receiver sends kind11 only when the authenticated event requests it. Durable outbound requires fresh session bit2.
-P1: Protocol capability metadata currently piggybacks real chat ACKs. A newly trusted, chat-silent peer may not receive durable control events until a current-session chat ACK advertises bit2. Do not fake ACKs or send new frame types to older peers to force negotiation.
-P1: ACK signifies saved encrypted event, not successful execution of business action or group consensus. Per-feature authorization, stable recipient identity and execution idempotence are separate responsibilities.
-P1: Inbound event inbox keeps 256 entries/peer; after eviction, duplicate event UUID processing can recur. Future consumer needs stronger sequence/clock/tombstone model before enabling group membership or irreversible task commands.
-P1: Acknowledged target rows retained only until all recipients ACK, or the event expires. After event GC, deliberately reusing UUID is a NEW send; UI/action layer should never reuse generated IDs.
-P1: v10 512-event cap is transaction-enforced (and intentionally bounded), and 16 recipients maximum per event. Overflow/unknown target errors rollback target inserts.
-P1: Received receipts must be parsed only within trusted authenticated session, bound to matching peer public key, UUID and AEAD context. Wire v4 replay window rejects repeated sequence.
-P1: Existing chat/attachments/keys preserved by additive migrations, but physical restore, lost Keychain and rollback Xcode/XCTest validation are still mandatory.
-P2: 2 KiB BLE per-control event cap and 24 KiB codec payload cap differ intentionally. Large payloads need segmented transfer later.
-P2: Ordinary IPA/iOS15 and TrollStore environments must keep identical trust and message security. PR #53 provides installation evidence; PR #57 readiness policy is an independent optional feature gate, never a security authority.
-OVERLAP: PR #53 design suggests its own DB v9. Governor must choose one single migration chain, not concurrently apply two v9 definitions.
-STATUS: REVIEW_REQUIRED, iOS integration tests NOT_RUN, cannot claim production or IPA.
+CRITICAL: Identity signing and Hello are protected protocol surfaces. Validating a detached signature is mandatory before using any capability bits. A missing/invalid *optional* extension does not invalidate a separately valid legacy v4 Hello, but must never enable new kinds.
+CRITICAL: The legacy Hello signedPayload, v4 HKDF transcript, trust pinning and replay protection are unchanged. No downgrade in cryptographic identity verification.
+HIGH: Optional Hello metadata can be stripped by a network attacker without breaking the original v4 signature; the result is **denial/downgrade of enhanced functionality**, not privilege escalation. Make downgrade observable in locally redacted diagnostics and consider a future authenticated consistency check after the session becomes encrypted.
+HIGH: An old R2 ACK decoder rejects unknown high bits; R5's conditional ACK advertisement (3 until peer proves bit2, then 7) is mandatory for backward interoperability.
+HIGH: R5 fresh capability bits must come from the verified signed Hello in the current session; a 30-day SQLite cache must not bypass current peer-version negotiation or trust.
+HIGH: A legacy v4/R4 peer has no R5 signed extension and may require a real chat ACK to negotiate new capabilities. Do not fake a chat acknowledgement or write phantom messages to force bootstrap.
+HIGH: New Hello bytes include a second Ed25519 signature; verify fragmented BLE packet handling, low-MTU phones, CB limits, resource/energy use and parser bounds on iPhone 7.
+HIGH: R4-v10 outbox still bounds 16 recipients, 512 events, 7-day expiry and 256 inbound entries per peer. No permanent business exactly-once execution or group E2EE can be claimed.
+HIGH: PR #53 has a competing proposed DB v9 migration model; only Governor may arbitrate this protected overlap. PR #57 TrollStore readiness is unrelated to encrypted peer trust.
+MEDIUM: Future unknown feature bits are currently rejected rather than masked for a conservative downgrade; old clients should not fail core v4.
+MEDIUM: Optional extension signature failure currently silently falls back. Governor should add a redacted security diagnostic for downgrade visibility without leaking identity or raw payloads.
+STATUS: INBOX_ONLY, no production tree change, iOS native build/tests NOT RUN, no IPA.
