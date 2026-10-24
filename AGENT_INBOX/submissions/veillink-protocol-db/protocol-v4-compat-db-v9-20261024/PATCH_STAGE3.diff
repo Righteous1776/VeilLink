@@ -1,0 +1,265 @@
+diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseStore.swift
+--- a/VeilLink/Storage/DatabaseStore.swift
++++ b/VeilLink/Storage/DatabaseStore.swift
+@@ -1345,7 +1345,151 @@
+         }
+     }
+ 
+-    private func migrate() throws {
++    /// Each event is encrypted only once; recipient rows track delivery independently.
++    /// Enqueue is atomic and does not alter the ordinary chat outbox.
++    func enqueueDurableControlEvent(
++        localIdentityID: String, recipientIdentityIDs: [String], event: VeilControlEvent
++    ) throws {
++        let recipients = Array(Set(recipientIdentityIDs)).sorted()
++        guard !recipients.isEmpty, recipients.count <= 16 else {
++            throw DatabaseError.statementFailed("单次控制事件最多可指定 16 个接收者。")
++        }
++        for recipient in recipients {
++            guard trustedContact(localIdentityID: localIdentityID, identityID: recipient) != nil else {
++                throw DatabaseError.statementFailed("控制事件不能发送给未认证的接收者。")
++            }
++        }
++        let existingCount = read(
++            "SELECT COUNT(*) FROM control_outbound_events WHERE local_identity_id = ?;",
++            bindings: [.text(localIdentityID)]
++        ) { Int(sqlite3_column_int64($0, 0)) }.first ?? 0
++        guard existingCount < 512 else {
++            throw DatabaseError.statementFailed("可靠控制队列容量已满，请先完成或清理过期事件。")
++        }
++        let sealed = try ChaChaPoly.seal(VeilControlEventCodec.encode(event), using: storageKey).combined
++        let now = Date().timeIntervalSince1970
++        let expiration = now + 7 * 24 * 60 * 60
++        var statements: [(String, [SQLiteValue])] = [
++            (
++                """
++                INSERT OR IGNORE INTO control_outbound_events(
++                    local_identity_id, event_id, payload_ciphertext, created_at, expires_at
++                ) VALUES(?, ?, ?, ?, ?);
++                """,
++                [.text(localIdentityID), .text(event.eventID), .blob(sealed), .double(now), .double(expiration)]
++            )
++        ]
++        for recipient in recipients {
++            statements.append((
++                """
++                INSERT OR IGNORE INTO control_outbound_targets(
++                    local_identity_id, event_id, peer_identity_id, next_attempt_at, attempts
++                ) VALUES(?, ?, ?, ?, 0);
++                """,
++                [.text(localIdentityID), .text(event.eventID), .text(recipient), .double(now)]
++            ))
++        }
++        try writeBatch(statements)
++    }
++
++    struct DueControlEvent {
++        let event: VeilControlEvent
++        let peerIdentityID: String
++        let attemptCount: Int
++    }
++
++    func dueDurableControlEvents(
++        localIdentityID: String, peerIdentityID: String, limit: Int = 8
++    ) -> [DueControlEvent] {
++        guard trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID) != nil else { return [] }
++        let now = Date().timeIntervalSince1970
++        let safeLimit = max(1, min(limit, 32))
++        let rows = read(
++            """
++            SELECT e.payload_ciphertext, t.attempts
++            FROM control_outbound_targets t
++            JOIN control_outbound_events e
++              ON t.local_identity_id = e.local_identity_id AND t.event_id = e.event_id
++            WHERE t.local_identity_id = ? AND t.peer_identity_id = ?
++              AND t.next_attempt_at <= ? AND e.expires_at > ?
++            ORDER BY e.created_at ASC, e.event_id ASC
++            LIMIT \(safeLimit);
++            """,
++            bindings: [.text(localIdentityID), .text(peerIdentityID), .double(now), .double(now)]
++        ) { (data($0, 0), Int(sqlite3_column_int64($0, 1))) }
++        return rows.compactMap { item in
++            guard let box = try? ChaChaPoly.SealedBox(combined: item.0),
++                  let clear = try? ChaChaPoly.open(box, using: storageKey),
++                  let event = try? VeilControlEventCodec.decode(clear) else { return nil }
++            return DueControlEvent(event: event, peerIdentityID: peerIdentityID, attemptCount: item.1)
++        }
++    }
++
++    /// Only call after an accepted transport enqueue, not after an unsupported/failed send.
++    func recordDurableControlSendAttempt(
++        localIdentityID: String, peerIdentityID: String, eventID: String
++    ) throws {
++        let now = Date().timeIntervalSince1970
++        try write(
++            """
++            UPDATE control_outbound_targets SET
++                attempts = MIN(attempts + 1, 30),
++                next_attempt_at = ? + CASE
++                    WHEN attempts <= 0 THEN 4
++                    WHEN attempts = 1 THEN 8
++                    WHEN attempts = 2 THEN 16
++                    WHEN attempts = 3 THEN 32
++                    ELSE 60
++                END
++            WHERE local_identity_id = ? AND peer_identity_id = ? AND event_id = ?;
++            """,
++            bindings: [.double(now), .text(localIdentityID), .text(peerIdentityID), .text(eventID)]
++        )
++    }
++
++    /// A receipt must originate from an authenticated and trusted matching peer session.
++    /// One peer can never acknowledge another peer's outstanding target row.
++    func acknowledgeDurableControlEvent(
++        localIdentityID: String, peerIdentityID: String,
++        authenticatedPeerPublicKey: Data, eventID: String
++    ) throws {
++        guard authenticatedPeerPublicKey.count == 32,
++              trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID)?.publicKey == authenticatedPeerPublicKey else {
++            throw DatabaseError.statementFailed("控制回执身份验证失败。")
++        }
++        try writeBatch([
++            (
++                "DELETE FROM control_outbound_targets WHERE local_identity_id = ? AND peer_identity_id = ? AND event_id = ?;",
++                [.text(localIdentityID), .text(peerIdentityID), .text(eventID)]
++            ),
++            (
++                """
++                DELETE FROM control_outbound_events
++                WHERE local_identity_id = ? AND event_id = ?
++                  AND NOT EXISTS (
++                      SELECT 1 FROM control_outbound_targets
++                      WHERE local_identity_id = ? AND event_id = ?
++                  );
++                """,
++                [.text(localIdentityID), .text(eventID), .text(localIdentityID), .text(eventID)]
++            )
++        ])
++    }
++
++    @discardableResult
++    func cleanupExpiredDurableControlEvents(now: Date = Date()) throws -> Int {
++        let cutOff = now.timeIntervalSince1970
++        let count = read(
++            "SELECT COUNT(*) FROM control_outbound_events WHERE expires_at <= ?;",
++            bindings: [.double(cutOff)]
++        ) { Int(sqlite3_column_int64($0, 0)) }.first ?? 0
++        if count > 0 {
++            try write("DELETE FROM control_outbound_events WHERE expires_at <= ?;", bindings: [.double(cutOff)])
++        }
++        return count
++    }
++
++    private func migrate() throws {
+         try execute("PRAGMA journal_mode=WAL;")
+         try execute("PRAGMA foreign_keys=ON;")
+         try execute("PRAGMA synchronous=NORMAL;")
+@@ -1473,8 +1617,9 @@
+         try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(7, strftime('%s','now'));")
+         try migrateConversationControlsV8()
+         try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(8, strftime('%s','now'));")
+-        try migratePeerCapabilitiesV9()
+-    }
++        try migratePeerCapabilitiesV9()
++        try migrateDurableControlOutboxV10()
++    }
+ 
+     private func migratePeerCapabilitiesV9() throws {
+         // Additive, idempotent and atomic, including the migration marker.
+@@ -1506,7 +1651,39 @@
+             """)
+     }
+ 
+-    private func migrateDeliveryLifecycleV5() throws {
++    private func migrateDurableControlOutboxV10() throws {
++        // A v10 change adds tables only; conversations, messages, keys and ordinary outbox persist.
++        try transaction("""
++            CREATE TABLE IF NOT EXISTS control_outbound_events(
++                local_identity_id TEXT NOT NULL,
++                event_id TEXT NOT NULL,
++                payload_ciphertext BLOB NOT NULL,
++                created_at REAL NOT NULL,
++                expires_at REAL NOT NULL,
++                PRIMARY KEY(local_identity_id, event_id)
++            );
++            CREATE TABLE IF NOT EXISTS control_outbound_targets(
++                local_identity_id TEXT NOT NULL,
++                event_id TEXT NOT NULL,
++                peer_identity_id TEXT NOT NULL,
++                next_attempt_at REAL NOT NULL,
++                attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts BETWEEN 0 AND 30),
++                PRIMARY KEY(local_identity_id, event_id, peer_identity_id),
++                FOREIGN KEY(local_identity_id, event_id)
++                    REFERENCES control_outbound_events(local_identity_id, event_id) ON DELETE CASCADE,
++                FOREIGN KEY(local_identity_id, peer_identity_id)
++                    REFERENCES contacts(local_identity_id, identity_id) ON DELETE CASCADE
++            );
++            CREATE INDEX IF NOT EXISTS idx_control_outbound_due_v10
++                ON control_outbound_targets(local_identity_id, peer_identity_id, next_attempt_at);
++            CREATE INDEX IF NOT EXISTS idx_control_outbound_expiry_v10
++                ON control_outbound_events(expires_at);
++            INSERT OR IGNORE INTO schema_migrations(version, applied_at)
++                VALUES(10, strftime('%s','now'));
++            """)
++    }
++
++    private func migrateDeliveryLifecycleV5() throws {
+         if !columnExists(table: "messages", column: "delivery_error") {
+             try execute("ALTER TABLE messages ADD COLUMN delivery_error TEXT;")
+         }
+diff --git a/VeilLinkTests/DatabaseStoreTests.swift b/VeilLinkTests/DatabaseStoreTests.swift
+--- a/VeilLinkTests/DatabaseStoreTests.swift
++++ b/VeilLinkTests/DatabaseStoreTests.swift
+@@ -3,8 +3,50 @@
+ import XCTest
+ @testable import VeilLink
+ 
+-final class DatabaseStoreTests: XCTestCase {
+-    func testControlEventInboxAuthDedupAndReadback() throws {
++final class DatabaseStoreTests: XCTestCase {
++    func testDurableControlOutboxOnePayloadTwoIndependentRecipients() throws {
++        let (store, root) = try makeStore()
++        defer { try? FileManager.default.removeItem(at: root) }
++        let local = "sender"
++        let a = "recipient-a"; let b = "recipient-b"
++        let keyA = Data(repeating: 31, count: 32)
++        let keyB = Data(repeating: 32, count: 32)
++        try store.trustPeer(localIdentityID: local, identityID: a, displayName: "A", publicKey: keyA)
++        try store.trustPeer(localIdentityID: local, identityID: b, displayName: "B", publicKey: keyB)
++        let event = VeilControlEvent(topic: "group.member", payload: Data([1, 2, 3]))
++        try store.enqueueDurableControlEvent(localIdentityID: local, recipientIdentityIDs: [a, b, a], event: event)
++        XCTAssertEqual(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: a).map { $0.event }, [event])
++        XCTAssertEqual(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).map { $0.event }, [event])
++        XCTAssertThrowsError(try store.acknowledgeDurableControlEvent(
++            localIdentityID: local, peerIdentityID: a, authenticatedPeerPublicKey: keyB, eventID: event.eventID
++        ))
++        try store.acknowledgeDurableControlEvent(
++            localIdentityID: local, peerIdentityID: a, authenticatedPeerPublicKey: keyA, eventID: event.eventID
++        )
++        XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: a).isEmpty)
++        XCTAssertEqual(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).map { $0.event }, [event])
++        try store.recordDurableControlSendAttempt(localIdentityID: local, peerIdentityID: b, eventID: event.eventID)
++        XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).isEmpty)
++        try store.acknowledgeDurableControlEvent(
++            localIdentityID: local, peerIdentityID: b, authenticatedPeerPublicKey: keyB, eventID: event.eventID
++        )
++        XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).isEmpty)
++        XCTAssertEqual(store.integrityCheck().lowercased(), "ok")
++    }
++
++    func testUntrustedControlRecipientPreventsPartialEnqueue() throws {
++        let (store, root) = try makeStore()
++        defer { try? FileManager.default.removeItem(at: root) }
++        let key = Data(repeating: 40, count: 32)
++        try store.trustPeer(localIdentityID: "local", identityID: "allowed", displayName: "Allowed", publicKey: key)
++        let event = VeilControlEvent(topic: "sync.cursor", payload: Data([0x10]))
++        XCTAssertThrowsError(try store.enqueueDurableControlEvent(
++            localIdentityID: "local", recipientIdentityIDs: ["allowed", "untrusted"], event: event
++        ))
++        XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: "local", peerIdentityID: "allowed").isEmpty)
++    }
++
++    func testControlEventInboxAuthDedupAndReadback() throws {
+         let (store, root) = try makeStore()
+         defer { try? FileManager.default.removeItem(at: root) }
+         let key = Data(repeating: 0x43, count: 32)
