@@ -93,6 +93,52 @@ diff --git a/VeilLink/Security/SessionCoordinator.swift b/VeilLink/Security/Sess
              context.negotiatedFeatureBits = freshBits
          }
          sessions[transportID] = context
+@@ -1008,7 +1049,9 @@
+         let acknowledgement = WireAcknowledgement(
+             messageID: messageID,
+             capabilitySchema: VeilPeerCapabilityPolicy.schemaVersion,
+-            capabilityBits: VeilPeerCapabilityPolicy.advertisedFeatureBits
++            capabilityBits: VeilPeerCapabilityPolicy.compatibleAckBits(
++                forPeerBits: context.negotiatedFeatureBits
++            )
+         )
+         let encrypted = try CryptoEngine.encrypt(try encoder.encode(acknowledgement), key: keys.sendKey, messageID: messageID, sequence: context.nextSendSequence, context: "ack")
+         context.nextSendSequence += 1
+diff --git a/VeilLink/Core/VeilPeerCapabilityPolicy.swift b/VeilLink/Core/VeilPeerCapabilityPolicy.swift
+--- a/VeilLink/Core/VeilPeerCapabilityPolicy.swift
++++ b/VeilLink/Core/VeilPeerCapabilityPolicy.swift
+@@ -8,6 +8,12 @@
+     static let recognizedFeatureBits = 7
+     static let cacheLifetime: TimeInterval = 30 * 24 * 60 * 60
+ 
++    /// Legacy R2 decoders reject the entire bit field when an unknown high bit is set.
++    /// Advertise bits 0/1 until this session proves the peer understands bit 2.
++    static func compatibleAckBits(forPeerBits peerBits: Int?) -> Int {
++        ((peerBits ?? 0) & 4) == 4 ? advertisedFeatureBits : (advertisedFeatureBits & 3)
++    }
++
+     static func validatedBits(schemaVersion: Int?, bits: Int?) -> Int? {
+         guard schemaVersion == self.schemaVersion,
+               let bits, bits >= 0, bits <= 1_048_575,
+diff --git a/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift b/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
+--- a/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
++++ b/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
+@@ -30,6 +30,15 @@
+         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: decoded.capabilitySchema, bits: decoded.capabilityBits))
+     }
+ 
++    func testAckCapabilityDowngradePreservesR2Compatibility() {
++        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: nil), 3)
++        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: 0), 3)
++        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: 1), 3)
++        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: 3), 3)
++        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: 7), 7)
++        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: 4), 7)
++    }
++
+     func testUnknownCapabilitiesAreRejected() {
+         XCTAssertEqual(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 1), 1)
+         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: nil, bits: 1))
 diff --git a/VeilLinkTests/VeilHelloCapabilityTests.swift b/VeilLinkTests/VeilHelloCapabilityTests.swift
 new file mode 100644
 --- /dev/null
