@@ -4,7 +4,7 @@
 
 Fix the real-device day/night switching defect where VeilLink changes text, system chrome and some outer surfaces immediately, while card/material backgrounds remain rendered with the previous theme for multiple seconds or until another unrelated redraw occurs.
 
-The repair must be reactive, local to the visual layer, preserve navigation/business state, and work on iOS 15.
+The repair must be reactive, local to the visual layer, preserve navigation/business state, and work on iOS 15. The first draft had malformed diff hunk headers; this revision regenerates the patch from exact main source, adds Apple Soft synchronization and strictly checks every hunk's ranges and output against that baseline.
 
 ## Reproduction evidence
 
@@ -37,7 +37,8 @@ The key affected layers are:
 - `VeilCardModifier`;
 - `VeilInstrumentBackground`;
 - `VeilInstrumentPlate`;
-- `VeilDynamicGlowBorder`.
+- `VeilDynamicGlowBorder`;
+- Apple Soft's `VeilPlatformGlassSurfaceModifier`, `VeilAppleSoftSurface`, `VeilAppleSoftBackground` and `VeilAppleSoftTextFieldModifier`.
 
 `SettingsView` itself already has:
 
@@ -95,7 +96,13 @@ This prevents an Instrument card or background from remaining on an old metal/re
 
 The existing rotating state remains intact; a theme change repaints the glow but does not reset navigation or business state.
 
-### 5. Regression tests
+### 5. Apple Soft material consistency
+
+A second dependency mismatch exists in `VeilAppleMaterialEngine.swift`: the central `VeilTheme` palette resolves through `VeilAppearanceController`, while Apple Soft borders, gradients, shadows and backgrounds select their day/night variation using `@Environment(\.colorScheme)`. During forced switching the SwiftUI environment may be updated on a different pass.
+
+These four Apple Soft types now observe the same controller and derive dark/light material choices from `appearance.isDarkAppearance`, avoiding independent theme clocks. The platform-native iOS 26 `glassEffect` still relies on iOS trait propagation; the Governor must smoke-test that integration separately rather than treating observation as proof of the native compositor's frame timing.
+
+### 6. Regression tests
 
 `GlobalAppearanceModeTests` gains:
 
