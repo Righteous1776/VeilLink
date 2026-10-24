@@ -1,7 +1,7 @@
 diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseStore.swift
 --- a/VeilLink/Storage/DatabaseStore.swift
 +++ b/VeilLink/Storage/DatabaseStore.swift
-@@ -1345,7 +1345,151 @@
+@@ -1345,7 +1345,163 @@
          }
      }
  
@@ -20,14 +20,26 @@ diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseSto
 +                throw DatabaseError.statementFailed("控制事件不能发送给未认证的接收者。")
 +            }
 +        }
++        let encoded = try VeilControlEventCodec.encode(event)
++        let existingPayload = read(
++            "SELECT payload_ciphertext FROM control_outbound_events WHERE local_identity_id = ? AND event_id = ? LIMIT 1;",
++            bindings: [.text(localIdentityID), .text(event.eventID)]
++        ) { data($0, 0) }.first
++        if let existingPayload {
++            guard let box = try? ChaChaPoly.SealedBox(combined: existingPayload),
++                  let recovered = try? ChaChaPoly.open(box, using: storageKey),
++                  recovered == encoded else {
++                throw DatabaseError.statementFailed("同一事件 ID 不能重复关联不同内容。")
++            }
++        }
 +        let existingCount = read(
 +            "SELECT COUNT(*) FROM control_outbound_events WHERE local_identity_id = ?;",
 +            bindings: [.text(localIdentityID)]
 +        ) { Int(sqlite3_column_int64($0, 0)) }.first ?? 0
-+        guard existingCount < 512 else {
++        guard existingCount < 512 || existingPayload != nil else {
 +            throw DatabaseError.statementFailed("可靠控制队列容量已满，请先完成或清理过期事件。")
 +        }
-+        let sealed = try ChaChaPoly.seal(VeilControlEventCodec.encode(event), using: storageKey).combined
++        let sealed = try ChaChaPoly.seal(encoded, using: storageKey).combined
 +        let now = Date().timeIntervalSince1970
 +        let expiration = now + 7 * 24 * 60 * 60
 +        var statements: [(String, [SQLiteValue])] = [
@@ -154,7 +166,7 @@ diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseSto
          try execute("PRAGMA journal_mode=WAL;")
          try execute("PRAGMA foreign_keys=ON;")
          try execute("PRAGMA synchronous=NORMAL;")
-@@ -1473,8 +1617,9 @@
+@@ -1473,8 +1629,9 @@
          try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(7, strftime('%s','now'));")
          try migrateConversationControlsV8()
          try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(8, strftime('%s','now'));")
@@ -166,7 +178,7 @@ diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseSto
  
      private func migratePeerCapabilitiesV9() throws {
          // Additive, idempotent and atomic, including the migration marker.
-@@ -1506,7 +1651,39 @@
+@@ -1506,7 +1663,39 @@
              """)
      }
  
@@ -210,7 +222,7 @@ diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseSto
 diff --git a/VeilLinkTests/DatabaseStoreTests.swift b/VeilLinkTests/DatabaseStoreTests.swift
 --- a/VeilLinkTests/DatabaseStoreTests.swift
 +++ b/VeilLinkTests/DatabaseStoreTests.swift
-@@ -3,8 +3,50 @@
+@@ -3,8 +3,55 @@
  import XCTest
  @testable import VeilLink
  
@@ -228,6 +240,11 @@ diff --git a/VeilLinkTests/DatabaseStoreTests.swift b/VeilLinkTests/DatabaseStor
 +        try store.trustPeer(localIdentityID: local, identityID: b, displayName: "B", publicKey: keyB)
 +        let event = VeilControlEvent(topic: "group.member", payload: Data([1, 2, 3]))
 +        try store.enqueueDurableControlEvent(localIdentityID: local, recipientIdentityIDs: [a, b, a], event: event)
++        try store.enqueueDurableControlEvent(localIdentityID: local, recipientIdentityIDs: [a, b], event: event)
++        XCTAssertThrowsError(try store.enqueueDurableControlEvent(
++            localIdentityID: local, recipientIdentityIDs: [a],
++            event: VeilControlEvent(eventID: event.eventID, topic: "group.member", payload: Data([9]))
++        ))
 +        XCTAssertEqual(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: a).map { $0.event }, [event])
 +        XCTAssertEqual(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).map { $0.event }, [event])
 +        XCTAssertThrowsError(try store.acknowledgeDurableControlEvent(
