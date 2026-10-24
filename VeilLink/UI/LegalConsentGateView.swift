@@ -68,6 +68,8 @@ struct LegalConsentGateView: View {
         }
         .navigationBarHidden(true)
         .telemetryScreen("legal.consent")
+        .onAppear { VeilPreConsentBlackBox.shared.record(.legalShown, stage: .consent) }
+        .onDisappear { VeilPreConsentBlackBox.shared.record(.legalHidden, stage: .consent) }
     }
 
     private var header: some View {
@@ -109,6 +111,7 @@ struct LegalConsentGateView: View {
     private func legalSegment(title: String, icon: String, index: Int) -> some View {
         Button {
             selectedDocument = index
+            VeilPreConsentBlackBox.shared.record(.documentSwitched, stage: .consent)
             VeilOnboardingHaptics.selection()
         } label: {
             HStack(spacing: 7) {
@@ -265,6 +268,7 @@ struct LegalConsentGateView: View {
     ) -> some View {
         Button {
             isOn.wrappedValue.toggle()
+            VeilPreConsentBlackBox.shared.record(.confirmationChanged, stage: .consent)
             VeilOnboardingHaptics.selection()
         } label: {
             HStack(alignment: .top, spacing: 11) {
@@ -296,20 +300,24 @@ struct LegalConsentGateView: View {
     }
 
     private func sign() {
+        VeilPreConsentBlackBox.shared.record(.signTapped, stage: .consent)
         // Commit any in-flight IME composition (e.g. a pinyin candidate bar that is still open)
         // before evaluating the gate. Without this, the acknowledgement state still holds the
         // intermediate composition text, canSign stays false and the disabled primary button
         // silently swallows the first tap — the classic "first signing attempt does nothing".
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         guard canSign else {
+            VeilPreConsentBlackBox.shared.record(.signIncomplete, stage: .consent)
             errorText = "请完成三项确认，并准确输入签署确认语。"
             return
         }
         if controller.accept(acknowledgment: acknowledgment) {
+            VeilPreConsentBlackBox.shared.record(.signSaved, stage: .consent)
             errorText = nil
             VeilOnboardingHaptics.confirm()
             onAccepted()
         } else {
+            VeilPreConsentBlackBox.shared.record(.signStorageFailed, stage: .consent)
             errorText = "签署记录未能安全保存，请重试。"
         }
     }
@@ -379,6 +387,14 @@ private struct VeilLegalAcknowledgmentField: UIViewRepresentable {
                 hasMarkedText: field.markedTextRange != nil
             ) else { return }
             text.wrappedValue = publishable
+        }
+
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            VeilPreConsentBlackBox.shared.record(.acknowledgmentFocused, stage: .consent)
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            VeilPreConsentBlackBox.shared.record(.acknowledgmentUnfocused, stage: .consent)
         }
 
         func textFieldShouldReturn(_ textField: UITextField) -> Bool {

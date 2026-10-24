@@ -11,6 +11,7 @@ struct VeilLinkApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        VeilPreConsentBlackBox.shared.record(.appLaunched, stage: .launch)
         TacticalLocalRenderCache.warmUp()
         VeilChrome.configure()
     }
@@ -44,16 +45,48 @@ struct VeilLinkApp: App {
                     StartupFailureView(message: bootstrap.errorMessage)
                 }
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !bootstrap.legal.isSatisfied {
+                    VeilPreConsentBlackBoxButton()
+                }
+            }
             .preferredColorScheme(appearance.preferredColorScheme)
             .onAppear {
+                if !bootstrap.legal.isSatisfied {
+                    VeilPreConsentBlackBox.shared.record(.rootPresented, stage: bootstrap.onboarding.isCompleted ? .consent : .onboarding)
+                }
                 appearance.synchronizeSystemAppearance()
                 VeilChrome.configure()
             }
             .onChange(of: appearance.colorMode) { _ in
+                if !bootstrap.legal.isSatisfied {
+                    VeilPreConsentBlackBox.shared.record(.appearanceChanged, stage: bootstrap.onboarding.isCompleted ? .consent : .onboarding)
+                }
                 appearance.synchronizeSystemAppearance()
                 VeilChrome.configure()
             }
-            .onChange(of: appearance.selection) { _ in VeilChrome.configure() }
+            .onChange(of: appearance.systemIsDark) { _ in
+                if !bootstrap.legal.isSatisfied {
+                    VeilPreConsentBlackBox.shared.record(.systemAppearanceChanged, stage: bootstrap.onboarding.isCompleted ? .consent : .onboarding)
+                }
+            }
+            .onChange(of: appearance.selection) { _ in
+                if !bootstrap.legal.isSatisfied {
+                    VeilPreConsentBlackBox.shared.record(.themeChanged, stage: bootstrap.onboarding.isCompleted ? .consent : .onboarding)
+                }
+                VeilChrome.configure()
+            }
+            .onChange(of: scenePhase) { phase in
+                guard !bootstrap.legal.isSatisfied else { return }
+                let box = VeilPreConsentBlackBox.shared
+                let stage: VeilPreConsentBlackBox.Stage = bootstrap.onboarding.isCompleted ? .consent : .onboarding
+                switch phase {
+                case .active: box.record(.sceneActive, stage: stage)
+                case .inactive: box.record(.sceneInactive, stage: stage)
+                case .background: box.record(.sceneBackground, stage: stage)
+                @unknown default: break
+                }
+            }
         }
     }
 }
