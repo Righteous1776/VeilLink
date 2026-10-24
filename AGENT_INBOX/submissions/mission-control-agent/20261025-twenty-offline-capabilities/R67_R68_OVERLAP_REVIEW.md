@@ -26,3 +26,7 @@ Do **not** concatenate both candidates, overwrite another agent's files, or coun
 3. Run exact-head macOS iOS15 compile, complete XCTest and iPhone7 interaction tests. Neither PR has passed an iOS SDK build.
 4. Real-time BLE/Keychain/SQLite adapters are separate protected work: no automatic packet/identity/storage changes from a user-entered simulation.
 5. No `workflow_dispatch`, IPA packaging or release as part of this review.
+
+## Independent native XCTest run (Linux only)
+
+The verified PR #67 ZIP was expanded to an isolated SwiftPM package in the analysis workspace (Foundation engine and bundled test file only; no source tree mutation). `swift test -j 2` under Linux Swift 6.2.1: **7 tests executed, 0 failures**; the broad test iterated over all **20** declared feature examples. This validates the Foundation algorithms and bundled test file on Linux, **not** the SwiftUI view or iOS 15 physical app. Mac/iOS validation is still required.
