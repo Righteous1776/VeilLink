@@ -1,33 +1,21 @@
-# VeilLink protocol + SQLite architecture uplift (cumulative proposal)
+# VeilLink Protocol and Database Foundation — R3
 
-**Base:** main `8048b5c52b87eeb5d3622582da5728a8c2d64dda`. **Status:** Inbox-only, no live product integration.
+**Base**: `8048b5c52b87eeb5d3622582da5728a8c2d64dda`; proposed-only, source not changed in main.
 
-## Root limitations observed
-- `SessionCoordinator.WireProtocol.version == 4` is mandatory for Hello, encryption and envelope framing.
-- Single text payload <= 16 KiB, images/voice specially encoded, no generic typed application event bus.
-- `conversations.peer_identity_id` and `outbound_queue.target_identity_id` reflect one-to-one delivery; no real group/multicast durable queue.
-- No generic encrypted event inbox for app-level sync/agent/game state replay.
+## Why it must be architectural
+The current application requires Wire v4, uses three main chat payload categories (text/image/voice), imposes a 16 KiB text message bound and has a one-to-one conversation/outbound queue design. Merely raising version numbers or limits cannot deliver groups, multi-peer sync, agent events or resilient large-object transfer.
 
-## Stage 1 (PATCH.diff)
-Keeps Wire v4 signatures and crypto intact. Optional authenticated ACK feature bits are versioned, backward-decodable, and fingerprint-scoped to a trusted contact in SQLite schema v9. Existing messages, attachment tables, backup envelope and version/build values are unchanged.
+## Apply cumulative patches in order
+1. `PATCH.diff`: authenticated optional capability bits in v4 ACK (safe old-peer fallback) + additive SQLite schema v9 peer capability cache.
+2. `PATCH_STAGE2.diff`: optional encrypted `controlEvent` kind 10 with a typed, bounded codec, separate AAD/replay, encrypted inbound `control_event_inbox` and safe callback. Capability bit 1 is mandatory before sending new kind.
+3. **`PATCH_STAGE3.diff`: schema v10 normalized durable control-event outbox.** `control_outbound_events` holds one encrypted event payload per local identity/event ID; `control_outbound_targets` keeps each recipient's retry/attempt schedule and acknowledgement state. All new rows are under transactions and trusted-recipient requirements. Acknowledging one peer cannot remove other peers' pending delivery. The last acknowledged recipient garbage-collects the event. A conflicting reuse of the same event ID with different content is rejected; identical re-enqueue is idempotent.
+4. The v10 migration creates two tables and two indexes plus the migration marker atomically. Does not rewrite messages, ordinary outbound_queue, attachments, conversations, contacts or storage key. V8 backups remain eligible for existing restore and migration sequence, subject to native regression verification.
 
-## Stage 2 (PATCH_STAGE2.diff) — apply after stage 1
-- New `WireKind.controlEvent=10`, but **only emitted to peers with the authenticated capability bit 1** from Stage 1. Legacy v4 peers continue their current handshake/message path and never receive unknown control frames.
-- New bounded typed `VeilControlEvent`: v1 schema, canonical UUID event ID, safe topic name and at most 24 KiB payload / 48 KiB encoded frame.
-- Per-event authenticated ChaChaPoly using current session directional keys and dedicated AAD context `control-event-v1`; replay window and messageID/eventID binding on receive.
-- SQLite v9 `control_event_inbox`: idempotent key `(local identity, peer identity, event ID)`, encrypted event body at rest, 256 retained records per peer, foreign-key cascade. No plaintext application payload stored in metadata.
-- Validated controls are stored **before** optional callback dispatch; consumer still must authorize each topic and transition. Reboot consumers can query recent encrypted events through the new read API.
-- Send uses existing control priority and returns `unsupportedLink` without matching negotiated bit. Sending is best-effort: no control-specific delivery ACK or durable outbound fan-out in this stage.
+## Hard constraints
+**Phase 3 is a data-plane foundation only, NOT an active E2E delivery protocol.** `SessionCoordinator` currently does not drain the new queue or emit/consume authenticated per-event ACK. Do not report control reliability as fully implemented. A later dedicated stage must wire accepted transport sends to `recordDurableControlSendAttempt`, authenticated receipt to `acknowledgeDurableControlEvent`, reconnect resend, expiry, and proper receipt-of-duplicate behavior. Existing Wire v4/crypto/handshake remains untouched.
 
-## Strict boundaries
-Do not label this a completed group chat, offline task sync, broadcast, v5 protocol or unlimited large-file pipeline. Those need explicit role/membership authority, per-recipient receipts, durable outbox, conflict resolution, encryption model and device stress testing. No automatic privilege escalation, trusted peer creation or bypass of BLE-first trust.
+## Future TrollStore readiness
+Coordinate separately with PR #53 (installation evidence/UI) and PR #57 (conservative optional readiness gates). Optional runtime enhancements must not influence E2EE identity, per-peer trust, wire capability proofs, schema migration or backup. Common app binary must remain installable on ordinary iOS 15 devices.
 
-## Next phases
-1. Real v5 negotiation over v4 authenticated Hello-compatible extension; dual-stack with old device fallback.
-2. Per-recipient durable control outbox and ACK state machine; idempotence beyond bounded inbox retention.
-3. Group membership semantics, sender authorization, group ratchet or per-recipient encryption contract, join/leave/revocation.
-4. Transfer manifests, 64-bit ranges and chunk recovery aligned to BLE/LAN constrained MTUs; never simply raise packet size.
-5. Backup migration/recovery, observability and adversarial replay/fuzz tests.
-
-## Integration procedure
-On current main, verify `git apply --check PATCH.diff`; apply stage 1; verify and apply `PATCH_STAGE2.diff`; run full iOS build/XCTest on macOS, old/new v4 device mixed matrix, actual BLE and LAN, snapshot/restore, protected surface review. PR #53 negotiation plan must be arbitrated by Governor. No version change or IPA publish without separate owner-authorized release gate.
+## Integrate only after
+Governor freezes and rechecks current main, resolves PR #53 overlap, verifies exact stage-by-stage `git apply`, builds/XCTests on macOS, runs old/new device matrix, validates backup/restore and only then promotes a controlled integration branch.
