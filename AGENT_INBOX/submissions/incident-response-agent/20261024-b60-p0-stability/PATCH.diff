@@ -150,7 +150,7 @@ diff --git a/VeilLink/Diagnostics/DeviceStressTestController.swift b/VeilLink/Di
 diff --git a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift b/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
 --- a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
 +++ b/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
-@@ -34,132 +34,134 @@
+@@ -34,132 +34,138 @@
          case signIncomplete
          case signSaved
          case signStorageFailed
@@ -281,6 +281,10 @@ diff --git a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift b/VeilLink/Diagno
 -                } catch {
 -                    box.record(.exportFailed, stage: .consent)
 +        case startupFailed
++        case startupKeyMissing
++        case startupKeyUnavailable
++        case startupKeyMismatch
++        case startupOtherFailure
 +        case exportRequested
 +        case exportPrepared
 +        case exportFailed
@@ -414,7 +418,7 @@ diff --git a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift b/VeilLink/Diagno
 diff --git a/VeilLink/App/VeilLinkApp.swift b/VeilLink/App/VeilLinkApp.swift
 --- a/VeilLink/App/VeilLinkApp.swift
 +++ b/VeilLink/App/VeilLinkApp.swift
-@@ -274,30 +274,34 @@
+@@ -274,30 +274,51 @@
          } catch {
              model = nil
              errorMessage = error.localizedDescription
@@ -444,6 +448,23 @@ diff --git a/VeilLink/App/VeilLinkApp.swift b/VeilLink/App/VeilLinkApp.swift
 -            }
 +            // Fixed-event diagnostics remain exportable without AppModel, SQLite or Keychain.
 +            VeilPreConsentBlackBox.shared.record(.startupFailed, stage: .startupFailure)
++            // Fixed categories only: never copy an error string, identifier or key.
++            let failureCategory: VeilPreConsentBlackBox.Event
++            if let databaseError = error as? DatabaseError {
++                switch databaseError {
++                case .encryptionKeyMissing:
++                    failureCategory = .startupKeyMissing
++                case .encryptionKeyTemporarilyUnavailable(_):
++                    failureCategory = .startupKeyUnavailable
++                case .encryptionKeyMismatch:
++                    failureCategory = .startupKeyMismatch
++                default:
++                    failureCategory = .startupOtherFailure
++                }
++            } else {
++                failureCategory = .startupOtherFailure
++            }
++            VeilPreConsentBlackBox.shared.record(failureCategory, stage: .startupFailure)
 +            diagnostics.recordStartupFailure(error)
 +        }
 +    }
