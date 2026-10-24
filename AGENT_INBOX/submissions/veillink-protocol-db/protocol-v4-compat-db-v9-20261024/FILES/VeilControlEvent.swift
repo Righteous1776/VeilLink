@@ -7,6 +7,8 @@ struct VeilControlEvent: Codable, Equatable {
     let topic: String
     let payload: Data
     let createdAt: TimeInterval
+    /// Optional compatibility flag: omitted by older control-event peers.
+    let receiptRequested: Bool?
 
     init(eventID: String = UUID().uuidString, topic: String, payload: Data, createdAt: TimeInterval = Date().timeIntervalSince1970) {
         schemaVersion = 1
@@ -14,6 +16,7 @@ struct VeilControlEvent: Codable, Equatable {
         self.topic = topic
         self.payload = payload
         self.createdAt = createdAt
+        self.receiptRequested = true
     }
 }
 
