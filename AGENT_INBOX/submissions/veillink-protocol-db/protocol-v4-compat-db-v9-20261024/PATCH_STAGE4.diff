@@ -1,0 +1,304 @@
+diff --git a/VeilLink/Core/WireCodec.swift b/VeilLink/Core/WireCodec.swift
+--- a/VeilLink/Core/WireCodec.swift
++++ b/VeilLink/Core/WireCodec.swift
+@@ -11,6 +11,7 @@
+     case meshOverlay = 8
+     case relayProvision = 9
+     case controlEvent = 10
++    case controlReceipt = 11
+ }
+ 
+ struct WireEnvelope {
+diff --git a/VeilLink/Security/SessionCoordinator.swift b/VeilLink/Security/SessionCoordinator.swift
+--- a/VeilLink/Security/SessionCoordinator.swift
++++ b/VeilLink/Security/SessionCoordinator.swift
+@@ -227,6 +227,7 @@
+                     try? database.wakeOutboundForPeer(targetIdentityID: peerIdentityID, localIdentityID: localIdentityID)
+                 }
+                 flushOutbound(for: peerIdentityID)
++                flushDurableControl(for: peerIdentityID)
+             } else {
+                 nearbyPeers.removeAll { $0.id == peerIdentityID }
+             }
+@@ -291,6 +292,7 @@
+             case .meshOverlay: try handleMeshOverlay(transportID: transportID, data: envelope.payload)
+             case .relayProvision: try handleRelayProvision(transportID: transportID, data: envelope.payload)
+             case .controlEvent: try handleControlEvent(transportID: transportID, data: envelope.payload)
++            case .controlReceipt: try handleControlReceipt(transportID: transportID, data: envelope.payload)
+             }
+             packetAbuseLimiter.reset(transportID)
+         } catch {
+@@ -452,7 +454,20 @@
+     /// Re-seeds the signed Hello on an already-known BLE transport without changing trust state.
+     /// This gives the UI a safe recovery action when the physical link survived but the secure
+     /// session was lost during backgrounding or a transient packet-loss window.
+-    /// Optional and best-effort until control-event acknowledgement/outbox v2 ships.
++    /// Persist an event once, then attach one independently acknowledged target per trusted peer.
++    /// Actual transmission is gated by the signed peer identity and feature-bit negotiation.
++    func enqueueReliableControlEvent(_ event: VeilControlEvent, recipientIdentityIDs: [String]) throws {
++        guard let local = identity.activeIdentity else { throw IdentityError.missingIdentity }
++        try database.enqueueDurableControlEvent(
++            localIdentityID: local.id, recipientIdentityIDs: recipientIdentityIDs, event: event
++        )
++        for peerIdentityID in Set(recipientIdentityIDs) {
++            flushDurableControl(for: peerIdentityID)
++        }
++        ensureRetryLoopIfNeeded()
++    }
++
++    /// One authenticated control packet attempt. Reliable callers use enqueueReliableControlEvent.
+     /// Never send new control frames to a peer that has not advertised capability bit 1.
+     @discardableResult
+     func sendControlEvent(_ event: VeilControlEvent, to peerIdentityID: String) -> TransportSendResult {
+@@ -467,6 +482,8 @@
+               ), bits & 2 == 2 else { return .unsupportedLink }
+         do {
+             let clear = try VeilControlEventCodec.encode(event)
++            // Constrain control-plane cost on BLE; bulk media belongs in chunked transfer.
++            if transportKinds[transportID] == .ble && clear.count > 2_048 { return .unsupportedLink }
+             let encrypted = try CryptoEngine.encrypt(clear, key: keys.sendKey, messageID: event.eventID,
+                 sequence: session.nextSendSequence, context: "control-event-v1")
+             let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version),
+@@ -510,6 +527,7 @@
+             onTrustEstablished?()
+             onMessagesChanged?(true)
+             flushOutbound(for: remote.identityID)
++            flushDurableControl(for: remote.identityID)
+         } catch { lastError = error.localizedDescription }
+     }
+ 
+@@ -777,6 +795,7 @@
+             try? database.wakeOutboundForPeer(targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
+             try? sendRelayProvisionIfNeeded(peerIdentityID: remote.identityID, transportID: transportID)
+             flushOutbound(for: remote.identityID)
++            flushDurableControl(for: remote.identityID)
+         }
+     }
+ 
+@@ -976,6 +995,7 @@
+         if shouldNotifyDelivery { onDeliveryConfirmed?() }
+         onMessagesChanged?(false)
+         flushOutbound(for: remote.identityID)
++        flushDurableControl(for: remote.identityID)
+         stopRetryLoopIfIdle()
+     }
+ 
+@@ -1343,8 +1363,10 @@
+ 
+     private func retryDueOutbound() {
+         try? database.expireOutboundMessages()
++        try? database.cleanupExpiredDurableControlEvents()
+         for peerIdentityID in peerTransport.keys {
+             flushOutbound(for: peerIdentityID)
++            flushDurableControl(for: peerIdentityID)
+         }
+     }
+ 
+@@ -1352,7 +1374,8 @@
+         guard retryTask == nil,
+               !peerTransport.isEmpty,
+               let localIdentityID = identity.activeIdentity?.id,
+-              database.pendingOutboundCount(localIdentityID: localIdentityID) > 0 else { return }
++              (database.pendingOutboundCount(localIdentityID: localIdentityID) > 0 ||
++               database.pendingDurableControlCount(localIdentityID: localIdentityID) > 0) else { return }
+         let interval = maintenanceTuning.outboundRetryIntervalNanoseconds
+         retryTaskGeneration &+= 1
+         let generation = retryTaskGeneration
+@@ -1363,7 +1386,8 @@
+                 guard !Task.isCancelled,
+                       !self.peerTransport.isEmpty,
+                       let localIdentityID = self.identity.activeIdentity?.id,
+-                      self.database.pendingOutboundCount(localIdentityID: localIdentityID) > 0 else { break }
++                      (self.database.pendingOutboundCount(localIdentityID: localIdentityID) > 0 ||
++                       self.database.pendingDurableControlCount(localIdentityID: localIdentityID) > 0) else { break }
+                 self.retryDueOutbound()
+             }
+             if self.retryTaskGeneration == generation { self.retryTask = nil }
+@@ -1377,7 +1401,9 @@
+             retryTask = nil
+             return
+         }
+-        if peerTransport.isEmpty || database.pendingOutboundCount(localIdentityID: localIdentityID) == 0 {
++        if peerTransport.isEmpty ||
++            (database.pendingOutboundCount(localIdentityID: localIdentityID) == 0 &&
++             database.pendingDurableControlCount(localIdentityID: localIdentityID) == 0) {
+             retryTaskGeneration &+= 1
+             retryTask?.cancel()
+             retryTask = nil
+@@ -1440,10 +1466,81 @@
+               session.replayWindow.accept(encrypted.sequence) else { throw CryptoEngineError.invalidCiphertext }
+         let isNew = try database.saveInboundControlEvent(localIdentityID: session.localHello.identityID,
+             peerIdentityID: remote.identityID, publicKey: remote.identityPublicKey, event: event)
++        // A duplicate with a fresh authenticated sequence still needs an ACK: the old ACK
++        // might have been lost even though the first event was safely persisted.
++        try sendControlReceipt(eventID: event.eventID, transportID: transportID, context: &session)
+         sessions[transportID] = session
+         if isNew { onControlEventReceived?(event, remote.identityID) }
+     }
+ 
++    private func sendControlReceipt(
++        eventID: String, transportID: UUID, context: inout SessionContext
++    ) throws {
++        guard let keys = context.keys else { throw CryptoEngineError.invalidKeyMaterial }
++        // The empty plaintext is protected by the dedicated AAD and the encrypted event UUID.
++        let encrypted = try CryptoEngine.encrypt(
++            Data(), key: keys.sendKey, messageID: eventID,
++            sequence: context.nextSendSequence, context: "control-receipt-v1"
++        )
++        let envelope = try WireCodec.encodeEnvelope(
++            version: UInt8(WireProtocol.version), kind: .controlReceipt,
++            payload: try WireCodec.encodeEncryptedPayload(encrypted)
++        )
++        context.nextSendSequence += 1
++        // If the queue rejects this ACK, the sender retries; the receiver deduplicates and ACKs again.
++        _ = transportSend?(transportID, envelope, .control)
++    }
++
++    private func handleControlReceipt(transportID: UUID, data: Data) throws {
++        guard var session = sessions[transportID], let remote = session.remoteHello,
++              let keys = session.keys,
++              database.trustedContact(
++                  localIdentityID: session.localHello.identityID, identityID: remote.identityID
++              )?.publicKey == remote.identityPublicKey else {
++            throw CryptoEngineError.invalidCiphertext
++        }
++        let encrypted = try WireCodec.decodeEncryptedPayload(data)
++        guard session.replayWindow.isPotentiallyFresh(encrypted.sequence) else {
++            throw CryptoEngineError.invalidCiphertext
++        }
++        let clear = try CryptoEngine.decrypt(encrypted, key: keys.receiveKey, context: "control-receipt-v1")
++        guard clear.isEmpty, session.replayWindow.accept(encrypted.sequence) else {
++            throw CryptoEngineError.invalidCiphertext
++        }
++        // Only this authenticated peer can remove its own target, never another recipient.
++        try database.acknowledgeDurableControlEvent(
++            localIdentityID: session.localHello.identityID,
++            peerIdentityID: remote.identityID,
++            authenticatedPeerPublicKey: remote.identityPublicKey,
++            eventID: encrypted.messageID
++        )
++        sessions[transportID] = session
++        flushDurableControl(for: remote.identityID)
++        stopRetryLoopIfIdle()
++    }
++
++    private func flushDurableControl(for peerIdentityID: String) {
++        guard let local = identity.activeIdentity else { return }
++        // sendControlEvent verifies the session, trusted key and advertised feature bit.
++        for item in database.dueDurableControlEvents(
++            localIdentityID: local.id, peerIdentityID: peerIdentityID, limit: 4
++        ) {
++            let status = sendControlEvent(item.event, to: peerIdentityID)
++            guard status == .accepted else { break }
++            // The transport queue accepted a frame; this is NOT proof of delivery.
++            do {
++                try database.recordDurableControlSendAttempt(
++                    localIdentityID: local.id,
++                    peerIdentityID: peerIdentityID,
++                    eventID: item.event.eventID
++                )
++            } catch {
++                lastError = "控制事件重试记录失败：\(error.localizedDescription)"
++                break
++            }
++        }
++    }
++
+     @discardableResult
+     func sendMeshPayload(_ clear: Data, to transportID: UUID) -> TransportSendResult {
+         guard !clear.isEmpty, clear.count <= VeilMeshCodec.maximumEncodedBytes,
+diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseStore.swift
+--- a/VeilLink/Storage/DatabaseStore.swift
++++ b/VeilLink/Storage/DatabaseStore.swift
+@@ -183,6 +183,7 @@
+         ) { text($0, 0) }
+ 
+         try writeBatch([
++            ("DELETE FROM control_outbound_events WHERE local_identity_id = ?;", [.text(localIdentityID)]),
+             ("DELETE FROM conversations WHERE local_identity_id = ?;", [.text(localIdentityID)]),
+             ("DELETE FROM contacts WHERE local_identity_id = ?;", [.text(localIdentityID)]),
+             ("DELETE FROM profiles WHERE id = ?;", [.text(localIdentityID)])
+@@ -1488,6 +1489,19 @@
+         ])
+     }
+ 
++    func pendingDurableControlCount(localIdentityID: String) -> Int {
++        let now = Date().timeIntervalSince1970
++        return read(
++            """
++            SELECT COUNT(*) FROM control_outbound_targets t
++            JOIN control_outbound_events e
++              ON e.local_identity_id = t.local_identity_id AND e.event_id = t.event_id
++            WHERE t.local_identity_id = ? AND e.expires_at > ?;
++            """,
++            bindings: [.text(localIdentityID), .double(now)]
++        ) { Int(sqlite3_column_int64($0, 0)) }.first ?? 0
++    }
++
+     @discardableResult
+     func cleanupExpiredDurableControlEvents(now: Date = Date()) throws -> Int {
+         let cutOff = now.timeIntervalSince1970
+diff --git a/VeilLinkTests/DatabaseStoreTests.swift b/VeilLinkTests/DatabaseStoreTests.swift
+--- a/VeilLinkTests/DatabaseStoreTests.swift
++++ b/VeilLinkTests/DatabaseStoreTests.swift
+@@ -4,6 +4,26 @@
+ @testable import VeilLink
+ 
+ final class DatabaseStoreTests: XCTestCase {
++    func testIdentityDeletionClearsDurableControlPayloadAndTargets() throws {
++        let (store, root) = try makeStore()
++        defer { try? FileManager.default.removeItem(at: root) }
++        let key = Data(repeating: 50, count: 32)
++        let event = VeilControlEvent(topic: "sync.cursor", payload: Data([1]))
++        try store.trustPeer(localIdentityID: "deleted-owner", identityID: "peer", displayName: "Peer", publicKey: key)
++        try store.enqueueDurableControlEvent(localIdentityID: "deleted-owner", recipientIdentityIDs: ["peer"], event: event)
++        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: "deleted-owner"), 1)
++        try store.deleteLocalIdentityData(localIdentityID: "deleted-owner")
++        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: "deleted-owner"), 0)
++        try store.trustPeer(localIdentityID: "deleted-owner", identityID: "peer", displayName: "Peer", publicKey: key)
++        // If ciphertext remained after account deletion, this conflicting UUID would be rejected.
++        try store.enqueueDurableControlEvent(
++            localIdentityID: "deleted-owner", recipientIdentityIDs: ["peer"],
++            event: VeilControlEvent(eventID: event.eventID, topic: "sync.cursor", payload: Data([2]))
++        )
++        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: "deleted-owner"), 1)
++        XCTAssertEqual(store.integrityCheck().lowercased(), "ok")
++    }
++
+     func testDurableControlOutboxOnePayloadTwoIndependentRecipients() throws {
+         let (store, root) = try makeStore()
+         defer { try? FileManager.default.removeItem(at: root) }
+@@ -30,12 +50,14 @@
+         )
+         XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: a).isEmpty)
+         XCTAssertEqual(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).map { $0.event }, [event])
++        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: local), 1)
+         try store.recordDurableControlSendAttempt(localIdentityID: local, peerIdentityID: b, eventID: event.eventID)
+         XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).isEmpty)
+         try store.acknowledgeDurableControlEvent(
+             localIdentityID: local, peerIdentityID: b, authenticatedPeerPublicKey: keyB, eventID: event.eventID
+         )
+         XCTAssertTrue(store.dueDurableControlEvents(localIdentityID: local, peerIdentityID: b).isEmpty)
++        XCTAssertEqual(store.pendingDurableControlCount(localIdentityID: local), 0)
+         XCTAssertEqual(store.integrityCheck().lowercased(), "ok")
+     }
+ 
+diff --git a/VeilLinkTests/VeilControlEventCodecTests.swift b/VeilLinkTests/VeilControlEventCodecTests.swift
+--- a/VeilLinkTests/VeilControlEventCodecTests.swift
++++ b/VeilLinkTests/VeilControlEventCodecTests.swift
+@@ -3,6 +3,15 @@
+ @testable import VeilLink
+ 
+ final class VeilControlEventCodecTests: XCTestCase {
++    func testControlReceiptWireKindRoundTrip() throws {
++        let payload = Data([1, 2, 3])
++        let envelope = try WireCodec.encodeEnvelope(version: 4, kind: .controlReceipt, payload: payload)
++        let decoded = try WireCodec.decodeEnvelope(envelope)
++        XCTAssertEqual(decoded.kind, .controlReceipt)
++        XCTAssertEqual(decoded.version, 4)
++        XCTAssertEqual(decoded.payload, payload)
++    }
++
+     func testEnvelopeAndEventRoundTrip() throws {
+         let event = VeilControlEvent(topic: "sync.cursor", payload: Data([1, 2, 3]))
+         let raw = try VeilControlEventCodec.encode(event)
