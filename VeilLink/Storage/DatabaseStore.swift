@@ -1366,9 +1366,12 @@ final class DatabaseStore {
             bindings: [.text(localIdentityID), .text(event.eventID)]
         ) { data($0, 0) }.first
         if let existingPayload {
+            // JSONEncoder does not guarantee stable key ordering across calls.
+            // Compare the authenticated, decoded event rather than ciphertext or raw JSON bytes.
             guard let box = try? ChaChaPoly.SealedBox(combined: existingPayload),
                   let recovered = try? ChaChaPoly.open(box, using: storageKey),
-                  recovered == encoded else {
+                  let recoveredEvent = try? VeilControlEventCodec.decode(recovered),
+                  recoveredEvent == event else {
                 throw DatabaseError.statementFailed("同一事件 ID 不能重复关联不同内容。")
             }
         }
