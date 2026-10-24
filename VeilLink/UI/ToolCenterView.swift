@@ -84,6 +84,9 @@ struct VeilToolCenterView: View {
                     if matches("指纹 hash sha256 文本 校验 摘要") {
                         toolLink("文本指纹", detail: "SHA-256 · 字节统计", icon: "number", destination: VeilFingerprintToolView())
                     }
+                    if matches("文件 完整性 校验 指纹 hash sha256 对比 传输 verify integrity") {
+                        toolLink("文件完整性", detail: "SHA-256 · 双文件对比", icon: "checkmark.shield.fill", destination: VeilFileIntegrityToolView())
+                    }
                     if matches("二维码 qr 临时 文本 分享") {
                         toolLink("临时二维码", detail: "短文本离线转码", icon: "qrcode", destination: VeilTemporaryQRToolView())
                     }
