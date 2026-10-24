@@ -1,7 +1,7 @@
 diff --git a/VeilLink/Core/AppTheme.swift b/VeilLink/Core/AppTheme.swift
 --- a/VeilLink/Core/AppTheme.swift
 +++ b/VeilLink/Core/AppTheme.swift
-@@ -234,17 +234,18 @@ private struct VeilCurtainShape: Shape {
+@@ -236,16 +236,18 @@ private struct VeilCurtainShape: Shape {
  }
  
  struct VeilAmbientBackground: View {
@@ -25,15 +25,16 @@ diff --git a/VeilLink/Core/AppTheme.swift b/VeilLink/Core/AppTheme.swift
                  VeilInstrumentBackground()
              } else if VeilRenderProfile.usesLegacyCompositorPath {
                  // Keep the legacy background strictly within its parent's bounds. On iOS 15,
-@@ -252,7 +253,7 @@ struct VeilAmbientBackground: View {
-                 // disappearance seen on real iPhone 7 recordings while preserving centering on iPad/newer iOS.
+@@ -252,7 +254,7 @@ struct VeilAmbientBackground: View {
+                 // an ignoresSafeArea background attached to ScrollView can participate in the
+                 // same content-host invalidation we are trying to avoid.
                  LinearGradient(
 -                    colors: [VeilTheme.backgroundLift, VeilTheme.background, VeilAppearanceController.shared.isDarkAppearance ? Color.black : VeilTheme.background],
 +                    colors: [VeilTheme.backgroundLift, VeilTheme.background, appearance.isDarkAppearance ? Color.black : VeilTheme.background],
                      startPoint: .topLeading,
                      endPoint: .bottomTrailing
                  )
-@@ -260,7 +261,7 @@ struct VeilAmbientBackground: View {
+@@ -260,7 +262,7 @@ struct VeilAmbientBackground: View {
                  GeometryReader { geometry in
                      ZStack {
                          LinearGradient(
@@ -42,7 +43,7 @@ diff --git a/VeilLink/Core/AppTheme.swift b/VeilLink/Core/AppTheme.swift
                              startPoint: .topLeading,
                              endPoint: .bottomTrailing
                          )
-@@ -352,6 +353,7 @@ struct VeilStableScrollView<Content: View>: View {
+@@ -354,6 +356,7 @@ struct VeilStableScrollView<Content: View>: View {
  }
  
  struct VeilCardModifier: ViewModifier {
@@ -50,7 +51,7 @@ diff --git a/VeilLink/Core/AppTheme.swift b/VeilLink/Core/AppTheme.swift
      let emphasized: Bool
  
      init(emphasized: Bool = false) {
-@@ -360,7 +362,7 @@ struct VeilCardModifier: ViewModifier {
+@@ -362,7 +365,7 @@ struct VeilCardModifier: ViewModifier {
  
      @ViewBuilder
      func body(content: Content) -> some View {
@@ -59,7 +60,8 @@ diff --git a/VeilLink/Core/AppTheme.swift b/VeilLink/Core/AppTheme.swift
              // 白描：卡片消解为分区——无填充、无描边、无阴影，仅以发丝线收尾。
              content
                  .padding(.vertical, VeilSpacing.sm)
-@@ -370,7 +372,7 @@ struct VeilCardModifier: ViewModifier {
+@@ -373,7 +376,7 @@ struct VeilCardModifier: ViewModifier {
+                         .frame(height: 0.5)
                          .allowsHitTesting(false)
                  }
 -        } else if VeilAppearanceController.shared.isIslet {
@@ -67,7 +69,7 @@ diff --git a/VeilLink/Core/AppTheme.swift b/VeilLink/Core/AppTheme.swift
              // 浮屿：内容浮起为岛——圆角岛面、微光描边、悬浮投影。
              content
                  .padding(VeilSpacing.md)
-@@ -383,11 +385,11 @@ struct VeilCardModifier: ViewModifier {
+@@ -386,11 +389,11 @@ struct VeilCardModifier: ViewModifier {
                  )
                  .shadow(color: Color.black.opacity(0.24), radius: 18, x: 0, y: 10)
 -        } else if VeilAppearanceController.shared.isAppleSoft {
@@ -131,7 +133,7 @@ diff --git a/VeilLink/Core/SkeuomorphicComponents.swift b/VeilLink/Core/Skeuomor
 diff --git a/VeilLink/Core/VeilMotionKit.swift b/VeilLink/Core/VeilMotionKit.swift
 --- a/VeilLink/Core/VeilMotionKit.swift
 +++ b/VeilLink/Core/VeilMotionKit.swift
-@@ -325,6 +325,7 @@ struct VeilFluidCapsule<Compact: View, Expanded: View>: View {
+@@ -327,6 +327,7 @@ struct VeilFluidCapsule<Compact: View, Expanded: View>: View {
  /// Rotating gradient edge plus a diffused back-glow. Continuous rotation is disabled on the
  /// legacy compositor; it keeps a static, brightened edge there instead.
  struct VeilDynamicGlowBorder: View {
@@ -139,7 +141,7 @@ diff --git a/VeilLink/Core/VeilMotionKit.swift b/VeilLink/Core/VeilMotionKit.swi
      var active = true
      var emphasized = true
      @State private var rotates = false
-@@ -366,7 +367,7 @@ struct VeilDynamicGlowBorder: View {
+@@ -367,7 +368,7 @@ struct VeilDynamicGlowBorder: View {
  
      @ViewBuilder
      private var baseStroke: some View {
@@ -148,7 +150,7 @@ diff --git a/VeilLink/Core/VeilMotionKit.swift b/VeilLink/Core/VeilMotionKit.swi
              RoundedRectangle(cornerRadius: emphasized ? 22 : 18, style: .continuous)
                  .stroke(active ? VeilTheme.gold.opacity(0.24) : VeilTheme.hairline, lineWidth: 1)
          } else {
-@@ -378,7 +379,7 @@ struct VeilDynamicGlowBorder: View {
+@@ -379,7 +380,7 @@ struct VeilDynamicGlowBorder: View {
  
      @ViewBuilder
      private var glowMask: some View {
