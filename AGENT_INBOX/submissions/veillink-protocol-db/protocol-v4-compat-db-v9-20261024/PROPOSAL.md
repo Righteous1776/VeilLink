@@ -1,21 +1,30 @@
-# VeilLink Protocol and Database Foundation — R3
+# VeilLink Protocol and Database R4 — cumulative engineering proposal
 
-**Base**: `8048b5c52b87eeb5d3622582da5728a8c2d64dda`; proposed-only, source not changed in main.
+## Objective and actual repository state
 
-## Why it must be architectural
-The current application requires Wire v4, uses three main chat payload categories (text/image/voice), imposes a 16 KiB text message bound and has a one-to-one conversation/outbound queue design. Merely raising version numbers or limits cannot deliver groups, multi-peer sync, agent events or resilient large-object transfer.
+Main currently uses strict Wire v4 Hello/envelope, one-to-one chat models and schema v8. This four-stage proposal is **Inbox-only** and does not change the running product. It develops a typed encrypted control lane and genuinely independent per-recipient **transport-persisted receipts**, without altering existing chat protocols.
 
-## Apply cumulative patches in order
-1. `PATCH.diff`: authenticated optional capability bits in v4 ACK (safe old-peer fallback) + additive SQLite schema v9 peer capability cache.
-2. `PATCH_STAGE2.diff`: optional encrypted `controlEvent` kind 10 with a typed, bounded codec, separate AAD/replay, encrypted inbound `control_event_inbox` and safe callback. Capability bit 1 is mandatory before sending new kind.
-3. **`PATCH_STAGE3.diff`: schema v10 normalized durable control-event outbox.** `control_outbound_events` holds one encrypted event payload per local identity/event ID; `control_outbound_targets` keeps each recipient's retry/attempt schedule and acknowledgement state. All new rows are under transactions and trusted-recipient requirements. Acknowledging one peer cannot remove other peers' pending delivery. The last acknowledged recipient garbage-collects the event. A conflicting reuse of the same event ID with different content is rejected; identical re-enqueue is idempotent.
-4. The v10 migration creates two tables and two indexes plus the migration marker atomically. Does not rewrite messages, ordinary outbound_queue, attachments, conversations, contacts or storage key. V8 backups remain eligible for existing restore and migration sequence, subject to native regression verification.
+### Apply in strict order
 
-## Hard constraints
-**Phase 3 is a data-plane foundation only, NOT an active E2E delivery protocol.** `SessionCoordinator` currently does not drain the new queue or emit/consume authenticated per-event ACK. Do not report control reliability as fully implemented. A later dedicated stage must wire accepted transport sends to `recordDurableControlSendAttempt`, authenticated receipt to `acknowledgeDurableControlEvent`, reconnect resend, expiry, and proper receipt-of-duplicate behavior. Existing Wire v4/crypto/handshake remains untouched.
+1. `PATCH.diff`: authenticated JSON ACK optional feature metadata, legacy v4 decoder compatibility and fingerprint/identity scoped SQLite peer capability cache (schema v9).
+2. `PATCH_STAGE2.diff`: Wire kind 10, event v1 codec with 24 KiB bounded payload, dedicated authenticated ChaChaPoly context, replay window, encrypted inbound cache; server-only changes to protected surfaces.
+3. `PATCH_STAGE3.diff`: normalized encrypted v10 `control_outbound_events` + `control_outbound_targets` journal, each event encrypted **once** at rest with independent targets, 7-day expiration, retry policy, pending API, per-trusted-peer receipt API, no original message/outbox rewrite.
+4. `PATCH_STAGE4.diff`: **actual connection to SessionCoordinator**. One API `enqueueReliableControlEvent(_:recipientIdentityIDs:)`; authentication/feature-gated outbound drain, accepted-transport attempt bookkeeping, incoming encrypted kind 11 ACK, authenticated event UUID binding, duplicate-event ACK retry, reconnect/periodic retry polling. The new `receiptRequested` optional encrypted event field provides receiver-side compatibility with earlier control-event clients. Received `controlReceipt` frames can remove **only the authenticated sender peer's** unacknowledged target, never another target.
+   - Feature bit2 (numeric 4) is required for outbound durable attempts and is negotiated **fresh per secured session**, not from 30-day cached metadata. Unknown/older clients never receive controlReceipt kind 11.
+   - v10 target rows retain `acknowledged_at` while other recipients are pending. Re-enqueuing the same event does not resurrect already-acknowledged target rows; the final ACK garbage-collects the shared event.
+   - 512-event capacity checks are enforced within the same SQLite write transaction as the event+target inserts, with FK rollback on overflow.
+   - Explicit local identity deletion also removes its encrypted control outbound event rows.
+   - BLE control frames are limited to <= 2 KiB encoded event size. Larger feature data must use a future chunked path or a validated alternate transport.
 
-## Future TrollStore readiness
-Coordinate separately with PR #53 (installation evidence/UI) and PR #57 (conservative optional readiness gates). Optional runtime enhancements must not influence E2EE identity, per-peer trust, wire capability proofs, schema migration or backup. Common app binary must remain installable on ordinary iOS 15 devices.
+## Compatibility constraints
 
-## Integrate only after
-Governor freezes and rechecks current main, resolves PR #53 overlap, verifies exact stage-by-stage `git apply`, builds/XCTests on macOS, runs old/new device matrix, validates backup/restore and only then promotes a controlled integration branch.
+- No changes to signed Hello v4, v4 HKDF, chat ciphertext, chat ACK semantics, contact trust or Keychain key.
+- **Current limitation:** optional capability feature bits arrive with authenticated CHAT acknowledgements. Fresh session-level negotiation is not possible before an outgoing chat ACK; R4 intentionally keeps durable control work pending until then, instead of sending unsolicited or unrecognized control packets to legacy v4 peers. A future dedicated compatibility-safe capability bootstrap is required.
+- Receipt acknowledges **encrypted event persistence**, not completed business execution. Feature consumers must authorize topic/actions separately; the bounded inbound cache does NOT confer permanent exactly-once application semantics.
+- A trusted remote identity may not send to untrusted recipients, alter another identity's outbox, or use TrollStore installation metadata as a transport/identity authority.
+
+## Future work / handoff
+
+R5: safe v4 capability bootstrap (without false ACK), app-level group membership and authorizations, idempotent state-machine handling with longer-lived dedup tombstones, chunked large-object manifests and per-channel BLE/LAN/relay backpressure tuning.
+
+PR #53 remains the owner of TrollStore marker/UI detection; PR #57 handles conservative runtime readiness. No entitlements, private APIs, release workflows or app build values are changed here.
