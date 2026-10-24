@@ -30,6 +30,15 @@ final class VeilPeerCapabilityPolicyTests: XCTestCase {
         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: decoded.capabilitySchema, bits: decoded.capabilityBits))
     }
 
+    func testAckCapabilityDowngradePreservesR2Compatibility() {
+        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: nil), 3)
+        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: 0), 3)
+        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: 1), 3)
+        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: 3), 3)
+        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: 7), 7)
+        XCTAssertEqual(VeilPeerCapabilityPolicy.compatibleAckBits(forPeerBits: 4), 7)
+    }
+
     func testUnknownCapabilitiesAreRejected() {
         XCTAssertEqual(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 1), 1)
         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: nil, bits: 1))
