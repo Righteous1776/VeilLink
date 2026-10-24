@@ -1,0 +1,509 @@
+diff --git a/VeilLink/UI/VeilAdaptiveParticleLayer.swift b/VeilLink/UI/VeilAdaptiveParticleLayer.swift
+--- a/VeilLink/UI/VeilAdaptiveParticleLayer.swift
++++ b/VeilLink/UI/VeilAdaptiveParticleLayer.swift
+@@ -58,7 +58,7 @@
+                     .accessibilityHidden(true)
+                 }
+             }
+-            .simultaneousGesture(dragGesture(budget: resolvedBudget))
++            // Visual-only: never compete with Slider, scroll, game drag, or back gestures.
+             .onChange(of: eventToken) { _ in
+                 guard resolvedBudget.burstCount > 0 else { return }
+                 emitBurst(at: nil)
+diff --git a/VeilLink/Core/VeilParticlePerformancePolicy.swift b/VeilLink/Core/VeilParticlePerformancePolicy.swift
+--- a/VeilLink/Core/VeilParticlePerformancePolicy.swift
++++ b/VeilLink/Core/VeilParticlePerformancePolicy.swift
+@@ -54,47 +54,46 @@
+     static func resolve(_ input: VeilParticlePerformanceInputs) -> VeilParticleBudget {
+         guard input.isAppActive else { return .off }
+ 
+-        // God Mode is deliberately authoritative for visual quality, including on legacy
+-        // devices and with Reduce Motion enabled. Persistent ambience still requires its
+-        // separate explicit switch so a transient-effects override cannot create an endless loop.
+-        if input.forceFullVisualEffects {
+-            return VeilParticleBudget(
+-                quality: .cinematic,
+-                ambientCount: input.allowPersistentAnimations ? 48 : 0,
+-                trailFragmentsPerSample: 5,
+-                burstCount: 84,
+-                maximumTrailSamples: 18,
+-                frameInterval: 1.0 / 60.0,
+-                usesGlow: true
+-            )
+-        }
+-
+-        guard !input.usesLegacyCompositor,
+-              !input.reduceMotionEnabled,
+-              !input.lowPowerModeEnabled,
+-              input.thermalLevel < .serious,
+-              input.visualComplexity != .minimal else { return .off }
+-
+-        if input.thermalLevel == .fair || input.visualComplexity == .balanced {
+-            return VeilParticleBudget(
+-                quality: .efficient,
+-                ambientCount: input.allowPersistentAnimations ? 8 : 0,
+-                trailFragmentsPerSample: 2,
+-                burstCount: 18,
+-                maximumTrailSamples: 8,
+-                frameInterval: 1.0 / 15.0,
+-                usesGlow: false
+-            )
+-        }
+-
+-        return VeilParticleBudget(
+-            quality: .balanced,
+-            ambientCount: input.allowPersistentAnimations ? 22 : 0,
+-            trailFragmentsPerSample: 3,
+-            burstCount: 42,
+-            maximumTrailSamples: 12,
+-            frameInterval: 1.0 / 30.0,
+-            usesGlow: true
++        // Accessibility and thermal safety also constrain forced visual effects.
++        if input.forceFullVisualEffects {
++            guard !input.reduceMotionEnabled, input.thermalLevel < .serious else { return .off }
++            return VeilParticleBudget(
++                quality: .cinematic,
++                ambientCount: input.allowPersistentAnimations ? 8 : 0,
++                trailFragmentsPerSample: 0,
++                burstCount: 12,
++                maximumTrailSamples: 0,
++                frameInterval: 1.0 / 24.0,
++                usesGlow: false
++            )
++        }
++
++        guard !input.usesLegacyCompositor,
++              !input.reduceMotionEnabled,
++              !input.lowPowerModeEnabled,
++              input.thermalLevel < .serious,
++              input.visualComplexity != .minimal else { return .off }
++
++        if input.thermalLevel == .fair || input.visualComplexity == .balanced {
++            return VeilParticleBudget(
++                quality: .efficient,
++                ambientCount: input.allowPersistentAnimations ? 4 : 0,
++                trailFragmentsPerSample: 0,
++                burstCount: 8,
++                maximumTrailSamples: 0,
++                frameInterval: 1.0 / 15.0,
++                usesGlow: false
++            )
++        }
++
++        return VeilParticleBudget(
++            quality: .balanced,
++            ambientCount: input.allowPersistentAnimations ? 10 : 0,
++            trailFragmentsPerSample: 0,
++            burstCount: 14,
++            maximumTrailSamples: 0,
++            frameInterval: 1.0 / 24.0,
++            usesGlow: false
+         )
+     }
+ }
+diff --git a/VeilLink/Diagnostics/DeviceStressTestController.swift b/VeilLink/Diagnostics/DeviceStressTestController.swift
+--- a/VeilLink/Diagnostics/DeviceStressTestController.swift
++++ b/VeilLink/Diagnostics/DeviceStressTestController.swift
+@@ -512,18 +512,30 @@
+         }
+ 
+         await step("a9.refresh", cycle: cycle, configuration: configuration) {
+-            let previousA9Evaluation = model.a9Health.lastEvaluatedAt
+-            let previousRuntimeSample = model.a10Ultra.lastRuntimeSample?.sampleID
+-            model.refreshA9Health()
+-            guard let evaluatedAt = model.a9Health.lastEvaluatedAt,
+-                  evaluatedAt != previousA9Evaluation else {
+-                throw StressFailure("A9 health evaluation timestamp did not advance")
+-            }
+-            guard let runtimeSample = model.a10Ultra.lastRuntimeSample,
+-                  runtimeSample.sampleID != previousRuntimeSample else {
+-                throw StressFailure("A10 runtime sample did not advance in mode \(model.kernelRuntime.mode.rawValue)")
+-            }
+-            return .passed("A9 evaluated at \(ISO8601DateFormatter().string(from: evaluatedAt)); A10 runtime sample \(runtimeSample.sampleID) recorded (\(runtimeSample.divergenceClass))")
++            let mode = model.kernelRuntime.mode
++            let expectsA9Evaluation = mode == .a9Only || mode == .dualShadow
++            let previousA9Evaluation = model.a9Health.lastEvaluatedAt
++            let previousRuntimeSample = model.a10Ultra.lastRuntimeSample?.sampleID
++            model.refreshA9Health()
++            let a9Result: String
++            if expectsA9Evaluation {
++                guard let evaluatedAt = model.a9Health.lastEvaluatedAt,
++                      evaluatedAt != previousA9Evaluation else {
++                    throw StressFailure("A9 health evaluation timestamp did not advance")
++                }
++                a9Result = "A9 evaluated at \(ISO8601DateFormatter().string(from: evaluatedAt))"
++            } else {
++                // A10 independent/LAB modes deliberately leave A9 evaluation unchanged.
++                guard model.a9Health.lastEvaluatedAt == previousA9Evaluation else {
++                    throw StressFailure("A9 evaluated unexpectedly in mode \(mode.rawValue)")
++                }
++                a9Result = "A9 correctly inactive in \(mode.rawValue)"
++            }
++            guard let runtimeSample = model.a10Ultra.lastRuntimeSample,
++                  runtimeSample.sampleID != previousRuntimeSample else {
++                throw StressFailure("A10 runtime sample did not advance in mode \(mode.rawValue)")
++            }
++            return .passed("\(a9Result); A10 runtime sample \(runtimeSample.sampleID) recorded (\(runtimeSample.divergenceClass))")
+         }
+ 
+         await step("ui.tabs.agent", cycle: cycle, configuration: configuration) {
+diff --git a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift b/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
+--- a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
++++ b/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
+@@ -34,132 +34,138 @@
+         case signIncomplete
+         case signSaved
+         case signStorageFailed
+-        case exportRequested
+-        case exportPrepared
+-        case exportFailed
+-    }
+-
+-    struct Entry: Codable {
+-        let sequence: Int
+-        let time: Date
+-        let event: Event
+-        let stage: Stage
+-        let session: String
+-        let colorMode: String
+-        let systemAppearance: String
+-    }
+-
+-    private struct Export: Codable {
+-        let format: String
+-        let schema: Int
+-        let generatedAt: Date
+-        let appVersion: String
+-        let build: String
+-        let iosVersion: String
+-        let hardwareClass: String
+-        let privacy: String
+-        let entries: [Entry]
+-    }
+-
+-    private let directory: URL
+-    private let eventURL: URL
+-    private let session = String(UUID().uuidString.prefix(8))
+-    private let limit = 128
+-    private(set) var entries: [Entry]
+-
+-    init(rootDirectory: URL? = nil) {
+-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+-            ?? FileManager.default.temporaryDirectory
+-        directory = rootDirectory ?? base
+-            .appendingPathComponent("VeilLink", isDirectory: true)
+-            .appendingPathComponent("PreConsentBlackBox", isDirectory: true)
+-        eventURL = directory.appendingPathComponent("events.json")
+-        if let data = try? Data(contentsOf: eventURL),
+-           let saved = try? JSONDecoder().decode([Entry].self, from: data) {
+-            entries = Array(saved.suffix(128))
+-        } else {
+-            entries = []
+-        }
+-    }
+-
+-    func record(_ event: Event, stage: Stage) {
+-        let mode = UserDefaults.standard.string(forKey: "appearance.color.mode.v1") ?? "automatic"
+-        let style: String
+-        switch UITraitCollection.current.userInterfaceStyle {
+-        case .dark: style = "dark"
+-        case .light: style = "light"
+-        default: style = "unspecified"
+-        }
+-
+-        entries.append(Entry(
+-            sequence: (entries.last?.sequence ?? 0) + 1,
+-            time: Date(),
+-            event: event,
+-            stage: stage,
+-            session: session,
+-            colorMode: ["automatic", "light", "dark"].contains(mode) ? mode : "other",
+-            systemAppearance: style
+-        ))
+-        if entries.count > limit { entries.removeFirst(entries.count - limit) }
+-        // Best-effort diagnostics: NEVER affect legal acceptance or application startup.
+-        do {
+-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+-            let encoded = try JSONEncoder().encode(entries)
+-            try encoded.write(to: eventURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+-        } catch {
+-            // Memory ring still supports export if disk is temporarily inaccessible.
+-        }
+-    }
+-
+-    func exportData() throws -> Data {
+-        let bundle = Bundle.main
+-        let export = Export(
+-            format: "VeilLinkPreConsentBlackBox",
+-            schema: 1,
+-            generatedAt: Date(),
+-            appVersion: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?",
+-            build: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?",
+-            iosVersion: UIDevice.current.systemVersion,
+-            hardwareClass: UIDevice.current.model,
+-            privacy: "Only fixed event names, stage, time, temporary session, appearance mode and OS/build information. No typed text, agreements, identifiers, keys, private messages, network connections, media or prompts.",
+-            entries: entries
+-        )
+-        let encoder = JSONEncoder()
+-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+-        encoder.dateEncodingStrategy = .iso8601
+-        return try encoder.encode(export)
+-    }
+-
+-    func exportFile() throws -> URL {
+-        let data = try exportData()
+-        let output = FileManager.default.temporaryDirectory
+-            .appendingPathComponent("VeilLink-PreConsent-\(UUID().uuidString).json")
+-        try data.write(to: output, options: [.atomic, .completeFileProtectionUnlessOpen])
+-        return output
+-    }
+-}
+-
+-/// Mounted before the legal gate is satisfied; never calls the normal AppModel-driven exporter.
+-struct VeilPreConsentBlackBoxButton: View {
+-    @State private var preparedFile: URL?
+-    @State private var presentsShare = false
+-    @State private var exportError: String?
+-
+-    var body: some View {
+-        HStack(spacing: 8) {
+-            Image(systemName: "waveform.path.ecg.rectangle")
+-            Text("首次启动异常？")
+-                .font(.system(size: 11, weight: .medium))
+-            Spacer(minLength: 4)
+-            Button {
+-                let box = VeilPreConsentBlackBox.shared
+-                box.record(.exportRequested, stage: .consent)
+-                do {
+-                    preparedFile = try box.exportFile()
+-                    box.record(.exportPrepared, stage: .consent)
+-                    presentsShare = true
+-                } catch {
+-                    box.record(.exportFailed, stage: .consent)
++        case startupFailed
++        case startupKeyMissing
++        case startupKeyUnavailable
++        case startupKeyMismatch
++        case startupOtherFailure
++        case exportRequested
++        case exportPrepared
++        case exportFailed
++    }
++
++    struct Entry: Codable {
++        let sequence: Int
++        let time: Date
++        let event: Event
++        let stage: Stage
++        let session: String
++        let colorMode: String
++        let systemAppearance: String
++    }
++
++    private struct Export: Codable {
++        let format: String
++        let schema: Int
++        let generatedAt: Date
++        let appVersion: String
++        let build: String
++        let iosVersion: String
++        let hardwareClass: String
++        let privacy: String
++        let entries: [Entry]
++    }
++
++    private let directory: URL
++    private let eventURL: URL
++    private let session = String(UUID().uuidString.prefix(8))
++    private let limit = 128
++    private(set) var entries: [Entry]
++
++    init(rootDirectory: URL? = nil) {
++        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
++            ?? FileManager.default.temporaryDirectory
++        directory = rootDirectory ?? base
++            .appendingPathComponent("VeilLink", isDirectory: true)
++            .appendingPathComponent("PreConsentBlackBox", isDirectory: true)
++        eventURL = directory.appendingPathComponent("events.json")
++        if let data = try? Data(contentsOf: eventURL),
++           let saved = try? JSONDecoder().decode([Entry].self, from: data) {
++            entries = Array(saved.suffix(128))
++        } else {
++            entries = []
++        }
++    }
++
++    func record(_ event: Event, stage: Stage) {
++        let mode = UserDefaults.standard.string(forKey: "appearance.color.mode.v1") ?? "automatic"
++        let style: String
++        switch UITraitCollection.current.userInterfaceStyle {
++        case .dark: style = "dark"
++        case .light: style = "light"
++        default: style = "unspecified"
++        }
++
++        entries.append(Entry(
++            sequence: (entries.last?.sequence ?? 0) + 1,
++            time: Date(),
++            event: event,
++            stage: stage,
++            session: session,
++            colorMode: ["automatic", "light", "dark"].contains(mode) ? mode : "other",
++            systemAppearance: style
++        ))
++        if entries.count > limit { entries.removeFirst(entries.count - limit) }
++        // Best-effort diagnostics: NEVER affect legal acceptance or application startup.
++        do {
++            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
++            let encoded = try JSONEncoder().encode(entries)
++            try encoded.write(to: eventURL, options: [.atomic, .completeFileProtectionUnlessOpen])
++        } catch {
++            // Memory ring still supports export if disk is temporarily inaccessible.
++        }
++    }
++
++    func exportData() throws -> Data {
++        let bundle = Bundle.main
++        let export = Export(
++            format: "VeilLinkPreConsentBlackBox",
++            schema: 1,
++            generatedAt: Date(),
++            appVersion: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?",
++            build: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?",
++            iosVersion: UIDevice.current.systemVersion,
++            hardwareClass: UIDevice.current.model,
++            privacy: "Only fixed event names, stage, time, temporary session, appearance mode and OS/build information. No typed text, agreements, identifiers, keys, private messages, network connections, media or prompts.",
++            entries: entries
++        )
++        let encoder = JSONEncoder()
++        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
++        encoder.dateEncodingStrategy = .iso8601
++        return try encoder.encode(export)
++    }
++
++    func exportFile() throws -> URL {
++        let data = try exportData()
++        let output = FileManager.default.temporaryDirectory
++            .appendingPathComponent("VeilLink-PreConsent-\(UUID().uuidString).json")
++        try data.write(to: output, options: [.atomic, .completeFileProtectionUnlessOpen])
++        return output
++    }
++}
++
++/// Mounted before the legal gate is satisfied; never calls the normal AppModel-driven exporter.
++struct VeilPreConsentBlackBoxButton: View {
++    var stage: VeilPreConsentBlackBox.Stage = .consent
++    @State private var preparedFile: URL?
++    @State private var presentsShare = false
++    @State private var exportError: String?
++
++    var body: some View {
++        HStack(spacing: 8) {
++            Image(systemName: "waveform.path.ecg.rectangle")
++            Text("首次启动异常？")
++                .font(.system(size: 11, weight: .medium))
++            Spacer(minLength: 4)
++            Button {
++                let box = VeilPreConsentBlackBox.shared
++                box.record(.exportRequested, stage: stage)
++                do {
++                    preparedFile = try box.exportFile()
++                    box.record(.exportPrepared, stage: stage)
++                    presentsShare = true
++                } catch {
++                    box.record(.exportFailed, stage: stage)
+                     exportError = "无法创建本地诊断文件。请检查设备可用空间。"
+                 }
+             } label: {
+diff --git a/VeilLink/App/VeilLinkApp.swift b/VeilLink/App/VeilLinkApp.swift
+--- a/VeilLink/App/VeilLinkApp.swift
++++ b/VeilLink/App/VeilLinkApp.swift
+@@ -274,30 +274,51 @@
+         } catch {
+             model = nil
+             errorMessage = error.localizedDescription
+-            diagnostics.recordStartupFailure(error)
+-        }
+-    }
+-}
+-
+-private struct StartupFailureView: View {
+-    let message: String
+-
+-    var body: some View {
+-        VStack(spacing: 16) {
+-            Image(systemName: "externaldrive.badge.exclamationmark")
+-                .font(.system(size: 48, weight: .light))
+-                .foregroundColor(VeilTheme.goldBright)
+-            Text("本地数据未能安全打开")
+-                .font(.title3.weight(.semibold))
+-            Text("VeilLink 没有自动重建或覆盖数据库，以避免造成不可逆的数据丢失。请重新启动应用；如果问题持续存在，再使用最近的有效备份恢复。")
+-                .multilineTextAlignment(.center)
+-                .foregroundColor(VeilTheme.secondaryText)
+-            if !message.isEmpty {
+-                Text(message)
+-                    .font(.caption.monospaced())
+-                    .foregroundColor(VeilTheme.secondaryText)
+-                    .textSelection(.enabled)
+-            }
++            // Fixed-event diagnostics remain exportable without AppModel, SQLite or Keychain.
++            VeilPreConsentBlackBox.shared.record(.startupFailed, stage: .startupFailure)
++            // Fixed categories only: never copy an error string, identifier or key.
++            let failureCategory: VeilPreConsentBlackBox.Event
++            if let databaseError = error as? DatabaseError {
++                switch databaseError {
++                case .encryptionKeyMissing:
++                    failureCategory = .startupKeyMissing
++                case .encryptionKeyTemporarilyUnavailable(_):
++                    failureCategory = .startupKeyUnavailable
++                case .encryptionKeyMismatch:
++                    failureCategory = .startupKeyMismatch
++                default:
++                    failureCategory = .startupOtherFailure
++                }
++            } else {
++                failureCategory = .startupOtherFailure
++            }
++            VeilPreConsentBlackBox.shared.record(failureCategory, stage: .startupFailure)
++            diagnostics.recordStartupFailure(error)
++        }
++    }
++}
++
++private struct StartupFailureView: View {
++    let message: String
++
++    var body: some View {
++        VStack(spacing: 16) {
++            Image(systemName: "externaldrive.badge.exclamationmark")
++                .font(.system(size: 48, weight: .light))
++                .foregroundColor(VeilTheme.goldBright)
++            Text("本地数据未能安全打开")
++                .font(.title3.weight(.semibold))
++            Text("VeilLink 没有自动重建或覆盖数据库，以避免造成不可逆的数据丢失。请重新启动应用；如果问题持续存在，再使用最近的有效备份恢复。")
++                .multilineTextAlignment(.center)
++                .foregroundColor(VeilTheme.secondaryText)
++            if !message.isEmpty {
++                Text(message)
++                    .font(.caption.monospaced())
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .textSelection(.enabled)
++            }
++            VeilPreConsentBlackBoxButton(stage: .startupFailure)
++                .frame(maxWidth: 520)
+         }
+         .padding(28)
+         .frame(maxWidth: 520)
+diff --git a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift b/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+--- a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
++++ b/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+@@ -601,6 +601,9 @@
+             "Render: \(VeilRenderProfile.diagnosticLabel)",
+             "Device profile: \(VeilDevicePerformance.diagnosticLabel)",
+             "",
++            // Diagnostic evidence only: no inferred elevated OS permission.
++            VeilRuntimeEnvironment.current.diagnosticsReport,
++            "",
+             model.bluetooth.diagnosticsReport(),
+             "",
+             model.a9DiagnosticsReport(),
