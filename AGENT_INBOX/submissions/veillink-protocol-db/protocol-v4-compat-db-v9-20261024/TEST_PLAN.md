@@ -1,28 +1,27 @@
-# R4 Validation and Test Protocol
+# VeilLink R5 — Hello bootstrap and compatibility test plan
 
-## Exact patch application gate
-- Fresh clone pinned at main `8048b5c52b87eeb5d3622582da5728a8c2d64dda`.
-- `git apply --check PATCH.diff && git apply PATCH.diff`
-- `git apply --check PATCH_STAGE2.diff && git apply PATCH_STAGE2.diff`
-- `git apply --check PATCH_STAGE3.diff && git apply PATCH_STAGE3.diff`
-- `git apply --check PATCH_STAGE4.diff && git apply PATCH_STAGE4.diff`
-- `git diff --check`, inspect 8 proposed product/test files, ensure no build/version/release drift.
+## Stage application (Governor controlled)
 
-## Unit and code-path verification
-1. ACK JSON legacy/new/malformed optional compatibility; schema versions and bits 0..7 accepted, unknown bits rejected.
-2. Control event envelope kind10 and optional `receiptRequested` cross-version JSON compatibility. Receipt envelope kind11, AEAD domain `control-receipt-v1`, fresh replay sequence, event UUID binding.
-3. DB v8→v9→v10 repeated migration, schema foreign keys, legacy user text/files/backup preserve; migration rollback after injected SQL error.
-4. One shared ciphertext and two target rows; authenticated ACK A leaves B pending; identical re-enqueue **does not resurrect A**; final ACK deletes shared ciphertext; mismatched UUID body rejected.
-5. New SQLite quota guard under the actual atomic INSERT transaction: 512 entries admitted, 513th rejected with rollback, no orphan target rows, no untrusted peer target rows.
-6. Identity deletion removes all new outbox rows; trust revocation/different-key receipts cannot acknowledge.
-7. Session reconnect, chat ACK negotiation, BLE queue temporarilyUnavailable vs accepted (only accepted increments retries), receipt packet loss, duplicated events, retry backoff, 7-day expiry.
-8. Cross-application matrix: legacy Wire4, R2 event-only control client, R4 receipt-capable, offline BLE and LAN and relay; R2 must never see kind11; fresh-session capability required for control send.
+Pin exact main SHA `8048b5c52b87eeb5d3622582da5728a8c2d64dda`. Apply and verify sequentially: `PATCH.diff` then `PATCH_STAGE2.diff` then `PATCH_STAGE3.diff` then `PATCH_STAGE4.diff` then `PATCH_STAGE5.diff`. Run `git apply --check` before each, full `git diff --check`, XcodeGen, iOS 15 XCTest. Never skip earlier stages.
 
-## Execution evidence obtained (not product CI)
-- Exact four-stage unified diff context/count/roundtrip: **PASS**, 23 file sections, 55 hunks.
-- Swift 6.2.1 standalone control event codec: **PASS**, optional receipt flag old/new JSON roundtrip, validation.
-- Python sqlite3 in-memory v10 fixture: **PASS**, repeat migrations, A/B independent ACK, no ACK resurrection, 512 quota/rollback, FK enforcement, old message preservation and integrity.
-- Agent Inbox Gate on GitHub validates only inbox boundaries and manifests, not Swift compilation.
+## Proposed native XCTest
+- `VeilHelloCapabilityTests`: old `LegacyHello` decodes the extended JSON and verifies unchanged old signature; new Hello decodes original old JSON with missing optional fields; valid second identity signature yields recognized bit7; any bit tampering drops optional capabilities; tampered agreement ephemeral cannot reuse extension proof; unknown schema and high bits produce no enhanced capability.
+- `VeilPeerCapabilityPolicyTests`: optional ACK with R2 known bits 3 until verified peer bit2; after R5/R4 signed/real ACK bit2, bits 7 permitted; old ACK decoded without extension; malformed optionals cannot break genuine message ACK.
+- Existing R1..R4 codec, replay, expiry, duplicate receipt, per-peer outbox tests remain required.
+- Test old/new BLE v4 Hello packets at real BLE MTUs, with and without optional fields, despite increased signed-hello size.
 
-## Still REQUIRED for promotion
-Native macOS XcodeGen / iOS simulator compile + all XCTest tests; actual iPhone 7 iOS15 and modern iPhone BLE/LAN intermittent-loss runs; old/new downgrade matrix; backup/keychain recovery; signed package verification; Governor conflict/arbitration with PR #53; dedicated integration branch, CI green. No IPA release on this PR.
+## Threat matrix
+- Modify unsigned extension schema/bits/signature while preserving valid v4 signature => **legacy handshake may continue, feature capability MUST be nil**.
+- Modify v4 ephemeral, identity, display name or nonce => original Hello Ed25519 verification MUST reject packet.
+- Replay an extension from an earlier handshake => must fail due to binding to different ephemeral and nonce.
+- Strip extension or send unknown future capability schema => valid v4 should remain usable, advanced features disabled.
+- New peer may never issue control kinds 10/11 unless signed Hello or authenticated current-session chat ACK proves corresponding feature bits AND trusted peer key is pinned.
+
+## Independently performed local checks
+- Five progressive unified diffs generated and re-applied to stage-snapshots; exact context/count and patch roundtrip: PASS.
+- Linux Swift 6.2.1 Foundation Codable harness: optional new/old Hello JSON, memberwise optional defaults, unchanged original v4 signedPayload: PASS.
+- Python cryptography/Ed25519 separate transcript harness: legitimate v4/extension signature passes, modified bits/session transcript fails: PASS.
+- These are focused preflight proofs, **not** the app's native iOS XCTest build.
+
+## Outstanding promotion gates
+- Xcode/macOS compilation, all app XCTest, real BLE/LAN/relay and battery/resource trials, iPhone 7 iOS15 old/new mixed versions, full SQLite v8->v10 restore/rollback, authenticated handshake fuzz and signed IPA tests. No native device evidence yet.
