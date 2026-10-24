@@ -1,17 +1,19 @@
 import SwiftUI
 
 struct VeilInstrumentBackground: View {
-    private var palette: VeilThemePalette { VeilAppearanceController.shared.palette }
+    @ObservedObject private var appearance = VeilAppearanceController.shared
+    private var palette: VeilThemePalette { appearance.palette }
+
     var body: some View {
         ZStack {
             LinearGradient(colors: [palette.backgroundLift, palette.background], startPoint: .top, endPoint: .bottomTrailing)
             LinearGradient(
-                colors: [Color.white.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.025 : 0.30), Color.clear],
+                colors: [Color.white.opacity(appearance.isDarkAppearance ? 0.025 : 0.30), Color.clear],
                 startPoint: .topLeading,
                 endPoint: .center
             )
             Rectangle()
-                .fill(Color.black.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.11 : 0.025))
+                .fill(Color.black.opacity(appearance.isDarkAppearance ? 0.11 : 0.025))
                 .blendMode(.multiply)
         }
         .ignoresSafeArea()
@@ -20,17 +22,18 @@ struct VeilInstrumentBackground: View {
 }
 
 struct VeilInstrumentPlate<S: Shape>: View {
+    @ObservedObject private var appearance = VeilAppearanceController.shared
     let shape: S
     var emphasized = false
-    private var palette: VeilThemePalette { VeilAppearanceController.shared.palette }
+    private var palette: VeilThemePalette { appearance.palette }
 
     var body: some View {
         shape
             .fill(LinearGradient(colors: [palette.metalTop, palette.metalBottom], startPoint: .topLeading, endPoint: .bottomTrailing))
-            .overlay(shape.stroke(Color.white.opacity(VeilAppearanceController.shared.isDarkAppearance ? 0.07 : 0.55), lineWidth: 0.8))
+            .overlay(shape.stroke(Color.white.opacity(appearance.isDarkAppearance ? 0.07 : 0.55), lineWidth: 0.8))
             .overlay(shape.stroke(Color.black.opacity(0.24), lineWidth: emphasized ? 1.3 : 0.7).padding(1))
             .shadow(
-                color: Color.black.opacity(VeilMotionPolicy.allowsFullSpatialEffects ? (VeilAppearanceController.shared.isDarkAppearance ? 0.46 : 0.26) : 0),
+                color: Color.black.opacity(VeilMotionPolicy.allowsFullSpatialEffects ? (appearance.isDarkAppearance ? 0.46 : 0.26) : 0),
                 radius: VeilMotionPolicy.allowsFullSpatialEffects ? (emphasized ? 12 : 7) : 0,
                 x: 0,
                 y: VeilMotionPolicy.allowsFullSpatialEffects ? (emphasized ? 8 : 4) : 0

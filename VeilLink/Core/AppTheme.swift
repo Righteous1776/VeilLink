@@ -234,24 +234,26 @@ private struct VeilCurtainShape: Shape {
 }
 
 struct VeilAmbientBackground: View {
+    @ObservedObject private var appearance = VeilAppearanceController.shared
+
     var body: some View {
         Group {
-            if VeilAppearanceController.shared.isPlainline {
+            if appearance.isPlainline {
                 // 白描：纯底色，无材质、无渐变、无帘形。
                 VeilTheme.background
-            } else if VeilAppearanceController.shared.isIslet {
+            } else if appearance.isIslet {
                 // 浮屿：深海极光底——径向微光浮于靛海之上。
                 VeilIsletBackground()
-            } else if VeilAppearanceController.shared.isAppleSoft {
+            } else if appearance.isAppleSoft {
                 VeilAppleSoftBackground()
-            } else if VeilAppearanceController.shared.isInstrument {
+            } else if appearance.isInstrument {
                 VeilInstrumentBackground()
             } else if VeilRenderProfile.usesLegacyCompositorPath {
                 // Keep the legacy background strictly within its parent's bounds. On iOS 15,
                 // an ignoresSafeArea background attached to ScrollView can participate in the
                 // same content-host invalidation we are trying to avoid.
                 LinearGradient(
-                    colors: [VeilTheme.backgroundLift, VeilTheme.background, VeilAppearanceController.shared.isDarkAppearance ? Color.black : VeilTheme.background],
+                    colors: [VeilTheme.backgroundLift, VeilTheme.background, appearance.isDarkAppearance ? Color.black : VeilTheme.background],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -259,7 +261,7 @@ struct VeilAmbientBackground: View {
                 GeometryReader { geometry in
                     ZStack {
                         LinearGradient(
-                            colors: [VeilTheme.backgroundLift, VeilTheme.background, VeilAppearanceController.shared.isDarkAppearance ? Color.black : VeilTheme.background],
+                            colors: [VeilTheme.backgroundLift, VeilTheme.background, appearance.isDarkAppearance ? Color.black : VeilTheme.background],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -352,6 +354,7 @@ struct VeilStableScrollView<Content: View>: View {
 }
 
 struct VeilCardModifier: ViewModifier {
+    @ObservedObject private var appearance = VeilAppearanceController.shared
     let emphasized: Bool
 
     init(emphasized: Bool = false) {
@@ -360,7 +363,7 @@ struct VeilCardModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if VeilAppearanceController.shared.isPlainline {
+        if appearance.isPlainline {
             // 白描：卡片消解为分区——无填充、无描边、无阴影，仅以发丝线收尾。
             content
                 .padding(.vertical, VeilSpacing.sm)
@@ -370,7 +373,7 @@ struct VeilCardModifier: ViewModifier {
                         .frame(height: 0.5)
                         .allowsHitTesting(false)
                 }
-        } else if VeilAppearanceController.shared.isIslet {
+        } else if appearance.isIslet {
             // 浮屿：内容浮起为岛——圆角岛面、微光描边、悬浮投影。
             content
                 .padding(VeilSpacing.md)
@@ -383,11 +386,11 @@ struct VeilCardModifier: ViewModifier {
                         .stroke(VeilTheme.hairline, lineWidth: 0.5)
                 )
                 .shadow(color: Color.black.opacity(0.24), radius: 18, x: 0, y: 10)
-        } else if VeilAppearanceController.shared.isAppleSoft {
+        } else if appearance.isAppleSoft {
             content
                 .padding(VeilSpacing.md)
                 .background(VeilAppleSoftSurface(cornerRadius: emphasized ? 28 : 23, emphasized: emphasized))
-        } else if VeilAppearanceController.shared.isInstrument {
+        } else if appearance.isInstrument {
             content
                 .padding(VeilSpacing.md)
                 .background(VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: emphasized ? 22 : 18, style: .continuous), emphasized: emphasized))
