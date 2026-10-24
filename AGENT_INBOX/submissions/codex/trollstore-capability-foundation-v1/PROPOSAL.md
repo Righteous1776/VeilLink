@@ -1,0 +1,34 @@
+# PROPOSAL — TrollStore 能力底座
+
+## 目标
+
+VeilLink 自动区分普通签名安装与 TrollStore 环境，但不把“由 TrollStore 安装”误当成“所有高权限都可用”。运行策略由三层决定：安装来源证据、包内能力声明、具体能力的运行时验证。
+
+## 第一阶段功能
+
+1. **可靠来源证据**：读取 TrollStore 官方在应用容器放置的 `_TrollStore` / `_TrollStoreLite` 标记；同时识别 App Store receipt、TestFlight `sandboxReceipt`、`embedded.mobileprovision` 和 Simulator。
+2. **明确优先级**：Simulator > TrollStore Lite > TrollStore > TestFlight > App Store > 普通 provisioning > unknown；TrollStore 标记优先于 IPA 内残留的 receipt/profile。
+3. **能力矩阵**：展示持久安装、BLE 后台、音频后台、后台刷新、Bonjour 局域网、Live Activity 和增强 entitlement 状态。
+4. **保守增强档位**：TrollStore 只进入“增强候选”，不会自动宣称无沙盒、后台常驻、JIT、扩展内存或任意文件权限。
+5. **漂亮且可解释的设置页**：显示安装渠道、自动选择的运行档位、每项能力状态、安全边界和可复制诊断。
+6. **隐私诊断**：报告不含容器路径、身份、消息或密钥；剪贴板仅限本机并在 5 分钟后过期。
+
+## 为什么不直接请求广泛高权限
+
+TrollStore 能接受不同 entitlement 组合，但“持久签名”不等于“已授予某项私有 entitlement”。直接把应用做成无沙盒或平台应用会扩大所有解析器、附件和模型代码的攻击面，也会造成普通签名包崩溃或无法安装。因此本阶段先建立可测试的能力路由；后续每个增强模块必须有最小 entitlement、独立探测、用户开关、失败回退和数据范围说明。
+
+## 后续增强模块候选
+
+- 更强的本地模型内存档位：仅在对应内存 entitlement 经压力测试确认后开放。
+- 更长的后台近距通信窗口：仅在生命周期/功耗测试通过且系统实际允许时开放。
+- 增强文件工作台：仍默认通过系统文件选择器；任何沙盒外读取都必须用户显式选择范围。
+- TrollStore 专用诊断：只输出 capability/result/error code，不收集设备私人路径或其他 App 数据。
+
+## 验收标准
+
+- 官方 TrollStore 与 Lite 标记可稳定识别，且普通签名不会误报；
+- 来源冲突时遵循固定优先级；
+- UI 不把“已声明”显示成“已验证可用”；
+- 增强 entitlement 在没有具体探测器前始终为“待验证”；
+- 普通签名包仍保留全部现有基础功能；
+- 无新增外连、数据库写入、私有 API 调用或越界文件读取。
