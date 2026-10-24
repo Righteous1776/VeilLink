@@ -1,0 +1,26 @@
+# RISKS — conversation-workspace-v1
+
+## 风险与缓解
+
+- **启发式误判**：只使用明确前缀与问句形式，不使用模糊情感推断；条目始终回链原文供用户判断。
+- **超长历史性能**：读取和分析在后台队列，UI 使用快照；需用 10,000 条真机夹具验证 CPU/内存。
+- **完整历史内存峰值**：工作台需要暂时载入完整消息；关闭后后续普通 reload 会恢复分页。iPhone 7 需确认峰值，必要时由 Governor 改为数据库分批游标。
+- **加载竞争**：复用 generation 丢弃旧结果；失效结果会清除工作台 busy 状态。仍需故障注入覆盖高频入站消息。
+- **URL 正则边界**：首版只收 HTTP(S)，不会把邮箱、IP 文本或自定义 scheme 自动当链接，降低误识别与危险 scheme 风险。
+- **跳转可见性**：打开工作台时清除聊天搜索并载入全历史，保证目标气泡存在；动态消息刷新仍需 UI 测试。
+- **剪贴板泄露**：复制链接使用 `.localOnly` 和 5 分钟 expiration，不复制整段聊天。
+
+## 重叠
+
+- `ConversationViews.swift` 曾被已归档并已整合的 Kimi UI 批次修改；本补丁基于当前 Build 59 main，而不是重放旧版本。
+- 历史 Inbox 中 `ui-rhythm-token-foundation-001` 含 ConversationViews 字体 token hunk，但该批次已进入 main；若 Governor 重新处理旧包，应以当前语义仲裁。
+- 未发现当前开放 Inbox 提案新增同类会话索引、修改 `ConversationWorkspace` 或相同工具栏入口。
+- PR #51 修改 `VeilLinkApp.swift`，PR #50 修改 AppModel/Settings；与本提案文件不重叠。
+
+## 明确不做
+
+- 不新增消息编辑、撤回或 reaction 协议。
+- 不修改数据库 schema，不持久化行动项或分析快照。
+- 不把聊天正文发送给灵核、云端或第三方。
+- 不改变加密、身份、附件存储或传输行为。
+- 不改版本、workflow、签名或发布，不自合并。

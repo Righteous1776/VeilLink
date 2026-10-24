@@ -1,0 +1,619 @@
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -304,6 +304,10 @@ struct ChatView: View {
+     @State private var replyingTo: ChatMessage?
+     @State private var showsSearchBar = false
+     @State private var searchQuery = ""
++    @State private var showsConversationWorkspace = false
++    @State private var isPreparingConversationWorkspace = false
++    @State private var conversationWorkspaceSnapshot: ConversationWorkspaceSnapshot?
++    @State private var pendingWorkspaceJumpID: String?
+     @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
+     @State private var hasOlderMessages = false
+     @State private var messageReloadGeneration = 0
+@@ -487,6 +491,18 @@ struct ChatView: View {
+                 .onChange(of: messages.last?.id) { _ in
+                     if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                 }
++                .onChange(of: pendingWorkspaceJumpID) { target in
++                    guard let target else { return }
++                    if usesReducedInteractionMotion {
++                        proxy.scrollTo(target, anchor: .center)
++                    } else {
++                        withAnimation(.easeOut(duration: 0.28)) {
++                            proxy.scrollTo(target, anchor: .center)
++                        }
++                    }
++                    pendingWorkspaceJumpID = nil
++                    model.haptics.selection()
++                }
+             }
+ 
+             VStack(spacing: 0) {
+@@ -655,6 +671,12 @@ struct ChatView: View {
+                     } label: {
+                         Label("搜索聊天", systemImage: "magnifyingglass")
+                     }
++                    Button {
++                        prepareConversationWorkspace()
++                    } label: {
++                        Label(isPreparingConversationWorkspace ? "正在整理会话…" : "会话工作台", systemImage: "tray.full.fill")
++                    }
++                    .disabled(isPreparingConversationWorkspace)
+                     Button { showsAgentAssistant = true } label: {
+                         Label("灵核助手", systemImage: "sparkles")
+                     }
+@@ -676,7 +698,10 @@ struct ChatView: View {
+         .onDisappear {
+             model.setConversationVisible(conversation.id, visible: false)
+         }
+-        .onChange(of: model.messagesRevision) { _ in reload(loadAll: showsSearchBar && loadedFullHistoryForSearch) }
++        .onChange(of: model.messagesRevision) { _ in
++            if showsConversationWorkspace { prepareConversationWorkspace(presentWhenReady: false) }
++            else { reload(loadAll: showsSearchBar && loadedFullHistoryForSearch) }
++        }
+         .onChange(of: searchQuery) { value in
+             let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
+             if showsSearchBar, !query.isEmpty, !loadedFullHistoryForSearch {
+@@ -692,6 +717,18 @@ struct ChatView: View {
+         .sheet(isPresented: $showsAgentAssistant) {
+             AgentConversationAssistantSheet(model: model, conversation: conversation, messages: messages)
+         }
++        .sheet(isPresented: $showsConversationWorkspace) {
++            if let snapshot = conversationWorkspaceSnapshot {
++                ConversationWorkspaceView(
++                    conversationTitle: conversation.title,
++                    snapshot: snapshot,
++                    onJump: { messageID in
++                        showsConversationWorkspace = false
++                        DispatchQueue.main.async { pendingWorkspaceJumpID = messageID }
++                    }
++                )
++            }
++        }
+         .sheet(isPresented: $showsMiniGames, onDismiss: { miniGameInitialSessionID = nil }) {
+             MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
+         }
+@@ -765,6 +802,52 @@ struct ChatView: View {
+         }
+     }
+ 
++    private func prepareConversationWorkspace(presentWhenReady: Bool = true) {
++        guard !isPreparingConversationWorkspace else { return }
++        isPreparingConversationWorkspace = true
++        messageReloadGeneration &+= 1
++        let generation = messageReloadGeneration
++        let store = model.database
++        let conversationID = conversation.id
++
++        DispatchQueue.global(qos: .userInitiated).async {
++            let loadedMessages = store.fetchMessages(conversationID: conversationID)
++            let snapshot = ConversationWorkspaceEngine.analyze(loadedMessages)
++            let loadedGameSessions = MiniGameSessionBuilder.sessionsByID(from: loadedMessages)
++            DispatchQueue.main.async {
++                guard generation == messageReloadGeneration else {
++                    isPreparingConversationWorkspace = false
++                    return
++                }
++                messages = loadedMessages
++                gameSessionsByID = loadedGameSessions
++                hasOlderMessages = false
++                conversationWorkspaceSnapshot = snapshot
++                isPreparingConversationWorkspace = false
++                searchQuery = ""
++                loadedFullHistoryForSearch = false
++                if showsSearchBar {
++                    if usesReducedInteractionMotion {
++                        showsSearchBar = false
++                    } else {
++                        withAnimation(.easeIn(duration: 0.16)) { showsSearchBar = false }
++                    }
++                }
++                if presentWhenReady { showsConversationWorkspace = true }
++                RuntimeDiagnosticsBridge.shared.recordSemanticAction(
++                    "chat.workspace.ready",
++                    metadata: [
++                        "messages": String(snapshot.messageCount),
++                        "actions": String(snapshot.count(for: .action)),
++                        "questions": String(snapshot.count(for: .question)),
++                        "links": String(snapshot.count(for: .link)),
++                        "attachments": String(snapshot.attachmentCount)
++                    ]
++                )
++            }
++        }
++    }
++
+     private func reload(loadAll: Bool = false, showLoading: Bool = false) {
+         messageReloadGeneration &+= 1
+         let generation = messageReloadGeneration
+diff --git a/VeilLink/Core/ConversationWorkspace.swift b/VeilLink/Core/ConversationWorkspace.swift
+new file mode 100644
+index 0000000..5bfe0f9
+--- /dev/null
++++ b/VeilLink/Core/ConversationWorkspace.swift
+@@ -0,0 +1,197 @@
++import Foundation
++
++enum ConversationWorkspaceKind: String, CaseIterable, Hashable, Sendable {
++    case action
++    case question
++    case link
++    case attachment
++
++    var title: String {
++        switch self {
++        case .action: return "行动项"
++        case .question: return "待回答"
++        case .link: return "链接"
++        case .attachment: return "附件"
++        }
++    }
++
++    var systemImage: String {
++        switch self {
++        case .action: return "checklist"
++        case .question: return "questionmark.bubble"
++        case .link: return "link"
++        case .attachment: return "paperclip"
++        }
++    }
++}
++
++struct ConversationWorkspaceItem: Identifiable, Equatable, Sendable {
++    let id: String
++    let messageID: String
++    let kind: ConversationWorkspaceKind
++    let title: String
++    let preview: String
++    let sentAt: Date
++    let isOutgoing: Bool
++    let value: String?
++}
++
++struct ConversationWorkspaceSnapshot: Equatable, Sendable {
++    let messageCount: Int
++    let outgoingCount: Int
++    let incomingCount: Int
++    let attachmentCount: Int
++    let activeDayCount: Int
++    let firstMessageAt: Date?
++    let lastMessageAt: Date?
++    let items: [ConversationWorkspaceItem]
++
++    func count(for kind: ConversationWorkspaceKind) -> Int {
++        items.lazy.filter { $0.kind == kind }.count
++    }
++}
++
++enum ConversationWorkspaceEngine {
++    private static let actionPrefixes = [
++        "todo", "to-do", "待办", "记得", "别忘", "请", "需要", "安排", "跟进", "截止", "deadline", "[ ]", "☐"
++    ]
++    private static let questionPrefixes = [
++        "请问", "是否", "怎么", "怎样", "为什么", "为何", "谁", "哪里", "什么时候", "能不能", "可不可以", "可以吗"
++    ]
++    private static let linkExpression = try? NSRegularExpression(
++        pattern: #"https?://[^\s<>\[\]{}\"'，。；：！？、）)]+"#,
++        options: [.caseInsensitive]
++    )
++
++    static func analyze(_ messages: [ChatMessage], calendar: Calendar = .current) -> ConversationWorkspaceSnapshot {
++        let userMessages = messages
++            .filter(isUserFacing)
++            .sorted { lhs, rhs in
++                if lhs.sentAt == rhs.sentAt { return lhs.id < rhs.id }
++                return lhs.sentAt < rhs.sentAt
++            }
++        var items: [ConversationWorkspaceItem] = []
++        var activeDays = Set<Date>()
++        var attachmentCount = 0
++
++        for message in userMessages {
++            activeDays.insert(calendar.startOfDay(for: message.sentAt))
++            if let attachment = message.attachment {
++                attachmentCount += 1
++                let label = attachmentLabel(attachment)
++                items.append(ConversationWorkspaceItem(
++                    id: "\(message.id):attachment",
++                    messageID: message.id,
++                    kind: .attachment,
++                    title: label,
++                    preview: "\(ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file)) · \(message.isOutgoing ? "已发送" : "已接收")",
++                    sentAt: message.sentAt,
++                    isOutgoing: message.isOutgoing,
++                    value: attachment.id
++                ))
++            }
++
++            guard let text = userFacingText(message), !text.isEmpty else { continue }
++            let preview = bounded(text)
++            if isAction(text) {
++                items.append(ConversationWorkspaceItem(
++                    id: "\(message.id):action", messageID: message.id, kind: .action,
++                    title: "行动项", preview: preview, sentAt: message.sentAt,
++                    isOutgoing: message.isOutgoing, value: nil
++                ))
++            }
++            if isQuestion(text) {
++                items.append(ConversationWorkspaceItem(
++                    id: "\(message.id):question", messageID: message.id, kind: .question,
++                    title: "问题", preview: preview, sentAt: message.sentAt,
++                    isOutgoing: message.isOutgoing, value: nil
++                ))
++            }
++            for (index, link) in links(in: text).enumerated() {
++                items.append(ConversationWorkspaceItem(
++                    id: "\(message.id):link:\(index)", messageID: message.id, kind: .link,
++                    title: link, preview: preview, sentAt: message.sentAt,
++                    isOutgoing: message.isOutgoing, value: link
++                ))
++            }
++        }
++
++        items.sort {
++            if $0.sentAt == $1.sentAt { return $0.id < $1.id }
++            return $0.sentAt > $1.sentAt
++        }
++        return ConversationWorkspaceSnapshot(
++            messageCount: userMessages.count,
++            outgoingCount: userMessages.lazy.filter(\.isOutgoing).count,
++            incomingCount: userMessages.lazy.filter { !$0.isOutgoing }.count,
++            attachmentCount: attachmentCount,
++            activeDayCount: activeDays.count,
++            firstMessageAt: userMessages.first?.sentAt,
++            lastMessageAt: userMessages.last?.sentAt,
++            items: items
++        )
++    }
++
++    static func filteredItems(
++        in snapshot: ConversationWorkspaceSnapshot,
++        kind: ConversationWorkspaceKind?,
++        query: String
++    ) -> [ConversationWorkspaceItem] {
++        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
++        return snapshot.items.filter { item in
++            guard kind == nil || item.kind == kind else { return false }
++            guard !needle.isEmpty else { return true }
++            return item.title.localizedCaseInsensitiveContains(needle)
++                || item.preview.localizedCaseInsensitiveContains(needle)
++                || item.value?.localizedCaseInsensitiveContains(needle) == true
++        }
++    }
++
++    private static func isUserFacing(_ message: ChatMessage) -> Bool {
++        MiniGameCodec.decode(message.body) == nil && TacticalV2.WireCodecV2.decode(message.body) == nil
++    }
++
++    private static func userFacingText(_ message: ChatMessage) -> String? {
++        if message.attachment != nil || message.body == "[图片]" || VoiceMessageCodec.decode(message.body) != nil { return nil }
++        let raw = ReplyTextCodec.decode(message.body)?.reply ?? message.body
++        let normalized = raw
++            .replacingOccurrences(of: "\r", with: "\n")
++            .split(whereSeparator: { $0.isWhitespace })
++            .joined(separator: " ")
++            .trimmingCharacters(in: .whitespacesAndNewlines)
++        return normalized.isEmpty ? nil : normalized
++    }
++
++    private static func isAction(_ text: String) -> Bool {
++        let lowered = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
++        if lowered.hasPrefix("请问") { return false }
++        return actionPrefixes.contains { lowered.hasPrefix($0) }
++    }
++
++    private static func isQuestion(_ text: String) -> Bool {
++        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
++        if trimmed.contains("?") || trimmed.contains("？") { return true }
++        return questionPrefixes.contains { trimmed.hasPrefix($0) }
++    }
++
++    private static func links(in text: String) -> [String] {
++        guard let linkExpression else { return [] }
++        let range = NSRange(text.startIndex..<text.endIndex, in: text)
++        return linkExpression.matches(in: text, range: range).compactMap { match in
++            guard let swiftRange = Range(match.range, in: text) else { return nil }
++            return String(text[swiftRange]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?，。；：！？、)）"))
++        }
++    }
++
++    private static func attachmentLabel(_ attachment: ChatAttachment) -> String {
++        if VoiceMessageCodec.isVoiceMIMEType(attachment.mimeType) { return "语音消息" }
++        if MediaTransferPolicy.supportsImageMIMEType(attachment.mimeType) { return "图片" }
++        return "附件"
++    }
++
++    private static func bounded(_ text: String, limit: Int = 220) -> String {
++        guard text.count > limit else { return text }
++        let end = text.index(text.startIndex, offsetBy: limit)
++        return String(text[..<end]) + "…"
++    }
++}
+diff --git a/VeilLink/UI/ConversationWorkspaceView.swift b/VeilLink/UI/ConversationWorkspaceView.swift
+new file mode 100644
+index 0000000..51c58b8
+--- /dev/null
++++ b/VeilLink/UI/ConversationWorkspaceView.swift
+@@ -0,0 +1,171 @@
++import SwiftUI
++import UIKit
++import UniformTypeIdentifiers
++
++struct ConversationWorkspaceView: View {
++    let conversationTitle: String
++    let snapshot: ConversationWorkspaceSnapshot
++    let onJump: (String) -> Void
++
++    @Environment(\.dismiss) private var dismiss
++    @State private var selectedKind: ConversationWorkspaceKind?
++    @State private var query = ""
++
++    private var items: [ConversationWorkspaceItem] {
++        ConversationWorkspaceEngine.filteredItems(in: snapshot, kind: selectedKind, query: query)
++    }
++
++    var body: some View {
++        NavigationView {
++            VeilStableScrollView {
++                VStack(spacing: 14) {
++                    overviewCard
++                    filterBar
++                    resultsCard
++                    privacyCard
++                }
++            }
++            .background(VeilAmbientBackground())
++            .navigationTitle("会话工作台")
++            .navigationBarTitleDisplayMode(.inline)
++            .toolbar {
++                ToolbarItem(placement: .navigationBarTrailing) {
++                    Button("完成") { dismiss() }
++                }
++            }
++        }
++    }
++
++    private var overviewCard: some View {
++        VStack(alignment: .leading, spacing: 12) {
++            Text(conversationTitle)
++                .font(.system(.title3, design: .rounded).weight(.semibold))
++            HStack(spacing: 8) {
++                metric("消息", snapshot.messageCount)
++                metric("行动", snapshot.count(for: .action))
++                metric("问题", snapshot.count(for: .question))
++                metric("资料", snapshot.count(for: .link) + snapshot.attachmentCount)
++            }
++            Text("活跃 \(snapshot.activeDayCount) 天 · 发出 \(snapshot.outgoingCount) · 收到 \(snapshot.incomingCount)")
++                .font(.caption).foregroundColor(VeilTheme.secondaryText)
++        }
++        .veilCard(emphasized: true)
++    }
++
++    private var filterBar: some View {
++        VStack(spacing: 10) {
++            HStack(spacing: 8) {
++                Image(systemName: "magnifyingglass").foregroundColor(VeilTheme.secondaryText)
++                TextField("搜索工作台", text: $query)
++                    .textInputAutocapitalization(.never)
++                    .disableAutocorrection(true)
++                if !query.isEmpty {
++                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
++                        .buttonStyle(.plain)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++            }
++            .padding(10)
++            .background(VeilTheme.subtleFill)
++            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
++
++            ScrollView(.horizontal, showsIndicators: false) {
++                HStack(spacing: 8) {
++                    filterButton(title: "全部", icon: "square.grid.2x2", kind: nil)
++                    ForEach(ConversationWorkspaceKind.allCases, id: \.self) { kind in
++                        filterButton(title: kind.title, icon: kind.systemImage, kind: kind)
++                    }
++                }
++            }
++        }
++        .veilCard()
++    }
++
++    private var resultsCard: some View {
++        VStack(alignment: .leading, spacing: 0) {
++            HStack {
++                Text(selectedKind?.title ?? "全部线索").font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
++                Spacer()
++                Text("\(items.count) 项").font(.caption.monospacedDigit()).foregroundColor(VeilTheme.secondaryText)
++            }
++            .padding(.bottom, 8)
++
++            if items.isEmpty {
++                VStack(spacing: 8) {
++                    Image(systemName: "tray").font(.title2).foregroundColor(VeilTheme.tertiaryText)
++                    Text("这个分类暂时没有内容").font(.subheadline).foregroundColor(VeilTheme.secondaryText)
++                }
++                .frame(maxWidth: .infinity).padding(.vertical, 30)
++            } else {
++                ForEach(items) { item in
++                    Button {
++                        onJump(item.messageID)
++                        dismiss()
++                    } label: {
++                        HStack(alignment: .top, spacing: 11) {
++                            Image(systemName: item.kind.systemImage)
++                                .foregroundColor(VeilTheme.gold).frame(width: 24, height: 24)
++                            VStack(alignment: .leading, spacing: 4) {
++                                Text(item.title)
++                                    .font(.subheadline.weight(.semibold)).foregroundColor(VeilTheme.text).lineLimit(1)
++                                Text(item.preview)
++                                    .font(.caption).foregroundColor(VeilTheme.secondaryText).lineLimit(3)
++                                Text(item.sentAt.formatted(date: .abbreviated, time: .shortened))
++                                    .font(.caption2.monospacedDigit()).foregroundColor(VeilTheme.tertiaryText)
++                            }
++                            Spacer(minLength: 4)
++                            Image(systemName: "arrow.up.left").font(.caption.weight(.bold)).foregroundColor(VeilTheme.tertiaryText)
++                        }
++                        .padding(.vertical, 10)
++                    }
++                    .buttonStyle(VeilPressStyle())
++                    .contextMenu {
++                        if let value = item.value, item.kind == .link {
++                            Button {
++                                UIPasteboard.general.setItems(
++                                    [[UTType.utf8PlainText.identifier: value]],
++                                    options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(5 * 60)]
++                                )
++                            } label: { Label("复制链接（5 分钟）", systemImage: "doc.on.doc") }
++                        }
++                    }
++                    if item.id != items.last?.id { Divider().background(VeilTheme.hairline) }
++                }
++            }
++        }
++        .veilCard()
++    }
++
++    private var privacyCard: some View {
++        HStack(alignment: .top, spacing: 10) {
++            Image(systemName: "lock.shield.fill").foregroundColor(VeilTheme.success)
++            Text("所有分类均在本机内存中即时完成，不上传正文、不建立新数据库、不改变消息协议；关闭页面后不保留分析结果。")
++                .font(.caption).foregroundColor(VeilTheme.secondaryText)
++        }
++        .veilCard()
++    }
++
++    private func metric(_ title: String, _ value: Int) -> some View {
++        VStack(spacing: 3) {
++            Text("\(value)").font(.headline.monospacedDigit()).foregroundColor(VeilTheme.goldBright)
++            Text(title).font(.caption2).foregroundColor(VeilTheme.secondaryText)
++        }
++        .frame(maxWidth: .infinity).padding(.vertical, 8)
++        .background(VeilTheme.subtleFill).clipShape(RoundedRectangle(cornerRadius: 9))
++    }
++
++    private func filterButton(title: String, icon: String, kind: ConversationWorkspaceKind?) -> some View {
++        let selected = selectedKind == kind
++        return Button {
++            selectedKind = kind
++        } label: {
++            Label(title, systemImage: icon)
++                .font(.caption.weight(.semibold))
++                .padding(.horizontal, 10).padding(.vertical, 7)
++                .foregroundColor(selected ? Color.black.opacity(0.88) : VeilTheme.secondaryText)
++                .background(selected ? AnyShapeStyle(VeilTheme.goldGradient) : AnyShapeStyle(VeilTheme.subtleFill))
++                .clipShape(Capsule())
++        }
++        .buttonStyle(.plain)
++    }
++}
+diff --git a/VeilLinkTests/ConversationWorkspaceTests.swift b/VeilLinkTests/ConversationWorkspaceTests.swift
+new file mode 100644
+index 0000000..91e3c88
+--- /dev/null
++++ b/VeilLinkTests/ConversationWorkspaceTests.swift
+@@ -0,0 +1,102 @@
++import XCTest
++@testable import VeilLink
++
++final class ConversationWorkspaceTests: XCTestCase {
++    private func message(
++        _ body: String,
++        id: String = UUID().uuidString,
++        date: Date = Date(),
++        outgoing: Bool = false,
++        attachment: ChatAttachment? = nil
++    ) -> ChatMessage {
++        ChatMessage(
++            id: id, conversationID: "c", senderIdentityID: outgoing ? "local" : "peer",
++            body: body, sentAt: date, isOutgoing: outgoing, deliveryState: .delivered,
++            attachment: attachment
++        )
++    }
++
++    func testSummaryCountsDirectionDaysAndAttachments() {
++        let day: TimeInterval = 24 * 60 * 60
++        let base = Date(timeIntervalSince1970: 1_700_000_000)
++        let image = ChatAttachment(id: "a", mimeType: "image/jpeg", byteCount: 2_048)
++        let snapshot = ConversationWorkspaceEngine.analyze([
++            message("你好", date: base),
++            message("[图片]", date: base.addingTimeInterval(day), outgoing: true, attachment: image)
++        ], calendar: Calendar(identifier: .gregorian))
++        XCTAssertEqual(snapshot.messageCount, 2)
++        XCTAssertEqual(snapshot.incomingCount, 1)
++        XCTAssertEqual(snapshot.outgoingCount, 1)
++        XCTAssertEqual(snapshot.activeDayCount, 2)
++        XCTAssertEqual(snapshot.attachmentCount, 1)
++    }
++
++    func testChineseAndEnglishActionPrefixesAreDetected() {
++        let snapshot = ConversationWorkspaceEngine.analyze([
++            message("待办：更新测试包", id: "a"),
++            message("TODO verify iPhone 7", id: "b"),
++            message("只是普通聊天", id: "c")
++        ])
++        XCTAssertEqual(snapshot.count(for: .action), 2)
++    }
++
++    func testQuestionsUsePunctuationAndNaturalPrefixes() {
++        let snapshot = ConversationWorkspaceEngine.analyze([
++            message("明天几点开始？", id: "a"),
++            message("怎么恢复连接", id: "b"),
++            message("请问现在可以测试吗", id: "d"),
++            message("明天开始", id: "c")
++        ])
++        XCTAssertEqual(snapshot.count(for: .question), 3)
++        XCTAssertEqual(snapshot.count(for: .action), 0)
++    }
++
++    func testLinksAreExtractedAndTrailingPunctuationRemoved() {
++        let snapshot = ConversationWorkspaceEngine.analyze([
++            message("资料 https://example.com/a?q=1，以及 http://localhost/test。")
++        ])
++        let links = snapshot.items.filter { $0.kind == .link }.compactMap(\.value)
++        XCTAssertEqual(links, ["https://example.com/a?q=1", "http://localhost/test"])
++    }
++
++    func testReplyAnalyzesNewReplyNotQuotedText() {
++        let body = ReplyTextCodec.encode(quoted: "待办：旧任务", reply: "这是普通答复")
++        XCTAssertEqual(ConversationWorkspaceEngine.analyze([message(body)]).count(for: .action), 0)
++    }
++
++    func testVoiceAndImageBecomeReadableAttachmentItems() {
++        let voice = ChatAttachment(id: "v", mimeType: "audio/mp4", byteCount: 100)
++        let image = ChatAttachment(id: "i", mimeType: "image/png", byteCount: 200)
++        let snapshot = ConversationWorkspaceEngine.analyze([
++            message(VoiceMessageCodec.encode(durationSeconds: 2), id: "v", attachment: voice),
++            message("[图片]", id: "i", attachment: image)
++        ])
++        XCTAssertEqual(Set(snapshot.items.filter { $0.kind == .attachment }.map(\.title)), Set(["语音消息", "图片"]))
++    }
++
++    func testGameProtocolPacketsAreExcluded() throws {
++        let packet = MiniGamePacket(game: .gomoku, command: .invite)
++        let encoded = try MiniGameCodec.encode(packet)
++        let snapshot = ConversationWorkspaceEngine.analyze([message(encoded)])
++        XCTAssertEqual(snapshot.messageCount, 0)
++        XCTAssertTrue(snapshot.items.isEmpty)
++    }
++
++    func testItemsAreNewestFirstWithStableTieBreak() {
++        let date = Date(timeIntervalSince1970: 1_700_000_000)
++        let snapshot = ConversationWorkspaceEngine.analyze([
++            message("待办 A", id: "b", date: date),
++            message("待办 B", id: "a", date: date.addingTimeInterval(1))
++        ])
++        XCTAssertEqual(snapshot.items.map(\.messageID), ["a", "b"])
++    }
++
++    func testFilteringCombinesKindAndQuery() {
++        let snapshot = ConversationWorkspaceEngine.analyze([
++            message("待办：发布测试", id: "a"),
++            message("测试地址 https://example.com", id: "b")
++        ])
++        let result = ConversationWorkspaceEngine.filteredItems(in: snapshot, kind: .action, query: "发布")
++        XCTAssertEqual(result.map(\.messageID), ["a"])
++    }
++}
+
