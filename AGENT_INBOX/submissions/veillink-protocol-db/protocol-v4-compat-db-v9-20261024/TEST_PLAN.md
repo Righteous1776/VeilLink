@@ -1,19 +1,28 @@
-# R3 TEST PLAN — compatibility + durable multi-recipient outbox
+# R4 Validation and Test Protocol
 
-### Static and unit
-1. On a clean clone pinned at `8048b5c52b87eeb5d3622582da5728a8c2d64dda`: `git apply --check PATCH.diff`, apply, `git apply --check PATCH_STAGE2.diff`, apply, `git apply --check PATCH_STAGE3.diff`, apply. `git diff --check`.
-2. `VeilPeerCapabilityPolicyTests`: backward ACK decode, schema mismatch, enabled bits 0..3, unknown bit rejection.
-3. `VeilControlEventCodecTests`: canonical event IDs, schema bounds, topic sanitation, encrypted Wire4 kind 10 roundtrip.
-4. `DatabaseStoreTests`: trusted first-contact boundary, identity scoped encrypted inbound, duplicate suppression, database integrity; new R3 tests with two trusted recipients, identical re-enqueue, conflicting event UUID payload reject, forged peer acknowledgment reject, peer A acknowledgment preserving peer B outbox, accepted-send backoff, final recipient garbage collection, untrusted recipient atomic rejection.
-5. v8 fixture -> v9 -> v10 repeated startup, FK cascade, failure rollback, 7-day expiry, 512-event quota, key mismatch/locked Keychain, encrypted backup v2 export/restore with old user data.
+## Exact patch application gate
+- Fresh clone pinned at main `8048b5c52b87eeb5d3622582da5728a8c2d64dda`.
+- `git apply --check PATCH.diff && git apply PATCH.diff`
+- `git apply --check PATCH_STAGE2.diff && git apply PATCH_STAGE2.diff`
+- `git apply --check PATCH_STAGE3.diff && git apply PATCH_STAGE3.diff`
+- `git apply --check PATCH_STAGE4.diff && git apply PATCH_STAGE4.diff`
+- `git diff --check`, inspect 8 proposed product/test files, ensure no build/version/release drift.
 
-### Device and CI
-- full iOS 15 Simulator compile/XCTest; install ordinary signed iPhone 7 and modern iPhone; BLE v4 old/new bidirectional text, attachment resume and control capability negotiation.
-- Test control events only between peers that advertised bit 1. Absent bit -> no unknown kind 10 sent.
-- Send queue is NOT currently wired. Verify no accidental UI promise or unsolicited control traffic until a follow-on receipt actor is implemented.
-- Test on BLE, LAN and Internet Relay separately; do not use installation channel (including TrollStore) to bypass the BLE-first trust rule.
+## Unit and code-path verification
+1. ACK JSON legacy/new/malformed optional compatibility; schema versions and bits 0..7 accepted, unknown bits rejected.
+2. Control event envelope kind10 and optional `receiptRequested` cross-version JSON compatibility. Receipt envelope kind11, AEAD domain `control-receipt-v1`, fresh replay sequence, event UUID binding.
+3. DB v8→v9→v10 repeated migration, schema foreign keys, legacy user text/files/backup preserve; migration rollback after injected SQL error.
+4. One shared ciphertext and two target rows; authenticated ACK A leaves B pending; identical re-enqueue **does not resurrect A**; final ACK deletes shared ciphertext; mismatched UUID body rejected.
+5. New SQLite quota guard under the actual atomic INSERT transaction: 512 entries admitted, 513th rejected with rollback, no orphan target rows, no untrusted peer target rows.
+6. Identity deletion removes all new outbox rows; trust revocation/different-key receipts cannot acknowledge.
+7. Session reconnect, chat ACK negotiation, BLE queue temporarilyUnavailable vs accepted (only accepted increments retries), receipt packet loss, duplicated events, retry backoff, 7-day expiry.
+8. Cross-application matrix: legacy Wire4, R2 event-only control client, R4 receipt-capable, offline BLE and LAN and relay; R2 must never see kind11; fresh-session capability required for control send.
 
-### Executed evidence
-- Unified diff context/hunk counts checked against exact stage source in this session for stage 1, 2 and 3.
-- Python sqlite3 in-memory simulation **PASS**: v9/v10 repeated, preserved legacy data, one event with two recipient rows, independent ack + event GC, FK rejection of unknown peer, trust deletion cascading target rows, integrity_check=ok.
-- Native Xcode, XCTest, real-device transport and production recovery: **NOT RUN**; required for promotion.
+## Execution evidence obtained (not product CI)
+- Exact four-stage unified diff context/count/roundtrip: **PASS**, 23 file sections, 55 hunks.
+- Swift 6.2.1 standalone control event codec: **PASS**, optional receipt flag old/new JSON roundtrip, validation.
+- Python sqlite3 in-memory v10 fixture: **PASS**, repeat migrations, A/B independent ACK, no ACK resurrection, 512 quota/rollback, FK enforcement, old message preservation and integrity.
+- Agent Inbox Gate on GitHub validates only inbox boundaries and manifests, not Swift compilation.
+
+## Still REQUIRED for promotion
+Native macOS XcodeGen / iOS simulator compile + all XCTest tests; actual iPhone 7 iOS15 and modern iPhone BLE/LAN intermittent-loss runs; old/new downgrade matrix; backup/keychain recovery; signed package verification; Governor conflict/arbitration with PR #53; dedicated integration branch, CI green. No IPA release on this PR.
