@@ -1,0 +1,325 @@
+diff --git a/VeilLink/App/VeilLinkApp.swift b/VeilLink/App/VeilLinkApp.swift
+--- a/VeilLink/App/VeilLinkApp.swift
++++ b/VeilLink/App/VeilLinkApp.swift
+@@ -6,5 +6,6 @@ struct VeilLinkApp: App {
+     @UIApplicationDelegateAdaptor(VeilBackgroundAppDelegate.self) private var backgroundDelegate
+     @StateObject private var bootstrap = AppBootstrap()
++    @StateObject private var lifecycle = VeilAppLifecycleCoordinator()
+     @StateObject private var appearance = VeilAppearanceController.shared
+     @Environment(\.scenePhase) private var scenePhase
+ 
+@@ -29,38 +30,13 @@ struct VeilLinkApp: App {
+                 } else if let model = bootstrap.model {
+                     RootContainer(model: model)
+                         .onAppear {
+-                            RuntimeDiagnosticsBridge.shared.attach(to: model)
+-                            DeviceStressTestController.shared.attach(model: model)
+-                            RuntimeDiagnosticsBridge.shared.recordLifecycle("root.appear")
+-                            VeilBackgroundContinuityCenter.shared.attach(to: model)
+-                            model.start()
++                            lifecycle.rootAppeared(model: model, scenePhase: scenePhase)
+                         }
+                         .onChange(of: scenePhase) { phase in
+-                            RuntimeDiagnosticsBridge.shared.recordLifecycle("scene.\(String(describing: phase))")
+-                            DeviceStressTestController.shared.handleSceneActive(phase == .active)
+-                            model.bluetooth.setForegroundActive(phase == .active)
+-                            switch phase {
+-                            case .active:
+-                                model.handleForegroundTransition()
+-                                VeilBackgroundContinuityCenter.shared.becameActive(model: model)
+-                            case .inactive:
+-                                // Start/refresh the visible continuity surface while the app is
+-                                // still eligible to create a Live Activity. Do not lock/reset yet.
+-                                VeilBackgroundContinuityCenter.shared.prepareForBackgroundTransition(model: model)
+-                            case .background:
+-                                VeilBackgroundContinuityCenter.shared.enteredBackground(model: model)
+-                                model.handleBackgroundTransition()
+-                                model.appLock.lock()
+-                                model.ownerMode.lock()
+-                            @unknown default:
+-                                break
+-                            }
++                            lifecycle.sceneChanged(phase, model: model)
+                         }
+                         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+-                            RuntimeDiagnosticsBridge.shared.recordMemoryPressure()
+-                            DeviceStressTestController.shared.noteMemoryWarning()
+-                            VeilBackgroundContinuityCenter.shared.handleMemoryPressure()
+-                            model.handleMemoryPressure()
++                            lifecycle.memoryWarning(model: model)
+                         }
+                 } else {
+                     StartupFailureView(message: bootstrap.errorMessage)
+diff --git a/VeilLink/Core/VeilLifecycleStabilityGate.swift b/VeilLink/Core/VeilLifecycleStabilityGate.swift
+new file mode 100644
+index 0000000..9efafb4
+--- /dev/null
++++ b/VeilLink/Core/VeilLifecycleStabilityGate.swift
+@@ -0,0 +1,103 @@
++import Foundation
++
++enum VeilLifecyclePhase: Equatable, Sendable {
++    case active
++    case inactive
++    case background
++}
++
++enum VeilLifecycleEvent: Equatable, Sendable {
++    case rootAppeared(VeilLifecyclePhase)
++    case sceneChanged(VeilLifecyclePhase)
++    case memoryWarning(uptime: TimeInterval)
++}
++
++enum VeilLifecycleAction: Equatable, Sendable {
++    case attachRuntime
++    case startRuntime
++    case setHostForeground(Bool)
++    case enterForeground
++    case prepareBackground
++    case enterBackground
++    case handleMemoryPressure
++}
++
++/// A pure state machine that turns noisy SwiftUI/UIKit lifecycle delivery into exactly-once work.
++/// It does not suppress real transitions: active -> inactive -> background -> active still emits
++/// every required action in order. It only removes duplicate notifications and warning bursts.
++struct VeilLifecycleStabilityGate: Sendable {
++    static let memoryWarningCooldown: TimeInterval = 2
++
++    private(set) var phase: VeilLifecyclePhase?
++    private(set) var runtimeAttached = false
++    private(set) var runtimeStarted = false
++    private(set) var backgroundPrepared = false
++    private var lastHandledMemoryWarningUptime: TimeInterval?
++
++    mutating func consume(_ event: VeilLifecycleEvent) -> [VeilLifecycleAction] {
++        switch event {
++        case .rootAppeared(let currentPhase):
++            var actions: [VeilLifecycleAction] = []
++            let firstStart = !runtimeStarted
++            if !runtimeAttached {
++                runtimeAttached = true
++                actions.append(.attachRuntime)
++            }
++            if !runtimeStarted {
++                runtimeStarted = true
++                actions.append(.startRuntime)
++            }
++            actions.append(contentsOf: transition(to: currentPhase, forceInitial: firstStart))
++            return actions
++
++        case .sceneChanged(let nextPhase):
++            guard runtimeAttached, runtimeStarted else {
++                phase = nextPhase
++                return []
++            }
++            return transition(to: nextPhase, forceInitial: false)
++
++        case .memoryWarning(let uptime):
++            guard runtimeAttached, runtimeStarted, uptime.isFinite, uptime >= 0 else { return [] }
++            if let last = lastHandledMemoryWarningUptime,
++               uptime >= last,
++               uptime - last < Self.memoryWarningCooldown {
++                return []
++            }
++            lastHandledMemoryWarningUptime = uptime
++            return [.handleMemoryPressure]
++        }
++    }
++
++    private mutating func transition(
++        to next: VeilLifecyclePhase,
++        forceInitial: Bool
++    ) -> [VeilLifecycleAction] {
++        guard forceInitial || phase != next else { return [] }
++        let previous = phase
++        phase = next
++
++        switch next {
++        case .active:
++            backgroundPrepared = false
++            return [.setHostForeground(true), .enterForeground]
++
++        case .inactive:
++            guard !backgroundPrepared else {
++                return previous == .active ? [.setHostForeground(false)] : []
++            }
++            backgroundPrepared = true
++            return [.setHostForeground(false), .prepareBackground]
++
++        case .background:
++            var actions: [VeilLifecycleAction] = []
++            if previous != .inactive { actions.append(.setHostForeground(false)) }
++            if !backgroundPrepared {
++                backgroundPrepared = true
++                actions.append(.prepareBackground)
++            }
++            actions.append(.enterBackground)
++            return actions
++        }
++    }
++}
+diff --git a/VeilLink/App/VeilAppLifecycleCoordinator.swift b/VeilLink/App/VeilAppLifecycleCoordinator.swift
+new file mode 100644
+index 0000000..c98167c
+--- /dev/null
++++ b/VeilLink/App/VeilAppLifecycleCoordinator.swift
+@@ -0,0 +1,84 @@
++import SwiftUI
++import UIKit
++
++@MainActor
++final class VeilAppLifecycleCoordinator: ObservableObject {
++    private weak var model: AppModel?
++    private var gate = VeilLifecycleStabilityGate()
++
++    func rootAppeared(model: AppModel, scenePhase: ScenePhase) {
++        prepare(for: model)
++        execute(gate.consume(.rootAppeared(Self.phase(scenePhase))), model: model)
++    }
++
++    func sceneChanged(_ scenePhase: ScenePhase, model: AppModel) {
++        prepare(for: model)
++        let phase = Self.phase(scenePhase)
++        let actions = gate.consume(.sceneChanged(phase))
++        guard !actions.isEmpty else { return }
++        RuntimeDiagnosticsBridge.shared.recordLifecycle("scene.\(Self.label(phase))")
++        execute(actions, model: model)
++    }
++
++    func memoryWarning(model: AppModel, uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) {
++        prepare(for: model)
++        let actions = gate.consume(.memoryWarning(uptime: uptime))
++        guard !actions.isEmpty else { return }
++        RuntimeDiagnosticsBridge.shared.recordMemoryPressure()
++        DeviceStressTestController.shared.noteMemoryWarning()
++        execute(actions, model: model)
++    }
++
++    private func prepare(for model: AppModel) {
++        guard self.model !== model else { return }
++        self.model = model
++        gate = VeilLifecycleStabilityGate()
++    }
++
++    private func execute(_ actions: [VeilLifecycleAction], model: AppModel) {
++        for action in actions {
++            switch action {
++            case .attachRuntime:
++                RuntimeDiagnosticsBridge.shared.attach(to: model)
++                DeviceStressTestController.shared.attach(model: model)
++                RuntimeDiagnosticsBridge.shared.recordLifecycle("root.appear")
++                VeilBackgroundContinuityCenter.shared.attach(to: model)
++            case .startRuntime:
++                model.start()
++            case .setHostForeground(let active):
++                DeviceStressTestController.shared.handleSceneActive(active)
++                model.bluetooth.setForegroundActive(active)
++            case .enterForeground:
++                model.handleForegroundTransition()
++                VeilBackgroundContinuityCenter.shared.becameActive(model: model)
++            case .prepareBackground:
++                VeilBackgroundContinuityCenter.shared.prepareForBackgroundTransition(model: model)
++            case .enterBackground:
++                VeilBackgroundContinuityCenter.shared.enteredBackground(model: model)
++                model.handleBackgroundTransition()
++                model.appLock.lock()
++                model.ownerMode.lock()
++            case .handleMemoryPressure:
++                VeilBackgroundContinuityCenter.shared.handleMemoryPressure()
++                model.handleMemoryPressure()
++            }
++        }
++    }
++
++    private static func phase(_ phase: ScenePhase) -> VeilLifecyclePhase {
++        switch phase {
++        case .active: return .active
++        case .inactive: return .inactive
++        case .background: return .background
++        @unknown default: return .inactive
++        }
++    }
++
++    private static func label(_ phase: VeilLifecyclePhase) -> String {
++        switch phase {
++        case .active: return "active"
++        case .inactive: return "inactive"
++        case .background: return "background"
++        }
++    }
++}
+diff --git a/VeilLinkTests/VeilLifecycleStabilityGateTests.swift b/VeilLinkTests/VeilLifecycleStabilityGateTests.swift
+new file mode 100644
+index 0000000..c6cb0c7
+--- /dev/null
++++ b/VeilLinkTests/VeilLifecycleStabilityGateTests.swift
+@@ -0,0 +1,67 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilLifecycleStabilityGateTests: XCTestCase {
++    func testInitialActiveAppearanceStartsAndForegroundsOnce() {
++        var gate = VeilLifecycleStabilityGate()
++        XCTAssertEqual(gate.consume(.rootAppeared(.active)), [
++            .attachRuntime, .startRuntime, .setHostForeground(true), .enterForeground
++        ])
++        XCTAssertEqual(gate.consume(.rootAppeared(.active)), [])
++        XCTAssertEqual(gate.consume(.sceneChanged(.active)), [])
++    }
++
++    func testNormalBackgroundRoundTripPreservesActionOrder() {
++        var gate = VeilLifecycleStabilityGate()
++        _ = gate.consume(.rootAppeared(.active))
++        XCTAssertEqual(gate.consume(.sceneChanged(.inactive)), [
++            .setHostForeground(false), .prepareBackground
++        ])
++        XCTAssertEqual(gate.consume(.sceneChanged(.background)), [.enterBackground])
++        XCTAssertEqual(gate.consume(.sceneChanged(.active)), [
++            .setHostForeground(true), .enterForeground
++        ])
++    }
++
++    func testDirectActiveToBackgroundStillPreparesBeforeEntering() {
++        var gate = VeilLifecycleStabilityGate()
++        _ = gate.consume(.rootAppeared(.active))
++        XCTAssertEqual(gate.consume(.sceneChanged(.background)), [
++            .setHostForeground(false), .prepareBackground, .enterBackground
++        ])
++    }
++
++    func testRepeatedInactiveAndBackgroundEventsAreIgnored() {
++        var gate = VeilLifecycleStabilityGate()
++        _ = gate.consume(.rootAppeared(.active))
++        _ = gate.consume(.sceneChanged(.inactive))
++        XCTAssertEqual(gate.consume(.sceneChanged(.inactive)), [])
++        _ = gate.consume(.sceneChanged(.background))
++        XCTAssertEqual(gate.consume(.sceneChanged(.background)), [])
++    }
++
++    func testMemoryWarningBurstIsCoalescedButLaterWarningRuns() {
++        var gate = VeilLifecycleStabilityGate()
++        _ = gate.consume(.rootAppeared(.active))
++        XCTAssertEqual(gate.consume(.memoryWarning(uptime: 100)), [.handleMemoryPressure])
++        XCTAssertEqual(gate.consume(.memoryWarning(uptime: 100.5)), [])
++        XCTAssertEqual(gate.consume(.memoryWarning(uptime: 102)), [.handleMemoryPressure])
++    }
++
++    func testWarningsBeforeRuntimeAndInvalidUptimeAreIgnored() {
++        var gate = VeilLifecycleStabilityGate()
++        XCTAssertEqual(gate.consume(.memoryWarning(uptime: 10)), [])
++        _ = gate.consume(.rootAppeared(.inactive))
++        XCTAssertEqual(gate.consume(.memoryWarning(uptime: .nan)), [])
++        XCTAssertEqual(gate.consume(.memoryWarning(uptime: -1)), [])
++    }
++
++    func testSceneChangeBeforeRootDoesNotStartRuntime() {
++        var gate = VeilLifecycleStabilityGate()
++        XCTAssertEqual(gate.consume(.sceneChanged(.background)), [])
++        XCTAssertEqual(gate.consume(.rootAppeared(.background)), [
++            .attachRuntime, .startRuntime, .setHostForeground(false),
++            .prepareBackground, .enterBackground
++        ])
++    }
++}
+
