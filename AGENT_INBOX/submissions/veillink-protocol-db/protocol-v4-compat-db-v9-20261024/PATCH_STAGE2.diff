@@ -331,3 +331,15 @@ new file mode 100644
 +        XCTAssertThrowsError(try VeilControlEventCodec.decode(try JSONSerialization.data(withJSONObject: json)))
 +    }
 +}
+diff --git a/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift b/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
+--- a/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
++++ b/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
+@@ -35,6 +35,7 @@
+         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: nil, bits: 1))
+         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 2, bits: 1))
+         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: -1))
+-        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 2))
++        XCTAssertEqual(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 2), 2)
++        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 4))
+     }
+ }
