@@ -1,12 +1,9 @@
 # CURRENT CHECKPOINT
 
-VeilLink **26.14 (Build 60)** is the proposed current cumulative release checkpoint.
-It retains all Build 59 foundations and adds reactive Light/Dark theme repair,
-a lifecycle stability state machine, local SHA-256 file integrity tools, and an offline
-conversation workspace with message templates and safe manual quick-clear controls.
-Build 60 keeps iOS 15 minimum deployment, Protocol 4, VLGM1 v1, SQLite Schema V8,
-identity signatures and A9/A10 governance unchanged. Wire/SQLite R5 and TrollStore
-capability integrations remain separately gated; they are NOT represented as shipped.
+VeilLink **26.14 (Build 60)** is the comprehensive **integration candidate** based on the verified Build 59 release. It now contains Inbox #49–#58 selected product patches, including #56 Wire v4-compatible R1–R5 and SQLite v8→v9→v10 migration. Protocol version remains 4; signed optional Hello capabilities, encrypted control events, receipts and durable per-recipient outbox are added only with current-session authenticated negotiation. #53's competing *plan* does not create a second schema.
+
+Appearance, lifecycle, file integrity, local conversation workspace, safe storage management, compact settings, TrollStore readiness policy and adaptive particles have also been staged. Historic duplicate Game Agent patches are held for supersedence adjudication. **The integrated candidate is not a released or verified IPA until macOS CI, XCTest, old-data migration, backward communication and release artifact gates complete.**
+
 
 The branch is based on the complete 26.11 Build 57 release tree and carries
 the I12/A10 Ultra M5 overlay plus the subsequent compile and release-gate fixes.

@@ -1,10 +1,10 @@
 # VeilLink
 
-> **Current cumulative checkpoint:** VeilLink **26.14 (Build 60)**. This release
-> preserves the complete 26.13 baseline and integrates a reactive Light/Dark palette repair,
-> lifecycle stability, an offline SHA-256 file integrity tool, and a local conversation workspace.
-> See [the Build 60 release notes](docs/RELEASE_26_14_BUILD_60.md), [the Build 59 release notes](docs/RELEASE_26_13_BUILD_59.md),
-> and [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
+> **Integration candidate:** VeilLink **26.14 (Build 60)** unifies appearance, lifecycle,
+> SHA-256 file integrity, local conversation tooling, Wire v4 R1–R5 / SQLite v10,
+> safe storage management, TrollStore capability foundations and adaptive particles.
+> This candidate must still pass macOS CI, full XCTest and compatibility gates before release.
+> See [the Build 60 release notes](docs/RELEASE_26_14_BUILD_60.md) and [Build 59](docs/RELEASE_26_13_BUILD_59.md).
 
 VeilLink is a GitHub-buildable iOS 15+ prototype for nearby, serverless encrypted
 messaging over Bluetooth Low Energy. The UI is Chinese-first and adapts separately
