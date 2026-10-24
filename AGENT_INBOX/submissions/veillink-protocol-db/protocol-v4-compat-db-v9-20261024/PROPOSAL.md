@@ -1,30 +1,38 @@
-# VeilLink Protocol and Database R4 — cumulative engineering proposal
+# VeilLink R5 — secure signed-Hello capability bootstrap without synthetic chat traffic
 
-## Objective and actual repository state
+## Background: actual current main
 
-Main currently uses strict Wire v4 Hello/envelope, one-to-one chat models and schema v8. This four-stage proposal is **Inbox-only** and does not change the running product. It develops a typed encrypted control lane and genuinely independent per-recipient **transport-persisted receipts**, without altering existing chat protocols.
+The product on main still requires a Wire v4 Hello and stores ordinary one-to-one messages using SQLite schema v8. The staged R1..R4 Inbox proposal in this directory upgrades the app through v9 and v10 control-event queues and receipts, but **the R4 control lane required a normal chat ACK to discover capability bits**. This makes agent events/group preparation artificially dependent on human chat traffic.
 
-### Apply in strict order
+## Cumulative patch order
 
-1. `PATCH.diff`: authenticated JSON ACK optional feature metadata, legacy v4 decoder compatibility and fingerprint/identity scoped SQLite peer capability cache (schema v9).
-2. `PATCH_STAGE2.diff`: Wire kind 10, event v1 codec with 24 KiB bounded payload, dedicated authenticated ChaChaPoly context, replay window, encrypted inbound cache; server-only changes to protected surfaces.
-3. `PATCH_STAGE3.diff`: normalized encrypted v10 `control_outbound_events` + `control_outbound_targets` journal, each event encrypted **once** at rest with independent targets, 7-day expiration, retry policy, pending API, per-trusted-peer receipt API, no original message/outbox rewrite.
-4. `PATCH_STAGE4.diff`: **actual connection to SessionCoordinator**. One API `enqueueReliableControlEvent(_:recipientIdentityIDs:)`; authentication/feature-gated outbound drain, accepted-transport attempt bookkeeping, incoming encrypted kind 11 ACK, authenticated event UUID binding, duplicate-event ACK retry, reconnect/periodic retry polling. The new `receiptRequested` optional encrypted event field provides receiver-side compatibility with earlier control-event clients. Received `controlReceipt` frames can remove **only the authenticated sender peer's** unacknowledged target, never another target.
-   - Feature bit2 (numeric 4) is required for outbound durable attempts and is negotiated **fresh per secured session**, not from 30-day cached metadata. Unknown/older clients never receive controlReceipt kind 11.
-   - v10 target rows retain `acknowledged_at` while other recipients are pending. Re-enqueuing the same event does not resurrect already-acknowledged target rows; the final ACK garbage-collects the shared event.
-   - 512-event capacity checks are enforced within the same SQLite write transaction as the event+target inserts, with FK rollback on overflow.
-   - Explicit local identity deletion also removes its encrypted control outbound event rows.
-   - BLE control frames are limited to <= 2 KiB encoded event size. Larger feature data must use a future chunked path or a validated alternate transport.
+1. `PATCH.diff` — v4 chat ACK capability extension + trusted-peer, identity-key-bound SQLite v9 cache.
+2. `PATCH_STAGE2.diff` — authenticated and schema-limited control-event kind 10, encrypted bounded inbound inbox.
+3. `PATCH_STAGE3.diff` — SQLite v10 durable, normalized per-recipient control outbox, event ciphertext encrypted once, independently acknowledged/queued target state.
+4. `PATCH_STAGE4.diff` — optional wire kind 11 E2EE receipts, per-target ACK/GC and reconnect/retry integration; fresh-session bit2 gate, duplicate ACK recovery, 512-quota transactional admission.
+5. **`PATCH_STAGE5.diff` — signed, optional Hello v4 capability bootstrap**, plus legacy ACK downgrade handling and focused XCTest cases.
 
-## Compatibility constraints
+## The R5 handshake
 
-- No changes to signed Hello v4, v4 HKDF, chat ciphertext, chat ACK semantics, contact trust or Keychain key.
-- **Current limitation:** optional capability feature bits arrive with authenticated CHAT acknowledgements. Fresh session-level negotiation is not possible before an outgoing chat ACK; R4 intentionally keeps durable control work pending until then, instead of sending unsolicited or unrecognized control packets to legacy v4 peers. A future dedicated compatibility-safe capability bootstrap is required.
-- Receipt acknowledges **encrypted event persistence**, not completed business execution. Feature consumers must authorize topic/actions separately; the bounded inbound cache does NOT confer permanent exactly-once application semantics.
-- A trusted remote identity may not send to untrusted recipients, alter another identity's outbox, or use TrollStore installation metadata as a transport/identity authority.
+- Retain `HelloPacket.protocolVersion = 4`, all mandatory fields, its original signed `VeilLink/Hello/v4` payload, and the existing v4 Curve25519 session transcript/HKDF. No wire version jump or secret/key rotation.
+- Add optional `capabilitySchema`, `capabilityBits`, `capabilitySignature` to the Codable Hello JSON. Old Swift Codable peers ignore unknown keys. No additional packet kinds are sent during bootstrap.
+- Create a **second identity Ed25519 signature** over `VeilLink/HelloCapabilities/v1|` plus original signed v4 payload, original v4 signature, and deterministic schema/bit values. This cryptographically binds the extension to ephemeral agreement key, nonce and identity, avoiding unauthenticated Hello metadata.
+- Validate the legacy v4 Hello signature first. If extension signature is absent, invalid, unknown-schema or has unsupported feature bits, accept the valid **legacy secure handshake**, but advertise **no enhanced features** on the basis of that extension.
+- Fresh verified signed Hello feature bits are assigned to the *current session context*; control send still requires a trusted matching contact key. The persistent peer capability cache is advisory only and must not authorize transport.
+- For a legacy R4 peer without Hello extension, permit genuine encrypted chat ACK capabilities later as fallback. ACK must not overwrite a valid current-session signed Hello advertisement.
 
-## Future work / handoff
+## Important R2 peer backward compatibility fix
 
-R5: safe v4 capability bootstrap (without false ACK), app-level group membership and authorizations, idempotent state-machine handling with longer-lived dedup tombstones, chunked large-object manifests and per-channel BLE/LAN/relay backpressure tuning.
+R2 decoders reject unknown feature bits rather than masking them. Therefore, before proof that the remote client supports bit2, R5 advertises just bits `3` in its optional chat ACK. If a verified current-session peer declares bit2, R5 may advertise bits `7`. This prevents an R2 peer from rejecting all optional ACK capabilities after the R5 upgrade.
 
-PR #53 remains the owner of TrollStore marker/UI detection; PR #57 handles conservative runtime readiness. No entitlements, private APIs, release workflows or app build values are changed here.
+## Real behavior and boundaries
+
+- R5↔R5 peers have the necessary capability negotiation input **during signed Hello** and can drain already-queued reliable control events immediately after explicit trust is established, without any invisible chat message.
+- R5↔R4 peers fall back to authenticated, genuine chat ACK capability proof for the new reliable control lane; if neither user sends chat, queued work stays pending rather than bypassing compatibility.
+- R5↔legacy v4 peers maintain original secure Hello/chat paths, without new kind 10/11 frames.
+- This still does **not** provide full group membership/group keys, permanent exactly-once application actions or large-media chunk streaming. Future R6 phases should implement group membership trust/authorization and chunked sync manifests **after** device regression passes.
+- TrollStore/ordinary installation channels may use the same protocol; TrollStore marker never affects cryptographic identity or control authorization.
+
+## Integration
+
+Governor alone reviews protected signing/transport/schema surfaces and overlap with PR #53. Apply in ordered standalone integration branch, run iOS/XCTest and old-new iPhone 7 and newer iPhone BLE/LAN matrix; no self-merge or IPA publication by this lane.
