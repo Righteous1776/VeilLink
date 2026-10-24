@@ -4,8 +4,8 @@ import Foundation
 /// This is advisory metadata, not a trust or authorization primitive.
 enum VeilPeerCapabilityPolicy {
     static let schemaVersion = 1
-    static let advertisedFeatureBits = 3 // bit 0: ACK metadata; bit 1: authenticated control
-    static let recognizedFeatureBits = 3
+    static let advertisedFeatureBits = 7 // bit 0: ACK; bit 1: control; bit 2: reliable control receipts
+    static let recognizedFeatureBits = 7
     static let cacheLifetime: TimeInterval = 30 * 24 * 60 * 60
 
     static func validatedBits(schemaVersion: Int?, bits: Int?) -> Int? {
