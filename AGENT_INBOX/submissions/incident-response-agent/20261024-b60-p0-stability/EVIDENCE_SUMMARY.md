@@ -6,3 +6,6 @@ Input: four ZIP black boxes captured 2026-10-24, all Build 60 / Protocol 4 (two 
 - iPhone 13 Pro, iOS 26.0.1: extreme stress 83 cycles, 2008 steps, 0 failed, 83 skipped; thermal state serious; BLE snapshots include PHY_CONNECTED peers waiting for data-channel readiness; 6 remote-ready timeouts.
 - An iPhone7 MetricKit CPU exception diagnostic was present but not symbolicated; crash root cause is not verified.
 - Privacy: raw logs and identifiers were not staged in GitHub. Counts are deduplicated by runtime event IDs across overlapping ZIPs.
+
+## Interpretation guard (2026-10-24)
+The current iPhone7 stress summary records **18 failures in 18 completed cycles**. Its rolling JSONL files contain 27 `stress.step.failed` records from overlapping/historical stress runs; do not add these together or incorrectly call all 27 failures part of one 18-cycle run. Of the 61 iPhone7 collaborative `session_mismatch` events, 59 are `bulkReady`, one `stop`, and one `accept`; compare session IDs/epochs before calling these production-message failures. Original exported diagnostics cannot capture the separate screenshot's AppModel bootstrap failure, which is why an isolated startup-failure exporter is proposed.
