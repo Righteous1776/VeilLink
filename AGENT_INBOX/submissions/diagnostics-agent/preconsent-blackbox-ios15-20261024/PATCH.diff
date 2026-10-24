@@ -1,0 +1,373 @@
+diff --git a/VeilLink/App/VeilLinkApp.swift b/VeilLink/App/VeilLinkApp.swift
+--- a/VeilLink/App/VeilLinkApp.swift
++++ b/VeilLink/App/VeilLinkApp.swift
+@@ -11,6 +11,7 @@
+     @Environment(\.scenePhase) private var scenePhase
+ 
+     init() {
++        VeilPreConsentBlackBox.shared.record(.appLaunched, stage: .launch)
+         TacticalLocalRenderCache.warmUp()
+         VeilChrome.configure()
+     }
+@@ -44,16 +45,43 @@
+                     StartupFailureView(message: bootstrap.errorMessage)
+                 }
+             }
++            .safeAreaInset(edge: .bottom, spacing: 0) {
++                if !bootstrap.legal.isSatisfied {
++                    VeilPreConsentBlackBoxButton()
++                }
++            }
+             .preferredColorScheme(appearance.preferredColorScheme)
+             .onAppear {
++                if !bootstrap.legal.isSatisfied {
++                    VeilPreConsentBlackBox.shared.record(.rootPresented, stage: bootstrap.onboarding.isCompleted ? .consent : .onboarding)
++                }
+                 appearance.synchronizeSystemAppearance()
+                 VeilChrome.configure()
+             }
+             .onChange(of: appearance.colorMode) { _ in
++                if !bootstrap.legal.isSatisfied {
++                    VeilPreConsentBlackBox.shared.record(.appearanceChanged, stage: bootstrap.onboarding.isCompleted ? .consent : .onboarding)
++                }
+                 appearance.synchronizeSystemAppearance()
+                 VeilChrome.configure()
+             }
++            .onChange(of: appearance.selection) { _ in
++                if !bootstrap.legal.isSatisfied {
++                    VeilPreConsentBlackBox.shared.record(.themeChanged, stage: bootstrap.onboarding.isCompleted ? .consent : .onboarding)
++                }
++                VeilChrome.configure()
++            }
++            .onChange(of: scenePhase) { phase in
++                guard !bootstrap.legal.isSatisfied else { return }
++                let box = VeilPreConsentBlackBox.shared
++                let stage: VeilPreConsentBlackBox.Stage = bootstrap.onboarding.isCompleted ? .consent : .onboarding
++                switch phase {
++                case .active: box.record(.sceneActive, stage: stage)
++                case .inactive: box.record(.sceneInactive, stage: stage)
++                case .background: box.record(.sceneBackground, stage: stage)
++                @unknown default: break
++                }
++            }
+-            .onChange(of: appearance.selection) { _ in VeilChrome.configure() }
+         }
+     }
+ }
+diff --git a/VeilLink/UI/LegalConsentGateView.swift b/VeilLink/UI/LegalConsentGateView.swift
+--- a/VeilLink/UI/LegalConsentGateView.swift
++++ b/VeilLink/UI/LegalConsentGateView.swift
+@@ -68,6 +68,8 @@
+         }
+         .navigationBarHidden(true)
+         .telemetryScreen("legal.consent")
++        .onAppear { VeilPreConsentBlackBox.shared.record(.legalShown, stage: .consent) }
++        .onDisappear { VeilPreConsentBlackBox.shared.record(.legalHidden, stage: .consent) }
+     }
+ 
+     private var header: some View {
+@@ -109,6 +111,7 @@
+     private func legalSegment(title: String, icon: String, index: Int) -> some View {
+         Button {
+             selectedDocument = index
++            VeilPreConsentBlackBox.shared.record(.documentSwitched, stage: .consent)
+             VeilOnboardingHaptics.selection()
+         } label: {
+             HStack(spacing: 7) {
+@@ -265,6 +268,7 @@
+     ) -> some View {
+         Button {
+             isOn.wrappedValue.toggle()
++            VeilPreConsentBlackBox.shared.record(.confirmationChanged, stage: .consent)
+             VeilOnboardingHaptics.selection()
+         } label: {
+             HStack(alignment: .top, spacing: 11) {
+@@ -296,6 +300,7 @@
+     }
+ 
+     private func sign() {
++        VeilPreConsentBlackBox.shared.record(.signTapped, stage: .consent)
+         // Commit any in-flight IME composition (e.g. a pinyin candidate bar that is still open)
+         // before evaluating the gate. Without this, the acknowledgement state still holds the
+         // intermediate composition text, canSign stays false and the disabled primary button
+@@ -302,14 +307,17 @@
+         // silently swallows the first tap — the classic "first signing attempt does nothing".
+         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+         guard canSign else {
++            VeilPreConsentBlackBox.shared.record(.signIncomplete, stage: .consent)
+             errorText = "请完成三项确认，并准确输入签署确认语。"
+             return
+         }
+         if controller.accept(acknowledgment: acknowledgment) {
++            VeilPreConsentBlackBox.shared.record(.signSaved, stage: .consent)
+             errorText = nil
+             VeilOnboardingHaptics.confirm()
+             onAccepted()
+         } else {
++            VeilPreConsentBlackBox.shared.record(.signStorageFailed, stage: .consent)
+             errorText = "签署记录未能安全保存，请重试。"
+         }
+     }
+@@ -381,6 +389,14 @@
+             text.wrappedValue = publishable
+         }
+ 
++        func textFieldDidBeginEditing(_ textField: UITextField) {
++            VeilPreConsentBlackBox.shared.record(.acknowledgmentFocused, stage: .consent)
++        }
++
++        func textFieldDidEndEditing(_ textField: UITextField) {
++            VeilPreConsentBlackBox.shared.record(.acknowledgmentUnfocused, stage: .consent)
++        }
++
+         func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+             textField.resignFirstResponder()
+             return true
+diff --git a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift b/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
+@@ -0,0 +1,188 @@
++import Foundation
++import SwiftUI
++import UIKit
++
++/// A deliberately isolated pre-consent diagnostic lane.
++/// This must not initialize AppModel, Keychain, SQLite, BLE, LAN, agent or telemetry hooks.
++@MainActor
++final class VeilPreConsentBlackBox {
++    static let shared = VeilPreConsentBlackBox()
++
++    enum Stage: String, Codable {
++        case launch
++        case onboarding
++        case consent
++        case startupFailure
++    }
++
++    enum Event: String, Codable {
++        case appLaunched
++        case rootPresented
++        case sceneActive
++        case sceneInactive
++        case sceneBackground
++        case appearanceChanged
++        case themeChanged
++        case legalShown
++        case legalHidden
++        case documentSwitched
++        case confirmationChanged
++        case acknowledgmentFocused
++        case acknowledgmentUnfocused
++        case signTapped
++        case signIncomplete
++        case signSaved
++        case signStorageFailed
++        case exportRequested
++        case exportPrepared
++        case exportFailed
++    }
++
++    struct Entry: Codable {
++        let sequence: Int
++        let time: Date
++        let event: Event
++        let stage: Stage
++        let session: String
++        let colorMode: String
++        let systemAppearance: String
++    }
++
++    private struct Export: Codable {
++        let format: String
++        let schema: Int
++        let generatedAt: Date
++        let appVersion: String
++        let build: String
++        let iosVersion: String
++        let hardwareClass: String
++        let privacy: String
++        let entries: [Entry]
++    }
++
++    private let directory: URL
++    private let eventURL: URL
++    private let session = String(UUID().uuidString.prefix(8))
++    private let limit = 128
++    private(set) var entries: [Entry]
++
++    init(rootDirectory: URL? = nil) {
++        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
++            ?? FileManager.default.temporaryDirectory
++        directory = rootDirectory ?? base
++            .appendingPathComponent("VeilLink", isDirectory: true)
++            .appendingPathComponent("PreConsentBlackBox", isDirectory: true)
++        eventURL = directory.appendingPathComponent("events.json")
++        if let data = try? Data(contentsOf: eventURL),
++           let saved = try? JSONDecoder().decode([Entry].self, from: data) {
++            entries = Array(saved.suffix(128))
++        } else {
++            entries = []
++        }
++    }
++
++    func record(_ event: Event, stage: Stage) {
++        let mode = UserDefaults.standard.string(forKey: "appearance.color.mode.v1") ?? "automatic"
++        let style: String
++        switch UITraitCollection.current.userInterfaceStyle {
++        case .dark: style = "dark"
++        case .light: style = "light"
++        default: style = "unspecified"
++        }
++
++        entries.append(Entry(
++            sequence: (entries.last?.sequence ?? 0) + 1,
++            time: Date(),
++            event: event,
++            stage: stage,
++            session: session,
++            colorMode: ["automatic", "light", "dark"].contains(mode) ? mode : "other",
++            systemAppearance: style
++        ))
++        if entries.count > limit { entries.removeFirst(entries.count - limit) }
++        // Best-effort diagnostics: NEVER affect legal acceptance or application startup.
++        do {
++            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
++            let encoded = try JSONEncoder().encode(entries)
++            try encoded.write(to: eventURL, options: [.atomic, .completeFileProtectionUnlessOpen])
++        } catch {
++            // Memory ring still supports export if disk is temporarily inaccessible.
++        }
++    }
++
++    func exportData() throws -> Data {
++        let bundle = Bundle.main
++        let export = Export(
++            format: "VeilLinkPreConsentBlackBox",
++            schema: 1,
++            generatedAt: Date(),
++            appVersion: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?",
++            build: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?",
++            iosVersion: UIDevice.current.systemVersion,
++            hardwareClass: UIDevice.current.model,
++            privacy: "Only fixed event names, stage, time, temporary session, appearance mode and OS/build information. No typed text, agreements, identifiers, keys, private messages, network connections, media or prompts.",
++            entries: entries
++        )
++        let encoder = JSONEncoder()
++        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
++        encoder.dateEncodingStrategy = .iso8601
++        return try encoder.encode(export)
++    }
++
++    func exportFile() throws -> URL {
++        let data = try exportData()
++        let output = FileManager.default.temporaryDirectory
++            .appendingPathComponent("VeilLink-PreConsent-\(UUID().uuidString).json")
++        try data.write(to: output, options: [.atomic, .completeFileProtectionUnlessOpen])
++        return output
++    }
++}
++
++/// Mounted before the legal gate is satisfied; never calls the normal AppModel-driven exporter.
++struct VeilPreConsentBlackBoxButton: View {
++    @State private var preparedFile: URL?
++    @State private var presentsShare = false
++    @State private var exportError: String?
++
++    var body: some View {
++        HStack(spacing: 8) {
++            Image(systemName: "waveform.path.ecg.rectangle")
++            Text("首次启动异常？")
++                .font(.system(size: 11, weight: .medium))
++            Spacer(minLength: 4)
++            Button {
++                let box = VeilPreConsentBlackBox.shared
++                box.record(.exportRequested, stage: .consent)
++                do {
++                    preparedFile = try box.exportFile()
++                    box.record(.exportPrepared, stage: .consent)
++                    presentsShare = true
++                } catch {
++                    box.record(.exportFailed, stage: .consent)
++                    exportError = "无法创建本地诊断文件。请检查设备可用空间。"
++                }
++            } label: {
++                Label("导出临时黑匣子", systemImage: "square.and.arrow.up")
++                    .font(.system(size: 11, weight: .semibold))
++            }
++            .buttonStyle(.bordered)
++            .accessibilityIdentifier("preconsent.blackbox.export")
++        }
++        .padding(.horizontal, 12)
++        .padding(.vertical, 7)
++        .background(Color(uiColor: .secondarySystemBackground))
++        .sheet(isPresented: $presentsShare) {
++            if let preparedFile {
++                DiagnosticsExportShareSheet(items: [preparedFile])
++            }
++        }
++        .alert("导出失败", isPresented: Binding(
++            get: { exportError != nil },
++            set: { if !$0 { exportError = nil } }
++        )) {
++            Button("确定", role: .cancel) {}
++        } message: {
++            Text(exportError ?? "")
++        }
++    }
++}
+diff --git a/VeilLinkTests/PreConsentBlackBoxTests.swift b/VeilLinkTests/PreConsentBlackBoxTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/PreConsentBlackBoxTests.swift
+@@ -0,0 +1,50 @@
++import Foundation
++import XCTest
++@testable import VeilLink
++
++@MainActor
++final class PreConsentBlackBoxTests: XCTestCase {
++    func testPreConsentExportContainsOnlyFixedEventSchema() throws {
++        let directory = FileManager.default.temporaryDirectory
++            .appendingPathComponent("preconsent-test-\(UUID().uuidString)")
++        defer { try? FileManager.default.removeItem(at: directory) }
++        let box = VeilPreConsentBlackBox(rootDirectory: directory)
++        box.record(.appLaunched, stage: .launch)
++        box.record(.legalShown, stage: .consent)
++        box.record(.signTapped, stage: .consent)
++        let data = try box.exportData()
++        let text = try XCTUnwrap(String(data: data, encoding: .utf8))
++        XCTAssertTrue(text.contains("VeilLinkPreConsentBlackBox"))
++        XCTAssertTrue(text.contains("signTapped"))
++        XCTAssertTrue(text.contains("legalShown"))
++        XCTAssertFalse(text.contains("private_key"))
++        XCTAssertFalse(text.contains("我已阅读并同意"))
++        let destination = try box.exportFile()
++        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
++        try? FileManager.default.removeItem(at: destination)
++    }
++
++    func testPersistsLastEventsAcrossColdRelaunchAndBoundsRecords() throws {
++        let directory = FileManager.default.temporaryDirectory
++            .appendingPathComponent("preconsent-test-\(UUID().uuidString)")
++        defer { try? FileManager.default.removeItem(at: directory) }
++        let first = VeilPreConsentBlackBox(rootDirectory: directory)
++        for _ in 0..<160 { first.record(.confirmationChanged, stage: .consent) }
++        XCTAssertEqual(first.entries.count, 128)
++        let subsequent = VeilPreConsentBlackBox(rootDirectory: directory)
++        XCTAssertEqual(subsequent.entries.count, 128)
++        XCTAssertEqual(subsequent.entries.last?.sequence, 160)
++        subsequent.record(.appLaunched, stage: .launch)
++        XCTAssertEqual(subsequent.entries.last?.sequence, 161)
++        XCTAssertEqual(subsequent.entries.count, 128)
++    }
++
++    func testNoLegalOrRuntimeInitializationNeededForExport() throws {
++        let directory = FileManager.default.temporaryDirectory
++            .appendingPathComponent("preconsent-test-\(UUID().uuidString)")
++        defer { try? FileManager.default.removeItem(at: directory) }
++        let box = VeilPreConsentBlackBox(rootDirectory: directory)
++        XCTAssertNoThrow(try box.exportData())
++        XCTAssertTrue(box.entries.isEmpty)
++    }
++}
