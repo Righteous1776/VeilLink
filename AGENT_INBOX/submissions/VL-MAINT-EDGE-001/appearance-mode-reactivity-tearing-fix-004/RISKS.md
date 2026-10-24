@@ -28,6 +28,7 @@ No direct overlap was found with:
 - `VeilLink/Core/AppTheme.swift`
 - `VeilLink/Core/SkeuomorphicComponents.swift`
 - `VeilLink/Core/VeilMotionKit.swift`
+- `VeilLink/Core/VeilAppleMaterialEngine.swift`
 - `VeilLinkTests/GlobalAppearanceModeTests.swift`
 
 The Governor must re-check later submissions before batching.
@@ -45,6 +46,14 @@ This is intended. The controller has a very small publication surface and these 
 `VeilDynamicGlowBorder` owns `@State rotates`. Re-rendering because appearance changed must preserve the existing state identity; the proposal does not add `.id` or reconstruct the root.
 
 Integration testing must confirm the glow does not restart continuously or leak animation work after mode switching.
+
+### Apple Soft native system material
+
+Explicitly deriving Apple Soft's custom color/shadow decisions from the controller removes one split-source state dependency. Native `glassEffect` (iOS 26) and `.ultraThinMaterial` (older compatible paths) still involve platform compositing and trait propagation. This patch cannot itself prove single-frame hardware rendering. Governor must validate the actual transitions on iOS 15 and current iOS.
+
+### Previous patch-format fault
+
+The first `PATCH.diff` had incorrect unified-hunk headers. The revised patch was regenerated from exact `main` source and verified with a strict independent line/count/output check. GitHub Inbox Gate does not test product patch application. Integration must also run `git apply --check` and full Xcode before accepting.
 
 ### Existing UIAppearance behavior
 
