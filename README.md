@@ -1,9 +1,9 @@
 # VeilLink
 
-> **Current cumulative checkpoint:** VeilLink **26.13 (Build 59)**. This release
-> preserves the complete 26.12 game/runtime line and adds shared UI rhythm tokens,
-> an IME-safe legal-signing fix, plus the optional 白描 and 浮屿 appearance styles.
-> See [the Build 59 release notes](docs/RELEASE_26_13_BUILD_59.md), [the Build 58 release notes](docs/RELEASE_26_12_BUILD_58.md),
+> **Current cumulative checkpoint:** VeilLink **26.14 (Build 60)**. This release
+> preserves the complete 26.13 baseline and integrates a reactive Light/Dark palette repair,
+> lifecycle stability, an offline SHA-256 file integrity tool, and a local conversation workspace.
+> See [the Build 60 release notes](docs/RELEASE_26_14_BUILD_60.md), [the Build 59 release notes](docs/RELEASE_26_13_BUILD_59.md),
 > and [the 2026-10-01 recovery record](docs/INCIDENT_RECOVERY_20261001.md).
 
 VeilLink is a GitHub-buildable iOS 15+ prototype for nearby, serverless encrypted
