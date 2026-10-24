@@ -35,6 +35,7 @@ final class VeilPeerCapabilityPolicyTests: XCTestCase {
         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: nil, bits: 1))
         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 2, bits: 1))
         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: -1))
-        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 2))
+        XCTAssertEqual(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 2), 2)
+        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 4))
     }
 }
