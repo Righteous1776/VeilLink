@@ -1,7 +1,102 @@
 diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
 --- a/VeilLink/UI/ConversationViews.swift
 +++ b/VeilLink/UI/ConversationViews.swift
-@@ -304,6 +304,11 @@ struct ChatView: View {
+@@ -19,3 +19,3 @@ struct ConversationListView: View {
+     @State private var stressConversation: ConversationSummary?
+-
++    @State private var conversationPendingClear: ConversationSummary?
+     var body: some View {
+@@ -61,11 +61,15 @@ struct ConversationListView: View {
+-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
++                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
++                            Button(role: .destructive) { conversationPendingClear = conversation } label: {
++                                Label("清空", systemImage: "trash.fill")
++                            }
++                            .tint(VeilTheme.danger)
+                             Button {
+                                 if conversation.unreadCount > 0 {
+                                     _ = model.markConversationRead(conversation.id)
+                                 } else {
+                                     _ = model.markConversationUnread(conversation.id)
+                                 }
+                             } label: {
+                                 Label(conversation.unreadCount > 0 ? "标为已读" : "标为未读", systemImage: conversation.unreadCount > 0 ? "envelope.open.fill" : "envelope.badge.fill")
+                             }
+                             .tint(VeilTheme.panelSoft)
+@@ -79,12 +83,16 @@ struct ConversationListView: View {
+                             Button {
+                                 if conversation.unreadCount > 0 {
+                                     _ = model.markConversationRead(conversation.id)
+                                 } else {
+                                     _ = model.markConversationUnread(conversation.id)
+                                 }
+                             } label: {
+                                 Label(conversation.unreadCount > 0 ? "标为已读" : "标为未读", systemImage: conversation.unreadCount > 0 ? "envelope.open" : "envelope.badge")
+                             }
++                            Divider()
++                            Button("清空本地聊天记录", role: .destructive) {
++                                conversationPendingClear = conversation
++                            }
+                         }
+                     } else {
+                         Button {
+@@ -109,11 +117,15 @@ struct ConversationListView: View {
+-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
++                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
++                            Button(role: .destructive) { conversationPendingClear = conversation } label: {
++                                Label("清空", systemImage: "trash.fill")
++                            }
++                            .tint(VeilTheme.danger)
+                             Button {
+                                 if conversation.unreadCount > 0 {
+                                     _ = model.markConversationRead(conversation.id)
+                                 } else {
+                                     _ = model.markConversationUnread(conversation.id)
+                                 }
+                             } label: {
+                                 Label(conversation.unreadCount > 0 ? "标为已读" : "标为未读", systemImage: conversation.unreadCount > 0 ? "envelope.open.fill" : "envelope.badge.fill")
+                             }
+                             .tint(VeilTheme.panelSoft)
+@@ -127,12 +139,16 @@ struct ConversationListView: View {
+                             Button {
+                                 if conversation.unreadCount > 0 {
+                                     _ = model.markConversationRead(conversation.id)
+                                 } else {
+                                     _ = model.markConversationUnread(conversation.id)
+                                 }
+                             } label: {
+                                 Label(conversation.unreadCount > 0 ? "标为已读" : "标为未读", systemImage: conversation.unreadCount > 0 ? "envelope.open" : "envelope.badge")
+                             }
++                            Divider()
++                            Button("清空本地聊天记录", role: .destructive) {
++                                conversationPendingClear = conversation
++                            }
+                         }
+                     }
+                 }
+@@ -160,6 +176,21 @@ struct ConversationListView: View {
+                 .accessibilityLabel("打开工具中心")
+             }
+         }
++        .alert("清空本地聊天记录？", isPresented: Binding(
++            get: { conversationPendingClear != nil },
++            set: { if !$0 { conversationPendingClear = nil } }
++        )) {
++            Button("取消", role: .cancel) { conversationPendingClear = nil }
++            Button("清空", role: .destructive) {
++                guard let conversation = conversationPendingClear else { return }
++                if model.clearConversationLocally(conversationID: conversation.id) {
++                    model.haptics.warning()
++                }
++                conversationPendingClear = nil
++            }
++        } message: {
++            Text("联系人与信任关系会保留，但本机这段对话的消息和附件会被删除。此操作不会影响对方设备。")
++        }
+         .background(VeilAmbientBackground())
+         .background(
+             NavigationLink(
+@@ -304,6 +335,11 @@ struct ChatView: View {
      @State private var replyingTo: ChatMessage?
      @State private var showsSearchBar = false
      @State private var searchQuery = ""
@@ -13,7 +108,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
      @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
      @State private var hasOlderMessages = false
      @State private var messageReloadGeneration = 0
-@@ -487,6 +492,18 @@ struct ChatView: View {
+@@ -487,6 +523,18 @@ struct ChatView: View {
                  .onChange(of: messages.last?.id) { _ in
                      if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
                  }
@@ -32,7 +127,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
              }
  
              VStack(spacing: 0) {
-@@ -655,6 +672,17 @@ struct ChatView: View {
+@@ -655,6 +703,17 @@ struct ChatView: View {
                      } label: {
                          Label("搜索聊天", systemImage: "magnifyingglass")
                      }
@@ -50,7 +145,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                      Button { showsAgentAssistant = true } label: {
                          Label("灵核助手", systemImage: "sparkles")
                      }
-@@ -676,7 +704,10 @@ struct ChatView: View {
+@@ -676,7 +735,10 @@ struct ChatView: View {
          .onDisappear {
              model.setConversationVisible(conversation.id, visible: false)
          }
@@ -62,7 +157,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
          .onChange(of: searchQuery) { value in
              let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
              if showsSearchBar, !query.isEmpty, !loadedFullHistoryForSearch {
-@@ -692,6 +723,28 @@ struct ChatView: View {
+@@ -692,6 +754,28 @@ struct ChatView: View {
          .sheet(isPresented: $showsAgentAssistant) {
              AgentConversationAssistantSheet(model: model, conversation: conversation, messages: messages)
          }
@@ -91,7 +186,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
          .sheet(isPresented: $showsMiniGames, onDismiss: { miniGameInitialSessionID = nil }) {
              MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
          }
-@@ -765,6 +818,52 @@ struct ChatView: View {
+@@ -765,6 +849,52 @@ struct ChatView: View {
          }
      }
  

@@ -13,6 +13,8 @@
 - **表达转换改变语气**：所有转换结果先预览，且只回填草稿；不自动发送，用户可继续编辑或取消。
 - **超限分段语义**：首版按扩展字形保证字节安全，不擅自按语义重写；用户在预览中确认各段边界。
 - **输入规模**：实时分析为线性复杂度；仍需真机验证超长粘贴下的输入延迟，必要时增加 debounce。
+- **误触清空**：快捷入口提升可达性，但明确关闭 `allowsFullSwipe` 并保留二次确认；不会提供无确认的一键删除。
+- **传输中清空**：复用数据库原子阻断；接收中附件存在时整体失败并通过 `alertMessage` 告知，不尝试部分删除。
 
 ## 重叠
 
@@ -20,6 +22,7 @@
 - 历史 Inbox 中 `ui-rhythm-token-foundation-001` 含 ConversationViews 字体 token hunk，但该批次已进入 main；若 Governor 重新处理旧包，应以当前语义仲裁。
 - 未发现当前开放 Inbox 提案新增同类会话索引、修改 `ConversationWorkspace` 或相同工具栏入口。
 - 消息锻造台与聊天编辑框共用 `draft`，但不修改发送管线；Governor 合并同期 composer 改动时需保留“只回填、不发送”的边界。
+- 快速清空仅增加 `ConversationViews.swift` 入口，和本提案原有聊天菜单接线属于同一文件，因此合并在同一修订，避免重复 PR 互相覆盖。
 - PR #51 修改 `VeilLinkApp.swift`，PR #50 修改 AppModel/Settings；与本提案文件不重叠。
 
 ## 明确不做

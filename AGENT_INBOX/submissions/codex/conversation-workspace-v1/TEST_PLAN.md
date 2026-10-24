@@ -41,9 +41,13 @@
 10. 输入 16 KB 边界、中文、组合 emoji 和超限文本，核对字节数与分段预览。
 11. 输入测试令牌/私钥标记，确认“回填”禁用且界面、日志、剪贴板均不出现秘密副本。
 12. 从已有草稿打开锻造台并回填，确认只替换编辑框、不自动发送、不改变回复上下文。
+13. 在手机会话列表右滑和 iPad 分栏列表右滑，确认均显示“清空”，且完整滑动不会直接执行。
+14. 长按会话选择“清空本地聊天记录”，分别验证取消与确认；确认后联系人和信任保留、消息/附件清除、预览为空、未读归零。
+15. 附件正在接收时从两个快捷入口尝试清空，确认操作被拒绝、错误可见且消息与传输状态保持完整。
 
 ## 当前验证
 
 - `git apply --check AGENT_INBOX/submissions/codex/conversation-workspace-v1/PATCH.diff`：PASS。
 - `git diff --check -- AGENT_INBOX/submissions/codex/conversation-workspace-v1`：PASS。
 - 当前云环境没有 Swift/Xcode，因此未宣称 iOS 编译或 XCTest 已通过。
+- 数据层清空语义已有 `DatabaseStoreTests.testClearConversationDeletesLocalHistoryButKeepsContactAndConversation` 与 `testIncompleteInboundImageBlocksLocalDeleteAndConversationClear` 覆盖；本修订新增的是列表 UI 接线，仍需上述真机交互验证。
