@@ -1,5 +1,5 @@
 import XCTest
-@testable import VeilMegaEngines
+@testable import VeilLink
 
 final class VeilStationChronicleTests: XCTestCase {
     typealias E = VeilStationChronicle

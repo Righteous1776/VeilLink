@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import VeilBackupPreflight
+@testable import VeilLink
 
 final class VeilBackupPreflightPolicyTests: XCTestCase {
     private typealias P = VeilBackupPreflightPolicy

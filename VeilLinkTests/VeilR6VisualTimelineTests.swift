@@ -1,9 +1,5 @@
 import XCTest
-#if canImport(VeilMegaEngines)
-@testable import VeilMegaEngines
-#elseif canImport(VeilLink)
 @testable import VeilLink
-#endif
 
 final class VeilR6VisualTimelineTests: XCTestCase {
     typealias V=VeilRhythmVisualTimeline
