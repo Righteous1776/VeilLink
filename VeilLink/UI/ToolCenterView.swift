@@ -957,7 +957,7 @@ struct VeilLinkPulseToolView: View {
 
 private let veilToolTextByteLimit = 128 * 1_024
 
-private enum VeilToolClipboard {
+enum VeilToolClipboard {
     static func copy(_ text: String) {
         guard !text.isEmpty else { return }
         let item: [String: Any] = [UTType.utf8PlainText.identifier: text]
