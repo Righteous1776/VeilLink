@@ -1,0 +1,7 @@
+# Advisory change plan only — official upstream binary must not be committed to Inbox.
+# Proposed source file (to be applied by Integration Governor on isolated integration branch):
+# Tools/VNPort/verify_monogatari_vendor.py
+# Source: this submission's FILES/Tools/VNPort/verify_monogatari_vendor.py
+# Lock document: this submission's VENDOR_LOCK.json
+# Existing earlier separate R0 candidate proposal remains the source for WKWebView
+# native glue; this submission intentionally changes no product files itself.
