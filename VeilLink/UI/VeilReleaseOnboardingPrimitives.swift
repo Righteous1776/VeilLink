@@ -265,6 +265,7 @@ struct VeilActivationMorphCore: View {
     }
 }
 
+@MainActor
 struct VeilOnboardingHaptics {
     static func selection() {
         let generator = UISelectionFeedbackGenerator()
