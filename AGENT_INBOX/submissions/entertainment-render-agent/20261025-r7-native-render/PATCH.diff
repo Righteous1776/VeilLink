@@ -1,3 +1,177 @@
+diff --git a/VeilLink/Entertainment/Rendering/VeilRenderGeometry.swift b/VeilLink/Entertainment/Rendering/VeilRenderGeometry.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Entertainment/Rendering/VeilRenderGeometry.swift
+@@ -0,0 +1,66 @@
++import Foundation
++
++/// Renderer-neutral, UIKit TOP-LEFT coordinate system measured in logical points.
++/// Never confuse points, physical pixels or SpriteKit Y-up world coordinates.
++public enum VeilRenderGeometry {
++    public struct Point: Equatable, Sendable { public var x: Double; public var y: Double
++        public init(_ x: Double, _ y: Double) { self.x = x; self.y = y }
++    }
++    public struct Size: Equatable, Sendable { public var width: Double; public var height: Double
++        public init(_ width: Double, _ height: Double) { self.width = width; self.height = height }
++        public var valid: Bool { width.isFinite && height.isFinite && width > 0 && height > 0 }
++    }
++    public struct Insets: Equatable, Sendable { public var top, left, bottom, right: Double
++        public init(top: Double = 0, left: Double = 0, bottom: Double = 0, right: Double = 0) {
++            self.top = top; self.left = left; self.bottom = bottom; self.right = right
++        }
++        public var valid: Bool { [top, left, bottom, right].allSatisfy { $0.isFinite && $0 >= 0 } }
++    }
++    public struct Rect: Equatable, Sendable {
++        public let x, y, width, height: Double
++        public func contains(_ p: Point) -> Bool {
++            x <= p.x && p.x <= x + width && y <= p.y && p.y <= y + height
++        }
++    }
++    public struct Projection: Equatable, Sendable {
++        public let canvas: Size
++        public let available: Rect
++        public let viewport: Rect
++        public let scale: Double
++        public let pixelsPerPoint: Double
++        public func toView(_ logical: Point) -> Point {
++            Point(viewport.x + logical.x * scale, viewport.y + logical.y * scale)
++        }
++        public func toLogical(_ view: Point) -> Point? {
++            guard viewport.contains(view) else { return nil } // Letterbox is never tappable.
++            return Point((view.x - viewport.x) / scale, (view.y - viewport.y) / scale)
++        }
++        public func toSpriteKit(_ logical: Point) -> Point {
++            Point(logical.x, canvas.height - logical.y)
++        }
++        public var aspectDistortion: Double { abs(viewport.width / canvas.width - viewport.height / canvas.height) }
++        public var drawablePixels: Size { Size(viewport.width * pixelsPerPoint, viewport.height * pixelsPerPoint) }
++    }
++    public enum Failure: Error, Equatable { case invalidCanvas, invalidView, invalidInsets, noDrawableArea, invalidScale }
++    /// aspectFIT: preserve whole interactive canvas on every device, with symmetric letterboxing.
++    /// Safe-area applies only when the container has not already been inset by SwiftUI/UIKit.
++    public static func fit(canvas: Size, in view: Size, insets: Insets = .init(), pixelsPerPoint: Double = 2) throws -> Projection {
++        guard canvas.valid else { throw Failure.invalidCanvas }
++        guard view.valid else { throw Failure.invalidView }
++        guard insets.valid else { throw Failure.invalidInsets }
++        guard pixelsPerPoint.isFinite && pixelsPerPoint > 0 && pixelsPerPoint <= 8 else { throw Failure.invalidScale }
++        let width = view.width - insets.left - insets.right
++        let height = view.height - insets.top - insets.bottom
++        guard width > 0 && height > 0 else { throw Failure.noDrawableArea }
++        let scale = min(width / canvas.width, height / canvas.height)
++        guard scale.isFinite && scale > 0 else { throw Failure.noDrawableArea }
++        let viewportW = canvas.width * scale
++        let viewportH = canvas.height * scale
++        return Projection(canvas: canvas,
++                available: Rect(x: insets.left, y: insets.top, width: width, height: height),
++                viewport: Rect(x: insets.left + (width - viewportW) * 0.5,
++                               y: insets.top + (height - viewportH) * 0.5,
++                               width: viewportW, height: viewportH),
++                scale: scale, pixelsPerPoint: pixelsPerPoint)
++    }
++}
+diff --git a/VeilLink/Entertainment/Rendering/VeilFramePacer.swift b/VeilLink/Entertainment/Rendering/VeilFramePacer.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Entertainment/Rendering/VeilFramePacer.swift
+@@ -0,0 +1,58 @@
++import Foundation
++
++/// Fixed-step simulation clock separate from the renderer's variable refresh.
++/// Prevents background catch-up storms and long-frame physics explosions.
++public struct VeilFramePacer: Sendable {
++    public struct Step: Equatable, Sendable {
++        public let simulationSteps: Int
++        public let stepSeconds: Double
++        public let interpolation: Double
++        public let droppedSeconds: Double
++    }
++    public static let fixedStep: Double = 1.0 / 60
++    private var previous: Double?
++    private var remainder = 0.0
++    public private(set) var totalDroppedSeconds = 0.0
++    public private(set) var totalSimSteps = 0
++    public init() {}
++    public mutating func reset() { previous = nil; remainder = 0 }
++    public mutating func advance(now: Double, maxCatchUpSteps: Int = 4) -> Step? {
++        guard now.isFinite, now >= 0, (1...8).contains(maxCatchUpSteps) else { return nil }
++        guard let last = previous else { previous = now; return Step(simulationSteps: 0, stepSeconds: Self.fixedStep, interpolation: 0, droppedSeconds: 0) }
++        guard now >= last else { return nil }
++        previous = now
++        // Never force 60 simulated seconds after a 60s background pause.
++        let delta = min(now - last, 0.25)
++        let dropped = max(0, now - last - delta)
++        remainder += delta
++        let requested = Int((remainder + 1e-10) / Self.fixedStep)
++        let steps = min(requested, maxCatchUpSteps)
++        remainder -= Double(steps) * Self.fixedStep
++        let cappedRemainder = min(remainder, Self.fixedStep * 0.999999)
++        let overflow = max(0, remainder - cappedRemainder)
++        remainder = cappedRemainder
++        totalDroppedSeconds += dropped + overflow
++        totalSimSteps += steps
++        return Step(simulationSteps: steps, stepSeconds: Self.fixedStep,
++                    interpolation: max(0, min(remainder / Self.fixedStep, 1)), droppedSeconds: dropped + overflow)
++    }
++}
++
++/// Rendering budgets are targets, not proof of physical-device performance.
++/// Limits only the local entertainment scene, not the chat application's global refresh.
++public struct VeilRenderBudget: Equatable, Sendable {
++    public enum Tier: String, Codable, Sendable { case legacy, balanced, high }
++    public let tier: Tier
++    public let targetFPS: Int
++    public let visibleNotes: Int
++    public let particleBudget: Int
++    public let maxSprites: Int
++    public init(tier: Tier) {
++        self.tier = tier
++        switch tier {
++        case .legacy: targetFPS = 30; visibleNotes = 5; particleBudget = 0; maxSprites = 48
++        case .balanced: targetFPS = 30; visibleNotes = 8; particleBudget = 16; maxSprites = 96
++        case .high: targetFPS = 60; visibleNotes = 12; particleBudget = 32; maxSprites = 160
++        }
++    }
++}
+diff --git a/VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift b/VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift
+@@ -0,0 +1,35 @@
++import Foundation
++
++/// Pure presentational projection, read-only from an existing session and timing frame.
++/// The visual note lane never chooses the judged lane; gameplay remains in LiveConductor.
++public enum VeilRhythmVisualTimeline {
++    public struct VisibleNote: Equatable, Sendable {
++        public let beat: Int
++        public let lane: Int
++        public let x, y: Double // canonical top-left 390x600 logical canvas
++        public let secondsUntilHit: Double
++    }
++    public static let canvas = VeilRenderGeometry.Size(390, 600)
++    public static let strikeY: Double = 500
++    public static let spawnY: Double = 80
++    public static let travelSeconds = 1.6
++
++    /// The playback time axis comes from the injected monotonic host clock, not animation frame indices.
++    public static func notes(seed: UInt64, district: Int, nextBeat: Int,
++                             secondsToNextBeat: Double?, capacity: Int = 8) -> [VisibleNote] {
++        guard let remaining = secondsToNextBeat, remaining.isFinite, (0..<4).contains(district),
++              (0..<16).contains(nextBeat), (1...16).contains(capacity),
++              let next = VeilRhythmExpedition.note(seed: seed, district: district, beat: nextBeat) else { return [] }
++        var result: [VisibleNote] = []
++        for beat in nextBeat..<min(16, nextBeat + capacity) {
++            guard let note = VeilRhythmExpedition.note(seed: seed, district: district, beat: beat) else { break }
++            let seconds = remaining + note.nominalTime - next.nominalTime
++            guard seconds >= -0.18 && seconds <= travelSeconds else { continue }
++            let unit = max(0, min(1, 1 - seconds / travelSeconds))
++            let x = (Double(note.lane) + 0.5) * canvas.width / 4
++            let y = spawnY + (strikeY - spawnY) * unit
++            result.append(VisibleNote(beat: beat, lane: note.lane, x: x, y: y, secondsUntilHit: seconds))
++        }
++        return result
++    }
++}
 diff --git a/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift b/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift
 new file mode 100644
 --- /dev/null
@@ -117,11 +291,268 @@ new file mode 100644
 +                     elapsedSeconds: intervals.reduce(0,+))
 +    }
 +}
-diff --git a/VeilLinkTests/VeilR7RenderCacheSmokeTests.swift b/VeilLinkTests/VeilR7RenderCacheSmokeTests.swift
+diff --git a/VeilLink/Entertainment/Rendering/VeilRhythmNativeScene.swift b/VeilLink/Entertainment/Rendering/VeilRhythmNativeScene.swift
 new file mode 100644
 --- /dev/null
-+++ b/VeilLinkTests/VeilR7RenderCacheSmokeTests.swift
-@@ -0,0 +1,29 @@
++++ b/VeilLink/Entertainment/Rendering/VeilRhythmNativeScene.swift
+@@ -0,0 +1,135 @@
++#if canImport(UIKit) && canImport(SpriteKit)
++import UIKit
++import SpriteKit
++import SwiftUI
++
++/// R6 rendering-only scene, intentionally touch transparent.
++/// SpriteKit paints with a FIXED 390x600 coordinate system and aspectFit scaling.
++/// Logic and judgement are owned by VeilRhythmLiveConductor, not render frames.
++@MainActor
++final class VeilRhythmNativeScene: SKScene {
++    struct Snapshot {
++        let seed: UInt64
++        let district: Int
++        let nextBeat: Int
++        let secondsToNextBeat: Double?
++        let sampledUptime: Double
++        let running: Bool
++    }
++    private let maxNotePool = VeilRenderBudget(tier: .legacy).visibleNotes
++    private var notes: [SKShapeNode] = []
++    private var latest: Snapshot?
++    private var cachedChart: VeilRhythmRenderCache?
++    private var stats = VeilRenderFrameStats()
++    private let noteColor = UIColor(red: 0.27, green: 0.89, blue: 1, alpha: 1)
++    private let rail = UIColor(red: 0.21, green: 0.30, blue: 0.39, alpha: 1)
++
++    override init(size: CGSize) {
++        super.init(size: size)
++        self.scaleMode = .aspectFit  // DO NOT replace with .fill or .resizeFill.
++        self.anchorPoint = .zero
++        self.backgroundColor = UIColor(red: 0.025, green: 0.036, blue: 0.08, alpha: 1)
++    }
++    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("Use init(size:)") }
++    override func didMove(to view: SKView) {
++        if !notes.isEmpty { return }
++        // All geometry measured in virtual points; no physical pixel sizes.
++        for lane in 0..<4 {
++            let cx = CGFloat(Double(lane) + 0.5) * (size.width / 4)
++            let railNode = SKShapeNode(rectOf: CGSize(width: size.width / 4 - 12, height: 460), cornerRadius: 13)
++            railNode.fillColor = rail.withAlphaComponent(0.18)
++            railNode.strokeColor = rail.withAlphaComponent(0.52)
++            railNode.lineWidth = 1
++            railNode.position = CGPoint(x: cx, y: size.height - 300)
++            railNode.zPosition = 0
++            addChild(railNode)
++        }
++        let strike = SKShapeNode(rectOf: CGSize(width: size.width - 30, height: 3))
++        strike.position = CGPoint(x: size.width * 0.5, y: size.height - CGFloat(VeilRhythmVisualTimeline.strikeY))
++        strike.fillColor = UIColor(red: 1, green: 0.7, blue: 0.4, alpha: 0.94)
++        strike.strokeColor = .clear
++        strike.zPosition = 3
++        addChild(strike)
++        for _ in 0..<maxNotePool {
++            let n = SKShapeNode(rectOf: CGSize(width: 64, height: 20), cornerRadius: 9)
++            n.fillColor = noteColor
++            n.strokeColor = .white.withAlphaComponent(0.55)
++            n.lineWidth = 1.5
++            n.zPosition = 5
++            n.isHidden = true
++            addChild(n)
++            notes.append(n)
++        }
++    }
++    func apply(_ snapshot: Snapshot) {
++        if cachedChart?.seed != snapshot.seed || cachedChart?.district != snapshot.district {
++            cachedChart = VeilRhythmRenderCache(seed: snapshot.seed, district: snapshot.district)
++        }
++        latest = snapshot
++    }
++    override func willMove(from view: SKView) {
++        latest = nil
++        cachedChart = nil
++        stats.reset()
++        super.willMove(from: view)
++    }
++    /// This is callback cadence, NOT measured GPU time or proof of achieved FPS.
++    var diagnosticCadence: VeilRenderFrameStats.Report { stats.report }
++    override func update(_ currentTime: TimeInterval) {
++        stats.observe(currentTime)
++        guard let latest = latest,
++              let seconds = latest.secondsToNextBeat,
++              let cache = cachedChart else { notes.forEach { $0.isHidden = true }; return }
++        // Freeze a paused chart, but NEVER freeze an out-of-date running chart.
++        // Host and renderer both sample ProcessInfo.systemUptime.
++        let state = VeilRenderSnapshotWatchdog.check(
++            now: ProcessInfo.processInfo.systemUptime,
++            sampledAt: latest.sampledUptime,
++            running: latest.running)
++        guard case .fresh(let elapsed) = state else {
++            notes.forEach { $0.isHidden = true }
++            return
++        }
++        let visible = cache.visible(nextBeat: latest.nextBeat,
++                                    secondsToNextBeat: seconds - elapsed,
++                                    capacity: maxNotePool)
++        for (index, node) in notes.enumerated() {
++            guard index < visible.count else { node.isHidden = true; continue }
++            let item = visible[index]
++            node.position = CGPoint(x: item.x, y: size.height - item.y)
++            node.isHidden = false
++        }
++    }
++}
++
++/// No gestures or buttons live INSIDE SKView. SwiftUI owns accessible input below.
++/// Coordinator retains one scene, preventing scene recreation during View updates.
++struct VeilRhythmNativeStage: UIViewRepresentable {
++    let snapshot: VeilRhythmNativeScene.Snapshot
++    func makeCoordinator() -> Coordinator { Coordinator() }
++    @MainActor final class Coordinator {
++        let scene = VeilRhythmNativeScene(size: CGSize(width: 390, height: 600))
++    }
++    func makeUIView(context: Context) -> SKView {
++        let sk = SKView(frame: .zero)
++        sk.backgroundColor = .black
++        sk.isUserInteractionEnabled = false
++        sk.isMultipleTouchEnabled = false
++        sk.preferredFramesPerSecond = 30 // requested, not guaranteed actual FPS
++        sk.isAsynchronous = true
++        sk.ignoresSiblingOrder = true // every node has explicit zPosition
++        sk.shouldCullNonVisibleNodes = true
++        sk.showsFPS = false
++        sk.showsNodeCount = false
++        sk.presentScene(context.coordinator.scene)
++        return sk
++    }
++    func updateUIView(_ uiView: SKView, context: Context) {
++        context.coordinator.scene.apply(snapshot)
++    }
++    static func dismantleUIView(_ uiView: SKView, coordinator: Coordinator) {
++        uiView.isPaused = true
++        uiView.presentScene(nil)
++    }
++}
++#endif
+diff --git a/VeilLink/Entertainment/Rendering/VeilRhythmR6NativeGameView.swift b/VeilLink/Entertainment/Rendering/VeilRhythmR6NativeGameView.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Entertainment/Rendering/VeilRhythmR6NativeGameView.swift
+@@ -0,0 +1,112 @@
++#if canImport(UIKit) && canImport(SpriteKit)
++import SwiftUI
++import Foundation
++
++/// R7 improved iOS15 native-scene game prototype. Does not attach UIWindow recognizers,
++/// alter existing GameLobby, or mutate transport/database/key material.
++struct VeilRhythmR6NativeGameView: View {
++    @Environment(\.scenePhase) private var scenePhase
++    @State private var game = VeilRhythmLiveConductor(seed: 20261025)
++    @State private var nowValue = 0.0
++    @State private var status = "准备开始：请在音符到达金色判定线时按下对应轨道。"
++    @State private var initiated = false
++    private let titles = ["左一", "左二", "右二", "右一"]
++    private func now() -> Double { ProcessInfo.processInfo.systemUptime }
++    var body: some View {
++        GeometryReader { geometry in
++            VStack(spacing: 0) {
++                ScrollView {
++                VStack(spacing: 12) {
++                    Text("雨夜回声 · 原生渲染 R7").font(.headline)
++                    Text("SpriteKit 画面 · Swift 游戏逻辑 · 不接入网络")
++                        .font(.caption).foregroundColor(.secondary)
++                    TimelineView(.animation(minimumInterval: 1.0 / 12.0, paused: !game.isRunning)) { timeline in
++                        VStack(spacing: 9) {
++                            let frame = game.frame(at: nowValue)
++                            Text("区域 \(frame.district + 1)/4 · 节拍 \(min(frame.beat+1,16))/16 · 分数 \(frame.score) · 能量 \(frame.focus)")
++                                .font(.caption.monospacedDigit())
++                            VeilRhythmNativeStage(snapshot: .init(
++                                seed: game.session.seed,
++                                district: frame.district, nextBeat: frame.beat,
++                                secondsToNextBeat: frame.secondsToBeat,
++                                sampledUptime: nowValue, running: frame.running))
++                                .aspectRatio(390.0 / 600.0, contentMode: .fit)
++                                .frame(height: min(400, max(200, geometry.size.height * 0.42)))
++                                .frame(maxWidth: 440)
++                                .frame(maxWidth: .infinity)
++                                .accessibilityLabel("四轨节奏画面，底部有可操作的轨道按钮")
++                                .accessibilityAddTraits(.isImage)
++                        }
++                        .onChange(of: timeline.date) { _ in tick() }
++                    }
++                    Text(status).font(.caption).frame(maxWidth: .infinity, alignment: .leading)
++                    HStack {
++                        if !initiated {
++                            Button("开始演奏") { begin() }.buttonStyle(.borderedProminent)
++                        } else if game.isPaused {
++                            Button("恢复") { resume() }.buttonStyle(.borderedProminent)
++                        } else if game.isRunning {
++                            Button("暂停") { pause() }.buttonStyle(.bordered)
++                        }
++                        Button("重来") { game = .init(seed: 20261025); initiated = false; nowValue = now(); status = "重置完成" }
++                            .buttonStyle(.bordered)
++                    }
++                    if game.session.districtCompleted && game.session.phase == .playing {
++                        Button("进入下一幕") { travel() }.buttonStyle(.borderedProminent)
++                    }
++                    if game.session.phase != .playing { Text(game.session.phase == .cleared ? "通关" : "本局结束") }
++                }
++                .padding(12)
++                }
++                laneDock // Fixed bottom dock: scrolling artwork cannot steal taps.
++            }
++        }
++        .navigationTitle("节律远征")
++        .onChange(of: scenePhase) { phase in if phase != .active { pause() } }
++        .onDisappear { pause() }
++    }
++    private var laneDock: some View {
++        HStack(spacing: 6) {
++            ForEach(0..<4, id: \.self) { lane in
++                Button(titles[lane]) { hit(lane) }
++                    .buttonStyle(.borderedProminent)
++                    .frame(maxWidth: .infinity, minHeight: 56)
++                    .disabled(!game.isRunning)
++                    .accessibilityLabel("第 \(lane + 1) 轨，\(titles[lane])")
++            }
++        }
++        .padding(.horizontal, 12)
++        .padding(.vertical, 8)
++        .background(Color(.secondarySystemBackground))
++    }
++    private func begin() {
++        let t = now(); do { try game.start(at:t); nowValue=t; initiated=true; status="已开始" }
++        catch { status="无法开始：\(error)" }
++    }
++    private func hit(_ lane:Int) {
++        let t=now()
++        do {
++            let quality=try game.tap(lane:lane,at:t)
++            nowValue=t
++            status="判定 \(quality)"
++        } catch VeilRhythmLiveConductor.Failure.tooEarly { status="尚未到达判定线" }
++          catch { status="操作未生效：\(error)" }
++    }
++    private func tick() {
++        guard game.isRunning else { return }
++        let t=now(); do { let skipped=try game.advance(to:t); nowValue=t; if skipped>0 { status="漏击 \(skipped) 音" } }
++        catch { status="计时异常：\(error)" }
++    }
++    private func pause() {
++        guard game.isRunning else { return }
++        do { try game.pause(at:now()); status="已暂停" } catch { status="暂停错误：\(error)" }
++    }
++    private func resume() {
++        let t=now(); do { try game.resume(at:t); nowValue=t; status="继续" } catch { status="恢复错误：\(error)" }
++    }
++    private func travel() {
++        let t=now(); do { try game.travel(at:t); try game.start(at:t); nowValue=t; status="新章节开始" }
++        catch { status="切换失败：\(error)" }
++    }
++}
++#endif
+diff --git a/VeilLinkTests/VeilR6RenderGeometryTests.swift b/VeilLinkTests/VeilR6RenderGeometryTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilR6RenderGeometryTests.swift
+@@ -0,0 +1,67 @@
 +import XCTest
 +#if canImport(VeilMegaEngines)
 +@testable import VeilMegaEngines
@@ -129,33 +560,259 @@ new file mode 100644
 +@testable import VeilLink
 +#endif
 +
-+final class VeilR7RenderCacheSmokeTests: XCTestCase {
-+    func testCacheParityAcrossDistricts() throws {
++final class VeilR6RenderGeometryTests: XCTestCase {
++    typealias G = VeilRenderGeometry
++    func testNoAspectDistortionAcrossScreens() throws {
++        let devices = [G.Size(375,667), G.Size(390,844), G.Size(428,926), G.Size(768,1024), G.Size(1024,768), G.Size(320,568), G.Size(800,600), G.Size(390,390)]
++        for device in devices {
++            let p = try G.fit(canvas: .init(390,600), in: device)
++            XCTAssertEqual(p.aspectDistortion, 0, accuracy: 1e-9)
++            XCTAssertLessThanOrEqual(p.viewport.width, device.width+1e-9)
++            XCTAssertLessThanOrEqual(p.viewport.height, device.height+1e-9)
++        }
++    }
++    func testRoundTripScreenTouchMapping() throws {
++        for device in [G.Size(375,667), G.Size(390,844), G.Size(768,1024), G.Size(1024,768)] {
++            let p = try G.fit(canvas: .init(390,600), in: device)
++            for pt in [G.Point(0,0), G.Point(100,200), G.Point(195,300), G.Point(390,600)] {
++                let roundtrip = try XCTUnwrap(p.toLogical(p.toView(pt)))
++                XCTAssertEqual(roundtrip.x, pt.x, accuracy: 1e-7)
++                XCTAssertEqual(roundtrip.y, pt.y, accuracy: 1e-7)
++            }
++        }
++    }
++    func testLetterboxIsNotInteractive() throws {
++        let p = try G.fit(canvas: .init(390,600), in: .init(1024,768))
++        XCTAssertNil(p.toLogical(.init(0,0)))
++        XCTAssertNil(p.toLogical(.init(1024,768)))
++        XCTAssertNotNil(p.toLogical(p.toView(.init(195,300))))
++    }
++    func testSafeInsetsAreRespected() throws {
++        let p = try G.fit(canvas: .init(390,600), in: .init(390,844), insets: .init(top: 47, bottom: 34))
++        XCTAssertGreaterThanOrEqual(p.viewport.y,47)
++        XCTAssertLessThanOrEqual(p.viewport.y+p.viewport.height,810)
++    }
++    func testRejectInvalidDimensionsAndInsets() throws {
++        XCTAssertThrowsError(try G.fit(canvas:.init(0,600),in:.init(300,500)))
++        XCTAssertThrowsError(try G.fit(canvas:.init(390,600),in:.init(.nan,500)))
++        XCTAssertThrowsError(try G.fit(canvas:.init(390,600),in:.init(100,100),insets:.init(top:80,bottom:80)))
++        XCTAssertThrowsError(try G.fit(canvas:.init(390,600),in:.init(100,100),pixelsPerPoint:.infinity))
++    }
++    func testSpriteKitYFlipsOnceOnly() throws {
++        let p = try G.fit(canvas: .init(390,600), in:.init(390,600))
++        XCTAssertEqual(p.toSpriteKit(.init(200,80)),.init(200,520))
++        XCTAssertEqual(p.toSpriteKit(.init(200,500)),.init(200,100))
++    }
++    func testPixelSizeOnlyChangesDensity() throws {
++        let p1 = try G.fit(canvas: .init(390,600), in:.init(390,600),pixelsPerPoint:1)
++        let p3 = try G.fit(canvas: .init(390,600), in:.init(390,600),pixelsPerPoint:3)
++        XCTAssertEqual(p1.viewport,p3.viewport)
++        XCTAssertEqual(p3.drawablePixels.width,3*p1.drawablePixels.width)
++    }
++    func testFuzzViewportsAreFinite() throws {
++        for w in stride(from: 240.0, through: 1280.0, by: 17.0) {
++            for h in stride(from: 240.0, through: 930.0, by: 37.0) {
++                let p = try G.fit(canvas: .init(390,600), in:.init(w,h))
++                XCTAssertTrue(p.scale.isFinite)
++                XCTAssertEqual(p.aspectDistortion,0,accuracy:1e-9)
++                XCTAssertNotNil(p.toLogical(p.toView(.init(195,300))))
++            }
++        }
++    }
++}
+diff --git a/VeilLinkTests/VeilR6FramePacerTests.swift b/VeilLinkTests/VeilR6FramePacerTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilR6FramePacerTests.swift
+@@ -0,0 +1,57 @@
++import XCTest
++#if canImport(VeilMegaEngines)
++@testable import VeilMegaEngines
++#elseif canImport(VeilLink)
++@testable import VeilLink
++#endif
++
++final class VeilR6FramePacerTests: XCTestCase {
++    func testFirstFrameHasNoTimeJump() {
++        var p=VeilFramePacer()
++        XCTAssertEqual(p.advance(now:200)?.simulationSteps,0)
++    }
++    func testSixtyFramesIsOneSecond() {
++        var p=VeilFramePacer()
++        _ = p.advance(now:0)
++        for i in 1...60 { _ = p.advance(now:Double(i)/60) }
++        XCTAssertEqual(p.totalSimSteps,60)
++    }
++    func testThirtyFPSStillHasSixtyLogicSteps() {
++        var p=VeilFramePacer()
++        _ = p.advance(now:0)
++        for i in 1...30 { _ = p.advance(now:Double(i)/30) }
++        XCTAssertEqual(p.totalSimSteps,60)
++    }
++    func testBackgroundGapIsCappedAndResetSafe() {
++        var p=VeilFramePacer()
++        _ = p.advance(now:0)
++        let step=p.advance(now:10000)!
++        XCTAssertLessThanOrEqual(step.simulationSteps,4)
++        XCTAssertGreaterThan(step.droppedSeconds,9999)
++        p.reset()
++        XCTAssertEqual(p.advance(now:10001)?.simulationSteps,0)
++    }
++    func testInvalidTimeDoesNotCorruptClock() {
++        var p=VeilFramePacer()
++        _ = p.advance(now:5)
++        XCTAssertNil(p.advance(now:.nan))
++        XCTAssertNil(p.advance(now:4))
++        XCTAssertEqual(p.advance(now:5+1.0/60)?.simulationSteps,1)
++    }
++    func testQualityBudgetsBoundMemoryAndParticles() {
++        let low=VeilRenderBudget(tier:.legacy)
++        let high=VeilRenderBudget(tier:.high)
++        XCTAssertEqual(low.targetFPS,30)
++        XCTAssertEqual(low.particleBudget,0)
++        XCTAssertLessThan(low.maxSprites,high.maxSprites)
++    }
++    func testInterpolationAlwaysValid() {
++        var p=VeilFramePacer()
++        _=p.advance(now:0)
++        for i in 1...200 {
++            let step=p.advance(now:Double(i)/41)!
++            XCTAssertGreaterThanOrEqual(step.interpolation,0)
++            XCTAssertLessThanOrEqual(step.interpolation,1)
++        }
++    }
++}
+diff --git a/VeilLinkTests/VeilR6VisualTimelineTests.swift b/VeilLinkTests/VeilR6VisualTimelineTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilR6VisualTimelineTests.swift
+@@ -0,0 +1,46 @@
++import XCTest
++#if canImport(VeilMegaEngines)
++@testable import VeilMegaEngines
++#elseif canImport(VeilLink)
++@testable import VeilLink
++#endif
++
++final class VeilR6VisualTimelineTests: XCTestCase {
++    typealias V=VeilRhythmVisualTimeline
++    func testOneNoteAtHitLine() throws {
++        let note=try XCTUnwrap(V.notes(seed:7,district:0,nextBeat:0,secondsToNextBeat:0).first)
++        XCTAssertEqual(note.y,V.strikeY,accuracy:1e-8)
++        XCTAssertEqual(note.beat,0)
++    }
++    func testFutureNoteStartsAtSpawnLine() throws {
++        let note=try XCTUnwrap(V.notes(seed:7,district:0,nextBeat:0,secondsToNextBeat:1.6).first)
++        XCTAssertEqual(note.y,V.spawnY,accuracy:1e-8)
++    }
++    func testAllFourLaneCentersAreInsideCanvas() {
++        for seed in UInt64(0)..<80 {
++            let arr=V.notes(seed:seed,district:0,nextBeat:0,secondsToNextBeat:0.5)
++            XCTAssertFalse(arr.isEmpty)
++            for note in arr {
++                XCTAssertTrue((0..<4).contains(note.lane))
++                XCTAssertGreaterThan(note.x,0)
++                XCTAssertLessThan(note.x,390)
++                XCTAssertGreaterThanOrEqual(note.y,V.spawnY)
++                XCTAssertLessThanOrEqual(note.y,V.strikeY)
++            }
++        }
++    }
++    func testInvalidFrameHasNoNotes() {
++        XCTAssertTrue(V.notes(seed:1,district:0,nextBeat:0,secondsToNextBeat:.nan).isEmpty)
++        XCTAssertTrue(V.notes(seed:1,district:-1,nextBeat:0,secondsToNextBeat:0).isEmpty)
++        XCTAssertTrue(V.notes(seed:1,district:0,nextBeat:16,secondsToNextBeat:0).isEmpty)
++    }
++    func testNoFutureLeakAcrossDistrict() {
++        let notes=V.notes(seed:1,district:3,nextBeat:15,secondsToNextBeat:1.2,capacity:10)
++        XCTAssertTrue(notes.allSatisfy { $0.beat==15 })
++    }
++    func testClockAnimationInvariantAcrossFPS() {
++        let at60=V.notes(seed:3,district:1,nextBeat:2,secondsToNextBeat:0.42)
++        let at30=V.notes(seed:3,district:1,nextBeat:2,secondsToNextBeat:0.42)
++        XCTAssertEqual(at60,at30)
++    }
++}
+diff --git a/VeilLinkTests/VeilR7RenderCacheTests.swift b/VeilLinkTests/VeilR7RenderCacheTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilR7RenderCacheTests.swift
+@@ -0,0 +1,70 @@
++import XCTest
++#if canImport(VeilMegaEngines)
++@testable import VeilMegaEngines
++#elseif canImport(VeilLink)
++@testable import VeilLink
++#endif
++
++final class VeilR7RenderCacheTests: XCTestCase {
++    typealias Cache = VeilRhythmRenderCache
++    typealias Watch = VeilRenderSnapshotWatchdog
++
++    func testAllDistrictsCanInitialize() {
++        for d in 0..<4 { XCTAssertNotNil(Cache(seed: 42, district: d)) }
++        XCTAssertNil(Cache(seed: 42, district: -1))
++        XCTAssertNil(Cache(seed: 42, district: 4))
++    }
++    func testCacheMatchesReferenceForOneHundredSeedsAllDistricts() throws {
 +        for seed in UInt64(0)..<100 {
 +            for district in 0..<4 {
-+                let cache = try XCTUnwrap(VeilRhythmRenderCache(seed: seed, district: district))
++                let cache = try XCTUnwrap(Cache(seed: seed, district: district))
 +                for beat in 0..<16 {
-+                    for time in [0.0, 0.5, 1.6] {
-+                        XCTAssertEqual(cache.visible(nextBeat:beat, secondsToNextBeat:time),
-+                          VeilRhythmVisualTimeline.notes(seed:seed,district:district,nextBeat:beat,secondsToNextBeat:time,capacity:5))
++                    for remaining in [-0.18, 0.0, 0.075, 0.5, 1.1, 1.6, 2.0] {
++                        let base = VeilRhythmVisualTimeline.notes(seed: seed, district: district,
++                                      nextBeat: beat, secondsToNextBeat: remaining, capacity: 5)
++                        XCTAssertEqual(cache.visible(nextBeat: beat, secondsToNextBeat: remaining, capacity: 5), base)
 +                    }
 +                }
 +            }
 +        }
 +    }
-+    func testRejectOutOfRangeAndStale() throws {
-+        XCTAssertNil(VeilRhythmRenderCache(seed: 1, district: 4))
-+        let cache = try XCTUnwrap(VeilRhythmRenderCache(seed: 1, district: 0))
-+        XCTAssertTrue(cache.visible(nextBeat: 16, secondsToNextBeat: 0).isEmpty)
-+        XCTAssertEqual(VeilRenderSnapshotWatchdog.check(now: 2, sampledAt: 1, running: true), .stale)
-+        XCTAssertEqual(VeilRenderSnapshotWatchdog.check(now: 2, sampledAt: 1, running: false), .fresh(0))
++    func testInvalidCapacityBeatAndClockProduceEmpty() throws {
++        let c = try XCTUnwrap(Cache(seed: 1, district: 3))
++        for k in [0, 17, -1] { XCTAssertTrue(c.visible(nextBeat: 2, secondsToNextBeat: 1, capacity:k).isEmpty) }
++        XCTAssertTrue(c.visible(nextBeat: -1, secondsToNextBeat: 0).isEmpty)
++        XCTAssertTrue(c.visible(nextBeat: 16, secondsToNextBeat: 0).isEmpty)
++        XCTAssertTrue(c.visible(nextBeat: 0, secondsToNextBeat: .infinity).isEmpty)
++        XCTAssertTrue(c.visible(nextBeat: 0, secondsToNextBeat: .nan).isEmpty)
++    }
++    func testStableVisualsIndifferentToRenderRate() throws {
++        let c = try XCTUnwrap(Cache(seed: 100, district: 2))
++        XCTAssertEqual(c.visible(nextBeat: 1, secondsToNextBeat: 0.25),
++                       c.visible(nextBeat: 1, secondsToNextBeat: 0.25))
++    }
++    func testSnapshotFreshProgression() {
++        if case .fresh(let age) = Watch.check(now: 50.1, sampledAt: 50, running: true) {
++            XCTAssertEqual(age, 0.1, accuracy: 1e-10)
++        } else { XCTFail("expected fresh snapshot") }
++        XCTAssertEqual(Watch.check(now: 50, sampledAt: 50, running: true), .fresh(0))
++    }
++    func testExpiredRunningSnapshotHidden() {
++        XCTAssertEqual(Watch.check(now: 51, sampledAt: 50, running: true), .stale)
++        XCTAssertEqual(Watch.check(now: 51, sampledAt: 50, running: false), .fresh(0))
++    }
++    func testClockSkewPolicy() {
++        XCTAssertEqual(Watch.check(now: 10, sampledAt: 10.01, running: true), .fresh(0))
++        XCTAssertEqual(Watch.check(now: 10, sampledAt: 10.2, running: true), .invalid)
++    }
++    func testInvalidInputsFailClosed() {
++        for v in [Double.nan, .infinity, -.infinity, -1] {
++            XCTAssertEqual(Watch.check(now: v, sampledAt: 10, running: true), .invalid)
++            XCTAssertEqual(Watch.check(now: 10, sampledAt: v, running: true), .invalid)
++        }
++    }
++    func testFrameClockStallPolicyAtBoundary() {
++        if case .fresh(let age) = Watch.check(now: 12 + Watch.maximumRunningAge,
++                                                  sampledAt: 12, running: true) {
++            XCTAssertEqual(age, Watch.maximumRunningAge, accuracy: 1e-10)
++        } else { XCTFail("boundary snapshot must still be visible") }
 +    }
 +}
-diff --git a/VeilLinkTests/VeilR7FrameStatsSmokeTests.swift b/VeilLinkTests/VeilR7FrameStatsSmokeTests.swift
+diff --git a/VeilLinkTests/VeilR7FrameStatsTests.swift b/VeilLinkTests/VeilR7FrameStatsTests.swift
 new file mode 100644
 --- /dev/null
-+++ b/VeilLinkTests/VeilR7FrameStatsSmokeTests.swift
-@@ -0,0 +1,23 @@
++++ b/VeilLinkTests/VeilR7FrameStatsTests.swift
+@@ -0,0 +1,68 @@
 +import XCTest
 +#if canImport(VeilMegaEngines)
 +@testable import VeilMegaEngines
@@ -163,19 +820,95 @@ new file mode 100644
 +@testable import VeilLink
 +#endif
 +
-+final class VeilR7FrameStatsSmokeTests: XCTestCase {
-+    func testBoundedRecentWindow() {
-+        var stats = VeilRenderFrameStats()
-+        for i in 0...400 { stats.observe(Double(i)/30) }
-+        XCTAssertEqual(stats.report.sampleCount, 240)
-+        XCTAssertEqual(stats.report.slowFrames, 0)
++final class VeilR7FrameStatsTests: XCTestCase {
++    func testEmptyReportAndInitialSample() {
++        var s = VeilRenderFrameStats()
++        XCTAssertEqual(s.report.sampleCount, 0)
++        s.observe(1)
++        XCTAssertEqual(s.report.sampleCount, 0)
 +    }
-+    func testNonfiniteAndBackgroundGapExcluded() {
-+        var stats = VeilRenderFrameStats()
-+        stats.observe(1)
-+        stats.observe(.nan)
-+        stats.observe(360)
-+        stats.observe(360.03)
-+        XCTAssertEqual(stats.report.sampleCount, 1)
++    func testThirtyFpsCadence() {
++        var s = VeilRenderFrameStats()
++        for i in 0...60 { s.observe(Double(i) / 30) }
++        XCTAssertEqual(s.report.sampleCount, 60)
++        XCTAssertEqual(s.report.medianIntervalMs, 1000.0/30.0, accuracy:0.001)
++        XCTAssertEqual(s.report.slowFrames, 0)
++    }
++    func testLongPauseNotCountedAsDroppedFrame() {
++        var s = VeilRenderFrameStats()
++        s.observe(1); s.observe(1.02); s.observe(200); s.observe(200.02)
++        XCTAssertEqual(s.report.sampleCount, 2)
++        XCTAssertEqual(s.report.slowFrames, 0)
++    }
++    func testRejectNaNAndBackwardsWithoutInflatingStats() {
++        var s = VeilRenderFrameStats()
++        s.observe(5)
++        s.observe(.nan); s.observe(.infinity); s.observe(-3)
++        s.observe(4)
++        s.observe(4.02)
++        XCTAssertEqual(s.report.sampleCount, 1)
++    }
++    func testSlowFramesCountWithinRing() {
++        var s = VeilRenderFrameStats()
++        s.observe(0)
++        s.observe(0.05)
++        s.observe(0.11)
++        XCTAssertEqual(s.report.slowFrames, 2)
++        XCTAssertEqual(s.report.sampleCount, 2)
++    }
++    func testRingBufferHardCapAndRecentSlowCount() {
++        var s = VeilRenderFrameStats()
++        s.observe(0)
++        s.observe(0.07)
++        for i in 1...400 { s.observe(0.07 + Double(i)*0.02) }
++        XCTAssertEqual(s.report.sampleCount, 240)
++        XCTAssertEqual(s.report.slowFrames, 0)
++        XCTAssertLessThan(s.report.elapsedSeconds, 5)
++    }
++    func testResetClearsCounters() {
++        var s = VeilRenderFrameStats()
++        s.observe(1);s.observe(1.05);s.reset()
++        XCTAssertEqual(s.report.sampleCount, 0)
++        s.observe(999)
++        XCTAssertEqual(s.report.sampleCount, 0)
++    }
++    func testDeterminismUnderIdenticalTraces() {
++        var a = VeilRenderFrameStats(), b = VeilRenderFrameStats()
++        for i in 0..<270 {
++            let t = Double(i)/30.0 + (i%9==0 ? 0.003 : 0)
++            a.observe(t);b.observe(t)
++        }
++        XCTAssertEqual(a.report,b.report)
 +    }
 +}
+diff --git a/VeilLinkTests/VeilRhythmNativeSceneSmokeTests.swift b/VeilLinkTests/VeilRhythmNativeSceneSmokeTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilRhythmNativeSceneSmokeTests.swift
+@@ -0,0 +1,26 @@
++#if canImport(UIKit) && canImport(SpriteKit)
++import XCTest
++import SpriteKit
++import UIKit
++@testable import VeilLink
++
++/// Apple-SDK-only tests. These are NOT executed by Linux SwiftPM.
++@MainActor final class VeilRhythmNativeSceneSmokeTests: XCTestCase {
++    func testSceneHasFixedCanvasAndAspectFit() {
++        let scene = VeilRhythmNativeScene(size: CGSize(width:390,height:600))
++        XCTAssertEqual(scene.size.width,390)
++        XCTAssertEqual(scene.size.height,600)
++        XCTAssertEqual(scene.scaleMode,.aspectFit)
++    }
++    func testDifferentViewportDoesNotMutateWorldSize() {
++        let scene = VeilRhythmNativeScene(size: CGSize(width:390,height:600))
++        let view = SKView(frame: CGRect(x:0,y:0,width:375,height:667))
++        view.isUserInteractionEnabled = false
++        view.presentScene(scene)
++        XCTAssertEqual(scene.size,CGSize(width:390,height:600))
++        view.frame = CGRect(x:0,y:0,width:1024,height:768)
++        XCTAssertEqual(scene.size,CGSize(width:390,height:600))
++        XCTAssertFalse(view.isUserInteractionEnabled)
++    }
++}
++#endif

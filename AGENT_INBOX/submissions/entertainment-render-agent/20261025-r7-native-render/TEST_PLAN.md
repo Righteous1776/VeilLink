@@ -1,7 +1,7 @@
-# Verification
+# R7 TEST PLAN
 
-PASS (local ZIP): Linux Swift 6.2.1, 128 XCTest / 0 failures (111 R6 +17 R7). R7 chart cache tested over 100 seeds × 4 districts ×16 beats ×7 timestamps against original function, plus watchdog 280ms, invalid clocks, ring buffer stress. Linux release compilation PASS, iOS source syntax parse PASS. Local 13-file add-only patch applies to a clean scratch git tree.
+**Executed:** Linux SwiftPM 128/128 XCTest; 100 seeds × 4 districts × 16 beats × 7 sample times exact reference parity; snapshot freshness, invalid time, fixed frame ring; Release build; Apple source syntax parse; patch applies with no whitespace errors.
 
-GitHub staged tests are smaller *smoke subsets* of the full local R7 suites, provided under FILES/ to enable review. They were not individually executed from this Inbox branch.
+**Missing:** macOS XcodeGen/iOS SDK typecheck, simulator XCTest+SwiftUI snapshots, physical iPhone7 15.8.3 tap/safe-area/dark/light, iPad, Core Animation/Metal tracing, thermal & battery tests.
 
-PENDING: XcodeGen iOS15 SwiftUI/SpriteKit typecheck, full XCTest on Apple SDK, iPhone7 15.8.3 physical touch and screenshot matrix, Apple performance tools GPU/thermal. This Inbox gate covers packaging, not runtime.
+**Governor:** first resolve PR #79 R5 dependency, reconcile #83 (superseded), P0 #64–66, then apply new source on isolated branch.
