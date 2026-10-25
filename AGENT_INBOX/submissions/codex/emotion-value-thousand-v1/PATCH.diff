@@ -1,12 +1,12 @@
 diff --git a/docs/features/VEILLINK_EMOTION_VALUE_1000_V1.md b/docs/features/VEILLINK_EMOTION_VALUE_1000_V1.md
 new file mode 100644
-index 0000000..3144143
+index 0000000..9c22d01
 --- /dev/null
 +++ b/docs/features/VEILLINK_EMOTION_VALUE_1000_V1.md
 @@ -0,0 +1,1014 @@
 +# VeilLink Emotion Value 1000 — Runtime Capability Catalog v2
 +
-+> 本目录与 `VeilEmotionGardenEngine.rituals` 一一对应：10 种状态 × 10 种互动 × 10 个场景 = 1000 个运行时可调用条目。每项都有稳定 ID、独立提示、持续时间、图标、筛选路径和完成动作；仍须经过 iOS 构建与真机验证后才可称为已上线。
++> 本目录与 `VeilEmotionGardenEngine.rituals` 一一对应：10 种状态 × 10 种互动 × 10 个场景 = 1000 个运行时可调用条目。每项都有稳定 ID、独立提示、独立三步操作、完成回响、持续时间、图标、筛选/搜索路径和完成动作；仍须经过 iOS 构建与真机验证后才可称为已上线。
 +
 +| ID | 状态 | 互动 | 场景 | 运行时键 | 入口 | 状态 |
 +|---|---|---|---|---|---|---|
@@ -1014,16 +1014,16 @@ index 0000000..3144143
 +## Runtime acceptance contract
 +
 +- `VeilEmotionGardenEngine.rituals.count == 1000`，ID 为连续的 `EV-0001...EV-1000`。
-+- 每个 ID 的提示文本唯一；每种状态有 100 项，每个“状态 + 场景”组合有 10 项且覆盖全部互动类型。
-+- 用户可通过两个选择器到达全部 1000 项；每项都能启动秒级倒计时、暂停/继续、重置并确认完成。每日三步只从当前状态与场景的 10 项中选择，不隐藏其他条目。
++- 每个 ID 的提示文本、三步操作组合及完成回响均唯一；每种状态有 100 项，每个“状态 + 场景”组合有 10 项且覆盖全部互动类型。
++- 用户可通过两个选择器或全库 ID/关键词搜索到达全部 1000 项；每项都能逐步勾选、启动秒级倒计时、暂停/继续、重置并确认完成。每日三步只从当前状态与场景的 10 项中选择，不隐藏其他条目。
 +- 所有条目离线运行、可跳过、不自动发送、不读取聊天、不上传状态，也不宣称诊断或治疗。
 +- `CANDIDATE-SOURCE` 表示完整源码已放入本提案，不表示已合并、已构建、已真机验证或已发布。
 diff --git a/VeilLink/Core/VeilEmotionGardenEngine.swift b/VeilLink/Core/VeilEmotionGardenEngine.swift
 new file mode 100644
-index 0000000..3a17c0f
+index 0000000..1416c4d
 --- /dev/null
 +++ b/VeilLink/Core/VeilEmotionGardenEngine.swift
-@@ -0,0 +1,228 @@
+@@ -0,0 +1,262 @@
 +import Foundation
 +
 +enum VeilEmotionTone: String, CaseIterable, Identifiable, Sendable {
@@ -1123,6 +1123,8 @@ index 0000000..3a17c0f
 +    let context: VeilEmotionContext
 +    let title: String
 +    let prompt: String
++    let steps: [String]
++    let completionNote: String
 +    let seconds: Int
 +    let symbol: String
 +}
@@ -1144,6 +1146,8 @@ index 0000000..3a17c0f
 +                        context: context,
 +                        title: "\(tone.title) · \(context.title) · \(kind.title)",
 +                        prompt: prompt(tone: tone, kind: kind, context: context),
++                        steps: steps(tone: tone, kind: kind, context: context),
++                        completionNote: "你完成了“\(tone.title) · \(context.title) · \(kind.title)”。不必立刻变好，愿意留出这段时间本身就算数。",
 +                        seconds: duration(kind, context: context),
 +                        symbol: symbol(kind)
 +                    ))
@@ -1251,25 +1255,66 @@ index 0000000..3a17c0f
 +        case .play: return "\(opening)允许 \(subject)和一点玩心同时存在：涂鸦、随手拍、哼一句旋律或看一眼天空。"
 +        }
 +    }
++
++    private static func steps(
++        tone: VeilEmotionTone,
++        kind: VeilEmotionRitualKind,
++        context: VeilEmotionContext
++    ) -> [String] {
++        let marker = "\(tone.title) · \(context.title)"
++        switch kind {
++        case .notice:
++            return ["[\(marker)] 放松下颌和肩膀。", "观察一个身体信号，不评价它。", "留意它在三次呼吸后有没有变化。"]
++        case .breath:
++            return ["[\(marker)] 找到不会影响安全的位置。", "跟随 3-1-4 节拍呼吸。", "最后一轮恢复自然呼吸并停留片刻。"]
++        case .name:
++            return ["[\(marker)] 先写下最先出现的感受词。", "再补两个更具体的词。", "选择其中最贴近现在的一个。"]
++        case .kindness:
++            return ["[\(marker)] 想象一位正在经历同样事情的朋友。", "写下一句不会催促对方的话。", "把称呼换成自己，再读一遍。"]
++        case .anchor:
++            return ["[\(marker)] 找出三个视觉细节。", "确认两个真实触感。", "听见一个近处或远处的声音。"]
++        case .gratitude:
++            return ["[\(marker)] 找一个今天真实发生的小片刻。", "写清它具体好在哪里。", "为它留下一句短短的感谢。"]
++        case .smallWin:
++            return ["[\(marker)] 选一个已经完成的小动作。", "说出它需要过哪一道阻力。", "用一句事实记录它，不贬低它。"]
++        case .connection:
++            return ["[\(marker)] 想到一位让你较安心的人。", "写一条不要求立即回复的消息。", "确认合适后再由你决定是否发送。"]
++        case .reset:
++            return ["[\(marker)] 选一个两分钟内能结束的动作。", "只完成这一件，不追加任务。", "完成后重新决定下一步。"]
++        case .play:
++            return ["[\(marker)] 任选涂鸦、哼唱、观察或随手拍。", "允许结果没有用途。", "在计时结束时留下一个你喜欢的细节。"]
++        }
++    }
 +}
 diff --git a/VeilLink/UI/VeilEmotionGardenView.swift b/VeilLink/UI/VeilEmotionGardenView.swift
 new file mode 100644
-index 0000000..b3422c1
+index 0000000..ca77d0e
 --- /dev/null
 +++ b/VeilLink/UI/VeilEmotionGardenView.swift
-@@ -0,0 +1,270 @@
+@@ -0,0 +1,331 @@
 +import SwiftUI
 +import Combine
 +
 +struct VeilEmotionGardenView: View {
 +    @State private var tone: VeilEmotionTone = .calm
 +    @State private var context: VeilEmotionContext = .morning
++    @State private var query = ""
 +    @State private var selected: VeilEmotionRitual?
 +    @State private var completedIDs = Set<String>()
 +    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 +
 +    private var path: [VeilEmotionRitual] {
 +        VeilEmotionGardenEngine.dailyPath(for: tone, context: context, date: Date())
++    }
++
++    private var displayedRituals: [VeilEmotionRitual] {
++        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
++        guard !needle.isEmpty else { return VeilEmotionGardenEngine.rituals(for: tone, context: context) }
++        return Array(VeilEmotionGardenEngine.rituals.lazy.filter {
++            $0.id.lowercased().contains(needle)
++                || $0.title.lowercased().contains(needle)
++                || $0.prompt.lowercased().contains(needle)
++        }.prefix(50))
 +    }
 +
 +    var body: some View {
@@ -1279,6 +1324,7 @@ index 0000000..b3422c1
 +                tonePicker
 +                contextPicker
 +                note
++                searchField
 +                VStack(alignment: .leading, spacing: 10) {
 +                    HStack {
 +                        Text("今日三步").font(.headline).foregroundColor(VeilTheme.text)
@@ -1288,9 +1334,13 @@ index 0000000..b3422c1
 +                    ForEach(path) { ritual in ritualCard(ritual) }
 +                }
 +                VStack(alignment: .leading, spacing: 10) {
-+                    Text("自己挑一个").font(.headline).foregroundColor(VeilTheme.text)
++                    HStack {
++                        Text(query.isEmpty ? "自己挑一个" : "全库搜索结果").font(.headline).foregroundColor(VeilTheme.text)
++                        Spacer()
++                        Text("\(displayedRituals.count)").font(.caption.monospacedDigit()).foregroundColor(VeilTheme.tertiaryText)
++                    }
 +                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 10)], spacing: 10) {
-+                        ForEach(VeilEmotionGardenEngine.rituals(for: tone, context: context)) { ritual in
++                        ForEach(displayedRituals) { ritual in
 +                            Button { selected = ritual } label: {
 +                                VStack(alignment: .leading, spacing: 8) {
 +                                    Image(systemName: ritual.symbol).font(.title3).foregroundColor(VeilTheme.gold)
@@ -1379,6 +1429,24 @@ index 0000000..b3422c1
 +            .veilCompactToolSurface(cornerRadius: 16)
 +    }
 +
++    private var searchField: some View {
++        HStack(spacing: 9) {
++            Image(systemName: "magnifyingglass").foregroundColor(VeilTheme.tertiaryText)
++            TextField("搜索 EV-编号、状态、场景或内容", text: $query)
++                .textInputAutocapitalization(.never)
++                .disableAutocorrection(true)
++            if !query.isEmpty {
++                Button { query = "" } label: {
++                    Image(systemName: "xmark.circle.fill").foregroundColor(VeilTheme.tertiaryText)
++                }
++                .accessibilityLabel("清空搜索")
++            }
++        }
++        .padding(.horizontal, 13)
++        .frame(height: 44)
++        .veilCompactToolSurface(cornerRadius: 14)
++    }
++
 +    private var contextPicker: some View {
 +        VStack(alignment: .leading, spacing: 8) {
 +            Text("你正在哪个场景？").font(.headline).foregroundColor(VeilTheme.text)
@@ -1437,6 +1505,7 @@ index 0000000..b3422c1
 +    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 +    @State private var remainingSeconds: Int
 +    @State private var isRunning = false
++    @State private var completedSteps = Set<Int>()
 +    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 +
 +    init(ritual: VeilEmotionRitual, completed: Bool, markCompleted: @escaping () -> Void) {
@@ -1448,12 +1517,30 @@ index 0000000..b3422c1
 +
 +    var body: some View {
 +        NavigationView {
-+            VStack(alignment: .leading, spacing: 20) {
++            ScrollView {
++                VStack(alignment: .leading, spacing: 20) {
 +                Image(systemName: ritual.symbol)
 +                    .font(.system(size: 40, weight: .medium))
 +                    .foregroundColor(VeilTheme.gold)
 +                Text(ritual.title).font(.title2.bold()).foregroundColor(VeilTheme.text)
 +                Text(ritual.prompt).font(.body).foregroundColor(VeilTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
++                VStack(alignment: .leading, spacing: 8) {
++                    ForEach(Array(ritual.steps.enumerated()), id: \.offset) { index, step in
++                        Button {
++                            if completedSteps.contains(index) { completedSteps.remove(index) }
++                            else { completedSteps.insert(index) }
++                        } label: {
++                            HStack(alignment: .top, spacing: 9) {
++                                Image(systemName: completedSteps.contains(index) ? "checkmark.circle.fill" : "circle")
++                                    .foregroundColor(completedSteps.contains(index) ? .green : VeilTheme.tertiaryText)
++                                Text(step).font(.subheadline).foregroundColor(VeilTheme.text).frame(maxWidth: .infinity, alignment: .leading)
++                            }
++                            .padding(10)
++                            .veilCompactToolSurface(cornerRadius: 12)
++                        }
++                        .buttonStyle(.plain)
++                    }
++                }
 +                countdown
 +                HStack(spacing: 10) {
 +                    Button {
@@ -1474,7 +1561,14 @@ index 0000000..b3422c1
 +                }
 +                Text("建议用时 \(ritual.seconds) 秒。可以暂停、重置或随时跳过。")
 +                    .font(.caption).foregroundColor(VeilTheme.tertiaryText)
-+                Spacer()
++                if completedSteps.count == ritual.steps.count || remainingSeconds == 0 {
++                    Text(ritual.completionNote)
++                        .font(.subheadline)
++                        .foregroundColor(VeilTheme.goldBright)
++                        .padding(12)
++                        .frame(maxWidth: .infinity, alignment: .leading)
++                        .veilCompactToolSurface(cornerRadius: 13)
++                }
 +                Button {
 +                    markCompleted()
 +                    dismiss()
@@ -1488,8 +1582,9 @@ index 0000000..b3422c1
 +                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 +                }
 +                .buttonStyle(VeilPressStyle())
++                }
++                .padding(22)
 +            }
-+            .padding(22)
 +            .background(VeilAmbientBackground())
 +            .navigationTitle("微小陪伴")
 +            .navigationBarTitleDisplayMode(.inline)
@@ -1530,10 +1625,10 @@ index 0000000..b3422c1
 +}
 diff --git a/VeilLinkTests/VeilEmotionGardenEngineTests.swift b/VeilLinkTests/VeilEmotionGardenEngineTests.swift
 new file mode 100644
-index 0000000..0968c48
+index 0000000..3de0e1a
 --- /dev/null
 +++ b/VeilLinkTests/VeilEmotionGardenEngineTests.swift
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,61 @@
 +import XCTest
 +@testable import VeilLink
 +
@@ -1542,7 +1637,9 @@ index 0000000..0968c48
 +        XCTAssertEqual(VeilEmotionGardenEngine.rituals.count, 1_000)
 +        XCTAssertEqual(Set(VeilEmotionGardenEngine.rituals.map(\.id)).count, 1_000)
 +        XCTAssertEqual(Set(VeilEmotionGardenEngine.rituals.map(\.prompt)).count, 1_000)
-+        XCTAssertTrue(VeilEmotionGardenEngine.rituals.allSatisfy { $0.seconds > 0 && !$0.prompt.isEmpty })
++        XCTAssertEqual(Set(VeilEmotionGardenEngine.rituals.map { $0.steps.joined(separator: "|") }).count, 1_000)
++        XCTAssertEqual(Set(VeilEmotionGardenEngine.rituals.map(\.completionNote)).count, 1_000)
++        XCTAssertTrue(VeilEmotionGardenEngine.rituals.allSatisfy { $0.seconds > 0 && !$0.prompt.isEmpty && $0.steps.count == 3 })
 +        XCTAssertEqual(VeilEmotionGardenEngine.rituals.first?.id, "EV-0001")
 +        XCTAssertEqual(VeilEmotionGardenEngine.rituals.last?.id, "EV-1000")
 +        XCTAssertEqual(VeilEmotionGardenEngine.ritual(id: "EV-1000")?.tone, .playful)

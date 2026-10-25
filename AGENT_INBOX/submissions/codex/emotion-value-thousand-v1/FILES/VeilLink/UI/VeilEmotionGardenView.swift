@@ -4,12 +4,23 @@ import Combine
 struct VeilEmotionGardenView: View {
     @State private var tone: VeilEmotionTone = .calm
     @State private var context: VeilEmotionContext = .morning
+    @State private var query = ""
     @State private var selected: VeilEmotionRitual?
     @State private var completedIDs = Set<String>()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var path: [VeilEmotionRitual] {
         VeilEmotionGardenEngine.dailyPath(for: tone, context: context, date: Date())
+    }
+
+    private var displayedRituals: [VeilEmotionRitual] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return VeilEmotionGardenEngine.rituals(for: tone, context: context) }
+        return Array(VeilEmotionGardenEngine.rituals.lazy.filter {
+            $0.id.lowercased().contains(needle)
+                || $0.title.lowercased().contains(needle)
+                || $0.prompt.lowercased().contains(needle)
+        }.prefix(50))
     }
 
     var body: some View {
@@ -19,6 +30,7 @@ struct VeilEmotionGardenView: View {
                 tonePicker
                 contextPicker
                 note
+                searchField
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text("今日三步").font(.headline).foregroundColor(VeilTheme.text)
@@ -28,9 +40,13 @@ struct VeilEmotionGardenView: View {
                     ForEach(path) { ritual in ritualCard(ritual) }
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("自己挑一个").font(.headline).foregroundColor(VeilTheme.text)
+                    HStack {
+                        Text(query.isEmpty ? "自己挑一个" : "全库搜索结果").font(.headline).foregroundColor(VeilTheme.text)
+                        Spacer()
+                        Text("\(displayedRituals.count)").font(.caption.monospacedDigit()).foregroundColor(VeilTheme.tertiaryText)
+                    }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 10)], spacing: 10) {
-                        ForEach(VeilEmotionGardenEngine.rituals(for: tone, context: context)) { ritual in
+                        ForEach(displayedRituals) { ritual in
                             Button { selected = ritual } label: {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Image(systemName: ritual.symbol).font(.title3).foregroundColor(VeilTheme.gold)
@@ -119,6 +135,24 @@ struct VeilEmotionGardenView: View {
             .veilCompactToolSurface(cornerRadius: 16)
     }
 
+    private var searchField: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "magnifyingglass").foregroundColor(VeilTheme.tertiaryText)
+            TextField("搜索 EV-编号、状态、场景或内容", text: $query)
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundColor(VeilTheme.tertiaryText)
+                }
+                .accessibilityLabel("清空搜索")
+            }
+        }
+        .padding(.horizontal, 13)
+        .frame(height: 44)
+        .veilCompactToolSurface(cornerRadius: 14)
+    }
+
     private var contextPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("你正在哪个场景？").font(.headline).foregroundColor(VeilTheme.text)
@@ -177,6 +211,7 @@ private struct VeilEmotionRitualSheet: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var remainingSeconds: Int
     @State private var isRunning = false
+    @State private var completedSteps = Set<Int>()
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     init(ritual: VeilEmotionRitual, completed: Bool, markCompleted: @escaping () -> Void) {
@@ -188,12 +223,30 @@ private struct VeilEmotionRitualSheet: View {
 
     var body: some View {
         NavigationView {
-            VStack(alignment: .leading, spacing: 20) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
                 Image(systemName: ritual.symbol)
                     .font(.system(size: 40, weight: .medium))
                     .foregroundColor(VeilTheme.gold)
                 Text(ritual.title).font(.title2.bold()).foregroundColor(VeilTheme.text)
                 Text(ritual.prompt).font(.body).foregroundColor(VeilTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(ritual.steps.enumerated()), id: \.offset) { index, step in
+                        Button {
+                            if completedSteps.contains(index) { completedSteps.remove(index) }
+                            else { completedSteps.insert(index) }
+                        } label: {
+                            HStack(alignment: .top, spacing: 9) {
+                                Image(systemName: completedSteps.contains(index) ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(completedSteps.contains(index) ? .green : VeilTheme.tertiaryText)
+                                Text(step).font(.subheadline).foregroundColor(VeilTheme.text).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(10)
+                            .veilCompactToolSurface(cornerRadius: 12)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 countdown
                 HStack(spacing: 10) {
                     Button {
@@ -214,7 +267,14 @@ private struct VeilEmotionRitualSheet: View {
                 }
                 Text("建议用时 \(ritual.seconds) 秒。可以暂停、重置或随时跳过。")
                     .font(.caption).foregroundColor(VeilTheme.tertiaryText)
-                Spacer()
+                if completedSteps.count == ritual.steps.count || remainingSeconds == 0 {
+                    Text(ritual.completionNote)
+                        .font(.subheadline)
+                        .foregroundColor(VeilTheme.goldBright)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .veilCompactToolSurface(cornerRadius: 13)
+                }
                 Button {
                     markCompleted()
                     dismiss()
@@ -228,8 +288,9 @@ private struct VeilEmotionRitualSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(VeilPressStyle())
+                }
+                .padding(22)
             }
-            .padding(22)
             .background(VeilAmbientBackground())
             .navigationTitle("微小陪伴")
             .navigationBarTitleDisplayMode(.inline)

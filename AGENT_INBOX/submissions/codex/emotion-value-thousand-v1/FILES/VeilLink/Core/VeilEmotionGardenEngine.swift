@@ -97,6 +97,8 @@ struct VeilEmotionRitual: Identifiable, Equatable, Sendable {
     let context: VeilEmotionContext
     let title: String
     let prompt: String
+    let steps: [String]
+    let completionNote: String
     let seconds: Int
     let symbol: String
 }
@@ -118,6 +120,8 @@ enum VeilEmotionGardenEngine {
                         context: context,
                         title: "\(tone.title) · \(context.title) · \(kind.title)",
                         prompt: prompt(tone: tone, kind: kind, context: context),
+                        steps: steps(tone: tone, kind: kind, context: context),
+                        completionNote: "你完成了“\(tone.title) · \(context.title) · \(kind.title)”。不必立刻变好，愿意留出这段时间本身就算数。",
                         seconds: duration(kind, context: context),
                         symbol: symbol(kind)
                     ))
@@ -223,6 +227,36 @@ enum VeilEmotionGardenEngine {
         case .connection: return "\(opening)想一个能接住 \(subject)的人或地方；合适时发一条无需回复的轻消息。"
         case .reset: return "\(opening)为带着 \(subject)的下一步选一个两分钟动作：喝水、洗脸、站起来或整理一角。"
         case .play: return "\(opening)允许 \(subject)和一点玩心同时存在：涂鸦、随手拍、哼一句旋律或看一眼天空。"
+        }
+    }
+
+    private static func steps(
+        tone: VeilEmotionTone,
+        kind: VeilEmotionRitualKind,
+        context: VeilEmotionContext
+    ) -> [String] {
+        let marker = "\(tone.title) · \(context.title)"
+        switch kind {
+        case .notice:
+            return ["[\(marker)] 放松下颌和肩膀。", "观察一个身体信号，不评价它。", "留意它在三次呼吸后有没有变化。"]
+        case .breath:
+            return ["[\(marker)] 找到不会影响安全的位置。", "跟随 3-1-4 节拍呼吸。", "最后一轮恢复自然呼吸并停留片刻。"]
+        case .name:
+            return ["[\(marker)] 先写下最先出现的感受词。", "再补两个更具体的词。", "选择其中最贴近现在的一个。"]
+        case .kindness:
+            return ["[\(marker)] 想象一位正在经历同样事情的朋友。", "写下一句不会催促对方的话。", "把称呼换成自己，再读一遍。"]
+        case .anchor:
+            return ["[\(marker)] 找出三个视觉细节。", "确认两个真实触感。", "听见一个近处或远处的声音。"]
+        case .gratitude:
+            return ["[\(marker)] 找一个今天真实发生的小片刻。", "写清它具体好在哪里。", "为它留下一句短短的感谢。"]
+        case .smallWin:
+            return ["[\(marker)] 选一个已经完成的小动作。", "说出它需要过哪一道阻力。", "用一句事实记录它，不贬低它。"]
+        case .connection:
+            return ["[\(marker)] 想到一位让你较安心的人。", "写一条不要求立即回复的消息。", "确认合适后再由你决定是否发送。"]
+        case .reset:
+            return ["[\(marker)] 选一个两分钟内能结束的动作。", "只完成这一件，不追加任务。", "完成后重新决定下一步。"]
+        case .play:
+            return ["[\(marker)] 任选涂鸦、哼唱、观察或随手拍。", "允许结果没有用途。", "在计时结束时留下一个你喜欢的细节。"]
         }
     }
 }

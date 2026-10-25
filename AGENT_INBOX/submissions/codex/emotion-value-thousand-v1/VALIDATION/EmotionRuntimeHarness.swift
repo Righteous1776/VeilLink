@@ -7,6 +7,9 @@ enum EmotionRuntimeHarness {
         precondition(all.count == 1_000)
         precondition(Set(all.map(\.id)).count == 1_000)
         precondition(Set(all.map(\.prompt)).count == 1_000)
+        precondition(Set(all.map { $0.steps.joined(separator: "|") }).count == 1_000)
+        precondition(Set(all.map(\.completionNote)).count == 1_000)
+        precondition(all.allSatisfy { $0.steps.count == 3 })
         precondition(all.first?.id == "EV-0001")
         precondition(all.last?.id == "EV-1000")
 

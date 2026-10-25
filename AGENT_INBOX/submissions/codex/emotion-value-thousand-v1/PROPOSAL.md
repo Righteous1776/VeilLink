@@ -5,8 +5,8 @@
 This proposal creates a governed 1,000-capability emotional-value program and stages the first executable product wave.
 
 - **1,000 numbered capability units** in ten emotional-value pillars, ten interaction forms and ten contexts.
-- **1,000 runtime local micro-rituals** implemented as ten self-reported tones × ten short, safe interaction forms × ten everyday contexts.
-- **Emotion Garden UI** with tone and context selectors that make every item reachable, three deterministic daily suggestions, a pick-your-own grid, live countdown/pause/reset controls, completion feedback and a clear skip option.
+- **1,000 runtime local micro-rituals** implemented as ten self-reported tones × ten short, safe interaction forms × ten everyday contexts; every item has a unique prompt, three-step action sequence and completion reflection.
+- **Emotion Garden UI** with tone/context selectors and full-library ID/keyword search, three deterministic daily suggestions, a pick-your-own grid, step check-offs, live countdown/pause/reset controls, completion feedback and a clear skip option.
 - **No fake therapeutic claim**: it is companionship/reflective UX, not diagnosis, treatment or a crisis service.
 
 ## Product boundaries

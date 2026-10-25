@@ -6,7 +6,7 @@
 - Catalog: 1,000 rows, 1,000 unique sequential IDs `EV-0001...EV-1000`: PASS.
 - Swift 6.2 Linux container, strict-concurrency engine typecheck: PASS.
 - Swift frontend parse of the proposed SwiftUI and XCTest source: PASS. This verifies syntax only, not Apple SDK symbols.
-- Compiled runtime harness: PASS with output `EMOTION_RUNTIME_1000_PASS`; it executes assertions for 1,000 unique IDs, 1,000 unique prompts, all 10 × 10 × 10 combinations reachable, and deterministic daily selection.
+- Compiled runtime harness: PASS with output `EMOTION_RUNTIME_1000_PASS`; it executes assertions for 1,000 unique IDs, prompts, three-step sequences and completion reflections, all 10 × 10 × 10 combinations reachable, and deterministic daily selection.
 - Five focused XCTest methods are staged but **XCTest has not been executed** as an app test bundle.
 - Xcode/iOS SDK/iPhone execution: NOT RUN; no pass is claimed.
 
