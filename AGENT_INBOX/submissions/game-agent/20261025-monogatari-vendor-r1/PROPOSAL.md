@@ -8,6 +8,6 @@ GitHub release asset pinned at exactly 2,798,775 bytes and SHA-256 `16d221485888
 - FILES/Tools/VNPort/verify_monogatari_vendor.py: revalidates actual ZIP before optional safe pristine extraction.
 - PATCH.diff: points to the proposed product-side paths, which must NOT be applied until an integration window.
 ## Not delivered in THIS PR
-Official zip cannot be obtained through current ChatGPT execution runtime; no fake .zip or home-built substitute is checked in. Earlier R0 and current R1 code/Swift adapter are maintained in user-facing artifacts of the conversation, *not* in this Inbox PR.
+Owner supplied official ZIP; exact digest/size and 12/12 upstream engine byte-for-byte checks PASS. Full integrated binary-containing package R2 is delivered in the current ChatGPT conversation, NOT checked into this GitHub Inbox PR (per asset policy). See OFFICIAL_BINARY_RECEIPT.md. iOS/real WebKit runtime remain unverified.
 ## Governor intake
 Download via network-enabled audited worker or import owner's exact upstream ZIP, run pinned script and verify output; stage original upstream as separate app resource directory under controlled integration branch; perform iOS15 XcodeGen, full XCTest and actual iPhone7 WebKit/saving/gesture tests. Do not trigger IPA/release merely to download the upstream ZIP.
