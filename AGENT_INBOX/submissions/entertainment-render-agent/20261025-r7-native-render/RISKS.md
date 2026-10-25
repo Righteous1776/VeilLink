@@ -1,8 +1,10 @@
-# R7 RISKS
+# R7 Risks / Scope Freeze
 
-- R7 and previous R6 PR #83 target same proposed product filenames: ONLY ONE may be promoted; prefer newer R7 after full review.
-- iOS SwiftUI/SpriteKit and @MainActor bridging syntax was parsed on Linux but requires actual macOS type checking.
-- Apple low-power + thermal behavior unmeasured; preferredFramesPerSecond=30 is requested not observed; frame callback cadence is not GPU performance.
-- Fixed 280ms stale watchdog blanks notes during dropped HUD cycles; safer than displaying incorrect note, but must test in-app lifecycle.
-- Current game has no audio-sample-accurate synchronization; host clock alignment is only logical scheduling.
-- Main transport, encryption, storage, legal consent and iOS15 screen-wide gesture P0 are frozen. No release or IPA.
+- P0 issues #64–#66 remain blocking: touch recognizers, Keychain signer continuity, first consent and old data recovery; no release or product merge.
+- R6 #83 contains overlapping renderer filenames; R7 is the selected full candidate, **do not apply both**.
+- PR #79 contains R5 timing/Station engines while the R4 E191 rule engine is in separate candidate; combined 20-file patch is an advisory integration plan, not a superseding Governor authority.
+- R4 guard (#78) has an unresolved owner decision: eight vs nine candidate IDs. Not modified by R7.
+- SpriteKit/SwiftUI code was syntax parsed on Linux only; iOS SDK type-check, GPU visual snapshots and iPhone7 input/heat not performed. Requested 30 fps ≠ achieved 30 fps.
+- Stale 280ms running snapshot blanks notes; validate lifecycle and background gap at full device frame cadence.
+- `VeilRenderFrameStats` is update callback statistics, **not** Metal/Core Animation GPU telemetry.
+- Cross-lane ToolCenter navigation is Governor-only; this submission touches no existing App navigation, release workflows, signing, protocol/schema/keychain or A9/A10 logic.

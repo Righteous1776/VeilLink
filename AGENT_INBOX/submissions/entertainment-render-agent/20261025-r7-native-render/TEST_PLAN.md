@@ -1,7 +1,13 @@
-# R7 TEST PLAN
+# R7 / Wave 1 Reproducible Evidence
 
-**Executed:** Linux SwiftPM 128/128 XCTest; 100 seeds × 4 districts × 16 beats × 7 sample times exact reference parity; snapshot freshness, invalid time, fixed frame ring; Release build; Apple source syntax parse; patch applies with no whitespace errors.
+- Linux Swift 6.2.1: `swift test -j 2` => **128 XCTest PASS / 0 failed** (fresh in this submission session, after documentation edits).
+- Linux Swift 6.2.1: `swift build -c release` => **PASS** (fresh).
+- R7 full 13-file candidate patch: `git apply --check --whitespace=error-all` against clean git fixture => **PASS**, and exact file content parity after apply => **PASS**.
+- R4 E191 + R5 + R7 Wave 1 *20-file advisory combined* patch: same check => **PASS**, exact file parity => **PASS**.
+- R7 source listing: 13/13 Swift file contents in GitHub `FILES/`; original two smoke test files retained. GitHub verifies inbox folder/text scope only, not iOS runtime.
+- Apple `xcodebuild` / XcodeGen iOS15 SDK typecheck => **PENDING** (no macOS/iOS SDK here).
+- Simulator launch/screenshot and SpriteKit/SwiftUI types => **PENDING**.
+- iPhone7 iOS15.8.3 physical 20min touch, appearance, pause/resume, thermal and power => **PENDING** (no connected device).
+- Existing BLE, privacy/DB and communication regression => **PENDING** (depends on Governor controlled integration).
 
-**Missing:** macOS XcodeGen/iOS SDK typecheck, simulator XCTest+SwiftUI snapshots, physical iPhone7 15.8.3 tap/safe-area/dark/light, iPad, Core Animation/Metal tracing, thermal & battery tests.
-
-**Governor:** first resolve PR #79 R5 dependency, reconcile #83 (superseded), P0 #64–66, then apply new source on isolated branch.
+Device acceptance matrix is `IPHONE7_RENDER_QA_MATRIX.md`. Never treat logic test green as measured GPU FPS or proof of fixed distortion.

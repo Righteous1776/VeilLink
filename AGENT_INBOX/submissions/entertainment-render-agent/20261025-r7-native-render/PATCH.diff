@@ -1,3 +1,132 @@
+diff --git a/VeilLink/Entertainment/Rendering/VeilFramePacer.swift b/VeilLink/Entertainment/Rendering/VeilFramePacer.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Entertainment/Rendering/VeilFramePacer.swift
+@@ -0,0 +1,58 @@
++import Foundation
++
++/// Fixed-step simulation clock separate from the renderer's variable refresh.
++/// Prevents background catch-up storms and long-frame physics explosions.
++public struct VeilFramePacer: Sendable {
++    public struct Step: Equatable, Sendable {
++        public let simulationSteps: Int
++        public let stepSeconds: Double
++        public let interpolation: Double
++        public let droppedSeconds: Double
++    }
++    public static let fixedStep: Double = 1.0 / 60
++    private var previous: Double?
++    private var remainder = 0.0
++    public private(set) var totalDroppedSeconds = 0.0
++    public private(set) var totalSimSteps = 0
++    public init() {}
++    public mutating func reset() { previous = nil; remainder = 0 }
++    public mutating func advance(now: Double, maxCatchUpSteps: Int = 4) -> Step? {
++        guard now.isFinite, now >= 0, (1...8).contains(maxCatchUpSteps) else { return nil }
++        guard let last = previous else { previous = now; return Step(simulationSteps: 0, stepSeconds: Self.fixedStep, interpolation: 0, droppedSeconds: 0) }
++        guard now >= last else { return nil }
++        previous = now
++        // Never force 60 simulated seconds after a 60s background pause.
++        let delta = min(now - last, 0.25)
++        let dropped = max(0, now - last - delta)
++        remainder += delta
++        let requested = Int((remainder + 1e-10) / Self.fixedStep)
++        let steps = min(requested, maxCatchUpSteps)
++        remainder -= Double(steps) * Self.fixedStep
++        let cappedRemainder = min(remainder, Self.fixedStep * 0.999999)
++        let overflow = max(0, remainder - cappedRemainder)
++        remainder = cappedRemainder
++        totalDroppedSeconds += dropped + overflow
++        totalSimSteps += steps
++        return Step(simulationSteps: steps, stepSeconds: Self.fixedStep,
++                    interpolation: max(0, min(remainder / Self.fixedStep, 1)), droppedSeconds: dropped + overflow)
++    }
++}
++
++/// Rendering budgets are targets, not proof of physical-device performance.
++/// Limits only the local entertainment scene, not the chat application's global refresh.
++public struct VeilRenderBudget: Equatable, Sendable {
++    public enum Tier: String, Codable, Sendable { case legacy, balanced, high }
++    public let tier: Tier
++    public let targetFPS: Int
++    public let visibleNotes: Int
++    public let particleBudget: Int
++    public let maxSprites: Int
++    public init(tier: Tier) {
++        self.tier = tier
++        switch tier {
++        case .legacy: targetFPS = 30; visibleNotes = 5; particleBudget = 0; maxSprites = 48
++        case .balanced: targetFPS = 30; visibleNotes = 8; particleBudget = 16; maxSprites = 96
++        case .high: targetFPS = 60; visibleNotes = 12; particleBudget = 32; maxSprites = 160
++        }
++    }
++}
+diff --git a/VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift b/VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift
+@@ -0,0 +1,61 @@
++import Foundation
++
++/// Bounded, local-only update-callback cadence counters, not GPU timing.
++/// Never records touch location, personal data, media or message content.
++public struct VeilRenderFrameStats: Sendable {
++    /// Statistical summary of callback intervals only; these are not GPU timings.
++    public struct Report: Equatable, Sendable {
++        /// Count of accepted positive intervals (at most 240).
++        public let sampleCount: Int
++        /// Median callback interval in milliseconds (not achieved display FPS).
++        public let medianIntervalMs: Double
++        /// 95th percentile callback interval in milliseconds.
++        public let p95IntervalMs: Double
++        /// Intervals above 1/24 second within the current rolling sample.
++        public let slowFrames: Int
++        /// Sum of accepted sample intervals, omitting background gaps.
++        public let elapsedSeconds: Double
++    }
++    /// Fixed maximum retention to avoid unbounded diagnostics growth.
++    public static let maximumSamples = 240
++    private var intervals: [Double] = []
++    private var nextSlot = 0
++    private var lastTime: Double?
++    /// Creates an empty in-memory local-only metrics recorder.
++    public init() { intervals.reserveCapacity(Self.maximumSamples) }
++    /// Discards all samples and previous clock anchor after scene lifecycle changes.
++    public mutating func reset() {
++        intervals.removeAll(keepingCapacity: true)
++        nextSlot = 0
++        lastTime = nil
++    }
++    /// Record only finite monotonic callback times; avoid counting background gaps.
++    public mutating func observe(_ now: Double) {
++        guard now.isFinite, now >= 0 else { return }
++        guard let last = lastTime else { lastTime = now; return }
++        guard now >= last else { lastTime = now; return }
++        lastTime = now
++        let delta = now - last
++        guard delta > 0, delta <= 0.3 else { return }
++        if intervals.count < Self.maximumSamples { intervals.append(delta) }
++        else {
++            intervals[nextSlot] = delta
++            nextSlot = (nextSlot + 1) % Self.maximumSamples
++        }
++    }
++    /// A read-only snapshot; sorting is bounded by 240 samples.
++    public var report: Report {
++        let sorted = intervals.sorted()
++        guard let middle = sorted.first else {
++            return .init(sampleCount: 0, medianIntervalMs: 0,
++                         p95IntervalMs: 0, slowFrames: 0, elapsedSeconds: 0)
++        }
++        let median = sorted[sorted.count/2]
++        let p95 = sorted[min(sorted.count-1, Int(Double(sorted.count-1)*0.95 + 0.999999))]
++        return .init(sampleCount: sorted.count,
++                     medianIntervalMs: median * 1000,
++                     p95IntervalMs: max(middle,p95) * 1000,
++                     slowFrames: intervals.filter { $0 > 1.0/24.0 }.count,
++                     elapsedSeconds: intervals.reduce(0,+))
++    }
++}
 diff --git a/VeilLink/Entertainment/Rendering/VeilRenderGeometry.swift b/VeilLink/Entertainment/Rendering/VeilRenderGeometry.swift
 new file mode 100644
 --- /dev/null
@@ -67,228 +196,6 @@ new file mode 100644
 +                               y: insets.top + (height - viewportH) * 0.5,
 +                               width: viewportW, height: viewportH),
 +                scale: scale, pixelsPerPoint: pixelsPerPoint)
-+    }
-+}
-diff --git a/VeilLink/Entertainment/Rendering/VeilFramePacer.swift b/VeilLink/Entertainment/Rendering/VeilFramePacer.swift
-new file mode 100644
---- /dev/null
-+++ b/VeilLink/Entertainment/Rendering/VeilFramePacer.swift
-@@ -0,0 +1,58 @@
-+import Foundation
-+
-+/// Fixed-step simulation clock separate from the renderer's variable refresh.
-+/// Prevents background catch-up storms and long-frame physics explosions.
-+public struct VeilFramePacer: Sendable {
-+    public struct Step: Equatable, Sendable {
-+        public let simulationSteps: Int
-+        public let stepSeconds: Double
-+        public let interpolation: Double
-+        public let droppedSeconds: Double
-+    }
-+    public static let fixedStep: Double = 1.0 / 60
-+    private var previous: Double?
-+    private var remainder = 0.0
-+    public private(set) var totalDroppedSeconds = 0.0
-+    public private(set) var totalSimSteps = 0
-+    public init() {}
-+    public mutating func reset() { previous = nil; remainder = 0 }
-+    public mutating func advance(now: Double, maxCatchUpSteps: Int = 4) -> Step? {
-+        guard now.isFinite, now >= 0, (1...8).contains(maxCatchUpSteps) else { return nil }
-+        guard let last = previous else { previous = now; return Step(simulationSteps: 0, stepSeconds: Self.fixedStep, interpolation: 0, droppedSeconds: 0) }
-+        guard now >= last else { return nil }
-+        previous = now
-+        // Never force 60 simulated seconds after a 60s background pause.
-+        let delta = min(now - last, 0.25)
-+        let dropped = max(0, now - last - delta)
-+        remainder += delta
-+        let requested = Int((remainder + 1e-10) / Self.fixedStep)
-+        let steps = min(requested, maxCatchUpSteps)
-+        remainder -= Double(steps) * Self.fixedStep
-+        let cappedRemainder = min(remainder, Self.fixedStep * 0.999999)
-+        let overflow = max(0, remainder - cappedRemainder)
-+        remainder = cappedRemainder
-+        totalDroppedSeconds += dropped + overflow
-+        totalSimSteps += steps
-+        return Step(simulationSteps: steps, stepSeconds: Self.fixedStep,
-+                    interpolation: max(0, min(remainder / Self.fixedStep, 1)), droppedSeconds: dropped + overflow)
-+    }
-+}
-+
-+/// Rendering budgets are targets, not proof of physical-device performance.
-+/// Limits only the local entertainment scene, not the chat application's global refresh.
-+public struct VeilRenderBudget: Equatable, Sendable {
-+    public enum Tier: String, Codable, Sendable { case legacy, balanced, high }
-+    public let tier: Tier
-+    public let targetFPS: Int
-+    public let visibleNotes: Int
-+    public let particleBudget: Int
-+    public let maxSprites: Int
-+    public init(tier: Tier) {
-+        self.tier = tier
-+        switch tier {
-+        case .legacy: targetFPS = 30; visibleNotes = 5; particleBudget = 0; maxSprites = 48
-+        case .balanced: targetFPS = 30; visibleNotes = 8; particleBudget = 16; maxSprites = 96
-+        case .high: targetFPS = 60; visibleNotes = 12; particleBudget = 32; maxSprites = 160
-+        }
-+    }
-+}
-diff --git a/VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift b/VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift
-new file mode 100644
---- /dev/null
-+++ b/VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift
-@@ -0,0 +1,35 @@
-+import Foundation
-+
-+/// Pure presentational projection, read-only from an existing session and timing frame.
-+/// The visual note lane never chooses the judged lane; gameplay remains in LiveConductor.
-+public enum VeilRhythmVisualTimeline {
-+    public struct VisibleNote: Equatable, Sendable {
-+        public let beat: Int
-+        public let lane: Int
-+        public let x, y: Double // canonical top-left 390x600 logical canvas
-+        public let secondsUntilHit: Double
-+    }
-+    public static let canvas = VeilRenderGeometry.Size(390, 600)
-+    public static let strikeY: Double = 500
-+    public static let spawnY: Double = 80
-+    public static let travelSeconds = 1.6
-+
-+    /// The playback time axis comes from the injected monotonic host clock, not animation frame indices.
-+    public static func notes(seed: UInt64, district: Int, nextBeat: Int,
-+                             secondsToNextBeat: Double?, capacity: Int = 8) -> [VisibleNote] {
-+        guard let remaining = secondsToNextBeat, remaining.isFinite, (0..<4).contains(district),
-+              (0..<16).contains(nextBeat), (1...16).contains(capacity),
-+              let next = VeilRhythmExpedition.note(seed: seed, district: district, beat: nextBeat) else { return [] }
-+        var result: [VisibleNote] = []
-+        for beat in nextBeat..<min(16, nextBeat + capacity) {
-+            guard let note = VeilRhythmExpedition.note(seed: seed, district: district, beat: beat) else { break }
-+            let seconds = remaining + note.nominalTime - next.nominalTime
-+            guard seconds >= -0.18 && seconds <= travelSeconds else { continue }
-+            let unit = max(0, min(1, 1 - seconds / travelSeconds))
-+            let x = (Double(note.lane) + 0.5) * canvas.width / 4
-+            let y = spawnY + (strikeY - spawnY) * unit
-+            result.append(VisibleNote(beat: beat, lane: note.lane, x: x, y: y, secondsUntilHit: seconds))
-+        }
-+        return result
-+    }
-+}
-diff --git a/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift b/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift
-new file mode 100644
---- /dev/null
-+++ b/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift
-@@ -0,0 +1,58 @@
-+import Foundation
-+
-+/// Precomputes chart metadata once per seed/district. SpriteKit reads bounded
-+/// value snapshots and never owns game rules, timing decisions or identities.
-+public struct VeilRhythmRenderCache: Sendable {
-+    public let seed: UInt64
-+    public let district: Int
-+    private let schedule: [VeilRhythmExpedition.Note]
-+    public init?(seed: UInt64, district: Int) {
-+        guard (0..<4).contains(district) else { return nil }
-+        self.seed = seed
-+        self.district = district
-+        var items: [VeilRhythmExpedition.Note] = []
-+        for beat in 0..<16 {
-+            guard let n = VeilRhythmExpedition.note(seed: seed, district: district, beat: beat) else { return nil }
-+            items.append(n)
-+        }
-+        schedule = items
-+    }
-+    public func visible(nextBeat: Int, secondsToNextBeat: Double,
-+                        capacity: Int = 5) -> [VeilRhythmVisualTimeline.VisibleNote] {
-+        guard (0..<16).contains(nextBeat), (1...16).contains(capacity),
-+              secondsToNextBeat.isFinite else { return [] }
-+        let nextTime = schedule[nextBeat].nominalTime
-+        let end = min(16, nextBeat + capacity)
-+        var visible: [VeilRhythmVisualTimeline.VisibleNote] = []
-+        visible.reserveCapacity(capacity)
-+        for beat in nextBeat..<end {
-+            let n = schedule[beat]
-+            let remaining = secondsToNextBeat + n.nominalTime - nextTime
-+            guard remaining >= -VeilRhythmLiveConductor.hitWindow,
-+                  remaining <= VeilRhythmVisualTimeline.travelSeconds else { continue }
-+            let progress = max(0, min(1, 1 - remaining / VeilRhythmVisualTimeline.travelSeconds))
-+            visible.append(.init(beat: beat, lane: n.lane,
-+                                 x: (Double(n.lane) + 0.5) * VeilRhythmVisualTimeline.canvas.width / 4,
-+                                 y: VeilRhythmVisualTimeline.spawnY +
-+                                    (VeilRhythmVisualTimeline.strikeY - VeilRhythmVisualTimeline.spawnY) * progress,
-+                                 secondsUntilHit: remaining))
-+        }
-+        return visible
-+    }
-+}
-+
-+/// A stopped producer must not leave misleading, eternally frozen notes visible.
-+/// Paused content is held by design; running content goes blank until fresh data.
-+public enum VeilRenderSnapshotWatchdog {
-+    public enum Status: Equatable, Sendable { case fresh(Double), stale, invalid }
-+    public static let maximumRunningAge = 0.28
-+    public static let maximumClockSkew = 0.015
-+    public static func check(now: Double, sampledAt: Double, running: Bool) -> Status {
-+        guard now.isFinite, sampledAt.isFinite, now >= 0, sampledAt >= 0 else { return .invalid }
-+        let age = now - sampledAt
-+        guard age >= -maximumClockSkew else { return .invalid }
-+        if !running { return .fresh(0) }
-+        guard age <= maximumRunningAge else { return .stale }
-+        return .fresh(max(0, age))
-+    }
-+}
-diff --git a/VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift b/VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift
-new file mode 100644
---- /dev/null
-+++ b/VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift
-@@ -0,0 +1,51 @@
-+import Foundation
-+
-+/// Bounded, local-only update-callback cadence counters, not GPU timing.
-+/// Never records touch location, personal data, media or message content.
-+public struct VeilRenderFrameStats: Sendable {
-+    public struct Report: Equatable, Sendable {
-+        public let sampleCount: Int
-+        public let medianIntervalMs: Double
-+        public let p95IntervalMs: Double
-+        public let slowFrames: Int
-+        public let elapsedSeconds: Double
-+    }
-+    public static let maximumSamples = 240
-+    private var intervals: [Double] = []
-+    private var nextSlot = 0
-+    private var lastTime: Double?
-+    public init() { intervals.reserveCapacity(Self.maximumSamples) }
-+    public mutating func reset() {
-+        intervals.removeAll(keepingCapacity: true)
-+        nextSlot = 0
-+        lastTime = nil
-+    }
-+    /// Record only finite monotonic callback times; avoid counting background gaps.
-+    public mutating func observe(_ now: Double) {
-+        guard now.isFinite, now >= 0 else { return }
-+        guard let last = lastTime else { lastTime = now; return }
-+        guard now >= last else { lastTime = now; return }
-+        lastTime = now
-+        let delta = now - last
-+        guard delta > 0, delta <= 0.3 else { return }
-+        if intervals.count < Self.maximumSamples { intervals.append(delta) }
-+        else {
-+            intervals[nextSlot] = delta
-+            nextSlot = (nextSlot + 1) % Self.maximumSamples
-+        }
-+    }
-+    public var report: Report {
-+        let sorted = intervals.sorted()
-+        guard let middle = sorted.first else {
-+            return .init(sampleCount: 0, medianIntervalMs: 0,
-+                         p95IntervalMs: 0, slowFrames: 0, elapsedSeconds: 0)
-+        }
-+        let median = sorted[sorted.count/2]
-+        let p95 = sorted[min(sorted.count-1, Int(Double(sorted.count-1)*0.95 + 0.999999))]
-+        return .init(sampleCount: sorted.count,
-+                     medianIntervalMs: median * 1000,
-+                     p95IntervalMs: max(middle,p95) * 1000,
-+                     slowFrames: intervals.filter { $0 > 1.0/24.0 }.count,
-+                     elapsedSeconds: intervals.reduce(0,+))
 +    }
 +}
 diff --git a/VeilLink/Entertainment/Rendering/VeilRhythmNativeScene.swift b/VeilLink/Entertainment/Rendering/VeilRhythmNativeScene.swift
@@ -548,6 +455,185 @@ new file mode 100644
 +    }
 +}
 +#endif
+diff --git a/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift b/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift
+@@ -0,0 +1,72 @@
++import Foundation
++
++/// Precomputes chart metadata once per seed/district. SpriteKit reads bounded
++/// value snapshots and never owns game rules, timing decisions or identities.
++public struct VeilRhythmRenderCache: Sendable {
++    /// Immutable seed used to generate the same sixteen notes on every replay.
++    public let seed: UInt64
++    /// Zero-based district, accepted range 0...3; never a remote peer identifier.
++    public let district: Int
++    private let schedule: [VeilRhythmExpedition.Note]
++    /// Builds a fixed-size (16 note) cache; fails for unknown districts.
++    /// No GPU nodes, timers, filesystem reads or network calls are created.
++    public init?(seed: UInt64, district: Int) {
++        guard (0..<4).contains(district) else { return nil }
++        self.seed = seed
++        self.district = district
++        var items: [VeilRhythmExpedition.Note] = []
++        for beat in 0..<16 {
++            guard let n = VeilRhythmExpedition.note(seed: seed, district: district, beat: beat) else { return nil }
++            items.append(n)
++        }
++        schedule = items
++    }
++    /// Computes at most `capacity` visible note placements without any allocation
++    /// outside the returned value array. `secondsToNextBeat` may be negative
++    /// inside the judgment window; NaN/infinite timestamps are rejected.
++    public func visible(nextBeat: Int, secondsToNextBeat: Double,
++                        capacity: Int = 5) -> [VeilRhythmVisualTimeline.VisibleNote] {
++        guard (0..<16).contains(nextBeat), (1...16).contains(capacity),
++              secondsToNextBeat.isFinite else { return [] }
++        let nextTime = schedule[nextBeat].nominalTime
++        let end = min(16, nextBeat + capacity)
++        var visible: [VeilRhythmVisualTimeline.VisibleNote] = []
++        visible.reserveCapacity(capacity)
++        for beat in nextBeat..<end {
++            let n = schedule[beat]
++            let remaining = secondsToNextBeat + n.nominalTime - nextTime
++            guard remaining >= -VeilRhythmLiveConductor.hitWindow,
++                  remaining <= VeilRhythmVisualTimeline.travelSeconds else { continue }
++            let progress = max(0, min(1, 1 - remaining / VeilRhythmVisualTimeline.travelSeconds))
++            visible.append(.init(beat: beat, lane: n.lane,
++                                 x: (Double(n.lane) + 0.5) * VeilRhythmVisualTimeline.canvas.width / 4,
++                                 y: VeilRhythmVisualTimeline.spawnY +
++                                    (VeilRhythmVisualTimeline.strikeY - VeilRhythmVisualTimeline.spawnY) * progress,
++                                 secondsUntilHit: remaining))
++        }
++        return visible
++    }
++}
++
++/// A stopped producer must not leave misleading, eternally frozen notes visible.
++/// Paused content is held by design; running content goes blank until fresh data.
++public enum VeilRenderSnapshotWatchdog {
++    /// Clock classification: a running producer is stale after 280ms;
++    /// `fresh(age)` is clamped to a nonnegative extrapolation interval.
++    public enum Status: Equatable, Sendable { case fresh(Double), stale, invalid }
++    /// The latest running snapshot is invalidated after 280ms without updates.
++    public static let maximumRunningAge = 0.28
++    /// Tolerate only 15ms of sampling skew; reject greater future timestamps.
++    public static let maximumClockSkew = 0.015
++    /// Evaluates two timestamps from the *same monotonic clock domain*.
++    /// Paused state freezes intentionally; invalid numbers fail closed.
++    /// The renderer must hide nodes on `stale` or `invalid`.
++    public static func check(now: Double, sampledAt: Double, running: Bool) -> Status {
++        guard now.isFinite, sampledAt.isFinite, now >= 0, sampledAt >= 0 else { return .invalid }
++        let age = now - sampledAt
++        guard age >= -maximumClockSkew else { return .invalid }
++        if !running { return .fresh(0) }
++        guard age <= maximumRunningAge else { return .stale }
++        return .fresh(max(0, age))
++    }
++}
+diff --git a/VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift b/VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift
+@@ -0,0 +1,35 @@
++import Foundation
++
++/// Pure presentational projection, read-only from an existing session and timing frame.
++/// The visual note lane never chooses the judged lane; gameplay remains in LiveConductor.
++public enum VeilRhythmVisualTimeline {
++    public struct VisibleNote: Equatable, Sendable {
++        public let beat: Int
++        public let lane: Int
++        public let x, y: Double // canonical top-left 390x600 logical canvas
++        public let secondsUntilHit: Double
++    }
++    public static let canvas = VeilRenderGeometry.Size(390, 600)
++    public static let strikeY: Double = 500
++    public static let spawnY: Double = 80
++    public static let travelSeconds = 1.6
++
++    /// The playback time axis comes from the injected monotonic host clock, not animation frame indices.
++    public static func notes(seed: UInt64, district: Int, nextBeat: Int,
++                             secondsToNextBeat: Double?, capacity: Int = 8) -> [VisibleNote] {
++        guard let remaining = secondsToNextBeat, remaining.isFinite, (0..<4).contains(district),
++              (0..<16).contains(nextBeat), (1...16).contains(capacity),
++              let next = VeilRhythmExpedition.note(seed: seed, district: district, beat: nextBeat) else { return [] }
++        var result: [VisibleNote] = []
++        for beat in nextBeat..<min(16, nextBeat + capacity) {
++            guard let note = VeilRhythmExpedition.note(seed: seed, district: district, beat: beat) else { break }
++            let seconds = remaining + note.nominalTime - next.nominalTime
++            guard seconds >= -0.18 && seconds <= travelSeconds else { continue }
++            let unit = max(0, min(1, 1 - seconds / travelSeconds))
++            let x = (Double(note.lane) + 0.5) * canvas.width / 4
++            let y = spawnY + (strikeY - spawnY) * unit
++            result.append(VisibleNote(beat: beat, lane: note.lane, x: x, y: y, secondsUntilHit: seconds))
++        }
++        return result
++    }
++}
+diff --git a/VeilLinkTests/VeilR6FramePacerTests.swift b/VeilLinkTests/VeilR6FramePacerTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilR6FramePacerTests.swift
+@@ -0,0 +1,57 @@
++import XCTest
++#if canImport(VeilMegaEngines)
++@testable import VeilMegaEngines
++#elseif canImport(VeilLink)
++@testable import VeilLink
++#endif
++
++final class VeilR6FramePacerTests: XCTestCase {
++    func testFirstFrameHasNoTimeJump() {
++        var p=VeilFramePacer()
++        XCTAssertEqual(p.advance(now:200)?.simulationSteps,0)
++    }
++    func testSixtyFramesIsOneSecond() {
++        var p=VeilFramePacer()
++        _ = p.advance(now:0)
++        for i in 1...60 { _ = p.advance(now:Double(i)/60) }
++        XCTAssertEqual(p.totalSimSteps,60)
++    }
++    func testThirtyFPSStillHasSixtyLogicSteps() {
++        var p=VeilFramePacer()
++        _ = p.advance(now:0)
++        for i in 1...30 { _ = p.advance(now:Double(i)/30) }
++        XCTAssertEqual(p.totalSimSteps,60)
++    }
++    func testBackgroundGapIsCappedAndResetSafe() {
++        var p=VeilFramePacer()
++        _ = p.advance(now:0)
++        let step=p.advance(now:10000)!
++        XCTAssertLessThanOrEqual(step.simulationSteps,4)
++        XCTAssertGreaterThan(step.droppedSeconds,9999)
++        p.reset()
++        XCTAssertEqual(p.advance(now:10001)?.simulationSteps,0)
++    }
++    func testInvalidTimeDoesNotCorruptClock() {
++        var p=VeilFramePacer()
++        _ = p.advance(now:5)
++        XCTAssertNil(p.advance(now:.nan))
++        XCTAssertNil(p.advance(now:4))
++        XCTAssertEqual(p.advance(now:5+1.0/60)?.simulationSteps,1)
++    }
++    func testQualityBudgetsBoundMemoryAndParticles() {
++        let low=VeilRenderBudget(tier:.legacy)
++        let high=VeilRenderBudget(tier:.high)
++        XCTAssertEqual(low.targetFPS,30)
++        XCTAssertEqual(low.particleBudget,0)
++        XCTAssertLessThan(low.maxSprites,high.maxSprites)
++    }
++    func testInterpolationAlwaysValid() {
++        var p=VeilFramePacer()
++        _=p.advance(now:0)
++        for i in 1...200 {
++            let step=p.advance(now:Double(i)/41)!
++            XCTAssertGreaterThanOrEqual(step.interpolation,0)
++            XCTAssertLessThanOrEqual(step.interpolation,1)
++        }
++    }
++}
 diff --git a/VeilLinkTests/VeilR6RenderGeometryTests.swift b/VeilLinkTests/VeilR6RenderGeometryTests.swift
 new file mode 100644
 --- /dev/null
@@ -620,68 +706,6 @@ new file mode 100644
 +        }
 +    }
 +}
-diff --git a/VeilLinkTests/VeilR6FramePacerTests.swift b/VeilLinkTests/VeilR6FramePacerTests.swift
-new file mode 100644
---- /dev/null
-+++ b/VeilLinkTests/VeilR6FramePacerTests.swift
-@@ -0,0 +1,57 @@
-+import XCTest
-+#if canImport(VeilMegaEngines)
-+@testable import VeilMegaEngines
-+#elseif canImport(VeilLink)
-+@testable import VeilLink
-+#endif
-+
-+final class VeilR6FramePacerTests: XCTestCase {
-+    func testFirstFrameHasNoTimeJump() {
-+        var p=VeilFramePacer()
-+        XCTAssertEqual(p.advance(now:200)?.simulationSteps,0)
-+    }
-+    func testSixtyFramesIsOneSecond() {
-+        var p=VeilFramePacer()
-+        _ = p.advance(now:0)
-+        for i in 1...60 { _ = p.advance(now:Double(i)/60) }
-+        XCTAssertEqual(p.totalSimSteps,60)
-+    }
-+    func testThirtyFPSStillHasSixtyLogicSteps() {
-+        var p=VeilFramePacer()
-+        _ = p.advance(now:0)
-+        for i in 1...30 { _ = p.advance(now:Double(i)/30) }
-+        XCTAssertEqual(p.totalSimSteps,60)
-+    }
-+    func testBackgroundGapIsCappedAndResetSafe() {
-+        var p=VeilFramePacer()
-+        _ = p.advance(now:0)
-+        let step=p.advance(now:10000)!
-+        XCTAssertLessThanOrEqual(step.simulationSteps,4)
-+        XCTAssertGreaterThan(step.droppedSeconds,9999)
-+        p.reset()
-+        XCTAssertEqual(p.advance(now:10001)?.simulationSteps,0)
-+    }
-+    func testInvalidTimeDoesNotCorruptClock() {
-+        var p=VeilFramePacer()
-+        _ = p.advance(now:5)
-+        XCTAssertNil(p.advance(now:.nan))
-+        XCTAssertNil(p.advance(now:4))
-+        XCTAssertEqual(p.advance(now:5+1.0/60)?.simulationSteps,1)
-+    }
-+    func testQualityBudgetsBoundMemoryAndParticles() {
-+        let low=VeilRenderBudget(tier:.legacy)
-+        let high=VeilRenderBudget(tier:.high)
-+        XCTAssertEqual(low.targetFPS,30)
-+        XCTAssertEqual(low.particleBudget,0)
-+        XCTAssertLessThan(low.maxSprites,high.maxSprites)
-+    }
-+    func testInterpolationAlwaysValid() {
-+        var p=VeilFramePacer()
-+        _=p.advance(now:0)
-+        for i in 1...200 {
-+            let step=p.advance(now:Double(i)/41)!
-+            XCTAssertGreaterThanOrEqual(step.interpolation,0)
-+            XCTAssertLessThanOrEqual(step.interpolation,1)
-+        }
-+    }
-+}
 diff --git a/VeilLinkTests/VeilR6VisualTimelineTests.swift b/VeilLinkTests/VeilR6VisualTimelineTests.swift
 new file mode 100644
 --- /dev/null
@@ -731,6 +755,79 @@ new file mode 100644
 +        let at60=V.notes(seed:3,district:1,nextBeat:2,secondsToNextBeat:0.42)
 +        let at30=V.notes(seed:3,district:1,nextBeat:2,secondsToNextBeat:0.42)
 +        XCTAssertEqual(at60,at30)
++    }
++}
+diff --git a/VeilLinkTests/VeilR7FrameStatsTests.swift b/VeilLinkTests/VeilR7FrameStatsTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilR7FrameStatsTests.swift
+@@ -0,0 +1,68 @@
++import XCTest
++#if canImport(VeilMegaEngines)
++@testable import VeilMegaEngines
++#elseif canImport(VeilLink)
++@testable import VeilLink
++#endif
++
++final class VeilR7FrameStatsTests: XCTestCase {
++    func testEmptyReportAndInitialSample() {
++        var s = VeilRenderFrameStats()
++        XCTAssertEqual(s.report.sampleCount, 0)
++        s.observe(1)
++        XCTAssertEqual(s.report.sampleCount, 0)
++    }
++    func testThirtyFpsCadence() {
++        var s = VeilRenderFrameStats()
++        for i in 0...60 { s.observe(Double(i) / 30) }
++        XCTAssertEqual(s.report.sampleCount, 60)
++        XCTAssertEqual(s.report.medianIntervalMs, 1000.0/30.0, accuracy:0.001)
++        XCTAssertEqual(s.report.slowFrames, 0)
++    }
++    func testLongPauseNotCountedAsDroppedFrame() {
++        var s = VeilRenderFrameStats()
++        s.observe(1); s.observe(1.02); s.observe(200); s.observe(200.02)
++        XCTAssertEqual(s.report.sampleCount, 2)
++        XCTAssertEqual(s.report.slowFrames, 0)
++    }
++    func testRejectNaNAndBackwardsWithoutInflatingStats() {
++        var s = VeilRenderFrameStats()
++        s.observe(5)
++        s.observe(.nan); s.observe(.infinity); s.observe(-3)
++        s.observe(4)
++        s.observe(4.02)
++        XCTAssertEqual(s.report.sampleCount, 1)
++    }
++    func testSlowFramesCountWithinRing() {
++        var s = VeilRenderFrameStats()
++        s.observe(0)
++        s.observe(0.05)
++        s.observe(0.11)
++        XCTAssertEqual(s.report.slowFrames, 2)
++        XCTAssertEqual(s.report.sampleCount, 2)
++    }
++    func testRingBufferHardCapAndRecentSlowCount() {
++        var s = VeilRenderFrameStats()
++        s.observe(0)
++        s.observe(0.07)
++        for i in 1...400 { s.observe(0.07 + Double(i)*0.02) }
++        XCTAssertEqual(s.report.sampleCount, 240)
++        XCTAssertEqual(s.report.slowFrames, 0)
++        XCTAssertLessThan(s.report.elapsedSeconds, 5)
++    }
++    func testResetClearsCounters() {
++        var s = VeilRenderFrameStats()
++        s.observe(1);s.observe(1.05);s.reset()
++        XCTAssertEqual(s.report.sampleCount, 0)
++        s.observe(999)
++        XCTAssertEqual(s.report.sampleCount, 0)
++    }
++    func testDeterminismUnderIdenticalTraces() {
++        var a = VeilRenderFrameStats(), b = VeilRenderFrameStats()
++        for i in 0..<270 {
++            let t = Double(i)/30.0 + (i%9==0 ? 0.003 : 0)
++            a.observe(t);b.observe(t)
++        }
++        XCTAssertEqual(a.report,b.report)
 +    }
 +}
 diff --git a/VeilLinkTests/VeilR7RenderCacheTests.swift b/VeilLinkTests/VeilR7RenderCacheTests.swift
@@ -806,79 +903,6 @@ new file mode 100644
 +                                                  sampledAt: 12, running: true) {
 +            XCTAssertEqual(age, Watch.maximumRunningAge, accuracy: 1e-10)
 +        } else { XCTFail("boundary snapshot must still be visible") }
-+    }
-+}
-diff --git a/VeilLinkTests/VeilR7FrameStatsTests.swift b/VeilLinkTests/VeilR7FrameStatsTests.swift
-new file mode 100644
---- /dev/null
-+++ b/VeilLinkTests/VeilR7FrameStatsTests.swift
-@@ -0,0 +1,68 @@
-+import XCTest
-+#if canImport(VeilMegaEngines)
-+@testable import VeilMegaEngines
-+#elseif canImport(VeilLink)
-+@testable import VeilLink
-+#endif
-+
-+final class VeilR7FrameStatsTests: XCTestCase {
-+    func testEmptyReportAndInitialSample() {
-+        var s = VeilRenderFrameStats()
-+        XCTAssertEqual(s.report.sampleCount, 0)
-+        s.observe(1)
-+        XCTAssertEqual(s.report.sampleCount, 0)
-+    }
-+    func testThirtyFpsCadence() {
-+        var s = VeilRenderFrameStats()
-+        for i in 0...60 { s.observe(Double(i) / 30) }
-+        XCTAssertEqual(s.report.sampleCount, 60)
-+        XCTAssertEqual(s.report.medianIntervalMs, 1000.0/30.0, accuracy:0.001)
-+        XCTAssertEqual(s.report.slowFrames, 0)
-+    }
-+    func testLongPauseNotCountedAsDroppedFrame() {
-+        var s = VeilRenderFrameStats()
-+        s.observe(1); s.observe(1.02); s.observe(200); s.observe(200.02)
-+        XCTAssertEqual(s.report.sampleCount, 2)
-+        XCTAssertEqual(s.report.slowFrames, 0)
-+    }
-+    func testRejectNaNAndBackwardsWithoutInflatingStats() {
-+        var s = VeilRenderFrameStats()
-+        s.observe(5)
-+        s.observe(.nan); s.observe(.infinity); s.observe(-3)
-+        s.observe(4)
-+        s.observe(4.02)
-+        XCTAssertEqual(s.report.sampleCount, 1)
-+    }
-+    func testSlowFramesCountWithinRing() {
-+        var s = VeilRenderFrameStats()
-+        s.observe(0)
-+        s.observe(0.05)
-+        s.observe(0.11)
-+        XCTAssertEqual(s.report.slowFrames, 2)
-+        XCTAssertEqual(s.report.sampleCount, 2)
-+    }
-+    func testRingBufferHardCapAndRecentSlowCount() {
-+        var s = VeilRenderFrameStats()
-+        s.observe(0)
-+        s.observe(0.07)
-+        for i in 1...400 { s.observe(0.07 + Double(i)*0.02) }
-+        XCTAssertEqual(s.report.sampleCount, 240)
-+        XCTAssertEqual(s.report.slowFrames, 0)
-+        XCTAssertLessThan(s.report.elapsedSeconds, 5)
-+    }
-+    func testResetClearsCounters() {
-+        var s = VeilRenderFrameStats()
-+        s.observe(1);s.observe(1.05);s.reset()
-+        XCTAssertEqual(s.report.sampleCount, 0)
-+        s.observe(999)
-+        XCTAssertEqual(s.report.sampleCount, 0)
-+    }
-+    func testDeterminismUnderIdenticalTraces() {
-+        var a = VeilRenderFrameStats(), b = VeilRenderFrameStats()
-+        for i in 0..<270 {
-+            let t = Double(i)/30.0 + (i%9==0 ? 0.003 : 0)
-+            a.observe(t);b.observe(t)
-+        }
-+        XCTAssertEqual(a.report,b.report)
 +    }
 +}
 diff --git a/VeilLinkTests/VeilRhythmNativeSceneSmokeTests.swift b/VeilLinkTests/VeilRhythmNativeSceneSmokeTests.swift

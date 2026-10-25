@@ -1,13 +1,23 @@
-# R7 PROPOSAL
+# R7 Rendering Hardening — Full, Auditable Submission
 
-Supersedes R6 PR #83 with complete 13-file add-only candidate patch. See PATCH.diff and FILES.
+toolcenter_group: 娱乐
+depends_on: Wave 0; R4 E191 rules, R5 #79, R7 #86
 
-- Fixed 390×600 virtual SpriteKit canvas .aspectFit; avoids stretched nodes.
-- Cache 16 deterministic chart notes once per seed/district; hot update no chart regeneration.
-- Running snapshot older than 280ms blanks notes rather than freezing at wrong position; paused snapshots freeze by design.
-- Bounded 240-call frame interval stats (not GPU telemetry).
-- 4 four-lane accessible SwiftUI input controls outside ScrollView with 56pt minimum height; 12Hz reactive HUD instead of 20Hz; SpriteKit requests 30Hz.
-- Tests can import either Linux SwiftPM VeilMegaEngines or iOS App VeilLink.
+device_focus: iPhone7 iOS15.8.3 GPU/thermal/touch; 12Hz HUD + 30fps requested SpriteKit.
 
-Requires R5 #79 types to be integrated before this, and P0 touch/consent #64/#65/#66 arbitration.
-Nothing enters main or installed App from this Inbox-only commit.
+## Why this replaces the earlier partial R7 drop
+
+The entire **13-file** R7 candidate is now staged under this same Inbox FILES directory. `PATCH.diff` includes ALL 13 paths exactly; two R7 scene/UI files are present rather than ZIP-only. This complete R7 version supersedes R6 proposal PR #83 for overlapping renderer filenames; do not import both.
+
+- Fixed 390×600 virtual SpriteKit `.aspectFit` scene (no uniform nonproportional scaling).
+- Bounded deterministic chart cache (16 notes per seed and district).
+- 280ms running snapshot stale watchdog; tolerate 15ms positive clock skew; pause deliberately holds state.
+- Bounded 240-callback rolling timing metrics (not measured GPU time).
+- Four accessible SwiftUI 56pt minimum-height lane buttons OUTSIDE ScrollView; HUD requests 12Hz, SpriteKit requests 30fps.
+- Renderer never owns BLE traffic, user keys, messages, network identity or A9/A10 governance.
+
+## Proposed Wave 1 convergence
+
+`WAVE1_COMBINED_CANDIDATE.diff` is an **advisory** 20-source/test-file R4 E191 + R5 + R7 combined patch. It contains each target path once and carries R5 #79 engine/test dependencies; Governor may choose a different subset after source review. It does NOT include ToolCenter navigation, the disputed R4 gate (#78, eight vs nine IDs) or an iOS IPA workflow. The owner decision on #78 is preserved.
+
+The submitted matrix `WAVE1_REVIEW.md` explicitly records Wave 0 P0 as blocking and integration as Governor-only.
