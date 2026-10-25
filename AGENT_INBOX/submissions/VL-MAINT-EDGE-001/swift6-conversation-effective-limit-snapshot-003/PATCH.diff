@@ -1,0 +1,19 @@
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -723,13 +723,14 @@
+                 loadedMessages = page.messages
+                 hasOlder = page.hasOlder
+             }
++            let resolvedLimit = effectiveLimit
+             let loadedGameSessions = MiniGameSessionBuilder.sessionsByID(from: loadedMessages)
+             DispatchQueue.main.async {
+                 guard generation == messageReloadGeneration else { return }
+                 if messages != loadedMessages { messages = loadedMessages }
+                 gameSessionsByID = loadedGameSessions
+                 if hasOlderMessages != hasOlder { hasOlderMessages = hasOlder }
+-                if !loadAll { messageWindowLimit = max(messageWindowLimit, effectiveLimit) }
++                if !loadAll { messageWindowLimit = max(messageWindowLimit, resolvedLimit) }
+                 if isReloadingMessages { isReloadingMessages = false }
+             }
+         }
