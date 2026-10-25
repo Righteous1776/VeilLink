@@ -1,0 +1,27 @@
+diff --git a/VeilLink/Storage/BackupManager.swift b/VeilLink/Storage/BackupManager.swift
+--- a/VeilLink/Storage/BackupManager.swift
++++ b/VeilLink/Storage/BackupManager.swift
+@@ -130,7 +130,9 @@
+             .appendingPathComponent("VeilLink-Restore-\(UUID().uuidString)", isDirectory: true)
+         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+         defer { try? fileManager.removeItem(at: root) }
+         try validateArchiveBeforeExtraction(archiveURL)
++        let preflight = VeilBackupArchiveInspector.inspect(archiveURL, verifyAllCRC: false)
++        guard preflight.permittedToRestore else { throw BackupError.invalidPackage }
+         try fileManager.unzipItem(at: archiveURL, to: root)
+         try validateExtractedTree(root)
+ 
+diff --git a/VeilLink/UI/ToolCenterView.swift b/VeilLink/UI/ToolCenterView.swift
+--- a/VeilLink/UI/ToolCenterView.swift
++++ b/VeilLink/UI/ToolCenterView.swift
+@@ -84,7 +84,10 @@
+                     if matches("指纹 hash sha256 文本 校验 摘要") {
+                         toolLink("文本指纹", detail: "SHA-256 · 字节统计", icon: "number", destination: VeilFingerprintToolView())
+                     }
++                    if matches("备份 ZIP 安全 体检 归档 完整性 CRC 压缩炸弹 restore preflight") {
++                        toolLink("ZIP 备份体检", detail: "导入前检查 · 可选全量 CRC", icon: "archivebox.fill", destination: VeilBackupPreflightView())
++                    }
+                     if matches("文件 完整性 校验 指纹 hash sha256 对比 传输 verify integrity") {
+                         toolLink("文件完整性", detail: "SHA-256 · 双文件对比", icon: "checkmark.shield.fill", destination: VeilFileIntegrityToolView())
+                     }
+                     if matches("二维码 qr 临时 文本 分享") {
