@@ -22,6 +22,7 @@ struct VeilCameraQRScannerView: View {
                     codeTypes: [.qr],
                     scanMode: .once,
                     showViewfinder: true,
+                    requiresPhotoOutput: false,
                     shouldVibrateOnSuccess: false
                 ) { response in
                     DispatchQueue.main.async {
