@@ -1,0 +1,134 @@
+diff --git a/project.yml b/project.yml
+--- a/project.yml
++++ b/project.yml
+@@ -15,6 +15,9 @@
+     DEVELOPMENT_TEAM: ""
+     CODE_SIGN_STYLE: Automatic
+ packages:
++  CodeScanner:
++    url: https://github.com/twostraws/CodeScanner.git
++    exactVersion: 2.5.2
+   ZIPFoundation:
+     url: https://github.com/weichsel/ZIPFoundation.git
+     from: 0.9.19
+@@ -52,6 +55,7 @@
+     dependencies:
+       - sdk: libsqlite3.tbd
+       - package: ZIPFoundation
++      - package: CodeScanner
+       - target: VeilBackgroundWidget
+         embed: true
+     settings:
+diff --git a/VeilLink/Resources/Info.plist b/VeilLink/Resources/Info.plist
+--- a/VeilLink/Resources/Info.plist
++++ b/VeilLink/Resources/Info.plist
+@@ -43,7 +43,7 @@
+ 	<key>NSFaceIDUsageDescription</key>
+ 	<string>VeilLink 使用 Face ID 在本机解锁应用；生物识别数据由系统处理，VeilLink 不读取或保存。</string>
+ 	<key>NSCameraUsageDescription</key>
++	<string>VeilLink 仅在你主动扫码时使用相机读取二维码，或在主动启用灵核视频对话时获取本机视觉摘要；扫码图像不上传。</string>
+-	<string>灵核视频对话可在本机使用前置摄像头生成低频视觉摘要；原始视频不会上传。</string>
+ 	<key>NSMicrophoneUsageDescription</key>
+ 	<string>用于发送加密语音消息、本地蓝牙对讲机与灵核的本机语音输入；不支持离线识别时不会自动改用云端。</string>
+ 	<key>NSSpeechRecognitionUsageDescription</key>
+diff --git a/VeilLink/UI/RemotePairingView.swift b/VeilLink/UI/RemotePairingView.swift
+--- a/VeilLink/UI/RemotePairingView.swift
++++ b/VeilLink/UI/RemotePairingView.swift
+@@ -10,6 +10,7 @@
+     @ObservedObject var pairing: VeilRemotePairingCoordinator
+     @ObservedObject var model: AppModel
+     @State private var showsPhotoPicker = false
++    @State private var showsCameraScanner = false
+     @State private var shareItem: ShareablePairImage?
+     @State private var saveStatus: String?
+ 
+@@ -28,6 +29,19 @@
+         }
+         .background(VeilAmbientBackground())
+         .navigationTitle("远程二维码配对")
++        .sheet(isPresented: $showsCameraScanner) {
++            VeilCameraQRScannerView(
++                purpose: .remotePairing,
++                onScanned: { code in
++                    pairing.consumeQRCode(code)
++                    pairing.lastError == nil ? model.haptics.resolved() : model.haptics.error()
++                },
++                onFailure: { message in
++                    model.alertMessage = message
++                    model.haptics.error()
++                }
++            )
++        }
+         .sheet(isPresented: $showsPhotoPicker) {
+             RemotePairQRPhotoPicker { image in
+                 showsPhotoPicker = false
+@@ -128,10 +142,20 @@
+             Label("导入朋友发来的二维码", systemImage: "photo.on.rectangle")
+                 .font(.headline)
+                 .foregroundColor(VeilTheme.goldBright)
++            Text("可以面对面扫描或从相册导入。注意远程配对需要已配置的 Relay 网络；二维码只承载临时配对凭据。")
+-            Text("从微信保存图片后，在这里直接选择。PHPicker 不需要 VeilLink 获取整个照片图库读取权限。")
+                 .font(.caption)
+                 .foregroundColor(VeilTheme.secondaryText)
+             Button {
++                showsCameraScanner = true
++                model.haptics.selection()
++            } label: {
++                Label("使用摄像头扫码", systemImage: "qrcode.viewfinder")
++                    .frame(maxWidth: .infinity)
++            }
++            .buttonStyle(.borderedProminent)
++            .tint(VeilTheme.gold)
++
++            Button {
+                 showsPhotoPicker = true
+                 model.haptics.selection()
+             } label: {
+diff --git a/VeilLink/UI/ToolCenterView.swift b/VeilLink/UI/ToolCenterView.swift
+--- a/VeilLink/UI/ToolCenterView.swift
++++ b/VeilLink/UI/ToolCenterView.swift
+@@ -287,6 +287,8 @@
+ 
+ struct VeilTemporaryQRToolView: View {
+     @State private var text = ""
++    @State private var showsCameraScanner = false
++    @State private var scanError: String?
+     @State private var qrImage: UIImage?
+     @State private var renderTask: Task<Void, Never>?
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+@@ -294,6 +296,18 @@
+     var body: some View {
+         ScrollView {
+             VStack(spacing: 16) {
++                Button {
++                    showsCameraScanner = true
++                } label: {
++                    Label("扫码读取文本", systemImage: "qrcode.viewfinder")
++                        .frame(maxWidth: .infinity)
++                }
++                .buttonStyle(VeilGameSecondaryButtonStyle())
++                if let scanError {
++                    Label(scanError, systemImage: "exclamationmark.triangle")
++                        .font(.footnote)
++                        .foregroundColor(VeilTheme.danger)
++                }
+                 TextEditor(text: $text)
+                     .frame(minHeight: 120)
+                     .padding(8)
+@@ -326,6 +340,16 @@
+         .background(VeilAmbientBackground())
+         .navigationTitle("临时二维码")
+         .navigationBarTitleDisplayMode(.inline)
++        .sheet(isPresented: $showsCameraScanner) {
++            VeilCameraQRScannerView(
++                purpose: .temporaryText,
++                onScanned: { scanned in
++                    text = scanned
++                    scanError = nil
++                },
++                onFailure: { message in scanError = message }
++            )
++        }
+         .onChange(of: text) { value in
+             renderTask?.cancel()
+             qrImage = nil
