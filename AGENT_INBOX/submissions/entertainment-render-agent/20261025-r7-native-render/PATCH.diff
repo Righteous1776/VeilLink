@@ -1,0 +1,181 @@
+diff --git a/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift b/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift
+@@ -0,0 +1,58 @@
++import Foundation
++
++/// Precomputes chart metadata once per seed/district. SpriteKit reads bounded
++/// value snapshots and never owns game rules, timing decisions or identities.
++public struct VeilRhythmRenderCache: Sendable {
++    public let seed: UInt64
++    public let district: Int
++    private let schedule: [VeilRhythmExpedition.Note]
++    public init?(seed: UInt64, district: Int) {
++        guard (0..<4).contains(district) else { return nil }
++        self.seed = seed
++        self.district = district
++        var items: [VeilRhythmExpedition.Note] = []
++        for beat in 0..<16 {
++            guard let n = VeilRhythmExpedition.note(seed: seed, district: district, beat: beat) else { return nil }
++            items.append(n)
++        }
++        schedule = items
++    }
++    public func visible(nextBeat: Int, secondsToNextBeat: Double,
++                        capacity: Int = 5) -> [VeilRhythmVisualTimeline.VisibleNote] {
++        guard (0..<16).contains(nextBeat), (1...16).contains(capacity),
++              secondsToNextBeat.isFinite else { return [] }
++        let nextTime = schedule[nextBeat].nominalTime
++        let end = min(16, nextBeat + capacity)
++        var visible: [VeilRhythmVisualTimeline.VisibleNote] = []
++        visible.reserveCapacity(capacity)
++        for beat in nextBeat..<end {
++            let n = schedule[beat]
++            let remaining = secondsToNextBeat + n.nominalTime - nextTime
++            guard remaining >= -VeilRhythmLiveConductor.hitWindow,
++                  remaining <= VeilRhythmVisualTimeline.travelSeconds else { continue }
++            let progress = max(0, min(1, 1 - remaining / VeilRhythmVisualTimeline.travelSeconds))
++            visible.append(.init(beat: beat, lane: n.lane,
++                                 x: (Double(n.lane) + 0.5) * VeilRhythmVisualTimeline.canvas.width / 4,
++                                 y: VeilRhythmVisualTimeline.spawnY +
++                                    (VeilRhythmVisualTimeline.strikeY - VeilRhythmVisualTimeline.spawnY) * progress,
++                                 secondsUntilHit: remaining))
++        }
++        return visible
++    }
++}
++
++/// A stopped producer must not leave misleading, eternally frozen notes visible.
++/// Paused content is held by design; running content goes blank until fresh data.
++public enum VeilRenderSnapshotWatchdog {
++    public enum Status: Equatable, Sendable { case fresh(Double), stale, invalid }
++    public static let maximumRunningAge = 0.28
++    public static let maximumClockSkew = 0.015
++    public static func check(now: Double, sampledAt: Double, running: Bool) -> Status {
++        guard now.isFinite, sampledAt.isFinite, now >= 0, sampledAt >= 0 else { return .invalid }
++        let age = now - sampledAt
++        guard age >= -maximumClockSkew else { return .invalid }
++        if !running { return .fresh(0) }
++        guard age <= maximumRunningAge else { return .stale }
++        return .fresh(max(0, age))
++    }
++}
+diff --git a/VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift b/VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift
+@@ -0,0 +1,51 @@
++import Foundation
++
++/// Bounded, local-only update-callback cadence counters, not GPU timing.
++/// Never records touch location, personal data, media or message content.
++public struct VeilRenderFrameStats: Sendable {
++    public struct Report: Equatable, Sendable {
++        public let sampleCount: Int
++        public let medianIntervalMs: Double
++        public let p95IntervalMs: Double
++        public let slowFrames: Int
++        public let elapsedSeconds: Double
++    }
++    public static let maximumSamples = 240
++    private var intervals: [Double] = []
++    private var nextSlot = 0
++    private var lastTime: Double?
++    public init() { intervals.reserveCapacity(Self.maximumSamples) }
++    public mutating func reset() {
++        intervals.removeAll(keepingCapacity: true)
++        nextSlot = 0
++        lastTime = nil
++    }
++    /// Record only finite monotonic callback times; avoid counting background gaps.
++    public mutating func observe(_ now: Double) {
++        guard now.isFinite, now >= 0 else { return }
++        guard let last = lastTime else { lastTime = now; return }
++        guard now >= last else { lastTime = now; return }
++        lastTime = now
++        let delta = now - last
++        guard delta > 0, delta <= 0.3 else { return }
++        if intervals.count < Self.maximumSamples { intervals.append(delta) }
++        else {
++            intervals[nextSlot] = delta
++            nextSlot = (nextSlot + 1) % Self.maximumSamples
++        }
++    }
++    public var report: Report {
++        let sorted = intervals.sorted()
++        guard let middle = sorted.first else {
++            return .init(sampleCount: 0, medianIntervalMs: 0,
++                         p95IntervalMs: 0, slowFrames: 0, elapsedSeconds: 0)
++        }
++        let median = sorted[sorted.count/2]
++        let p95 = sorted[min(sorted.count-1, Int(Double(sorted.count-1)*0.95 + 0.999999))]
++        return .init(sampleCount: sorted.count,
++                     medianIntervalMs: median * 1000,
++                     p95IntervalMs: max(middle,p95) * 1000,
++                     slowFrames: intervals.filter { $0 > 1.0/24.0 }.count,
++                     elapsedSeconds: intervals.reduce(0,+))
++    }
++}
+diff --git a/VeilLinkTests/VeilR7RenderCacheSmokeTests.swift b/VeilLinkTests/VeilR7RenderCacheSmokeTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilR7RenderCacheSmokeTests.swift
+@@ -0,0 +1,29 @@
++import XCTest
++#if canImport(VeilMegaEngines)
++@testable import VeilMegaEngines
++#elseif canImport(VeilLink)
++@testable import VeilLink
++#endif
++
++final class VeilR7RenderCacheSmokeTests: XCTestCase {
++    func testCacheParityAcrossDistricts() throws {
++        for seed in UInt64(0)..<100 {
++            for district in 0..<4 {
++                let cache = try XCTUnwrap(VeilRhythmRenderCache(seed: seed, district: district))
++                for beat in 0..<16 {
++                    for time in [0.0, 0.5, 1.6] {
++                        XCTAssertEqual(cache.visible(nextBeat:beat, secondsToNextBeat:time),
++                          VeilRhythmVisualTimeline.notes(seed:seed,district:district,nextBeat:beat,secondsToNextBeat:time,capacity:5))
++                    }
++                }
++            }
++        }
++    }
++    func testRejectOutOfRangeAndStale() throws {
++        XCTAssertNil(VeilRhythmRenderCache(seed: 1, district: 4))
++        let cache = try XCTUnwrap(VeilRhythmRenderCache(seed: 1, district: 0))
++        XCTAssertTrue(cache.visible(nextBeat: 16, secondsToNextBeat: 0).isEmpty)
++        XCTAssertEqual(VeilRenderSnapshotWatchdog.check(now: 2, sampledAt: 1, running: true), .stale)
++        XCTAssertEqual(VeilRenderSnapshotWatchdog.check(now: 2, sampledAt: 1, running: false), .fresh(0))
++    }
++}
+diff --git a/VeilLinkTests/VeilR7FrameStatsSmokeTests.swift b/VeilLinkTests/VeilR7FrameStatsSmokeTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilR7FrameStatsSmokeTests.swift
+@@ -0,0 +1,23 @@
++import XCTest
++#if canImport(VeilMegaEngines)
++@testable import VeilMegaEngines
++#elseif canImport(VeilLink)
++@testable import VeilLink
++#endif
++
++final class VeilR7FrameStatsSmokeTests: XCTestCase {
++    func testBoundedRecentWindow() {
++        var stats = VeilRenderFrameStats()
++        for i in 0...400 { stats.observe(Double(i)/30) }
++        XCTAssertEqual(stats.report.sampleCount, 240)
++        XCTAssertEqual(stats.report.slowFrames, 0)
++    }
++    func testNonfiniteAndBackgroundGapExcluded() {
++        var stats = VeilRenderFrameStats()
++        stats.observe(1)
++        stats.observe(.nan)
++        stats.observe(360)
++        stats.observe(360.03)
++        XCTAssertEqual(stats.report.sampleCount, 1)
++    }
++}
