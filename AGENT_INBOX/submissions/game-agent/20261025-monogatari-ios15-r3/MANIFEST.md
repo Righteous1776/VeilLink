@@ -1,0 +1,11 @@
+# R3 Inbox manifest
+- agent_id: game-agent
+- task_id: 20261025-monogatari-ios15-r3
+- base_main_sha: 501ef814a0a9bea41419fe2d9f48315371b30320
+- submission_path: AGENT_INBOX/submissions/game-agent/20261025-monogatari-ios15-r3/
+- mode: INBOX_ONLY
+- actual_status: OWNER_PACKAGE_COMPLETED; GITHUB_PARTIAL_SOURCE_STAGING_ONLY
+- complete_owner_package: VeilLink_Monogatari_OfficialFullEngine_R3_20261025.zip (5,636,992 bytes)
+- complete_owner_package_sha256: 840270de26bcf53ea1f8fe68e4d8ec717ae610d289c1de6dfa7573c59bd2cd09
+- upstream ZIP sha256: 16d221485888b0193312e9989ecafa57cb1913978bf2f09ba554552ba3885806
+- no product/main/release/ipa action: true

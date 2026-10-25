@@ -1,0 +1,77 @@
+diff --git a/VeilLink/Narrative/VeilMonogatariByteRange.swift b/VeilLink/Narrative/VeilMonogatariByteRange.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Narrative/VeilMonogatariByteRange.swift
+@@ -0,0 +1,42 @@
++import Foundation
++
++/// RFC 7233 single-byte-range subset for a read-only local bundle server.
++/// Deliberately rejects multiple/ambiguous ranges rather than guessing.
++struct VeilNovelResolvedByteRange: Equatable {
++    let first: Int
++    let last: Int    // inclusive
++    let fullLength: Int
++
++    var count: Int { last - first + 1 }
++    var contentRange: String { "bytes \(first)-\(last)/\(fullLength)" }
++}
++
++enum VeilNovelRangeParser {
++    static func resolve(_ header: String?, fileLength: Int) -> VeilNovelResolvedByteRange? {
++        guard fileLength > 0 else { return nil }
++        guard let header = header else {
++            return VeilNovelResolvedByteRange(first: 0, last: fileLength - 1, fullLength: fileLength)
++        }
++        let value = header.trimmingCharacters(in: .whitespaces)
++        guard value.hasPrefix("bytes="), !value.contains(",") else { return nil }
++        let spec = String(value.dropFirst(6))
++        let parts = spec.split(separator: "-", omittingEmptySubsequences: false)
++        guard parts.count == 2 else { return nil }
++        func digits(_ s: Substring) -> Int? {
++            guard !s.isEmpty, s.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) else { return nil }
++            return Int(s)
++        }
++        if parts[0].isEmpty {
++            guard let suffix = digits(parts[1]), suffix > 0 else { return nil }
++            return VeilNovelResolvedByteRange(first: max(0, fileLength - suffix), last: fileLength - 1, fullLength: fileLength)
++        }
++        guard let first = digits(parts[0]), first < fileLength else { return nil }
++        let end: Int
++        if parts[1].isEmpty { end = fileLength - 1 }
++        else {
++            guard let explicit = digits(parts[1]), explicit >= first else { return nil }
++            end = min(explicit, fileLength - 1)
++        }
++        return VeilNovelResolvedByteRange(first: first, last: end, fullLength: fileLength)
++    }
++}
+diff --git a/Tools/VNPort/tests/swift/main.swift b/Tools/VNPort/tests/swift/main.swift
+new file mode 100644
+--- /dev/null
++++ b/Tools/VNPort/tests/swift/main.swift
+@@ -0,0 +1,25 @@
++import Foundation
++
++func check(_ header: String?, _ length: Int, _ start: Int?, _ end: Int?) {
++    let actual = VeilNovelRangeParser.resolve(header, fileLength: length)
++    if let start = start, let end = end {
++        precondition(actual?.first == start, "bad start for \(header ?? "nil")")
++        precondition(actual?.last == end, "bad end for \(header ?? "nil")")
++    } else { precondition(actual == nil, "expected rejection: \(header ?? "nil")") }
++}
++check(nil, 100, 0, 99)
++check("bytes=0-0", 100, 0, 0)
++check("bytes=13-", 100, 13, 99)
++check("bytes=-10", 100, 90, 99)
++check("bytes=-999", 100, 0, 99)
++check("bytes=90-300", 100, 90, 99)
++check("bytes=99-99", 100, 99, 99)
++check("bytes=100-", 100, nil, nil)
++check("bytes=12-11", 100, nil, nil)
++check("bytes=1-2,3-4", 100, nil, nil)
++check("bytes=1-xyz", 100, nil, nil)
++check("bytes=18446744073709551616-", 100, nil, nil)
++check("bytes=-0", 100, nil, nil)
++check("BYTES=1-5", 100, nil, nil)
++check(nil, 0, nil, nil)
++print("PASS: 15 Swift Foundation range-parser cases")
