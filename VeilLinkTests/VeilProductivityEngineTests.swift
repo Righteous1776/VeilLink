@@ -65,7 +65,7 @@ final class VeilProductivityEngineTests: XCTestCase {
         let slots = try VeilProductivityEngine.meetingSlots(from: start, participants: participants, days: 1, limit: 4)
         XCTAssertEqual(slots.count, 4)
         XCTAssertTrue(slots.allSatisfy { $0.comfortableParticipantCount == 2 })
-        XCTAssertEqual(slots.first?.date, Date(timeIntervalSince1970: 1_704_096_000)) // 08:00 UTC, 09:00 Berlin
+        XCTAssertEqual(slots.first?.date, Date(timeIntervalSince1970: 1_704_099_600)) // 09:00 UTC, 10:00 Berlin
     }
 
     func testMeetingPlannerRejectsUnknownTimeZone() {
