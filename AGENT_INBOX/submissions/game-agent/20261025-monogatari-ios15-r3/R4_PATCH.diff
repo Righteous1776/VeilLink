@@ -1,0 +1,38 @@
+diff --git a/Tools/VNPort/overlays/js/veillink-ios15-compat.js b/Tools/VNPort/overlays/js/veillink-ios15-compat.js
+new file mode 100644
+--- /dev/null
++++ b/Tools/VNPort/overlays/js/veillink-ios15-compat.js
+@@ -0,0 +1,33 @@
++/* Monogatari v2.8.0 compatibility shim for iOS 15 WKWebView custom/file origins.
++   Engine files remain byte-for-byte identical to the official distribution. */
++(function () {
++  'use strict';
++  if (typeof Object.hasOwn !== 'function') {
++    Object.hasOwn = function (object, key) {
++      return Object.prototype.hasOwnProperty.call(Object(object), key);
++    };
++  }
++  var rng = window.crypto;
++  if (rng && typeof rng.randomUUID !== 'function' && typeof rng.getRandomValues === 'function') {
++    // randomUUID() may be withheld in non-secure custom-scheme origins.
++    // Use only the platform's cryptographic random generator; never Math.random.
++    try {
++      Object.defineProperty(rng, 'randomUUID', {
++        configurable: true,
++        value: function () {
++          var bytes = new Uint8Array(16);
++          rng.getRandomValues(bytes);
++          bytes[6] = (bytes[6] & 15) | 64;
++          bytes[8] = (bytes[8] & 63) | 128;
++          var hex = [];
++          for (var i = 0; i < 16; i++) hex.push(bytes[i].toString(16).padStart(2, '0'));
++          return hex.slice(0, 4).join('') + '-' + hex.slice(4, 6).join('') + '-' +
++            hex.slice(6, 8).join('') + '-' + hex.slice(8, 10).join('') + '-' +
++            hex.slice(10).join('');
++        }
++      });
++    } catch (_) {
++      // If the host object is immutable, let the engine report the unsupported origin.
++    }
++  }
++})();
