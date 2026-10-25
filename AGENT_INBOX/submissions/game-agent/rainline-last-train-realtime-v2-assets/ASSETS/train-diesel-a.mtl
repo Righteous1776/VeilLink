@@ -1,0 +1,7 @@
+# VeilLink CC0 fallback material derived from Kenney Train Kit
+newmtl colormap
+Ka 0.08 0.10 0.13
+Kd 0.16 0.46 0.58
+Ks 0.22 0.28 0.30
+Ns 32
+illum 2

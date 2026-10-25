@@ -1,0 +1,45 @@
+{
+  "grant_id": "VEILLINK-ASSET-GAME-001",
+  "assets": [
+    {
+      "path": "ASSETS/rainline_train_diesel_a.obj",
+      "alias": "rainline-kenney-train-diesel-a",
+      "source_url": "https://github.com/ThomasW1204/A-Rolling-Start/blob/df74eea644c7e5ebfd5c0ce9c5cb8fe55fad71e7/assets/kenney_train-kit/Models/OBJ%20format/train-diesel-a.obj",
+      "license": "CC0-1.0",
+      "sha256": "c6524279582014f820b7988113e8b43c1b9e9831cecabba95e623a90f2ca99ac",
+      "bytes": 132680,
+      "purpose": "Train Kit locomotive source model for Rainline exterior/baked-car art",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/train-diesel-a.mtl",
+      "alias": "rainline-kenney-train-material",
+      "source_url": "https://github.com/ThomasW1204/A-Rolling-Start/blob/df74eea644c7e5ebfd5c0ce9c5cb8fe55fad71e7/assets/kenney_train-kit/Models/OBJ%20format/train-diesel-a.mtl",
+      "license": "CC0-1.0",
+      "sha256": "43bc0c0290e35a8f93869cd7d72eeac39750819bd6b5fb415c7af1986a6f61d8",
+      "bytes": 147,
+      "purpose": "Texture-free CC0 derivative material so the locomotive remains renderable without colormap.png",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/rainline_track_detailed.obj",
+      "alias": "rainline-kenney-track-detailed",
+      "source_url": "https://github.com/ThomasW1204/A-Rolling-Start/blob/df74eea644c7e5ebfd5c0ce9c5cb8fe55fad71e7/assets/kenney_train-kit/Models/OBJ%20format/track-detailed.obj",
+      "license": "CC0-1.0",
+      "sha256": "f67c9e5bce90d03ac3ba0272301682ebd56c01e29b40439e4fd66791c446fae1",
+      "bytes": 8291,
+      "purpose": "Train Kit detailed rail source model for Rainline track/parallax baking",
+      "attribution": ""
+    },
+    {
+      "path": "ASSETS/track-detailed.mtl",
+      "alias": "rainline-kenney-track-material",
+      "source_url": "https://github.com/ThomasW1204/A-Rolling-Start/blob/df74eea644c7e5ebfd5c0ce9c5cb8fe55fad71e7/assets/kenney_train-kit/Models/OBJ%20format/track-detailed.mtl",
+      "license": "CC0-1.0",
+      "sha256": "d6faaa9056fc29cfb39a6b5b23909ead7e0ea48869cb5a8c06f38a0d61585a1f",
+      "bytes": 147,
+      "purpose": "Texture-free CC0 derivative material for the rail model",
+      "attribution": ""
+    }
+  ]
+}
