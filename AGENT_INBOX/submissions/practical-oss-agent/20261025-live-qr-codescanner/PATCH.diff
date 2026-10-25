@@ -36,11 +36,11 @@ diff --git a/VeilLink/UI/RemotePairingView.swift b/VeilLink/UI/RemotePairingView
      @State private var shareItem: ShareablePairImage?
      @State private var saveStatus: String?
  
-@@ -41,6 +44,57 @@
+@@ -41,6 +44,60 @@
                  }
              }
          }
-+        .sheet(isPresented: $showsLiveScanner) {
++        .sheet(isPresented: $showsLiveScanner, onDismiss: { cameraScanDidComplete = true }) {
 +            NavigationView {
 +                CodeScannerView(
 +                    codeTypes: [.qr],
@@ -53,7 +53,7 @@ diff --git a/VeilLink/UI/RemotePairingView.swift b/VeilLink/UI/RemotePairingView
 +                    case .success(let scan):
 +                        let scannedText = scan.string
 +                        DispatchQueue.main.async {
-+                            guard !cameraScanDidComplete else { return }
++                            guard showsLiveScanner, !cameraScanDidComplete else { return }
 +                            cameraScanDidComplete = true
 +                            showsLiveScanner = false
 +                            guard VeilPairCameraInputGate.accepts(scannedText) else {
@@ -74,7 +74,7 @@ diff --git a/VeilLink/UI/RemotePairingView.swift b/VeilLink/UI/RemotePairingView
 +                    case .failure(let error):
 +                        let reason = error.localizedDescription
 +                        DispatchQueue.main.async {
-+                            guard !cameraScanDidComplete else { return }
++                            guard showsLiveScanner, !cameraScanDidComplete else { return }
 +                            cameraScanDidComplete = true
 +                            showsLiveScanner = false
 +                            model.alertMessage = "相机扫码失败：\(reason)。也可以改用相册导入。"
@@ -86,7 +86,10 @@ diff --git a/VeilLink/UI/RemotePairingView.swift b/VeilLink/UI/RemotePairingView
 +                .navigationBarTitleDisplayMode(.inline)
 +                .toolbar {
 +                    ToolbarItem(placement: .navigationBarTrailing) {
-+                        Button("取消") { showsLiveScanner = false }
++                        Button("取消") {
++                            cameraScanDidComplete = true
++                            showsLiveScanner = false
++                        }
 +                    }
 +                }
 +            }
