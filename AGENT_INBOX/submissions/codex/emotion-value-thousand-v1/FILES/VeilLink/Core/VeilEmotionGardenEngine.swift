@@ -60,10 +60,41 @@ enum VeilEmotionRitualKind: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum VeilEmotionContext: String, CaseIterable, Identifiable, Sendable {
+    case morning
+    case midday
+    case night
+    case alone
+    case commute
+    case workBreak
+    case afterCompletion
+    case waiting
+    case rainyDay
+    case specialDay
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .morning: return "晨间"
+        case .midday: return "午间"
+        case .night: return "夜间"
+        case .alone: return "独处"
+        case .commute: return "通勤"
+        case .workBreak: return "工作间隙"
+        case .afterCompletion: return "完成之后"
+        case .waiting: return "等待中"
+        case .rainyDay: return "雨天"
+        case .specialDay: return "特别日子"
+        }
+    }
+}
+
 struct VeilEmotionRitual: Identifiable, Equatable, Sendable {
     let id: String
     let tone: VeilEmotionTone
     let kind: VeilEmotionRitualKind
+    let context: VeilEmotionContext
     let title: String
     let prompt: String
     let seconds: Int
@@ -71,31 +102,54 @@ struct VeilEmotionRitual: Identifiable, Equatable, Sendable {
 }
 
 enum VeilEmotionGardenEngine {
-    /// The first 100 executable micro-rituals are generated from 10 tones × 10 safe ritual forms.
+    /// 1,000 executable micro-rituals: 10 tones × 10 safe ritual forms × 10 contexts.
     /// They are local prompts, not diagnosis, therapy, or crisis care.
-    static let rituals: [VeilEmotionRitual] = VeilEmotionTone.allCases.flatMap { tone in
-        VeilEmotionRitualKind.allCases.map { kind in
-            VeilEmotionRitual(
-                id: "EVG-\(tone.rawValue)-\(kind.rawValue)",
-                tone: tone,
-                kind: kind,
-                title: "\(tone.title) · \(kind.title)",
-                prompt: prompt(tone: tone, kind: kind),
-                seconds: duration(kind),
-                symbol: symbol(kind)
-            )
+    static let rituals: [VeilEmotionRitual] = {
+        var result: [VeilEmotionRitual] = []
+        result.reserveCapacity(1_000)
+        for (toneIndex, tone) in VeilEmotionTone.allCases.enumerated() {
+            for (kindIndex, kind) in VeilEmotionRitualKind.allCases.enumerated() {
+                for (contextIndex, context) in VeilEmotionContext.allCases.enumerated() {
+                    let number = toneIndex * 100 + kindIndex * 10 + contextIndex + 1
+                    result.append(VeilEmotionRitual(
+                        id: String(format: "EV-%04d", number),
+                        tone: tone,
+                        kind: kind,
+                        context: context,
+                        title: "\(tone.title) · \(context.title) · \(kind.title)",
+                        prompt: prompt(tone: tone, kind: kind, context: context),
+                        seconds: duration(kind, context: context),
+                        symbol: symbol(kind)
+                    ))
+                }
+            }
         }
-    }
+        return result
+    }()
 
     static func rituals(for tone: VeilEmotionTone) -> [VeilEmotionRitual] {
         rituals.filter { $0.tone == tone }
     }
 
-    static func dailyPath(for tone: VeilEmotionTone, date: Date, calendar: Calendar = .current) -> [VeilEmotionRitual] {
-        let source = rituals(for: tone)
+    static func rituals(for tone: VeilEmotionTone, context: VeilEmotionContext) -> [VeilEmotionRitual] {
+        rituals.filter { $0.tone == tone && $0.context == context }
+    }
+
+    static func ritual(id: String) -> VeilEmotionRitual? {
+        rituals.first { $0.id == id }
+    }
+
+    static func dailyPath(
+        for tone: VeilEmotionTone,
+        context: VeilEmotionContext,
+        date: Date,
+        calendar: Calendar = .current
+    ) -> [VeilEmotionRitual] {
+        let source = rituals(for: tone, context: context)
         guard !source.isEmpty else { return [] }
         let day = calendar.ordinality(of: .day, in: .year, for: date) ?? 1
-        let start = (day + tone.rawValue.unicodeScalars.reduce(0) { $0 + Int($1.value) }) % source.count
+        let seed = tone.rawValue + context.rawValue
+        let start = (day + seed.unicodeScalars.reduce(0) { $0 + Int($1.value) }) % source.count
         return (0..<min(3, source.count)).map { source[(start + $0) % source.count] }
     }
 
@@ -114,12 +168,14 @@ enum VeilEmotionGardenEngine {
         }
     }
 
-    private static func duration(_ kind: VeilEmotionRitualKind) -> Int {
+    private static func duration(_ kind: VeilEmotionRitualKind, context: VeilEmotionContext) -> Int {
+        let base: Int
         switch kind {
-        case .breath: return 60
-        case .notice, .name, .anchor: return 45
-        case .kindness, .gratitude, .smallWin, .connection, .reset, .play: return 90
+        case .breath: base = 60
+        case .notice, .name, .anchor: base = 45
+        case .kindness, .gratitude, .smallWin, .connection, .reset, .play: base = 90
         }
+        return context == .commute || context == .waiting ? max(30, base - 15) : base
     }
 
     private static func symbol(_ kind: VeilEmotionRitualKind) -> String {
@@ -137,23 +193,36 @@ enum VeilEmotionGardenEngine {
         }
     }
 
-    private static func prompt(tone: VeilEmotionTone, kind: VeilEmotionRitualKind) -> String {
-        let context: [VeilEmotionTone: String] = [
+    private static func prompt(tone: VeilEmotionTone, kind: VeilEmotionRitualKind, context: VeilEmotionContext) -> String {
+        let subjects: [VeilEmotionTone: String] = [
             .calm: "此刻的平静", .low: "这份低落", .tense: "这股紧绷", .tired: "这份疲惫", .lonely: "这份孤单",
             .joyful: "这份愉快", .proud: "这份成就感", .uncertain: "这份不确定", .focused: "这份专注", .playful: "这点玩心"
         ]
-        let subject = context[tone] ?? "此刻的感受"
+        let subject = subjects[tone] ?? "此刻的感受"
+        let opening: String
+        switch context {
+        case .morning: opening = "在今天刚开始的时候，"
+        case .midday: opening = "在一天走到中段的时候，"
+        case .night: opening = "在准备结束今天之前，"
+        case .alone: opening = "在只属于你的这段时间里，"
+        case .commute: opening = "在安全、不影响行程的前提下，"
+        case .workBreak: opening = "把工作暂放片刻，"
+        case .afterCompletion: opening = "完成一件事之后，"
+        case .waiting: opening = "利用眼前这小段等待，"
+        case .rainyDay: opening = "让雨声成为背景，"
+        case .specialDay: opening = "给这个特别的日子留一点位置，"
+        }
         switch kind {
-        case .notice: return "不评价地观察 \(subject)：身体、呼吸和念头各是什么样？"
-        case .breath: return "吸气 3 拍、停留 1 拍、呼气 4 拍。按舒服的速度做 6 轮。"
-        case .name: return "用三个词给 \(subject) 命名；不需要解释，也不需要修正。"
-        case .kindness: return "如果朋友正经历同样的事，你会对他/她说哪一句温和的话？也把它留给自己。"
-        case .anchor: return "找出你现在能看见的 3 个细节、能触到的 2 个触感、能听到的 1 个声音。"
-        case .gratitude: return "写下一个不必宏大、但今天确实让你感到一点点好的瞬间。"
-        case .smallWin: return "记录一个已经完成的小动作。再小也算，它说明你在前进。"
-        case .connection: return "想一个让你感觉安全的人或地方；如果合适，发一条无需回复的轻消息。"
-        case .reset: return "为下一步选一个两分钟以内的动作：喝水、洗脸、站起来，或清空桌面一角。"
-        case .play: return "给自己 90 秒做一件没有产出的事：涂鸦、随手拍、哼一句旋律，或看一眼天空。"
+        case .notice: return "\(opening)不评价地观察 \(subject)：身体、呼吸和念头各是什么样？"
+        case .breath: return "\(opening)带着 \(subject)吸气 3 拍、停留 1 拍、呼气 4 拍；按舒服的速度做 6 轮。"
+        case .name: return "\(opening)用三个词给 \(subject)命名；不需要解释，也不需要修正。"
+        case .kindness: return "\(opening)想想朋友若正经历 \(subject)，你会说哪句温和的话；也把它留给自己。"
+        case .anchor: return "\(opening)带着 \(subject)找出能看见的 3 个细节、能触到的 2 个触感、能听到的 1 个声音。"
+        case .gratitude: return "\(opening)写下一个不必宏大、却让 \(subject)有了细微变化的瞬间。"
+        case .smallWin: return "\(opening)记录一个在 \(subject)中仍然完成的小动作；再小也算。"
+        case .connection: return "\(opening)想一个能接住 \(subject)的人或地方；合适时发一条无需回复的轻消息。"
+        case .reset: return "\(opening)为带着 \(subject)的下一步选一个两分钟动作：喝水、洗脸、站起来或整理一角。"
+        case .play: return "\(opening)允许 \(subject)和一点玩心同时存在：涂鸦、随手拍、哼一句旋律或看一眼天空。"
         }
     }
 }

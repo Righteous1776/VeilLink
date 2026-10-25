@@ -15,5 +15,9 @@
 - `VeilLinkTests/VeilEmotionGardenEngineTests.swift` (new; full copy under `FILES/`)
 - `VeilLink/UI/ToolCenterView.swift` (one additive navigation hunk in `PATCH.diff`)
 
+## Submission-only validation artifact
+
+- `VALIDATION/EmotionRuntimeHarness.swift` — compiled and executed with Swift 6.2 Linux; validates the complete 1,000-entry runtime matrix. It is not included in the proposed product patch.
+
 No third-party payload, binary asset, protocol/schema/key/transport change, build/version update, workflow, IPA artifact or release mutation is included.
 

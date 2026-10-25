@@ -11,7 +11,7 @@ exchange_scan: UNAVAILABLE (AGENT_EXCHANGE and agent_sessions are absent)
 authority: verified repository owner instruction + current AGENTS.md lane boundary
 state: PARTIAL
 allowed_mode: INBOX_ONLY
-missing: governance/MANDATORY_READ_SET.json; governance/CONSTITUTION_SEAL.json; AGENT_EXCHANGE; agent_sessions; AGENT_INBOX/07_LEARNING_GATE.md; Swift/Xcode runtime
+missing: governance/MANDATORY_READ_SET.json; governance/CONSTITUTION_SEAL.json; AGENT_EXCHANGE; agent_sessions; AGENT_INBOX/07_LEARNING_GATE.md; Apple Xcode/iOS runtime
 next: submit isolated Inbox-only proposal and await Governor integration
 ```
 

@@ -3,7 +3,7 @@
 ## Risks
 
 - Emotional-support UX can be mistaken for health care. Keep the non-diagnostic statement and emergency escalation language; obtain specialist review before any symptom scoring, crisis routing or clinical content.
-- The first wave uses only in-memory completion state. Persistent journals, streaks, reminders and sharing must be separate proposals because they add storage, notification, privacy and consent concerns.
+- All 1,000 entries use only in-memory completion state. Persistent journals, streaks, reminders and sharing must be separate proposals because they add storage, notification, privacy and consent concerns.
 - Repetitive content can feel mechanical. Future content packs need human editorial review, localization and a user ability to hide/reduce categories.
 - The app supports iOS 15. Avoid `NavigationStack`, iOS 16-only symbols and continuous expensive animation until real-device validation.
 
