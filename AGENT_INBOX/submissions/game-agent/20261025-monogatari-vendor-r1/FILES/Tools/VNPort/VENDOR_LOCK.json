@@ -1,0 +1,14 @@
+{
+  "schema": "veillink.monogatari.v2.8.0.vendor-lock.v1",
+  "state": "UPSTREAM_BYTES_NOT_OBTAINED",
+  "officialRelease": "https://github.com/Monogatari/Monogatari/releases/tag/v2.8.0",
+  "assetURL": "https://github.com/Monogatari/Monogatari/releases/download/v2.8.0/monogatari-v2.8.0.zip",
+  "officialPublisherMirror": "https://storage.monogatari.io/releases/monogatari-v2.8.0.zip",
+  "releaseBytes": 2798775,
+  "releaseSHA256": "16d221485888b0193312e9989ecafa57cb1913978bf2f09ba554552ba3885806",
+  "sourceTagCommit": "89045f59b6af1669eefcd74ec59de0df52106bf1",
+  "compiledBrowserCoreGitBlob": "0211c2f2c9adc56e28d5583feb0dd46b902d37d5",
+  "compiledCSSGitBlob": "4eae91263557a8192cacea19948890c74086de4d",
+  "license": "MIT; Copyright Diana Islas Ocampo",
+  "appMinimumIOS": "15.0"
+}
