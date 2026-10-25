@@ -131,6 +131,8 @@ final class BackupManager {
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: root) }
         try validateArchiveBeforeExtraction(archiveURL)
+        let preflight = VeilBackupArchiveInspector.inspect(archiveURL, verifyAllCRC: false)
+        guard preflight.permittedToRestore else { throw BackupError.invalidPackage }
         try fileManager.unzipItem(at: archiveURL, to: root)
         try validateExtractedTree(root)
 

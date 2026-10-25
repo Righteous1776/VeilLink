@@ -601,6 +601,9 @@ final class RuntimeDiagnosticsBridge {
             "Render: \(VeilRenderProfile.diagnosticLabel)",
             "Device profile: \(VeilDevicePerformance.diagnosticLabel)",
             "",
+            // Diagnostic evidence only: no inferred elevated OS permission.
+            VeilRuntimeEnvironment.current.diagnosticsReport,
+            "",
             model.bluetooth.diagnosticsReport(),
             "",
             model.a9DiagnosticsReport(),

@@ -58,7 +58,7 @@ private struct VeilAdaptiveParticleModifier: ViewModifier {
                     .accessibilityHidden(true)
                 }
             }
-            .simultaneousGesture(dragGesture(budget: resolvedBudget))
+            // Visual-only: never compete with Slider, scroll, game drag, or back gestures.
             .onChange(of: eventToken) { _ in
                 guard resolvedBudget.burstCount > 0 else { return }
                 emitBurst(at: nil)

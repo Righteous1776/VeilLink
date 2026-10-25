@@ -274,6 +274,25 @@ private final class AppBootstrap: ObservableObject {
         } catch {
             model = nil
             errorMessage = error.localizedDescription
+            // Fixed-event diagnostics remain exportable without AppModel, SQLite or Keychain.
+            VeilPreConsentBlackBox.shared.record(.startupFailed, stage: .startupFailure)
+            // Fixed categories only: never copy an error string, identifier or key.
+            let failureCategory: VeilPreConsentBlackBox.Event
+            if let databaseError = error as? DatabaseError {
+                switch databaseError {
+                case .encryptionKeyMissing:
+                    failureCategory = .startupKeyMissing
+                case .encryptionKeyTemporarilyUnavailable(_):
+                    failureCategory = .startupKeyUnavailable
+                case .encryptionKeyMismatch:
+                    failureCategory = .startupKeyMismatch
+                default:
+                    failureCategory = .startupOtherFailure
+                }
+            } else {
+                failureCategory = .startupOtherFailure
+            }
+            VeilPreConsentBlackBox.shared.record(failureCategory, stage: .startupFailure)
             diagnostics.recordStartupFailure(error)
         }
     }
@@ -298,6 +317,8 @@ private struct StartupFailureView: View {
                     .foregroundColor(VeilTheme.secondaryText)
                     .textSelection(.enabled)
             }
+            VeilPreConsentBlackBoxButton(stage: .startupFailure)
+                .frame(maxWidth: 520)
         }
         .padding(28)
         .frame(maxWidth: 520)

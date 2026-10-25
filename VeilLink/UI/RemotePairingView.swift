@@ -1,3 +1,4 @@
+import CodeScanner
 import CoreImage
 import ImageIO
 import Photos
@@ -10,6 +11,8 @@ struct VeilRemotePairingView: View {
     @ObservedObject var pairing: VeilRemotePairingCoordinator
     @ObservedObject var model: AppModel
     @State private var showsPhotoPicker = false
+    @State private var showsLiveScanner = false
+    @State private var cameraScanDidComplete = false
     @State private var shareItem: ShareablePairImage?
     @State private var saveStatus: String?
 
@@ -38,6 +41,60 @@ struct VeilRemotePairingView: View {
                 } catch {
                     model.alertMessage = error.localizedDescription
                     model.haptics.error()
+                }
+            }
+        }
+        .sheet(isPresented: $showsLiveScanner, onDismiss: { cameraScanDidComplete = true }) {
+            NavigationView {
+                CodeScannerView(
+                    codeTypes: [.qr],
+                    scanMode: .once,
+                    showViewfinder: true,
+                    requiresPhotoOutput: false,
+                    shouldVibrateOnSuccess: false
+                ) { result in
+                    switch result {
+                    case .success(let scan):
+                        let scannedText = scan.string
+                        DispatchQueue.main.async {
+                            guard showsLiveScanner, !cameraScanDidComplete else { return }
+                            cameraScanDidComplete = true
+                            showsLiveScanner = false
+                            guard VeilPairCameraInputGate.accepts(scannedText) else {
+                                model.alertMessage = VeilRemotePairError.invalidQRCode.localizedDescription
+                                model.haptics.error()
+                                return
+                            }
+                            // The existing decoder enforces expiry, authenticated handshake,
+                            // relay configuration and six-digit mutual confirmation.
+                            pairing.consumeQRCode(scannedText)
+                            if let errorText = pairing.lastError {
+                                model.alertMessage = errorText
+                                model.haptics.error()
+                            } else {
+                                model.haptics.resolved()
+                            }
+                        }
+                    case .failure(let error):
+                        let reason = error.localizedDescription
+                        DispatchQueue.main.async {
+                            guard showsLiveScanner, !cameraScanDidComplete else { return }
+                            cameraScanDidComplete = true
+                            showsLiveScanner = false
+                            model.alertMessage = "相机扫码失败：\(reason)。也可以改用相册导入。"
+                            model.haptics.error()
+                        }
+                    }
+                }
+                .navigationTitle("扫码导入配对码")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("取消") {
+                            cameraScanDidComplete = true
+                            showsLiveScanner = false
+                        }
+                    }
                 }
             }
         }
@@ -128,9 +185,19 @@ struct VeilRemotePairingView: View {
             Label("导入朋友发来的二维码", systemImage: "photo.on.rectangle")
                 .font(.headline)
                 .foregroundColor(VeilTheme.goldBright)
-            Text("从微信保存图片后，在这里直接选择。PHPicker 不需要 VeilLink 获取整个照片图库读取权限。")
+            Text("面对面可直接扫码；远程收到的图片仍可从相册导入。此功能属于 Relay 配对，完成身份交换需要已配置的网络 Relay；双方仍需核对六码。")
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
+            Button {
+                cameraScanDidComplete = false
+                showsLiveScanner = true
+                model.haptics.selection()
+            } label: {
+                Label("使用相机扫描", systemImage: "qrcode.viewfinder")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(VeilTheme.gold)
             Button {
                 showsPhotoPicker = true
                 model.haptics.selection()

@@ -117,6 +117,7 @@ struct BlackoutDistrictLabView: View {
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var controlOrigin:
         CGPoint?
@@ -171,12 +172,22 @@ struct BlackoutDistrictLabView: View {
                 $0
             )
         }
+        .onDisappear { stopTouchInput() }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active { stopTouchInput() }
+        }
         .navigationTitle(
             "熄灯街区"
         )
         .navigationBarTitleDisplayMode(
             .inline
         )
+    }
+
+    private func stopTouchInput() {
+        controlOrigin = nil
+        model.stopDriving()
+        model.setRepairing(false)
     }
 
     private var hud: some View {

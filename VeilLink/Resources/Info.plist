@@ -43,7 +43,7 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>VeilLink 使用 Face ID 在本机解锁应用；生物识别数据由系统处理，VeilLink 不读取或保存。</string>
 	<key>NSCameraUsageDescription</key>
-	<string>灵核视频对话可在本机使用前置摄像头生成低频视觉摘要；原始视频不会上传。</string>
+	<string>仅在你主动打开扫码时用摄像头识别远程配对二维码；灵核视频对话也可在你选择时使用摄像头。扫码图像和灵核原始视频不会上传。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>用于发送加密语音消息、本地蓝牙对讲机与灵核的本机语音输入；不支持离线识别时不会自动改用云端。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

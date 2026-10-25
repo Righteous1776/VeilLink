@@ -512,18 +512,30 @@ final class DeviceStressTestController: ObservableObject {
         }
 
         await step("a9.refresh", cycle: cycle, configuration: configuration) {
+            let mode = model.kernelRuntime.mode
+            let expectsA9Evaluation = mode == .a9Only || mode == .dualShadow
             let previousA9Evaluation = model.a9Health.lastEvaluatedAt
             let previousRuntimeSample = model.a10Ultra.lastRuntimeSample?.sampleID
             model.refreshA9Health()
-            guard let evaluatedAt = model.a9Health.lastEvaluatedAt,
-                  evaluatedAt != previousA9Evaluation else {
-                throw StressFailure("A9 health evaluation timestamp did not advance")
+            let a9Result: String
+            if expectsA9Evaluation {
+                guard let evaluatedAt = model.a9Health.lastEvaluatedAt,
+                      evaluatedAt != previousA9Evaluation else {
+                    throw StressFailure("A9 health evaluation timestamp did not advance")
+                }
+                a9Result = "A9 evaluated at \(ISO8601DateFormatter().string(from: evaluatedAt))"
+            } else {
+                // A10 independent/LAB modes deliberately leave A9 evaluation unchanged.
+                guard model.a9Health.lastEvaluatedAt == previousA9Evaluation else {
+                    throw StressFailure("A9 evaluated unexpectedly in mode \(mode.rawValue)")
+                }
+                a9Result = "A9 correctly inactive in \(mode.rawValue)"
             }
             guard let runtimeSample = model.a10Ultra.lastRuntimeSample,
                   runtimeSample.sampleID != previousRuntimeSample else {
-                throw StressFailure("A10 runtime sample did not advance in mode \(model.kernelRuntime.mode.rawValue)")
+                throw StressFailure("A10 runtime sample did not advance in mode \(mode.rawValue)")
             }
-            return .passed("A9 evaluated at \(ISO8601DateFormatter().string(from: evaluatedAt)); A10 runtime sample \(runtimeSample.sampleID) recorded (\(runtimeSample.divergenceClass))")
+            return .passed("\(a9Result); A10 runtime sample \(runtimeSample.sampleID) recorded (\(runtimeSample.divergenceClass))")
         }
 
         await step("ui.tabs.agent", cycle: cycle, configuration: configuration) {

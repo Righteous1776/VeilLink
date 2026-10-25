@@ -34,6 +34,11 @@ final class VeilPreConsentBlackBox {
         case signIncomplete
         case signSaved
         case signStorageFailed
+        case startupFailed
+        case startupKeyMissing
+        case startupKeyUnavailable
+        case startupKeyMismatch
+        case startupOtherFailure
         case exportRequested
         case exportPrepared
         case exportFailed
@@ -141,6 +146,7 @@ final class VeilPreConsentBlackBox {
 
 /// Mounted before the legal gate is satisfied; never calls the normal AppModel-driven exporter.
 struct VeilPreConsentBlackBoxButton: View {
+    var stage: VeilPreConsentBlackBox.Stage = .consent
     @State private var preparedFile: URL?
     @State private var presentsShare = false
     @State private var exportError: String?
@@ -153,13 +159,13 @@ struct VeilPreConsentBlackBoxButton: View {
             Spacer(minLength: 4)
             Button {
                 let box = VeilPreConsentBlackBox.shared
-                box.record(.exportRequested, stage: .consent)
+                box.record(.exportRequested, stage: stage)
                 do {
                     preparedFile = try box.exportFile()
-                    box.record(.exportPrepared, stage: .consent)
+                    box.record(.exportPrepared, stage: stage)
                     presentsShare = true
                 } catch {
-                    box.record(.exportFailed, stage: .consent)
+                    box.record(.exportFailed, stage: stage)
                     exportError = "无法创建本地诊断文件。请检查设备可用空间。"
                 }
             } label: {

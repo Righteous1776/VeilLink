@@ -95,6 +95,7 @@ struct AshHarborLabView: View {
     @State private var throttle = 0.58
     @State private var searchlight = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         GeometryReader { proxy in
@@ -130,6 +131,16 @@ struct AshHarborLabView: View {
         .onChange(of: reduceMotion) {
             model.setReduceMotion($0)
         }
+        .onDisappear { releaseTouchInput() }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active { releaseTouchInput() }
+        }
+    }
+
+    private func releaseTouchInput() {
+        model.setRudder(0)
+        model.setRescuing(false)
+        model.setThrottle(0)
     }
 
     private var hud: some View {
