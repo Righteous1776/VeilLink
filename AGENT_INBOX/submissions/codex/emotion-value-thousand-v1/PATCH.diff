@@ -1,9 +1,9 @@
 diff --git a/docs/features/VEILLINK_EMOTION_VALUE_1000_V1.md b/docs/features/VEILLINK_EMOTION_VALUE_1000_V1.md
 new file mode 100644
-index 0000000..9c22d01
+index 0000000..8891323
 --- /dev/null
 +++ b/docs/features/VEILLINK_EMOTION_VALUE_1000_V1.md
-@@ -0,0 +1,1014 @@
+@@ -0,0 +1,1015 @@
 +# VeilLink Emotion Value 1000 — Runtime Capability Catalog v2
 +
 +> 本目录与 `VeilEmotionGardenEngine.rituals` 一一对应：10 种状态 × 10 种互动 × 10 个场景 = 1000 个运行时可调用条目。每项都有稳定 ID、独立提示、独立三步操作、完成回响、持续时间、图标、筛选/搜索路径和完成动作；仍须经过 iOS 构建与真机验证后才可称为已上线。
@@ -1017,13 +1017,14 @@ index 0000000..9c22d01
 +- 每个 ID 的提示文本、三步操作组合及完成回响均唯一；每种状态有 100 项，每个“状态 + 场景”组合有 10 项且覆盖全部互动类型。
 +- 用户可通过两个选择器或全库 ID/关键词搜索到达全部 1000 项；每项都能逐步勾选、启动秒级倒计时、暂停/继续、重置并确认完成。每日三步只从当前状态与场景的 10 项中选择，不隐藏其他条目。
 +- 所有条目离线运行、可跳过、不自动发送、不读取聊天、不上传状态，也不宣称诊断或治疗。
++- 状态/场景、稳定 ID 和搜索文本均预建索引；搜索结果限制 50 项，计时器只在运行状态存在，暂停或退出立即释放。
 +- `CANDIDATE-SOURCE` 表示完整源码已放入本提案，不表示已合并、已构建、已真机验证或已发布。
 diff --git a/VeilLink/Core/VeilEmotionGardenEngine.swift b/VeilLink/Core/VeilEmotionGardenEngine.swift
 new file mode 100644
-index 0000000..1416c4d
+index 0000000..8441f7c
 --- /dev/null
 +++ b/VeilLink/Core/VeilEmotionGardenEngine.swift
-@@ -0,0 +1,262 @@
+@@ -0,0 +1,299 @@
 +import Foundation
 +
 +enum VeilEmotionTone: String, CaseIterable, Identifiable, Sendable {
@@ -1130,6 +1131,16 @@ index 0000000..1416c4d
 +}
 +
 +enum VeilEmotionGardenEngine {
++    private struct RouteKey: Hashable, Sendable {
++        let tone: VeilEmotionTone
++        let context: VeilEmotionContext
++    }
++
++    private struct SearchEntry: Sendable {
++        let ritual: VeilEmotionRitual
++        let normalizedText: String
++    }
++
 +    /// 1,000 executable micro-rituals: 10 tones × 10 safe ritual forms × 10 contexts.
 +    /// They are local prompts, not diagnosis, therapy, or crisis care.
 +    static let rituals: [VeilEmotionRitual] = {
@@ -1157,16 +1168,36 @@ index 0000000..1416c4d
 +        return result
 +    }()
 +
++    private static let toneIndex = Dictionary(grouping: rituals, by: \.tone)
++    private static let routeIndex = Dictionary(grouping: rituals) {
++        RouteKey(tone: $0.tone, context: $0.context)
++    }
++    private static let idIndex = Dictionary(uniqueKeysWithValues: rituals.map { ($0.id, $0) })
++    private static let searchIndex: [SearchEntry] = rituals.map { ritual in
++        let text = ([ritual.id, ritual.title, ritual.prompt, ritual.completionNote] + ritual.steps)
++            .joined(separator: " ")
++        return SearchEntry(ritual: ritual, normalizedText: normalized(text))
++    }
++
 +    static func rituals(for tone: VeilEmotionTone) -> [VeilEmotionRitual] {
-+        rituals.filter { $0.tone == tone }
++        toneIndex[tone] ?? []
 +    }
 +
 +    static func rituals(for tone: VeilEmotionTone, context: VeilEmotionContext) -> [VeilEmotionRitual] {
-+        rituals.filter { $0.tone == tone && $0.context == context }
++        routeIndex[RouteKey(tone: tone, context: context)] ?? []
 +    }
 +
 +    static func ritual(id: String) -> VeilEmotionRitual? {
-+        rituals.first { $0.id == id }
++        idIndex[id.uppercased()]
++    }
++
++    static func search(_ query: String, limit: Int = 50) -> [VeilEmotionRitual] {
++        let needle = normalized(query.trimmingCharacters(in: .whitespacesAndNewlines))
++        guard !needle.isEmpty, limit > 0 else { return [] }
++        return searchIndex.lazy
++            .filter { $0.normalizedText.contains(needle) }
++            .prefix(min(limit, 100))
++            .map(\.ritual)
 +    }
 +
 +    static func dailyPath(
@@ -1285,13 +1316,20 @@ index 0000000..1416c4d
 +            return ["[\(marker)] 任选涂鸦、哼唱、观察或随手拍。", "允许结果没有用途。", "在计时结束时留下一个你喜欢的细节。"]
 +        }
 +    }
++
++    private static func normalized(_ text: String) -> String {
++        text.folding(
++            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
++            locale: Locale(identifier: "zh_Hans_CN")
++        )
++    }
 +}
 diff --git a/VeilLink/UI/VeilEmotionGardenView.swift b/VeilLink/UI/VeilEmotionGardenView.swift
 new file mode 100644
-index 0000000..ca77d0e
+index 0000000..e46063e
 --- /dev/null
 +++ b/VeilLink/UI/VeilEmotionGardenView.swift
-@@ -0,0 +1,331 @@
+@@ -0,0 +1,373 @@
 +import SwiftUI
 +import Combine
 +
@@ -1308,13 +1346,9 @@ index 0000000..ca77d0e
 +    }
 +
 +    private var displayedRituals: [VeilEmotionRitual] {
-+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-+        guard !needle.isEmpty else { return VeilEmotionGardenEngine.rituals(for: tone, context: context) }
-+        return Array(VeilEmotionGardenEngine.rituals.lazy.filter {
-+            $0.id.lowercased().contains(needle)
-+                || $0.title.lowercased().contains(needle)
-+                || $0.prompt.lowercased().contains(needle)
-+        }.prefix(50))
++        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
++            ? VeilEmotionGardenEngine.rituals(for: tone, context: context)
++            : VeilEmotionGardenEngine.search(query)
 +    }
 +
 +    var body: some View {
@@ -1503,16 +1537,14 @@ index 0000000..ca77d0e
 +    let markCompleted: () -> Void
 +    @Environment(\.dismiss) private var dismiss
 +    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-+    @State private var remainingSeconds: Int
-+    @State private var isRunning = false
 +    @State private var completedSteps = Set<Int>()
-+    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
++    @StateObject private var clock: VeilEmotionRitualClock
 +
 +    init(ritual: VeilEmotionRitual, completed: Bool, markCompleted: @escaping () -> Void) {
 +        self.ritual = ritual
 +        self.completed = completed
 +        self.markCompleted = markCompleted
-+        _remainingSeconds = State(initialValue: ritual.seconds)
++        _clock = StateObject(wrappedValue: VeilEmotionRitualClock(duration: ritual.seconds))
 +    }
 +
 +    var body: some View {
@@ -1544,16 +1576,14 @@ index 0000000..ca77d0e
 +                countdown
 +                HStack(spacing: 10) {
 +                    Button {
-+                        if remainingSeconds == 0 { remainingSeconds = ritual.seconds }
-+                        isRunning.toggle()
++                        clock.toggle()
 +                    } label: {
-+                        Label(isRunning ? "暂停" : (remainingSeconds == ritual.seconds ? "开始" : "继续"), systemImage: isRunning ? "pause.fill" : "play.fill")
++                        Label(clock.isRunning ? "暂停" : (clock.remainingSeconds == ritual.seconds ? "开始" : "继续"), systemImage: clock.isRunning ? "pause.fill" : "play.fill")
 +                            .frame(maxWidth: .infinity)
 +                    }
 +                    .buttonStyle(.borderedProminent)
 +                    Button {
-+                        isRunning = false
-+                        remainingSeconds = ritual.seconds
++                        clock.reset()
 +                    } label: {
 +                        Label("重置", systemImage: "arrow.counterclockwise")
 +                    }
@@ -1561,7 +1591,7 @@ index 0000000..ca77d0e
 +                }
 +                Text("建议用时 \(ritual.seconds) 秒。可以暂停、重置或随时跳过。")
 +                    .font(.caption).foregroundColor(VeilTheme.tertiaryText)
-+                if completedSteps.count == ritual.steps.count || remainingSeconds == 0 {
++                if completedSteps.count == ritual.steps.count || clock.remainingSeconds == 0 {
 +                    Text(ritual.completionNote)
 +                        .font(.subheadline)
 +                        .foregroundColor(VeilTheme.goldBright)
@@ -1589,21 +1619,13 @@ index 0000000..ca77d0e
 +            .navigationTitle("微小陪伴")
 +            .navigationBarTitleDisplayMode(.inline)
 +            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
-+            .onReceive(ticker) { _ in
-+                guard isRunning else { return }
-+                if remainingSeconds > 1 {
-+                    remainingSeconds -= 1
-+                } else {
-+                    remainingSeconds = 0
-+                    isRunning = false
-+                }
-+            }
++            .onDisappear { clock.pause() }
 +        }
 +    }
 +
 +    private var countdown: some View {
 +        let progress = ritual.seconds > 0
-+            ? Double(ritual.seconds - remainingSeconds) / Double(ritual.seconds)
++            ? Double(ritual.seconds - clock.remainingSeconds) / Double(ritual.seconds)
 +            : 1
 +        return ZStack {
 +            Circle().stroke(VeilTheme.panelSoft, lineWidth: 8)
@@ -1612,23 +1634,81 @@ index 0000000..ca77d0e
 +                .stroke(VeilTheme.gold, style: StrokeStyle(lineWidth: 8, lineCap: .round))
 +                .rotationEffect(.degrees(-90))
 +            VStack(spacing: 3) {
-+                Text("\(remainingSeconds)").font(.system(size: 30, weight: .bold, design: .rounded)).monospacedDigit().foregroundColor(VeilTheme.text)
-+                Text(remainingSeconds == 0 ? "完成" : "秒").font(.caption).foregroundColor(VeilTheme.secondaryText)
++                Text("\(clock.remainingSeconds)").font(.system(size: 30, weight: .bold, design: .rounded)).monospacedDigit().foregroundColor(VeilTheme.text)
++                Text(clock.remainingSeconds == 0 ? "完成" : "秒").font(.caption).foregroundColor(VeilTheme.secondaryText)
 +            }
 +        }
 +        .frame(width: 112, height: 112)
 +        .frame(maxWidth: .infinity)
-+        .animation(reduceMotion ? nil : .linear(duration: 0.25), value: remainingSeconds)
++        .animation(reduceMotion ? nil : .linear(duration: 0.25), value: clock.remainingSeconds)
 +        .accessibilityElement(children: .ignore)
-+        .accessibilityLabel(remainingSeconds == 0 ? "计时完成" : "剩余 \(remainingSeconds) 秒")
++        .accessibilityLabel(clock.remainingSeconds == 0 ? "计时完成" : "剩余 \(clock.remainingSeconds) 秒")
 +    }
++}
++
++private final class VeilEmotionRitualClock: ObservableObject {
++    @Published private(set) var remainingSeconds: Int
++    @Published private(set) var isRunning = false
++
++    private let duration: Int
++    private var deadline: Date?
++    private var timer: Timer?
++
++    init(duration: Int) {
++        self.duration = max(1, duration)
++        remainingSeconds = max(1, duration)
++    }
++
++    func toggle() {
++        if isRunning { pause() }
++        else { start() }
++    }
++
++    func pause() {
++        updateRemaining()
++        stopTimer()
++    }
++
++    func reset() {
++        stopTimer()
++        remainingSeconds = duration
++    }
++
++    private func start() {
++        if remainingSeconds == 0 { remainingSeconds = duration }
++        deadline = Date().addingTimeInterval(TimeInterval(remainingSeconds))
++        isRunning = true
++        let next = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
++        next.tolerance = 0.15
++        RunLoop.main.add(next, forMode: .common)
++        timer = next
++    }
++
++    private func tick() {
++        updateRemaining()
++        if remainingSeconds == 0 { stopTimer() }
++    }
++
++    private func updateRemaining() {
++        guard let deadline else { return }
++        remainingSeconds = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
++    }
++
++    private func stopTimer() {
++        timer?.invalidate()
++        timer = nil
++        deadline = nil
++        isRunning = false
++    }
++
++    deinit { timer?.invalidate() }
 +}
 diff --git a/VeilLinkTests/VeilEmotionGardenEngineTests.swift b/VeilLinkTests/VeilEmotionGardenEngineTests.swift
 new file mode 100644
-index 0000000..3de0e1a
+index 0000000..227807f
 --- /dev/null
 +++ b/VeilLinkTests/VeilEmotionGardenEngineTests.swift
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,71 @@
 +import XCTest
 +@testable import VeilLink
 +
@@ -1688,6 +1768,16 @@ index 0000000..3de0e1a
 +        XCTAssertEqual(ritual?.seconds, 60)
 +        XCTAssertTrue(ritual?.prompt.contains("吸气") == true)
 +        XCTAssertTrue(ritual?.prompt.contains("呼气") == true)
++    }
++
++    func testIndexedLookupAndSearchCoverTheWholeLibrary() {
++        XCTAssertEqual(VeilEmotionGardenEngine.ritual(id: "ev-1000")?.id, "EV-1000")
++        XCTAssertEqual(VeilEmotionGardenEngine.search("EV-0001").map(\.id), ["EV-0001"])
++        let rainy = VeilEmotionGardenEngine.search("雨天", limit: 100)
++        XCTAssertEqual(rainy.count, 100)
++        XCTAssertTrue(rainy.allSatisfy { $0.context == .rainyDay })
++        XCTAssertTrue(VeilEmotionGardenEngine.search("不存在的情绪条目").isEmpty)
++        XCTAssertTrue(VeilEmotionGardenEngine.search("雨天", limit: 0).isEmpty)
 +    }
 +}
 diff --git a/VeilLink/UI/ToolCenterView.swift b/VeilLink/UI/ToolCenterView.swift

@@ -58,4 +58,14 @@ final class VeilEmotionGardenEngineTests: XCTestCase {
         XCTAssertTrue(ritual?.prompt.contains("吸气") == true)
         XCTAssertTrue(ritual?.prompt.contains("呼气") == true)
     }
+
+    func testIndexedLookupAndSearchCoverTheWholeLibrary() {
+        XCTAssertEqual(VeilEmotionGardenEngine.ritual(id: "ev-1000")?.id, "EV-1000")
+        XCTAssertEqual(VeilEmotionGardenEngine.search("EV-0001").map(\.id), ["EV-0001"])
+        let rainy = VeilEmotionGardenEngine.search("雨天", limit: 100)
+        XCTAssertEqual(rainy.count, 100)
+        XCTAssertTrue(rainy.allSatisfy { $0.context == .rainyDay })
+        XCTAssertTrue(VeilEmotionGardenEngine.search("不存在的情绪条目").isEmpty)
+        XCTAssertTrue(VeilEmotionGardenEngine.search("雨天", limit: 0).isEmpty)
+    }
 }

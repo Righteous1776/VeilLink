@@ -7,6 +7,7 @@ This proposal creates a governed 1,000-capability emotional-value program and st
 - **1,000 numbered capability units** in ten emotional-value pillars, ten interaction forms and ten contexts.
 - **1,000 runtime local micro-rituals** implemented as ten self-reported tones × ten short, safe interaction forms × ten everyday contexts; every item has a unique prompt, three-step action sequence and completion reflection.
 - **Emotion Garden UI** with tone/context selectors and full-library ID/keyword search, three deterministic daily suggestions, a pick-your-own grid, step check-offs, live countdown/pause/reset controls, completion feedback and a clear skip option.
+- **Old-device performance path** with precomputed tone/context and ID indexes, pre-normalized search text, 50-result UI cap, and a deadline-based timer that exists only while a ritual is actively running.
 - **No fake therapeutic claim**: it is companionship/reflective UX, not diagnosis, treatment or a crisis service.
 
 ## Product boundaries
@@ -14,6 +15,7 @@ This proposal creates a governed 1,000-capability emotional-value program and st
 - No account, remote profile, telemetry, background job, notification, microphone, location, contacts, calendar or chat-message access.
 - No persistence in the first wave; completion state lives only in the current UI session.
 - No autoplay audio, particle-heavy render path or global gesture recognizer.
+- Paused or dismissed rituals do not retain an active one-second timer.
 - All content is local and can be shown without a network connection.
 - Emergency language directs users to local emergency/crisis resources and trusted people rather than offering an in-app substitute.
 

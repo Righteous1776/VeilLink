@@ -104,6 +104,16 @@ struct VeilEmotionRitual: Identifiable, Equatable, Sendable {
 }
 
 enum VeilEmotionGardenEngine {
+    private struct RouteKey: Hashable, Sendable {
+        let tone: VeilEmotionTone
+        let context: VeilEmotionContext
+    }
+
+    private struct SearchEntry: Sendable {
+        let ritual: VeilEmotionRitual
+        let normalizedText: String
+    }
+
     /// 1,000 executable micro-rituals: 10 tones × 10 safe ritual forms × 10 contexts.
     /// They are local prompts, not diagnosis, therapy, or crisis care.
     static let rituals: [VeilEmotionRitual] = {
@@ -131,16 +141,36 @@ enum VeilEmotionGardenEngine {
         return result
     }()
 
+    private static let toneIndex = Dictionary(grouping: rituals, by: \.tone)
+    private static let routeIndex = Dictionary(grouping: rituals) {
+        RouteKey(tone: $0.tone, context: $0.context)
+    }
+    private static let idIndex = Dictionary(uniqueKeysWithValues: rituals.map { ($0.id, $0) })
+    private static let searchIndex: [SearchEntry] = rituals.map { ritual in
+        let text = ([ritual.id, ritual.title, ritual.prompt, ritual.completionNote] + ritual.steps)
+            .joined(separator: " ")
+        return SearchEntry(ritual: ritual, normalizedText: normalized(text))
+    }
+
     static func rituals(for tone: VeilEmotionTone) -> [VeilEmotionRitual] {
-        rituals.filter { $0.tone == tone }
+        toneIndex[tone] ?? []
     }
 
     static func rituals(for tone: VeilEmotionTone, context: VeilEmotionContext) -> [VeilEmotionRitual] {
-        rituals.filter { $0.tone == tone && $0.context == context }
+        routeIndex[RouteKey(tone: tone, context: context)] ?? []
     }
 
     static func ritual(id: String) -> VeilEmotionRitual? {
-        rituals.first { $0.id == id }
+        idIndex[id.uppercased()]
+    }
+
+    static func search(_ query: String, limit: Int = 50) -> [VeilEmotionRitual] {
+        let needle = normalized(query.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !needle.isEmpty, limit > 0 else { return [] }
+        return searchIndex.lazy
+            .filter { $0.normalizedText.contains(needle) }
+            .prefix(min(limit, 100))
+            .map(\.ritual)
     }
 
     static func dailyPath(
@@ -258,5 +288,12 @@ enum VeilEmotionGardenEngine {
         case .play:
             return ["[\(marker)] 任选涂鸦、哼唱、观察或随手拍。", "允许结果没有用途。", "在计时结束时留下一个你喜欢的细节。"]
         }
+    }
+
+    private static func normalized(_ text: String) -> String {
+        text.folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: Locale(identifier: "zh_Hans_CN")
+        )
     }
 }

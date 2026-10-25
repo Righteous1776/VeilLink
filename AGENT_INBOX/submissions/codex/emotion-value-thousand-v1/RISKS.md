@@ -6,6 +6,7 @@
 - All 1,000 entries use only in-memory completion state. Persistent journals, streaks, reminders and sharing must be separate proposals because they add storage, notification, privacy and consent concerns.
 - Repetitive content can feel mechanical. Future content packs need human editorial review, localization and a user ability to hide/reduce categories.
 - The app supports iOS 15. Avoid `NavigationStack`, iOS 16-only symbols and continuous expensive animation until real-device validation.
+- The optimized timer uses a main-run-loop `Timer` with tolerance and deadline correction. Background/foreground behavior and timer invalidation still require Instruments and physical-device verification.
 
 ## Third-party risk
 

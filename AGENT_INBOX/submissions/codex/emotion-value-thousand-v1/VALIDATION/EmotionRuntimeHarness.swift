@@ -28,6 +28,19 @@ enum EmotionRuntimeHarness {
         let first = VeilEmotionGardenEngine.dailyPath(for: .uncertain, context: .night, date: date, calendar: utc)
         let second = VeilEmotionGardenEngine.dailyPath(for: .uncertain, context: .night, date: date, calendar: utc)
         precondition(first == second && first.count == 3)
+        precondition(VeilEmotionGardenEngine.ritual(id: "ev-1000")?.id == "EV-1000")
+        precondition(VeilEmotionGardenEngine.search("EV-0001").map(\.id) == ["EV-0001"])
+        let rainy = VeilEmotionGardenEngine.search("雨天", limit: 100)
+        precondition(rainy.count == 100 && rainy.allSatisfy { $0.context == .rainyDay })
+        precondition(VeilEmotionGardenEngine.search("不存在的情绪条目").isEmpty)
+
+        let benchmarkStart = Date()
+        for index in 1...10_000 {
+            let id = String(format: "EV-%04d", (index % 1_000) + 1)
+            precondition(VeilEmotionGardenEngine.ritual(id: id) != nil)
+        }
+        let lookupMilliseconds = Int(Date().timeIntervalSince(benchmarkStart) * 1_000)
+        print("INDEXED_LOOKUP_10000_MS=\(lookupMilliseconds)")
         print("EMOTION_RUNTIME_1000_PASS")
     }
 }

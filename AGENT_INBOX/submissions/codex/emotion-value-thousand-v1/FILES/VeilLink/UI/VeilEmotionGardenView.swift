@@ -14,13 +14,9 @@ struct VeilEmotionGardenView: View {
     }
 
     private var displayedRituals: [VeilEmotionRitual] {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !needle.isEmpty else { return VeilEmotionGardenEngine.rituals(for: tone, context: context) }
-        return Array(VeilEmotionGardenEngine.rituals.lazy.filter {
-            $0.id.lowercased().contains(needle)
-                || $0.title.lowercased().contains(needle)
-                || $0.prompt.lowercased().contains(needle)
-        }.prefix(50))
+        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? VeilEmotionGardenEngine.rituals(for: tone, context: context)
+            : VeilEmotionGardenEngine.search(query)
     }
 
     var body: some View {
@@ -209,16 +205,14 @@ private struct VeilEmotionRitualSheet: View {
     let markCompleted: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var remainingSeconds: Int
-    @State private var isRunning = false
     @State private var completedSteps = Set<Int>()
-    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @StateObject private var clock: VeilEmotionRitualClock
 
     init(ritual: VeilEmotionRitual, completed: Bool, markCompleted: @escaping () -> Void) {
         self.ritual = ritual
         self.completed = completed
         self.markCompleted = markCompleted
-        _remainingSeconds = State(initialValue: ritual.seconds)
+        _clock = StateObject(wrappedValue: VeilEmotionRitualClock(duration: ritual.seconds))
     }
 
     var body: some View {
@@ -250,16 +244,14 @@ private struct VeilEmotionRitualSheet: View {
                 countdown
                 HStack(spacing: 10) {
                     Button {
-                        if remainingSeconds == 0 { remainingSeconds = ritual.seconds }
-                        isRunning.toggle()
+                        clock.toggle()
                     } label: {
-                        Label(isRunning ? "暂停" : (remainingSeconds == ritual.seconds ? "开始" : "继续"), systemImage: isRunning ? "pause.fill" : "play.fill")
+                        Label(clock.isRunning ? "暂停" : (clock.remainingSeconds == ritual.seconds ? "开始" : "继续"), systemImage: clock.isRunning ? "pause.fill" : "play.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     Button {
-                        isRunning = false
-                        remainingSeconds = ritual.seconds
+                        clock.reset()
                     } label: {
                         Label("重置", systemImage: "arrow.counterclockwise")
                     }
@@ -267,7 +259,7 @@ private struct VeilEmotionRitualSheet: View {
                 }
                 Text("建议用时 \(ritual.seconds) 秒。可以暂停、重置或随时跳过。")
                     .font(.caption).foregroundColor(VeilTheme.tertiaryText)
-                if completedSteps.count == ritual.steps.count || remainingSeconds == 0 {
+                if completedSteps.count == ritual.steps.count || clock.remainingSeconds == 0 {
                     Text(ritual.completionNote)
                         .font(.subheadline)
                         .foregroundColor(VeilTheme.goldBright)
@@ -295,21 +287,13 @@ private struct VeilEmotionRitualSheet: View {
             .navigationTitle("微小陪伴")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
-            .onReceive(ticker) { _ in
-                guard isRunning else { return }
-                if remainingSeconds > 1 {
-                    remainingSeconds -= 1
-                } else {
-                    remainingSeconds = 0
-                    isRunning = false
-                }
-            }
+            .onDisappear { clock.pause() }
         }
     }
 
     private var countdown: some View {
         let progress = ritual.seconds > 0
-            ? Double(ritual.seconds - remainingSeconds) / Double(ritual.seconds)
+            ? Double(ritual.seconds - clock.remainingSeconds) / Double(ritual.seconds)
             : 1
         return ZStack {
             Circle().stroke(VeilTheme.panelSoft, lineWidth: 8)
@@ -318,14 +302,72 @@ private struct VeilEmotionRitualSheet: View {
                 .stroke(VeilTheme.gold, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 3) {
-                Text("\(remainingSeconds)").font(.system(size: 30, weight: .bold, design: .rounded)).monospacedDigit().foregroundColor(VeilTheme.text)
-                Text(remainingSeconds == 0 ? "完成" : "秒").font(.caption).foregroundColor(VeilTheme.secondaryText)
+                Text("\(clock.remainingSeconds)").font(.system(size: 30, weight: .bold, design: .rounded)).monospacedDigit().foregroundColor(VeilTheme.text)
+                Text(clock.remainingSeconds == 0 ? "完成" : "秒").font(.caption).foregroundColor(VeilTheme.secondaryText)
             }
         }
         .frame(width: 112, height: 112)
         .frame(maxWidth: .infinity)
-        .animation(reduceMotion ? nil : .linear(duration: 0.25), value: remainingSeconds)
+        .animation(reduceMotion ? nil : .linear(duration: 0.25), value: clock.remainingSeconds)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(remainingSeconds == 0 ? "计时完成" : "剩余 \(remainingSeconds) 秒")
+        .accessibilityLabel(clock.remainingSeconds == 0 ? "计时完成" : "剩余 \(clock.remainingSeconds) 秒")
     }
+}
+
+private final class VeilEmotionRitualClock: ObservableObject {
+    @Published private(set) var remainingSeconds: Int
+    @Published private(set) var isRunning = false
+
+    private let duration: Int
+    private var deadline: Date?
+    private var timer: Timer?
+
+    init(duration: Int) {
+        self.duration = max(1, duration)
+        remainingSeconds = max(1, duration)
+    }
+
+    func toggle() {
+        if isRunning { pause() }
+        else { start() }
+    }
+
+    func pause() {
+        updateRemaining()
+        stopTimer()
+    }
+
+    func reset() {
+        stopTimer()
+        remainingSeconds = duration
+    }
+
+    private func start() {
+        if remainingSeconds == 0 { remainingSeconds = duration }
+        deadline = Date().addingTimeInterval(TimeInterval(remainingSeconds))
+        isRunning = true
+        let next = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+        next.tolerance = 0.15
+        RunLoop.main.add(next, forMode: .common)
+        timer = next
+    }
+
+    private func tick() {
+        updateRemaining()
+        if remainingSeconds == 0 { stopTimer() }
+    }
+
+    private func updateRemaining() {
+        guard let deadline else { return }
+        remainingSeconds = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+        deadline = nil
+        isRunning = false
+    }
+
+    deinit { timer?.invalidate() }
 }
