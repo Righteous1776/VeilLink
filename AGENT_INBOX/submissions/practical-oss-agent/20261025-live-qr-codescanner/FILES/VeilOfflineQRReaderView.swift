@@ -62,7 +62,7 @@ struct VeilOfflineQRReaderView: View {
         }
         .navigationTitle("二维码阅读器")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showsCamera) {
+        .sheet(isPresented: $showsCamera, onDismiss: { scanResolved = true }) {
             NavigationView {
                 CodeScannerView(
                     codeTypes: [.qr],
@@ -75,7 +75,7 @@ struct VeilOfflineQRReaderView: View {
                     case .success(let scanned):
                         let text = scanned.string
                         DispatchQueue.main.async {
-                            guard !scanResolved else { return }
+                            guard showsCamera, !scanResolved else { return }
                             scanResolved = true
                             showsCamera = false
                             guard !text.isEmpty, text.utf8.count <= 4_096 else {
@@ -88,7 +88,7 @@ struct VeilOfflineQRReaderView: View {
                     case .failure(let error):
                         let description = error.localizedDescription
                         DispatchQueue.main.async {
-                            guard !scanResolved else { return }
+                            guard showsCamera, !scanResolved else { return }
                             scanResolved = true
                             showsCamera = false
                             failureText = "扫码失败：\(description)"
@@ -99,7 +99,10 @@ struct VeilOfflineQRReaderView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("取消") { showsCamera = false }
+                        Button("取消") {
+                            scanResolved = true
+                            showsCamera = false
+                        }
                     }
                 }
             }
