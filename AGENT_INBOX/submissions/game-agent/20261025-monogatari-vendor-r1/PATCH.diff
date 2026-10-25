@@ -1,7 +1,103 @@
-# Advisory change plan only — official upstream binary must not be committed to Inbox.
-# Proposed source file (to be applied by Integration Governor on isolated integration branch):
-# Tools/VNPort/verify_monogatari_vendor.py
-# Source: this submission's FILES/Tools/VNPort/verify_monogatari_vendor.py
-# Lock document: this submission's VENDOR_LOCK.json
-# Existing earlier separate R0 candidate proposal remains the source for WKWebView
-# native glue; this submission intentionally changes no product files itself.
+diff --git a/Tools/VNPort/verify_monogatari_vendor.py b/Tools/VNPort/verify_monogatari_vendor.py
+new file mode 100644
+--- /dev/null
++++ b/Tools/VNPort/verify_monogatari_vendor.py
+@@ -0,0 +1,79 @@
++#!/usr/bin/env python3
++"""Verify official Monogatari release BYTES; never substitute a fake runtime.
++
++Writes no product files. Optional --extract extracts pristine upstream assets
++ONLY into an explicit location AFTER verification. No IPA build or release.
++"""
++import argparse
++import hashlib
++import io
++import json
++import pathlib
++import stat
++import sys
++import urllib.request
++import zipfile
++
++LOCK = json.loads((pathlib.Path(__file__).parent / "VENDOR_LOCK.json").read_text())
++def git_blob(data):
++    return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
++def get_bytes(p):
++    if p is not None:
++        return p.read_bytes()
++    errs = []
++    for url in (LOCK["assetURL"], LOCK["officialPublisherMirror"]):
++        try:
++            with urllib.request.urlopen(url, timeout=40) as resp:
++                b = resp.read(15000001)
++            if hashlib.sha256(b).hexdigest() == LOCK["releaseSHA256"]:
++                return b
++            errs.append("digest mismatch from " + url)
++        except Exception as e:
++            errs.append(type(e).__name__ + " from " + url)
++    sys.exit("NO_VERIFIED_RELEASE_DOWNLOAD: " + "; ".join(errs))
++def run():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--release-zip", type=pathlib.Path)
++    parser.add_argument("--extract", type=pathlib.Path, help="pristine upstream extraction, optional")
++    args = parser.parse_args()
++    b = get_bytes(args.release_zip)
++    got = hashlib.sha256(b).hexdigest()
++    if len(b) != LOCK["releaseBytes"] or got != LOCK["releaseSHA256"]:
++        sys.exit("PIN_MISMATCH: size=" + str(len(b)) + " sha256=" + got)
++    with zipfile.ZipFile(io.BytesIO(b)) as z:
++        files = [i for i in z.infolist() if not i.is_dir()]
++        names = [i.filename for i in files]
++        if len(names) != len(set(names)) or len(files)>5000 or sum(i.file_size for i in files)>150000000:
++            sys.exit("BAD_ARCHIVE_LIMITS_OR_DUPLICATES")
++        candidates=[name[:-10] for name in names if name.endswith("index.html") and
++          name[:-10]+"engine/core/monogatari.js" in names and name[:-10]+"js/options.js" in names]
++        if len(candidates)!=1: sys.exit("COMPLETE_RUNTIME_ROOT_NOT_UNIQUE")
++        root = candidates[0]
++        checks={"engine/core/monogatari.js":LOCK["compiledBrowserCoreGitBlob"],
++                "engine/core/monogatari.css":LOCK["compiledCSSGitBlob"]}
++        for file,sha in checks.items():
++            raw = z.read(root+file)
++            if git_blob(raw)!=sha: sys.exit("GIT_BLOB_MISMATCH: "+file)
++        for info in files:
++            if not info.filename.startswith(root): continue
++            rel=info.filename[len(root):]
++            pp=pathlib.PurePosixPath(rel)
++            mode=info.external_attr>>16
++            if (not rel or rel.startswith("/") or "\\\\" in rel or ":" in rel or
++                any(p in ("..", ".") for p in pp.parts) or
++                stat.S_ISLNK(mode) or info.file_size>30000000):
++                sys.exit("UNSAFE_ARCHIVE_PATH: "+rel)
++        if args.extract:
++            output = args.extract.resolve()
++            if output.exists() or output.is_symlink():
++                sys.exit("EXTRACT_OUTPUT_MUST_NOT_EXIST")
++            output.mkdir(parents=True)
++            for info in files:
++                if not info.filename.startswith(root): continue
++                rel=info.filename[len(root):]
++                target=output.joinpath(*pathlib.PurePosixPath(rel).parts)
++                target.parent.mkdir(parents=True, exist_ok=True)
++                target.write_bytes(z.read(info))
++        print(json.dumps({"status":"VERIFIED_OFFICIAL_BYTES","zipSHA256":got,
++         "bytes":len(b),"entries":len(files),"extracted":bool(args.extract)}, indent=2))
++if __name__ == "__main__": run()
+diff --git a/Tools/VNPort/VENDOR_LOCK.json b/Tools/VNPort/VENDOR_LOCK.json
+new file mode 100644
+--- /dev/null
++++ b/Tools/VNPort/VENDOR_LOCK.json
+@@ -0,0 +1,14 @@
++{
++  "schema": "veillink.monogatari.v2.8.0.vendor-lock.v1",
++  "state": "UPSTREAM_BYTES_NOT_OBTAINED",
++  "officialRelease": "https://github.com/Monogatari/Monogatari/releases/tag/v2.8.0",
++  "assetURL": "https://github.com/Monogatari/Monogatari/releases/download/v2.8.0/monogatari-v2.8.0.zip",
++  "officialPublisherMirror": "https://storage.monogatari.io/releases/monogatari-v2.8.0.zip",
++  "releaseBytes": 2798775,
++  "releaseSHA256": "16d221485888b0193312e9989ecafa57cb1913978bf2f09ba554552ba3885806",
++  "sourceTagCommit": "89045f59b6af1669eefcd74ec59de0df52106bf1",
++  "compiledBrowserCoreGitBlob": "0211c2f2c9adc56e28d5583feb0dd46b902d37d5",
++  "compiledCSSGitBlob": "4eae91263557a8192cacea19948890c74086de4d",
++  "license": "MIT; Copyright Diana Islas Ocampo",
++  "appMinimumIOS": "15.0"
++}
