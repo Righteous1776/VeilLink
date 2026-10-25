@@ -340,12 +340,19 @@ enum VeilMissionControlEngine {
                           "候选：\(risky.map(\.name).joined(separator: "、"))。需要真机命中路径验证，不直接更改视图层级。")
         case .incidentCorrelation:
             let group = Dictionary(grouping: s.warningEvents, by: { $0 })
-            let sorted = group.map { ($0.key, $0.value.count) }
-                .sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
-            guard let top = sorted.first else { return result(feature, .normal, "没有警告样本", "0", "暂无可归类的事件。") }
-            return result(feature, top.1 >= 3 ? .caution : .normal,
-                          "最高频异常事件", top.0,
-                          "发生 \(top.1) 次，合计 \(s.warningEvents.count) 条；同名计数不代表已证明因果关系。")
+            let sortedKeys = group.keys.sorted { lhs, rhs in
+                let leftCount = group[lhs]?.count ?? 0
+                let rightCount = group[rhs]?.count ?? 0
+                if leftCount == rightCount { return lhs < rhs }
+                return leftCount > rightCount
+            }
+            guard let topEvent = sortedKeys.first else {
+                return result(feature, .normal, "没有警告样本", "0", "暂无可归类的事件。")
+            }
+            let topCount = group[topEvent]?.count ?? 0
+            return result(feature, topCount >= 3 ? .caution : .normal,
+                          "最高频异常事件", topEvent,
+                          "发生 \(topCount) 次，合计 \(s.warningEvents.count) 条；同名计数不代表已证明因果关系。")
         case .capabilityFallback:
             let absent = s.requestedCapabilities.subtracting(s.knownCapabilities)
             if absent.isEmpty { return result(feature, .normal, "请求能力齐全", "全部可用", "实际调用前仍需实时 OS 权限与安全会话检查。") }
