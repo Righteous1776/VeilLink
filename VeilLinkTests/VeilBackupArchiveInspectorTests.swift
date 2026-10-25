@@ -62,7 +62,7 @@ final class VeilBackupArchiveInspectorTests: XCTestCase {
     }
 
     func testTruncatedArchiveFailsClosed() throws {
-        let (root, file) = try fixture(corrupted: true)
+        let (root, file) = try fixture(true)
         defer { try? FileManager.default.removeItem(at: root) }
         let report = VeilBackupArchiveInspector.inspect(file, verifyAllCRC: true)
         XCTAssertFalse(report.permittedToRestore)
