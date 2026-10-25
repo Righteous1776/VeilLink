@@ -6,7 +6,7 @@
 - submission_path: AGENT_INBOX/submissions/game-agent/20261025-monogatari-vendor-r1/
 - scope: Pin the *genuine official* Monogatari 2.8.0 distribution and stage a safe importer/verifier; retain actual vendor ZIP outside Inbox under Governor import process.
 - source_proposed: Tools/VNPort/verify_monogatari_vendor.py plus v2.8.0 lock manifest.
-- evidence: GitHub release metadata and source tag dist build confirmed; **upstream ZIP bytes not obtained** in this execution environment.
+- evidence: real owner-uploaded official ZIP SHA-256 and release size match; 12 upstream engine blobs are byte-for-byte unchanged; full binary imported to user-facing R2 candidate package (see OFFICIAL_BINARY_RECEIPT.md).
 - asset_grant: not used
 - status: DROPPED (text-only verifier proposal, no binary)
 - overlap: Issue #77 R0 source candidate; P0 #64 #65 #66 and GameLobby/project config proposals
