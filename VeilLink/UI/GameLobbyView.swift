@@ -536,6 +536,7 @@ struct LocalAIGameView: View {
 
                 if game == .gomoku {
                     if ownerMode.isAuthorized(for: .developerTraining),
+                       !model.appLock.isLocked,
                        developerLearningGate.canImportTraining() {
                         NavigationLink(destination: BoardDeveloperLearningLabView(
                             model: model,
@@ -573,11 +574,13 @@ struct LocalAIGameView: View {
                 enabled: controller.canHumanAct || (
                     controller.developerTeachingMode
                         && ownerMode.isAuthorized(for: .developerTraining)
+                        && !model.appLock.isLocked
                         && developerLearningGate.canImportTraining()
                 )
             ) { index in
                 if controller.developerTeachingMode,
                    ownerMode.isAuthorized(for: .developerTraining),
+                   !model.appLock.isLocked,
                    developerLearningGate.canImportTraining() {
                     controller.developerGomokuMove(index)
                 } else {

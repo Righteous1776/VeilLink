@@ -18,11 +18,18 @@ struct BoardDeveloperLearningLabView: View {
 
     private var gate: DeveloperLearningLabGate { model.developerLearningGate }
 
+    /// Authorization is conjunctive and checked at each mutation boundary.
+    private var authorizedSession: Bool {
+        model.ownerMode.isAuthorized(for: .developerTraining)
+            && !model.appLock.isLocked
+            && gate.canImportTraining()
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
-                if gate.isAuthorized {
+                if authorizedSession {
                     authorizedContent
                 } else {
                     lockedContent
@@ -39,7 +46,7 @@ struct BoardDeveloperLearningLabView: View {
             allowsMultipleSelection: false
         ) { result in
             guard case .success(let urls) = result, let selectedURL = urls.first else { return }
-            guard gate.canImportTraining() else {
+            guard authorizedSession else {
                 message = "开发者会话已失效，请重新验证。"
                 return
             }
@@ -52,6 +59,11 @@ struct BoardDeveloperLearningLabView: View {
                         acceptedExtensions: ["json"]
                     )
                     defer { VeilImportedFileAccess.removeStagedCopy(file) }
+                    guard authorizedSession else {
+                        gate.lock()
+                        message = "Owner Mode 或应用锁状态已变化，请重新授权后导入。"
+                        return
+                    }
                     let report = try controller.importBoardLearning(from: file)
                     message = "已写入\(game.title)开发训练：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
                     model.haptics.resolved()
@@ -110,6 +122,7 @@ struct BoardDeveloperLearningLabView: View {
                 .foregroundColor(VeilTheme.secondaryText)
             formationRecorder
             Button {
+                guard authorizedSession else { gate.lock(); return }
                 showsImporter = true
             } label: {
                 Label(preparingImport ? "正在准备训练包…" : "导入开发训练包", systemImage: "square.and.arrow.down")
@@ -130,7 +143,7 @@ struct BoardDeveloperLearningLabView: View {
                 .foregroundColor(VeilTheme.secondaryText)
             Toggle("录制模式：手动演示双方走子", isOn: Binding(
                 get: { controller.developerTeachingMode },
-                set: { controller.setDeveloperTeachingMode($0) }
+                set: { controller.setDeveloperTeachingMode($0 && authorizedSession) }
             ))
             .font(.caption.weight(.semibold))
             TextField("阵法名称，例如：中心活三防守", text: $formationName)
@@ -154,6 +167,11 @@ struct BoardDeveloperLearningLabView: View {
                 .padding(10)
                 .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             Button("保存当前录制阵法") {
+                guard authorizedSession else {
+                    gate.lock()
+                    message = "Owner Mode 或应用锁已失效，不能保存开发者阵法。"
+                    return
+                }
                 do {
                     try controller.captureDeveloperFormation(
                         name: formationName,

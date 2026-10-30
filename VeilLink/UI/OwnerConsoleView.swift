@@ -104,6 +104,7 @@ struct OwnerConsoleView: View {
                     Button("退出") {
                         RuntimeDiagnosticsBridge.shared.recordSemanticAction("owner.exit")
                         ownerMode.lock()
+                        model.developerLearningGate.lock()
                         dismiss()
                     }
                 }
@@ -128,6 +129,7 @@ struct OwnerConsoleView: View {
                 showsStressConfiguration = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                     ownerMode.lock()
+                        model.developerLearningGate.lock()
                     dismiss()
                 }
             }
