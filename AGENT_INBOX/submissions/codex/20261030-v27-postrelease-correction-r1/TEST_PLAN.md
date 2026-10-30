@@ -26,6 +26,7 @@
 - Gomoku and Xiangqi difficulty budgets monotonically increase search capacity; retained training evidence also reinforces every tier's bounded search budget; a repeated Xiangqi opening produces an explainable personal-coach profile.
 - developer learning enrollment requires an already-unlocked application lock; an eight-digit verifier unlocks a short-lived session and neither a plaintext PIN nor a public import entry is retained.
 - a developer-recorded formation with a host opening and guest reply survives authenticated reload; its matching prefix yields that guest reply as a high-priority Bot adjustment and its recorded next human move as the predicted adversarial reply; incomplete/one-sided lessons are rejected.
+- the coach profile derives a non-generic review direction from local outcome/interruption and repeated-line evidence, in addition to level, preferred opening and next lesson.
 
 ## Mandatory Apple SDK gates (not available in this Linux workspace)
 

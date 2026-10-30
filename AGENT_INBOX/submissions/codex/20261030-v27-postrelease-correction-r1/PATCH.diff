@@ -1,5 +1,5 @@
 diff --git a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
-index 7346026..119a386 100644
+index 7346026..494aa97 100644
 --- a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
 +++ b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
 @@ -1,16 +1,72 @@
@@ -79,7 +79,7 @@ index 7346026..119a386 100644
  }
  
  enum AdaptiveBoardPosition {
-@@ -93,6 +149,18 @@ struct AdaptiveBoardLearningImportReport: Equatable, Sendable {
+@@ -93,6 +149,21 @@ struct AdaptiveBoardLearningImportReport: Equatable, Sendable {
      let rememberedPositions: Int
  }
  
@@ -91,6 +91,9 @@ index 7346026..119a386 100644
 +    let repeatedLineCount: Int
 +    let preferredOpening: String
 +    let nextLesson: String
++    /// A plain-language, evidence-based post-game direction. It is deliberately
++    /// derived from local results rather than a remote rating or opaque model.
++    let reviewFocus: String
 +
 +    var levelText: String { "个性化教练 · Lv\(level)" }
 +}
@@ -98,7 +101,7 @@ index 7346026..119a386 100644
  enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
      case unreadable
      case tooLarge
-@@ -104,7 +172,7 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
+@@ -104,7 +175,7 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
      var errorDescription: String? {
          switch self {
          case .unreadable: return "无法读取训练包。"
@@ -107,7 +110,7 @@ index 7346026..119a386 100644
          case .unsupportedFormat: return "训练包版本不受支持。"
          case .checksumMismatch: return "训练包完整性校验失败。"
          case .invalidContent: return "训练包包含无效棋步或越界数据。"
-@@ -115,7 +183,12 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
+@@ -115,7 +186,12 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
  
  @MainActor
  final class AdaptiveBoardLearningStore {
@@ -121,7 +124,7 @@ index 7346026..119a386 100644
  
      private struct ActionStat: Codable {
          var count: Int
-@@ -152,16 +225,12 @@ final class AdaptiveBoardLearningStore {
+@@ -152,16 +228,12 @@ final class AdaptiveBoardLearningStore {
          let payload: Database
      }
  
@@ -140,7 +143,7 @@ index 7346026..119a386 100644
          let resolvedURL: URL
          if let fileURL {
              resolvedURL = fileURL
-@@ -169,10 +238,33 @@ final class AdaptiveBoardLearningStore {
+@@ -169,10 +241,33 @@ final class AdaptiveBoardLearningStore {
              let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                  .appendingPathComponent("VeilLink", isDirectory: true)
              try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -176,7 +179,7 @@ index 7346026..119a386 100644
      }
  
      var summary: AdaptiveBoardLearningSummary {
-@@ -183,7 +275,7 @@ final class AdaptiveBoardLearningStore {
+@@ -183,7 +278,7 @@ final class AdaptiveBoardLearningStore {
          )
      }
  
@@ -185,7 +188,7 @@ index 7346026..119a386 100644
          var result = Self.seedPreferences()
          for (position, stat) in database.positions {
              var actions = result[position] ?? [:]
-@@ -202,11 +294,109 @@ final class AdaptiveBoardLearningStore {
+@@ -202,11 +297,125 @@ final class AdaptiveBoardLearningStore {
              }
              result[position] = actions
          }
@@ -234,6 +237,9 @@ index 7346026..119a386 100644
 +    func coachProfile(for game: MiniGameKind) -> PersonalBoardCoachProfile {
 +        let records = database.recentGames.filter { $0.game == game }
 +        let completed = records.filter { $0.result != .unfinished }.count
++        let interrupted = records.filter { $0.result == .unfinished }.count
++        let humanWins = records.filter { $0.result == .humanWon }.count
++        let aiWins = records.filter { $0.result == .aiWon }.count
 +        let openings = records.compactMap { record in
 +            record.actions.first(where: { $0.first == "h" }).map { String($0.dropFirst()) }
 +        }
@@ -280,13 +286,26 @@ index 7346026..119a386 100644
 +            preferredOpening = "仅支持五子棋和中国象棋"
 +            nextLesson = "选择棋类对局后开始建立个人档案。"
 +        }
++        let reviewFocus: String
++        if interrupted >= max(2, completed) {
++            reviewFocus = "复盘方向：中断局较多；先完成短对局，观察优势从哪一步开始丢失。"
++        } else if aiWins > humanWins {
++            reviewFocus = "复盘方向：重点回看电脑取得优势前的两手，先处理对方直接威胁。"
++        } else if repeatedLines > 0 {
++            reviewFocus = "复盘方向：你的常用线路已被识别；尝试为同一开局准备一个转向。"
++        } else if humanWins > 0 {
++            reviewFocus = "复盘方向：复走一局胜局，找出可以稳定复用的威胁与防守转换。"
++        } else {
++            reviewFocus = "复盘方向：先完成一局，教练会从开局、结果和重复线路生成针对性建议。"
++        }
 +        let level = min(10, max(1, 1 + completed / 3 + database.positions.count / 180))
 +        return PersonalBoardCoachProfile(
 +            level: level,
 +            completedGames: completed,
 +            repeatedLineCount: repeatedLines,
 +            preferredOpening: preferredOpening,
-+            nextLesson: nextLesson
++            nextLesson: nextLesson,
++            reviewFocus: reviewFocus
 +        )
      }
  
@@ -296,7 +315,7 @@ index 7346026..119a386 100644
  
          database.sequence += 1
          let sequence = database.sequence
-@@ -218,13 +408,6 @@ final class AdaptiveBoardLearningStore {
+@@ -218,13 +427,6 @@ final class AdaptiveBoardLearningStore {
              action.aiReward = max(-32_000, min(32_000, action.aiReward + result.aiReward))
              position.actions[ply.action] = action
              position.lastSequence = sequence
@@ -310,7 +329,7 @@ index 7346026..119a386 100644
              database.positions[ply.position] = position
          }
  
-@@ -235,7 +418,6 @@ final class AdaptiveBoardLearningStore {
+@@ -235,7 +437,6 @@ final class AdaptiveBoardLearningStore {
              actions: plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
              finishedAt: Date()
          ))
@@ -318,7 +337,7 @@ index 7346026..119a386 100644
          save()
      }
  
-@@ -267,13 +449,12 @@ final class AdaptiveBoardLearningStore {
+@@ -267,13 +468,12 @@ final class AdaptiveBoardLearningStore {
              payload: database
          )
          let data = try encoder.encode(envelope)
@@ -334,7 +353,7 @@ index 7346026..119a386 100644
          do {
              try data.write(to: url, options: .atomic)
              return url
-@@ -288,9 +469,6 @@ final class AdaptiveBoardLearningStore {
+@@ -288,9 +488,6 @@ final class AdaptiveBoardLearningStore {
          guard let data = try? Data(contentsOf: url) else {
              throw AdaptiveBoardLearningPackageError.unreadable
          }
@@ -344,7 +363,7 @@ index 7346026..119a386 100644
          guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
                envelope.format == "veillink.board-learning.export.v1",
                envelope.checksumAlgorithm == "fnv1a64-canonical-json",
-@@ -309,8 +487,11 @@ final class AdaptiveBoardLearningStore {
+@@ -309,8 +506,11 @@ final class AdaptiveBoardLearningStore {
          }
  
          let previous = database
@@ -358,7 +377,7 @@ index 7346026..119a386 100644
          save()
          guard lastSaveSucceeded else {
              database = previous
-@@ -322,30 +503,11 @@ final class AdaptiveBoardLearningStore {
+@@ -322,30 +522,11 @@ final class AdaptiveBoardLearningStore {
          )
      }
  
@@ -390,7 +409,7 @@ index 7346026..119a386 100644
              try FileManager.default.createDirectory(
                  at: fileURL.deletingLastPathComponent(),
                  withIntermediateDirectories: true
-@@ -357,22 +519,65 @@ final class AdaptiveBoardLearningStore {
+@@ -357,22 +538,65 @@ final class AdaptiveBoardLearningStore {
          }
      }
  
@@ -464,7 +483,7 @@ index 7346026..119a386 100644
              for (action, value) in stat.actions {
                  guard value.count > 0, value.count <= 65_535,
                        (-32_000...32_000).contains(value.aiReward),
-@@ -381,7 +586,6 @@ final class AdaptiveBoardLearningStore {
+@@ -381,7 +605,6 @@ final class AdaptiveBoardLearningStore {
          }
          return database.recentGames.allSatisfy { record in
              (record.game == .gomoku || record.game == .xiangqi)
@@ -2145,7 +2164,7 @@ index 0000000..0d1e4a1
 +    }
 +}
 diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
-index 7c19021..124c091 100644
+index 7c19021..b723634 100644
 --- a/VeilLink/UI/GameLobbyView.swift
 +++ b/VeilLink/UI/GameLobbyView.swift
 @@ -15,7 +15,8 @@ struct GameLobbyView: View {
@@ -2284,7 +2303,7 @@ index 7c19021..124c091 100644
              }
          }
          .alert(
-@@ -425,10 +470,53 @@ struct LocalAIGameView: View {
+@@ -425,10 +470,57 @@ struct LocalAIGameView: View {
                      .font(.caption.weight(.semibold))
                      .foregroundColor(VeilTheme.secondaryText)
              }
@@ -2329,6 +2348,10 @@ index 7c19021..124c091 100644
 +                Text(controller.coachProfile.nextLesson)
 +                    .font(.caption2)
 +                    .foregroundColor(VeilTheme.secondaryText)
++                Text(controller.coachProfile.reviewFocus)
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .fixedSize(horizontal: false, vertical: true)
 +                Text(controller.coachTip)
 +                    .font(.caption2)
 +                    .foregroundColor(VeilTheme.goldBright)
@@ -2339,7 +2362,7 @@ index 7c19021..124c091 100644
              HStack(spacing: 10) {
                  Button {
                      do {
-@@ -442,12 +530,24 @@ struct LocalAIGameView: View {
+@@ -442,12 +534,24 @@ struct LocalAIGameView: View {
                  }
                  .buttonStyle(.bordered)
  
@@ -2369,7 +2392,7 @@ index 7c19021..124c091 100644
              }
              .font(.caption.weight(.semibold))
              if !controller.learningStoreAvailable {
-@@ -463,8 +563,22 @@ struct LocalAIGameView: View {
+@@ -463,8 +567,22 @@ struct LocalAIGameView: View {
      private var board: some View {
          switch game {
          case .gomoku:
@@ -3227,7 +3250,7 @@ index 0fb1a42..366a27a 100644
      }
  
 diff --git a/VeilLinkTests/AdaptiveBoardLearningTests.swift b/VeilLinkTests/AdaptiveBoardLearningTests.swift
-index 5eb3806..800d7fe 100644
+index 5eb3806..718ba3c 100644
 --- a/VeilLinkTests/AdaptiveBoardLearningTests.swift
 +++ b/VeilLinkTests/AdaptiveBoardLearningTests.swift
 @@ -9,7 +9,7 @@ final class AdaptiveBoardLearningTests: XCTestCase {
@@ -3239,7 +3262,7 @@ index 5eb3806..800d7fe 100644
          let url = temporaryURL()
          defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
          let store = AdaptiveBoardLearningStore(fileURL: url)
-@@ -26,14 +26,100 @@ final class AdaptiveBoardLearningTests: XCTestCase {
+@@ -26,14 +26,101 @@ final class AdaptiveBoardLearningTests: XCTestCase {
          }
  
          XCTAssertEqual(store.summary.completedGames, 80)
@@ -3337,6 +3360,7 @@ index 5eb3806..800d7fe 100644
 +        XCTAssertEqual(profile.completedGames, 0)
 +        XCTAssertEqual(profile.preferredOpening, "偏好中炮")
 +        XCTAssertGreaterThanOrEqual(profile.repeatedLineCount, 1)
++        XCTAssertTrue(profile.reviewFocus.contains("中断局"))
 +    }
 +
      func testRepeatedPlayerMoveBecomesSearchPreferenceAndCanBeCleared() {
