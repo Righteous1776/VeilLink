@@ -15,3 +15,6 @@ No PR or pushed Codex changes for these exact eight items after Build62 main cou
 
 ## Critical sequencing
 P0 Files/legacy database and migration safety first. Independent training databases, loss-driven live bot policy and owner governance wiring next. Only after iOS15/physical iPhone7 build and UI/BLE regression Governor may promote the batch. Do not interpret any R1 candidate as already in IPA.
+
+## R1b learned-game storage candidate
+A separate append-only JSONL journal implementation is staged for each game (`training-gomoku.jsonl`, `training-xiangqi.jsonl`). It streams lines instead of assuming a fixed whole-file 512KiB maximum, reports wins/losses/draws/interrupted matches per game, supports independent clear/export and cautious validated import with rollback. It does not yet replace the existing shared legacy v1 storage or connect to the live decision engine. The source's per-record input limits are safety checks, NOT old global-history truncation. An additional three XCTest methods are authored but have not been executed.
