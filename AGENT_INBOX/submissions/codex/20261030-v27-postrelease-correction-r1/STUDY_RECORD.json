@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "task_id": "20261030-v27-postrelease-correction-r1",
+  "agent_id": "codex",
+  "lane": "INBOX_ONLY",
+  "baseline": "403b3dc474746d3925ad52fa4169225905bac7fc",
+  "status": "VALIDATED_LOCAL",
+  "sources_read": [
+    "zeo-unified-agent-foundation/SKILL.md",
+    "references/UNIFIED_CONSTITUTION_BRIDGE.md",
+    "references/DUAL_LEARNING_GATE.md",
+    "references/CONFLICT_MATRIX.md",
+    "references/OPERATING_PLAYBOOK.md",
+    "platforms/PLATFORM_ROUTER.md",
+    "handbook/01_OPERATOR_ENTRY.md",
+    "handbook/README.md",
+    "memory/README.md",
+    "memory/references/01_MEMORY_ARCHITECTURE.md",
+    "memory/references/03_AUTHORITY_AND_SCOPE.md",
+    "memory/references/06_RESUME_ROUTER.md",
+    "repository/AGENTS.md",
+    "repository/AGENT_INBOX/00_READ_ME_FIRST.md",
+    "repository/AGENT_INBOX/01_GOVERNOR_IDENTITY.md",
+    "repository/AGENT_INBOX/02_RULES.md",
+    "repository/AGENT_INBOX/03_PROMPT_FOR_AGENTS.md",
+    "repository/AGENT_INBOX/06_ASSET_DROP_POLICY.md",
+    "repository/AGENT_INBOX/ASSET_GRANTS.json"
+  ],
+  "repository_learning_gate": {
+    "status": "PARTIAL",
+    "missing": [
+      "governance/CONSTITUTION_SEAL.json",
+      "governance/MANDATORY_READ_SET.json",
+      "AGENT_INBOX/07_LEARNING_GATE.md"
+    ],
+    "action": "Stayed INBOX_ONLY; no claim of machine learning-gate PASS."
+  },
+  "authority": {
+    "live_lane_grant": false,
+    "main_write": false,
+    "release": false,
+    "binary_asset_grant": false
+  },
+  "evidence": {
+    "git_diff_check": "PASS",
+    "tactical_v2_source_gate": "PASS",
+    "apple_sdk_build": "NOT_AVAILABLE",
+    "xctest": "NOT_RUN",
+    "device_test": "NOT_RUN",
+    "ipa": "NOT_REQUESTED"
+  }
+}
