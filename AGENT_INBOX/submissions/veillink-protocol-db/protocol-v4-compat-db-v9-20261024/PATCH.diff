@@ -1,0 +1,261 @@
+diff --git a/VeilLink/Security/SessionCoordinator.swift b/VeilLink/Security/SessionCoordinator.swift
+--- a/VeilLink/Security/SessionCoordinator.swift
++++ b/VeilLink/Security/SessionCoordinator.swift
+@@ -12,7 +12,36 @@
+     static let maximumDisplayNameBytes = 128
+ }
+ 
+-private struct WireAcknowledgement: Codable { let messageID: String }
++struct WireAcknowledgement: Codable {
++    let messageID: String
++    let capabilitySchema: Int?
++    let capabilityBits: Int?
++
++    init(messageID: String, capabilitySchema: Int? = nil, capabilityBits: Int? = nil) {
++        self.messageID = messageID
++        self.capabilitySchema = capabilitySchema
++        self.capabilityBits = capabilityBits
++    }
++
++    private enum CodingKeys: String, CodingKey {
++        case messageID, capabilitySchema, capabilityBits
++    }
++
++    init(from decoder: Decoder) throws {
++        let container = try decoder.container(keyedBy: CodingKeys.self)
++        messageID = try container.decode(String.self, forKey: .messageID)
++        // Malformed optional extension fields cannot invalidate an authenticated v4 ACK.
++        capabilitySchema = try? container.decode(Int.self, forKey: .capabilitySchema)
++        capabilityBits = try? container.decode(Int.self, forKey: .capabilityBits)
++    }
++
++    func encode(to encoder: Encoder) throws {
++        var container = encoder.container(keyedBy: CodingKeys.self)
++        try container.encode(messageID, forKey: .messageID)
++        try container.encodeIfPresent(capabilitySchema, forKey: .capabilitySchema)
++        try container.encodeIfPresent(capabilityBits, forKey: .capabilityBits)
++    }
++}
+ 
+ private struct WireChatContent: Codable {
+     enum Kind: String, Codable { case text, image, voice }
+@@ -905,8 +934,18 @@
+         sessions[transportID] = context
+         let shouldNotifyDelivery = database.fetchMessage(id: ack.messageID).map { $0.isOutgoing && $0.deliveryState != .delivered } ?? false
+         try database.markDelivered(messageID: ack.messageID, from: remote.identityID, localIdentityID: context.localHello.identityID)
+-        try database.completeOutbound(messageID: ack.messageID, targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
+-        if shouldNotifyDelivery { onDeliveryConfirmed?() }
++        try database.completeOutbound(messageID: ack.messageID, targetIdentityID: remote.identityID, localIdentityID: context.localHello.identityID)
++        if let existing = database.fetchMessage(id: ack.messageID), existing.isOutgoing,
++           let bits = VeilPeerCapabilityPolicy.validatedBits(schemaVersion: ack.capabilitySchema, bits: ack.capabilityBits) {
++            // Advisory only. Missing/invalid extensions never impede delivery.
++            try? database.cacheAuthenticatedPeerCapabilities(
++                localIdentityID: context.localHello.identityID,
++                peerIdentityID: remote.identityID,
++                publicKey: remote.identityPublicKey,
++                featureBits: bits
++            )
++        }
++        if shouldNotifyDelivery { onDeliveryConfirmed?() }
+         onMessagesChanged?(false)
+         flushOutbound(for: remote.identityID)
+         stopRetryLoopIfIdle()
+@@ -914,7 +953,12 @@
+ 
+     private func sendAcknowledgement(for messageID: String, transportID: UUID, context: inout SessionContext) throws {
+         guard let keys = context.keys else { throw CryptoEngineError.invalidKeyMaterial }
+-        let encrypted = try CryptoEngine.encrypt(try encoder.encode(WireAcknowledgement(messageID: messageID)), key: keys.sendKey, messageID: messageID, sequence: context.nextSendSequence, context: "ack")
++        let acknowledgement = WireAcknowledgement(
++            messageID: messageID,
++            capabilitySchema: VeilPeerCapabilityPolicy.schemaVersion,
++            capabilityBits: VeilPeerCapabilityPolicy.advertisedFeatureBits
++        )
++        let encrypted = try CryptoEngine.encrypt(try encoder.encode(acknowledgement), key: keys.sendKey, messageID: messageID, sequence: context.nextSendSequence, context: "ack")
+         context.nextSendSequence += 1
+         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .acknowledgement, payload: try WireCodec.encodeEncryptedPayload(encrypted))
+         _ = transportSend?(transportID, envelope, .control)
+diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseStore.swift
+--- a/VeilLink/Storage/DatabaseStore.swift
++++ b/VeilLink/Storage/DatabaseStore.swift
+@@ -1258,7 +1258,47 @@
+         (try? databaseURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+     }
+ 
+-    private func migrate() throws {
++    /// Non-authoritative capability cache, scoped to a previously trusted identity and key.
++    func cacheAuthenticatedPeerCapabilities(
++        localIdentityID: String, peerIdentityID: String, publicKey: Data, featureBits: Int
++    ) throws {
++        guard publicKey.count == 32, featureBits >= 0, featureBits <= 1_048_575,
++              trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID)?.publicKey == publicKey else { return }
++        let fingerprint = Data(SHA256.hash(data: publicKey))
++        try write(
++            """
++            INSERT INTO peer_capabilities(local_identity_id, peer_identity_id, public_key_sha256, capability_schema_version, feature_bits, observed_at)
++            VALUES(?, ?, ?, 1, ?, ?)
++            ON CONFLICT(local_identity_id, peer_identity_id) DO UPDATE SET
++                public_key_sha256 = excluded.public_key_sha256,
++                capability_schema_version = excluded.capability_schema_version,
++                feature_bits = excluded.feature_bits,
++                observed_at = excluded.observed_at;
++            """,
++            bindings: [.text(localIdentityID), .text(peerIdentityID), .blob(fingerprint),
++                       .int(featureBits), .double(Date().timeIntervalSince1970)]
++        )
++    }
++
++    func cachedAuthenticatedPeerFeatureBits(
++        localIdentityID: String, peerIdentityID: String, publicKey: Data
++    ) -> Int? {
++        guard publicKey.count == 32,
++              trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID)?.publicKey == publicKey else { return nil }
++        let fingerprint = Data(SHA256.hash(data: publicKey))
++        return read(
++            """
++            SELECT feature_bits FROM peer_capabilities
++            WHERE local_identity_id = ? AND peer_identity_id = ? AND public_key_sha256 = ?
++              AND capability_schema_version = 1 AND observed_at >= ?
++            LIMIT 1;
++            """,
++            bindings: [.text(localIdentityID), .text(peerIdentityID), .blob(fingerprint),
++                       .double(Date().timeIntervalSince1970 - VeilPeerCapabilityPolicy.cacheLifetime)]
++        ) { Int(sqlite3_column_int64($0, 0)) }.first
++    }
++
++    private func migrate() throws {
+         try execute("PRAGMA journal_mode=WAL;")
+         try execute("PRAGMA foreign_keys=ON;")
+         try execute("PRAGMA synchronous=NORMAL;")
+@@ -1384,11 +1424,31 @@
+         try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(6, strftime('%s','now'));")
+         try migrateUserTransferControlsV7()
+         try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(7, strftime('%s','now'));")
+-        try migrateConversationControlsV8()
+-        try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(8, strftime('%s','now'));")
+-    }
+-
+-    private func migrateDeliveryLifecycleV5() throws {
++        try migrateConversationControlsV8()
++        try execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(8, strftime('%s','now'));")
++        try migratePeerCapabilitiesV9()
++    }
++
++    private func migratePeerCapabilitiesV9() throws {
++        // Additive, idempotent and atomic, including the migration marker.
++        try transaction("""
++            CREATE TABLE IF NOT EXISTS peer_capabilities(
++                local_identity_id TEXT NOT NULL,
++                peer_identity_id TEXT NOT NULL,
++                public_key_sha256 BLOB NOT NULL CHECK(length(public_key_sha256) = 32),
++                capability_schema_version INTEGER NOT NULL CHECK(capability_schema_version = 1),
++                feature_bits INTEGER NOT NULL CHECK(feature_bits BETWEEN 0 AND 1048575),
++                observed_at REAL NOT NULL,
++                PRIMARY KEY(local_identity_id, peer_identity_id),
++                FOREIGN KEY(local_identity_id, peer_identity_id)
++                    REFERENCES contacts(local_identity_id, identity_id) ON DELETE CASCADE
++            );
++            CREATE INDEX IF NOT EXISTS idx_peer_capabilities_fresh_v9 ON peer_capabilities(observed_at);
++            INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(9, strftime('%s','now'));
++            """)
++    }
++
++    private func migrateDeliveryLifecycleV5() throws {
+         if !columnExists(table: "messages", column: "delivery_error") {
+             try execute("ALTER TABLE messages ADD COLUMN delivery_error TEXT;")
+         }
+diff --git a/VeilLinkTests/DatabaseStoreTests.swift b/VeilLinkTests/DatabaseStoreTests.swift
+--- a/VeilLinkTests/DatabaseStoreTests.swift
++++ b/VeilLinkTests/DatabaseStoreTests.swift
+@@ -3,8 +3,23 @@
+ import XCTest
+ @testable import VeilLink
+ 
+-final class DatabaseStoreTests: XCTestCase {
+-    func testKeychainProtectedDataStatusesAreTransientNotMissing() {
++final class DatabaseStoreTests: XCTestCase {
++    func testPeerCapabilitiesAreTrustedAndIdentityScoped() throws {
++        let (store, root) = try makeStore()
++        defer { try? FileManager.default.removeItem(at: root) }
++        let key = Data(repeating: 0x39, count: 32)
++        let wrong = Data(repeating: 0x42, count: 32)
++        try store.trustPeer(localIdentityID: "localA", identityID: "peer", displayName: "Peer", publicKey: key)
++        try store.cacheAuthenticatedPeerCapabilities(localIdentityID: "localA", peerIdentityID: "peer", publicKey: key, featureBits: 1)
++        XCTAssertEqual(store.cachedAuthenticatedPeerFeatureBits(localIdentityID: "localA", peerIdentityID: "peer", publicKey: key), 1)
++        XCTAssertNil(store.cachedAuthenticatedPeerFeatureBits(localIdentityID: "localB", peerIdentityID: "peer", publicKey: key))
++        XCTAssertNil(store.cachedAuthenticatedPeerFeatureBits(localIdentityID: "localA", peerIdentityID: "peer", publicKey: wrong))
++        try store.cacheAuthenticatedPeerCapabilities(localIdentityID: "localB", peerIdentityID: "peer", publicKey: key, featureBits: 1)
++        XCTAssertNil(store.cachedAuthenticatedPeerFeatureBits(localIdentityID: "localB", peerIdentityID: "peer", publicKey: key))
++        XCTAssertEqual(store.integrityCheck().lowercased(), "ok")
++    }
++
++    func testKeychainProtectedDataStatusesAreTransientNotMissing() {
+         XCTAssertTrue(KeychainStore.isTransientReadStatus(errSecInteractionNotAllowed))
+         XCTAssertTrue(KeychainStore.isTransientReadStatus(errSecNotAvailable))
+         XCTAssertFalse(KeychainStore.isTransientReadStatus(errSecItemNotFound))
+diff --git a/VeilLink/Core/VeilPeerCapabilityPolicy.swift b/VeilLink/Core/VeilPeerCapabilityPolicy.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/VeilPeerCapabilityPolicy.swift
+@@ -0,0 +1,17 @@
++import Foundation
++
++/// A compatibility extension to authenticated Wire v4 acknowledgements.
++/// This is advisory metadata, not a trust or authorization primitive.
++enum VeilPeerCapabilityPolicy {
++    static let schemaVersion = 1
++    static let advertisedFeatureBits = 1 // bit 0: understands optional ACK capabilities
++    static let recognizedFeatureBits = 1
++    static let cacheLifetime: TimeInterval = 30 * 24 * 60 * 60
++
++    static func validatedBits(schemaVersion: Int?, bits: Int?) -> Int? {
++        guard schemaVersion == self.schemaVersion,
++              let bits, bits >= 0, bits <= 1_048_575,
++              bits & ~recognizedFeatureBits == 0 else { return nil }
++        return bits
++    }
++}
+diff --git a/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift b/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
+@@ -0,0 +1,40 @@
++import Foundation
++import XCTest
++@testable import VeilLink
++
++final class VeilPeerCapabilityPolicyTests: XCTestCase {
++    private struct LegacyAcknowledgement: Codable { let messageID: String }
++
++    func testExtendedAcknowledgementIsReadableByLegacyDecoder() throws {
++        let current = WireAcknowledgement(messageID: "fixed-id", capabilitySchema: 1, capabilityBits: 1)
++        let encoded = try JSONEncoder().encode(current)
++        XCTAssertEqual(try JSONDecoder().decode(LegacyAcknowledgement.self, from: encoded).messageID, "fixed-id")
++        let restored = try JSONDecoder().decode(WireAcknowledgement.self, from: encoded)
++        XCTAssertEqual(restored.capabilitySchema, 1)
++        XCTAssertEqual(restored.capabilityBits, 1)
++    }
++
++    func testLegacyAcknowledgementStillDecodes() throws {
++        let old = try JSONEncoder().encode(LegacyAcknowledgement(messageID: "old-id"))
++        let decoded = try JSONDecoder().decode(WireAcknowledgement.self, from: old)
++        XCTAssertEqual(decoded.messageID, "old-id")
++        XCTAssertNil(decoded.capabilitySchema)
++        XCTAssertNil(decoded.capabilityBits)
++    }
++
++    func testMalformedOptionalDataCannotInvalidateRealACK() throws {
++        let raw = Data(#"{"messageID":"valid-id","capabilitySchema":"bad","capabilityBits":-1}"#.utf8)
++        let decoded = try JSONDecoder().decode(WireAcknowledgement.self, from: raw)
++        XCTAssertEqual(decoded.messageID, "valid-id")
++        XCTAssertNil(decoded.capabilitySchema)
++        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: decoded.capabilitySchema, bits: decoded.capabilityBits))
++    }
++
++    func testUnknownCapabilitiesAreRejected() {
++        XCTAssertEqual(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 1), 1)
++        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: nil, bits: 1))
++        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 2, bits: 1))
++        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: -1))
++        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 2))
++    }
++}
