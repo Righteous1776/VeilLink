@@ -19,7 +19,7 @@ enum VeilSettingsSection: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .appearanceAndData: return "主题、协议、存储、媒体与反馈"
         case .connectivity: return "蓝牙、后台、运行环境与互联网中继"
-        case .intelligence: return "灵核助手、A9 健康与内核运行时"
+        case .intelligence: return "灵核助手、健康治理与内核运行时"
         }
     }
 

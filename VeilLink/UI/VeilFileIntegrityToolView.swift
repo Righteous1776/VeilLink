@@ -68,14 +68,21 @@ struct VeilFileIntegrityToolView: View {
         .navigationBarTitleDisplayMode(.inline)
         .fileImporter(
             isPresented: $showsImporter,
-            allowedContentTypes: [.data],
+            allowedContentTypes: [.item],
             allowsMultipleSelection: false
         ) { result in
             guard let slot = importingSlot else { return }
             switch result {
             case .success(let urls):
-                guard let url = urls.first else { return }
-                inspect(url: url, into: slot)
+                guard let selectedURL = urls.first else { return }
+                Task {
+                    do {
+                        let url = try await VeilImportedFileAccess.materializeInBackground(selectedURL)
+                        inspect(url: url, into: slot)
+                    } catch {
+                        errorText = error.localizedDescription
+                    }
+                }
             case .failure(let error):
                 errorText = error.localizedDescription
             }
@@ -209,6 +216,7 @@ struct VeilFileIntegrityToolView: View {
         busySlot = slot
 
         inspectionTask = Task {
+            defer { VeilImportedFileAccess.removeStagedCopy(url) }
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try VeilFileIntegrityEngine.inspect(url: url)

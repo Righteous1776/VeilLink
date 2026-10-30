@@ -8,6 +8,7 @@ struct VeilBackupPreflightView: View {
     @State private var result: VeilBackupPreflightPolicy.Report?
     @State private var working = false
     @State private var generation = UUID()
+    @State private var importError: String?
 
     var body: some View {
         ScrollView {
@@ -27,6 +28,11 @@ struct VeilBackupPreflightView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(working)
                 if working { ProgressView("只读检查中…") }
+                if let importError {
+                    Label(importError, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundColor(.red)
+                }
                 if let result {
                     VStack(alignment: .leading, spacing: 10) {
                         Text(result.safetyLabel)
@@ -60,20 +66,32 @@ struct VeilBackupPreflightView: View {
         .navigationTitle("ZIP 备份安全体检")
         .navigationBarTitleDisplayMode(.inline)
         .fileImporter(isPresented: $presentingPicker,
-                      allowedContentTypes: [.zip], allowsMultipleSelection: false) { pick in
-            guard case .success(let urls) = pick, let file = urls.first else { return }
+                      allowedContentTypes: [.item], allowsMultipleSelection: false) { pick in
+            guard case .success(let urls) = pick, let selectedURL = urls.first else { return }
+            importError = nil
             let token = UUID()
             generation = token
             working = true
             result = nil
             let runDeep = deepCRC
             Task {
-                let inspected = await Task.detached(priority: .userInitiated) {
-                    VeilBackupArchiveInspector.inspect(file, verifyAllCRC: runDeep)
-                }.value
-                guard generation == token else { return }
-                result = inspected
-                working = false
+                do {
+                    let file = try await VeilImportedFileAccess.materializeInBackground(
+                        selectedURL,
+                        acceptedExtensions: ["zip"]
+                    )
+                    defer { VeilImportedFileAccess.removeStagedCopy(file) }
+                    let inspected = await Task.detached(priority: .userInitiated) {
+                        VeilBackupArchiveInspector.inspect(file, verifyAllCRC: runDeep)
+                    }.value
+                    guard generation == token else { return }
+                    result = inspected
+                    working = false
+                } catch {
+                    guard generation == token else { return }
+                    importError = error.localizedDescription
+                    working = false
+                }
             }
         }
         .onDisappear {
