@@ -32,6 +32,7 @@ targets:
       - path: VeilLink
         excludes:
           - Agent/MaleCNS
+          - Resources/VisualNovelBundle
           - Agent/Games/TrainedGamePolicyRuntime.swift
           - Agent/Games/MaleCNSGameDecisionEncoder.swift
           - Agent/Language/LlamaInferenceEngine.swift
@@ -55,6 +56,9 @@ targets:
           - Resources/AgentModels/game_policy_ranker_v4.vlpol
           - Resources/AgentModels/game_policy_ranker_v4.manifest.json
           - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
+      - path: VeilLink/Resources/VisualNovelBundle
+        type: folder
+        buildPhase: resources
     dependencies:
       - sdk: libsqlite3.tbd
       - package: CodeScanner

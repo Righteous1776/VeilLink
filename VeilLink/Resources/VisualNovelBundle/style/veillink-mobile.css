@@ -1,0 +1,7 @@
+:root { color-scheme: dark; }
+html, body { margin: 0; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+body { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+button, [role='button'], .choice-button, [data-choice], visual-novel button { min-height: 44px; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+text-box, [data-ui='text-box'], dialog-log { -webkit-user-select: text; user-select: text; }
+@media (max-width: 390px) { .choices { max-height: 46vh; overflow-y: auto; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
