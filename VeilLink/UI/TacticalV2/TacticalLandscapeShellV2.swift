@@ -16,6 +16,7 @@ struct TacticalLandscapeShellV2: View {
     @State private var zoom: Double = 0.82
     @State private var routePlanner = TacticalV2.RouteDragPlannerV2()
     @State private var routePreview: TacticalV2.RoutePlanV2?
+    @State private var showsCompactCommandPanel = false
 
 
     private var objectiveDefinitions: [TacticalV2.ObjectiveDefinitionV2] {
@@ -66,19 +67,49 @@ struct TacticalLandscapeShellV2: View {
             topBar
             Divider().opacity(0.18)
 
-            HStack(spacing: 0) {
-                battlefield
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            GeometryReader { proxy in
+                if proxy.size.width >= 700 {
+                    HStack(spacing: 0) {
+                        battlefield
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                commandSidebar
-                    .frame(width: 276)
+                        commandSidebar
+                            .frame(width: 276)
+                    }
+                } else {
+                    battlefield
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .overlay(alignment: .topTrailing) {
+                            Button {
+                                showsCompactCommandPanel = true
+                            } label: {
+                                Label("指挥", systemImage: "flag.checkered")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color(red: 0.68, green: 0.51, blue: 0.22))
+                            .padding(10)
+                        }
+                }
             }
 
             Divider().opacity(0.18)
             overlayBar
         }
         .background(Color(red: 0.055, green: 0.052, blue: 0.046))
-        .preferredColorScheme(.dark)
+        .sheet(isPresented: $showsCompactCommandPanel) {
+            NavigationView {
+                commandSidebar
+                    .navigationTitle("战役指挥")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { showsCompactCommandPanel = false }
+                        }
+                    }
+            }
+            .accentColor(Color(red: 0.90, green: 0.73, blue: 0.35))
+        }
     }
 
     private var topBar: some View {

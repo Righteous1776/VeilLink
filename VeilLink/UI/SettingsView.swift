@@ -10,6 +10,8 @@ struct SettingsView: View {
     @ObservedObject var bluetooth: BLETransport
     @ObservedObject var a9Health: VeilA9HealthMonitor
     @ObservedObject var computeGovernor: VeilA9ComputeGovernor
+    @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
+    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
     @ObservedObject var agentControls: AgentControlCenterSettings
     @ObservedObject var internetRelay: InternetRelayTransport
     @ObservedObject var legalConsent: VeilLegalConsentController
@@ -40,6 +42,8 @@ struct SettingsView: View {
         bluetooth = model.bluetooth
         a9Health = model.a9Health
         computeGovernor = model.computeGovernor
+        kernelRuntime = model.kernelRuntime
+        a10Ultra = model.a10Ultra
         agentControls = model.agentControls
         internetRelay = model.internetRelay
         legalConsent = model.legalConsent
@@ -116,10 +120,18 @@ struct SettingsView: View {
                 model.exportBackup(password: password)
             }
         }
-        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
-            if case .success(let url) = result {
-                restoreURL = url
-                showsRestorePassword = true
+        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.item]) { result in
+            guard case .success(let selectedURL) = result else { return }
+            Task {
+                do {
+                    restoreURL = try await VeilImportedFileAccess.materializeInBackground(
+                        selectedURL,
+                        acceptedExtensions: ["zip"]
+                    )
+                    showsRestorePassword = true
+                } catch {
+                    model.alertMessage = error.localizedDescription
+                }
             }
         }
         .sheet(isPresented: $showsRestorePassword) {
@@ -458,20 +470,12 @@ struct SettingsView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(a9DatabaseColor)
             }
-            Button {
-                model.runA9StorageCheck()
-                haptics.selection()
-            } label: {
-                HStack {
-                    Image(systemName: "checkmark.shield")
-                    Text("运行本地完整性自检")
-                    Spacer()
-                    Text("A9")
-                        .font(VeilType.terminalLabel)
-                        .foregroundColor(VeilTheme.mutedGold)
-                }
-            }
-            .buttonStyle(VeilPressStyle())
+            Label(
+                "由 \(model.activeGovernanceEngineName) 自动巡检；失败时写入黑匣子并提示",
+                systemImage: "checkmark.shield"
+            )
+            .font(.caption)
+            .foregroundColor(VeilTheme.secondaryText)
         }
         .veilCard()
     }
@@ -789,42 +793,75 @@ struct SettingsView: View {
 
     private var a9HealthCard: some View {
         let decision = a9Health.decision
+        let usesUltra = kernelRuntime.mode == .a10Independent || kernelRuntime.mode == .a10OnlyLab
+        let ultraDecision = a10Ultra.lastRuntimeSample?.ultraDecision
+        let ultraBudget = a10Ultra.lastRuntimeSample?.ultraBudget
+        let engineName = usesUltra ? "A10 Ultra Ω" : "A9"
+        let shownLevel = usesUltra ? (ultraDecision.map { "L\($0.level)" } ?? "--") : decision.level.shortTitle
+        let shownHealth = usesUltra ? (ultraDecision.map { String($0.healthScore) } ?? "--") : String(decision.healthScore)
+        let shownLight = usesUltra ? (ultraDecision?.light ?? "等待首个样本") : decision.light.title
+        let shownRisk = usesUltra ? (ultraDecision.map { String(format: "%.0f", Double($0.riskBasisPoints) / 100) } ?? "--") : String(format: "%.0f", decision.riskPoints)
+        let shownPersistence = usesUltra ? (ultraDecision.map { "\($0.persistenceSeconds)s" } ?? "--") : "\(decision.persistenceRuns)"
+        let shownCell = usesUltra ? (ultraDecision.map { "\($0.latticeCell)" } ?? "--") : "\(decision.latticeIndex)"
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Circle()
-                    .fill(a9LightColor)
+                    .fill(usesUltra ? VeilTheme.goldBright : a9LightColor)
                     .frame(width: 9, height: 9)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("A9 健康晶格")
+                    Text("\(engineName) 健康治理")
                         .font(VeilType.cardTitle)
                         .foregroundColor(VeilTheme.goldBright)
-                    Text("本地采集 · 144 状态裁决 · Advisory Only")
+                    Text(usesUltra ? "独立采样 · 实时裁决 · A9 本轮不参与" : "本地采集 · 144 状态裁决 · Advisory Only")
                         .font(.caption2)
                         .foregroundColor(VeilTheme.secondaryText)
                 }
                 Spacer()
-                Text("\(decision.level.shortTitle) · H\(decision.healthScore)")
+                Text("\(shownLevel) · H\(shownHealth)")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(a9LightColor)
+                    .foregroundColor(usesUltra ? VeilTheme.goldBright : a9LightColor)
             }
 
             HStack(spacing: 8) {
-                a9Metric(title: "状态", value: decision.light.title)
-                a9Metric(title: "风险", value: String(format: "%.0f", decision.riskPoints))
-                a9Metric(title: "持续", value: "\(decision.persistenceRuns)")
-                a9Metric(title: "CELL", value: "\(decision.latticeIndex)")
+                a9Metric(title: "状态", value: shownLight)
+                a9Metric(title: "风险", value: shownRisk)
+                a9Metric(title: "持续", value: shownPersistence)
+                a9Metric(title: "CELL", value: shownCell)
             }
 
 
-            let compute = computeGovernor.plan
-            HStack(spacing: 8) {
-                a9Metric(title: "算力", value: compute.mode.title)
-                a9Metric(title: "FLY预算", value: compute.maleCNS.tier.rawValue.uppercased())
-                a9Metric(title: "BLE保留", value: "\(compute.transportReserveUnits)")
-                a9Metric(title: "视觉", value: "\(compute.vision.sampleIntervalMilliseconds)ms")
+            if usesUltra {
+                HStack(spacing: 8) {
+                    a9Metric(title: "算力", value: ultraBudget?.mode ?? "采样中")
+                    a9Metric(title: "CPU", value: ultraBudget.map { "\($0.cpuPct)%" } ?? "--")
+                    a9Metric(title: "传输保留", value: ultraBudget.map { "\($0.transportReservePct)%" } ?? "--")
+                    a9Metric(title: "视觉", value: ultraBudget.map { "\($0.visionPct)%" } ?? "--")
+                }
+            } else {
+                let compute = computeGovernor.plan
+                HStack(spacing: 8) {
+                    a9Metric(title: "算力", value: compute.mode.title)
+                    a9Metric(title: "FLY预算", value: compute.maleCNS.tier.rawValue.uppercased())
+                    a9Metric(title: "BLE保留", value: "\(compute.transportReserveUnits)")
+                    a9Metric(title: "视觉", value: "\(compute.vision.sampleIntervalMilliseconds)ms")
+                }
             }
 
-            if decision.issues.isEmpty {
+            if usesUltra {
+                if let ultraDecision, !ultraDecision.issues.isEmpty {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(Array(ultraDecision.issues.prefix(4)), id: \.code) { issue in
+                            Text("\(issue.severity) · \(issue.source) · \(issue.code)")
+                                .font(.caption.monospaced())
+                                .foregroundColor(VeilTheme.secondaryText)
+                        }
+                    }
+                } else {
+                    Text(ultraDecision == nil ? "A10 Ultra Ω 正在生成首个独立样本…" : "A10 Ultra Ω 当前没有需要裁决的异常。")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+            } else if decision.issues.isEmpty {
                 Text("当前没有需要裁决的异常。A9 不会主动断链、删数据或修改游戏状态。")
                     .font(.caption)
                     .foregroundColor(VeilTheme.secondaryText)
@@ -849,14 +886,9 @@ struct SettingsView: View {
             }
 
             HStack(spacing: 10) {
-                Button {
-                    model.refreshA9Health()
-                    haptics.selection()
-                } label: {
-                    Label("重新采样", systemImage: "waveform.path.ecg")
-                }
-                .buttonStyle(.bordered)
-                .tint(VeilTheme.gold)
+                Label("后台自动采样", systemImage: "waveform.path.ecg")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.secondaryText)
 
                 Button {
                     UIPasteboard.general.string = model.a9DiagnosticsReport()
@@ -864,13 +896,15 @@ struct SettingsView: View {
                     haptics.selection()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { diagnosticsCopied = false }
                 } label: {
-                    Label(diagnosticsCopied ? "已复制" : "复制 A9 诊断", systemImage: diagnosticsCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                    Label(diagnosticsCopied ? "已复制" : "复制 \(engineName) 诊断", systemImage: diagnosticsCopied ? "checkmark.circle.fill" : "doc.on.doc")
                 }
                 .buttonStyle(.bordered)
                 .tint(VeilTheme.gold)
             }
 
-            Text("A9 继续负责算力治理；MaleCNS、VFLY、Qwen 与 llama 实验历史仍保存在仓库中，但未进入 Core 默认发行包。")
+            Text(usesUltra
+                ? "当前卡片直接读取 A10 Ultra Ω 的实时决策与预算；A9 冻结值不会冒充当前数据。"
+                : "当前卡片读取 A9 的实时决策与预算；切换 A10 后会自动改用 A10 数据源。")
                 .font(.caption2)
                 .foregroundColor(VeilTheme.tertiaryText)
         }
