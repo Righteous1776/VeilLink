@@ -8,3 +8,6 @@
 - A10 UI uses sample's current `modeSessionID` and `ultraDecision` to avoid showing stale A9. Sample source might be temporarily nil; waiting text is intentional. No A10 governance permission changes.
 - Three separate diffs are based on same exact main; `PATCH.diff` touches GameLobby training and Settings restore while other diffs touch other hunks of those same files. Governor must integrate them in order and rerun context checks on combined tree. No declared ability to merge automatically.
 - New Games navigation needs Apple SDK compile and touch test. Galgame R5 archive/binary missing, no playable claim. Old large map asset exists but not the same as the small tactical Bot state, so do not delete the latter until full adapter exists.
+
+## Added Guandu recovery risk
+Three old 48×27 SOLO source/test files have now been staged from a historical branch rather than invented. The prior shell and current `TacticalLandscapeShellV2` are not byte-identical; the recovered UI needs iOS SDK compilation, CPU & thermal profiling, singleplayer WEGO turn assertions, and landscape pan/zoom tests. Never claim this code is fully playable until verified. `PATCH.diff` is now the **combined** candidate for Files + A10 + games (8 paths/21 hunks), so do not apply the reference patches separately afterward.
