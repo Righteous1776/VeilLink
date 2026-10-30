@@ -24,6 +24,7 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var isAIThinking = false
     @Published private(set) var lastDecisionMode = "基础策略"
     @Published private(set) var lastDecisionMilliseconds: Int?
+    @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
 
     let game: MiniGameKind
     let humanPlayer: MiniGamePlayer = .host
@@ -31,9 +32,13 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var sessionID: String
 
     private var aiTask: Task<Void, Never>?
+    private let learningStore: AdaptiveBoardLearningStore
+    private var learningPlies: [AdaptiveBoardPly] = []
 
-    init(game: MiniGameKind) {
+    init(game: MiniGameKind, learningStore: AdaptiveBoardLearningStore = .shared) {
         self.game = game
+        self.learningStore = learningStore
+        learningSummary = learningStore.summary
         sessionID = UUID().uuidString
     }
 
@@ -50,6 +55,8 @@ final class LocalAIGameController: ObservableObject {
         }
     }
 
+    var learningStoreAvailable: Bool { learningStore.lastSaveSucceeded }
+
     var statusText: String {
         switch outcome {
         case .humanWon: return "你赢了"
@@ -62,6 +69,7 @@ final class LocalAIGameController: ObservableObject {
     }
 
     func restart() {
+        finalizeLearning(as: .unfinished)
         aiTask?.cancel(); aiTask = nil
         gomoku = GomokuState()
         xiangqi = XiangqiState()
@@ -85,7 +93,9 @@ final class LocalAIGameController: ObservableObject {
     func humanGomokuMove(_ index: Int) {
         guard game == .gomoku, canHumanAct else { return }
         var state = gomoku
+        let position = AdaptiveBoardPosition.gomoku(state)
         guard state.apply(index: index, actor: humanPlayer) else { return }
+        learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: humanPlayer))
         gomoku = state
         finishOrScheduleAI()
     }
@@ -93,7 +103,9 @@ final class LocalAIGameController: ObservableObject {
     func humanXiangqiMove(from: Int, to: Int) {
         guard game == .xiangqi, canHumanAct else { return }
         var state = xiangqi
+        let position = AdaptiveBoardPosition.xiangqi(state)
         guard state.apply(from: from, to: to, actor: humanPlayer) else { return }
+        learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: humanPlayer))
         xiangqi = state
         finishOrScheduleAI()
     }
@@ -182,6 +194,13 @@ final class LocalAIGameController: ObservableObject {
     func cancelAI() {
         aiTask?.cancel(); aiTask = nil
         isAIThinking = false
+        finalizeLearning(as: .unfinished)
+    }
+
+    func clearBoardLearning() {
+        learningStore.clear()
+        learningPlies.removeAll(keepingCapacity: true)
+        learningSummary = learningStore.summary
     }
 
     private func finishOrScheduleAI() {
@@ -212,6 +231,12 @@ final class LocalAIGameController: ObservableObject {
         case .magneticHockey:
             if let winner = magneticHockey.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
             else if magneticHockey.isDraw { outcome = .draw }
+        }
+        switch outcome {
+        case .humanWon: finalizeLearning(as: .humanWon)
+        case .aiWon: finalizeLearning(as: .aiWon)
+        case .draw: finalizeLearning(as: .draw)
+        case .playing: break
         }
     }
 
@@ -250,11 +275,12 @@ final class LocalAIGameController: ObservableObject {
         switch game {
         case .gomoku:
             let snapshot = gomoku
+            let learning = learningStore.snapshot()
             let budget = GomokuBotBudget.standard(
                 profileLabel: VeilDevicePerformance.current.label
             )
             let result = await Task.detached(priority: .userInitiated) {
-                GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget)
+                GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
             }.value
             guard let result else { return nil }
 
@@ -274,11 +300,12 @@ final class LocalAIGameController: ObservableObject {
 
         case .xiangqi:
             let snapshot = xiangqi
+            let learning = learningStore.snapshot()
             let budget = XiangqiBotBudget.standard(
                 profileLabel: VeilDevicePerformance.current.label
             )
             let result = await Task.detached(priority: .userInitiated) {
-                XiangqiBot.chooseMove(in: snapshot, for: .guest, budget: budget)
+                XiangqiBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
             }.value
             guard let result else { return nil }
 
@@ -446,13 +473,17 @@ final class LocalAIGameController: ObservableObject {
         case .gomoku:
             guard let index = candidate.metadata["index"].flatMap(Int.init) else { return }
             var state = gomoku
+            let position = AdaptiveBoardPosition.gomoku(state)
             guard state.apply(index: index, actor: aiPlayer) else { return }
+            learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: aiPlayer))
             gomoku = state
         case .xiangqi:
             guard let from = candidate.metadata["from"].flatMap(Int.init),
                   let to = candidate.metadata["to"].flatMap(Int.init) else { return }
             var state = xiangqi
+            let position = AdaptiveBoardPosition.xiangqi(state)
             guard state.apply(from: from, to: to, actor: aiPlayer) else { return }
+            learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: aiPlayer))
             xiangqi = state
         case .ludo:
             guard let piece = candidate.metadata["piece"].flatMap(Int.init) else { return }
@@ -483,5 +514,12 @@ final class LocalAIGameController: ObservableObject {
             guard state.apply(angle: angle, power: power, actor: aiPlayer, sessionID: sessionID) else { return }
             magneticHockey = state
         }
+    }
+
+    private func finalizeLearning(as result: AdaptiveBoardGameResult) {
+        guard game == .gomoku || game == .xiangqi, !learningPlies.isEmpty else { return }
+        learningStore.record(game: game, plies: learningPlies, result: result)
+        learningPlies.removeAll(keepingCapacity: true)
+        learningSummary = learningStore.summary
     }
 }
