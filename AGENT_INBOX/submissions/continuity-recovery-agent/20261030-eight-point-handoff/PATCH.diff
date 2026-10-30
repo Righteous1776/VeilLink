@@ -278,3 +278,61 @@ diff --git a/VeilLink/UI/ToolCenterView.swift b/VeilLink/UI/ToolCenterView.swift
 +                    // BLE/LAN 链路详细采样继续在治理后台，用户工具箱仅显示健康状态。
                      if matches("json 格式化 校验 压缩 pretty minify") {
                          toolLink("JSON 工坊", detail: "校验 · 整理 · 压缩", icon: "curlybraces", destination: VeilJSONToolView())
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -71,5 +71,12 @@
+                     VStack(spacing: 12) {
+                         agentCard
+-                        a9HealthCard
++                        Group {
++                            if model.kernelRuntime.mode == .a10OnlyLab ||
++                                model.kernelRuntime.mode == .a10Independent {
++                                VeilActiveKernelHealthView(model: model)
++                            } else {
++                                a9HealthCard
++                            }
++                        }
+                         kernelRuntimeCard
+                     }
+diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.swift
+--- a/VeilLink/UI/OwnerConsoleView.swift
++++ b/VeilLink/UI/OwnerConsoleView.swift
+@@ -54,5 +54,6 @@
+     @ObservedObject var ownerMode: OwnerModeController
+     @ObservedObject var performanceOverrides: PerformanceOverrideController
+-    @ObservedObject var diagnostics: DiagnosticLogStore
++    @ObservedObject var diagnostics: DiagnosticLogStore
++    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
+     @ObservedObject var telemetry: DeepTelemetry
+     @ObservedObject var stressTest: DeviceStressTestController
+@@ -69,5 +70,6 @@
+         ownerMode = model.ownerMode
+         performanceOverrides = model.performanceOverrides
+-        diagnostics = DiagnosticLogStore.shared
++        diagnostics = DiagnosticLogStore.shared
++        a10Ultra = model.a10Ultra
+         telemetry = DeepTelemetry.shared
+         stressTest = DeviceStressTestController.shared
+@@ -174,5 +176,20 @@
+             consoleRow("Nodes", value: "\(model.sessions.nearbyPeers.count)")
+             consoleRow("Protocol", value: "VL-BLE/4")
+-            consoleRow("Profile", value: VeilDevicePerformance.diagnosticLabel)
++            consoleRow("Profile", value: VeilDevicePerformance.diagnosticLabel)
++            if model.kernelRuntime.mode == .a10OnlyLab ||
++                model.kernelRuntime.mode == .a10Independent {
++                let sample = a10Ultra.lastRuntimeSample
++                let valid = sample?.environment.modeSessionID == model.kernelRuntime.modeSessionID &&
++                    sample?.environment.mode == model.kernelRuntime.mode &&
++                    abs(sample?.timestamp.timeIntervalSinceNow ?? .infinity) <= 30
++                consoleRow("Active Core", value: "A10 Ultra Ω")
++                consoleRow("A10 Live", value: valid ? String(sample!.sampleID.prefix(8)) : "等待新样本")
++                if valid, let decision = sample?.ultraDecision {
++                    consoleRow("A10 Health", value: String(decision.healthScore))
++                }
++            } else {
++                consoleRow("Active Core", value: "A9")
++                consoleRow("A9 Health", value: String(model.a9Health.decision.healthScore))
++            }
+         }
+         .veilCard()
