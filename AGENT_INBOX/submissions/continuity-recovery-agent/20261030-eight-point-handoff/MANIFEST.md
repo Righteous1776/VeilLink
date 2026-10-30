@@ -20,3 +20,8 @@ status: DROPPED / NOT APPLIED / NOT RELEASED
 ## Proposed main modifications
 PATCH.diff only; ten existing files, synchronized to the exact Build62 main SHA. PATCH_GRAND_MAP.diff exists for the separately audited map-navigation change, but has already been incorporated into the consolidated PATCH.diff; **do not apply both**.
 No product tree writes, version/build changes, signing, releases, migrations or Actions.
+
+## Added separate persistent learning journal proposal
+- FILES/VeilPerGameLearningJournal.swift -> VeilLink/Agent/Games/VeilPerGameLearningJournal.swift
+- FILES/VeilPerGameLearningJournalTests.swift -> VeilLinkTests/VeilPerGameLearningJournalTests.swift
+Both are candidates; these tests are authored, NOT run. No migration or live Bot/controller integration in PATCH.diff.
