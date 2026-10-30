@@ -30,6 +30,7 @@ final class DeveloperLearningLabGateTests: XCTestCase {
         XCTAssertTrue(gate.canImportTraining())
         let verifier = keychain.data(for: "board.developer-lab.verifier.v1")
         XCTAssertNotNil(verifier)
-        XCTAssertFalse(verifier?.contains(Data("87654321".utf8)) ?? true)
+        // Data.contains(Data) requires iOS 16; Data.range(of:) is supported by the iOS 15 target.
+        XCTAssertNil(verifier?.range(of: Data("87654321".utf8)))
     }
 }
