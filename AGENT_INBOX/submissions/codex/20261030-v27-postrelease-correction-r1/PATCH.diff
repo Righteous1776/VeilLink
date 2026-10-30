@@ -1,8 +1,8 @@
 diff --git a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
-index 7346026..19f3962 100644
+index 7346026..119a386 100644
 --- a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
 +++ b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
-@@ -1,16 +1,45 @@
+@@ -1,16 +1,72 @@
  import Foundation
  
 -/// A compact, on-device repertoire used by the native Gomoku and Xiangqi bots.
@@ -49,10 +49,37 @@ index 7346026..19f3962 100644
 +struct AdaptiveBoardPrediction: Equatable, Sendable {
 +    let action: String
 +    let evidence: Int
++}
++
++struct DeveloperFormationInfluence: Sendable {
++    static let empty = DeveloperFormationInfluence(rootAdjustments: [:], predictedHumanReplies: [:], matchedLessonNames: [])
++    let rootAdjustments: [String: Int]
++    let predictedHumanReplies: [String: AdaptiveBoardPrediction]
++    let matchedLessonNames: [String]
++}
++
++extension AdaptiveBoardLearningSnapshot {
++    func applying(_ influence: DeveloperFormationInfluence) -> AdaptiveBoardLearningSnapshot {
++        var roots = rootAdjustments
++        for (action, bonus) in influence.rootAdjustments {
++            roots[action, default: 0] = min(2_400, max(-1_200, roots[action, default: 0] + bonus))
++        }
++        var replies = predictedHumanReplies
++        for (action, prediction) in influence.predictedHumanReplies {
++            if let current = replies[action], current.evidence > prediction.evidence { continue }
++            replies[action] = prediction
++        }
++        return AdaptiveBoardLearningSnapshot(
++            preferences: preferences,
++            rootAdjustments: roots,
++            predictedHumanReplies: replies,
++            trainingLevel: trainingLevel
++        )
++    }
  }
  
  enum AdaptiveBoardPosition {
-@@ -93,6 +122,18 @@ struct AdaptiveBoardLearningImportReport: Equatable, Sendable {
+@@ -93,6 +149,18 @@ struct AdaptiveBoardLearningImportReport: Equatable, Sendable {
      let rememberedPositions: Int
  }
  
@@ -71,7 +98,7 @@ index 7346026..19f3962 100644
  enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
      case unreadable
      case tooLarge
-@@ -104,7 +145,7 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
+@@ -104,7 +172,7 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
      var errorDescription: String? {
          switch self {
          case .unreadable: return "无法读取训练包。"
@@ -80,7 +107,7 @@ index 7346026..19f3962 100644
          case .unsupportedFormat: return "训练包版本不受支持。"
          case .checksumMismatch: return "训练包完整性校验失败。"
          case .invalidContent: return "训练包包含无效棋步或越界数据。"
-@@ -115,7 +156,12 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
+@@ -115,7 +183,12 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
  
  @MainActor
  final class AdaptiveBoardLearningStore {
@@ -94,7 +121,7 @@ index 7346026..19f3962 100644
  
      private struct ActionStat: Codable {
          var count: Int
-@@ -152,16 +198,12 @@ final class AdaptiveBoardLearningStore {
+@@ -152,16 +225,12 @@ final class AdaptiveBoardLearningStore {
          let payload: Database
      }
  
@@ -113,7 +140,7 @@ index 7346026..19f3962 100644
          let resolvedURL: URL
          if let fileURL {
              resolvedURL = fileURL
-@@ -169,10 +211,33 @@ final class AdaptiveBoardLearningStore {
+@@ -169,10 +238,33 @@ final class AdaptiveBoardLearningStore {
              let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                  .appendingPathComponent("VeilLink", isDirectory: true)
              try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -149,7 +176,7 @@ index 7346026..19f3962 100644
      }
  
      var summary: AdaptiveBoardLearningSummary {
-@@ -183,7 +248,7 @@ final class AdaptiveBoardLearningStore {
+@@ -183,7 +275,7 @@ final class AdaptiveBoardLearningStore {
          )
      }
  
@@ -158,7 +185,7 @@ index 7346026..19f3962 100644
          var result = Self.seedPreferences()
          for (position, stat) in database.positions {
              var actions = result[position] ?? [:]
-@@ -202,11 +267,109 @@ final class AdaptiveBoardLearningStore {
+@@ -202,11 +294,109 @@ final class AdaptiveBoardLearningStore {
              }
              result[position] = actions
          }
@@ -269,7 +296,7 @@ index 7346026..19f3962 100644
  
          database.sequence += 1
          let sequence = database.sequence
-@@ -218,13 +381,6 @@ final class AdaptiveBoardLearningStore {
+@@ -218,13 +408,6 @@ final class AdaptiveBoardLearningStore {
              action.aiReward = max(-32_000, min(32_000, action.aiReward + result.aiReward))
              position.actions[ply.action] = action
              position.lastSequence = sequence
@@ -283,7 +310,7 @@ index 7346026..19f3962 100644
              database.positions[ply.position] = position
          }
  
-@@ -235,7 +391,6 @@ final class AdaptiveBoardLearningStore {
+@@ -235,7 +418,6 @@ final class AdaptiveBoardLearningStore {
              actions: plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
              finishedAt: Date()
          ))
@@ -291,7 +318,7 @@ index 7346026..19f3962 100644
          save()
      }
  
-@@ -267,13 +422,12 @@ final class AdaptiveBoardLearningStore {
+@@ -267,13 +449,12 @@ final class AdaptiveBoardLearningStore {
              payload: database
          )
          let data = try encoder.encode(envelope)
@@ -307,7 +334,7 @@ index 7346026..19f3962 100644
          do {
              try data.write(to: url, options: .atomic)
              return url
-@@ -288,9 +442,6 @@ final class AdaptiveBoardLearningStore {
+@@ -288,9 +469,6 @@ final class AdaptiveBoardLearningStore {
          guard let data = try? Data(contentsOf: url) else {
              throw AdaptiveBoardLearningPackageError.unreadable
          }
@@ -317,7 +344,7 @@ index 7346026..19f3962 100644
          guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
                envelope.format == "veillink.board-learning.export.v1",
                envelope.checksumAlgorithm == "fnv1a64-canonical-json",
-@@ -309,8 +460,11 @@ final class AdaptiveBoardLearningStore {
+@@ -309,8 +487,11 @@ final class AdaptiveBoardLearningStore {
          }
  
          let previous = database
@@ -331,7 +358,7 @@ index 7346026..19f3962 100644
          save()
          guard lastSaveSucceeded else {
              database = previous
-@@ -322,30 +476,11 @@ final class AdaptiveBoardLearningStore {
+@@ -322,30 +503,11 @@ final class AdaptiveBoardLearningStore {
          )
      }
  
@@ -363,7 +390,7 @@ index 7346026..19f3962 100644
              try FileManager.default.createDirectory(
                  at: fileURL.deletingLastPathComponent(),
                  withIntermediateDirectories: true
-@@ -357,22 +492,65 @@ final class AdaptiveBoardLearningStore {
+@@ -357,22 +519,65 @@ final class AdaptiveBoardLearningStore {
          }
      }
  
@@ -437,7 +464,7 @@ index 7346026..19f3962 100644
              for (action, value) in stat.actions {
                  guard value.count > 0, value.count <= 65_535,
                        (-32_000...32_000).contains(value.aiReward),
-@@ -381,7 +559,6 @@ final class AdaptiveBoardLearningStore {
+@@ -381,7 +586,6 @@ final class AdaptiveBoardLearningStore {
          }
          return database.recentGames.allSatisfy { record in
              (record.game == .gomoku || record.game == .xiangqi)
@@ -445,6 +472,181 @@ index 7346026..19f3962 100644
                  && record.actions.allSatisfy { $0.count <= 12 }
          }
      }
+diff --git a/VeilLink/Agent/Games/DeveloperFormationLibrary.swift b/VeilLink/Agent/Games/DeveloperFormationLibrary.swift
+new file mode 100644
+index 0000000..046b920
+--- /dev/null
++++ b/VeilLink/Agent/Games/DeveloperFormationLibrary.swift
+@@ -0,0 +1,169 @@
++import Combine
++import CryptoKit
++import Foundation
++
++struct DeveloperFormationLesson: Codable, Identifiable, Equatable, Sendable {
++    struct Move: Codable, Equatable, Sendable {
++        let actor: MiniGamePlayer
++        let action: String
++    }
++
++    let id: UUID
++    let game: MiniGameKind
++    let name: String
++    let purpose: String
++    let objective: String
++    let moves: [Move]
++    let createdAt: Date
++}
++
++@MainActor
++final class DeveloperFormationLibrary: ObservableObject {
++    @Published private(set) var lessons: [DeveloperFormationLesson] = []
++
++    private struct Envelope: Codable {
++        let schema: Int
++        let lessons: [DeveloperFormationLesson]
++        let mac: Data
++    }
++
++    private enum Key { static let mac = "board.developer-formations.mac.v1" }
++    private let game: MiniGameKind
++    private let keychain: KeychainStore
++    private let fileURL: URL
++
++    init(game: MiniGameKind, keychain: KeychainStore, fileURL: URL? = nil) {
++        self.game = game
++        self.keychain = keychain
++        if let fileURL {
++            self.fileURL = fileURL
++        } else {
++            let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
++                .appendingPathComponent("VeilLink", isDirectory: true)
++                .appendingPathComponent("DeveloperFormations", isDirectory: true)
++            self.fileURL = root.appendingPathComponent("\(game.rawValue)-v1.json")
++        }
++        load()
++    }
++
++    func capture(name: String, purpose: String, objective: String, plies: [AdaptiveBoardPly]) throws {
++        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
++        let trimmedPurpose = purpose.trimmingCharacters(in: .whitespacesAndNewlines)
++        let trimmedObjective = objective.trimmingCharacters(in: .whitespacesAndNewlines)
++        guard (2...64).contains(trimmedName.count),
++              (2...360).contains(trimmedPurpose.count),
++              (2...240).contains(trimmedObjective.count),
++              plies.count >= 2,
++              plies.contains(where: { $0.actor == .guest }) else {
++            throw DeveloperFormationError.invalidLesson
++        }
++        let lesson = DeveloperFormationLesson(
++            id: UUID(),
++            game: game,
++            name: trimmedName,
++            purpose: trimmedPurpose,
++            objective: trimmedObjective,
++            moves: plies.map { .init(actor: $0.actor, action: $0.action) },
++            createdAt: Date()
++        )
++        lessons.append(lesson)
++        do {
++            try save()
++        } catch {
++            lessons.removeLast()
++            throw error
++        }
++    }
++
++    func remove(_ lesson: DeveloperFormationLesson) {
++        let previous = lessons
++        lessons.removeAll { $0.id == lesson.id }
++        do { try save() } catch { lessons = previous }
++    }
++
++    func influence(for plies: [AdaptiveBoardPly]) -> DeveloperFormationInfluence {
++        let current = plies.map { DeveloperFormationLesson.Move(actor: $0.actor, action: $0.action) }
++        var roots: [String: Int] = [:]
++        var replies: [String: AdaptiveBoardPrediction] = [:]
++        var matchedNames: [String] = []
++        for lesson in lessons where lesson.moves.starts(with: current) {
++            guard lesson.moves.count > current.count else { continue }
++            let nextIndex = current.count
++            let next = lesson.moves[nextIndex]
++            guard next.actor == .guest else { continue }
++            matchedNames.append(lesson.name)
++            roots[next.action, default: 0] += 1_400
++            let replyIndex = nextIndex + 1
++            if lesson.moves.indices.contains(replyIndex), lesson.moves[replyIndex].actor == .host {
++                replies[next.action] = AdaptiveBoardPrediction(
++                    action: lesson.moves[replyIndex].action,
++                    evidence: 99
++                )
++            }
++        }
++        return DeveloperFormationInfluence(
++            rootAdjustments: roots,
++            predictedHumanReplies: replies,
++            matchedLessonNames: matchedNames.sorted()
++        )
++    }
++
++    private func load() {
++        guard let data = try? Data(contentsOf: fileURL),
++              let envelope = try? JSONDecoder().decode(Envelope.self, from: data),
++              envelope.schema == 1,
++              verify(envelope.lessons, mac: envelope.mac) else { return }
++        lessons = envelope.lessons.filter { $0.game == game }
++    }
++
++    private func save() throws {
++        let key = try macKey()
++        let mac = Data(HMAC<SHA256>.authenticationCode(for: canonicalData(for: lessons), using: SymmetricKey(data: key)))
++        let envelope = Envelope(schema: 1, lessons: lessons, mac: mac)
++        let root = fileURL.deletingLastPathComponent()
++        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
++        try JSONEncoder().encode(envelope).write(to: fileURL, options: .atomic)
++    }
++
++    private func verify(_ candidate: [DeveloperFormationLesson], mac: Data) -> Bool {
++        // Verification must never manufacture a replacement key. If Keychain was
++        // reset or is temporarily unavailable, the old on-disk lesson stays
++        // untrusted instead of being silently re-keyed.
++        do {
++            guard let key = try keychain.readData(for: Key.mac), key.count == 32 else { return false }
++            let expected = Data(HMAC<SHA256>.authenticationCode(for: canonicalData(for: candidate), using: SymmetricKey(data: key)))
++            return expected == mac
++        } catch {
++            return false
++        }
++    }
++
++    private func canonicalData(for candidate: [DeveloperFormationLesson]) -> Data {
++        let encoder = JSONEncoder()
++        encoder.outputFormatting = [.sortedKeys]
++        return (try? encoder.encode(candidate)) ?? Data()
++    }
++
++    private func macKey() throws -> Data {
++        if let current = try keychain.readData(for: Key.mac) {
++            guard current.count == 32 else { throw DeveloperFormationError.keyUnavailable }
++            return current
++        }
++        let key = PasswordKDF.randomData(count: 32)
++        guard key.count == 32 else { throw DeveloperFormationError.keyUnavailable }
++        try keychain.set(key, for: Key.mac)
++        return key
++    }
++}
++
++enum DeveloperFormationError: LocalizedError {
++    case invalidLesson
++    case keyUnavailable
++
++    var errorDescription: String? {
++        switch self {
++        case .invalidLesson: return "请录制至少两手、包含电脑应手的合法阵法，并填写名称、用途和目的。"
++        case .keyUnavailable: return "无法取得本机阵法保护密钥。"
++        }
++    }
++}
 diff --git a/VeilLink/Agent/Games/GomokuBot.swift b/VeilLink/Agent/Games/GomokuBot.swift
 index 43af066..92a9e55 100644
 --- a/VeilLink/Agent/Games/GomokuBot.swift
@@ -588,7 +790,7 @@ index 43af066..92a9e55 100644
          GomokuBotMove(
              index: index,
 diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
-index f381fae..0d2de7c 100644
+index f381fae..aef9056 100644
 --- a/VeilLink/Agent/Games/LocalAIGameController.swift
 +++ b/VeilLink/Agent/Games/LocalAIGameController.swift
 @@ -1,6 +1,33 @@
@@ -625,33 +827,57 @@ index f381fae..0d2de7c 100644
  @MainActor
  final class LocalAIGameController: ObservableObject {
      enum Outcome: Equatable {
-@@ -25,6 +52,9 @@ final class LocalAIGameController: ObservableObject {
+@@ -25,6 +52,11 @@ final class LocalAIGameController: ObservableObject {
      @Published private(set) var lastDecisionMode = "基础策略"
      @Published private(set) var lastDecisionMilliseconds: Int?
      @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
 +    @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
 +    @Published private(set) var coachProfile: PersonalBoardCoachProfile
 +    @Published private(set) var coachTip = "每一步都会沉淀为下一局的本地训练证据。"
++    @Published private(set) var developerTeachingMode = false
++    @Published private(set) var developerFormationCount = 0
  
      let game: MiniGameKind
      let humanPlayer: MiniGamePlayer = .host
-@@ -35,10 +65,12 @@ final class LocalAIGameController: ObservableObject {
-     private let learningStore: AdaptiveBoardLearningStore
-     private var learningPlies: [AdaptiveBoardPly] = []
+@@ -33,12 +65,24 @@ final class LocalAIGameController: ObservableObject {
  
+     private var aiTask: Task<Void, Never>?
+     private let learningStore: AdaptiveBoardLearningStore
++    private let formationLibrary: DeveloperFormationLibrary?
+     private var learningPlies: [AdaptiveBoardPly] = []
+-
 -    init(game: MiniGameKind, learningStore: AdaptiveBoardLearningStore = .shared) {
-+    init(game: MiniGameKind, learningStore: AdaptiveBoardLearningStore? = nil) {
++    /// Kept separate from ordinary player history so an owner-authored lesson
++    /// never silently becomes public-player learning evidence.
++    private var developerFormationPlies: [AdaptiveBoardPly] = []
++
++    init(
++        game: MiniGameKind,
++        learningStore: AdaptiveBoardLearningStore? = nil,
++        formationLibrary: DeveloperFormationLibrary? = nil
++    ) {
          self.game = game
 -        self.learningStore = learningStore
 -        learningSummary = learningStore.summary
 +        let resolvedLearningStore = learningStore ?? AdaptiveBoardLearningStore.store(for: game)
 +        self.learningStore = resolvedLearningStore
++        self.formationLibrary = formationLibrary
 +        learningSummary = resolvedLearningStore.summary
 +        coachProfile = resolvedLearningStore.coachProfile(for: game)
++        developerFormationCount = formationLibrary?.lessons.count ?? 0
          sessionID = UUID().uuidString
      }
  
-@@ -94,6 +126,7 @@ final class LocalAIGameController: ObservableObject {
+@@ -86,6 +130,8 @@ final class LocalAIGameController: ObservableObject {
+         sessionID = UUID().uuidString
+         outcome = .playing
+         isAIThinking = false
++        developerFormationPlies.removeAll(keepingCapacity: true)
++        developerTeachingMode = false
+         lastDecisionMode = "规则 Bot"
+         lastDecisionMilliseconds = nil
+     }
+@@ -94,16 +140,63 @@ final class LocalAIGameController: ObservableObject {
          guard game == .gomoku, canHumanAct else { return }
          var state = gomoku
          let position = AdaptiveBoardPosition.gomoku(state)
@@ -659,7 +885,55 @@ index f381fae..0d2de7c 100644
          guard state.apply(index: index, actor: humanPlayer) else { return }
          learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: humanPlayer))
          gomoku = state
-@@ -104,6 +137,7 @@ final class LocalAIGameController: ObservableObject {
+         finishOrScheduleAI()
+     }
+ 
++    func setDeveloperTeachingMode(_ enabled: Bool) {
++        guard game == .gomoku else { return }
++        if enabled, !developerTeachingMode {
++            beginDeveloperFormationRecording()
++            return
++        }
++        developerTeachingMode = enabled
++        if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false }
++    }
++
++    func beginDeveloperFormationRecording() {
++        guard game == .gomoku else { return }
++        finalizeLearning(as: .unfinished)
++        aiTask?.cancel(); aiTask = nil
++        gomoku = GomokuState()
++        outcome = .playing
++        isAIThinking = false
++        sessionID = UUID().uuidString
++        developerFormationPlies.removeAll(keepingCapacity: true)
++        developerTeachingMode = true
++        coachTip = "阵法录制已从空棋盘开始：请依次演示双方的攻防走子。"
++    }
++
++    func developerGomokuMove(_ index: Int) {
++        guard game == .gomoku, developerTeachingMode, outcome == .playing else { return }
++        var state = gomoku
++        let actor = state.currentPlayer
++        let position = AdaptiveBoardPosition.gomoku(state)
++        guard state.apply(index: index, actor: actor) else { return }
++        developerFormationPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: actor))
++        gomoku = state
++        updateOutcome()
++    }
++
++    func captureDeveloperFormation(name: String, purpose: String, objective: String) throws {
++        guard game == .gomoku, let formationLibrary else {
++            throw DeveloperFormationError.invalidLesson
++        }
++        try formationLibrary.capture(name: name, purpose: purpose, objective: objective, plies: developerFormationPlies)
++        developerFormationCount = formationLibrary.lessons.count
++        developerFormationPlies.removeAll(keepingCapacity: true)
++        developerTeachingMode = false
++        coachTip = "已保存开发者阵法：后续同一前缀局面会优先使用你录制的应手。"
++    }
++
+     func humanXiangqiMove(from: Int, to: Int) {
          guard game == .xiangqi, canHumanAct else { return }
          var state = xiangqi
          let position = AdaptiveBoardPosition.xiangqi(state)
@@ -667,7 +941,7 @@ index f381fae..0d2de7c 100644
          guard state.apply(from: from, to: to, actor: humanPlayer) else { return }
          learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: humanPlayer))
          xiangqi = state
-@@ -163,6 +197,11 @@ final class LocalAIGameController: ObservableObject {
+@@ -163,6 +256,11 @@ final class LocalAIGameController: ObservableObject {
          tacticalDifficulty = difficulty
      }
  
@@ -679,7 +953,7 @@ index f381fae..0d2de7c 100644
      func setTacticalScenario(_ scenario: TacticalSoloScenario) {
          guard game == .tactical, tacticalScenario != scenario else { return }
          tacticalScenario = scenario
-@@ -201,6 +240,8 @@ final class LocalAIGameController: ObservableObject {
+@@ -201,6 +299,8 @@ final class LocalAIGameController: ObservableObject {
          learningStore.clear()
          learningPlies.removeAll(keepingCapacity: true)
          learningSummary = learningStore.summary
@@ -688,7 +962,7 @@ index f381fae..0d2de7c 100644
      }
  
      func exportBoardLearning() throws -> URL {
-@@ -211,6 +252,8 @@ final class LocalAIGameController: ObservableObject {
+@@ -211,11 +311,14 @@ final class LocalAIGameController: ObservableObject {
          let report = try learningStore.importPackage(from: url)
          learningPlies.removeAll(keepingCapacity: true)
          learningSummary = learningStore.summary
@@ -697,13 +971,20 @@ index f381fae..0d2de7c 100644
          return report
      }
  
-@@ -286,10 +329,11 @@ final class LocalAIGameController: ObservableObject {
+     private func finishOrScheduleAI() {
+         updateOutcome()
++        guard !developerTeachingMode else { return }
+         guard outcome == .playing else { return }
+         scheduleAIIfNeeded()
+     }
+@@ -286,10 +389,12 @@ final class LocalAIGameController: ObservableObject {
          switch game {
          case .gomoku:
              let snapshot = gomoku
 -            let learning = learningStore.snapshot()
 -            let budget = GomokuBotBudget.standard(
-+            let learning = learningStore.snapshot(currentPlies: learningPlies)
++            let formation = formationLibrary?.influence(for: learningPlies) ?? .empty
++            let learning = learningStore.snapshot(currentPlies: learningPlies).applying(formation)
 +            let budget = GomokuBotBudget.forDifficulty(
 +                boardDifficulty,
                  profileLabel: VeilDevicePerformance.current.label
@@ -712,23 +993,25 @@ index f381fae..0d2de7c 100644
              let result = await Task.detached(priority: .userInitiated) {
                  GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
              }.value
-@@ -297,7 +341,8 @@ final class LocalAIGameController: ObservableObject {
+@@ -297,7 +402,9 @@ final class LocalAIGameController: ObservableObject {
  
              var ruleGate = gomoku
              guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
 -            lastDecisionMode = "五子棋 Bot"
 +            let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
-+            lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)"
++            let formationLabel = formation.matchedLessonNames.first.map { " · 阵法：\($0)" } ?? ""
++            lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)\(formationLabel)"
              return AgentActionCandidate(
                  actionID: "gomoku:\(result.index)",
                  encodedAction: AgentGameEncoding.encodeInts([result.index]),
-@@ -311,10 +356,11 @@ final class LocalAIGameController: ObservableObject {
+@@ -311,10 +418,12 @@ final class LocalAIGameController: ObservableObject {
  
          case .xiangqi:
              let snapshot = xiangqi
 -            let learning = learningStore.snapshot()
 -            let budget = XiangqiBotBudget.standard(
-+            let learning = learningStore.snapshot(currentPlies: learningPlies)
++            let formation = formationLibrary?.influence(for: learningPlies) ?? .empty
++            let learning = learningStore.snapshot(currentPlies: learningPlies).applying(formation)
 +            let budget = XiangqiBotBudget.forDifficulty(
 +                boardDifficulty,
                  profileLabel: VeilDevicePerformance.current.label
@@ -737,7 +1020,7 @@ index f381fae..0d2de7c 100644
              let result = await Task.detached(priority: .userInitiated) {
                  XiangqiBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
              }.value
-@@ -322,9 +368,12 @@ final class LocalAIGameController: ObservableObject {
+@@ -322,9 +431,12 @@ final class LocalAIGameController: ObservableObject {
  
              var ruleGate = xiangqi
              guard ruleGate.apply(from: result.from, to: result.to, actor: .guest) else { return nil }
@@ -753,7 +1036,7 @@ index f381fae..0d2de7c 100644
              return AgentActionCandidate(
                  actionID: "xiangqi:\(result.from):\(result.to)",
                  encodedAction: AgentGameEncoding.encodeInts([result.from, result.to]),
-@@ -532,5 +581,14 @@ final class LocalAIGameController: ObservableObject {
+@@ -532,5 +644,14 @@ final class LocalAIGameController: ObservableObject {
          learningStore.record(game: game, plies: learningPlies, result: result)
          learningPlies.removeAll(keepingCapacity: true)
          learningSummary = learningStore.summary
@@ -1536,10 +1819,10 @@ index f01d136..653487e 100644
          }
 diff --git a/VeilLink/UI/BoardDeveloperLearningLabView.swift b/VeilLink/UI/BoardDeveloperLearningLabView.swift
 new file mode 100644
-index 0000000..1f3b3e9
+index 0000000..9c0bf77
 --- /dev/null
 +++ b/VeilLink/UI/BoardDeveloperLearningLabView.swift
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,179 @@
 +import SwiftUI
 +import UniformTypeIdentifiers
 +
@@ -1554,6 +1837,9 @@ index 0000000..1f3b3e9
 +    @State private var showsImporter = false
 +    @State private var message: String?
 +    @State private var preparingImport = false
++    @State private var formationName = ""
++    @State private var formationPurpose = ""
++    @State private var formationObjective = ""
 +
 +    private var gate: DeveloperLearningLabGate { model.developerLearningGate }
 +
@@ -1614,7 +1900,7 @@ index 0000000..1f3b3e9
 +            Label("\(game.title) · 私有训练入口", systemImage: "lock.shield")
 +                .font(.headline)
 +                .foregroundColor(VeilTheme.goldBright)
-+            Text("仅用于你审阅后导入的训练包。普通对局仍会本地学习，但公开游戏页不提供训练包注入，避免外部文件污染个人棋谱。")
++            Text("可审阅后导入训练包，也可从空棋盘录制私有阵法。普通对局仍会本地学习，但公开游戏页不提供训练包注入，避免外部文件污染个人棋谱。")
 +                .font(.caption)
 +                .foregroundColor(VeilTheme.secondaryText)
 +        }
@@ -1647,6 +1933,7 @@ index 0000000..1f3b3e9
 +            Text("训练包会先走系统“文件”选择器、安全作用域暂存与校验，再写入当前\(game.title)独立训练库。不会上传网络。")
 +                .font(.caption)
 +                .foregroundColor(VeilTheme.secondaryText)
++            formationRecorder
 +            Button {
 +                showsImporter = true
 +            } label: {
@@ -1656,6 +1943,63 @@ index 0000000..1f3b3e9
 +            .disabled(preparingImport)
 +        }
 +        .veilCard()
++    }
++
++    private var formationRecorder: some View {
++        VStack(alignment: .leading, spacing: 9) {
++            Divider().background(VeilTheme.hairline)
++            Text("阵法录制与教学")
++                .font(.subheadline.weight(.bold))
++            Text("开启录制会从空棋盘新开一条示范线；返回棋盘后可依次替双方落子来演示攻防，再回到这里为线路命名并解释用途。保存后，Bot 遇到相同前缀会优先采用你录制的电脑应手。")
++                .font(.caption)
++                .foregroundColor(VeilTheme.secondaryText)
++            Toggle("录制模式：手动演示双方走子", isOn: Binding(
++                get: { controller.developerTeachingMode },
++                set: { controller.setDeveloperTeachingMode($0) }
++            ))
++            .font(.caption.weight(.semibold))
++            TextField("阵法名称，例如：中心活三防守", text: $formationName)
++                .textInputAutocapitalization(.never)
++                .padding(10)
++                .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
++            TextEditor(text: $formationPurpose)
++                .frame(minHeight: 62)
++                .padding(6)
++                .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
++                .overlay(alignment: .topLeading) {
++                    if formationPurpose.isEmpty {
++                        Text("阵法用途：它要防什么、制造什么威胁？")
++                            .font(.caption)
++                            .foregroundColor(VeilTheme.tertiaryText)
++                            .padding(.horizontal, 11).padding(.vertical, 14)
++                            .allowsHitTesting(false)
++                    }
++                }
++            TextField("训练目的，例如：优先封堵对方冲四", text: $formationObjective)
++                .padding(10)
++                .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
++            Button("保存当前录制阵法") {
++                do {
++                    try controller.captureDeveloperFormation(
++                        name: formationName,
++                        purpose: formationPurpose,
++                        objective: formationObjective
++                    )
++                    formationName = ""
++                    formationPurpose = ""
++                    formationObjective = ""
++                    model.haptics.resolved()
++                    message = "阵法已保存。后续同一局面前缀会将你录制的电脑应手作为高优先级训练。"
++                } catch {
++                    message = error.localizedDescription
++                }
++            }
++            .buttonStyle(.bordered)
++            Label("已保存 \(controller.developerFormationCount) 条私有阵法", systemImage: "point.3.connected.trianglepath.dotted")
++                .font(.caption2)
++                .foregroundColor(VeilTheme.goldBright)
++        }
++        .padding(.top, 2)
 +    }
 +}
 diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
@@ -1801,7 +2145,7 @@ index 0000000..0d1e4a1
 +    }
 +}
 diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
-index 7c19021..d72f5e6 100644
+index 7c19021..124c091 100644
 --- a/VeilLink/UI/GameLobbyView.swift
 +++ b/VeilLink/UI/GameLobbyView.swift
 @@ -15,7 +15,8 @@ struct GameLobbyView: View {
@@ -1879,16 +2223,34 @@ index 7c19021..d72f5e6 100644
      let game: MiniGameKind
      @StateObject private var controller: LocalAIGameController
      @State private var selectedXiangqiIndex: Int?
-@@ -284,6 +310,8 @@ struct LocalAIGameView: View {
+@@ -284,8 +310,15 @@ struct LocalAIGameView: View {
  
      init(model: AppModel, game: MiniGameKind) {
          self.model = model
 +        ownerMode = model.ownerMode
 +        developerLearningGate = model.developerLearningGate
          self.game = game
-         _controller = StateObject(wrappedValue: LocalAIGameController(game: game))
+-        _controller = StateObject(wrappedValue: LocalAIGameController(game: game))
++        _controller = StateObject(wrappedValue: LocalAIGameController(
++            game: game,
++            formationLibrary: game == .gomoku
++                ? DeveloperFormationLibrary(game: game, keychain: model.keychain)
++                : nil
++        ))
      }
-@@ -342,16 +370,25 @@ struct LocalAIGameView: View {
+ 
+     var body: some View {
+@@ -332,6 +365,9 @@ struct LocalAIGameView: View {
+             controller.cancelAI()
+             model.agent.setComputeFocus(.idle)
+         }
++        .onChange(of: developerLearningGate.isAuthorized) { authorized in
++            if !authorized { controller.setDeveloperTeachingMode(false) }
++        }
+         .sheet(isPresented: $showsTacticalGuide) {
+             TacticalSoloGuideView()
+         }
+@@ -342,16 +378,25 @@ struct LocalAIGameView: View {
          }
          .fileImporter(
              isPresented: $showsLearningImporter,
@@ -1922,7 +2284,7 @@ index 7c19021..d72f5e6 100644
              }
          }
          .alert(
-@@ -425,10 +462,53 @@ struct LocalAIGameView: View {
+@@ -425,10 +470,53 @@ struct LocalAIGameView: View {
                      .font(.caption.weight(.semibold))
                      .foregroundColor(VeilTheme.secondaryText)
              }
@@ -1977,7 +2339,7 @@ index 7c19021..d72f5e6 100644
              HStack(spacing: 10) {
                  Button {
                      do {
-@@ -442,12 +522,24 @@ struct LocalAIGameView: View {
+@@ -442,12 +530,24 @@ struct LocalAIGameView: View {
                  }
                  .buttonStyle(.bordered)
  
@@ -2007,6 +2369,31 @@ index 7c19021..d72f5e6 100644
              }
              .font(.caption.weight(.semibold))
              if !controller.learningStoreAvailable {
+@@ -463,8 +563,22 @@ struct LocalAIGameView: View {
+     private var board: some View {
+         switch game {
+         case .gomoku:
+-            GomokuBoardView(state: controller.gomoku, localPlayer: .host, enabled: controller.canHumanAct) { index in
+-                controller.humanGomokuMove(index)
++            GomokuBoardView(
++                state: controller.gomoku,
++                localPlayer: .host,
++                enabled: controller.canHumanAct || (
++                    controller.developerTeachingMode
++                        && ownerMode.isAuthorized(for: .developerTraining)
++                        && developerLearningGate.canImportTraining()
++                )
++            ) { index in
++                if controller.developerTeachingMode,
++                   ownerMode.isAuthorized(for: .developerTraining),
++                   developerLearningGate.canImportTraining() {
++                    controller.developerGomokuMove(index)
++                } else {
++                    controller.humanGomokuMove(index)
++                }
+                 model.haptics.impact()
+             }
+         case .xiangqi:
 diff --git a/VeilLink/UI/OnboardingView.swift b/VeilLink/UI/OnboardingView.swift
 index 9d1265f..c9ca11b 100644
 --- a/VeilLink/UI/OnboardingView.swift
@@ -2955,12 +3342,72 @@ index 5eb3806..800d7fe 100644
      func testRepeatedPlayerMoveBecomesSearchPreferenceAndCanBeCleared() {
          let url = temporaryURL()
          defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+diff --git a/VeilLinkTests/DeveloperFormationLibraryTests.swift b/VeilLinkTests/DeveloperFormationLibraryTests.swift
+new file mode 100644
+index 0000000..0be6e86
+--- /dev/null
++++ b/VeilLinkTests/DeveloperFormationLibraryTests.swift
+@@ -0,0 +1,54 @@
++import XCTest
++@testable import VeilLink
++
++@MainActor
++final class DeveloperFormationLibraryTests: XCTestCase {
++    private func makeLibrary() -> (DeveloperFormationLibrary, URL, KeychainStore) {
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent("VeilLinkFormationTests-\(UUID().uuidString)", isDirectory: true)
++        let file = root.appendingPathComponent("gomoku-v1.json")
++        let keychain = KeychainStore(service: "studio.zeo.veillink.tests.formations.\(UUID().uuidString)")
++        return (DeveloperFormationLibrary(game: .gomoku, keychain: keychain, fileURL: file), file, keychain)
++    }
++
++    func testRecordedFormationInfluencesMatchingPrefixAndSurvivesReload() throws {
++        let (library, file, keychain) = makeLibrary()
++        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
++        let line = [
++            AdaptiveBoardPly(position: "g:initial", action: "112", actor: .host),
++            AdaptiveBoardPly(position: "g:after-112", action: "113", actor: .guest),
++            AdaptiveBoardPly(position: "g:after-113", action: "97", actor: .host)
++        ]
++        try library.capture(
++            name: "中心反制",
++            purpose: "以相邻点回应中心落子，限制对方扩张。",
++            objective: "诱导对方回到已验证的防守线路。",
++            plies: line
++        )
++
++        let influence = library.influence(for: [line[0]])
++        XCTAssertEqual(influence.rootAdjustments["113"], 1_400)
++        XCTAssertEqual(influence.predictedHumanReplies["113"], .init(action: "97", evidence: 99))
++        XCTAssertEqual(influence.matchedLessonNames, ["中心反制"])
++
++        let reloaded = DeveloperFormationLibrary(game: .gomoku, keychain: keychain, fileURL: file)
++        XCTAssertEqual(reloaded.lessons.count, 1)
++        XCTAssertEqual(reloaded.influence(for: [line[0]]).rootAdjustments["113"], 1_400)
++    }
++
++    func testLessonRequiresBothSidesAndMeaningfulExplanation() {
++        let (library, file, _) = makeLibrary()
++        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
++        XCTAssertThrowsError(try library.capture(
++            name: "x",
++            purpose: "短",
++            objective: "短",
++            plies: [AdaptiveBoardPly(position: "g:initial", action: "112", actor: .host)]
++        )) { error in
++            guard let formationError = error as? DeveloperFormationError,
++                  case .invalidLesson = formationError else {
++                return XCTFail("expected invalid lesson, got \(error)")
++            }
++        }
++    }
++}
 diff --git a/VeilLinkTests/DeveloperLearningLabGateTests.swift b/VeilLinkTests/DeveloperLearningLabGateTests.swift
 new file mode 100644
-index 0000000..d0966fb
+index 0000000..2591f2b
 --- /dev/null
 +++ b/VeilLinkTests/DeveloperLearningLabGateTests.swift
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,35 @@
 +import XCTest
 +@testable import VeilLink
 +
@@ -2991,7 +3438,9 @@ index 0000000..d0966fb
 +        XCTAssertFalse(gate.unlock(pin: "00000000"))
 +        XCTAssertTrue(gate.unlock(pin: "87654321"))
 +        XCTAssertTrue(gate.canImportTraining())
-+        XCTAssertNil(keychain.data(for: "board.developer-lab.pin"))
++        let verifier = keychain.data(for: "board.developer-lab.verifier.v1")
++        XCTAssertNotNil(verifier)
++        XCTAssertFalse(verifier?.contains(Data("87654321".utf8)) ?? true)
 +    }
 +}
 diff --git a/VeilLinkTests/GomokuBotTests.swift b/VeilLinkTests/GomokuBotTests.swift

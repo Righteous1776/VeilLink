@@ -43,6 +43,10 @@ All existing pickers remain Apple's system Files picker. Selection now accepts t
 - The developer verifier asks for an eight-digit numeric surface PIN. It is only configurable after the existing app lock is enabled and unlocked, and must be reached through Owner Mode.
 - The PIN is not hard-coded, logged, exported or stored in plaintext. The candidate stores a 240,000-iteration verifier and a device-local 256-bit Keychain secret, creates an HMAC-backed 10-minute in-memory session after validation, and applies progressive failure cooldown.
 - The owner chooses the actual eight digits during first setup on their device. No secret is supplied in this patch or conversation.
+- Inside the authorized Gomoku room, “阵法录制与教学” starts from an empty board and lets the owner demonstrate both sides of one legal attack/defence line. The owner must give the lesson a name, explain its purpose, and state its objective; this is not a free-text note detached from play.
+- Lessons are kept separately from ordinary player-learning history. Their data is authenticated with a device-local Keychain MAC key, so a malformed or edited on-disk lesson is ignored. They are not uploaded or included in the ordinary public training import path.
+- At run time, the Bot compares the current move prefix to recorded lessons. When a matching line says it is the computer's turn, that recorded legal response receives a bounded high-priority score and the recorded following human reply becomes a high-confidence adversarial prediction. This then composes with the ordinary personal repertoire/outcome learner and the selected search tier.
+- Recording begins a fresh demo line and does not silently turn the owner's demonstration moves into ordinary player-learning evidence. A lesson contains at least two moves and an AI-side response before it can be saved.
 - This touches Owner Mode capability policy and Keychain authorization and therefore remains a protected-surface proposal: it requires dedicated security review, Keychain persistence/reinstall testing and a full XCTest/device gate before integration.
 
 ### A10 presentation and automation

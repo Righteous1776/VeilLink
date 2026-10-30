@@ -14,6 +14,8 @@
 - “宗师” is a device-aware local search budget, not a claim of a cloud grandmaster engine. It can take longer on old devices; the candidate caps the legacy iPhone 7 budget and requires thermal, foreground/background and cancellation testing before promotion.
 - Third-party engine source has not been silently imported. MIT candidates have been identified, but file-level provenance, attribution and iOS integration still need the intake gate recorded in `THIRD_PARTY_CHESS_ENGINE_AUDIT.md`.
 - The developer learning room changes Owner Mode capability policy and Keychain-backed authorization. Its eight-digit PIN is deliberately only a surface factor; secure storage, device secret, session expiry, God Mode prerequisite and app-lock prerequisite need independent review. There is no hard-coded recovery password: loss of the owner-selected PIN requires an explicit future reset/re-enrollment design, not a hidden bypass.
+- A recorded formation is deliberately a high-priority local tactical preference, not an unconditional move. Integration must test that its proposed response remains legal after a matching prefix and that ordinary tactical win/block rules still prevail. Recording starts from a fresh board and uses a separate buffer so demonstrations cannot contaminate the public learning store.
+- Formation lessons are integrity-protected by a device-local Keychain MAC key. Keychain reset/reinstall makes old local lesson files unverifiable by design; the candidate must not silently accept them. Any future export/import of these private lessons needs its own authenticated format and owner review.
 
 ## 三国兵器
 

@@ -25,6 +25,7 @@
 - a V1 mixed shared learning file migrates into two scoped V2 stores while its source bytes remain unchanged.
 - Gomoku and Xiangqi difficulty budgets monotonically increase search capacity; retained training evidence also reinforces every tier's bounded search budget; a repeated Xiangqi opening produces an explainable personal-coach profile.
 - developer learning enrollment requires an already-unlocked application lock; an eight-digit verifier unlocks a short-lived session and neither a plaintext PIN nor a public import entry is retained.
+- a developer-recorded formation with a host opening and guest reply survives authenticated reload; its matching prefix yields that guest reply as a high-priority Bot adjustment and its recorded next human move as the predicted adversarial reply; incomplete/one-sided lessons are rejected.
 
 ## Mandatory Apple SDK gates (not available in this Linux workspace)
 
@@ -38,6 +39,7 @@
    - repeat a fixed Xiangqi line at least three times and confirm “阵法预判” plus changed legal AI response;
    - switch every tier on iPhone 7 and a newer device, verify that all tiers retain trained responses, and ensure the Master budget does not cause thermal/background termination;
    - first-run God Mode developer enrollment, restart, wrong-PIN cooldown, app lock/relock, Owner Mode exit, session expiry, device restore and Keychain-unavailable paths; verify ordinary Gomoku UI has no package-import action and the entry appears only after both Owner Mode and developer-session authorization;
+   - in the authorized Gomoku developer room, enable formation recording, verify it starts a new board, manually play both sides, save an explained lesson, relaunch, and reproduce its prefix. Confirm the Bot chooses the recorded legal response while tactical forced-win/forced-block still wins priority; confirm a regular game and an aborted recording do not add those moves to ordinary learning history;
    - verify Gomoku/Xiangqi summaries remain independent across relaunch;
    - enter A10-only and confirm Settings and Owner Console continuously show A10 sample/health/budget;
    - open 三国兵器 in portrait and landscape, pan/zoom the 48×27 map, issue ten turns, background/foreground, restart.
