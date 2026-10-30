@@ -206,6 +206,38 @@ final class VeilKernelRuntimeSelector: ObservableObject {
         )
     }
 
+    /// Rejects A10 results from a previous runtime mode, mode epoch or session.
+    /// The age window also prevents frozen/stale A10 snapshots being labelled live.
+    func isCurrentUltraEnvironment(
+        _ environment: VeilKernelRuntimeEnvironment,
+        sampledAt: Date,
+        now: Date = Date(),
+        maxAge: TimeInterval = 30
+    ) -> Bool {
+        guard mode.ultraEvaluationEnabled,
+              environment.ultraEvaluationEnabled,
+              environment.mode == mode,
+              environment.modeEpoch == modeEpoch,
+              environment.modeSessionID == modeSessionID,
+              maxAge.isFinite,
+              maxAge >= 0 else { return false }
+        let age = now.timeIntervalSince(sampledAt)
+        return age.isFinite && age >= 0 && age <= maxAge
+    }
+
+    func currentUltraSample(
+        _ candidate: VeilKernelRuntimeSampleRecord?,
+        now: Date = Date()
+    ) -> VeilKernelRuntimeSampleRecord? {
+        guard let candidate,
+              candidate.ultraDecision != nil,
+              candidate.ultraBudget != nil,
+              isCurrentUltraEnvironment(
+                  candidate.environment, sampledAt: candidate.timestamp, now: now
+              ) else { return nil }
+        return candidate
+    }
+
     func report() -> String {
         [
             "VeilLink Kernel Runtime Selector",

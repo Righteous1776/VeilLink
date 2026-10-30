@@ -212,7 +212,7 @@ struct OwnerConsoleView: View {
     }
 
     private var governanceRuntimeCard: some View {
-        let sample = a10Ultra.lastRuntimeSample
+        let sample = kernelRuntime.currentUltraSample(a10Ultra.lastRuntimeSample)
         let decision = sample?.ultraDecision
         let budget = sample?.ultraBudget
         return VStack(alignment: .leading, spacing: 12) {
