@@ -56,7 +56,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 -            NavigationLink(destination: LocalAIGameView(model: model, game: .tactical)) {
 +            NavigationLink(destination: TacticalSoloV2View(model: model)) {
 -                gameRow(.tactical, detail: "你执曹军先行 · 离线训练策略 + 补给与目标评估", enabled: true)
-+                gameRow(.tactical, detail: "官渡大地图 48×27 · WEGO 回合结算 · 本地袁军 Bot", enabled: true)
++                realtimeGameRow(title: "三国兵器 · 官渡大战场", detail: "48×27 大地图 · WEGO 回合 · 袁军 AI", motif: .circuit, badge: "V2")
              }
              .buttonStyle(VeilPressStyle())
              .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
