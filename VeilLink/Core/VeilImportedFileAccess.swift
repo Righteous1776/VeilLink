@@ -103,8 +103,8 @@ enum VeilImportedFileAccess {
     }
 
     static func removeStagedCopy(_ url: URL) {
-        guard url.path.contains("/\(stagingFolderName)/") else { return }
-        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        // Only delete snapshots created below our canonical UUID lease root.
+        try? VeilImportStagingLeasePolicy.removeOwnedCopy(url)
     }
 
     private static func copyCancellableFile(from source: URL, to destination: URL) throws {
