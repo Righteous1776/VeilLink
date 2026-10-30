@@ -14,3 +14,7 @@
 Current source of large-map truth: `VeilLink/Resources/Tactical/guandu_large_map_v2_48x27.json`, `VeilLink/Core/TacticalV2/TacticalLargeMapLoaderV2.swift`, `VeilLink/UI/TacticalV2/TacticalLandscapeShellV2.swift`, `VeilLink/UI/TacticalV2/TacticalV2LaunchGateView.swift` (the latter currently accepts a conversation/session and negotiates capabilities).
 
 Monogatari official 2.8.0 owner ZIP was verified historically by game agent, but the full R5 package is **not currently available** to this handoff. Audit `PR #85` and its `R5_ADDENDUM.md`; don't invent vendor resources or include missing binary in main.
+
+
+## Continuation note: status #8 superseded by actual historical solo V2 recovery
+The earlier status cell for #8 was written **before the owner-history recovery**. The owner-owned branch `local-iter/tactical-v2-restore-20261003` contains `TacticalSoloRuntimeV2.swift`, `TacticalSoloV2View.swift` and `TacticalSoloV2Tests.swift`, all now staged verbatim inside this submission. The proposed GameLobby solo entry now opens the restored **48×27 / 1296-cell V2 WEGO game** instead of the smaller legacy board; the multiplayer path is unchanged. This is a concrete candidate restoration, **not yet Xcode/iOS15 or iPhone7 validated**. Do not treat the earlier “NOT integrated” line as the current proposal state.
