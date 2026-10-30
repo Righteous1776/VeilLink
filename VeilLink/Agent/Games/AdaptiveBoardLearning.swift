@@ -441,14 +441,15 @@ final class AdaptiveBoardLearningStore {
     }
 
     func clear() {
+        // Persist an empty scoped V2 database rather than deleting its file.
+        // The presence of this file is a migration tombstone: deleting it would
+        // re-import the preserved shared V1 history on the next app launch.
+        let previous = database
         database = Database()
-        do {
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                try FileManager.default.removeItem(at: fileURL)
-            }
-            lastSaveSucceeded = true
-        } catch {
-            lastSaveSucceeded = false
+        save()
+        if !lastSaveSucceeded {
+            // A failed atomic write must not pretend the visible reset succeeded.
+            database = previous
         }
     }
 
