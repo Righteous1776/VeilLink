@@ -24,6 +24,7 @@
 - wrong extension is rejected after the permissive Apple Files picker.
 - a V1 mixed shared learning file migrates into two scoped V2 stores while its source bytes remain unchanged.
 - Gomoku and Xiangqi difficulty budgets monotonically increase search capacity; retained training evidence also reinforces every tier's bounded search budget; a repeated Xiangqi opening produces an explainable personal-coach profile.
+- developer learning enrollment requires an already-unlocked application lock; an eight-digit verifier unlocks a short-lived session and neither a plaintext PIN nor a public import entry is retained.
 
 ## Mandatory Apple SDK gates (not available in this Linux workspace)
 
@@ -36,6 +37,7 @@
    - cancel picker and cancel backup-password sheet without stale staged data;
    - repeat a fixed Xiangqi line at least three times and confirm “阵法预判” plus changed legal AI response;
    - switch every tier on iPhone 7 and a newer device, verify that all tiers retain trained responses, and ensure the Master budget does not cause thermal/background termination;
+   - first-run God Mode developer enrollment, restart, wrong-PIN cooldown, app lock/relock, Owner Mode exit, session expiry, device restore and Keychain-unavailable paths; verify ordinary Gomoku UI has no package-import action and the entry appears only after both Owner Mode and developer-session authorization;
    - verify Gomoku/Xiangqi summaries remain independent across relaunch;
    - enter A10-only and confirm Settings and Owner Console continuously show A10 sample/health/budget;
    - open 三国兵器 in portrait and landscape, pan/zoom the 48×27 map, issue ten turns, background/foreground, restart.

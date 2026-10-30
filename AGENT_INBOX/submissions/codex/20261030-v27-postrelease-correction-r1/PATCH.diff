@@ -878,7 +878,7 @@ index 6e00d8e..60e1c5c 100644
          "/game status",
          "/game move"
 diff --git a/VeilLink/App/AppModel.swift b/VeilLink/App/AppModel.swift
-index fe9a7ae..bd0793d 100644
+index fe9a7ae..a86289d 100644
 --- a/VeilLink/App/AppModel.swift
 +++ b/VeilLink/App/AppModel.swift
 @@ -55,6 +55,7 @@ final class AppModel: ObservableObject {
@@ -889,7 +889,15 @@ index fe9a7ae..bd0793d 100644
      private var a9Cancellables = Set<AnyCancellable>()
      private var pendingConversationRefresh = false
      private var hostForegroundActive = true
-@@ -96,6 +97,36 @@ final class AppModel: ObservableObject {
+@@ -65,6 +66,7 @@ final class AppModel: ObservableObject {
+     let database: DatabaseStore
+     let identity: IdentityManager
+     let appLock: AppLockController
++    let developerLearningGate: DeveloperLearningLabGate
+     let ownerMode: OwnerModeController
+     let bluetooth: BLETransport
+     let lanTurbo: LANTransport
+@@ -96,6 +98,36 @@ final class AppModel: ObservableObject {
          }
      }
  
@@ -926,7 +934,15 @@ index fe9a7ae..bd0793d 100644
      init(keychain: KeychainStore = KeychainStore(), legalConsent: VeilLegalConsentController? = nil) throws {
          autoSaveReceivedImages = UserDefaults.standard.bool(forKey: Self.autoSaveReceivedImagesKey)
          self.keychain = keychain
-@@ -323,6 +354,7 @@ final class AppModel: ObservableObject {
+@@ -107,6 +139,7 @@ final class AppModel: ObservableObject {
+             try? database.adoptLegacyUnscopedRows(localIdentityID: onlyIdentity.id)
+         }
+         appLock = AppLockController(keychain: keychain)
++        developerLearningGate = DeveloperLearningLabGate(keychain: keychain)
+         ownerMode = OwnerModeController()
+         performanceOverrides = PerformanceOverrideController()
+         bluetooth = BLETransport()
+@@ -323,6 +356,7 @@ final class AppModel: ObservableObject {
      }
  
      func refreshA9Health() {
@@ -934,7 +950,7 @@ index fe9a7ae..bd0793d 100644
          // A9 must reason about operational links, not every UUID passively observed by scanning.
          let snapshots = bluetooth.linkSnapshots.values.filter(\.isA9Relevant)
          let liveQualitySnapshots = snapshots.filter(\.contributesLinkQualityToA9)
-@@ -461,9 +493,30 @@ final class AppModel: ObservableObject {
+@@ -461,9 +495,30 @@ final class AppModel: ObservableObject {
      func runA9StorageCheck() {
          let result = database.integrityCheck().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
          a9Health.setDatabaseIntegrity(result == "ok" ? .ok : .failed)
@@ -965,7 +981,15 @@ index fe9a7ae..bd0793d 100644
      func clearUserRequestedCaches() {
          database.clearTransientCaches()
          sessions.clearTransientCaches()
-@@ -856,6 +909,7 @@ final class AppModel: ObservableObject {
+@@ -645,6 +700,7 @@ final class AppModel: ObservableObject {
+         agent.handleBackground()
+         appLock.lock()
+         ownerMode.lock()
++        developerLearningGate.lock()
+     }
+ 
+     func createInitialProfile(name: String, password: String, pin: String) -> Bool {
+@@ -856,6 +912,7 @@ final class AppModel: ObservableObject {
          _ = suspendCommunicationStack(reason: "正在恢复备份")
          defer {
              if accessed { url.stopAccessingSecurityScopedResource() }
@@ -973,7 +997,7 @@ index fe9a7ae..bd0793d 100644
              if identity.activeIdentity != nil { start() }
          }
          do {
-@@ -1077,7 +1131,7 @@ final class AppModel: ObservableObject {
+@@ -1077,7 +1134,7 @@ final class AppModel: ObservableObject {
              result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "本地 SQLite 完整性检查已执行：\(a9Health.databaseIntegrity.title)。没有读取或回显聊天正文。")
  
          case .a9Status:
@@ -982,6 +1006,37 @@ index fe9a7ae..bd0793d 100644
  
          case .agentStatus:
              result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: "灵核运行时：\(agent.runtimeManifest?.displayName ?? LocalTextModelRuntimeFactory.backendName)，状态 \(agent.runtimeState.displayName)；游戏引擎 Native Bot；Control Plane V3 / AutoTune \(agentControls.autoRegulationMode.title)。")
+diff --git a/VeilLink/App/VeilAppLifecycleCoordinator.swift b/VeilLink/App/VeilAppLifecycleCoordinator.swift
+index c98167c..cc2be57 100644
+--- a/VeilLink/App/VeilAppLifecycleCoordinator.swift
++++ b/VeilLink/App/VeilAppLifecycleCoordinator.swift
+@@ -58,6 +58,7 @@ final class VeilAppLifecycleCoordinator: ObservableObject {
+                 model.handleBackgroundTransition()
+                 model.appLock.lock()
+                 model.ownerMode.lock()
++                model.developerLearningGate.lock()
+             case .handleMemoryPressure:
+                 VeilBackgroundContinuityCenter.shared.handleMemoryPressure()
+                 model.handleMemoryPressure()
+diff --git a/VeilLink/Core/Models.swift b/VeilLink/Core/Models.swift
+index 941df12..d80c208 100644
+--- a/VeilLink/Core/Models.swift
++++ b/VeilLink/Core/Models.swift
+@@ -102,11 +102,13 @@ struct OwnerCapability: OptionSet, Codable, Hashable {
+     static let protocolTuning = OwnerCapability(rawValue: 1 << 1)
+     static let groupModeration = OwnerCapability(rawValue: 1 << 2)
+     static let visualEffects = OwnerCapability(rawValue: 1 << 3)
++    static let developerTraining = OwnerCapability(rawValue: 1 << 4)
+ 
+     static let safeDefault: OwnerCapability = [
+         .diagnostics,
+         .protocolTuning,
+         .groupModeration,
+-        .visualEffects
++        .visualEffects,
++        .developerTraining
+     ]
+ }
 diff --git a/VeilLink/Core/VeilImportedFileAccess.swift b/VeilLink/Core/VeilImportedFileAccess.swift
 new file mode 100644
 index 0000000..fcb855a
@@ -1130,6 +1185,167 @@ index b211ffc..19edcfb 100644
  	<key>NSBluetoothAlwaysUsageDescription</key>
  	<string>VeilLink 使用蓝牙发现附近设备并传输端到端加密消息。</string>
  	<key>NSBluetoothPeripheralUsageDescription</key>
+diff --git a/VeilLink/Security/DeveloperLearningLabGate.swift b/VeilLink/Security/DeveloperLearningLabGate.swift
+new file mode 100644
+index 0000000..ca6f764
+--- /dev/null
++++ b/VeilLink/Security/DeveloperLearningLabGate.swift
+@@ -0,0 +1,155 @@
++import CryptoKit
++import Foundation
++
++/// Local authorization for developer-only board-training imports. The visible
++/// input is an eight-digit PIN, but it is never stored in plaintext: a high-cost
++/// verifier, device-local 256-bit secret and short-lived HMAC session capability
++/// are all required before a training package may be injected.
++@MainActor
++final class DeveloperLearningLabGate: ObservableObject {
++    @Published private(set) var isConfigured: Bool
++    @Published private(set) var isAuthorized = false
++    @Published private(set) var failedAttempts = 0
++    @Published private(set) var authorizationExpiresAt: Date?
++    @Published var errorMessage: String?
++
++    private struct LockoutState: Codable {
++        var failedAttempts: Int
++        var lockedUntil: Date?
++    }
++
++    private enum Key {
++        static let verifier = "board.developer-lab.verifier.v1"
++        static let deviceSecret = "board.developer-lab.device-secret.v1"
++        static let lockout = "board.developer-lab.lockout.v1"
++    }
++
++    private let keychain: KeychainStore
++    private let encoder = JSONEncoder()
++    private let decoder = JSONDecoder()
++    private var sessionCapability: Data?
++    private var lockedUntil: Date?
++
++    init(keychain: KeychainStore) {
++        self.keychain = keychain
++        isConfigured = keychain.data(for: Key.verifier) != nil && keychain.data(for: Key.deviceSecret)?.count == 32
++        if let data = keychain.data(for: Key.lockout),
++           let state = try? decoder.decode(LockoutState.self, from: data),
++           let deadline = state.lockedUntil,
++           deadline > Date() {
++            failedAttempts = state.failedAttempts
++            lockedUntil = deadline
++        } else {
++            keychain.remove(Key.lockout)
++        }
++    }
++
++    var isLockedOut: Bool {
++        refreshExpiration()
++        return lockedUntil.map { $0 > Date() } ?? false
++    }
++
++    /// Initial setup requires the existing application lock to be configured and
++    /// currently unlocked. This keeps a passer-by from claiming the developer
++    /// gate on a fresh install.
++    func configure(pin: String, appLock: AppLockController) -> Bool {
++        guard appLock.isEnabled, !appLock.isLocked else {
++            errorMessage = "请先启用并解锁应用锁，才能初始化开发者训练密钥。"
++            return false
++        }
++        guard Self.isEightDigitPIN(pin) else {
++            errorMessage = "请输入 8 位数字开发者口令。"
++            return false
++        }
++        do {
++            let verifier = PasswordKDF.makeVerifier(pin, iterations: 240_000)
++            let deviceSecret = PasswordKDF.randomData(count: 32)
++            guard deviceSecret.count == 32 else { throw DeveloperLearningLabGateError.keyGeneration }
++            try keychain.set(try encoder.encode(verifier), for: Key.verifier)
++            try keychain.set(deviceSecret, for: Key.deviceSecret)
++            isConfigured = true
++            clearLockout()
++            return establishSession(using: deviceSecret)
++        } catch {
++            errorMessage = "开发者训练密钥无法保存。"
++            return false
++        }
++    }
++
++    func unlock(pin: String) -> Bool {
++        refreshExpiration()
++        guard !isLockedOut else {
++            errorMessage = "尝试次数过多，请在 \(Int(lockedUntil!.timeIntervalSinceNow.rounded(.up))) 秒后重试。"
++            return false
++        }
++        guard Self.isEightDigitPIN(pin),
++              let verifierData = keychain.data(for: Key.verifier),
++              let verifier = try? decoder.decode(PasswordKDF.Verifier.self, from: verifierData),
++              let deviceSecret = keychain.data(for: Key.deviceSecret),
++              deviceSecret.count == 32,
++              PasswordKDF.verify(pin, against: verifier) else {
++            registerFailure()
++            return false
++        }
++        clearLockout()
++        return establishSession(using: deviceSecret)
++    }
++
++    func lock() {
++        sessionCapability = nil
++        authorizationExpiresAt = nil
++        isAuthorized = false
++    }
++
++    func canImportTraining() -> Bool {
++        refreshExpiration()
++        return isAuthorized && sessionCapability?.count == 32
++    }
++
++    private func establishSession(using deviceSecret: Data) -> Bool {
++        let nonce = PasswordKDF.randomData(count: 32)
++        guard nonce.count == 32 else {
++            errorMessage = "无法生成本次开发者会话。"
++            return false
++        }
++        let capability = HMAC<SHA256>.authenticationCode(for: nonce, using: SymmetricKey(data: deviceSecret))
++        sessionCapability = Data(capability)
++        authorizationExpiresAt = Date().addingTimeInterval(10 * 60)
++        isAuthorized = true
++        errorMessage = nil
++        return true
++    }
++
++    private func refreshExpiration() {
++        if let expiry = authorizationExpiresAt, expiry <= Date() { lock() }
++        if let deadline = lockedUntil, deadline <= Date() { clearLockout() }
++    }
++
++    private func registerFailure() {
++        failedAttempts += 1
++        if failedAttempts >= 8 { lockedUntil = Date().addingTimeInterval(10 * 60) }
++        else if failedAttempts >= 5 { lockedUntil = Date().addingTimeInterval(60) }
++        persistLockout()
++        errorMessage = "开发者口令不正确。"
++    }
++
++    private func persistLockout() {
++        if let data = try? encoder.encode(LockoutState(failedAttempts: failedAttempts, lockedUntil: lockedUntil)) {
++            try? keychain.set(data, for: Key.lockout)
++        }
++    }
++
++    private func clearLockout() {
++        failedAttempts = 0
++        lockedUntil = nil
++        keychain.remove(Key.lockout)
++    }
++
++    private static func isEightDigitPIN(_ pin: String) -> Bool {
++        pin.utf8.count == 8 && pin.utf8.allSatisfy { (48...57).contains($0) }
++    }
++}
++
++private enum DeveloperLearningLabGateError: Error {
++    case keyGeneration
++}
 diff --git a/VeilLink/UI/AgentControlCenterView.swift b/VeilLink/UI/AgentControlCenterView.swift
 index 6b1a32d..11dfe5f 100644
 --- a/VeilLink/UI/AgentControlCenterView.swift
@@ -1318,6 +1534,130 @@ index f01d136..653487e 100644
                  AgentStatusChip(title: "MODEL", value: LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled ? "GGUF" : "NONE")
              }
          }
+diff --git a/VeilLink/UI/BoardDeveloperLearningLabView.swift b/VeilLink/UI/BoardDeveloperLearningLabView.swift
+new file mode 100644
+index 0000000..1f3b3e9
+--- /dev/null
++++ b/VeilLink/UI/BoardDeveloperLearningLabView.swift
+@@ -0,0 +1,118 @@
++import SwiftUI
++import UniformTypeIdentifiers
++
++/// Separate developer-only entrance for injecting reviewed board-learning
++/// packages. Ordinary players can play, learn and export their own history, but
++/// cannot import a package into the active repertoire from the public game UI.
++struct BoardDeveloperLearningLabView: View {
++    @ObservedObject var model: AppModel
++    @ObservedObject var controller: LocalAIGameController
++    let game: MiniGameKind
++
++    @State private var showsImporter = false
++    @State private var message: String?
++    @State private var preparingImport = false
++
++    private var gate: DeveloperLearningLabGate { model.developerLearningGate }
++
++    var body: some View {
++        ScrollView {
++            VStack(alignment: .leading, spacing: 14) {
++                header
++                if gate.isAuthorized {
++                    authorizedContent
++                } else {
++                    lockedContent
++                }
++            }
++            .padding(16)
++        }
++        .background(VeilAmbientBackground())
++        .navigationTitle("开发者学习室")
++        .navigationBarTitleDisplayMode(.inline)
++        .fileImporter(
++            isPresented: $showsImporter,
++            allowedContentTypes: [.item],
++            allowsMultipleSelection: false
++        ) { result in
++            guard case .success(let urls) = result, let selectedURL = urls.first else { return }
++            guard gate.canImportTraining() else {
++                message = "开发者会话已失效，请重新验证。"
++                return
++            }
++            preparingImport = true
++            Task {
++                defer { preparingImport = false }
++                do {
++                    let file = try await VeilImportedFileAccess.materializeInBackground(
++                        selectedURL,
++                        acceptedExtensions: ["json"]
++                    )
++                    defer { VeilImportedFileAccess.removeStagedCopy(file) }
++                    let report = try controller.importBoardLearning(from: file)
++                    message = "已写入\(game.title)开发训练：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
++                    model.haptics.resolved()
++                } catch {
++                    message = error.localizedDescription
++                }
++            }
++        }
++        .alert("开发者学习室", isPresented: Binding(
++            get: { message != nil },
++            set: { if !$0 { message = nil } }
++        )) {
++            Button("好", role: .cancel) { message = nil }
++        } message: {
++            Text(message ?? "")
++        }
++    }
++
++    private var header: some View {
++        VStack(alignment: .leading, spacing: 6) {
++            Label("\(game.title) · 私有训练入口", systemImage: "lock.shield")
++                .font(.headline)
++                .foregroundColor(VeilTheme.goldBright)
++            Text("仅用于你审阅后导入的训练包。普通对局仍会本地学习，但公开游戏页不提供训练包注入，避免外部文件污染个人棋谱。")
++                .font(.caption)
++                .foregroundColor(VeilTheme.secondaryText)
++        }
++        .veilCard(emphasized: true)
++    }
++
++    @ViewBuilder
++    private var lockedContent: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            Label("开发者模式未授权", systemImage: "lock.fill")
++                .font(.subheadline.weight(.bold))
++                .foregroundColor(VeilTheme.secondaryText)
++            Text("请先在上帝模式的“开发者模式”中完成验证。训练包注入不会在普通游戏页提供密码输入或初始化入口。")
++                .font(.caption)
++                .foregroundColor(VeilTheme.secondaryText)
++        }
++        .veilCard()
++    }
++
++    private var authorizedContent: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            HStack {
++                Label("本地开发者会话有效", systemImage: "checkmark.shield")
++                    .font(.subheadline.weight(.bold))
++                    .foregroundColor(VeilTheme.success)
++                Spacer()
++                Button("锁定") { gate.lock() }
++                    .font(.caption.weight(.semibold))
++            }
++            Text("训练包会先走系统“文件”选择器、安全作用域暂存与校验，再写入当前\(game.title)独立训练库。不会上传网络。")
++                .font(.caption)
++                .foregroundColor(VeilTheme.secondaryText)
++            Button {
++                showsImporter = true
++            } label: {
++                Label(preparingImport ? "正在准备训练包…" : "导入开发训练包", systemImage: "square.and.arrow.down")
++            }
++            .buttonStyle(.borderedProminent)
++            .disabled(preparingImport)
++        }
++        .veilCard()
++    }
++}
 diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
 index 40ae5b1..93d46b5 100644
 --- a/VeilLink/UI/ConversationViews.swift
@@ -1340,8 +1680,128 @@ index 40ae5b1..93d46b5 100644
                  }
              case .failure(let error):
                  model.alertMessage = error.localizedDescription
+diff --git a/VeilLink/UI/DeveloperModeConsoleView.swift b/VeilLink/UI/DeveloperModeConsoleView.swift
+new file mode 100644
+index 0000000..0d1e4a1
+--- /dev/null
++++ b/VeilLink/UI/DeveloperModeConsoleView.swift
+@@ -0,0 +1,114 @@
++import SwiftUI
++
++/// The developer stratum of Owner Mode. It exposes only VeilLink's own
++/// read-only runtime map and separately unlocks controlled training injection;
++/// it does not bypass iOS privacy prompts, the sandbox, encryption or other
++/// users' locks.
++struct DeveloperModeConsoleView: View {
++    @ObservedObject var model: AppModel
++    @ObservedObject private var ownerMode: OwnerModeController
++    @ObservedObject private var gate: DeveloperLearningLabGate
++    @Environment(\.dismiss) private var dismiss
++    @State private var pin = ""
++    @State private var message: String?
++
++    init(model: AppModel) {
++        self.model = model
++        ownerMode = model.ownerMode
++        gate = model.developerLearningGate
++    }
++
++    var body: some View {
++        ScrollView {
++            VStack(alignment: .leading, spacing: 14) {
++                Text("DEVELOPER STRATUM")
++                    .font(.system(.headline, design: .monospaced))
++                    .foregroundColor(VeilTheme.goldBright)
++                Text("Owner Mode 的开发者层。只开放 VeilLink 自身的受控训练入口和只读运行时观测；系统隐私授权、沙盒、端到端加密与应用锁边界保持不变。")
++                    .font(.caption)
++                    .foregroundColor(VeilTheme.secondaryText)
++                runtimeMap
++                authorizationCard
++            }
++            .padding(16)
++        }
++        .background(VeilAmbientBackground())
++        .navigationTitle("开发者模式")
++        .navigationBarTitleDisplayMode(.inline)
++        .onAppear {
++            guard ownerMode.isAuthorized(for: .developerTraining) else { dismiss() }
++        }
++        .alert("开发者模式", isPresented: Binding(
++            get: { message != nil },
++            set: { if !$0 { message = nil } }
++        )) {
++            Button("好", role: .cancel) { message = nil }
++        } message: {
++            Text(message ?? "")
++        }
++    }
++
++    private var runtimeMap: some View {
++        VStack(alignment: .leading, spacing: 8) {
++            Text("LIVE RUNTIME MAP · READ ONLY")
++                .font(.system(.caption, design: .monospaced).weight(.bold))
++                .foregroundColor(VeilTheme.gold)
++            runtimeRow("棋谱训练", value: "独立本地 JSON · 写入受开发者门保护")
++            runtimeRow("五子棋搜索", value: "威胁评估 + 训练强化候选")
++            runtimeRow("中国象棋搜索", value: "Alpha-Beta + 安静搜索 + 训练预判")
++            runtimeRow("治理运行时", value: model.activeGovernanceEngineName)
++            runtimeRow("隐私边界", value: "iOS 授权与应用沙盒仍生效")
++        }
++        .veilCard()
++    }
++
++    private var authorizationCard: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            if gate.isAuthorized {
++                Label("开发者训练已授权", systemImage: "checkmark.shield.fill")
++                    .font(.subheadline.weight(.bold))
++                    .foregroundColor(VeilTheme.success)
++                Text("五子棋页面已显示“开发训练室”；本次授权在离开应用、Owner Mode 退出或十分钟后失效。")
++                    .font(.caption)
++                    .foregroundColor(VeilTheme.secondaryText)
++                Button("锁定开发者训练") { gate.lock() }
++                    .buttonStyle(.bordered)
++            } else {
++                Text(gate.isConfigured ? "验证开发者口令" : "初始化开发者口令")
++                    .font(.subheadline.weight(.bold))
++                Text(gate.isConfigured
++                    ? "输入仅你知道的 8 位数字口令。明文不会保存；设备 Keychain 会保存高成本验证器和随机设备秘密。"
++                    : "首次仅能在已开启的 Owner Mode 中设置。请自选 8 位数字口令；不要发送给任何人。")
++                    .font(.caption)
++                    .foregroundColor(VeilTheme.secondaryText)
++                SecureField("8 位数字口令", text: $pin)
++                    .keyboardType(.numberPad)
++                    .textContentType(.oneTimeCode)
++                    .font(.system(.body, design: .monospaced))
++                    .padding(11)
++                    .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
++                Button(gate.isConfigured ? "验证并开启" : "初始化本机密钥") {
++                    let success = gate.isConfigured
++                        ? gate.unlock(pin: pin)
++                        : gate.configure(pin: pin, appLock: model.appLock)
++                    if success {
++                        pin = ""
++                        model.haptics.resolved()
++                    }
++                    if let error = gate.errorMessage { message = error }
++                }
++                .buttonStyle(.borderedProminent)
++                .disabled(pin.count != 8)
++            }
++        }
++        .veilCard(emphasized: true)
++    }
++
++    private func runtimeRow(_ title: String, value: String) -> some View {
++        HStack(alignment: .firstTextBaseline) {
++            Text(title).font(.caption.weight(.semibold)).foregroundColor(VeilTheme.text)
++            Spacer()
++            Text(value).font(.caption2.monospaced()).foregroundColor(VeilTheme.secondaryText).multilineTextAlignment(.trailing)
++        }
++    }
++}
 diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
-index 7c19021..f1a1803 100644
+index 7c19021..d72f5e6 100644
 --- a/VeilLink/UI/GameLobbyView.swift
 +++ b/VeilLink/UI/GameLobbyView.swift
 @@ -15,7 +15,8 @@ struct GameLobbyView: View {
@@ -1410,7 +1870,25 @@ index 7c19021..f1a1803 100644
          }
      }
  
-@@ -342,16 +366,23 @@ struct LocalAIGameView: View {
+@@ -271,6 +295,8 @@ struct GameLobbyView: View {
+ 
+ struct LocalAIGameView: View {
+     @ObservedObject var model: AppModel
++    @ObservedObject private var ownerMode: OwnerModeController
++    @ObservedObject private var developerLearningGate: DeveloperLearningLabGate
+     let game: MiniGameKind
+     @StateObject private var controller: LocalAIGameController
+     @State private var selectedXiangqiIndex: Int?
+@@ -284,6 +310,8 @@ struct LocalAIGameView: View {
+ 
+     init(model: AppModel, game: MiniGameKind) {
+         self.model = model
++        ownerMode = model.ownerMode
++        developerLearningGate = model.developerLearningGate
+         self.game = game
+         _controller = StateObject(wrappedValue: LocalAIGameController(game: game))
+     }
+@@ -342,16 +370,25 @@ struct LocalAIGameView: View {
          }
          .fileImporter(
              isPresented: $showsLearningImporter,
@@ -1425,7 +1903,9 @@ index 7c19021..f1a1803 100644
 -                model.haptics.selection()
 -            } catch {
 -                learningExchangeMessage = error.localizedDescription
-+            guard case .success(let urls) = result, let selectedURL = urls.first else { return }
++            guard game == .xiangqi,
++                  case .success(let urls) = result,
++                  let selectedURL = urls.first else { return }
 +            Task {
 +                do {
 +                    let url = try await VeilImportedFileAccess.materializeInBackground(
@@ -1442,7 +1922,7 @@ index 7c19021..f1a1803 100644
              }
          }
          .alert(
-@@ -425,10 +456,53 @@ struct LocalAIGameView: View {
+@@ -425,10 +462,53 @@ struct LocalAIGameView: View {
                      .font(.caption.weight(.semibold))
                      .foregroundColor(VeilTheme.secondaryText)
              }
@@ -1497,6 +1977,36 @@ index 7c19021..f1a1803 100644
              HStack(spacing: 10) {
                  Button {
                      do {
+@@ -442,12 +522,24 @@ struct LocalAIGameView: View {
+                 }
+                 .buttonStyle(.bordered)
+ 
+-                Button {
+-                    showsLearningImporter = true
+-                } label: {
+-                    Label("导入增强包", systemImage: "square.and.arrow.down")
++                if game == .gomoku {
++                    if ownerMode.isAuthorized(for: .developerTraining),
++                       developerLearningGate.canImportTraining() {
++                        NavigationLink(destination: BoardDeveloperLearningLabView(
++                            model: model,
++                            controller: controller,
++                            game: game
++                        )) {
++                            Label("开发训练室", systemImage: "lock.shield")
++                        }
++                        .buttonStyle(.bordered)
++                    }
++                } else {
++                    Button { showsLearningImporter = true } label: {
++                        Label("导入增强包", systemImage: "square.and.arrow.down")
++                    }
++                    .buttonStyle(.bordered)
+                 }
+-                .buttonStyle(.bordered)
+             }
+             .font(.caption.weight(.semibold))
+             if !controller.learningStoreAvailable {
 diff --git a/VeilLink/UI/OnboardingView.swift b/VeilLink/UI/OnboardingView.swift
 index 9d1265f..c9ca11b 100644
 --- a/VeilLink/UI/OnboardingView.swift
@@ -1527,7 +2037,7 @@ index 9d1265f..c9ca11b 100644
                  model.alertMessage = "无法选择备份：\(error.localizedDescription)"
              }
 diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.swift
-index f6ae543..d94bc57 100644
+index f6ae543..e86afad 100644
 --- a/VeilLink/UI/OwnerConsoleView.swift
 +++ b/VeilLink/UI/OwnerConsoleView.swift
 @@ -56,6 +56,8 @@ struct OwnerConsoleView: View {
@@ -1548,7 +2058,7 @@ index f6ae543..d94bc57 100644
      }
  
      var body: some View {
-@@ -79,6 +83,7 @@ struct OwnerConsoleView: View {
+@@ -79,9 +83,11 @@ struct OwnerConsoleView: View {
                  VStack(alignment: .leading, spacing: 16) {
                      consoleHeader
                      diagnosticCard
@@ -1556,10 +2066,39 @@ index f6ae543..d94bc57 100644
                      deepTelemetryCard
                      deviceStressCard
                      capabilityCard
-@@ -178,6 +183,39 @@ struct OwnerConsoleView: View {
++                    developerModeCard
+                     performanceOverrideCard
+                     easterEggCard
+                     Text("权限边界：Owner Mode 不读取消息正文、不导出私钥、不绕过其他用户的应用锁。")
+@@ -178,6 +184,64 @@ struct OwnerConsoleView: View {
          .veilCard()
      }
  
++    private var developerModeCard: some View {
++        let enabled = ownerMode.isAuthorized(for: .developerTraining)
++        return NavigationLink(destination: DeveloperModeConsoleView(model: model)) {
++            HStack(spacing: 12) {
++                Image(systemName: "hammer.fill")
++                    .foregroundColor(enabled ? VeilTheme.goldBright : VeilTheme.secondaryText)
++                VStack(alignment: .leading, spacing: 3) {
++                    Text("DEVELOPER MODE")
++                        .font(.system(.subheadline, design: .monospaced).weight(.bold))
++                        .foregroundColor(VeilTheme.text)
++                    Text("上帝模式内的受控训练与运行时观测入口")
++                        .font(.caption)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++                Spacer()
++                Image(systemName: "chevron.right").font(.caption).foregroundColor(VeilTheme.secondaryText)
++            }
++            .padding(12)
++            .background(VeilTheme.subtleFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
++        }
++        .buttonStyle(.plain)
++        .disabled(!enabled)
++        .veilCard()
++    }
++
 +    private var governanceRuntimeCard: some View {
 +        let sample = a10Ultra.lastRuntimeSample
 +        let decision = sample?.ultraDecision
@@ -2416,6 +2955,45 @@ index 5eb3806..800d7fe 100644
      func testRepeatedPlayerMoveBecomesSearchPreferenceAndCanBeCleared() {
          let url = temporaryURL()
          defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+diff --git a/VeilLinkTests/DeveloperLearningLabGateTests.swift b/VeilLinkTests/DeveloperLearningLabGateTests.swift
+new file mode 100644
+index 0000000..d0966fb
+--- /dev/null
++++ b/VeilLinkTests/DeveloperLearningLabGateTests.swift
+@@ -0,0 +1,33 @@
++import XCTest
++@testable import VeilLink
++
++@MainActor
++final class DeveloperLearningLabGateTests: XCTestCase {
++    func testDeveloperLabRequiresUnlockedAppLockForFirstEnrollment() {
++        let keychain = KeychainStore(service: "studio.zeo.veillink.tests.developer-lab.\(UUID().uuidString)")
++        let appLock = AppLockController(keychain: keychain)
++        let gate = DeveloperLearningLabGate(keychain: keychain)
++
++        XCTAssertFalse(gate.configure(pin: "12345678", appLock: appLock))
++        XCTAssertFalse(gate.isConfigured)
++
++        XCTAssertTrue(appLock.configure(pin: "123456"))
++        XCTAssertTrue(gate.configure(pin: "12345678", appLock: appLock))
++        XCTAssertTrue(gate.isConfigured)
++        XCTAssertTrue(gate.canImportTraining())
++    }
++
++    func testDeveloperLabStoresNoPlainPINAndLocksSession() {
++        let keychain = KeychainStore(service: "studio.zeo.veillink.tests.developer-lab.\(UUID().uuidString)")
++        let appLock = AppLockController(keychain: keychain)
++        XCTAssertTrue(appLock.configure(pin: "123456"))
++        let gate = DeveloperLearningLabGate(keychain: keychain)
++        XCTAssertTrue(gate.configure(pin: "87654321", appLock: appLock))
++        gate.lock()
++        XCTAssertFalse(gate.canImportTraining())
++        XCTAssertFalse(gate.unlock(pin: "00000000"))
++        XCTAssertTrue(gate.unlock(pin: "87654321"))
++        XCTAssertTrue(gate.canImportTraining())
++        XCTAssertNil(keychain.data(for: "board.developer-lab.pin"))
++    }
++}
 diff --git a/VeilLinkTests/GomokuBotTests.swift b/VeilLinkTests/GomokuBotTests.swift
 index b16f8cf..1d6af8c 100644
 --- a/VeilLinkTests/GomokuBotTests.swift

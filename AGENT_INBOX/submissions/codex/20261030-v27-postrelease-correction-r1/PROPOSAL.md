@@ -36,6 +36,15 @@ All existing pickers remain Apple's system Files picker. Selection now accepts t
 - A local coach profile turns completed games, repeated lines and preferred opening choices into an explainable level, next lesson and immediate move feedback. It is a practice aid, not an internet rating or an opaque model claim.
 - `THIRD_PARTY_CHESS_ENGINE_AUDIT.md` records the current GitHub intake result. External engine source is not vendored until a permissive licence and iOS integration gate are verified.
 
+### God Mode developer training room
+
+- The ordinary Gomoku page no longer offers arbitrary training-package import. Its “开发训练室” entry appears only after the owner has opened the God Mode developer stratum and passed the local developer verification.
+- “开发者模式” lives inside the existing Owner Mode console. It provides a read-only map of VeilLink's own running components; it does not claim to expose arbitrary source code, bypass the iOS sandbox, override system privacy prompts, decrypt conversations or bypass another user's lock.
+- The developer verifier asks for an eight-digit numeric surface PIN. It is only configurable after the existing app lock is enabled and unlocked, and must be reached through Owner Mode.
+- The PIN is not hard-coded, logged, exported or stored in plaintext. The candidate stores a 240,000-iteration verifier and a device-local 256-bit Keychain secret, creates an HMAC-backed 10-minute in-memory session after validation, and applies progressive failure cooldown.
+- The owner chooses the actual eight digits during first setup on their device. No secret is supplied in this patch or conversation.
+- This touches Owner Mode capability policy and Keychain authorization and therefore remains a protected-surface proposal: it requires dedicated security review, Keychain persistence/reinstall testing and a full XCTest/device gate before integration.
+
 ### A10 presentation and automation
 
 - Settings and Owner Console observe `VeilKernelRuntimeSelector` and `A10UltraOmegaShadowCoordinator` directly.

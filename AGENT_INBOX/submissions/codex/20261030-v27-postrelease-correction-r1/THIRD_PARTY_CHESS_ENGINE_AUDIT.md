@@ -10,13 +10,18 @@ or release gates.
 
 ## Research outcome
 
-- `JiachenRen/GomokuZero` describes threat-space search, alpha-beta, Zobrist
-  hashing, principal-variation search and MCTS, but GitHub currently reports no
-  licence. It is useful as an algorithm reading list, not vendorable source.
-- `gooooloo/XiangqiNotebook` and the common Pikafish-based Xiangqi projects
-  found in GitHub search currently do not present a clean permissive source
-  intake for this iOS target. Pikafish/Stockfish-derived engines need a separate
-  GPL compatibility and packaging review before any binary or source intake.
+- `JiachenRen/GomokuZero` is MIT at `9ff66c28701417d6786b6e493b1cef08a0887f0e`.
+  Its Swift threat-search, Zobrist and iterative-search structure is a viable
+  source-level intake candidate, subject to attribution and an iOS 15 port
+  review. It is not yet vendored in this submission.
+- `maksimKorzh/wukong-xiangqi` is MIT at
+  `9ef8db735e78ec640a64d50240698087b44c5294`, but its engine is JavaScript and
+  cannot be silently embedded as a native iOS binary dependency.
+- `gooooloo/XiangqiNotebook` is MIT at
+  `61ff49bcac427080dbf423c648fc08554c39a941`, but its external engine/dependency
+  graph still needs a file-level audit before source intake.
+- Pikafish/Stockfish-derived engines require a separate GPL compatibility and
+  packaging review before any binary or source intake.
 - No binary engine, weights, archive or external dependency is staged by this
   candidate.
 

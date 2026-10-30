@@ -18,14 +18,18 @@
 6. Tool/game/story reclassification.
 7. Restore the 48×27 Guandu battlefield for offline 三国兵器 and remove the visible 7×9 fallback.
 8. Tests for learning separation/sequence response and imported-file materialization.
+9. Developer-only Gomoku training-room entry with device-local Keychain authorization; public training-package injection removed.
 
 ## Files
 
-`PATCH.diff` changes 28 product/test files (1,368 insertions, 226 deletions), including new:
+`PATCH.diff` changes 34 product/test files (1,844 insertions, 232 deletions), including new:
 
 - `VeilLink/Core/VeilImportedFileAccess.swift`
 - `VeilLink/UI/TacticalV2/TacticalV2SoloView.swift`
 - `VeilLinkTests/VeilImportedFileAccessTests.swift`
+- `VeilLink/Security/DeveloperLearningLabGate.swift`
+- `VeilLink/UI/BoardDeveloperLearningLabView.swift`
+- `VeilLinkTests/DeveloperLearningLabGateTests.swift`
 
 Third-party engine intake evidence is recorded in `THIRD_PARTY_CHESS_ENGINE_AUDIT.md`; no external binary, weight or unlicensed source is included.
 
