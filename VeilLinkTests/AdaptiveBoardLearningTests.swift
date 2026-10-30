@@ -146,6 +146,38 @@ final class AdaptiveBoardLearningTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: legacyURL), originalLegacy)
     }
 
+    func testCorruptScopedDatabaseCannotBeSilentlyOverwrittenByAutosave() throws {
+        let url = temporaryURL()
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let damagedBytes = Data("{broken V2 payload".utf8)
+        try damagedBytes.write(to: url, options: .atomic)
+
+        let store = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
+        XCTAssertTrue(store.requiresRecovery)
+        XCTAssertFalse(store.lastSaveSucceeded)
+        store.record(
+            game: .gomoku,
+            plies: [AdaptiveBoardPly(position: "g:must-not-overwrite", action: "112", actor: .host)],
+            result: .humanWon
+        )
+        XCTAssertEqual(try Data(contentsOf: url), damagedBytes)
+        XCTAssertEqual(store.summary.completedGames, 0)
+        XCTAssertTrue(store.requiresRecovery)
+
+        // A deliberate clear may resolve the recovery fence, and must persist
+        // a durable V2 tombstone rather than expose the old shared history.
+        store.clear()
+        XCTAssertFalse(store.requiresRecovery)
+        XCTAssertTrue(store.lastSaveSucceeded)
+        let restarted = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
+        XCTAssertFalse(restarted.requiresRecovery)
+        XCTAssertEqual(restarted.summary.completedGames, 0)
+        XCTAssertEqual(restarted.summary.rememberedPositions, 0)
+    }
+
     func testRepeatedInterruptedLinePenalisesOldAIReplyAndPredictsHumanFormation() {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

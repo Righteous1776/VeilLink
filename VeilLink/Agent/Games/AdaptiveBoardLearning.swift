@@ -232,6 +232,8 @@ final class AdaptiveBoardLearningStore {
     private let scopedGame: MiniGameKind?
     private var database: Database
     private(set) var lastSaveSucceeded = true
+    /// Existing unreadable/invalid stores are retained on disk, never overwritten by autosave.
+    private(set) var requiresRecovery = false
 
     init(game: MiniGameKind? = nil, fileURL: URL? = nil, legacyURL: URL? = nil) {
         let resolvedURL: URL
@@ -246,7 +248,13 @@ final class AdaptiveBoardLearningStore {
         }
         self.fileURL = resolvedURL
         scopedGame = game
-        database = Self.load(from: resolvedURL, scopedGame: game)
+        let existingStore = FileManager.default.fileExists(atPath: resolvedURL.path)
+        let loadedStore = Self.load(from: resolvedURL, scopedGame: game)
+        database = loadedStore ?? Database()
+        if existingStore && loadedStore == nil {
+            requiresRecovery = true
+            lastSaveSucceeded = false
+        }
 
         // One-time, non-destructive migration from V27's shared store. The
         // legacy file is never moved, truncated or overwritten: each V2 game
@@ -258,14 +266,19 @@ final class AdaptiveBoardLearningStore {
         if (fileURL == nil || legacyURL != nil),
            !FileManager.default.fileExists(atPath: resolvedURL.path),
            FileManager.default.fileExists(atPath: legacy.path) {
-            let migrated = Self.load(from: legacy, scopedGame: game)
-            if !migrated.positions.isEmpty || !migrated.recentGames.isEmpty {
-                if Self.writeInitialMigration(migrated, to: resolvedURL) {
-                    database = migrated
-                    lastSaveSucceeded = true
-                } else {
-                    lastSaveSucceeded = false
+            if let migrated = Self.load(from: legacy, scopedGame: game) {
+                if !migrated.positions.isEmpty || !migrated.recentGames.isEmpty {
+                    if Self.writeInitialMigration(migrated, to: resolvedURL) {
+                        database = migrated
+                        lastSaveSucceeded = true
+                    } else {
+                        lastSaveSucceeded = false
+                    }
                 }
+            } else {
+                // A corrupt legacy source is not silently replaced by an empty V2.
+                requiresRecovery = true
+                lastSaveSucceeded = false
             }
         }
     }
@@ -424,6 +437,10 @@ final class AdaptiveBoardLearningStore {
     func record(game: MiniGameKind, plies: [AdaptiveBoardPly], result: AdaptiveBoardGameResult) {
         guard game == .gomoku || game == .xiangqi, !plies.isEmpty else { return }
         guard scopedGame == nil || scopedGame == game else { return }
+        guard !requiresRecovery else {
+            lastSaveSucceeded = false
+            return
+        }
 
         database.sequence += 1
         let sequence = database.sequence
@@ -449,19 +466,21 @@ final class AdaptiveBoardLearningStore {
     }
 
     func clear() {
-        // Persist an empty scoped V2 database rather than deleting its file.
-        // The presence of this file is a migration tombstone: deleting it would
-        // re-import the preserved shared V1 history on the next app launch.
+        // Persist an empty scoped V2 database as an explicit migration tombstone.
+        // Clear is the user's deliberate reset, including in recovery mode.
         let previous = database
+        let previousRecovery = requiresRecovery
         database = Database()
+        requiresRecovery = false
         save()
         if !lastSaveSucceeded {
-            // A failed atomic write must not pretend the visible reset succeeded.
             database = previous
+            requiresRecovery = previousRecovery
         }
     }
 
     func exportPackage() throws -> URL {
+        guard !requiresRecovery else { throw AdaptiveBoardLearningPackageError.invalidContent }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let compactEncoder = JSONEncoder()
@@ -515,14 +534,18 @@ final class AdaptiveBoardLearningStore {
         }
 
         let previous = database
+        let previousRecovery = requiresRecovery
         database = Self.filtered(envelope.payload, for: scopedGame)
         guard !database.positions.isEmpty || !database.recentGames.isEmpty else {
             database = previous
             throw AdaptiveBoardLearningPackageError.invalidContent
         }
+        // Explicit validated package import is a permitted recovery operation.
+        requiresRecovery = false
         save()
         guard lastSaveSucceeded else {
             database = previous
+            requiresRecovery = previousRecovery
             throw AdaptiveBoardLearningPackageError.writeFailed
         }
         return AdaptiveBoardLearningImportReport(
@@ -532,6 +555,10 @@ final class AdaptiveBoardLearningStore {
     }
 
     private func save() {
+        guard !requiresRecovery else {
+            lastSaveSucceeded = false
+            return
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         do {
@@ -547,10 +574,11 @@ final class AdaptiveBoardLearningStore {
         }
     }
 
-    private static func load(from url: URL, scopedGame: MiniGameKind?) -> Database {
+    private static func load(from url: URL, scopedGame: MiniGameKind?) -> Database? {
         guard let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(Database.self, from: data),
-              decoded.schema == 1 else { return Database() }
+              decoded.schema == 1,
+              isValid(decoded) else { return nil }
         return filtered(decoded, for: scopedGame)
     }
 
