@@ -6,3 +6,5 @@
 - Symlink and File Provider behaviors need iOS verification. Backup staging may include sensitive content; protection settings and lifecycle cleanup remain owned by the importer.
 - Standalone Linux XCTest does not prove Apple SDK, iPhone 7, or full-app compatibility.
 - Stop on any data loss, consent/touch regression, missing protection or migration failure. No direct main edit, workflow dispatch, version, signing, IPA or self-merge.
+
+- Even with `activeLeaseIDs`, wiring automatic crash recovery without a reliable current active-lease registry could delete a live long-running import. Governor CI candidate #96 intentionally integrates safe explicit cleanup ONLY; sweeper activation remains deferred pending verified registry and iOS device regression.
