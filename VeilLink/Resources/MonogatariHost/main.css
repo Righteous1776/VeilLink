@@ -1,0 +1,4 @@
+:root { color-scheme: dark; }
+html, body { margin: 0; padding: 0; background: #101a2e; }
+body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans", sans-serif; }
+[data-screen="main"] { background: linear-gradient(135deg, #101a2e 0%, #233a57 55%, #1b2446 100%); }
