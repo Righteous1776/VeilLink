@@ -1,8 +1,8 @@
 diff --git a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
-index 7346026..6bcb892 100644
+index 7346026..19f3962 100644
 --- a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
 +++ b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
-@@ -1,16 +1,41 @@
+@@ -1,16 +1,45 @@
  import Foundation
  
 -/// A compact, on-device repertoire used by the native Gomoku and Xiangqi bots.
@@ -15,12 +15,16 @@ index 7346026..6bcb892 100644
 +    static let empty = AdaptiveBoardLearningSnapshot(
 +        preferences: [:],
 +        rootAdjustments: [:],
-+        predictedHumanReplies: [:]
++        predictedHumanReplies: [:],
++        trainingLevel: 0
 +    )
  
      fileprivate let preferences: [String: [String: Int]]
 +    fileprivate let rootAdjustments: [String: Int]
 +    fileprivate let predictedHumanReplies: [String: AdaptiveBoardPrediction]
++    /// Bounded compute reinforcement derived from retained local evidence. This
++    /// is independent of the uncapped on-disk history and is safe on old devices.
++    let trainingLevel: Int
  
      func bonus(position: String, action: String) -> Int {
          preferences[position]?[action] ?? 0
@@ -48,7 +52,7 @@ index 7346026..6bcb892 100644
  }
  
  enum AdaptiveBoardPosition {
-@@ -93,6 +118,18 @@ struct AdaptiveBoardLearningImportReport: Equatable, Sendable {
+@@ -93,6 +122,18 @@ struct AdaptiveBoardLearningImportReport: Equatable, Sendable {
      let rememberedPositions: Int
  }
  
@@ -67,7 +71,7 @@ index 7346026..6bcb892 100644
  enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
      case unreadable
      case tooLarge
-@@ -104,7 +141,7 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
+@@ -104,7 +145,7 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
      var errorDescription: String? {
          switch self {
          case .unreadable: return "无法读取训练包。"
@@ -76,7 +80,7 @@ index 7346026..6bcb892 100644
          case .unsupportedFormat: return "训练包版本不受支持。"
          case .checksumMismatch: return "训练包完整性校验失败。"
          case .invalidContent: return "训练包包含无效棋步或越界数据。"
-@@ -115,7 +152,12 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
+@@ -115,7 +156,12 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
  
  @MainActor
  final class AdaptiveBoardLearningStore {
@@ -90,7 +94,7 @@ index 7346026..6bcb892 100644
  
      private struct ActionStat: Codable {
          var count: Int
-@@ -152,16 +194,12 @@ final class AdaptiveBoardLearningStore {
+@@ -152,16 +198,12 @@ final class AdaptiveBoardLearningStore {
          let payload: Database
      }
  
@@ -109,7 +113,7 @@ index 7346026..6bcb892 100644
          let resolvedURL: URL
          if let fileURL {
              resolvedURL = fileURL
-@@ -169,10 +207,33 @@ final class AdaptiveBoardLearningStore {
+@@ -169,10 +211,33 @@ final class AdaptiveBoardLearningStore {
              let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                  .appendingPathComponent("VeilLink", isDirectory: true)
              try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -145,7 +149,7 @@ index 7346026..6bcb892 100644
      }
  
      var summary: AdaptiveBoardLearningSummary {
-@@ -183,7 +244,7 @@ final class AdaptiveBoardLearningStore {
+@@ -183,7 +248,7 @@ final class AdaptiveBoardLearningStore {
          )
      }
  
@@ -154,7 +158,7 @@ index 7346026..6bcb892 100644
          var result = Self.seedPreferences()
          for (position, stat) in database.positions {
              var actions = result[position] ?? [:]
-@@ -202,11 +263,108 @@ final class AdaptiveBoardLearningStore {
+@@ -202,11 +267,109 @@ final class AdaptiveBoardLearningStore {
              }
              result[position] = actions
          }
@@ -195,7 +199,8 @@ index 7346026..6bcb892 100644
 +        return AdaptiveBoardLearningSnapshot(
 +            preferences: result,
 +            rootAdjustments: rootAdjustments.mapValues { min(1_200, max(-1_200, $0)) },
-+            predictedHumanReplies: predictions
++            predictedHumanReplies: predictions,
++            trainingLevel: min(8, database.completedGames / 3 + database.positions.count / 220)
 +        )
 +    }
 +
@@ -264,7 +269,7 @@ index 7346026..6bcb892 100644
  
          database.sequence += 1
          let sequence = database.sequence
-@@ -218,13 +376,6 @@ final class AdaptiveBoardLearningStore {
+@@ -218,13 +381,6 @@ final class AdaptiveBoardLearningStore {
              action.aiReward = max(-32_000, min(32_000, action.aiReward + result.aiReward))
              position.actions[ply.action] = action
              position.lastSequence = sequence
@@ -278,7 +283,7 @@ index 7346026..6bcb892 100644
              database.positions[ply.position] = position
          }
  
-@@ -235,7 +386,6 @@ final class AdaptiveBoardLearningStore {
+@@ -235,7 +391,6 @@ final class AdaptiveBoardLearningStore {
              actions: plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
              finishedAt: Date()
          ))
@@ -286,7 +291,7 @@ index 7346026..6bcb892 100644
          save()
      }
  
-@@ -267,13 +417,12 @@ final class AdaptiveBoardLearningStore {
+@@ -267,13 +422,12 @@ final class AdaptiveBoardLearningStore {
              payload: database
          )
          let data = try encoder.encode(envelope)
@@ -302,7 +307,7 @@ index 7346026..6bcb892 100644
          do {
              try data.write(to: url, options: .atomic)
              return url
-@@ -288,9 +437,6 @@ final class AdaptiveBoardLearningStore {
+@@ -288,9 +442,6 @@ final class AdaptiveBoardLearningStore {
          guard let data = try? Data(contentsOf: url) else {
              throw AdaptiveBoardLearningPackageError.unreadable
          }
@@ -312,7 +317,7 @@ index 7346026..6bcb892 100644
          guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
                envelope.format == "veillink.board-learning.export.v1",
                envelope.checksumAlgorithm == "fnv1a64-canonical-json",
-@@ -309,8 +455,11 @@ final class AdaptiveBoardLearningStore {
+@@ -309,8 +460,11 @@ final class AdaptiveBoardLearningStore {
          }
  
          let previous = database
@@ -326,7 +331,7 @@ index 7346026..6bcb892 100644
          save()
          guard lastSaveSucceeded else {
              database = previous
-@@ -322,30 +471,11 @@ final class AdaptiveBoardLearningStore {
+@@ -322,30 +476,11 @@ final class AdaptiveBoardLearningStore {
          )
      }
  
@@ -358,7 +363,7 @@ index 7346026..6bcb892 100644
              try FileManager.default.createDirectory(
                  at: fileURL.deletingLastPathComponent(),
                  withIntermediateDirectories: true
-@@ -357,22 +487,65 @@ final class AdaptiveBoardLearningStore {
+@@ -357,22 +492,65 @@ final class AdaptiveBoardLearningStore {
          }
      }
  
@@ -432,7 +437,7 @@ index 7346026..6bcb892 100644
              for (action, value) in stat.actions {
                  guard value.count > 0, value.count <= 65_535,
                        (-32_000...32_000).contains(value.aiReward),
-@@ -381,7 +554,6 @@ final class AdaptiveBoardLearningStore {
+@@ -381,7 +559,6 @@ final class AdaptiveBoardLearningStore {
          }
          return database.recentGames.allSatisfy { record in
              (record.game == .gomoku || record.game == .xiangqi)
@@ -441,10 +446,10 @@ index 7346026..6bcb892 100644
          }
      }
 diff --git a/VeilLink/Agent/Games/GomokuBot.swift b/VeilLink/Agent/Games/GomokuBot.swift
-index 43af066..f701919 100644
+index 43af066..92a9e55 100644
 --- a/VeilLink/Agent/Games/GomokuBot.swift
 +++ b/VeilLink/Agent/Games/GomokuBot.swift
-@@ -11,23 +11,41 @@ struct GomokuBotBudget: Equatable, Sendable {
+@@ -11,23 +11,55 @@ struct GomokuBotBudget: Equatable, Sendable {
      let candidateRadius: Int
      let rootCandidateLimit: Int
      let replyCandidateLimit: Int
@@ -460,7 +465,8 @@ index 43af066..f701919 100644
          if upper.contains("HIGH") || upper.contains("13PRO") {
 -            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 28, replyCandidateLimit: 16, timeLimitMilliseconds: 260)
 +            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 28, replyCandidateLimit: 16, continuationCandidateLimit: 8, timeLimitMilliseconds: 260)
-+        }
+         }
+-        return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 22, replyCandidateLimit: 12, timeLimitMilliseconds: 200)
 +        return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 22, replyCandidateLimit: 12, continuationCandidateLimit: 6, timeLimitMilliseconds: 200)
 +    }
 +
@@ -477,8 +483,21 @@ index 43af066..f701919 100644
 +            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: legacy ? 22 : 36, replyCandidateLimit: legacy ? 14 : 22, continuationCandidateLimit: legacy ? 6 : 14, timeLimitMilliseconds: legacy ? 240 : 520)
 +        case .master:
 +            return GomokuBotBudget(candidateRadius: legacy ? 2 : 3, rootCandidateLimit: legacy ? 28 : 48, replyCandidateLimit: legacy ? 16 : 30, continuationCandidateLimit: legacy ? 8 : 20, timeLimitMilliseconds: legacy ? 420 : 950)
-         }
--        return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 22, replyCandidateLimit: 12, timeLimitMilliseconds: 200)
++        }
++    }
++
++    func reinforced(by trainingLevel: Int) -> GomokuBotBudget {
++        let reinforcement = max(0, min(8, trainingLevel))
++        guard reinforcement > 0 else { return self }
++        return GomokuBotBudget(
++            candidateRadius: candidateRadius,
++            rootCandidateLimit: min(56, rootCandidateLimit + reinforcement * 2),
++            replyCandidateLimit: min(34, replyCandidateLimit + reinforcement),
++            continuationCandidateLimit: continuationCandidateLimit == 0
++                ? 0
++                : min(22, continuationCandidateLimit + reinforcement),
++            timeLimitMilliseconds: min(1_100, timeLimitMilliseconds + reinforcement * 45)
++        )
      }
  
      static let deterministicTest = GomokuBotBudget(
@@ -489,7 +508,7 @@ index 43af066..f701919 100644
          timeLimitMilliseconds: 2_000
      )
  }
-@@ -70,7 +88,8 @@ enum GomokuBot {
+@@ -70,7 +102,8 @@ enum GomokuBot {
          let rankedRoots = candidates
              .map {
                  let learned = learning.bonus(position: rootPosition, action: String($0))
@@ -499,7 +518,7 @@ index 43af066..f701919 100644
              }
              .sorted { lhs, rhs in
                  if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
-@@ -93,10 +112,14 @@ enum GomokuBot {
+@@ -93,10 +126,14 @@ enum GomokuBot {
              } else {
                  let opponent = player.opponent
                  let replyPosition = AdaptiveBoardPosition.gomoku(next)
@@ -515,7 +534,7 @@ index 43af066..f701919 100644
                      }
                      .sorted { lhs, rhs in
                          if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
-@@ -110,11 +133,34 @@ enum GomokuBot {
+@@ -110,11 +147,34 @@ enum GomokuBot {
                      nodes += 1
                      var afterReply = next
                      guard afterReply.apply(index: reply, actor: opponent) else { continue }
@@ -551,7 +570,7 @@ index 43af066..f701919 100644
                      }
                      worstReply = min(worstReply, replyScore)
                      if worstReply <= lossScore { break }
-@@ -138,6 +184,16 @@ enum GomokuBot {
+@@ -138,6 +198,16 @@ enum GomokuBot {
          candidateIndices(in: state, radius: radius).count
      }
  
@@ -569,7 +588,7 @@ index 43af066..f701919 100644
          GomokuBotMove(
              index: index,
 diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
-index f381fae..88b525c 100644
+index f381fae..0d2de7c 100644
 --- a/VeilLink/Agent/Games/LocalAIGameController.swift
 +++ b/VeilLink/Agent/Games/LocalAIGameController.swift
 @@ -1,6 +1,33 @@
@@ -678,7 +697,7 @@ index f381fae..88b525c 100644
          return report
      }
  
-@@ -286,8 +329,9 @@ final class LocalAIGameController: ObservableObject {
+@@ -286,10 +329,11 @@ final class LocalAIGameController: ObservableObject {
          switch game {
          case .gomoku:
              let snapshot = gomoku
@@ -688,19 +707,22 @@ index f381fae..88b525c 100644
 +            let budget = GomokuBotBudget.forDifficulty(
 +                boardDifficulty,
                  profileLabel: VeilDevicePerformance.current.label
-             )
+-            )
++            ).reinforced(by: learning.trainingLevel)
              let result = await Task.detached(priority: .userInitiated) {
+                 GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
+             }.value
 @@ -297,7 +341,8 @@ final class LocalAIGameController: ObservableObject {
  
              var ruleGate = gomoku
              guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
 -            lastDecisionMode = "五子棋 Bot"
-+            let learned = learning.hasSequenceEvidence ? " · 训练预判" : ""
++            let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
 +            lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)"
              return AgentActionCandidate(
                  actionID: "gomoku:\(result.index)",
                  encodedAction: AgentGameEncoding.encodeInts([result.index]),
-@@ -311,8 +356,9 @@ final class LocalAIGameController: ObservableObject {
+@@ -311,10 +356,11 @@ final class LocalAIGameController: ObservableObject {
  
          case .xiangqi:
              let snapshot = xiangqi
@@ -710,9 +732,12 @@ index f381fae..88b525c 100644
 +            let budget = XiangqiBotBudget.forDifficulty(
 +                boardDifficulty,
                  profileLabel: VeilDevicePerformance.current.label
-             )
+-            )
++            ).reinforced(by: learning.trainingLevel)
              let result = await Task.detached(priority: .userInitiated) {
-@@ -322,9 +368,10 @@ final class LocalAIGameController: ObservableObject {
+                 XiangqiBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
+             }.value
+@@ -322,9 +368,12 @@ final class LocalAIGameController: ObservableObject {
  
              var ruleGate = xiangqi
              guard ruleGate.apply(from: result.from, to: result.to, actor: .guest) else { return nil }
@@ -722,11 +747,13 @@ index f381fae..88b525c 100644
 +            let baseMode = result.completedDepth > 0
 +                ? "象棋 · \(boardDifficulty.title) D\(result.completedDepth)"
 +                : "象棋 · \(boardDifficulty.title) 快速着"
-+            lastDecisionMode = learning.hasSequenceEvidence ? baseMode + " · 训练预判" : baseMode
++            lastDecisionMode = learning.hasSequenceEvidence
++                ? baseMode + " · 训练 Lv\(learning.trainingLevel)"
++                : baseMode
              return AgentActionCandidate(
                  actionID: "xiangqi:\(result.from):\(result.to)",
                  encodedAction: AgentGameEncoding.encodeInts([result.from, result.to]),
-@@ -532,5 +579,14 @@ final class LocalAIGameController: ObservableObject {
+@@ -532,5 +581,14 @@ final class LocalAIGameController: ObservableObject {
          learningStore.record(game: game, plies: learningPlies, result: result)
          learningPlies.removeAll(keepingCapacity: true)
          learningSummary = learningStore.summary
@@ -742,10 +769,10 @@ index f381fae..88b525c 100644
      }
  }
 diff --git a/VeilLink/Agent/Games/XiangqiBot.swift b/VeilLink/Agent/Games/XiangqiBot.swift
-index 8a10eb8..ce97679 100644
+index 8a10eb8..667f6dd 100644
 --- a/VeilLink/Agent/Games/XiangqiBot.swift
 +++ b/VeilLink/Agent/Games/XiangqiBot.swift
-@@ -25,6 +25,21 @@ struct XiangqiBotBudget: Equatable, Sendable {
+@@ -25,6 +25,31 @@ struct XiangqiBotBudget: Equatable, Sendable {
          return XiangqiBotBudget(maxDepth: 5, quiescenceDepth: 2, timeLimitMilliseconds: 280)
      }
  
@@ -764,10 +791,20 @@ index 8a10eb8..ce97679 100644
 +        }
 +    }
 +
++    func reinforced(by trainingLevel: Int) -> XiangqiBotBudget {
++        let reinforcement = max(0, min(8, trainingLevel))
++        guard reinforcement > 0 else { return self }
++        return XiangqiBotBudget(
++            maxDepth: min(10, maxDepth + reinforcement / 3),
++            quiescenceDepth: min(4, quiescenceDepth + reinforcement / 5),
++            timeLimitMilliseconds: min(1_500, timeLimitMilliseconds + reinforcement * 55)
++        )
++    }
++
      static let deterministicTest = XiangqiBotBudget(
          maxDepth: 2,
          quiescenceDepth: 1,
-@@ -112,6 +127,26 @@ enum XiangqiBot {
+@@ -112,6 +137,26 @@ enum XiangqiBot {
                      context: &context
                  )
  
@@ -794,7 +831,7 @@ index 8a10eb8..ce97679 100644
                  // Repetition is legal but usually undesirable when another close move exists.
                  if next.currentPositionRepetitionCount >= 2 {
                      score -= 90
-@@ -157,6 +192,23 @@ enum XiangqiBot {
+@@ -157,6 +202,23 @@ enum XiangqiBot {
          orderedLegalMoves(in: state, actor: actor, learning: .empty).count
      }
  
@@ -2380,10 +2417,10 @@ index 5eb3806..800d7fe 100644
          let url = temporaryURL()
          defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 diff --git a/VeilLinkTests/GomokuBotTests.swift b/VeilLinkTests/GomokuBotTests.swift
-index b16f8cf..17c6c51 100644
+index b16f8cf..1d6af8c 100644
 --- a/VeilLinkTests/GomokuBotTests.swift
 +++ b/VeilLinkTests/GomokuBotTests.swift
-@@ -22,4 +22,14 @@ final class GomokuBotTests: XCTestCase {
+@@ -22,4 +22,17 @@ final class GomokuBotTests: XCTestCase {
          XCTAssertLessThanOrEqual(budget.timeLimitMilliseconds, 160)
          XCTAssertLessThanOrEqual(budget.rootCandidateLimit, 18)
      }
@@ -2396,6 +2433,9 @@ index b16f8cf..17c6c51 100644
 +        XCTAssertLessThan(relaxed.timeLimitMilliseconds, master.timeLimitMilliseconds)
 +        XCTAssertEqual(relaxed.continuationCandidateLimit, 0)
 +        XCTAssertGreaterThan(master.continuationCandidateLimit, 0)
++        let trainedRelaxed = relaxed.reinforced(by: 8)
++        XCTAssertGreaterThan(trainedRelaxed.rootCandidateLimit, relaxed.rootCandidateLimit)
++        XCTAssertGreaterThan(trainedRelaxed.replyCandidateLimit, relaxed.replyCandidateLimit)
 +    }
  }
 diff --git a/VeilLinkTests/VeilImportedFileAccessTests.swift b/VeilLinkTests/VeilImportedFileAccessTests.swift
@@ -2457,10 +2497,10 @@ index 0000000..4f163b8
 +    }
 +}
 diff --git a/VeilLinkTests/XiangqiBotTests.swift b/VeilLinkTests/XiangqiBotTests.swift
-index b6891e1..84c782c 100644
+index b6891e1..f47b277 100644
 --- a/VeilLinkTests/XiangqiBotTests.swift
 +++ b/VeilLinkTests/XiangqiBotTests.swift
-@@ -49,4 +49,12 @@ final class XiangqiBotTests: XCTestCase {
+@@ -49,4 +49,15 @@ final class XiangqiBotTests: XCTestCase {
          XCTAssertEqual(budget.maxDepth, 4)
          XCTAssertLessThanOrEqual(budget.timeLimitMilliseconds, 200)
      }
@@ -2471,5 +2511,8 @@ index b6891e1..84c782c 100644
 +        XCTAssertLessThan(relaxed.maxDepth, master.maxDepth)
 +        XCTAssertLessThan(relaxed.quiescenceDepth, master.quiescenceDepth)
 +        XCTAssertLessThan(relaxed.timeLimitMilliseconds, master.timeLimitMilliseconds)
++        let trainedRelaxed = relaxed.reinforced(by: 8)
++        XCTAssertGreaterThanOrEqual(trainedRelaxed.maxDepth, relaxed.maxDepth)
++        XCTAssertGreaterThan(trainedRelaxed.timeLimitMilliseconds, relaxed.timeLimitMilliseconds)
 +    }
  }

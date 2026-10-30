@@ -23,7 +23,7 @@
 - provider file is materialized and remains readable after picker handoff;
 - wrong extension is rejected after the permissive Apple Files picker.
 - a V1 mixed shared learning file migrates into two scoped V2 stores while its source bytes remain unchanged.
-- Gomoku and Xiangqi difficulty budgets monotonically increase search capacity; a repeated Xiangqi opening produces an explainable personal-coach profile.
+- Gomoku and Xiangqi difficulty budgets monotonically increase search capacity; retained training evidence also reinforces every tier's bounded search budget; a repeated Xiangqi opening produces an explainable personal-coach profile.
 
 ## Mandatory Apple SDK gates (not available in this Linux workspace)
 

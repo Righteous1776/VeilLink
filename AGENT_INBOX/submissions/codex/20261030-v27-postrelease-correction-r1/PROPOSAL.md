@@ -31,7 +31,7 @@ All existing pickers remain Apple's system Files picker. Selection now accepts t
 ### Selectable strength and personal coach
 
 - Both board games expose four local starting budgets: 轻松、均衡、进阶、宗师.
-- Every tier uses the same per-game training store; no setting disables accumulated personal repertoire, sequence prediction or outcome feedback. Higher tiers only widen/deepen the legal search that consumes that learning.
+- Every tier uses the same per-game training store; no setting disables accumulated personal repertoire, sequence prediction or outcome feedback. As retained local evidence grows, every tier receives a bounded training reinforcement to its legal search budget; higher tiers begin from a larger budget and widen/deepen further.
 - Gomoku gains a third-ply continuation pass at the higher tiers; Xiangqi raises iterative alpha-beta and quiescence depth within a device-aware time budget.
 - A local coach profile turns completed games, repeated lines and preferred opening choices into an explainable level, next lesson and immediate move feedback. It is a practice aid, not an internet rating or an opaque model claim.
 - `THIRD_PARTY_CHESS_ENGINE_AUDIT.md` records the current GitHub intake result. External engine source is not vendored until a permissive licence and iOS integration gate are verified.
