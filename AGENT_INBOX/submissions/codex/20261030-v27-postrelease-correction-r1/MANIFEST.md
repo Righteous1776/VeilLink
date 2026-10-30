@@ -12,7 +12,7 @@
 
 1. Apple Files import handoff and security-scoped staging for every current importer.
 2. Game-scoped Gomoku/Xiangqi learning stores with no fixed position/history/file-size cap.
-3. Sequence/outcome learning that changes root scores and predicts the player's next move.
+3. Four selectable board-strength tiers plus sequence/outcome learning at every tier, with an explainable personal coach profile.
 4. A10-aware Settings, Agent and Owner Console presentation.
 5. Automated six-hour SQLite integrity sampling and read-only user status.
 6. Tool/game/story reclassification.
@@ -21,11 +21,13 @@
 
 ## Files
 
-`PATCH.diff` changes 26 product/test files (1,050 insertions, 214 deletions), including new:
+`PATCH.diff` changes 28 product/test files (1,329 insertions, 224 deletions), including new:
 
 - `VeilLink/Core/VeilImportedFileAccess.swift`
 - `VeilLink/UI/TacticalV2/TacticalV2SoloView.swift`
 - `VeilLinkTests/VeilImportedFileAccessTests.swift`
+
+Third-party engine intake evidence is recorded in `THIRD_PARTY_CHESS_ENGINE_AUDIT.md`; no external binary, weight or unlicensed source is included.
 
 Supporting evidence:
 

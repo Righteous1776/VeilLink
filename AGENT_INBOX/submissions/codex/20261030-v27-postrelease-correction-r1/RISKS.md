@@ -11,6 +11,8 @@
 - Removing artificial caps means training data can grow. Writes remain atomic and naturally fail if iOS reports no space; the UI reports write failure. Governor may add a visible disk-pressure pause, but must not silently prune or merge the two games.
 - V1 migration can recover exact positions by prefix. A V2 target is written only after an encode/decode verification in a sibling staging file, while the shared V1 file is left byte-for-byte intact. Old aggregate `completedGames` cannot be perfectly split if its old 40-record history had already discarded earlier per-game records; the migration intentionally counts only surviving game-typed records rather than inventing attribution.
 - This is lightweight repertoire/sequence learning, not unrestricted neural training. It becomes observably adaptive but does not guarantee victory.
+- “宗师” is a device-aware local search budget, not a claim of a cloud grandmaster engine. It can take longer on old devices; the candidate caps the legacy iPhone 7 budget and requires thermal, foreground/background and cancellation testing before promotion.
+- Third-party engine source has not been silently imported. The current GitHub candidates lack a clean permissive intake path; see `THIRD_PARTY_CHESS_ENGINE_AUDIT.md` for the future licence/provenance gate.
 
 ## 三国兵器
 

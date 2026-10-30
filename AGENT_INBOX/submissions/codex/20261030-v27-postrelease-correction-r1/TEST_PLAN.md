@@ -23,6 +23,7 @@
 - provider file is materialized and remains readable after picker handoff;
 - wrong extension is rejected after the permissive Apple Files picker.
 - a V1 mixed shared learning file migrates into two scoped V2 stores while its source bytes remain unchanged.
+- Gomoku and Xiangqi difficulty budgets monotonically increase search capacity; a repeated Xiangqi opening produces an explainable personal-coach profile.
 
 ## Mandatory Apple SDK gates (not available in this Linux workspace)
 
@@ -34,6 +35,7 @@
    - import `.vltrain.json`, backup ZIP, HTML, image and arbitrary integrity-test file;
    - cancel picker and cancel backup-password sheet without stale staged data;
    - repeat a fixed Xiangqi line at least three times and confirm “阵法预判” plus changed legal AI response;
+   - switch every tier on iPhone 7 and a newer device, verify that all tiers retain trained responses, and ensure the Master budget does not cause thermal/background termination;
    - verify Gomoku/Xiangqi summaries remain independent across relaunch;
    - enter A10-only and confirm Settings and Owner Console continuously show A10 sample/health/budget;
    - open 三国兵器 in portrait and landscape, pan/zoom the 48×27 map, issue ten turns, background/foreground, restart.

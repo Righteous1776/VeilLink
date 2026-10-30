@@ -28,6 +28,14 @@ All existing pickers remain Apple's system Files picker. Selection now accepts t
 - Decision UI adds “阵法预判” when sequence evidence is active.
 - Exports are named separately as `VeilLink-GomokuLearning-…` and `VeilLink-XiangqiLearning-…`.
 
+### Selectable strength and personal coach
+
+- Both board games expose four local starting budgets: 轻松、均衡、进阶、宗师.
+- Every tier uses the same per-game training store; no setting disables accumulated personal repertoire, sequence prediction or outcome feedback. Higher tiers only widen/deepen the legal search that consumes that learning.
+- Gomoku gains a third-ply continuation pass at the higher tiers; Xiangqi raises iterative alpha-beta and quiescence depth within a device-aware time budget.
+- A local coach profile turns completed games, repeated lines and preferred opening choices into an explainable level, next lesson and immediate move feedback. It is a practice aid, not an internet rating or an opaque model claim.
+- `THIRD_PARTY_CHESS_ENGINE_AUDIT.md` records the current GitHub intake result. External engine source is not vendored until a permissive licence and iOS integration gate are verified.
+
 ### A10 presentation and automation
 
 - Settings and Owner Console observe `VeilKernelRuntimeSelector` and `A10UltraOmegaShadowCoordinator` directly.
