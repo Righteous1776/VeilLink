@@ -22,6 +22,7 @@
 - import/export checksum round trip remains covered;
 - provider file is materialized and remains readable after picker handoff;
 - wrong extension is rejected after the permissive Apple Files picker.
+- a V1 mixed shared learning file migrates into two scoped V2 stores while its source bytes remain unchanged.
 
 ## Mandatory Apple SDK gates (not available in this Linux workspace)
 
@@ -29,7 +30,7 @@
 2. iOS 15 build for simulator and generic device.
 3. Complete XCTest suite, including new learning/import tests.
 4. iPhone 7 / iOS 15.8.x:
-   - select local, iCloud and third-party-provider files;
+   - select local, iCloud and third-party-provider files, including a 200 MiB backup; cancel during staging and confirm UI responsiveness plus temporary-file cleanup;
    - import `.vltrain.json`, backup ZIP, HTML, image and arbitrary integrity-test file;
    - cancel picker and cancel backup-password sheet without stale staged data;
    - repeat a fixed Xiangqi line at least three times and confirm “阵法预判” plus changed legal AI response;

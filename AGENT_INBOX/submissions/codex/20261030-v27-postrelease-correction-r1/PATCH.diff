@@ -1,5 +1,5 @@
 diff --git a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
-index 7346026..1181bab 100644
+index 7346026..b0e42f9 100644
 --- a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
 +++ b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
 @@ -1,16 +1,41 @@
@@ -86,11 +86,11 @@ index 7346026..1181bab 100644
      private(set) var lastSaveSucceeded = true
  
 -    init(fileURL: URL? = nil) {
-+    init(game: MiniGameKind? = nil, fileURL: URL? = nil) {
++    init(game: MiniGameKind? = nil, fileURL: URL? = nil, legacyURL: URL? = nil) {
          let resolvedURL: URL
          if let fileURL {
              resolvedURL = fileURL
-@@ -169,10 +195,23 @@ final class AdaptiveBoardLearningStore {
+@@ -169,10 +195,33 @@ final class AdaptiveBoardLearningStore {
              let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                  .appendingPathComponent("VeilLink", isDirectory: true)
              try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -103,20 +103,30 @@ index 7346026..1181bab 100644
 +        scopedGame = game
 +        database = Self.load(from: resolvedURL, scopedGame: game)
 +
-+        // One-time, non-destructive migration from V27's shared store. Prefixes
-+        // provide an exact split even though the old summary card did not.
-+        if fileURL == nil, !FileManager.default.fileExists(atPath: resolvedURL.path) {
-+            let legacy = resolvedURL.deletingLastPathComponent()
-+                .appendingPathComponent("adaptive-board-learning-v1.json")
-+            if FileManager.default.fileExists(atPath: legacy.path) {
-+                database = Self.load(from: legacy, scopedGame: game)
-+                save()
++        // One-time, non-destructive migration from V27's shared store. The
++        // legacy file is never moved, truncated or overwritten: each V2 game
++        // database is fully encoded and decoded in a sibling temporary file
++        // before its first atomic placement. A failed migration leaves the old
++        // shared record available for retry on the next launch.
++        let legacy = legacyURL ?? resolvedURL.deletingLastPathComponent()
++            .appendingPathComponent("adaptive-board-learning-v1.json")
++        if (fileURL == nil || legacyURL != nil),
++           !FileManager.default.fileExists(atPath: resolvedURL.path),
++           FileManager.default.fileExists(atPath: legacy.path) {
++            let migrated = Self.load(from: legacy, scopedGame: game)
++            if !migrated.positions.isEmpty || !migrated.recentGames.isEmpty {
++                if Self.writeInitialMigration(migrated, to: resolvedURL) {
++                    database = migrated
++                    lastSaveSucceeded = true
++                } else {
++                    lastSaveSucceeded = false
++                }
 +            }
 +        }
      }
  
      var summary: AdaptiveBoardLearningSummary {
-@@ -183,7 +222,7 @@ final class AdaptiveBoardLearningStore {
+@@ -183,7 +232,7 @@ final class AdaptiveBoardLearningStore {
          )
      }
  
@@ -125,7 +135,7 @@ index 7346026..1181bab 100644
          var result = Self.seedPreferences()
          for (position, stat) in database.positions {
              var actions = result[position] ?? [:]
-@@ -202,11 +241,49 @@ final class AdaptiveBoardLearningStore {
+@@ -202,11 +251,49 @@ final class AdaptiveBoardLearningStore {
              }
              result[position] = actions
          }
@@ -176,7 +186,7 @@ index 7346026..1181bab 100644
  
          database.sequence += 1
          let sequence = database.sequence
-@@ -218,13 +295,6 @@ final class AdaptiveBoardLearningStore {
+@@ -218,13 +305,6 @@ final class AdaptiveBoardLearningStore {
              action.aiReward = max(-32_000, min(32_000, action.aiReward + result.aiReward))
              position.actions[ply.action] = action
              position.lastSequence = sequence
@@ -190,7 +200,7 @@ index 7346026..1181bab 100644
              database.positions[ply.position] = position
          }
  
-@@ -235,7 +305,6 @@ final class AdaptiveBoardLearningStore {
+@@ -235,7 +315,6 @@ final class AdaptiveBoardLearningStore {
              actions: plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
              finishedAt: Date()
          ))
@@ -198,7 +208,7 @@ index 7346026..1181bab 100644
          save()
      }
  
-@@ -267,13 +336,12 @@ final class AdaptiveBoardLearningStore {
+@@ -267,13 +346,12 @@ final class AdaptiveBoardLearningStore {
              payload: database
          )
          let data = try encoder.encode(envelope)
@@ -214,7 +224,7 @@ index 7346026..1181bab 100644
          do {
              try data.write(to: url, options: .atomic)
              return url
-@@ -288,9 +356,6 @@ final class AdaptiveBoardLearningStore {
+@@ -288,9 +366,6 @@ final class AdaptiveBoardLearningStore {
          guard let data = try? Data(contentsOf: url) else {
              throw AdaptiveBoardLearningPackageError.unreadable
          }
@@ -224,7 +234,7 @@ index 7346026..1181bab 100644
          guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
                envelope.format == "veillink.board-learning.export.v1",
                envelope.checksumAlgorithm == "fnv1a64-canonical-json",
-@@ -309,8 +374,11 @@ final class AdaptiveBoardLearningStore {
+@@ -309,8 +384,11 @@ final class AdaptiveBoardLearningStore {
          }
  
          let previous = database
@@ -238,7 +248,7 @@ index 7346026..1181bab 100644
          save()
          guard lastSaveSucceeded else {
              database = previous
-@@ -322,30 +390,11 @@ final class AdaptiveBoardLearningStore {
+@@ -322,30 +400,11 @@ final class AdaptiveBoardLearningStore {
          )
      }
  
@@ -270,7 +280,7 @@ index 7346026..1181bab 100644
              try FileManager.default.createDirectory(
                  at: fileURL.deletingLastPathComponent(),
                  withIntermediateDirectories: true
-@@ -357,22 +406,33 @@ final class AdaptiveBoardLearningStore {
+@@ -357,22 +416,65 @@ final class AdaptiveBoardLearningStore {
          }
      }
  
@@ -282,6 +292,38 @@ index 7346026..1181bab 100644
                decoded.schema == 1 else { return Database() }
 -        return decoded
 +        return filtered(decoded, for: scopedGame)
++    }
++
++    /// Writes an initial V2 database without touching the old shared file. The
++    /// decode-back check prevents a half-written or wrongly-filtered migration
++    /// from becoming the first durable store for either game.
++    private static func writeInitialMigration(_ candidate: Database, to destination: URL) -> Bool {
++        guard isValid(candidate),
++              !FileManager.default.fileExists(atPath: destination.path) else { return false }
++        let directory = destination.deletingLastPathComponent()
++        let staging = directory.appendingPathComponent(
++            ".\(destination.lastPathComponent).migrating-\(UUID().uuidString)"
++        )
++        do {
++            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
++            let encoder = JSONEncoder()
++            encoder.outputFormatting = [.sortedKeys]
++            let data = try encoder.encode(candidate)
++            try data.write(to: staging, options: .atomic)
++            guard let verificationData = try? Data(contentsOf: staging),
++                  let verified = try? JSONDecoder().decode(Database.self, from: verificationData),
++                  isValid(verified),
++                  verified.positions.count == candidate.positions.count,
++                  verified.recentGames.count == candidate.recentGames.count else {
++                try? FileManager.default.removeItem(at: staging)
++                return false
++            }
++            try FileManager.default.moveItem(at: staging, to: destination)
++            return true
++        } catch {
++            try? FileManager.default.removeItem(at: staging)
++            return false
++        }
 +    }
 +
 +    private static func filtered(_ database: Database, for game: MiniGameKind?) -> Database {
@@ -312,7 +354,7 @@ index 7346026..1181bab 100644
              for (action, value) in stat.actions {
                  guard value.count > 0, value.count <= 65_535,
                        (-32_000...32_000).contains(value.aiReward),
-@@ -381,7 +441,6 @@ final class AdaptiveBoardLearningStore {
+@@ -381,7 +483,6 @@ final class AdaptiveBoardLearningStore {
          }
          return database.recentGames.allSatisfy { record in
              (record.game == .gomoku || record.game == .xiangqi)
@@ -572,16 +614,17 @@ index fe9a7ae..bd0793d 100644
              result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: "灵核运行时：\(agent.runtimeManifest?.displayName ?? LocalTextModelRuntimeFactory.backendName)，状态 \(agent.runtimeState.displayName)；游戏引擎 Native Bot；Control Plane V3 / AutoTune \(agentControls.autoRegulationMode.title)。")
 diff --git a/VeilLink/Core/VeilImportedFileAccess.swift b/VeilLink/Core/VeilImportedFileAccess.swift
 new file mode 100644
-index 0000000..bf6a158
+index 0000000..fcb855a
 --- /dev/null
 +++ b/VeilLink/Core/VeilImportedFileAccess.swift
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,129 @@
 +import Foundation
 +
 +enum VeilImportedFileAccessError: LocalizedError {
 +    case unsupportedExtension(expected: [String])
 +    case inaccessible
 +    case coordinationFailed(String)
++    case cancelled
 +
 +    var errorDescription: String? {
 +        switch self {
@@ -591,6 +634,8 @@ index 0000000..bf6a158
 +            return "无法读取所选文件。请确认文件已从 iCloud 或第三方文件提供商下载完成。"
 +        case .coordinationFailed(let detail):
 +            return "文件提供商没有完成导入：\(detail)"
++        case .cancelled:
++            return "已取消文件导入。"
 +        }
 +    }
 +}
@@ -600,6 +645,23 @@ index 0000000..bf6a158
 +/// to download iCloud/third-party placeholders before the callback returns.
 +enum VeilImportedFileAccess {
 +    private static let stagingFolderName = "VeilLink-Import-Staging"
++    private static let copyChunkBytes = 1_024 * 1_024
++
++    /// Runs provider coordination and the potentially large local copy away from
++    /// the SwiftUI callback. Cancellation is checked between chunks, so a 200 MiB
++    /// backup or a large image does not monopolise the main thread.
++    static func materializeInBackground(
++        _ sourceURL: URL,
++        acceptedExtensions: Set<String> = []
++    ) async throws -> URL {
++        let worker = Task.detached(priority: .userInitiated) {
++            try materialize(sourceURL, acceptedExtensions: acceptedExtensions)
++        }
++        return try await withTaskCancellationHandler(
++            operation: { try await worker.value },
++            onCancel: { worker.cancel() }
++        )
++    }
 +
 +    static func materialize(
 +        _ sourceURL: URL,
@@ -634,8 +696,10 @@ index 0000000..bf6a158
 +            error: &coordinationError
 +        ) { readableURL in
 +            do {
-+                try FileManager.default.copyItem(at: readableURL, to: destination)
++                try copyCancellableFile(from: readableURL, to: destination)
 +                copied = true
++            } catch is CancellationError {
++                copyError = VeilImportedFileAccessError.cancelled
 +            } catch {
 +                copyError = error
 +            }
@@ -661,6 +725,26 @@ index 0000000..bf6a158
 +    static func removeStagedCopy(_ url: URL) {
 +        guard url.path.contains("/\(stagingFolderName)/") else { return }
 +        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
++    }
++
++    private static func copyCancellableFile(from source: URL, to destination: URL) throws {
++        if Task.isCancelled { throw CancellationError() }
++        guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
++            throw VeilImportedFileAccessError.inaccessible
++        }
++        let input = try FileHandle(forReadingFrom: source)
++        let output = try FileHandle(forWritingTo: destination)
++        defer {
++            try? input.close()
++            try? output.close()
++        }
++
++        while true {
++            if Task.isCancelled { throw CancellationError() }
++            let chunk = try input.read(upToCount: copyChunkBytes) ?? Data()
++            if chunk.isEmpty { return }
++            try output.write(contentsOf: chunk)
++        }
 +    }
 +}
 diff --git a/VeilLink/Resources/Info.plist b/VeilLink/Resources/Info.plist
@@ -865,27 +949,29 @@ index f01d136..653487e 100644
              }
          }
 diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
-index 40ae5b1..d4805bc 100644
+index 40ae5b1..93d46b5 100644
 --- a/VeilLink/UI/ConversationViews.swift
 +++ b/VeilLink/UI/ConversationViews.swift
-@@ -789,8 +789,13 @@ struct ChatView: View {
+@@ -789,8 +789,15 @@ struct ChatView: View {
          ) { result in
              switch result {
              case .success(let urls):
 -                if let url = urls.first {
 -                    prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: false))
 +                if let selectedURL = urls.first {
-+                    do {
-+                        let url = try VeilImportedFileAccess.materialize(selectedURL)
-+                        prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: true))
-+                    } catch {
-+                        model.alertMessage = error.localizedDescription
++                    Task {
++                        do {
++                            let url = try await VeilImportedFileAccess.materializeInBackground(selectedURL)
++                            prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: true))
++                        } catch {
++                            model.alertMessage = error.localizedDescription
++                        }
 +                    }
                  }
              case .failure(let error):
                  model.alertMessage = error.localizedDescription
 diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
-index 7c19021..8a04d6c 100644
+index 7c19021..bb04e6f 100644
 --- a/VeilLink/UI/GameLobbyView.swift
 +++ b/VeilLink/UI/GameLobbyView.swift
 @@ -15,7 +15,8 @@ struct GameLobbyView: View {
@@ -939,7 +1025,7 @@ index 7c19021..8a04d6c 100644
          }
      }
  
-@@ -342,11 +366,16 @@ struct LocalAIGameView: View {
+@@ -342,16 +366,23 @@ struct LocalAIGameView: View {
          }
          .fileImporter(
              isPresented: $showsLearningImporter,
@@ -948,17 +1034,30 @@ index 7c19021..8a04d6c 100644
              allowsMultipleSelection: false
          ) { result in
 -            guard case .success(let urls) = result, let url = urls.first else { return }
+-            do {
+-                let report = try controller.importBoardLearning(from: url)
+-                learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
+-                model.haptics.selection()
+-            } catch {
+-                learningExchangeMessage = error.localizedDescription
 +            guard case .success(let urls) = result, let selectedURL = urls.first else { return }
-             do {
-+                let url = try VeilImportedFileAccess.materialize(
-+                    selectedURL,
-+                    acceptedExtensions: ["json"]
-+                )
-+                defer { VeilImportedFileAccess.removeStagedCopy(url) }
-                 let report = try controller.importBoardLearning(from: url)
-                 learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
-                 model.haptics.selection()
-@@ -425,7 +454,7 @@ struct LocalAIGameView: View {
++            Task {
++                do {
++                    let url = try await VeilImportedFileAccess.materializeInBackground(
++                        selectedURL,
++                        acceptedExtensions: ["json"]
++                    )
++                    defer { VeilImportedFileAccess.removeStagedCopy(url) }
++                    let report = try controller.importBoardLearning(from: url)
++                    learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
++                    model.haptics.selection()
++                } catch {
++                    learningExchangeMessage = error.localizedDescription
++                }
+             }
+         }
+         .alert(
+@@ -425,7 +456,7 @@ struct LocalAIGameView: View {
                      .font(.caption.weight(.semibold))
                      .foregroundColor(VeilTheme.secondaryText)
              }
@@ -968,10 +1067,10 @@ index 7c19021..8a04d6c 100644
                  .foregroundColor(VeilTheme.secondaryText)
                  .fixedSize(horizontal: false, vertical: true)
 diff --git a/VeilLink/UI/OnboardingView.swift b/VeilLink/UI/OnboardingView.swift
-index 9d1265f..14b144a 100644
+index 9d1265f..c9ca11b 100644
 --- a/VeilLink/UI/OnboardingView.swift
 +++ b/VeilLink/UI/OnboardingView.swift
-@@ -115,11 +115,18 @@ struct OnboardingView: View {
+@@ -115,11 +115,20 @@ struct OnboardingView: View {
              .frame(maxWidth: .infinity)
          }
          .background(VeilAmbientBackground())
@@ -982,14 +1081,16 @@ index 9d1265f..14b144a 100644
 -                restoreURL = url
 -                showsRestorePassword = true
 +            case .success(let selectedURL):
-+                do {
-+                    restoreURL = try VeilImportedFileAccess.materialize(
-+                        selectedURL,
-+                        acceptedExtensions: ["zip"]
-+                    )
-+                    showsRestorePassword = true
-+                } catch {
-+                    model.alertMessage = error.localizedDescription
++                Task {
++                    do {
++                        restoreURL = try await VeilImportedFileAccess.materializeInBackground(
++                            selectedURL,
++                            acceptedExtensions: ["zip"]
++                        )
++                        showsRestorePassword = true
++                    } catch {
++                        model.alertMessage = error.localizedDescription
++                    }
 +                }
              case .failure(let error):
                  model.alertMessage = "无法选择备份：\(error.localizedDescription)"
@@ -1065,7 +1166,7 @@ index f6ae543..d94bc57 100644
      private var deepTelemetryCard: some View {
          VStack(alignment: .leading, spacing: 13) {
 diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
-index f4b3a0a..1778360 100644
+index f4b3a0a..9bd1976 100644
 --- a/VeilLink/UI/SettingsView.swift
 +++ b/VeilLink/UI/SettingsView.swift
 @@ -10,6 +10,8 @@ struct SettingsView: View {
@@ -1086,27 +1187,30 @@ index f4b3a0a..1778360 100644
          agentControls = model.agentControls
          internetRelay = model.internetRelay
          legalConsent = model.legalConsent
-@@ -116,10 +120,16 @@ struct SettingsView: View {
+@@ -116,10 +120,18 @@ struct SettingsView: View {
                  model.exportBackup(password: password)
              }
          }
 -        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
 -            if case .success(let url) = result {
 -                restoreURL = url
+-                showsRestorePassword = true
 +        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.item]) { result in
-+            do {
-+                guard case .success(let selectedURL) = result else { return }
-+                restoreURL = try VeilImportedFileAccess.materialize(
-+                    selectedURL,
-+                    acceptedExtensions: ["zip"]
-+                )
-                 showsRestorePassword = true
-+            } catch {
-+                model.alertMessage = error.localizedDescription
++            guard case .success(let selectedURL) = result else { return }
++            Task {
++                do {
++                    restoreURL = try await VeilImportedFileAccess.materializeInBackground(
++                        selectedURL,
++                        acceptedExtensions: ["zip"]
++                    )
++                    showsRestorePassword = true
++                } catch {
++                    model.alertMessage = error.localizedDescription
++                }
              }
          }
          .sheet(isPresented: $showsRestorePassword) {
-@@ -458,20 +468,12 @@ struct SettingsView: View {
+@@ -458,20 +470,12 @@ struct SettingsView: View {
                      .font(.system(.caption, design: .monospaced))
                      .foregroundColor(a9DatabaseColor)
              }
@@ -1133,7 +1237,7 @@ index f4b3a0a..1778360 100644
          }
          .veilCard()
      }
-@@ -789,42 +791,75 @@ struct SettingsView: View {
+@@ -789,42 +793,75 @@ struct SettingsView: View {
  
      private var a9HealthCard: some View {
          let decision = a9Health.decision
@@ -1225,7 +1329,7 @@ index f4b3a0a..1778360 100644
                  Text("当前没有需要裁决的异常。A9 不会主动断链、删数据或修改游戏状态。")
                      .font(.caption)
                      .foregroundColor(VeilTheme.secondaryText)
-@@ -849,14 +884,9 @@ struct SettingsView: View {
+@@ -849,14 +886,9 @@ struct SettingsView: View {
              }
  
              HStack(spacing: 10) {
@@ -1243,7 +1347,7 @@ index f4b3a0a..1778360 100644
  
                  Button {
                      UIPasteboard.general.string = model.a9DiagnosticsReport()
-@@ -864,13 +894,15 @@ struct SettingsView: View {
+@@ -864,13 +896,15 @@ struct SettingsView: View {
                      haptics.selection()
                      DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { diagnosticsCopied = false }
                  } label: {
@@ -1619,7 +1723,7 @@ index ac74117..5e879ab 100644
                          toolLink("JSON 工坊", detail: "校验 · 整理 · 压缩", icon: "curlybraces", destination: VeilJSONToolView())
                      }
 diff --git a/VeilLink/UI/VeilBackupPreflightView.swift b/VeilLink/UI/VeilBackupPreflightView.swift
-index e904dfd..2264f40 100644
+index e904dfd..479c52a 100644
 --- a/VeilLink/UI/VeilBackupPreflightView.swift
 +++ b/VeilLink/UI/VeilBackupPreflightView.swift
 @@ -8,6 +8,7 @@ struct VeilBackupPreflightView: View {
@@ -1642,7 +1746,7 @@ index e904dfd..2264f40 100644
                  if let result {
                      VStack(alignment: .leading, spacing: 10) {
                          Text(result.safetyLabel)
-@@ -60,14 +66,26 @@ struct VeilBackupPreflightView: View {
+@@ -60,20 +66,32 @@ struct VeilBackupPreflightView: View {
          .navigationTitle("ZIP 备份安全体检")
          .navigationBarTitleDisplayMode(.inline)
          .fileImporter(isPresented: $presentingPicker,
@@ -1650,16 +1754,6 @@ index e904dfd..2264f40 100644
 -            guard case .success(let urls) = pick, let file = urls.first else { return }
 +                      allowedContentTypes: [.item], allowsMultipleSelection: false) { pick in
 +            guard case .success(let urls) = pick, let selectedURL = urls.first else { return }
-+            let file: URL
-+            do {
-+                file = try VeilImportedFileAccess.materialize(
-+                    selectedURL,
-+                    acceptedExtensions: ["zip"]
-+                )
-+            } catch {
-+                importError = error.localizedDescription
-+                return
-+            }
 +            importError = nil
              let token = UUID()
              generation = token
@@ -1667,15 +1761,37 @@ index e904dfd..2264f40 100644
              result = nil
              let runDeep = deepCRC
              Task {
-+                defer { VeilImportedFileAccess.removeStagedCopy(file) }
-                 let inspected = await Task.detached(priority: .userInitiated) {
-                     VeilBackupArchiveInspector.inspect(file, verifyAllCRC: runDeep)
-                 }.value
+-                let inspected = await Task.detached(priority: .userInitiated) {
+-                    VeilBackupArchiveInspector.inspect(file, verifyAllCRC: runDeep)
+-                }.value
+-                guard generation == token else { return }
+-                result = inspected
+-                working = false
++                do {
++                    let file = try await VeilImportedFileAccess.materializeInBackground(
++                        selectedURL,
++                        acceptedExtensions: ["zip"]
++                    )
++                    defer { VeilImportedFileAccess.removeStagedCopy(file) }
++                    let inspected = await Task.detached(priority: .userInitiated) {
++                        VeilBackupArchiveInspector.inspect(file, verifyAllCRC: runDeep)
++                    }.value
++                    guard generation == token else { return }
++                    result = inspected
++                    working = false
++                } catch {
++                    guard generation == token else { return }
++                    importError = error.localizedDescription
++                    working = false
++                }
+             }
+         }
+         .onDisappear {
 diff --git a/VeilLink/UI/VeilFileIntegrityToolView.swift b/VeilLink/UI/VeilFileIntegrityToolView.swift
-index b33554d..571f4d9 100644
+index b33554d..b9993f7 100644
 --- a/VeilLink/UI/VeilFileIntegrityToolView.swift
 +++ b/VeilLink/UI/VeilFileIntegrityToolView.swift
-@@ -68,14 +68,19 @@ struct VeilFileIntegrityToolView: View {
+@@ -68,14 +68,21 @@ struct VeilFileIntegrityToolView: View {
          .navigationBarTitleDisplayMode(.inline)
          .fileImporter(
              isPresented: $showsImporter,
@@ -1689,16 +1805,18 @@ index b33554d..571f4d9 100644
 -                guard let url = urls.first else { return }
 -                inspect(url: url, into: slot)
 +                guard let selectedURL = urls.first else { return }
-+                do {
-+                    let url = try VeilImportedFileAccess.materialize(selectedURL)
-+                    inspect(url: url, into: slot)
-+                } catch {
-+                    errorText = error.localizedDescription
++                Task {
++                    do {
++                        let url = try await VeilImportedFileAccess.materializeInBackground(selectedURL)
++                        inspect(url: url, into: slot)
++                    } catch {
++                        errorText = error.localizedDescription
++                    }
 +                }
              case .failure(let error):
                  errorText = error.localizedDescription
              }
-@@ -209,6 +214,7 @@ struct VeilFileIntegrityToolView: View {
+@@ -209,6 +216,7 @@ struct VeilFileIntegrityToolView: View {
          busySlot = slot
  
          inspectionTask = Task {
@@ -1707,10 +1825,10 @@ index b33554d..571f4d9 100644
                  let result = try await Task.detached(priority: .userInitiated) {
                      try VeilFileIntegrityEngine.inspect(url: url)
 diff --git a/VeilLink/UI/VeilOfflineHTMLReaderView.swift b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
-index 2478cdf..e7e7278 100644
+index 2478cdf..a73729b 100644
 --- a/VeilLink/UI/VeilOfflineHTMLReaderView.swift
 +++ b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
-@@ -95,13 +95,23 @@ struct VeilOfflineHTMLReaderView: View {
+@@ -95,13 +95,13 @@ struct VeilOfflineHTMLReaderView: View {
          .navigationTitle("离线资料阅读器")
          .navigationBarTitleDisplayMode(.inline)
          .fileImporter(isPresented: $showingImporter,
@@ -1723,27 +1841,21 @@ index 2478cdf..e7e7278 100644
              case .success(let urls):
 -                guard let url = urls.first else { return }
 +                guard let selectedURL = urls.first else { return }
-+                let url: URL
-+                do {
-+                    url = try VeilImportedFileAccess.materialize(
-+                        selectedURL,
-+                        acceptedExtensions: ["html", "htm"]
-+                    )
-+                } catch {
-+                    errorDescription = error.localizedDescription
-+                    return
-+                }
                  let token = UUID()
                  importGeneration = token
                  isLoading = true
-@@ -109,6 +119,7 @@ struct VeilOfflineHTMLReaderView: View {
-                 query = ""
+@@ -110,6 +110,11 @@ struct VeilOfflineHTMLReaderView: View {
                  errorDescription = nil
                  Task {
-+                    defer { VeilImportedFileAccess.removeStagedCopy(url) }
                      do {
++                        let url = try await VeilImportedFileAccess.materializeInBackground(
++                            selectedURL,
++                            acceptedExtensions: ["html", "htm"]
++                        )
++                        defer { VeilImportedFileAccess.removeStagedCopy(url) }
                          let parsed = try await Task.detached(priority: .userInitiated) {
                              try VeilOfflineHTMLImporter.load(fileURL: url)
+                         }.value
 diff --git a/VeilLink/UI/VeilSettingsDisclosureSection.swift b/VeilLink/UI/VeilSettingsDisclosureSection.swift
 index 0fb1a42..366a27a 100644
 --- a/VeilLink/UI/VeilSettingsDisclosureSection.swift
@@ -1758,7 +1870,7 @@ index 0fb1a42..366a27a 100644
      }
  
 diff --git a/VeilLinkTests/AdaptiveBoardLearningTests.swift b/VeilLinkTests/AdaptiveBoardLearningTests.swift
-index 5eb3806..4a71517 100644
+index 5eb3806..884daca 100644
 --- a/VeilLinkTests/AdaptiveBoardLearningTests.swift
 +++ b/VeilLinkTests/AdaptiveBoardLearningTests.swift
 @@ -9,7 +9,7 @@ final class AdaptiveBoardLearningTests: XCTestCase {
@@ -1770,7 +1882,7 @@ index 5eb3806..4a71517 100644
          let url = temporaryURL()
          defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
          let store = AdaptiveBoardLearningStore(fileURL: url)
-@@ -26,14 +26,56 @@ final class AdaptiveBoardLearningTests: XCTestCase {
+@@ -26,14 +26,96 @@ final class AdaptiveBoardLearningTests: XCTestCase {
          }
  
          XCTAssertEqual(store.summary.completedGames, 80)
@@ -1806,6 +1918,46 @@ index 5eb3806..4a71517 100644
 +        XCTAssertEqual(xiangqi.snapshot().bonus(position: "g:opening", action: "112"), 0)
 +    }
 +
++    func testLegacyMigrationSplitsGamesWithoutMutatingSharedSource() throws {
++        let legacyURL = temporaryURL()
++        let gomokuURL = temporaryURL()
++        let xiangqiURL = temporaryURL()
++        defer {
++            try? FileManager.default.removeItem(at: legacyURL.deletingLastPathComponent())
++            try? FileManager.default.removeItem(at: gomokuURL.deletingLastPathComponent())
++            try? FileManager.default.removeItem(at: xiangqiURL.deletingLastPathComponent())
++        }
++        let legacy = AdaptiveBoardLearningStore(fileURL: legacyURL)
++        legacy.record(
++            game: .gomoku,
++            plies: [AdaptiveBoardPly(position: "g:legacy", action: "112", actor: .host)],
++            result: .humanWon
++        )
++        legacy.record(
++            game: .xiangqi,
++            plies: [AdaptiveBoardPly(position: "x:legacy", action: "64:67", actor: .host)],
++            result: .aiWon
++        )
++        let originalLegacy = try Data(contentsOf: legacyURL)
++
++        let gomoku = AdaptiveBoardLearningStore(
++            game: .gomoku,
++            fileURL: gomokuURL,
++            legacyURL: legacyURL
++        )
++        let xiangqi = AdaptiveBoardLearningStore(
++            game: .xiangqi,
++            fileURL: xiangqiURL,
++            legacyURL: legacyURL
++        )
++
++        XCTAssertEqual(gomoku.summary.completedGames, 1)
++        XCTAssertEqual(gomoku.summary.rememberedPositions, 1)
++        XCTAssertEqual(xiangqi.summary.completedGames, 1)
++        XCTAssertEqual(xiangqi.summary.rememberedPositions, 1)
++        XCTAssertEqual(try Data(contentsOf: legacyURL), originalLegacy)
++    }
++
 +    func testRepeatedInterruptedLinePenalisesOldAIReplyAndPredictsHumanFormation() {
 +        let url = temporaryURL()
 +        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
@@ -1831,10 +1983,10 @@ index 5eb3806..4a71517 100644
          defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 diff --git a/VeilLinkTests/VeilImportedFileAccessTests.swift b/VeilLinkTests/VeilImportedFileAccessTests.swift
 new file mode 100644
-index 0000000..3da6a91
+index 0000000..4f163b8
 --- /dev/null
 +++ b/VeilLinkTests/VeilImportedFileAccessTests.swift
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,52 @@
 +import Foundation
 +import XCTest
 +@testable import VeilLink
@@ -1871,5 +2023,19 @@ index 0000000..3da6a91
 +            )
 +        )
 +    }
++
++    func testBackgroundMaterializationCopiesLargeFile() async throws {
++        let source = FileManager.default.temporaryDirectory
++            .appendingPathComponent("import-source-\(UUID().uuidString).zip")
++        let expected = Data(repeating: 0x5A, count: 3 * 1_024 * 1_024)
++        try expected.write(to: source, options: .atomic)
++        defer { try? FileManager.default.removeItem(at: source) }
++
++        let staged = try await VeilImportedFileAccess.materializeInBackground(
++            source,
++            acceptedExtensions: ["zip"]
++        )
++        defer { VeilImportedFileAccess.removeStagedCopy(staged) }
++        XCTAssertEqual(try Data(contentsOf: staged), expected)
++    }
 +}
-

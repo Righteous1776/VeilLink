@@ -4,12 +4,12 @@
 
 - A9/A10 labels and status selection touch governance presentation. The patch does not grant mutation authority or alter the runtime selector contract, but requires protected review.
 - Backup restore remains destructive to local app state after password verification. The new staging layer only fixes file access; existing confirmation and backup validation must remain intact.
-- Apple Files behavior varies by provider. Physical tests must cover iCloud Drive and at least one File Provider extension.
+- Apple Files behavior varies by provider. The staging copy is moved off the main actor, uses 1 MiB cancellation checkpoints, and is deleted on every known terminal path; physical tests must still cover iCloud Drive and at least one File Provider extension, including cancellation during a 200 MiB copy.
 
 ## Learning storage
 
 - Removing artificial caps means training data can grow. Writes remain atomic and naturally fail if iOS reports no space; the UI reports write failure. Governor may add a visible disk-pressure pause, but must not silently prune or merge the two games.
-- V1 migration can recover exact positions by prefix. Old aggregate `completedGames` cannot be perfectly split if its old 40-record history had already discarded earlier per-game records; the migration intentionally counts only surviving game-typed records rather than inventing attribution.
+- V1 migration can recover exact positions by prefix. A V2 target is written only after an encode/decode verification in a sibling staging file, while the shared V1 file is left byte-for-byte intact. Old aggregate `completedGames` cannot be perfectly split if its old 40-record history had already discarded earlier per-game records; the migration intentionally counts only surviving game-typed records rather than inventing attribution.
 - This is lightweight repertoire/sequence learning, not unrestricted neural training. It becomes observably adaptive but does not guarantee victory.
 
 ## 三国兵器

@@ -8,7 +8,7 @@ Apply `PATCH.diff` on an isolated Governor integration branch. This candidate do
 
 ### Apple Files import
 
-All existing pickers remain Apple's system Files picker. Selection now accepts the system item, coordinates iCloud/third-party provider download while the security-scoped grant is active, copies it to an app-owned temporary staging folder, validates the expected extension where applicable, and deletes the staged copy after use. Covered entry points:
+All existing pickers remain Apple's system Files picker. Selection now accepts the system item, coordinates iCloud/third-party provider download while the security-scoped grant is active, then performs a cancellable 1 MiB-chunk copy on a background task into an app-owned temporary staging folder. This prevents a 200 MiB backup or large image from monopolising the SwiftUI callback; cancellation and every success/failure path clear the staged copy. Expected extensions are validated after selection. Covered entry points:
 
 - settings backup restore;
 - onboarding backup restore;
@@ -21,7 +21,7 @@ All existing pickers remain Apple's system Files picker. Selection now accepts t
 ### Board learning
 
 - Gomoku and Xiangqi use separate V2 files, summaries, clear actions and exports.
-- The old shared V1 store is migrated non-destructively by `g:` / `x:` position prefix and recorded game kind.
+- The old shared V1 store is migrated non-destructively by `g:` / `x:` position prefix and recorded game kind. Each V2 target is encode/decode verified in a sibling temporary file before atomic placement; the shared V1 file is never deleted, moved or overwritten.
 - Removes the fixed 1,600-position, 40-game and 512 KiB pruning limits. Data remains local and grows until the user clears it or the filesystem refuses a write.
 - Keeps full move sequences. Repeated AI replies in lost or abandoned lines receive a root-score penalty; successful lines receive reinforcement.
 - Predicts the player's next reply after each candidate AI move. Gomoku prioritizes that reply in its adversarial reply search; Xiangqi replays it into the evaluated score, rather than using learning only for move ordering.
