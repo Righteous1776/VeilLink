@@ -13,9 +13,10 @@ struct GameLobbyView: View {
         VeilStableScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero.veilStaggeredEntrance(index: 0)
-                singlePlayerSection.veilStaggeredEntrance(index: 1)
-                realtimeArcadeSection.veilStaggeredEntrance(index: 2)
-                nearbySection.veilStaggeredEntrance(index: 3)
+                visualNovelSection.veilStaggeredEntrance(index: 1)
+                singlePlayerSection.veilStaggeredEntrance(index: 2)
+                realtimeArcadeSection.veilStaggeredEntrance(index: 3)
+                nearbySection.veilStaggeredEntrance(index: 4)
             }
         }
         .background(VeilAmbientBackground())
@@ -64,6 +65,17 @@ struct GameLobbyView: View {
         .veilCard(emphasized: true)
         .veilSpatialPress(maximumTilt: 3.8, cornerRadius: 20, highlightColor: VeilTheme.goldBright)
         .veilDynamicGlow(active: true, emphasized: true)
+    }
+
+    private var visualNovelSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("视觉小说 · 离线剧情", subtitle: "Monogatari 2.8.0 · 官方完整运行时 · 多结局")
+            NavigationLink(destination: VeilMonogatariGameView()) {
+                realtimeGameRow(title: "雨幕之后", detail: "东京雨夜 · 三次剧情抉择 · 四种结局 · 本地存档",
+                                motif: .tide, badge: "VN")
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private var singlePlayerSection: some View {
