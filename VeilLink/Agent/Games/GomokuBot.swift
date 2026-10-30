@@ -11,23 +11,55 @@ struct GomokuBotBudget: Equatable, Sendable {
     let candidateRadius: Int
     let rootCandidateLimit: Int
     let replyCandidateLimit: Int
+    let continuationCandidateLimit: Int
     let timeLimitMilliseconds: Int
 
     static func standard(profileLabel: String) -> GomokuBotBudget {
         let upper = profileLabel.uppercased()
         if upper.contains("SE1") || upper.contains("LEGACY") || upper.contains("IPHONE7") {
-            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 16, replyCandidateLimit: 10, timeLimitMilliseconds: 150)
+            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 16, replyCandidateLimit: 10, continuationCandidateLimit: 0, timeLimitMilliseconds: 150)
         }
         if upper.contains("HIGH") || upper.contains("13PRO") {
-            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 28, replyCandidateLimit: 16, timeLimitMilliseconds: 260)
+            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 28, replyCandidateLimit: 16, continuationCandidateLimit: 8, timeLimitMilliseconds: 260)
         }
-        return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 22, replyCandidateLimit: 12, timeLimitMilliseconds: 200)
+        return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 22, replyCandidateLimit: 12, continuationCandidateLimit: 6, timeLimitMilliseconds: 200)
+    }
+
+    static func forDifficulty(_ difficulty: BoardBotDifficulty, profileLabel: String) -> GomokuBotBudget {
+        let legacy = profileLabel.uppercased().contains("SE1")
+            || profileLabel.uppercased().contains("LEGACY")
+            || profileLabel.uppercased().contains("IPHONE7")
+        switch difficulty {
+        case .relaxed:
+            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 12, replyCandidateLimit: 8, continuationCandidateLimit: 0, timeLimitMilliseconds: legacy ? 100 : 130)
+        case .balanced:
+            return standard(profileLabel: profileLabel)
+        case .advanced:
+            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: legacy ? 22 : 36, replyCandidateLimit: legacy ? 14 : 22, continuationCandidateLimit: legacy ? 6 : 14, timeLimitMilliseconds: legacy ? 240 : 520)
+        case .master:
+            return GomokuBotBudget(candidateRadius: legacy ? 2 : 3, rootCandidateLimit: legacy ? 28 : 48, replyCandidateLimit: legacy ? 16 : 30, continuationCandidateLimit: legacy ? 8 : 20, timeLimitMilliseconds: legacy ? 420 : 950)
+        }
+    }
+
+    func reinforced(by trainingLevel: Int) -> GomokuBotBudget {
+        let reinforcement = max(0, min(8, trainingLevel))
+        guard reinforcement > 0 else { return self }
+        return GomokuBotBudget(
+            candidateRadius: candidateRadius,
+            rootCandidateLimit: min(56, rootCandidateLimit + reinforcement * 2),
+            replyCandidateLimit: min(34, replyCandidateLimit + reinforcement),
+            continuationCandidateLimit: continuationCandidateLimit == 0
+                ? 0
+                : min(22, continuationCandidateLimit + reinforcement),
+            timeLimitMilliseconds: min(1_100, timeLimitMilliseconds + reinforcement * 45)
+        )
     }
 
     static let deterministicTest = GomokuBotBudget(
         candidateRadius: 2,
         rootCandidateLimit: 18,
         replyCandidateLimit: 10,
+        continuationCandidateLimit: 8,
         timeLimitMilliseconds: 2_000
     )
 }
@@ -70,7 +102,8 @@ enum GomokuBot {
         let rankedRoots = candidates
             .map {
                 let learned = learning.bonus(position: rootPosition, action: String($0))
-                return ($0, tacticalPriority(index: $0, state: state, player: player) + learned)
+                let sequence = learning.rootAdjustment(action: String($0))
+                return ($0, tacticalPriority(index: $0, state: state, player: player) + learned + sequence)
             }
             .sorted { lhs, rhs in
                 if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
@@ -93,10 +126,14 @@ enum GomokuBot {
             } else {
                 let opponent = player.opponent
                 let replyPosition = AdaptiveBoardPosition.gomoku(next)
+                let predictedReply = learning.predictedHumanReply(afterAIAction: String(index))
                 let replies = candidateIndices(in: next, radius: budget.candidateRadius)
                     .map {
                         let learned = learning.bonus(position: replyPosition, action: String($0))
-                        return ($0, tacticalPriority(index: $0, state: next, player: opponent) + learned)
+                        let prediction = predictedReply?.action == String($0)
+                            ? min(4_000, predictedReply!.evidence * 900)
+                            : 0
+                        return ($0, tacticalPriority(index: $0, state: next, player: opponent) + learned + prediction)
                     }
                     .sorted { lhs, rhs in
                         if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
@@ -110,11 +147,34 @@ enum GomokuBot {
                     nodes += 1
                     var afterReply = next
                     guard afterReply.apply(index: reply, actor: opponent) else { continue }
-                    let replyScore: Int
+                    var replyScore: Int
                     if afterReply.winner == opponent {
                         replyScore = lossScore
                     } else {
                         replyScore = staticEvaluation(afterReply, root: player)
+                        if budget.continuationCandidateLimit > 0 {
+                            let continuations = candidateIndices(in: afterReply, radius: budget.candidateRadius)
+                                .map { candidate in
+                                    (
+                                        candidate,
+                                        tacticalPriority(index: candidate, state: afterReply, player: player)
+                                    )
+                                }
+                                .sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
+                                .prefix(budget.continuationCandidateLimit)
+                            var bestContinuation = Int.min
+                            for (continuation, _) in continuations {
+                                guard Date.timeIntervalSinceReferenceDate < deadline else { break }
+                                nodes += 1
+                                var afterContinuation = afterReply
+                                guard afterContinuation.apply(index: continuation, actor: player) else { continue }
+                                let continuationScore = afterContinuation.winner == player
+                                    ? winScore
+                                    : staticEvaluation(afterContinuation, root: player)
+                                bestContinuation = max(bestContinuation, continuationScore)
+                            }
+                            if bestContinuation != Int.min { replyScore = bestContinuation }
+                        }
                     }
                     worstReply = min(worstReply, replyScore)
                     if worstReply <= lossScore { break }
@@ -136,6 +196,16 @@ enum GomokuBot {
 
     static func legalCandidateCount(in state: GomokuState, radius: Int = 2) -> Int {
         candidateIndices(in: state, radius: radius).count
+    }
+
+    static func coachingHint(beforePlaying index: Int, in state: GomokuState, for player: MiniGamePlayer) -> String {
+        let own: Int8 = player == .host ? 1 : 2
+        let opponent: Int8 = player == .host ? 2 : 1
+        let attack = placementPatternScore(index: index, state: state, value: own)
+        let defend = placementPatternScore(index: index, state: state, value: opponent)
+        if defend >= 8_000 { return "教练提示：这手优先封堵了对方的强威胁，防守判断正确。" }
+        if attack >= 2_000 { return "教练提示：你正在建立强进攻形状；下一手留意对方的反冲。" }
+        return "教练提示：落子后先同时检查自己的活三和对方的冲四。"
     }
 
     private static func result(index: Int, score: Int, nodes: Int, started: TimeInterval) -> GomokuBotMove {
