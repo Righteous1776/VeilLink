@@ -34,6 +34,25 @@ final class AdaptiveBoardLearningTests: XCTestCase {
         XCTAssertEqual(restored.summary.rememberedPositions, store.summary.rememberedPositions)
     }
 
+    func testStoredBytesMatchesFileMetadataAfterUnboundedHistoryWrites() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = AdaptiveBoardLearningStore(fileURL: url)
+        for index in 0..<65 {
+            store.record(
+                game: .gomoku,
+                plies: [AdaptiveBoardPly(position: "g:stat-\(index)", action: "112", actor: .host)],
+                result: .humanWon
+            )
+        }
+        let expectedBytes = try XCTUnwrap(
+            (try FileManager.default.attributesOfItem(atPath: url.path))[.size] as? NSNumber
+        ).intValue
+        XCTAssertGreaterThan(expectedBytes, 0)
+        XCTAssertEqual(store.summary.storedBytes, expectedBytes)
+        XCTAssertEqual(store.summary.completedGames, 65)
+    }
+
     func testGameScopedStoresDoNotLeakSummariesOrPositions() {
         let gomokuURL = temporaryURL()
         let xiangqiURL = temporaryURL()

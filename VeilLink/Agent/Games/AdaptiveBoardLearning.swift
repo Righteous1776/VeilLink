@@ -271,10 +271,13 @@ final class AdaptiveBoardLearningStore {
     }
 
     var summary: AdaptiveBoardLearningSummary {
-        AdaptiveBoardLearningSummary(
+        // Metadata read only: the history is intentionally uncapped, so loading
+        // its entire JSON just to display its byte count is a memory hazard.
+        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        return AdaptiveBoardLearningSummary(
             completedGames: database.completedGames,
             rememberedPositions: database.positions.count,
-            storedBytes: (try? Data(contentsOf: fileURL).count) ?? 0
+            storedBytes: fileSize
         )
     }
 
@@ -344,17 +347,22 @@ final class AdaptiveBoardLearningStore {
         let interrupted = records.filter { $0.result == .unfinished }.count
         let humanWins = records.filter { $0.result == .humanWon }.count
         let aiWins = records.filter { $0.result == .aiWon }.count
-        let openings = records.compactMap { record in
-            record.actions.first(where: { $0.first == "h" }).map { String($0.dropFirst()) }
+        // Count each opening once. The former max-by-filter implementation
+        // rescanned the entire history for every comparison (quadratic cost).
+        var openingCounts: [String: Int] = [:]
+        for record in records {
+            if let firstHumanMove = record.actions.first(where: { $0.first == "h" }) {
+                let action = String(firstHumanMove.dropFirst())
+                openingCounts[action, default: 0] += 1
+            }
         }
         let repeatedLines = Dictionary(grouping: records) { record in
             record.actions.prefix(6).joined(separator: ",")
         }.values.filter { $0.count >= 2 }.count
-        let preferredAction = openings.max(by: { lhs, rhs in
-            let left = openings.filter { $0 == lhs }.count
-            let right = openings.filter { $0 == rhs }.count
-            return left < right
-        })
+        let preferredAction = openingCounts.max(by: { lhs, rhs in
+            if lhs.value != rhs.value { return lhs.value < rhs.value }
+            return lhs.key > rhs.key
+        })?.key
 
         let preferredOpening: String
         let nextLesson: String
