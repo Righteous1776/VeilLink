@@ -1,0 +1,10 @@
+diff --git a/VeilLink/UI/ToolCenterView.swift b/VeilLink/UI/ToolCenterView.swift
+--- a/VeilLink/UI/ToolCenterView.swift
++++ b/VeilLink/UI/ToolCenterView.swift
+@@ -68,3 +68,6 @@
+                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
++                    if matches("AetherLab 百项实验室 科学 Mesh 算法 离线游戏 实验") {
++                        toolLink("AetherLab 100", detail: "百项离线计算 · 原创实验", icon: "atom", destination: VeilAetherLabView())
++                    }
+                     if matches("手电筒信标 手电筒 信标 闪光灯 sos flashlight beacon") {
+                         toolLink("手电筒信标", detail: "常亮 · 脉冲 · SOS", icon: "flashlight.on.fill", destination: VeilBeaconView())
