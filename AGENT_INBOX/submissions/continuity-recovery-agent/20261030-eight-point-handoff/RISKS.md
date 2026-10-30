@@ -17,3 +17,6 @@
 - Historical Codex PRs, Build62 integrated P0 fixes, game rendering R7; direct mutations to main prohibited. Keep the exact main-based diff in one Governor batch; never blanket merge old proposals.
 - Monogatari #80/#85 partial GitHub source vs missing binary. Do not treat user-supplied R5 archive as currently available in this runtime. No fake install-success claim.
 - No live-lane grant has been issued in repo for this exact eight-point task: all work INBOX_ONLY.
+
+## Separate append-only storage caution
+`VeilPerGameLearningJournal.swift` has no fixed global count/file size limit; it trades eviction for increased disk footprint and must be backed by quota-free **user-observable** disk status and reasonable device storage-pressure handling. Its journal import makes a temporary copy and rollback copy, potentially doubling disk usage. The current import writes are not journal-transactional across unexpected process crashes. Governor must perform physical iPhone7 interruption/corruption tests and migrate legacy v1 evidence without ever deleting the original before declaring the learning replacement ready.
