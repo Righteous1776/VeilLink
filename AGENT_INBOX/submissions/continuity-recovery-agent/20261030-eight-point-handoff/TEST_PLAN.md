@@ -15,3 +15,6 @@
 - Training engine loss/incomplete episode replay, per-game file isolation, export/import/corruption recovery, bot safety legal-gate, deterministic UI “阵法预判”, unexpected process termination.
 - Monogatari official vendor SHA verification, full R5 host, iOS15 WebKit compat, localStorage/save/restart, privacy and license before enabling launch.
 - Git apply --check, XcodeGen, iOS Simulator compile, full XCTest, iPhoneOS release build, physical iPhone7. No IPA Action before governor arbitration.
+
+## Newly authored storage tests (NOT executed yet)
+`VeilPerGameLearningJournalTests.swift` checks independent per-game files/clear/stats, 1650 appended episodes without old 1600/40 pruning, per-game export/import, and invalid-file rollback. Apple iOS SDK compatibility, application integration, legacy migration and actual stress remain blocking. Existing 10 passed Linux XCTest cover only FilesIngress and in-memory sequence prediction.
