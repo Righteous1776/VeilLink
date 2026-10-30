@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import Foundation
+import UIKit
 
 struct MiniGameHubView: View {
     @ObservedObject var model: AppModel
@@ -1418,6 +1419,56 @@ private struct MiniGameStatusHeader: View {
     }
 }
 
+/// A tap-only UIKit bridge for board coordinates. The old zero-distance
+/// DragGesture hijacked scrolling and could submit moves on drag release.
+/// This view never recognizes a drag and does not cancel ancestor scroll touches.
+private struct VeilBoardTapSurface: UIViewRepresentable {
+    let enabled: Bool
+    let onTap: (CGPoint) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onTap: onTap)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .clear
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        view.addGestureRecognizer(tap)
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.onTap = onTap
+        view.isUserInteractionEnabled = enabled
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onTap: (CGPoint) -> Void
+
+        init(onTap: @escaping (CGPoint) -> Void) {
+            self.onTap = onTap
+        }
+
+        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard recognizer.state == .ended, let view = recognizer.view else { return }
+            onTap(recognizer.location(in: view))
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+    }
+}
+
 struct GomokuBoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let state: GomokuState
@@ -1473,24 +1524,18 @@ struct GomokuBoardView: View {
                         }
                     }
 
-                    if enabled {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onEnded { gesture in
-                                        let col = Int(round((gesture.location.x - margin) / step))
-                                        let row = Int(round((gesture.location.y - margin) / step))
-                                        guard (0..<GomokuState.size).contains(row), (0..<GomokuState.size).contains(col) else { return }
-                                        let point = CGPoint(x: margin + CGFloat(col) * step, y: margin + CGFloat(row) * step)
-                                        let dx = gesture.location.x - point.x
-                                        let dy = gesture.location.y - point.y
-                                        guard sqrt(dx * dx + dy * dy) <= step * 0.52 else { return }
-                                        let index = row * GomokuState.size + col
-                                        guard state.value(at: index) == 0 else { return }
-                                        onMove(index)
-                                    }
-                            )
+                    VeilBoardTapSurface(enabled: enabled) { location in
+                        guard enabled, step > 0 else { return }
+                        let col = Int(round((location.x - margin) / step))
+                        let row = Int(round((location.y - margin) / step))
+                        guard (0..<GomokuState.size).contains(row), (0..<GomokuState.size).contains(col) else { return }
+                        let point = CGPoint(x: margin + CGFloat(col) * step, y: margin + CGFloat(row) * step)
+                        let dx = location.x - point.x
+                        let dy = location.y - point.y
+                        guard hypot(dx, dy) <= step * 0.52 else { return }
+                        let index = row * GomokuState.size + col
+                        guard state.value(at: index) == 0 else { return }
+                        onMove(index)
                     }
                 }
                 .frame(width: side, height: side)
@@ -1614,16 +1659,11 @@ struct XiangqiBoardView: View {
                         }
                     }
 
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onEnded { gesture in
-                                    guard enabled else { return }
-                                    guard let index = xiangqiIndex(at: gesture.location, width: width, height: height, margin: margin, stepX: stepX, stepY: stepY) else { return }
-                                    handleTap(index)
-                                }
-                        )
+                    VeilBoardTapSurface(enabled: enabled) { location in
+                        guard enabled else { return }
+                        guard let index = xiangqiIndex(at: location, width: width, height: height, margin: margin, stepX: stepX, stepY: stepY) else { return }
+                        handleTap(index)
+                    }
                 }
             }
             .aspectRatio(0.86, contentMode: .fit)

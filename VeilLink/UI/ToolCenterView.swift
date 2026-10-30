@@ -66,6 +66,9 @@ struct VeilToolCenterView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+                    if matches("v27 功能库 实验室 游戏 情绪 工具 feature library") {
+                        toolLink("V27 功能库", detail: "统一搜索 · 按需加载", icon: "square.grid.3x3.fill", destination: VeilV27FeatureHubView())
+                    }
                     if matches("手电筒信标 手电筒 信标 闪光灯 sos flashlight beacon") {
                         toolLink("手电筒信标", detail: "常亮 · 脉冲 · SOS", icon: "flashlight.on.fill", destination: VeilBeaconView())
                     }
@@ -954,7 +957,7 @@ struct VeilLinkPulseToolView: View {
 
 private let veilToolTextByteLimit = 128 * 1_024
 
-private enum VeilToolClipboard {
+enum VeilToolClipboard {
     static func copy(_ text: String) {
         guard !text.isEmpty else { return }
         let item: [String: Any] = [UTType.utf8PlainText.identifier: text]
@@ -1058,6 +1061,7 @@ struct VeilWalkieTalkieView: View {
     @State private var selectedPeerIDs = Set<String>()
     @State private var pressed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     init(model: AppModel) {
         self.model = model
@@ -1083,10 +1087,22 @@ struct VeilWalkieTalkieView: View {
         .background(VeilAmbientBackground())
         .navigationTitle("对讲机")
         .navigationBarTitleDisplayMode(.inline)
-        .onDisappear {
-            if radio.state == .transmitting || radio.state == .preparing {
-                radio.endTransmit()
-            }
+        .onDisappear { cancelPress() }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active { cancelPress() }
+        }
+        .onChange(of: recipients) { peers in
+            if peers.isEmpty { cancelPress() }
+        }
+        .onChange(of: isReceiving) { receiving in
+            if receiving { cancelPress() }
+        }
+    }
+
+    private func cancelPress() {
+        pressed = false
+        if radio.state == .transmitting || radio.state == .preparing {
+            radio.endTransmit()
         }
     }
 

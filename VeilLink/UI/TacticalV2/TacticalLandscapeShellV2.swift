@@ -122,6 +122,7 @@ struct TacticalLandscapeShellV2: View {
                     .background(.black.opacity(0.34))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .padding(10)
+                    .allowsHitTesting(false)
             }
         }
         .clipped()
@@ -235,7 +236,8 @@ struct TacticalLandscapeShellV2: View {
     }
 
     private func mapGesture(size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 1)
+        // Coordinate selection must respond to a stationary tap on iOS 15.
+        DragGesture(minimumDistance: 0)
             .onChanged { value in
                 let normalized = normalizedPoint(value.location, size: size)
                 guard let target = TacticalV2.MapGeometryV2.nearestCell(

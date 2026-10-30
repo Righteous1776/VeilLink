@@ -110,9 +110,25 @@ struct AfterglowConvoyLabView: View {
             model.configure(reduceMotion: reduceMotion)
             model.setPaused(false)
         }
-        .onDisappear { model.setPaused(true) }
-        .onChange(of: scenePhase) { model.setPaused($0 != .active) }
-        .onChange(of: showsGuide) { model.setPaused($0) }
+        .onDisappear {
+            model.steer(0)
+            model.setShielding(false)
+            model.setPaused(true)
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active {
+                model.steer(0)
+                model.setShielding(false)
+            }
+            model.setPaused(phase != .active)
+        }
+        .onChange(of: showsGuide) { showing in
+            if showing {
+                model.steer(0)
+                model.setShielding(false)
+            }
+            model.setPaused(showing)
+        }
         .onChange(of: reduceMotion) { model.configure(reduceMotion: $0) }
     }
 

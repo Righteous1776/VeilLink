@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct GameLobbyView: View {
     @ObservedObject var model: AppModel
@@ -274,6 +275,11 @@ struct LocalAIGameView: View {
     @StateObject private var controller: LocalAIGameController
     @State private var selectedXiangqiIndex: Int?
     @State private var showsTacticalGuide = false
+    @State private var showsLearningResetConfirmation = false
+    @State private var showsLearningImporter = false
+    @State private var showsLearningShare = false
+    @State private var learningExportURL: URL?
+    @State private var learningExchangeMessage: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: AppModel, game: MiniGameKind) {
@@ -286,6 +292,7 @@ struct LocalAIGameView: View {
         ScrollView {
             VStack(spacing: 14) {
                 statusCard
+                if game == .gomoku || game == .xiangqi { learningCard }
                 if game == .tactical { tacticalControlCard }
                 board
                 if controller.outcome != .playing { resultCard }
@@ -328,6 +335,49 @@ struct LocalAIGameView: View {
         .sheet(isPresented: $showsTacticalGuide) {
             TacticalSoloGuideView()
         }
+        .sheet(isPresented: $showsLearningShare, onDismiss: { learningExportURL = nil }) {
+            if let learningExportURL {
+                ShareSheet(items: [learningExportURL])
+            }
+        }
+        .fileImporter(
+            isPresented: $showsLearningImporter,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            do {
+                let report = try controller.importBoardLearning(from: url)
+                learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
+                model.haptics.selection()
+            } catch {
+                learningExchangeMessage = error.localizedDescription
+            }
+        }
+        .alert(
+            "棋谱训练包",
+            isPresented: Binding(
+                get: { learningExchangeMessage != nil },
+                set: { if !$0 { learningExchangeMessage = nil } }
+            )
+        ) {
+            Button("好", role: .cancel) { learningExchangeMessage = nil }
+        } message: {
+            Text(learningExchangeMessage ?? "")
+        }
+        .confirmationDialog(
+            "清空本地自学习棋谱？",
+            isPresented: $showsLearningResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("清空棋谱与训练数据", role: .destructive) {
+                controller.clearBoardLearning()
+                model.haptics.selection()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("只会删除五子棋和中国象棋的本地训练数据，不影响对局功能。")
+        }
     }
 
     private var statusCard: some View {
@@ -355,6 +405,58 @@ struct LocalAIGameView: View {
             }
         }
         .veilCard(emphasized: true)
+    }
+
+    private var learningCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top) {
+                Image(systemName: "brain.head.profile")
+                    .foregroundColor(VeilTheme.gold)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("本地自学习棋手")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(VeilTheme.text)
+                    Text(controller.learningSummary.compactText)
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(VeilTheme.goldBright)
+                }
+                Spacer()
+                Button("清空") { showsLearningResetConfirmation = true }
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.secondaryText)
+            }
+            Text("每局自动记住你的走法，并把常见应对加入下一局搜索。最近 40 局保留完整棋谱，更早对局压缩为长期走法权重；全程离线，存储上限 512 KB。")
+                .font(.caption)
+                .foregroundColor(VeilTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button {
+                    do {
+                        learningExportURL = try controller.exportBoardLearning()
+                        showsLearningShare = true
+                    } catch {
+                        learningExchangeMessage = error.localizedDescription
+                    }
+                } label: {
+                    Label("导出训练包", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    showsLearningImporter = true
+                } label: {
+                    Label("导入增强包", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.bordered)
+            }
+            .font(.caption.weight(.semibold))
+            if !controller.learningStoreAvailable {
+                Label("训练数据暂时无法写入，当前对局仍可正常进行", systemImage: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.danger)
+            }
+        }
+        .veilCard()
     }
 
     @ViewBuilder

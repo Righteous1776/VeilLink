@@ -8,6 +8,7 @@ import SwiftUI
 struct VeilPulseRunnerView: View {
     @StateObject private var session = PlatformerGameSession()
     @State private var pausedByLifecycle = false
+    @State private var jumpHeld = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -63,12 +64,24 @@ struct VeilPulseRunnerView: View {
                     pausedByLifecycle = false
                     session.resume()
                 }
-            } else if session.phase == .playing {
-                pausedByLifecycle = true
-                session.pause()
+            } else {
+                jumpHeld = false
+                session.releaseJump()
+                if session.phase == .playing {
+                    pausedByLifecycle = true
+                    session.pause()
+                }
+            }
+        }
+        .onChange(of: session.phase) { phase in
+            if phase != .playing {
+                jumpHeld = false
+                session.releaseJump()
             }
         }
         .onDisappear {
+            jumpHeld = false
+            session.releaseJump()
             if session.phase == .playing { pausedByLifecycle = true }
             session.pause()
         }
@@ -163,8 +176,15 @@ struct VeilPulseRunnerView: View {
             .contentShape(Circle())
             .gesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { _ in session.jump() }
-                    .onEnded { _ in session.releaseJump() }
+                    .onChanged { _ in
+                        guard !jumpHeld else { return }
+                        jumpHeld = true
+                        session.jump()
+                    }
+                    .onEnded { _ in
+                        jumpHeld = false
+                        session.releaseJump()
+                    }
             )
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel("跳跃")

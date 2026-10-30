@@ -140,6 +140,7 @@ struct SignalDiveLabView: View {
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var controlOrigin:
         CGPoint?
@@ -202,6 +203,10 @@ struct SignalDiveLabView: View {
             model.setReduceMotion(
                 $0
             )
+        }
+        .onDisappear { stopTouchInput() }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active { stopTouchInput() }
         }
         .navigationTitle(
             "深潜信号"
@@ -507,6 +512,12 @@ struct SignalDiveLabView: View {
                 style: .continuous
             )
         )
+    }
+
+    private func stopTouchInput() {
+        controlOrigin = nil
+        controlVector = .zero
+        model.stopThrust()
     }
 
     private func thrustGesture(

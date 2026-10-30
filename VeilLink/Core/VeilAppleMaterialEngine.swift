@@ -54,6 +54,7 @@ struct VeilPlatformGlassSurfaceModifier: ViewModifier {
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .stroke(VeilTheme.hairline, lineWidth: 1)
+                        .allowsHitTesting(false)
                 )
         } else {
             content
@@ -66,6 +67,7 @@ struct VeilPlatformGlassSurfaceModifier: ViewModifier {
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .stroke(appearance.isDarkAppearance ? Color.white.opacity(0.10) : Color.white.opacity(0.72), lineWidth: 0.8)
+                        .allowsHitTesting(false)
                 )
                 .shadow(color: Color.black.opacity(appearance.isDarkAppearance ? 0.24 : 0.10), radius: 14, x: 0, y: 8)
         }

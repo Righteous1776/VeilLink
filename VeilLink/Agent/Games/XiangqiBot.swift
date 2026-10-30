@@ -46,6 +46,7 @@ enum XiangqiBot {
         let deadline: TimeInterval
         let rootPlayer: MiniGamePlayer
         let quiescenceDepth: Int
+        let learning: AdaptiveBoardLearningSnapshot
         var nodes = 0
         var stopped = false
 
@@ -62,7 +63,8 @@ enum XiangqiBot {
     static func chooseMove(
         in state: XiangqiState,
         for player: MiniGamePlayer,
-        budget: XiangqiBotBudget
+        budget: XiangqiBotBudget,
+        learning: AdaptiveBoardLearningSnapshot = .empty
     ) -> XiangqiBotMove? {
         guard state.winner == nil,
               !state.isDraw,
@@ -72,14 +74,15 @@ enum XiangqiBot {
 
         let started = Date.timeIntervalSinceReferenceDate
         let deadline = started + Double(max(40, budget.timeLimitMilliseconds)) / 1_000.0
-        let rootMoves = orderedLegalMoves(in: state, actor: player)
+        let rootMoves = orderedLegalMoves(in: state, actor: player, learning: learning)
         guard !rootMoves.isEmpty else { return nil }
 
         var bestCompleted: (move: Move, score: Int, depth: Int)?
         var context = SearchContext(
             deadline: deadline,
             rootPlayer: player,
-            quiescenceDepth: max(0, budget.quiescenceDepth)
+            quiescenceDepth: max(0, budget.quiescenceDepth),
+            learning: learning
         )
 
         for depth in 1...max(1, budget.maxDepth) {
@@ -151,7 +154,7 @@ enum XiangqiBot {
     }
 
     static func legalMoveCount(in state: XiangqiState, actor: MiniGamePlayer) -> Int {
-        orderedLegalMoves(in: state, actor: actor).count
+        orderedLegalMoves(in: state, actor: actor, learning: .empty).count
     }
 
     private static func search(
@@ -184,7 +187,7 @@ enum XiangqiBot {
         }
 
         let actor = state.currentPlayer
-        let moves = orderedLegalMoves(in: state, actor: actor)
+        let moves = orderedLegalMoves(in: state, actor: actor, learning: context.learning)
         if moves.isEmpty {
             return state.isInCheck(player: actor)
                 ? (actor == context.rootPlayer ? -mateScore - depth : mateScore + depth)
@@ -251,7 +254,7 @@ enum XiangqiBot {
         guard remaining > 0 else { return standPat }
 
         let actor = state.currentPlayer
-        let captures = orderedLegalMoves(in: state, actor: actor).filter {
+        let captures = orderedLegalMoves(in: state, actor: actor, learning: context.learning).filter {
             state.piece(at: $0.to) != nil
         }
         guard !captures.isEmpty else { return standPat }
@@ -303,13 +306,15 @@ enum XiangqiBot {
 
     private static func orderedLegalMoves(
         in state: XiangqiState,
-        actor: MiniGamePlayer
+        actor: MiniGamePlayer,
+        learning: AdaptiveBoardLearningSnapshot
     ) -> [Move] {
         guard state.currentPlayer == actor else { return [] }
 
         var moves: [Move] = []
         moves.reserveCapacity(48)
 
+        let position = AdaptiveBoardPosition.xiangqi(state)
         for from in 0..<(XiangqiState.rows * XiangqiState.columns) {
             guard state.piece(at: from) != nil else { continue }
             for to in state.legalDestinations(from: from, actor: actor) {
@@ -325,6 +330,7 @@ enum XiangqiBot {
                 if next.winner == actor {
                     ordering += mateScore
                 }
+                ordering += learning.bonus(position: position, action: "\(from):\(to)")
                 moves.append(Move(from: from, to: to, orderingScore: ordering))
             }
         }

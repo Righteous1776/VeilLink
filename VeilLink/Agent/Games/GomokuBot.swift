@@ -40,7 +40,8 @@ enum GomokuBot {
     static func chooseMove(
         in state: GomokuState,
         for player: MiniGamePlayer,
-        budget: GomokuBotBudget
+        budget: GomokuBotBudget,
+        learning: AdaptiveBoardLearningSnapshot = .empty
     ) -> GomokuBotMove? {
         guard state.winner == nil,
               !state.isDraw,
@@ -65,8 +66,12 @@ enum GomokuBot {
             }
         }
 
+        let rootPosition = AdaptiveBoardPosition.gomoku(state)
         let rankedRoots = candidates
-            .map { ($0, tacticalPriority(index: $0, state: state, player: player)) }
+            .map {
+                let learned = learning.bonus(position: rootPosition, action: String($0))
+                return ($0, tacticalPriority(index: $0, state: state, player: player) + learned)
+            }
             .sorted { lhs, rhs in
                 if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
                 return lhs.0 < rhs.0
@@ -87,8 +92,12 @@ enum GomokuBot {
                 score = winScore
             } else {
                 let opponent = player.opponent
+                let replyPosition = AdaptiveBoardPosition.gomoku(next)
                 let replies = candidateIndices(in: next, radius: budget.candidateRadius)
-                    .map { ($0, tacticalPriority(index: $0, state: next, player: opponent)) }
+                    .map {
+                        let learned = learning.bonus(position: replyPosition, action: String($0))
+                        return ($0, tacticalPriority(index: $0, state: next, player: opponent) + learned)
+                    }
                     .sorted { lhs, rhs in
                         if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
                         return lhs.0 < rhs.0

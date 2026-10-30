@@ -121,7 +121,7 @@ struct VeilReleaseActivationView: View {
         if VeilReleaseActivationInteractionPolicy.allowsOnboardingSwipe(on: page) {
             pageSurface(proxy: proxy)
                 .contentShape(Rectangle())
-                .gesture(swipeGesture)
+                .simultaneousGesture(swipeGesture)
         } else {
             pageSurface(proxy: proxy)
         }
@@ -132,6 +132,7 @@ struct VeilReleaseActivationView: View {
             pageContent(proxy: proxy)
                 .id(page)
                 .opacity(contentVisible ? 1 : 0)
+                .allowsHitTesting(contentVisible)
                 .scaleEffect(contentVisible || motionReduced ? 1 : 0.975)
                 .offset(x: motionReduced ? 0 : dragX * 0.12, y: contentVisible || motionReduced ? 0 : 12)
         }
@@ -359,10 +360,18 @@ struct VeilReleaseActivationView: View {
     }
 
     private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 12)
-            .updating($dragX) { value, state, _ in state = value.translation.width }
+        DragGesture(minimumDistance: 20)
+            .updating($dragX) { value, state, _ in
+                let x = abs(value.translation.width)
+                let y = abs(value.translation.height)
+                // Only animate horizontal paging. Vertical pans belong to the ScrollView.
+                state = x > y * 1.35 ? value.translation.width : 0
+            }
             .onEnded { value in
-                guard abs(value.predictedEndTranslation.width) > 72 else { return }
+                let x = abs(value.translation.width)
+                let y = abs(value.translation.height)
+                guard x > y * 1.35,
+                      abs(value.predictedEndTranslation.width) > 72 else { return }
                 if value.predictedEndTranslation.width < 0, page < 3 {
                     move(to: page + 1)
                 } else if value.predictedEndTranslation.width > 0, page > 0 {
