@@ -1,0 +1,171 @@
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -118,11 +118,19 @@
+         }
+         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
+             if case .success(let url) = result {
++                do {
++                    if let previous = restoreURL { VeilFilesImportStage.discard(previous) }
++                    restoreURL = try VeilFilesImportStage.stage(url, maximumBytes: 200 * 1_024 * 1_024)
++                    showsRestorePassword = true
++                } catch {
++                    model.alertMessage = error.localizedDescription
++                }
+-                restoreURL = url
+-                showsRestorePassword = true
+             }
+         }
++        .sheet(isPresented: $showsRestorePassword, onDismiss: {
++            if let restoreURL { VeilFilesImportStage.discard(restoreURL) }
++            restoreURL = nil
++        }) {
+-        .sheet(isPresented: $showsRestorePassword) {
+             BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { password in
+                 if let restoreURL { model.restoreBackup(url: restoreURL, password: password) }
+             }
+diff --git a/VeilLink/UI/OnboardingView.swift b/VeilLink/UI/OnboardingView.swift
+--- a/VeilLink/UI/OnboardingView.swift
++++ b/VeilLink/UI/OnboardingView.swift
+@@ -118,13 +118,21 @@
+         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
+             switch result {
+             case .success(let url):
++                do {
++                    if let previous = restoreURL { VeilFilesImportStage.discard(previous) }
++                    restoreURL = try VeilFilesImportStage.stage(url, maximumBytes: 200 * 1_024 * 1_024)
++                    showsRestorePassword = true
++                } catch {
++                    model.alertMessage = error.localizedDescription
++                }
+-                restoreURL = url
+-                showsRestorePassword = true
+             case .failure(let error):
+                 model.alertMessage = "无法选择备份：\(error.localizedDescription)"
+             }
+         }
++        .sheet(isPresented: $showsRestorePassword, onDismiss: {
++            if let restoreURL { VeilFilesImportStage.discard(restoreURL) }
++            restoreURL = nil
++        }) {
+-        .sheet(isPresented: $showsRestorePassword) {
+             BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { backupPassword in
+                 if let restoreURL { model.restoreBackup(url: restoreURL, password: backupPassword) }
+             }
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -347,7 +347,9 @@
+         ) { result in
+             guard case .success(let urls) = result, let url = urls.first else { return }
+             do {
++                let staged = try VeilFilesImportStage.stage(url, maximumBytes: 512 * 1_024 * 1_024)
++                defer { VeilFilesImportStage.discard(staged) }
++                let report = try controller.importBoardLearning(from: staged)
+-                let report = try controller.importBoardLearning(from: url)
+                 learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
+                 model.haptics.selection()
+             } catch {
+diff --git a/VeilLink/UI/VeilOfflineHTMLReaderView.swift b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
+--- a/VeilLink/UI/VeilOfflineHTMLReaderView.swift
++++ b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
+@@ -111,7 +111,9 @@
+                 Task {
+                     do {
+                         let parsed = try await Task.detached(priority: .userInitiated) {
++                            let staged = try VeilFilesImportStage.stage(url, maximumBytes: Int64(VeilHTMLImportPolicy.maximumSourceBytes))
++                            defer { VeilFilesImportStage.discard(staged) }
++                            return try VeilOfflineHTMLImporter.load(fileURL: staged)
+-                            try VeilOfflineHTMLImporter.load(fileURL: url)
+                         }.value
+                         guard importGeneration == token else { return }
+                         document = parsed
+diff --git a/VeilLink/UI/VeilBackupPreflightView.swift b/VeilLink/UI/VeilBackupPreflightView.swift
+--- a/VeilLink/UI/VeilBackupPreflightView.swift
++++ b/VeilLink/UI/VeilBackupPreflightView.swift
+@@ -7,6 +7,7 @@
+     @State private var deepCRC = false
+     @State private var result: VeilBackupPreflightPolicy.Report?
+     @State private var working = false
++    @State private var importError: String?
+     @State private var generation = UUID()
+ 
+     var body: some View {
+@@ -27,6 +28,10 @@
+                 .buttonStyle(.borderedProminent)
+                 .disabled(working)
+                 if working { ProgressView("只读检查中…") }
++                if let importError {
++                    Label(importError, systemImage: "exclamationmark.triangle")
++                        .font(.footnote).foregroundColor(.red)
++                }
+                 if let result {
+                     VStack(alignment: .leading, spacing: 10) {
+                         Text(result.safetyLabel)
+@@ -67,12 +72,20 @@
+             working = true
+             result = nil
+             let runDeep = deepCRC
++            importError = nil
+             Task {
++                let inspected = await Task.detached(priority: .userInitiated) { () -> (VeilBackupPreflightPolicy.Report?, String?) in
++                    do {
++                        let staged = try VeilFilesImportStage.stage(file, maximumBytes: Int64(VeilBackupPreflightPolicy.maxArchiveBytes))
++                        defer { VeilFilesImportStage.discard(staged) }
++                        return (VeilBackupArchiveInspector.inspect(staged, verifyAllCRC: runDeep), nil)
++                    } catch {
++                        return (nil, error.localizedDescription)
++                    }
+-                let inspected = await Task.detached(priority: .userInitiated) {
+-                    VeilBackupArchiveInspector.inspect(file, verifyAllCRC: runDeep)
+                 }.value
+                 guard generation == token else { return }
++                result = inspected.0
++                importError = inspected.1
+-                result = inspected
+                 working = false
+             }
+         }
+diff --git a/VeilLink/UI/VeilFileIntegrityToolView.swift b/VeilLink/UI/VeilFileIntegrityToolView.swift
+--- a/VeilLink/UI/VeilFileIntegrityToolView.swift
++++ b/VeilLink/UI/VeilFileIntegrityToolView.swift
+@@ -211,7 +211,9 @@
+         inspectionTask = Task {
+             do {
+                 let result = try await Task.detached(priority: .userInitiated) {
++                    try VeilFilesImportStage.withCoordinatedRead(url) { readable in
++                        try VeilFileIntegrityEngine.inspect(url: readable)
++                    }
+-                    try VeilFileIntegrityEngine.inspect(url: url)
+                 }.value
+                 try Task.checkCancellation()
+                 if slot == .first {
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -790,7 +790,12 @@
+             switch result {
+             case .success(let urls):
+                 if let url = urls.first {
++                    do {
++                        let staged = try VeilFilesImportStage.stage(url, maximumBytes: 80 * 1_024 * 1_024)
++                        prepareAndSendImage(ImportedImageFile(url: staged, shouldDeleteAfterUse: true))
++                    } catch {
++                        model.alertMessage = error.localizedDescription
++                    }
+-                    prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: false))
+                 }
+             case .failure(let error):
+                 model.alertMessage = error.localizedDescription
+@@ -1073,7 +1078,10 @@
+             let accessed = imported.shouldDeleteAfterUse ? false : imported.url.startAccessingSecurityScopedResource()
+             defer {
+                 if accessed { imported.url.stopAccessingSecurityScopedResource() }
++                if imported.shouldDeleteAfterUse {
++                    VeilFilesImportStage.discard(imported.url)
++                    try? FileManager.default.removeItem(at: imported.url)
++                }
+-                if imported.shouldDeleteAfterUse { try? FileManager.default.removeItem(at: imported.url) }
+                 isPreparingImage = false
+             }
+             do {
