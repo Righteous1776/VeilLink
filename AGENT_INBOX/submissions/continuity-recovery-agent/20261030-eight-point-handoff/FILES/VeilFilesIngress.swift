@@ -50,6 +50,13 @@ enum VeilFilesIngress {
         do {
             try withRead(from: source, maximumBytes: maximumBytes) { readable in
                 try FileManager.default.copyItem(at: readable, to: destination)
+                #if canImport(Darwin)
+                // Local snapshots must not become unlocked plaintext caches.
+                try FileManager.default.setAttributes(
+                    [.protectionKey: FileProtectionType.complete],
+                    ofItemAtPath: destination.path
+                )
+                #endif
                 try ensureReadable(destination, maximumBytes: maximumBytes)
             }
             return destination
