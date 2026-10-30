@@ -1,0 +1,73 @@
+diff --git a/VeilLink/UI/OnboardingView.swift b/VeilLink/UI/OnboardingView.swift
+--- a/VeilLink/UI/OnboardingView.swift
++++ b/VeilLink/UI/OnboardingView.swift
+@@ -118,7 +118,13 @@
+         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
+             switch result {
+-            case .success(let url):
+-                restoreURL = url
+-                showsRestorePassword = true
++            case .success(let url):
++                do {
++                    if let old = restoreURL { VeilFilesIngress.discard(old) }
++                    restoreURL = try VeilFilesIngress.stage(from: url, maximumBytes: 200 * 1024 * 1024)
++                    showsRestorePassword = true
++                } catch {
++                    restoreURL = nil
++                    model.alertMessage = "无法读取备份文件：\(error.localizedDescription)"
++                }
+             case .failure(let error):
+                 model.alertMessage = "无法选择备份：\(error.localizedDescription)"
+@@ -125,6 +131,9 @@
+             }
+         }
+-        .sheet(isPresented: $showsRestorePassword) {
+-            BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { backupPassword in
++        .sheet(isPresented: $showsRestorePassword, onDismiss: {
++            if let restoreURL { VeilFilesIngress.discard(restoreURL) }
++            restoreURL = nil
++        }) {
++            BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { backupPassword in
+                 if let restoreURL { model.restoreBackup(url: restoreURL, password: backupPassword) }
+             }
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -117,10 +117,19 @@
+             }
+         }
+-        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
+-            if case .success(let url) = result {
+-                restoreURL = url
+-                showsRestorePassword = true
+-            }
+-        }
++        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
++            switch result {
++            case .success(let url):
++                do {
++                    if let old = restoreURL { VeilFilesIngress.discard(old) }
++                    restoreURL = try VeilFilesIngress.stage(from: url, maximumBytes: 200 * 1024 * 1024)
++                    showsRestorePassword = true
++                } catch {
++                    restoreURL = nil
++                    model.alertMessage = "无法读取备份文件：\(error.localizedDescription)"
++                }
++            case .failure(let error):
++                model.alertMessage = "无法选择备份：\(error.localizedDescription)"
++            }
++        }
+         .sheet(isPresented: $showsRestorePassword) {
+             BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { password in
+@@ -123,6 +132,9 @@
+             }
+         }
+-        .sheet(isPresented: $showsRestorePassword) {
+-            BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { password in
++        .sheet(isPresented: $showsRestorePassword, onDismiss: {
++            if let restoreURL { VeilFilesIngress.discard(restoreURL) }
++            restoreURL = nil
++        }) {
++            BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { password in
+                 if let restoreURL { model.restoreBackup(url: restoreURL, password: password) }
+             }
