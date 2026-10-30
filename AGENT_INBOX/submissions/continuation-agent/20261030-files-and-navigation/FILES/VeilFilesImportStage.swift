@@ -68,6 +68,26 @@ enum VeilFilesImportStage {
         return destination
     }
 
+    /// Hash or inspect a large Files document without duplicating it in Caches.
+    /// Keep security scope and file-provider coordination alive for the whole read.
+    static func withCoordinatedRead<T>(
+        _ source: URL,
+        _ body: (URL) throws -> T
+    ) throws -> T {
+        guard source.isFileURL else { throw StageError.unsupportedSource }
+        let accessed = source.startAccessingSecurityScopedResource()
+        defer { if accessed { source.stopAccessingSecurityScopedResource() } }
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        var coordinationFailure: NSError?
+        var result: Result<T, Error>?
+        coordinator.coordinate(readingItemAt: source, options: [], error: &coordinationFailure) { readable in
+            result = Result { try body(readable) }
+        }
+        if let coordinationFailure { throw coordinationFailure }
+        guard let result else { throw StageError.cannotRead }
+        return try result.get()
+    }
+
     static func discard(_ staged: URL) {
         guard staged.isFileURL else { return }
         let folder = staged.deletingLastPathComponent().standardizedFileURL
