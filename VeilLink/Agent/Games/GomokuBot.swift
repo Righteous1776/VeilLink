@@ -153,17 +153,32 @@ enum GomokuBot {
                     } else {
                         replyScore = staticEvaluation(afterReply, root: player)
                         if budget.continuationCandidateLimit > 0 {
-                            let continuations = candidateIndices(in: afterReply, radius: budget.candidateRadius)
-                                .map { candidate in
-                                    (
-                                        candidate,
-                                        tacticalPriority(index: candidate, state: afterReply, player: player)
-                                    )
+                            // Swift 5.9's type checker struggles with the chained
+                            // tuple-map/sort/prefix here. Keep the same ordering and
+                            // candidate cap using explicitly typed intermediate values.
+                            let continuationCandidates: [Int] = candidateIndices(
+                                in: afterReply, radius: budget.candidateRadius
+                            )
+                            var continuationScores: [(index: Int, priority: Int)] = []
+                            continuationScores.reserveCapacity(continuationCandidates.count)
+                            for candidate in continuationCandidates {
+                                let priority: Int = tacticalPriority(
+                                    index: candidate, state: afterReply, player: player
+                                )
+                                continuationScores.append((index: candidate, priority: priority))
+                            }
+                            continuationScores.sort { lhs, rhs in
+                                if lhs.priority != rhs.priority {
+                                    return lhs.priority > rhs.priority
                                 }
-                                .sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
-                                .prefix(budget.continuationCandidateLimit)
+                                return lhs.index < rhs.index
+                            }
+                            let continuationLimit = min(
+                                continuationScores.count, budget.continuationCandidateLimit
+                            )
                             var bestContinuation = Int.min
-                            for (continuation, _) in continuations {
+                            for rankedIndex in 0..<continuationLimit {
+                                let continuation = continuationScores[rankedIndex].index
                                 guard Date.timeIntervalSinceReferenceDate < deadline else { break }
                                 nodes += 1
                                 var afterContinuation = afterReply
