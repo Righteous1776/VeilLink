@@ -22,4 +22,17 @@ final class GomokuBotTests: XCTestCase {
         XCTAssertLessThanOrEqual(budget.timeLimitMilliseconds, 160)
         XCTAssertLessThanOrEqual(budget.rootCandidateLimit, 18)
     }
+
+    func testDifficultyBudgetsIncreaseSearchCapacityWhileRetainingLearningPath() {
+        let relaxed = GomokuBotBudget.forDifficulty(.relaxed, profileLabel: "A16-HIGH")
+        let master = GomokuBotBudget.forDifficulty(.master, profileLabel: "A16-HIGH")
+        XCTAssertLessThan(relaxed.rootCandidateLimit, master.rootCandidateLimit)
+        XCTAssertLessThan(relaxed.replyCandidateLimit, master.replyCandidateLimit)
+        XCTAssertLessThan(relaxed.timeLimitMilliseconds, master.timeLimitMilliseconds)
+        XCTAssertEqual(relaxed.continuationCandidateLimit, 0)
+        XCTAssertGreaterThan(master.continuationCandidateLimit, 0)
+        let trainedRelaxed = relaxed.reinforced(by: 8)
+        XCTAssertGreaterThan(trainedRelaxed.rootCandidateLimit, relaxed.rootCandidateLimit)
+        XCTAssertGreaterThan(trainedRelaxed.replyCandidateLimit, relaxed.replyCandidateLimit)
+    }
 }
