@@ -22,6 +22,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>VeilLink 使用蓝牙发现附近设备并传输端到端加密消息。</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
