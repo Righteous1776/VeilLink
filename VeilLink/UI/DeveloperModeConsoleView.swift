@@ -36,7 +36,7 @@ struct DeveloperModeConsoleView: View {
         .navigationTitle("开发者模式")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            guard ownerMode.isAuthorized(for: .developerTraining), !model.appLock.isLocked else {
+            guard ownerMode.isAuthorized(for: .developerTraining), model.appLock.isEnabled, !model.appLock.isLocked else {
                 gate.lock()
                 dismiss()
                 return
@@ -95,7 +95,7 @@ struct DeveloperModeConsoleView: View {
                     .padding(11)
                     .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 Button(gate.isConfigured ? "验证并开启" : "初始化本机密钥") {
-                    guard ownerMode.isAuthorized(for: .developerTraining), !model.appLock.isLocked else {
+                    guard ownerMode.isAuthorized(for: .developerTraining), model.appLock.isEnabled, !model.appLock.isLocked else {
                         gate.lock()
                         pin = ""
                         dismiss()

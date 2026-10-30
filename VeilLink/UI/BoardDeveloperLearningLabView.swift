@@ -21,6 +21,7 @@ struct BoardDeveloperLearningLabView: View {
     /// Authorization is conjunctive and checked at each mutation boundary.
     private var authorizedSession: Bool {
         model.ownerMode.isAuthorized(for: .developerTraining)
+            && model.appLock.isEnabled
             && !model.appLock.isLocked
             && gate.canImportTraining()
     }
