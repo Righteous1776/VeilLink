@@ -23,3 +23,6 @@ Base main: `403b3dc474746d3925ad52fa4169225905bac7fc` (VeilLink 27.0 Build 62), 
 ## Scope
 
 No current main, SQLite v10 schema, Wire v4, Keychain, signatures, A9/A10 authority, workflows or IPA release changed. Follow-up integration needs current main rebase and protected-surface Governor approval.
+
+## Later continuation — historical Guandu solo source recovered
+The previous above statement “offline V2 campaign adapter required” has **now been superseded in this branch** by retrieving the owner's original `local-iter/tactical-v2-restore-20261003` implementation. The full `TacticalSoloRuntimeV2` and `TacticalSoloV2View`, plus its original 2-test suite, are now staged under FILES. `PATCH_GAME_NAV.diff` / PRIMARY `PATCH.diff` replace the **solo** `LocalAIGameView(.tactical)` entry with the historical V2 singleplayer campaign on the 48×27 bundled map. No existing TacticalV2 multiplayer/chat path is changed; no old source is deleted. Current Build62 Xcode compilation and real-device gameplay are still UNVERIFIED.
