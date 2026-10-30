@@ -71,3 +71,148 @@ diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
 +            BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { password in
                  if let restoreURL { model.restoreBackup(url: restoreURL, password: password) }
              }
+diff --git a/VeilLink/App/AppModel.swift b/VeilLink/App/AppModel.swift
+--- a/VeilLink/App/AppModel.swift
++++ b/VeilLink/App/AppModel.swift
+@@ -853,9 +853,7 @@
+ 
+     func restoreBackup(url: URL, password: String) {
+-        let accessed = url.startAccessingSecurityScopedResource()
+-        _ = suspendCommunicationStack(reason: "正在恢复备份")
+-        defer {
+-            if accessed { url.stopAccessingSecurityScopedResource() }
+-            if identity.activeIdentity != nil { start() }
+-        }
++        _ = suspendCommunicationStack(reason: "正在恢复备份")
++        defer {
++            if identity.activeIdentity != nil { start() }
++        }
+         do {
+@@ -862,3 +860,5 @@
+-            try backups.restoreBackup(from: url, password: password)
++            try VeilFilesIngress.withRead(from: url, maximumBytes: 200 * 1024 * 1024) { readable in
++                try backups.restoreBackup(from: readable, password: password)
++            }
+             resetIdentityScopedRuntimeState()
+             alertMessage = "备份已恢复。"
+diff --git a/VeilLink/UI/VeilOfflineHTMLReaderView.swift b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
+--- a/VeilLink/UI/VeilOfflineHTMLReaderView.swift
++++ b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
+@@ -111,7 +111,9 @@
+                 Task {
+                     do {
+-                        let parsed = try await Task.detached(priority: .userInitiated) {
+-                            try VeilOfflineHTMLImporter.load(fileURL: url)
+-                        }.value
++                        let parsed = try await Task.detached(priority: .userInitiated) {
++                            try VeilFilesIngress.withRead(from: url, maximumBytes: 512 * 1024) { readable in
++                                try VeilOfflineHTMLImporter.load(fileURL: readable)
++                            }
++                        }.value
+                         guard importGeneration == token else { return }
+                         document = parsed
+diff --git a/VeilLink/UI/VeilBackupPreflightView.swift b/VeilLink/UI/VeilBackupPreflightView.swift
+--- a/VeilLink/UI/VeilBackupPreflightView.swift
++++ b/VeilLink/UI/VeilBackupPreflightView.swift
+@@ -7,5 +7,6 @@
+     @State private var deepCRC = false
+     @State private var result: VeilBackupPreflightPolicy.Report?
+-    @State private var working = false
++    @State private var working = false
++    @State private var fileErrorText: String?
+     @State private var generation = UUID()
+ 
+@@ -27,5 +28,8 @@
+                 .buttonStyle(.borderedProminent)
+                 .disabled(working)
+-                if working { ProgressView("只读检查中…") }
++                if working { ProgressView("只读检查中…") }
++                if let fileErrorText {
++                    Text(fileErrorText).font(.footnote).foregroundColor(.red)
++                }
+                 if let result {
+                     VStack(alignment: .leading, spacing: 10) {
+@@ -65,6 +69,7 @@
+             let token = UUID()
+             generation = token
+-            working = true
+-            result = nil
++            working = true
++            result = nil
++            fileErrorText = nil
+             let runDeep = deepCRC
+             Task {
+@@ -70,9 +75,16 @@
+             Task {
+-                let inspected = await Task.detached(priority: .userInitiated) {
+-                    VeilBackupArchiveInspector.inspect(file, verifyAllCRC: runDeep)
+-                }.value
+-                guard generation == token else { return }
+-                result = inspected
+-                working = false
++                do {
++                    let inspected = try await Task.detached(priority: .userInitiated) {
++                        try VeilFilesIngress.withRead(from: file, maximumBytes: 200 * 1024 * 1024) { readable in
++                            VeilBackupArchiveInspector.inspect(readable, verifyAllCRC: runDeep)
++                        }
++                    }.value
++                    guard generation == token else { return }
++                    result = inspected
++                } catch {
++                    guard generation == token else { return }
++                    fileErrorText = "备份文件无法读取：\(error.localizedDescription)"
++                }
++                if generation == token { working = false }
+             }
+         }
+diff --git a/VeilLink/UI/VeilFileIntegrityToolView.swift b/VeilLink/UI/VeilFileIntegrityToolView.swift
+--- a/VeilLink/UI/VeilFileIntegrityToolView.swift
++++ b/VeilLink/UI/VeilFileIntegrityToolView.swift
+@@ -212,5 +212,7 @@
+             do {
+                 let result = try await Task.detached(priority: .userInitiated) {
+-                    try VeilFileIntegrityEngine.inspect(url: url)
++                    try VeilFilesIngress.withRead(from: url, maximumBytes: 2 * 1024 * 1024 * 1024) { readable in
++                        try VeilFileIntegrityEngine.inspect(url: readable)
++                    }
+                 }.value
+                 try Task.checkCancellation()
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -790,7 +790,20 @@
+             switch result {
+             case .success(let urls):
+-                if let url = urls.first {
+-                    prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: false))
+-                }
++                if let url = urls.first {
++                    Task {
++                        do {
++                            let staged = try await Task.detached(priority: .userInitiated) {
++                                try VeilFilesIngress.stage(from: url, maximumBytes: 80 * 1024 * 1024)
++                            }.value
++                            if isPreparingImage {
++                                VeilFilesIngress.discard(staged)
++                            } else {
++                                prepareAndSendImage(ImportedImageFile(url: staged, shouldDeleteAfterUse: true))
++                            }
++                        } catch {
++                            model.alertMessage = "图片文件无法读取：\(error.localizedDescription)"
++                        }
++                    }
++                }
+             case .failure(let error):
+                 model.alertMessage = error.localizedDescription
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -348,5 +348,7 @@
+             guard case .success(let urls) = result, let url = urls.first else { return }
+             do {
+-                let report = try controller.importBoardLearning(from: url)
++                let report = try VeilFilesIngress.withRead(from: url, maximumBytes: 64 * 1024 * 1024) { readable in
++                    try controller.importBoardLearning(from: readable)
++                }
+                 learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
+                 model.haptics.selection()
