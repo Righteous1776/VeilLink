@@ -1,0 +1,10 @@
+# Open risks and overlaps
+
+- Protected/overlapping paths: `SettingsView.swift`, `OnboardingView.swift`, `ConversationViews.swift`, `GameLobbyView.swift`, `OwnerConsoleView.swift` and `VeilBackupPreflightView.swift`. Must reconcile with future pending Agent PRs, never self merge.
+- Provider source URL can be coordinated only while the picker grants access. Do not rely on retaining original URL past password sheet. iCloud Drive may require download and fail gracefully. The new stage helper calls NSFileCoordinator and holds security scope while performing copy, then stores a UUID child in the app Caches directory.
+- Temporary local copies of an encrypted ZIP, training package, HTML or images may persist on crash; add old-staging-directory TTL cleanup before shipping and minimize backups' retention. No plaintext backup restore is written by the stage helper. Backup restore still needs preconsent lifecycle tests.
+- Main-thread import of up to 200MiB backup / 80MiB image can stall on old iPhone7; benchmark and move these stages to detached worker while preserving security-scope lifetime and UI feedback before accepting.
+- Existing `AdaptiveBoardLearningStore` still rejects >1MiB import despite staged 512MiB copy allowance; DON'T claim training hardcaps lifted until V2 replacement and migration are implemented.
+- A10 UI uses sample's current `modeSessionID` and `ultraDecision` to avoid showing stale A9. Sample source might be temporarily nil; waiting text is intentional. No A10 governance permission changes.
+- Three separate diffs are based on same exact main; `PATCH.diff` touches GameLobby training and Settings restore while other diffs touch other hunks of those same files. Governor must integrate them in order and rerun context checks on combined tree. No declared ability to merge automatically.
+- New Games navigation needs Apple SDK compile and touch test. Galgame R5 archive/binary missing, no playable claim. Old large map asset exists but not the same as the small tactical Bot state, so do not delete the latter until full adapter exists.
