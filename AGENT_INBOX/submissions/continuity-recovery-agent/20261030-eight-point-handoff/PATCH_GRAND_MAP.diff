@@ -1,0 +1,16 @@
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -99,9 +99,9 @@
+             }
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+-            NavigationLink(destination: LocalAIGameView(model: model, game: .tactical)) {
+-                gameRow(.tactical, detail: "你执曹军先行 · 离线训练策略 + 补给与目标评估", enabled: true)
+-            }
++            NavigationLink(destination: VeilGuanduGrandMapSoloView()) {
++                gameRow(.tactical, detail: "48×27 官渡大战场 · Tactical V2 · 离线 WEGO 对战", enabled: true)
++            }
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+         }
