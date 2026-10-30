@@ -17,3 +17,8 @@ Must run during Governor integration:
 7. Manual UI/gesture tests on iPhone7 dark/light and all onboarding states; existing P0 #64–#66 remain regression candidates.
 
 No version/release/main promotion unless full gates and Governor authorization.
+
+## Additional verified static state (continuation)
+- Recovered exactly 3 owner-history tactical source/test Git blobs: runtime `777ea776b2a30246fa74a0bf7e34a2670d81b9a3`, view `5c3dc38a0cec8d429ef9afca5cdfcc565a41e632`, tests `c3b8e175ba842acce3396206f4028d95ae3afe2b`.
+- PRIMARY `PATCH.diff` and `PATCH_COMBINED.diff` now form one **8-existing-file/21-hunk** delta, all original context and old/new counts and adjusted new offsets validated against Build62 main. New GameLobby solo route is `TacticalSoloV2View`.
+- Historical 2 tactical XCTest methods **authored/recovered but NOT executed on Build62**. Existing 763 pass CI was before this change and does not certify it.
