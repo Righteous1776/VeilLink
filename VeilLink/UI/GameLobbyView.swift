@@ -13,9 +13,10 @@ struct GameLobbyView: View {
         VeilStableScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero.veilStaggeredEntrance(index: 0)
-                singlePlayerSection.veilStaggeredEntrance(index: 1)
-                realtimeArcadeSection.veilStaggeredEntrance(index: 2)
-                nearbySection.veilStaggeredEntrance(index: 3)
+                visualNovelSection.veilStaggeredEntrance(index: 1)
+                singlePlayerSection.veilStaggeredEntrance(index: 2)
+                realtimeArcadeSection.veilStaggeredEntrance(index: 3)
+                nearbySection.veilStaggeredEntrance(index: 4)
             }
         }
         .background(VeilAmbientBackground())
@@ -64,6 +65,36 @@ struct GameLobbyView: View {
         .veilCard(emphasized: true)
         .veilSpatialPress(maximumTilt: 3.8, cornerRadius: 20, highlightColor: VeilTheme.goldBright)
         .veilDynamicGlow(active: true, emphasized: true)
+    }
+
+    private var visualNovelSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("视觉小说 · 单机剧情", subtitle: "Monogatari v2.8.0 · 纯离线 · 原创多结局")
+            NavigationLink(destination: VeilMonogatariGameView()) {
+                HStack(spacing: 14) {
+                    Image(systemName: "book.closed.fill")
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundColor(VeilTheme.goldBright)
+                        .frame(width: 48, height: 48)
+                        .background(VeilTheme.gold.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("雨幕之后 · VeilLink × Monogatari")
+                            .font(.headline)
+                            .foregroundColor(VeilTheme.text)
+                        Text("进入剧情 · 分支选择 · 四种结局 · 本地存档")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").foregroundColor(VeilTheme.secondaryText)
+                }
+                .padding(14)
+                .veilCard()
+            }
+            .buttonStyle(VeilPressStyle())
+            .accessibilityLabel("打开雨幕之后视觉小说")
+        }
     }
 
     private var singlePlayerSection: some View {
