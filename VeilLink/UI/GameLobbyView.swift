@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct GameLobbyView: View {
     @ObservedObject var model: AppModel
@@ -275,6 +276,10 @@ struct LocalAIGameView: View {
     @State private var selectedXiangqiIndex: Int?
     @State private var showsTacticalGuide = false
     @State private var showsLearningResetConfirmation = false
+    @State private var showsLearningImporter = false
+    @State private var showsLearningShare = false
+    @State private var learningExportURL: URL?
+    @State private var learningExchangeMessage: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: AppModel, game: MiniGameKind) {
@@ -329,6 +334,36 @@ struct LocalAIGameView: View {
         }
         .sheet(isPresented: $showsTacticalGuide) {
             TacticalSoloGuideView()
+        }
+        .sheet(isPresented: $showsLearningShare, onDismiss: { learningExportURL = nil }) {
+            if let learningExportURL {
+                ShareSheet(items: [learningExportURL])
+            }
+        }
+        .fileImporter(
+            isPresented: $showsLearningImporter,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            do {
+                let report = try controller.importBoardLearning(from: url)
+                learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
+                model.haptics.selection()
+            } catch {
+                learningExchangeMessage = error.localizedDescription
+            }
+        }
+        .alert(
+            "棋谱训练包",
+            isPresented: Binding(
+                get: { learningExchangeMessage != nil },
+                set: { if !$0 { learningExchangeMessage = nil } }
+            )
+        ) {
+            Button("好", role: .cancel) { learningExchangeMessage = nil }
+        } message: {
+            Text(learningExchangeMessage ?? "")
         }
         .confirmationDialog(
             "清空本地自学习棋谱？",
@@ -394,6 +429,27 @@ struct LocalAIGameView: View {
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button {
+                    do {
+                        learningExportURL = try controller.exportBoardLearning()
+                        showsLearningShare = true
+                    } catch {
+                        learningExchangeMessage = error.localizedDescription
+                    }
+                } label: {
+                    Label("导出训练包", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    showsLearningImporter = true
+                } label: {
+                    Label("导入增强包", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.bordered)
+            }
+            .font(.caption.weight(.semibold))
             if !controller.learningStoreAvailable {
                 Label("训练数据暂时无法写入，当前对局仍可正常进行", systemImage: "exclamationmark.triangle")
                     .font(.caption2)

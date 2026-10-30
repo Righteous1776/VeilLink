@@ -15,13 +15,14 @@ VeilLink 27.0 is a major integration release built from the reviewed, source-com
 - Startup black-box diagnostics and corrected A9 stress assertions.
 - Owner God Mode retains high-quality transient animation behavior.
 - Five-in-a-row and Chinese chess now learn from local solo games with seeded opening priors, bounded on-device repertoire weights and a rolling 40-game score history.
+- Portable `.vltrain.json` packages let users export training evidence for offline enhancement and re-import a validated replacement package.
 
 ## Compatibility and privacy
 
 - Minimum iOS version remains iOS 15.
 - QR and HTML tools are user-initiated. Scanned text is validated before use; HTML is parsed locally without automatic URL loading.
 - Backup preflight does not extract archives or modify the database, keys or identity.
-- Adaptive board-game learning stays offline in a separate, user-clearable file capped at 512 KB; older games are condensed into aggregate move weights.
+- Adaptive board-game learning stays offline in a separate, user-clearable file capped at 512 KB; older games are condensed into aggregate move weights. Imports enforce schema, checksum, size and move-range validation.
 - Wire v4, SQLite v10, identity and Keychain contracts are unchanged.
 
 ## Open hardware evidence

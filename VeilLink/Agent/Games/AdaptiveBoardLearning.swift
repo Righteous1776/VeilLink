@@ -88,6 +88,31 @@ struct AdaptiveBoardLearningSummary: Equatable, Sendable {
     }
 }
 
+struct AdaptiveBoardLearningImportReport: Equatable, Sendable {
+    let completedGames: Int
+    let rememberedPositions: Int
+}
+
+enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
+    case unreadable
+    case tooLarge
+    case unsupportedFormat
+    case checksumMismatch
+    case invalidContent
+    case writeFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .unreadable: return "无法读取训练包。"
+        case .tooLarge: return "训练包超过 1 MB 安全上限。"
+        case .unsupportedFormat: return "训练包版本不受支持。"
+        case .checksumMismatch: return "训练包完整性校验失败。"
+        case .invalidContent: return "训练包包含无效棋步或越界数据。"
+        case .writeFailed: return "训练包通过校验，但无法保存到设备。"
+        }
+    }
+}
+
 @MainActor
 final class AdaptiveBoardLearningStore {
     static let shared = AdaptiveBoardLearningStore()
@@ -116,6 +141,15 @@ final class AdaptiveBoardLearningStore {
         var sequence = 0
         var positions: [String: PositionStat] = [:]
         var recentGames: [GameRecord] = []
+    }
+
+    private struct ExportEnvelope: Codable {
+        let format: String
+        let createdAt: Date
+        let appVersion: String
+        let checksumAlgorithm: String
+        let payloadChecksum: String
+        let payload: Database
     }
 
     private static let maximumPositions = 1_600
@@ -217,6 +251,77 @@ final class AdaptiveBoardLearningStore {
         }
     }
 
+    func exportPackage() throws -> URL {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let compactEncoder = JSONEncoder()
+        compactEncoder.outputFormatting = [.sortedKeys]
+        let payloadData = try compactEncoder.encode(database)
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let envelope = ExportEnvelope(
+            format: "veillink.board-learning.export.v1",
+            createdAt: Date(),
+            appVersion: version,
+            checksumAlgorithm: "fnv1a64-canonical-json",
+            payloadChecksum: Self.checksum(payloadData),
+            payload: database
+        )
+        let data = try encoder.encode(envelope)
+        guard data.count <= Self.maximumBytes * 2 else { throw AdaptiveBoardLearningPackageError.tooLarge }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VeilLink-BoardLearning-\(formatter.string(from: Date())).vltrain.json")
+        do {
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            throw AdaptiveBoardLearningPackageError.writeFailed
+        }
+    }
+
+    func importPackage(from url: URL) throws -> AdaptiveBoardLearningImportReport {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else {
+            throw AdaptiveBoardLearningPackageError.unreadable
+        }
+        guard data.count <= Self.maximumBytes * 2 else {
+            throw AdaptiveBoardLearningPackageError.tooLarge
+        }
+        guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
+              envelope.format == "veillink.board-learning.export.v1",
+              envelope.checksumAlgorithm == "fnv1a64-canonical-json",
+              envelope.payload.schema == 1 else {
+            throw AdaptiveBoardLearningPackageError.unsupportedFormat
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let payloadData = try? encoder.encode(envelope.payload),
+              Self.checksum(payloadData) == envelope.payloadChecksum else {
+            throw AdaptiveBoardLearningPackageError.checksumMismatch
+        }
+        guard Self.isValid(envelope.payload) else {
+            throw AdaptiveBoardLearningPackageError.invalidContent
+        }
+
+        let previous = database
+        database = envelope.payload
+        prune(positionLimit: Self.maximumPositions, historyLimit: Self.maximumRecentGames)
+        save()
+        guard lastSaveSucceeded else {
+            database = previous
+            throw AdaptiveBoardLearningPackageError.writeFailed
+        }
+        return AdaptiveBoardLearningImportReport(
+            completedGames: database.completedGames,
+            rememberedPositions: database.positions.count
+        )
+    }
+
     private func prune(positionLimit: Int, historyLimit: Int) {
         if database.positions.count > positionLimit {
             let keep = database.positions.sorted { lhs, rhs in
@@ -257,6 +362,48 @@ final class AdaptiveBoardLearningStore {
               let decoded = try? JSONDecoder().decode(Database.self, from: data),
               decoded.schema == 1 else { return Database() }
         return decoded
+    }
+
+    private static func isValid(_ database: Database) -> Bool {
+        guard database.completedGames >= 0,
+              database.sequence >= 0,
+              database.positions.count <= maximumPositions,
+              database.recentGames.count <= maximumRecentGames else { return false }
+        for (position, stat) in database.positions {
+            guard (position.hasPrefix("g:") || position.hasPrefix("x:")),
+                  position.count <= 32,
+                  stat.actions.count <= maximumActionsPerPosition else { return false }
+            for (action, value) in stat.actions {
+                guard value.count > 0, value.count <= 65_535,
+                      (-32_000...32_000).contains(value.aiReward),
+                      isValid(action: action, for: position) else { return false }
+            }
+        }
+        return database.recentGames.allSatisfy { record in
+            (record.game == .gomoku || record.game == .xiangqi)
+                && record.actions.count <= 225
+                && record.actions.allSatisfy { $0.count <= 12 }
+        }
+    }
+
+    private static func isValid(action: String, for position: String) -> Bool {
+        if position.hasPrefix("g:") {
+            guard let index = Int(action) else { return false }
+            return (0..<(GomokuState.size * GomokuState.size)).contains(index)
+        }
+        let parts = action.split(separator: ":")
+        guard parts.count == 2, let from = Int(parts[0]), let to = Int(parts[1]) else { return false }
+        let range = 0..<(XiangqiState.rows * XiangqiState.columns)
+        return range.contains(from) && range.contains(to) && from != to
+    }
+
+    private static func checksum(_ data: Data) -> String {
+        var value: UInt64 = 14_695_981_039_346_656_037
+        for byte in data {
+            value ^= UInt64(byte)
+            value &*= 1_099_511_628_211
+        }
+        return String(value, radix: 16)
     }
 
     private static func seedPreferences() -> [String: [String: Int]] {

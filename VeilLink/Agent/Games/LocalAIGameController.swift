@@ -203,6 +203,17 @@ final class LocalAIGameController: ObservableObject {
         learningSummary = learningStore.summary
     }
 
+    func exportBoardLearning() throws -> URL {
+        try learningStore.exportPackage()
+    }
+
+    func importBoardLearning(from url: URL) throws -> AdaptiveBoardLearningImportReport {
+        let report = try learningStore.importPackage(from: url)
+        learningPlies.removeAll(keepingCapacity: true)
+        learningSummary = learningStore.summary
+        return report
+    }
+
     private func finishOrScheduleAI() {
         updateOutcome()
         guard outcome == .playing else { return }
