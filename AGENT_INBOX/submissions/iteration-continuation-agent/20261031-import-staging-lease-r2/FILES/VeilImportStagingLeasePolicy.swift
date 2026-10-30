@@ -26,6 +26,7 @@ enum VeilImportStagingLeasePolicy {
               UUID(uuidString: lease.lastPathComponent) != nil,
               item.lastPathComponent != ".", item.lastPathComponent != "..",
               isActualDirectory(lease, fileManager: fileManager),
+              isActualRegularFile(item),
               isActualDirectory(anchor, fileManager: fileManager) else { return false }
         return true
     }
@@ -40,11 +41,13 @@ enum VeilImportStagingLeasePolicy {
 
     /// Recover interrupted imports at a future launch/foreground.
     /// Symlink directories and entries without reliable timestamps are retained.
+    /// Pass the current active lease set; no live lease can be swept.
     static func sweepExpired(
         root: URL = stagingRoot(),
         now: Date = Date(),
         lifetime: TimeInterval = defaultLifetime,
         maxRemovals: Int = 64,
+        activeLeaseIDs: Set<UUID>,
         fileManager: FileManager = .default
     ) throws -> SweepReport {
         guard lifetime > 0, maxRemovals > 0 else { return SweepReport(removed: 0, retained: 0, failed: 0) }
@@ -61,7 +64,8 @@ enum VeilImportStagingLeasePolicy {
         var retained = 0
         var failed = 0
         for entry in entries {
-            guard UUID(uuidString: entry.lastPathComponent) != nil,
+            guard let leaseID = UUID(uuidString: entry.lastPathComponent),
+                  !activeLeaseIDs.contains(leaseID),
                   entry.standardizedFileURL.deletingLastPathComponent() == root.standardizedFileURL,
                   isActualDirectory(entry, fileManager: fileManager) else {
                 retained += 1
@@ -78,6 +82,11 @@ enum VeilImportStagingLeasePolicy {
             catch { failed += 1 }
         }
         return SweepReport(removed: removed, retained: retained, failed: failed)
+    }
+
+    private static func isActualRegularFile(_ url: URL) -> Bool {
+        guard let v = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return false }
+        return v.isRegularFile == true && v.isSymbolicLink != true
     }
 
     private static func isActualDirectory(_ url: URL, fileManager: FileManager) -> Bool {
