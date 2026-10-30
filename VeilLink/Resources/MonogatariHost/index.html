@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data: blob:; script-src 'self' file: blob: 'unsafe-eval'; style-src 'self' file: 'unsafe-inline'; connect-src 'self' file:; img-src 'self' file: data: blob:; media-src 'self' file: blob: data:; object-src 'none'; frame-src 'none';">
+  <meta name="theme-color" content="#101a2e">
+  <title>VeilLink × Monogatari · 雨中的信号</title>
+  <link rel="stylesheet" href="engine/monogatari.css">
+  <link rel="stylesheet" href="main.css">
+  <script src="engine/monogatari.js"></script>
+  <script src="options.js"></script>
+  <script src="storage.js"></script>
+  <script src="script.js"></script>
+  <script src="main.js"></script>
+</head>
+<body>
+  <noscript>此剧情需要 JavaScript。请在支持 JavaScript 的设备中游玩。</noscript>
+  <div id="monogatari">
+    <visual-novel>
+      <language-selection-screen></language-selection-screen>
+      <loading-screen></loading-screen>
+      <main-screen><main-menu></main-menu></main-screen>
+      <game-screen>
+        <dialog-log></dialog-log>
+        <text-box></text-box>
+        <quick-menu></quick-menu>
+      </game-screen>
+      <gallery-screen></gallery-screen>
+      <credits-screen></credits-screen>
+      <load-screen></load-screen>
+      <save-screen></save-screen>
+      <settings-screen></settings-screen>
+      <help-screen></help-screen>
+    </visual-novel>
+  </div>
+</body>
+</html>

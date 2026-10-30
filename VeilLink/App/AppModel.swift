@@ -107,7 +107,7 @@ final class AppModel: ObservableObject {
     var activeGovernanceHealthText: String {
         if kernelRuntime.mode.ultraEvaluationEnabled,
            !kernelRuntime.mode.a9EvaluationEnabled {
-            if let decision = a10Ultra.lastRuntimeSample?.ultraDecision {
+            if let decision = kernelRuntime.currentUltraSample(a10Ultra.lastRuntimeSample)?.ultraDecision {
                 return "H\(decision.healthScore)"
             }
             return "采样中"
@@ -118,7 +118,7 @@ final class AppModel: ObservableObject {
     func activeGovernanceStatusText() -> String {
         if kernelRuntime.mode.ultraEvaluationEnabled,
            !kernelRuntime.mode.a9EvaluationEnabled {
-            guard let sample = a10Ultra.lastRuntimeSample,
+            guard let sample = kernelRuntime.currentUltraSample(a10Ultra.lastRuntimeSample),
                   let decision = sample.ultraDecision else {
                 return "A10 Ultra Ω：正在生成首个独立治理样本；A9 冻结值不会作为当前数据展示。"
             }

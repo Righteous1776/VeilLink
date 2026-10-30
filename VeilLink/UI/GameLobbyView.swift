@@ -216,6 +216,15 @@ struct GameLobbyView: View {
                 )
             }
             .buttonStyle(.plain)
+            NavigationLink(destination: VeilMonogatariHostView()) {
+                realtimeGameRow(
+                    title: "VeilLink × Monogatari",
+                    detail: "官方 v2.8.0 引擎 · 原创离线剧情 · 本地存档",
+                    motif: .comet,
+                    badge: "VN"
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 

@@ -794,8 +794,9 @@ struct SettingsView: View {
     private var a9HealthCard: some View {
         let decision = a9Health.decision
         let usesUltra = kernelRuntime.mode == .a10Independent || kernelRuntime.mode == .a10OnlyLab
-        let ultraDecision = a10Ultra.lastRuntimeSample?.ultraDecision
-        let ultraBudget = a10Ultra.lastRuntimeSample?.ultraBudget
+        let ultraSample = kernelRuntime.currentUltraSample(a10Ultra.lastRuntimeSample)
+        let ultraDecision = ultraSample?.ultraDecision
+        let ultraBudget = ultraSample?.ultraBudget
         let engineName = usesUltra ? "A10 Ultra Ω" : "A9"
         let shownLevel = usesUltra ? (ultraDecision.map { "L\($0.level)" } ?? "--") : decision.level.shortTitle
         let shownHealth = usesUltra ? (ultraDecision.map { String($0.healthScore) } ?? "--") : String(decision.healthScore)
