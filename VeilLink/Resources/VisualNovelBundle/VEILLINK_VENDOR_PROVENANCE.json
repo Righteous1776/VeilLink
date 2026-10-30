@@ -1,0 +1,9 @@
+{
+  "upstream": "https://github.com/Monogatari/Monogatari/releases/tag/v2.8.0",
+  "version": "v2.8.0",
+  "releaseSHA256": "16d221485888b0193312e9989ecafa57cb1913978bf2f09ba554552ba3885806",
+  "browserJSBlob": "0211c2f2c9adc56e28d5583feb0dd46b902d37d5",
+  "browserCSSBlob": "4eae91263557a8192cacea19948890c74086de4d",
+  "license": "MIT",
+  "note": "Production mobile bundle: pristine full browser engine JS/CSS, desktop/debug/source-map files omitted to reduce IPA size. The exact complete official ZIP remains in owner-supplied R5 archive."
+}
