@@ -789,8 +789,15 @@ struct ChatView: View {
         ) { result in
             switch result {
             case .success(let urls):
-                if let url = urls.first {
-                    prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: false))
+                if let selectedURL = urls.first {
+                    Task {
+                        do {
+                            let url = try await VeilImportedFileAccess.materializeInBackground(selectedURL)
+                            prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: true))
+                        } catch {
+                            model.alertMessage = error.localizedDescription
+                        }
+                    }
                 }
             case .failure(let error):
                 model.alertMessage = error.localizedDescription

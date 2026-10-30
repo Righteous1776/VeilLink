@@ -15,7 +15,8 @@ struct GameLobbyView: View {
                 hero.veilStaggeredEntrance(index: 0)
                 singlePlayerSection.veilStaggeredEntrance(index: 1)
                 realtimeArcadeSection.veilStaggeredEntrance(index: 2)
-                nearbySection.veilStaggeredEntrance(index: 3)
+                interactiveStorySection.veilStaggeredEntrance(index: 3)
+                nearbySection.veilStaggeredEntrance(index: 4)
             }
         }
         .background(VeilAmbientBackground())
@@ -85,12 +86,12 @@ struct GameLobbyView: View {
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
-                gameRow(.gomoku, detail: "你执黑先手 · 威胁识别 + 候选搜索 + 规则校验", enabled: true)
+                gameRow(.gomoku, detail: "你执黑先手 · 四档棋力 · 个性化本地陪练", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
-                gameRow(.xiangqi, detail: "你执红先手 · Alpha-Beta + 局面评估 + 规则校验", enabled: true)
+                gameRow(.xiangqi, detail: "你执红先手 · 四档棋力 · 自学习阵法预判", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
@@ -99,8 +100,8 @@ struct GameLobbyView: View {
             }
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
-            NavigationLink(destination: LocalAIGameView(model: model, game: .tactical)) {
-                gameRow(.tactical, detail: "你执曹军先行 · 离线训练策略 + 补给与目标评估", enabled: true)
+            NavigationLink(destination: TacticalV2SoloView(model: model)) {
+                gameRow(.tactical, detail: "48×27 官渡大战场 · 战争迷雾 · 补给 · 袁军实时行动", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
@@ -192,6 +193,29 @@ struct GameLobbyView: View {
                 realtimeGameRow(title: "霓虹节拍", detail: "节拍闪避 · 连击得分 · 超载冲刺", motif: .pulse, badge: "2D")
             }
             .buttonStyle(.plain)
+            NavigationLink(destination: VeilRhythmR6NativeGameView()) {
+                realtimeGameRow(title: "实时节奏远征", detail: "SpriteKit 实时判定 · 原生渲染 · 自适应画质", motif: .pulse, badge: "2D")
+            }
+            .buttonStyle(.plain)
+            NavigationLink(destination: LatticeClashLabView()) {
+                realtimeGameRow(title: "晶格冲突", detail: "确定性单机策略 · 连锁占领 · 本地 Bot", motif: .circuit, badge: "策略")
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var interactiveStorySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("互动剧情", subtitle: "剧情与游戏归入大厅，不再藏在工具箱")
+            NavigationLink(destination: VeilStoryLabView()) {
+                realtimeGameRow(
+                    title: "故事实验室",
+                    detail: "原生分支叙事 · 多结局 · 完全离线",
+                    motif: .comet,
+                    badge: "剧情"
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -271,6 +295,8 @@ struct GameLobbyView: View {
 
 struct LocalAIGameView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject private var ownerMode: OwnerModeController
+    @ObservedObject private var developerLearningGate: DeveloperLearningLabGate
     let game: MiniGameKind
     @StateObject private var controller: LocalAIGameController
     @State private var selectedXiangqiIndex: Int?
@@ -284,8 +310,15 @@ struct LocalAIGameView: View {
 
     init(model: AppModel, game: MiniGameKind) {
         self.model = model
+        ownerMode = model.ownerMode
+        developerLearningGate = model.developerLearningGate
         self.game = game
-        _controller = StateObject(wrappedValue: LocalAIGameController(game: game))
+        _controller = StateObject(wrappedValue: LocalAIGameController(
+            game: game,
+            formationLibrary: game == .gomoku
+                ? DeveloperFormationLibrary(game: game, keychain: model.keychain)
+                : nil
+        ))
     }
 
     var body: some View {
@@ -332,6 +365,9 @@ struct LocalAIGameView: View {
             controller.cancelAI()
             model.agent.setComputeFocus(.idle)
         }
+        .onChange(of: developerLearningGate.isAuthorized) { authorized in
+            if !authorized { controller.setDeveloperTeachingMode(false) }
+        }
         .sheet(isPresented: $showsTacticalGuide) {
             TacticalSoloGuideView()
         }
@@ -342,16 +378,25 @@ struct LocalAIGameView: View {
         }
         .fileImporter(
             isPresented: $showsLearningImporter,
-            allowedContentTypes: [.json],
+            allowedContentTypes: [.item],
             allowsMultipleSelection: false
         ) { result in
-            guard case .success(let urls) = result, let url = urls.first else { return }
-            do {
-                let report = try controller.importBoardLearning(from: url)
-                learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
-                model.haptics.selection()
-            } catch {
-                learningExchangeMessage = error.localizedDescription
+            guard game == .xiangqi,
+                  case .success(let urls) = result,
+                  let selectedURL = urls.first else { return }
+            Task {
+                do {
+                    let url = try await VeilImportedFileAccess.materializeInBackground(
+                        selectedURL,
+                        acceptedExtensions: ["json"]
+                    )
+                    defer { VeilImportedFileAccess.removeStagedCopy(url) }
+                    let report = try controller.importBoardLearning(from: url)
+                    learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
+                    model.haptics.selection()
+                } catch {
+                    learningExchangeMessage = error.localizedDescription
+                }
             }
         }
         .alert(
@@ -425,10 +470,57 @@ struct LocalAIGameView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundColor(VeilTheme.secondaryText)
             }
-            Text("每局自动记住你的走法，并把常见应对加入下一局搜索。最近 40 局保留完整棋谱，更早对局压缩为长期走法权重；全程离线，存储上限 512 KB。")
+            Text("五子棋与中国象棋分别建库；每一局和每个合法局面都会保留。重复阵法会按走子序列预测你的下一步，并把输局与中断局反馈到下一局决策。全程离线，不设固定局面或容量上限，仅受设备可用空间约束。")
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Label(controller.boardDifficulty.title, systemImage: "slider.horizontal.3")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+                Text(controller.boardDifficulty.detail)
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.secondaryText)
+                Spacer(minLength: 0)
+                Menu {
+                    ForEach(BoardBotDifficulty.allCases) { difficulty in
+                        Button {
+                            controller.setBoardDifficulty(difficulty)
+                            model.haptics.selection()
+                        } label: {
+                            if difficulty == controller.boardDifficulty {
+                                Label(difficulty.title, systemImage: "checkmark")
+                            } else {
+                                Text(difficulty.title)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(VeilTheme.goldBright)
+                }
+            }
+            .padding(9)
+            .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(controller.coachProfile.levelText + " · " + controller.coachProfile.preferredOpening)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.text)
+                Text(controller.coachProfile.nextLesson)
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.secondaryText)
+                Text(controller.coachProfile.reviewFocus)
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(controller.coachTip)
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.goldBright)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(9)
+            .background(VeilTheme.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             HStack(spacing: 10) {
                 Button {
                     do {
@@ -442,12 +534,24 @@ struct LocalAIGameView: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button {
-                    showsLearningImporter = true
-                } label: {
-                    Label("导入增强包", systemImage: "square.and.arrow.down")
+                if game == .gomoku {
+                    if ownerMode.isAuthorized(for: .developerTraining),
+                       developerLearningGate.canImportTraining() {
+                        NavigationLink(destination: BoardDeveloperLearningLabView(
+                            model: model,
+                            controller: controller,
+                            game: game
+                        )) {
+                            Label("开发训练室", systemImage: "lock.shield")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                } else {
+                    Button { showsLearningImporter = true } label: {
+                        Label("导入增强包", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
             }
             .font(.caption.weight(.semibold))
             if !controller.learningStoreAvailable {
@@ -463,8 +567,22 @@ struct LocalAIGameView: View {
     private var board: some View {
         switch game {
         case .gomoku:
-            GomokuBoardView(state: controller.gomoku, localPlayer: .host, enabled: controller.canHumanAct) { index in
-                controller.humanGomokuMove(index)
+            GomokuBoardView(
+                state: controller.gomoku,
+                localPlayer: .host,
+                enabled: controller.canHumanAct || (
+                    controller.developerTeachingMode
+                        && ownerMode.isAuthorized(for: .developerTraining)
+                        && developerLearningGate.canImportTraining()
+                )
+            ) { index in
+                if controller.developerTeachingMode,
+                   ownerMode.isAuthorized(for: .developerTraining),
+                   developerLearningGate.canImportTraining() {
+                    controller.developerGomokuMove(index)
+                } else {
+                    controller.humanGomokuMove(index)
+                }
                 model.haptics.impact()
             }
         case .xiangqi:

@@ -115,11 +115,20 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity)
         }
         .background(VeilAmbientBackground())
-        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
+        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.item]) { result in
             switch result {
-            case .success(let url):
-                restoreURL = url
-                showsRestorePassword = true
+            case .success(let selectedURL):
+                Task {
+                    do {
+                        restoreURL = try await VeilImportedFileAccess.materializeInBackground(
+                            selectedURL,
+                            acceptedExtensions: ["zip"]
+                        )
+                        showsRestorePassword = true
+                    } catch {
+                        model.alertMessage = error.localizedDescription
+                    }
+                }
             case .failure(let error):
                 model.alertMessage = "无法选择备份：\(error.localizedDescription)"
             }
