@@ -96,6 +96,37 @@ final class AdaptiveBoardLearningTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: legacyURL), originalLegacy)
     }
 
+    func testScopedClearAfterLegacyMigrationPersistsAcrossRestart() throws {
+        let legacyURL = temporaryURL()
+        let scopedURL = temporaryURL()
+        defer {
+            try? FileManager.default.removeItem(at: legacyURL.deletingLastPathComponent())
+            try? FileManager.default.removeItem(at: scopedURL.deletingLastPathComponent())
+        }
+
+        let legacy = AdaptiveBoardLearningStore(fileURL: legacyURL)
+        legacy.record(
+            game: .gomoku,
+            plies: [AdaptiveBoardPly(position: "g:migration-clear-regression", action: "112", actor: .host)],
+            result: .humanWon
+        )
+        let originalLegacy = try Data(contentsOf: legacyURL)
+        let scoped = AdaptiveBoardLearningStore(game: .gomoku, fileURL: scopedURL, legacyURL: legacyURL)
+        XCTAssertEqual(scoped.summary.completedGames, 1)
+        XCTAssertEqual(scoped.summary.rememberedPositions, 1)
+
+        scoped.clear()
+        XCTAssertTrue(scoped.lastSaveSucceeded)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: scopedURL.path),
+                      "Empty scoped database must block legacy re-migration")
+        XCTAssertEqual(scoped.summary.rememberedPositions, 0)
+
+        let restarted = AdaptiveBoardLearningStore(game: .gomoku, fileURL: scopedURL, legacyURL: legacyURL)
+        XCTAssertEqual(restarted.summary.completedGames, 0)
+        XCTAssertEqual(restarted.summary.rememberedPositions, 0)
+        XCTAssertEqual(try Data(contentsOf: legacyURL), originalLegacy)
+    }
+
     func testRepeatedInterruptedLinePenalisesOldAIReplyAndPredictsHumanFormation() {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
