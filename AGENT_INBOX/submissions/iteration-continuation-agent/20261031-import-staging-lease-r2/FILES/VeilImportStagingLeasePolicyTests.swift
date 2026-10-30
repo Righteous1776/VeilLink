@@ -47,7 +47,7 @@ final class VeilImportStagingLeasePolicyTests: XCTestCase {
     func testSweepKeepsFreshLease() throws {
         let root = VeilImportStagingLeasePolicy.stagingRoot(temporaryDirectory: temp)
         let current = try createLease(root: root)
-        let result = try VeilImportStagingLeasePolicy.sweepExpired(root: root, now: Date(), lifetime: 3600)
+        let result = try VeilImportStagingLeasePolicy.sweepExpired(root: root, now: Date(), lifetime: 3600, activeLeaseIDs: [])
         XCTAssertEqual(result.removed, 0)
         XCTAssertTrue(fm.fileExists(atPath: current.path))
     }
@@ -58,7 +58,7 @@ final class VeilImportStagingLeasePolicyTests: XCTestCase {
         let fresh = try createLease(root: root)
         let futureNow = Date().addingTimeInterval(100000)
         try fm.setAttributes([.modificationDate: futureNow], ofItemAtPath: fresh.deletingLastPathComponent().path)
-        let result = try VeilImportStagingLeasePolicy.sweepExpired(root: root, now: futureNow, lifetime: 3600)
+        let result = try VeilImportStagingLeasePolicy.sweepExpired(root: root, now: futureNow, lifetime: 3600, activeLeaseIDs: [])
         XCTAssertEqual(result.removed, 1)
         XCTAssertFalse(fm.fileExists(atPath: old.path))
         XCTAssertTrue(fm.fileExists(atPath: fresh.path))
@@ -68,9 +68,23 @@ final class VeilImportStagingLeasePolicyTests: XCTestCase {
         let root = VeilImportStagingLeasePolicy.stagingRoot(temporaryDirectory: temp)
         let old = try (0..<3).map { _ in try createLease(root: root) }
         let futureNow = Date().addingTimeInterval(100000)
-        let result = try VeilImportStagingLeasePolicy.sweepExpired(root: root, now: futureNow, lifetime: 3600, maxRemovals: 1)
+        let result = try VeilImportStagingLeasePolicy.sweepExpired(root: root, now: futureNow, lifetime: 3600, maxRemovals: 1, activeLeaseIDs: [])
         XCTAssertEqual(result.removed, 1)
         XCTAssertEqual(old.filter { fm.fileExists(atPath: $0.path) }.count, 2)
+    }
+
+    func testActiveLeaseNotSweptEvenWhenOld() throws {
+        let root = VeilImportStagingLeasePolicy.stagingRoot(temporaryDirectory: temp)
+        let active = try createLease(root: root)
+        let stale = try createLease(root: root)
+        let activeID = UUID(uuidString: active.deletingLastPathComponent().lastPathComponent)!
+        let futureNow = Date().addingTimeInterval(100_000)
+        let report = try VeilImportStagingLeasePolicy.sweepExpired(
+            root: root, now: futureNow, lifetime: 3_600, activeLeaseIDs: [activeID]
+        )
+        XCTAssertEqual(report.removed, 1)
+        XCTAssertTrue(fm.fileExists(atPath: active.path))
+        XCTAssertFalse(fm.fileExists(atPath: stale.path))
     }
 
     func testRejectsSymlinkLease() throws {
@@ -84,7 +98,7 @@ final class VeilImportStagingLeasePolicyTests: XCTestCase {
         try fm.createSymbolicLink(at: linked, withDestinationURL: outside)
         let spoof = linked.appendingPathComponent("snapshot.zip")
         XCTAssertFalse(VeilImportStagingLeasePolicy.owns(spoof, root: root))
-        let result = try VeilImportStagingLeasePolicy.sweepExpired(root: root, now: Date().addingTimeInterval(1_000_000), lifetime: 1)
+        let result = try VeilImportStagingLeasePolicy.sweepExpired(root: root, now: Date().addingTimeInterval(1_000_000), lifetime: 1, activeLeaseIDs: [])
         XCTAssertEqual(result.removed, 0)
         XCTAssertTrue(fm.fileExists(atPath: file.path))
     }
