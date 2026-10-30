@@ -122,7 +122,9 @@ struct VeilGuanduGrandMapSoloView: View {
                 map.distance(unit.cell, $0.cell) < map.distance(unit.cell, $1.cell)
             }) else { continue }
             let next = map.neighbors(of: unit.cell)
-                .filter { !state.units.contains(where: { occupied in occupied.cell == $0 }) }
+                .filter { candidate in
+                    !state.units.contains(where: { occupied in occupied.cell == candidate })
+                }
                 .min(by: { map.distance($0, target.cell) < map.distance($1, target.cell) })
             if let next, map.distance(next, target.cell) < map.distance(unit.cell, target.cell),
                UInt16(exactly: unit.cell) != nil, UInt16(exactly: next) != nil {
