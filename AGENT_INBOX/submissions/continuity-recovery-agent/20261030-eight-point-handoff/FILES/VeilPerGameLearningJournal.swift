@@ -132,18 +132,37 @@ struct VeilPerGameLearningJournal {
         }
     }
 
-    /// Validate the entire import before replacing the selected game's file.
-    /// Rename-swap is required in the final iOS storage integration lane.
-    func validateImport(_ source: URL, for game: Engine.Game) throws -> Summary {
-        guard source.isFileURL else { throw JournalError.unsafeSource }
-        let check = VeilPerGameLearningJournal(directory: source.deletingLastPathComponent())
-        let expectedFile = check.url(for: game)
-        // File Provider inputs cannot be assumed to use the journal's canonical
-        // name, so only a staged, local copy is accepted for actual processing.
-        // The final adapter must pass its validated copy to a separate decoder.
-        guard source.standardizedFileURL == expectedFile.standardizedFileURL else {
-            throw JournalError.unsafeSource
+    /// Import exactly one game's journal with validation and rollback.
+    /// A user-selected Files URL is coordinated before leaving its scope;
+    /// no other game's journal file is touched.
+    func importJournal(from source: URL, for game: Engine.Game) throws -> Summary {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let staging = directory.appendingPathComponent(".import-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let checked = VeilPerGameLearningJournal(directory: staging)
+        let candidate = checked.url(for: game)
+        try VeilFilesIngress.withRead(from: source, maximumBytes: Int64.max) { readable in
+            try FileManager.default.copyItem(at: readable, to: candidate)
         }
-        return try check.summary(for: game)
+        let summary = try checked.summary(for: game)
+        let current = url(for: game)
+        let rollback = staging.appendingPathComponent("rollback-\(game.rawValue).jsonl")
+        if FileManager.default.fileExists(atPath: current.path) {
+            try FileManager.default.copyItem(at: current, to: rollback)
+        }
+        do {
+            if FileManager.default.fileExists(atPath: current.path) {
+                try FileManager.default.removeItem(at: current)
+            }
+            try FileManager.default.moveItem(at: candidate, to: current)
+            return summary
+        } catch {
+            if FileManager.default.fileExists(atPath: rollback.path) {
+                try? FileManager.default.removeItem(at: current)
+                try? FileManager.default.copyItem(at: rollback, to: current)
+            }
+            throw error
+        }
     }
 }
