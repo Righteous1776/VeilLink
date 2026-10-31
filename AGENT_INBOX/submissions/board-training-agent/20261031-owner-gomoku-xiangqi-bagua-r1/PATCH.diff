@@ -1,0 +1,582 @@
+diff --git a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
+--- a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
++++ b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
+@@ -391,161 +391,249 @@
+             } else {
+                 preferredOpening = "正在观察你的起手"
+             }
+-            nextLesson = repeatedLines > 0
+-                ? "下一课：复盘重复阵法中的活三、冲四与防守优先级。"
+-                : "下一课：先找对手的威胁，再决定进攻方向。"
+-        case .xiangqi:
+-            if preferredAction == "64:67" {
+-                preferredOpening = "偏好中炮"
+-            } else if preferredAction == "82:65" || preferredAction == "88:67" {
+-                preferredOpening = "偏好起马"
+-            } else if preferredAction != nil {
+-                preferredOpening = "偏好多变开局"
+-            } else {
+-                preferredOpening = "正在观察你的开局"
+-            }
+-            nextLesson = repeatedLines > 0
+-                ? "下一课：针对常用布局练习一手预防与两手反击。"
+-                : "下一课：发展子力前，先检查对方将军、吃子与威胁。"
+-        default:
+-            preferredOpening = "仅支持五子棋和中国象棋"
+-            nextLesson = "选择棋类对局后开始建立个人档案。"
+-        }
+-        let reviewFocus: String
+-        if interrupted >= max(2, completed) {
+-            reviewFocus = "复盘方向：中断局较多；先完成短对局，观察优势从哪一步开始丢失。"
+-        } else if aiWins > humanWins {
+-            reviewFocus = "复盘方向：重点回看电脑取得优势前的两手，先处理对方直接威胁。"
+-        } else if repeatedLines > 0 {
+-            reviewFocus = "复盘方向：你的常用线路已被识别；尝试为同一开局准备一个转向。"
+-        } else if humanWins > 0 {
+-            reviewFocus = "复盘方向：复走一局胜局，找出可以稳定复用的威胁与防守转换。"
+-        } else {
+-            reviewFocus = "复盘方向：先完成一局，教练会从开局、结果和重复线路生成针对性建议。"
+-        }
+-        let level = min(10, max(1, 1 + completed / 3 + database.positions.count / 180))
+-        return PersonalBoardCoachProfile(
+-            level: level,
+-            completedGames: completed,
+-            repeatedLineCount: repeatedLines,
+-            preferredOpening: preferredOpening,
+-            nextLesson: nextLesson,
+-            reviewFocus: reviewFocus
+-        )
+-    }
+-
+-    func record(game: MiniGameKind, plies: [AdaptiveBoardPly], result: AdaptiveBoardGameResult) {
+-        guard game == .gomoku || game == .xiangqi, !plies.isEmpty else { return }
+-        guard scopedGame == nil || scopedGame == game else { return }
+-        guard !requiresRecovery else {
+-            lastSaveSucceeded = false
+-            return
+-        }
+-
+-        database.sequence += 1
+-        let sequence = database.sequence
+-        for ply in plies {
+-            var position = database.positions[ply.position]
+-                ?? PositionStat(actor: ply.actor, actions: [:], lastSequence: sequence)
+-            var action = position.actions[ply.action] ?? ActionStat(count: 0, aiReward: 0)
+-            action.count = min(65_535, action.count + 1)
+-            action.aiReward = max(-32_000, min(32_000, action.aiReward + result.aiReward))
+-            position.actions[ply.action] = action
+-            position.lastSequence = sequence
+-            database.positions[ply.position] = position
+-        }
+-
+-        if result != .unfinished { database.completedGames += 1 }
+-        database.recentGames.append(GameRecord(
+-            game: game,
+-            result: result,
+-            actions: plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
+-            finishedAt: Date()
+-        ))
+-        save()
+-    }
+-
+-    func clear() {
+-        // Persist an empty scoped V2 database as an explicit migration tombstone.
+-        // Clear is the user's deliberate reset, including in recovery mode.
+-        let previous = database
+-        let previousRecovery = requiresRecovery
+-        database = Database()
+-        requiresRecovery = false
+-        save()
+-        if !lastSaveSucceeded {
+-            database = previous
+-            requiresRecovery = previousRecovery
+-        }
+-    }
+-
+-    func exportPackage() throws -> URL {
+-        guard !requiresRecovery else { throw AdaptiveBoardLearningPackageError.invalidContent }
+-        let encoder = JSONEncoder()
+-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+-        let compactEncoder = JSONEncoder()
+-        compactEncoder.outputFormatting = [.sortedKeys]
+-        let payloadData = try compactEncoder.encode(database)
+-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+-        let envelope = ExportEnvelope(
+-            format: "veillink.board-learning.export.v1",
+-            createdAt: Date(),
+-            appVersion: version,
+-            checksumAlgorithm: "fnv1a64-canonical-json",
+-            payloadChecksum: Self.checksum(payloadData),
+-            payload: database
+-        )
+-        let data = try encoder.encode(envelope)
+-        let formatter = DateFormatter()
+-        formatter.locale = Locale(identifier: "en_US_POSIX")
+-        formatter.dateFormat = "yyyyMMdd-HHmmss"
+-        let gameLabel = scopedGame == .xiangqi ? "Xiangqi" : "Gomoku"
+-        let url = FileManager.default.temporaryDirectory
+-            .appendingPathComponent("VeilLink-\(gameLabel)Learning-\(formatter.string(from: Date())).vltrain.json")
+-        do {
+-            try data.write(to: url, options: .atomic)
+-            return url
+-        } catch {
+-            throw AdaptiveBoardLearningPackageError.writeFailed
+-        }
+-    }
+-
+-    func importPackage(from url: URL) throws -> AdaptiveBoardLearningImportReport {
+-        let accessed = url.startAccessingSecurityScopedResource()
+-        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+-        guard let data = try? Data(contentsOf: url) else {
+-            throw AdaptiveBoardLearningPackageError.unreadable
+-        }
+-        guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
+-              envelope.format == "veillink.board-learning.export.v1",
+-              envelope.checksumAlgorithm == "fnv1a64-canonical-json",
+-              envelope.payload.schema == 1 else {
+-            throw AdaptiveBoardLearningPackageError.unsupportedFormat
+-        }
+-
+-        let encoder = JSONEncoder()
+-        encoder.outputFormatting = [.sortedKeys]
+-        guard let payloadData = try? encoder.encode(envelope.payload),
+-              Self.checksum(payloadData) == envelope.payloadChecksum else {
+-            throw AdaptiveBoardLearningPackageError.checksumMismatch
+-        }
+-        guard Self.isValid(envelope.payload) else {
+-            throw AdaptiveBoardLearningPackageError.invalidContent
+-        }
+-
+-        let previous = database
+-        let previousRecovery = requiresRecovery
+-        database = Self.filtered(envelope.payload, for: scopedGame)
+-        guard !database.positions.isEmpty || !database.recentGames.isEmpty else {
+-            database = previous
+-            throw AdaptiveBoardLearningPackageError.invalidContent
+-        }
+-        // Explicit validated package import is a permitted recovery operation.
+-        requiresRecovery = false
+-        save()
+-        guard lastSaveSucceeded else {
+-            database = previous
+-            requiresRecovery = previousRecovery
++            let bagua = VeilBaguaFormation.analyze(games: records.map { $0.actions })
++            nextLesson = bagua.isCandidate
++                ? "阵法预判：发现多次马步式落点。复盘八卦阵的活三、冲四和对手威胁；关键破阵点需要逐局验证。"
++                : (repeatedLines > 0
++                    ? "下一课：复盘重复阵法中的活三、冲四与防守优先级。"
++                    : "下一课：先找对手的威胁，再决定进攻方向。")
++        case .xiangqi:
++            if preferredAction == "64:67" {
++                preferredOpening = "偏好中炮"
++            } else if preferredAction == "82:65" || preferredAction == "88:67" {
++                preferredOpening = "偏好起马"
++            } else if preferredAction != nil {
++                preferredOpening = "偏好多变开局"
++            } else {
++                preferredOpening = "正在观察你的开局"
++            }
++            nextLesson = repeatedLines > 0
++                ? "下一课：针对常用布局练习一手预防与两手反击。"
++                : "下一课：发展子力前，先检查对方将军、吃子与威胁。"
++        default:
++            preferredOpening = "仅支持五子棋和中国象棋"
++            nextLesson = "选择棋类对局后开始建立个人档案。"
++        }
++        let reviewFocus: String
++        if interrupted >= max(2, completed) {
++            reviewFocus = "复盘方向：中断局较多；先完成短对局，观察优势从哪一步开始丢失。"
++        } else if aiWins > humanWins {
++            reviewFocus = "复盘方向：重点回看电脑取得优势前的两手，先处理对方直接威胁。"
++        } else if repeatedLines > 0 {
++            reviewFocus = "复盘方向：你的常用线路已被识别；尝试为同一开局准备一个转向。"
++        } else if humanWins > 0 {
++            reviewFocus = "复盘方向：复走一局胜局，找出可以稳定复用的威胁与防守转换。"
++        } else {
++            reviewFocus = "复盘方向：先完成一局，教练会从开局、结果和重复线路生成针对性建议。"
++        }
++        let level = min(10, max(1, 1 + completed / 3 + database.positions.count / 180))
++        return PersonalBoardCoachProfile(
++            level: level,
++            completedGames: completed,
++            repeatedLineCount: repeatedLines,
++            preferredOpening: preferredOpening,
++            nextLesson: nextLesson,
++            reviewFocus: reviewFocus
++        )
++    }
++
++    func record(game: MiniGameKind, plies: [AdaptiveBoardPly], result: AdaptiveBoardGameResult) {
++        guard game == .gomoku || game == .xiangqi, !plies.isEmpty else { return }
++        guard scopedGame == nil || scopedGame == game else { return }
++        guard !requiresRecovery else {
++            lastSaveSucceeded = false
++            return
++        }
++
++        database.sequence += 1
++        let sequence = database.sequence
++        for ply in plies {
++            var position = database.positions[ply.position]
++                ?? PositionStat(actor: ply.actor, actions: [:], lastSequence: sequence)
++            var action = position.actions[ply.action] ?? ActionStat(count: 0, aiReward: 0)
++            action.count = min(65_535, action.count + 1)
++            action.aiReward = max(-32_000, min(32_000, action.aiReward + result.aiReward))
++            position.actions[ply.action] = action
++            position.lastSequence = sequence
++            database.positions[ply.position] = position
++        }
++
++        if result != .unfinished { database.completedGames += 1 }
++        database.recentGames.append(GameRecord(
++            game: game,
++            result: result,
++            actions: plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
++            finishedAt: Date()
++        ))
++        save()
++    }
++
++    func clear() {
++        // Persist an empty scoped V2 database as an explicit migration tombstone.
++        // Clear is the user's deliberate reset, including in recovery mode.
++        let previous = database
++        let previousRecovery = requiresRecovery
++        database = Database()
++        requiresRecovery = false
++        save()
++        if !lastSaveSucceeded {
++            database = previous
++            requiresRecovery = previousRecovery
++        }
++    }
++
++    func exportPackage() throws -> URL {
++        guard !requiresRecovery else { throw AdaptiveBoardLearningPackageError.invalidContent }
++        let encoder = JSONEncoder()
++        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
++        let compactEncoder = JSONEncoder()
++        compactEncoder.outputFormatting = [.sortedKeys]
++        let payloadData = try compactEncoder.encode(database)
++        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
++        let envelope = ExportEnvelope(
++            format: "veillink.board-learning.export.v1",
++            createdAt: Date(),
++            appVersion: version,
++            checksumAlgorithm: "fnv1a64-canonical-json",
++            payloadChecksum: Self.checksum(payloadData),
++            payload: database
++        )
++        let data = try encoder.encode(envelope)
++        let formatter = DateFormatter()
++        formatter.locale = Locale(identifier: "en_US_POSIX")
++        formatter.dateFormat = "yyyyMMdd-HHmmss"
++        let gameLabel = scopedGame == .xiangqi ? "Xiangqi" : "Gomoku"
++        let url = FileManager.default.temporaryDirectory
++            .appendingPathComponent("VeilLink-\(gameLabel)Learning-\(formatter.string(from: Date())).vltrain.json")
++        do {
++            try data.write(to: url, options: .atomic)
++            return url
++        } catch {
++            throw AdaptiveBoardLearningPackageError.writeFailed
++        }
++    }
++
++    func importPackage(from url: URL) throws -> AdaptiveBoardLearningImportReport {
++        let accessed = url.startAccessingSecurityScopedResource()
++        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
++        guard let data = try? Data(contentsOf: url) else {
++            throw AdaptiveBoardLearningPackageError.unreadable
++        }
++        guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
++              envelope.format == "veillink.board-learning.export.v1",
++              envelope.checksumAlgorithm == "fnv1a64-canonical-json",
++              envelope.payload.schema == 1 else {
++            throw AdaptiveBoardLearningPackageError.unsupportedFormat
++        }
++
++        let encoder = JSONEncoder()
++        encoder.outputFormatting = [.sortedKeys]
++        guard let payloadData = try? encoder.encode(envelope.payload),
++              Self.checksum(payloadData) == envelope.payloadChecksum else {
++            throw AdaptiveBoardLearningPackageError.checksumMismatch
++        }
++        guard Self.isValid(envelope.payload) else {
++            throw AdaptiveBoardLearningPackageError.invalidContent
++        }
++
++        let previous = database
++        let previousRecovery = requiresRecovery
++        database = Self.filtered(envelope.payload, for: scopedGame)
++        guard !database.positions.isEmpty || !database.recentGames.isEmpty else {
++            database = previous
++            throw AdaptiveBoardLearningPackageError.invalidContent
++        }
++        // Explicit validated package import is a permitted recovery operation.
++        requiresRecovery = false
++        save()
++        guard lastSaveSucceeded else {
++            database = previous
++            requiresRecovery = previousRecovery
++            throw AdaptiveBoardLearningPackageError.writeFailed
++        }
++        return AdaptiveBoardLearningImportReport(
++            completedGames: database.completedGames,
++            rememberedPositions: database.positions.count
++        )
++    }
++
++    /// Non-destructive, idempotent Owner-reviewed training addition.
++    /// Never replace an existing local repertoire or a database requiring recovery.
++    /// Existing positions/actions are authoritative; source statistics only fill
++    /// missing gaps, while distinct game records add sequence evidence.
++    func mergeReviewedPackage(from url: URL) throws -> AdaptiveBoardLearningImportReport {
++        guard !requiresRecovery else { throw AdaptiveBoardLearningPackageError.invalidContent }
++        let accessed = url.startAccessingSecurityScopedResource()
++        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
++        guard let data = try? Data(contentsOf: url) else {
++            throw AdaptiveBoardLearningPackageError.unreadable
++        }
++        guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
++              envelope.format == "veillink.board-learning.export.v1",
++              envelope.checksumAlgorithm == "fnv1a64-canonical-json",
++              envelope.payload.schema == 1 else {
++            throw AdaptiveBoardLearningPackageError.unsupportedFormat
++        }
++        let encoder = JSONEncoder()
++        encoder.outputFormatting = [.sortedKeys]
++        guard let encoded = try? encoder.encode(envelope.payload),
++              Self.checksum(encoded) == envelope.payloadChecksum else {
++            throw AdaptiveBoardLearningPackageError.checksumMismatch
++        }
++        guard Self.isValid(envelope.payload) else {
++            throw AdaptiveBoardLearningPackageError.invalidContent
++        }
++        let incoming = Self.filtered(envelope.payload, for: scopedGame)
++        guard !incoming.positions.isEmpty || !incoming.recentGames.isEmpty else {
++            throw AdaptiveBoardLearningPackageError.invalidContent
++        }
++
++        var merged = database
++        var changed = false
++        for (position, source) in incoming.positions {
++            if var retained = merged.positions[position] {
++                guard retained.actor == source.actor else {
++                    throw AdaptiveBoardLearningPackageError.invalidContent
++                }
++                for (action, statistic) in source.actions where retained.actions[action] == nil {
++                    retained.actions[action] = statistic
++                    changed = true
++                }
++                if changed { merged.positions[position] = retained }
++            } else {
++                merged.positions[position] = source
++                changed = true
++            }
++        }
++        func signature(_ record: GameRecord) -> String {
++            record.game.rawValue + "#" + record.result.rawValue + "#"
++            + String(record.finishedAt.timeIntervalSinceReferenceDate) + "#"
++            + record.actions.joined(separator: "|")
++        }
++        var known = Set(merged.recentGames.map(signature))
++        for record in incoming.recentGames {
++            if known.insert(signature(record)).inserted {
++                merged.recentGames.append(record)
++                if record.result != .unfinished { merged.completedGames += 1 }
++                changed = true
++            }
++        }
++        if !changed {
++            return AdaptiveBoardLearningImportReport(
++                completedGames: database.completedGames,
++                rememberedPositions: database.positions.count
++            )
++        }
++        merged.sequence = max(merged.sequence, incoming.sequence) + 1
++        guard Self.isValid(merged) else {
++            throw AdaptiveBoardLearningPackageError.invalidContent
++        }
++
++        let previous = database
++        database = merged
++        save()
++        guard lastSaveSucceeded else {
++            database = previous
+             throw AdaptiveBoardLearningPackageError.writeFailed
+         }
+         return AdaptiveBoardLearningImportReport(
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -308,12 +308,25 @@
+     }
+ 
+     func importBoardLearning(from url: URL) throws -> AdaptiveBoardLearningImportReport {
+-        let report = try learningStore.importPackage(from: url)
+-        learningPlies.removeAll(keepingCapacity: true)
+-        learningSummary = learningStore.summary
+-        coachProfile = learningStore.coachProfile(for: game)
+-        coachTip = "训练包已合并到本地档案；下一局会使用其中的阵法证据。"
+-        return report
++        let report = try learningStore.mergeReviewedPackage(from: url)
++        learningPlies.removeAll(keepingCapacity: true)
++        learningSummary = learningStore.summary
++        coachProfile = learningStore.coachProfile(for: game)
++        coachTip = "训练包已合并到本地档案；下一局会使用其中的阵法证据。"
++        return report
++    }
++
++    /// First-party training seed bypasses Files-picker failures, but is still
++    /// only available through the gated Developer Learning Lab.
++    func importBundledBoardLearning() throws -> AdaptiveBoardLearningImportReport {
++        let resource = game == .xiangqi
++            ? "VeilLink-Xiangqi-OwnerTraining-20261031"
++            : "VeilLink-Gomoku-OwnerTraining-20261031"
++        guard (game == .gomoku || game == .xiangqi),
++              let url = Bundle.main.url(forResource: resource, withExtension: "json") else {
++            throw AdaptiveBoardLearningPackageError.unreadable
++        }
++        return try importBoardLearning(from: url)
+     }
+ 
+     private func finishOrScheduleAI() {
+diff --git a/VeilLink/UI/BoardDeveloperLearningLabView.swift b/VeilLink/UI/BoardDeveloperLearningLabView.swift
+--- a/VeilLink/UI/BoardDeveloperLearningLabView.swift
++++ b/VeilLink/UI/BoardDeveloperLearningLabView.swift
+@@ -130,6 +130,24 @@
+             }
+             .buttonStyle(.borderedProminent)
+             .disabled(preparingImport)
++            Button {
++                guard authorizedSession else {
++                    gate.lock()
++                    message = "开发者授权已失效。"
++                    return
++                }
++                do {
++                    let report = try controller.importBundledBoardLearning()
++                    message = "已增量合并内置实战训练：总计\(report.completedGames) 局、\(report.rememberedPositions) 个局面（重复导入不会重复计数）。"
++                    model.haptics.resolved()
++                } catch {
++                    message = error.localizedDescription
++                }
++            } label: {
++                Label("合并内置实战训练（无需文件选择器）", systemImage: "brain.head.profile")
++            }
++            .buttonStyle(.bordered)
++            .disabled(preparingImport)
+         }
+         .veilCard()
+     }
+diff --git a/VeilLink/Agent/Games/VeilBaguaFormation.swift b/VeilLink/Agent/Games/VeilBaguaFormation.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Agent/Games/VeilBaguaFormation.swift
+@@ -0,0 +1,50 @@
++import Foundation
++
++/// Observed geometric style, not a guarantee of strategic invulnerability.
++/// Index is row-major on a 15x15 board; a chess-knight displacement is (1,2).
++struct VeilBaguaEvidence: Equatable, Sendable {
++    let moves: Int
++    let transitions: Int
++    let knightTransitions: Int
++
++    var ratio: Double {
++        transitions > 0 ? Double(knightTransitions) / Double(transitions) : 0
++    }
++
++    /// Conservative style hint only. A threat-search result always outranks it.
++    var isCandidate: Bool {
++        transitions >= 10 && knightTransitions >= 4 && ratio >= 0.25
++    }
++}
++
++enum VeilBaguaFormation {
++    static func isKnightMove(from: Int, to: Int, boardSize: Int = 15) -> Bool {
++        guard boardSize > 2, (0..<(boardSize * boardSize)).contains(from),
++              (0..<(boardSize * boardSize)).contains(to) else { return false }
++        let dr = abs(from / boardSize - to / boardSize)
++        let dc = abs(from % boardSize - to % boardSize)
++        return (dr == 1 && dc == 2) || (dr == 2 && dc == 1)
++    }
++
++    static func analyze(games: [[String]], actor: Character = "h", boardSize: Int = 15) -> VeilBaguaEvidence {
++        var moves = 0
++        var transitions = 0
++        var knight = 0
++        for actions in games {
++            let indices: [Int] = actions.compactMap { action in
++                guard action.first == actor,
++                      let index = Int(action.dropFirst()),
++                      (0..<(boardSize * boardSize)).contains(index) else { return nil }
++                return index
++            }
++            moves += indices.count
++            for pair in zip(indices, indices.dropFirst()) {
++                transitions += 1
++                if isKnightMove(from: pair.0, to: pair.1, boardSize: boardSize) {
++                    knight += 1
++                }
++            }
++        }
++        return VeilBaguaEvidence(moves: moves, transitions: transitions, knightTransitions: knight)
++    }
++}
+diff --git a/VeilLinkTests/VeilBaguaFormationTests.swift b/VeilLinkTests/VeilBaguaFormationTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilBaguaFormationTests.swift
+@@ -0,0 +1,51 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilBaguaFormationTests: XCTestCase {
++    func testKnightGeometryIsTranslationInvariantAndBounded() {
++        XCTAssertTrue(VeilBaguaFormation.isKnightMove(from: 112, to: 81))
++        XCTAssertTrue(VeilBaguaFormation.isKnightMove(from: 0, to: 17))
++        XCTAssertFalse(VeilBaguaFormation.isKnightMove(from: 112, to: 96))
++        XCTAssertFalse(VeilBaguaFormation.isKnightMove(from: 0, to: -1))
++        XCTAssertFalse(VeilBaguaFormation.isKnightMove(from: 224, to: 225))
++    }
++
++    func testRecognizesRecordedKnightTransitionsWithoutTreatingThemAsWins() {
++        let history = [["h112", "a80", "h81", "a83", "h64", "a85", "h93"]]
++        let sample = VeilBaguaFormation.analyze(games: history)
++        XCTAssertEqual(sample.moves, 4)
++        XCTAssertEqual(sample.transitions, 3)
++        XCTAssertEqual(sample.knightTransitions, 3)
++        XCTAssertEqual(sample.ratio, 1)
++        XCTAssertFalse(sample.isCandidate) // too little evidence to certify a style
++    }
++}
++
++@MainActor
++final class ReviewedBoardSeedMergeTests: XCTestCase {
++    func testAdditiveSeedImportPreservesHistoryAndIsIdempotent() throws {
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent(UUID().uuidString, isDirectory: true)
++        defer { try? FileManager.default.removeItem(at: root) }
++        let source = AdaptiveBoardLearningStore(game: .gomoku, fileURL: root.appendingPathComponent("source.json"))
++        let target = AdaptiveBoardLearningStore(game: .gomoku, fileURL: root.appendingPathComponent("target.json"))
++        source.record(game: .gomoku, plies: [
++            .init(position: "g:source", action: "112", actor: .host)
++        ], result: .humanWon)
++        target.record(game: .gomoku, plies: [
++            .init(position: "g:existing", action: "81", actor: .host)
++        ], result: .aiWon)
++        let exported = try source.exportPackage()
++        defer { try? FileManager.default.removeItem(at: exported) }
++
++        let first = try target.mergeReviewedPackage(from: exported)
++        XCTAssertEqual(first.completedGames, 2)
++        XCTAssertEqual(first.rememberedPositions, 2)
++        let second = try target.mergeReviewedPackage(from: exported)
++        XCTAssertEqual(first, second)
++
++        let restored = AdaptiveBoardLearningStore(game: .gomoku, fileURL: root.appendingPathComponent("target.json"))
++        XCTAssertEqual(restored.summary.completedGames, 2)
++        XCTAssertEqual(restored.summary.rememberedPositions, 2)
++    }
++}

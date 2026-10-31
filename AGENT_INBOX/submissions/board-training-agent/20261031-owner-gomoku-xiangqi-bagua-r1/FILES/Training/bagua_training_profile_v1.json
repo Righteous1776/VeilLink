@@ -1,0 +1,59 @@
+{
+  "schema": "veillink.bagua.training.v1",
+  "provenance": "owner-provided VeilLink-GomokuLearning-20261031-132217.vltrain.json",
+  "source_checksum": "c52154f68a0cb20c",
+  "representation": "counted geometric style evidence, not a trained neural model",
+  "boardSize": 15,
+  "ownerSide": "host / black",
+  "games": 28,
+  "completedGames": 10,
+  "positions": 1205,
+  "blackMoves": 700,
+  "consecutiveBlackTransitions": 672,
+  "knightTransitions": 196,
+  "knightRatio": 0.291667,
+  "center112Openings": 21,
+  "outcomes": {
+    "unfinished": 18,
+    "humanWon": 4,
+    "draw": 3,
+    "aiWon": 3
+  },
+  "outcomeStrata": {
+    "unfinished": {
+      "games": 18,
+      "moves": 150,
+      "transitions": 132,
+      "knightTransitions": 63,
+      "knightRatio": 0.477273
+    },
+    "humanWon": {
+      "games": 4,
+      "moves": 177,
+      "transitions": 173,
+      "knightTransitions": 57,
+      "knightRatio": 0.32948
+    },
+    "draw": {
+      "games": 3,
+      "moves": 339,
+      "transitions": 336,
+      "knightTransitions": 72,
+      "knightRatio": 0.214286
+    },
+    "aiWon": {
+      "games": 3,
+      "moves": 34,
+      "transitions": 31,
+      "knightTransitions": 4,
+      "knightRatio": 0.129032
+    }
+  },
+  "hypotheses": [
+    "马步是(1,2)/(2,1)的几何风格特征，不等于胜率因果",
+    "关键点应以合法棋形与威胁搜索验证，不能假定只有一个破阵点",
+    "风格候选不得压过立即取胜与必防点"
+  ],
+  "evaluation": "in-sample descriptive statistics; no held-out performance claims",
+  "enableByDefault": false
+}
