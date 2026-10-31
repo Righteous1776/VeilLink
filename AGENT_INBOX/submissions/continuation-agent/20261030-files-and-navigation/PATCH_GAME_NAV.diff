@@ -1,0 +1,54 @@
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -4,6 +4,7 @@
+ struct GameLobbyView: View {
+     @ObservedObject var model: AppModel
+     @State private var nearbyConversation: ConversationSummary?
++    @State private var showsGalgameMissing = false
+ 
+     init(model: AppModel) {
+         self.model = model
+@@ -28,6 +29,11 @@
+         .sheet(item: $nearbyConversation) { conversation in
+             MiniGameHubView(model: model, conversation: conversation)
+         }
++        .alert("Galgame 资源待恢复", isPresented: $showsGalgameMissing) {
++            Button("知道了", role: .cancel) {}
++        } message: {
++            Text("Monogatari R5 引擎完整二进制当前不在主分支和已核实附件中。入口已恢复为缺件说明；补齐原始资源并验证后才能开放游玩。")
++        }
+     }
+ 
+     private var hero: some View {
+@@ -100,7 +100,7 @@
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+-            NavigationLink(destination: LocalAIGameView(model: model, game: .tactical)) {
++            NavigationLink(destination: TacticalSoloV2View(model: model)) {
+-                gameRow(.tactical, detail: "你执曹军先行 · 离线训练策略 + 补给与目标评估", enabled: true)
++                realtimeGameRow(title: "三国兵器 · 官渡大战场", detail: "48×27 大地图 · WEGO 回合 · 袁军 AI", motif: .circuit, badge: "V2")
+             }
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+@@ -156,6 +162,20 @@
+     private var realtimeArcadeSection: some View {
+         VStack(alignment: .leading, spacing: 10) {
+             sectionTitle("实时渲染游戏", subtitle: "SpriteKit 2D + SceneKit 3D · 稳定帧循环 · 自适应画质")
++            NavigationLink(destination: VeilRhythmR6NativeGameView()) {
++                realtimeGameRow(title: "实时节奏远征", detail: "原生 SpriteKit · 多轨节拍判定", motif: .pulse, badge: "R7")
++            }.buttonStyle(.plain)
++            NavigationLink(destination: LatticeClashLabView()) {
++                realtimeGameRow(title: "晶格冲突", detail: "离线战略棋盘 · 本地对手", motif: .circuit, badge: "策略")
++            }.buttonStyle(.plain)
++            NavigationLink(destination: VeilStoryLabView()) {
++                realtimeGameRow(title: "分支互动剧情", detail: "选择与后果 · 多结局", motif: .tide, badge: "剧情")
++            }.buttonStyle(.plain)
++            Button {
++                showsGalgameMissing = true
++            } label: {
++                realtimeGameRow(title: "Galgame 引擎", detail: "Monogatari R5 资源未齐 · 查看说明", motif: .comet, badge: "缺件")
++            }.buttonStyle(.plain)
+             NavigationLink(destination: PrismRift3DGameView()) {
+                 realtimeGameRow(title: "棱镜裂隙 3D", detail: "动态灯光 · 三维隧道 · 3 阶 Boss · 能量与舰体管理", motif: .circuit, badge: "3D")
+             }

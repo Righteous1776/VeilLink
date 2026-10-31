@@ -1,0 +1,108 @@
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -10,6 +10,7 @@
+     @ObservedObject var bluetooth: BLETransport
+     @ObservedObject var a9Health: VeilA9HealthMonitor
+     @ObservedObject var computeGovernor: VeilA9ComputeGovernor
++    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
+     @ObservedObject var agentControls: AgentControlCenterSettings
+     @ObservedObject var internetRelay: InternetRelayTransport
+     @ObservedObject var legalConsent: VeilLegalConsentController
+@@ -40,6 +41,7 @@
+         bluetooth = model.bluetooth
+         a9Health = model.a9Health
+         computeGovernor = model.computeGovernor
++        a10Ultra = model.a10Ultra
+         agentControls = model.agentControls
+         internetRelay = model.internetRelay
+         legalConsent = model.legalConsent
+@@ -70,7 +72,11 @@
+                 VeilSettingsDisclosureSection(section: .intelligence, isExpanded: $intelligenceExpanded) {
+                     VStack(spacing: 12) {
+                         agentCard
++                        if model.kernelRuntime.mode.a9EvaluationEnabled {
++                            a9HealthCard
++                        } else {
++                            a10LiveHealthCard
++                        }
+-                        a9HealthCard
+                         kernelRuntimeCard
+                     }
+                 }
+@@ -787,6 +793,32 @@
+         .veilCard(emphasized: internetRelay.connectedPeerCount > 0)
+     }
+ 
++    private var a10LiveHealthCard: some View {
++        let sample = a10Ultra.lastRuntimeSample
++        let current = sample?.environment.modeSessionID == model.kernelRuntime.modeSessionID
++            && sample?.environment.mode == model.kernelRuntime.mode
++        return VStack(alignment: .leading, spacing: 10) {
++            Label("A10 Ultra Ω · 独立实时采样", systemImage: "cpu")
++                .font(VeilType.cardTitle)
++                .foregroundColor(VeilTheme.goldBright)
++            if current, let sample, let decision = sample.ultraDecision {
++                Text("A10 样本 " + String(sample.sampleID.prefix(12)))
++                    .font(.caption.monospaced())
++                Text("健康决策 " + String(describing: decision) .prefix(80))
++                    .font(.caption).lineLimit(2)
++                HStack {
++                    a9Metric(title: "CPU", value: "\(sample.ultraCPUNanos / 1_000_000)ms")
++                    a9Metric(title: "延迟", value: "\(sample.ultraLatencyNanos / 1_000_000)ms")
++                    a9Metric(title: "RSS", value: "\(sample.rssBytes / 1_048_576)MB")
++                }
++                Text("最近采样：") + Text(sample.timestamp, style: .relative)
++            } else {
++                Text("等待当前 A10 环境的有效实时样本；不显示已冻结的 A9 数据。")
++                    .font(.caption).foregroundColor(VeilTheme.secondaryText)
++            }
++        }.veilCard()
++    }
++
+     private var a9HealthCard: some View {
+         let decision = a9Health.decision
+         return VStack(alignment: .leading, spacing: 12) {
+diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.swift
+--- a/VeilLink/UI/OwnerConsoleView.swift
++++ b/VeilLink/UI/OwnerConsoleView.swift
+@@ -52,6 +52,7 @@
+ struct OwnerConsoleView: View {
+     @ObservedObject var model: AppModel
+     @ObservedObject var ownerMode: OwnerModeController
++    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
+     @ObservedObject var performanceOverrides: PerformanceOverrideController
+     @ObservedObject var diagnostics: DiagnosticLogStore
+     @ObservedObject var telemetry: DeepTelemetry
+@@ -67,6 +68,7 @@
+     init(model: AppModel) {
+         self.model = model
+         ownerMode = model.ownerMode
++        a10Ultra = model.a10Ultra
+         performanceOverrides = model.performanceOverrides
+         diagnostics = DiagnosticLogStore.shared
+         telemetry = DeepTelemetry.shared
+@@ -174,6 +176,23 @@
+             consoleRow("Nodes", value: "\(model.sessions.nearbyPeers.count)")
+             consoleRow("Protocol", value: "VL-BLE/4")
+             consoleRow("Profile", value: VeilDevicePerformance.diagnosticLabel)
++            if model.kernelRuntime.mode == .a10OnlyLab || model.kernelRuntime.mode == .a10Independent {
++                if let sample = a10Ultra.lastRuntimeSample,
++                   sample.environment.modeSessionID == model.kernelRuntime.modeSessionID,
++                   sample.environment.mode == model.kernelRuntime.mode,
++                   sample.ultraDecision != nil {
++                    consoleRow("Health source", value: "A10 Ultra Ω LIVE")
++                    consoleRow("Sample", value: String(sample.sampleID.prefix(12)))
++                    consoleRow("Latency", value: "\(sample.ultraLatencyNanos / 1_000_000) ms")
++                    consoleRow("CPU", value: "\(sample.ultraCPUNanos / 1_000_000) ms")
++                    consoleRow("RSS", value: "\(sample.rssBytes / 1_048_576) MiB")
++                    consoleRow("Backend", value: sample.runtimeBackend)
++                } else {
++                    consoleRow("Health source", value: "A10 · 等待当前环境样本")
++                }
++            } else {
++                consoleRow("Health source", value: "A9 · 当前模式")
++            }
+         }
+         .veilCard()
+     }
