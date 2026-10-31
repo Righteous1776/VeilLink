@@ -23,6 +23,7 @@
 - import/export checksum round trip remains covered;
 - provider file is materialized and remains readable after picker handoff;
 - wrong extension is rejected after the permissive Apple Files picker.
+- source Info.plist declares both `LSSupportsOpeningDocumentsInPlace` and `UIFileSharingEnabled`, covering File Provider handoff and the native “On My iPhone/VeilLink” Documents surface.
 - a V1 mixed shared learning file migrates into two scoped V2 stores while its source bytes remain unchanged.
 - clearing a migrated scoped store persists an empty V2 tombstone across relaunch and does not re-import the preserved V1 file;
 - a corrupt scoped V2 file cannot be overwritten by routine record/autosave; explicit clear restores a valid empty store;
@@ -39,6 +40,7 @@
 3. Complete XCTest suite, including new learning/import tests.
 4. iPhone 7 / iOS 15.8.x:
    - select local, iCloud and third-party-provider files, including a 200 MiB backup; cancel during staging and confirm UI responsiveness plus temporary-file cleanup;
+   - in Apple “文件” App, verify “On My iPhone/VeilLink” exposes only intended Documents exports; save an encrypted backup there, relaunch, select it through the system picker and complete password-gated restore;
    - import `.vltrain.json`, backup ZIP, HTML, image and arbitrary integrity-test file;
    - cancel picker and cancel backup-password sheet without stale staged data;
    - repeat a fixed Xiangqi line at least three times and confirm “阵法预判” plus changed legal AI response;

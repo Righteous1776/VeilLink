@@ -10,7 +10,7 @@
 
 ## Candidate scope
 
-1. Apple Files import handoff and security-scoped staging for every current importer.
+1. Apple native Files integration: system document pickers, security-scoped staging, in-place provider support and an `On My iPhone/VeilLink` Documents surface for encrypted backup exports.
 2. Game-scoped Gomoku/Xiangqi learning stores with no fixed position/history/file-size cap.
 3. Four selectable board-strength tiers plus sequence/outcome learning at every tier, with an explainable personal coach profile.
 4. A10-aware Settings, Agent and Owner Console presentation.
@@ -23,7 +23,7 @@
 
 ## Files
 
-`PATCH.diff` changes 36 product/test files (2,412 insertions, 246 deletions), including new:
+`PATCH.diff` changes 36 product/test files (2,434 insertions, 251 deletions), including new:
 
 - `VeilLink/Core/VeilImportedFileAccess.swift`
 - `VeilLink/UI/TacticalV2/TacticalV2SoloView.swift`

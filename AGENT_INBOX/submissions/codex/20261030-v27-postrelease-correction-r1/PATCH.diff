@@ -1559,14 +1559,16 @@ index 0000000..fcb855a
 +    }
 +}
 diff --git a/VeilLink/Resources/Info.plist b/VeilLink/Resources/Info.plist
-index b211ffc..19edcfb 100644
+index b211ffc..e26266b 100644
 --- a/VeilLink/Resources/Info.plist
 +++ b/VeilLink/Resources/Info.plist
-@@ -22,6 +22,8 @@
+@@ -22,6 +22,10 @@
  	<string>$(CURRENT_PROJECT_VERSION)</string>
  	<key>LSRequiresIPhoneOS</key>
  	<true/>
 +	<key>LSSupportsOpeningDocumentsInPlace</key>
++	<true/>
++	<key>UIFileSharingEnabled</key>
 +	<true/>
  	<key>NSBluetoothAlwaysUsageDescription</key>
  	<string>VeilLink 使用蓝牙发现附近设备并传输端到端加密消息。</string>
@@ -1922,7 +1924,7 @@ index f01d136..653487e 100644
          }
 diff --git a/VeilLink/UI/BoardDeveloperLearningLabView.swift b/VeilLink/UI/BoardDeveloperLearningLabView.swift
 new file mode 100644
-index 0000000..9c0bf77
+index 0000000..264f87d
 --- /dev/null
 +++ b/VeilLink/UI/BoardDeveloperLearningLabView.swift
 @@ -0,0 +1,179 @@
@@ -2040,7 +2042,7 @@ index 0000000..9c0bf77
 +            Button {
 +                showsImporter = true
 +            } label: {
-+                Label(preparingImport ? "正在准备训练包…" : "导入开发训练包", systemImage: "square.and.arrow.down")
++                Label(preparingImport ? "正在准备训练包…" : "从“文件”App 导入训练包", systemImage: "square.and.arrow.down")
 +            }
 +            .buttonStyle(.borderedProminent)
 +            .disabled(preparingImport)
@@ -2248,7 +2250,7 @@ index 0000000..0d1e4a1
 +    }
 +}
 diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
-index 7c19021..b723634 100644
+index 7c19021..28dbe99 100644
 --- a/VeilLink/UI/GameLobbyView.swift
 +++ b/VeilLink/UI/GameLobbyView.swift
 @@ -15,7 +15,8 @@ struct GameLobbyView: View {
@@ -2468,7 +2470,7 @@ index 7c19021..b723634 100644
 +                    }
 +                } else {
 +                    Button { showsLearningImporter = true } label: {
-+                        Label("导入增强包", systemImage: "square.and.arrow.down")
++                        Label("从“文件”导入", systemImage: "square.and.arrow.down")
 +                    }
 +                    .buttonStyle(.bordered)
                  }
@@ -2502,9 +2504,18 @@ index 7c19021..b723634 100644
              }
          case .xiangqi:
 diff --git a/VeilLink/UI/OnboardingView.swift b/VeilLink/UI/OnboardingView.swift
-index 9d1265f..c9ca11b 100644
+index 9d1265f..edd8e5f 100644
 --- a/VeilLink/UI/OnboardingView.swift
 +++ b/VeilLink/UI/OnboardingView.swift
+@@ -90,7 +90,7 @@ struct OnboardingView: View {
+                 Button {
+                     showsImporter = true
+                 } label: {
+-                    Label("从加密备份恢复", systemImage: "arrow.counterclockwise.circle")
++                    Label("从 Apple“文件”App 恢复", systemImage: "arrow.counterclockwise.circle")
+                         .font(.body.weight(.medium))
+                         .frame(maxWidth: .infinity)
+                         .padding(.vertical, 13)
 @@ -115,11 +115,20 @@ struct OnboardingView: View {
              .frame(maxWidth: .infinity)
          }
@@ -2630,7 +2641,7 @@ index f6ae543..e86afad 100644
      private var deepTelemetryCard: some View {
          VStack(alignment: .leading, spacing: 13) {
 diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
-index f4b3a0a..9bd1976 100644
+index f4b3a0a..f2b1f34 100644
 --- a/VeilLink/UI/SettingsView.swift
 +++ b/VeilLink/UI/SettingsView.swift
 @@ -10,6 +10,8 @@ struct SettingsView: View {
@@ -2674,6 +2685,20 @@ index f4b3a0a..9bd1976 100644
              }
          }
          .sheet(isPresented: $showsRestorePassword) {
+@@ -444,11 +456,11 @@ struct SettingsView: View {
+                 }
+             }.buttonStyle(VeilPressStyle())
+             Divider().background(VeilTheme.hairline)
+-            settingButton(title: "导出加密ZIP", detail: "保存到文件或分享", icon: "square.and.arrow.up") {
++            settingButton(title: "导出加密ZIP", detail: "保存到 Apple“文件”App 或分享", icon: "square.and.arrow.up") {
+                 showsBackupSheet = true
+             }
+             Divider().background(VeilTheme.hairline)
+-            settingButton(title: "恢复备份", detail: "导入身份、对话与附件", icon: "arrow.counterclockwise") {
++            settingButton(title: "恢复备份", detail: "从 Apple“文件”App 选择加密 ZIP", icon: "arrow.counterclockwise") {
+                 showsImporter = true
+             }
+             HStack {
 @@ -458,20 +470,12 @@ struct SettingsView: View {
                      .font(.system(.caption, design: .monospaced))
                      .foregroundColor(a9DatabaseColor)
@@ -3187,7 +3212,7 @@ index ac74117..5e879ab 100644
                          toolLink("JSON 工坊", detail: "校验 · 整理 · 压缩", icon: "curlybraces", destination: VeilJSONToolView())
                      }
 diff --git a/VeilLink/UI/VeilBackupPreflightView.swift b/VeilLink/UI/VeilBackupPreflightView.swift
-index e904dfd..479c52a 100644
+index e904dfd..0aa18ef 100644
 --- a/VeilLink/UI/VeilBackupPreflightView.swift
 +++ b/VeilLink/UI/VeilBackupPreflightView.swift
 @@ -8,6 +8,7 @@ struct VeilBackupPreflightView: View {
@@ -3198,7 +3223,14 @@ index e904dfd..479c52a 100644
  
      var body: some View {
          ScrollView {
-@@ -27,6 +28,11 @@ struct VeilBackupPreflightView: View {
+@@ -21,12 +22,17 @@ struct VeilBackupPreflightView: View {
+                 Button {
+                     presentingPicker = true
+                 } label: {
+-                    Label("从文件选择备份 ZIP", systemImage: "doc.zipper")
++                    Label("从 Apple“文件”App 选择备份 ZIP", systemImage: "doc.zipper")
+                         .frame(maxWidth: .infinity)
+                 }
                  .buttonStyle(.borderedProminent)
                  .disabled(working)
                  if working { ProgressView("只读检查中…") }
@@ -3289,9 +3321,18 @@ index b33554d..b9993f7 100644
                  let result = try await Task.detached(priority: .userInitiated) {
                      try VeilFileIntegrityEngine.inspect(url: url)
 diff --git a/VeilLink/UI/VeilOfflineHTMLReaderView.swift b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
-index 2478cdf..a73729b 100644
+index 2478cdf..f59b686 100644
 --- a/VeilLink/UI/VeilOfflineHTMLReaderView.swift
 +++ b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
+@@ -22,7 +22,7 @@ struct VeilOfflineHTMLReaderView: View {
+                 Button {
+                     showingImporter = true
+                 } label: {
+-                    Label("选择 HTML 文件", systemImage: "folder")
++                    Label("从 Apple“文件”App 选择 HTML", systemImage: "folder")
+                         .frame(maxWidth: .infinity)
+                 }
+                 .buttonStyle(.borderedProminent)
 @@ -95,13 +95,13 @@ struct VeilOfflineHTMLReaderView: View {
          .navigationTitle("离线资料阅读器")
          .navigationBarTitleDisplayMode(.inline)
@@ -3655,15 +3696,30 @@ index b16f8cf..1d6af8c 100644
  }
 diff --git a/VeilLinkTests/VeilImportedFileAccessTests.swift b/VeilLinkTests/VeilImportedFileAccessTests.swift
 new file mode 100644
-index 0000000..4f163b8
+index 0000000..33f6d92
 --- /dev/null
 +++ b/VeilLinkTests/VeilImportedFileAccessTests.swift
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,67 @@
 +import Foundation
 +import XCTest
 +@testable import VeilLink
 +
 +final class VeilImportedFileAccessTests: XCTestCase {
++    func testNativeFilesAppIntegrationIsDeclared() throws {
++        let repositoryRoot = URL(fileURLWithPath: #filePath)
++            .deletingLastPathComponent()
++            .deletingLastPathComponent()
++        let plistURL = repositoryRoot
++            .appendingPathComponent("VeilLink", isDirectory: true)
++            .appendingPathComponent("Resources", isDirectory: true)
++            .appendingPathComponent("Info.plist")
++        let data = try Data(contentsOf: plistURL)
++        let object = try PropertyListSerialization.propertyList(from: data, format: nil)
++        let plist = try XCTUnwrap(object as? [String: Any])
++        XCTAssertEqual(plist["LSSupportsOpeningDocumentsInPlace"] as? Bool, true)
++        XCTAssertEqual(plist["UIFileSharingEnabled"] as? Bool, true)
++    }
++
 +    func testMaterializeCopiesProviderFileBeforeGrantEnds() throws {
 +        let source = FileManager.default.temporaryDirectory
 +            .appendingPathComponent("import-source-\(UUID().uuidString).vltrain.json")

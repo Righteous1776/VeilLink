@@ -5,6 +5,7 @@
 - A9/A10 labels and status selection touch governance presentation. The patch does not grant mutation authority or alter the runtime selector contract, but requires protected review.
 - Backup restore remains destructive to local app state after password verification. The new staging layer only fixes file access; existing confirmation and backup validation must remain intact.
 - Apple Files behavior varies by provider. The staging copy is moved off the main actor, uses 1 MiB cancellation checkpoints, and is deleted on every known terminal path; physical tests must still cover iCloud Drive and at least one File Provider extension, including cancellation during a 200 MiB copy.
+- `UIFileSharingEnabled` intentionally exposes the app Documents directory in Apple Files. Current Documents output is encrypted backup ZIP data, while protected databases/attachments/identity state remain in private storage. Integration must audit every future Documents writer and must not place plaintext secrets or internal database files there.
 
 ## Learning storage
 

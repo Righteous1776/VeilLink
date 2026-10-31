@@ -18,6 +18,8 @@ All existing pickers remain Apple's system Files picker. Selection now accepts t
 - image attachment import;
 - arbitrary file integrity inspection.
 
+`LSSupportsOpeningDocumentsInPlace=true` remains enabled for Apple/iCloud File Provider handoff. The candidate also sets `UIFileSharingEnabled=true`, which makes VeilLink's Documents directory visible through the native Files app under “On My iPhone/VeilLink”; current product code writes encrypted backup ZIP exports there, while databases, identities, attachments and Keychain material remain outside Documents. Import/export labels explicitly identify Apple “文件” App so this path is discoverable without adding a second custom file browser.
+
 ### Board learning
 
 - Gomoku and Xiangqi use separate V2 files, summaries, clear actions and exports.
