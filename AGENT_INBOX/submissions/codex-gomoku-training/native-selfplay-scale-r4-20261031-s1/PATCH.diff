@@ -1,0 +1,17 @@
+diff --git a/docs/GOMOKU_NATIVE_TRAINING_S1_ACCEPTANCE.md b/docs/GOMOKU_NATIVE_TRAINING_S1_ACCEPTANCE.md
+new file mode 100644
+--- /dev/null
++++ b/docs/GOMOKU_NATIVE_TRAINING_S1_ACCEPTANCE.md
+@@ -0,0 +1,12 @@
++# Proposed native Gomoku S1 acceptance gate
++
++> Evidence-only proposal; not applied to product source or `main`.
++
++- Replay every submitted shard with an independent rules checker.
++- Count preset opening stones separately from real Bot decisions.
++- Require exact and symmetry-normalised diversity statistics.
++- Keep incomplete, invalid or duplicate-on-resume records out of completed counts.
++- Test a formation candidate with colour-swapped held-out openings.
++- Require the 95% lower score bound to exceed 50% before default promotion.
++- Retain forced win / forced block precedence over any learned or formation score.
++- Import only verified, bounded, additive data; never overwrite a player archive.
