@@ -108,6 +108,49 @@ class RelayContractTest(unittest.TestCase):
                 self.assertEqual(len(result[1]['packets']),1)
             finally: b.close()
 
+    def test_ack_replay_is_idempotent_without_redelivery(self):
+        self.register()
+        self.assertEqual(self.push()[0], 200)
+        self.assertEqual(self.ack()[0], 200)
+        self.assertEqual(self.pull()[1]["packets"], [])
+        status, duplicate = self.push()
+        self.assertEqual(status, 200)
+        self.assertTrue(duplicate.get("duplicate"))
+        self.assertEqual(self.pull()[1]["packets"], [])
+        self.assertEqual(self.push(payload=b"changed")[0], 409)
+
+    def test_ack_replay_receipt_survives_restart(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "relay.sqlite3")
+            def post(store, path, body):
+                return store.request("POST", path, headers={"content-type": "application/json"},
+                                     body=json.dumps(body).encode("utf8"))
+            registration = dict(version=1, mailbox=M, readToken=R, writeToken=W,
+                                expiresAt=self.now+180000)
+            packet = dict(version=1, mailbox=M, writeToken=W, packetID=P,
+                          expiresAt=self.now+120000,
+                          body=base64.b64encode(b"encrypted").decode())
+            ack = dict(version=1, mailbox=M, readToken=R, packetIDs=[P])
+            one = RelayStore(path, clock=lambda:self.now)
+            try:
+                self.assertEqual(post(one, "/v1/register", registration)[0], 200)
+                self.assertEqual(post(one, "/v1/push", packet)[0], 200)
+                self.assertEqual(post(one, "/v1/ack", ack)[0], 200)
+            finally:
+                one.close()
+            two = RelayStore(path, clock=lambda:self.now)
+            try:
+                result = post(two, "/v1/push", packet)
+                self.assertEqual(result[0], 200)
+                self.assertTrue(result[1].get("duplicate"))
+                pulled = two.request("GET", "/v1/pull", query="mailbox="+M,
+                                     headers={"authorization":"Bearer "+R})
+                self.assertEqual(pulled[1]["packets"], [])
+                self.assertEqual(post(two, "/v1/push", dict(packet,
+                    body=base64.b64encode(b"other").decode()))[0], 409)
+            finally:
+                two.close()
+
     def test_method_and_path_hardening(self):
         self.assertEqual(self.s.request('GET','/v1/unknown')[0],404)
         self.assertEqual(self.s.request('GET','/v1/register')[0],405)
