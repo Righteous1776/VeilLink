@@ -1,0 +1,157 @@
+diff --git a/VeilLink/Core/MiniGames.swift b/VeilLink/Core/MiniGames.swift
+index 2632ed2..d26a32e 100644
+--- a/VeilLink/Core/MiniGames.swift
++++ b/VeilLink/Core/MiniGames.swift
+@@ -142,6 +142,14 @@ struct MiniGamePacket: Codable, Hashable, Identifiable {
+ enum MiniGameCodec {
+     private static let prefix = "\u{2063}VLGM1:"
+ 
++    static func isValid(_ packet: MiniGamePacket) -> Bool {
++        packet.version == MiniGamePacket.currentVersion
++            && UUID(uuidString: packet.sessionID) != nil
++            && UUID(uuidString: packet.actionID) != nil
++            && packet.turn >= 0
++            && structurallyValid(packet)
++    }
++
+     static func encode(_ packet: MiniGamePacket) throws -> String {
+         let data = try JSONEncoder().encode(packet)
+         return prefix + data.base64EncodedString()
+@@ -152,11 +160,7 @@ enum MiniGameCodec {
+         let encoded = String(body.dropFirst(prefix.count))
+         guard let data = Data(base64Encoded: encoded),
+               let packet = try? JSONDecoder().decode(MiniGamePacket.self, from: data),
+-              packet.version == MiniGamePacket.currentVersion,
+-              UUID(uuidString: packet.sessionID) != nil,
+-              UUID(uuidString: packet.actionID) != nil,
+-              packet.turn >= 0,
+-              structurallyValid(packet) else { return nil }
++              isValid(packet) else { return nil }
+         return packet
+     }
+ 
+@@ -923,7 +927,10 @@ enum MiniGameSessionBuilder {
+         }
+ 
+         return live.filter { candidate in
+-            let collisionGroup = sessions.filter { other in
++            // Terminal history is not an invitation contender. Including a just-finished,
++            // declined or cancelled session here made a quick rematch disappear from both the
++            // game hub and its chat card for the whole collision window.
++            let collisionGroup = live.filter { other in
+                 guard other.game == candidate.game else { return false }
+                 return abs(other.invitedAt.timeIntervalSince(candidate.invitedAt)) <= concurrentInviteCollisionWindow
+             }
+diff --git a/VeilLink/Security/SessionCoordinator.swift b/VeilLink/Security/SessionCoordinator.swift
+index 343e196..4f80216 100644
+--- a/VeilLink/Security/SessionCoordinator.swift
++++ b/VeilLink/Security/SessionCoordinator.swift
+@@ -581,6 +581,9 @@ final class SessionCoordinator: ObservableObject {
+         guard hasSecureSession(for: peerIdentityID) else {
+             throw NSError(domain: "VeilLink", code: 25, userInfo: [NSLocalizedDescriptionKey: "对手安全链路尚未就绪，小游戏操作未发送。"])
+         }
++        guard MiniGameCodec.isValid(packet) else {
++            throw NSError(domain: "VeilLink", code: 26, userInfo: [NSLocalizedDescriptionKey: "小游戏操作结构无效，已在写入发送队列前拦截。"])
++        }
+         let encoded = try MiniGameCodec.encode(packet)
+         guard encoded.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else {
+             throw NSError(domain: "VeilLink", code: 23, userInfo: [NSLocalizedDescriptionKey: "小游戏操作数据超过当前消息上限。"])
+diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
+index dc2077f..c4d5f76 100644
+--- a/VeilLink/UI/MiniGameViews.swift
++++ b/VeilLink/UI/MiniGameViews.swift
+@@ -336,7 +336,9 @@ private struct MiniGameLinkStatusView: View {
+         return bluetooth.linkSnapshots[transportID] ?? bluetooth.linkSnapshot(for: transportID)
+     }
+     private var secureReady: Bool { sessions.hasSecureSession(for: peerIdentityID) }
+-    private var linkReady: Bool { snapshot?.transportStage == .gattReady && secureReady }
++    // A game can use an authenticated session over BLE, LAN or relay. Requiring a BLE-only
++    // GATT snapshot here falsely reported a working non-BLE game channel as disconnected.
++    private var linkReady: Bool { secureReady }
+ 
+     private var primaryText: String {
+         if linkReady { return "SECURE_SESSION_READY · 对手链路已就绪" }
+@@ -348,7 +350,9 @@ private struct MiniGameLinkStatusView: View {
+     }
+ 
+     private var detailText: String? {
+-        guard let snapshot else { return nil }
++        guard let snapshot else {
++            return secureReady ? "加密游戏通道可用 · 支持 ACK 与断线重发" : nil
++        }
+         if linkReady { return snapshot.compactDetail }
+         if snapshot.pendingPackets > 0 { return "操作会保留在加密待发送队列 · \(snapshot.queueSummary)" }
+         return snapshot.rssi.map { "\($0) dBm · \(snapshot.qualityTitle)" }
+diff --git a/VeilLinkTests/MiniGameTests.swift b/VeilLinkTests/MiniGameTests.swift
+index 2edb6b8..eadbf30 100644
+--- a/VeilLinkTests/MiniGameTests.swift
++++ b/VeilLinkTests/MiniGameTests.swift
+@@ -5,10 +5,21 @@ final class MiniGameTests: XCTestCase {
+     func testCodecRoundTripAndPreview() throws {
+         let packet = MiniGamePacket(game: .gomoku, command: .invite)
+         let encoded = try MiniGameCodec.encode(packet)
++        XCTAssertTrue(MiniGameCodec.isValid(packet))
+         XCTAssertEqual(MiniGameCodec.decode(encoded), packet)
+         XCTAssertEqual(MiniGameCodec.previewText(for: encoded), "[小游戏] 邀请你玩五子棋")
+     }
+ 
++    func testOutboundValidationRejectsMalformedCommandBeforeQueueing() {
++        let malformed = MiniGamePacket(
++            game: .gomoku,
++            command: .accept,
++            turn: 1,
++            move: .gomoku(index: 112)
++        )
++        XCTAssertFalse(MiniGameCodec.isValid(malformed))
++    }
++
+     func testGomokuDetectsFiveInRow() {
+         var state = GomokuState()
+         for col in 0..<4 {
+@@ -166,6 +177,46 @@ final class MiniGameTests: XCTestCase {
+         XCTAssertEqual(MiniGameSessionBuilder.coalescedLiveSessions([b, a], now: now).map(\.id), [a.id])
+     }
+ 
++    func testTerminalHistoryDoesNotHideQuickRematch() {
++        let now = Date(timeIntervalSince1970: 20_000)
++        func snapshot(id: String, status: MiniGameSessionStatus, offset: TimeInterval) -> MiniGameSessionSnapshot {
++            MiniGameSessionSnapshot(
++                id: id,
++                game: .gomoku,
++                hostIsLocal: true,
++                status: status,
++                invitedAt: now.addingTimeInterval(offset),
++                startedAt: status == .invited ? nil : now.addingTimeInterval(offset),
++                lastActivity: now.addingTimeInterval(offset),
++                gomoku: GomokuState(),
++                xiangqi: nil,
++                ludo: nil,
++                endedByResignation: false
++            )
++        }
++
++        let rematch = snapshot(
++            id: "00000000-0000-0000-0000-000000000099",
++            status: .invited,
++            offset: 1
++        )
++        for terminalStatus in [
++            MiniGameSessionStatus.finished(winner: .host),
++            .declined,
++            .cancelled
++        ] {
++            let history = snapshot(
++                id: "00000000-0000-0000-0000-000000000001",
++                status: terminalStatus,
++                offset: 0
++            )
++            XCTAssertEqual(
++                MiniGameSessionBuilder.coalescedLiveSessions([history, rematch], now: now).map(\.id),
++                [rematch.id]
++            )
++        }
++    }
++
+     func testLudoCaptureMetadataAndFinishedCountersStayConsistent() {
+         let sessionID = UUID().uuidString
+         let state = LudoState()
