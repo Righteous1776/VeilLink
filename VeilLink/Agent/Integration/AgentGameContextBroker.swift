@@ -170,11 +170,13 @@ final class AgentGameContextBroker: ObservableObject {
             return false
         }
 
-        return adapter.enumerateLegalActions()
-            .filter(adapter.validate)
-            .contains { candidate in
-                Self.move(for: candidate, game: session.game) == action.move
-            }
+        // Validate just the matching candidate. The earlier filter invoked
+        // adapter.validate() on every legal action, each of which performed
+        // another full legal-action enumeration (quadratic work).
+        return adapter.enumerateLegalActions().contains { candidate in
+            Self.move(for: candidate, game: session.game) == action.move
+                && adapter.validate(candidate)
+        }
     }
 
     func markSuggestedActionExecuted(_ action: AgentSuggestedGameAction) {
@@ -200,6 +202,34 @@ final class AgentGameContextBroker: ObservableObject {
         case .gomoku:
             guard let state = session.gomoku else { return }
             let budget = GomokuBotBudget.standard(profileLabel: VeilDevicePerformance.current.label)
+
+            // The empty board has one deterministic native opening: center.
+            // Publish synchronously, before scheduling any detached worker, so
+            // a busy simulator or device cannot starve the first suggestion.
+            // This still uses GomokuBot's actual legal rule-based decision.
+            if state.moveCount == 0,
+               let opening = GomokuBot.chooseMove(in: state, for: localPlayer, budget: budget) {
+                publish(
+                    candidate: AgentActionCandidate(
+                        actionID: "gomoku:\(opening.index)",
+                        encodedAction: AgentGameEncoding.encodeInts([opening.index]),
+                        metadata: [
+                            "index": String(opening.index),
+                            "score": String(opening.score),
+                            "nodes": String(opening.nodes)
+                        ],
+                        features: []
+                    ),
+                    score: Float(opening.score),
+                    sessionID: sessionID,
+                    game: game,
+                    turn: turn,
+                    stateHash: stateHash,
+                    peerIdentityID: peerIdentityID
+                )
+                return
+            }
+
             recommendationTask = Task { @MainActor [weak self] in
                 let result = await Task.detached(priority: .utility) {
                     GomokuBot.chooseMove(in: state, for: localPlayer, budget: budget)

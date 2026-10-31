@@ -7,8 +7,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: 5.9
-    MARKETING_VERSION: "27.1"
-    CURRENT_PROJECT_VERSION: "63"
+    MARKETING_VERSION: "27.2"
+    CURRENT_PROJECT_VERSION: "64"
     SWIFT_STRICT_CONCURRENCY: complete
     IPHONEOS_DEPLOYMENT_TARGET: 15.0
     TARGETED_DEVICE_FAMILY: "1,2"
@@ -57,11 +57,15 @@ targets:
           - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
           - Resources/MonogatariHost
           - Resources/VisualNovelBundle
+          - Resources/GomokuEngineV2
       # Preserve relative JS/CSS paths as a bundled folder reference.
       - path: VeilLink/Resources/MonogatariHost
         type: folder
         buildPhase: resources
       - path: VeilLink/Resources/VisualNovelBundle
+        type: folder
+        buildPhase: resources
+      - path: VeilLink/Resources/GomokuEngineV2
         type: folder
         buildPhase: resources
     dependencies:

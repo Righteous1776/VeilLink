@@ -492,6 +492,105 @@ struct LocalAIGameView: View {
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+            if game == .gomoku {
+                Toggle(isOn: Binding(
+                    get: { controller.useExternalGomokuEngine },
+                    set: { controller.setExternalGomokuEngineEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("离线强力引擎 · PVS/VCF")
+                            .font(.caption.weight(.semibold))
+                        Text("实验功能：默认关闭，遇到异常自动回退原生 AI；独立引擎不修改你的棋谱")
+                            .font(.caption2)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                }
+                .tint(VeilTheme.gold)
+                Menu {
+                    ForEach(GomokuFormationMode.allCases) { mode in
+                        Button {
+                            controller.setGomokuFormationMode(mode)
+                            model.haptics.selection()
+                        } label: {
+                            if mode == controller.gomokuFormationMode {
+                                Label(mode.title, systemImage: "checkmark")
+                            } else {
+                                Text(mode.title)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "brain.head.profile")
+                        Text("阵法学习")
+                            .font(.caption.weight(.semibold))
+                        Spacer(minLength: 0)
+                        Text(controller.gomokuFormationMode.title)
+                            .font(.caption2)
+                        Image(systemName: "chevron.up.chevron.down")
+                    }
+                    .foregroundColor(VeilTheme.goldBright)
+                    .padding(10)
+                    .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .accessibilityLabel("五子棋阵法学习模式")
+                Text("系统可自主选择八卦、进攻、防守偏好，或由玩家指定。已发现候选：\(controller.discoveredGomokuFormations) 类。阵法不能覆盖必胜/必防；启用阵法偏好时使用原生搜索，PVS/VCF 在关闭阵法后恢复。云盘棋形模型仍处于离线验证阶段。")
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "repeat.circle")
+                            .foregroundColor(VeilTheme.gold)
+                        Text("原生 Bot 自对弈训练")
+                            .font(.caption.weight(.bold))
+                        Spacer()
+                        Text("已实战 \(controller.trainedNativeGames) 局")
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(VeilTheme.goldBright)
+                    }
+                    Text("直接运行本 App 原生棋手；完整胜负局才会写入独立档案，棋形识别不计局数。启用训练经验会从 PVS/VCF 切换为原生搜索；关闭后可恢复原引擎。")
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                    Toggle("允许原生 Bot 使用已保存的自对弈经验", isOn: Binding(
+                        get: { controller.useNativeTrainingEvidence },
+                        set: { controller.setUseNativeTrainingEvidence($0) }
+                    ))
+                    .font(.caption2)
+                    .tint(VeilTheme.gold)
+                    if controller.isNativeTraining {
+                        ProgressView(
+                            value: Double(controller.nativeTrainingCompleted),
+                            total: Double(max(1, controller.nativeTrainingTarget))
+                        )
+                        HStack {
+                            Text("\(controller.nativeTrainingCompleted)/\(controller.nativeTrainingTarget) 局已保存")
+                                .font(.caption.monospacedDigit())
+                            Spacer()
+                            Button("停止训练") { controller.stopNativeTraining() }
+                                .font(.caption.weight(.semibold))
+                        }
+                    } else {
+                        Menu {
+                            Button("原生自对弈 10 局") { controller.startNativeTraining(games: 10) }
+                            Button("原生自对弈 100 局") { controller.startNativeTraining(games: 100) }
+                            Button("原生自对弈 1000 局（长时间前台运行）") {
+                                controller.startNativeTraining(games: 1_000)
+                            }
+                        } label: {
+                            Label("开始真正的 Bot 自对弈", systemImage: "play.circle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(VeilTheme.goldBright)
+                        }
+                    }
+                    Text(controller.nativeTrainingMessage)
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
             HStack(spacing: 8) {
                 Label(controller.boardDifficulty.title, systemImage: "slider.horizontal.3")
                     .font(.caption.weight(.semibold))

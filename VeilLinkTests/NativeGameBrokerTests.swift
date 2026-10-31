@@ -24,12 +24,21 @@ final class NativeGameBrokerTests: XCTestCase {
 
         broker.update(session: session, conversationTitle: "peer", peerIdentityID: "peer-id")
         XCTAssertEqual(broker.context?.policyMode, "native-bot")
-        let deadline = Date().addingTimeInterval(1.0)
+        // Opening recommendations are deterministic and should not depend on
+        // detached worker scheduling under concurrent CI and UI load.
+        XCTAssertNotNil(
+            broker.currentSuggestedAction(validating: session),
+            "Native Gomoku opening must publish immediately, even when worker scheduling is starved"
+        )
+        // CI on macOS-15 may schedule the detached native search later than
+        // one second under concurrent XCTest workload. Give the asynchronous
+        // result a bounded startup budget; never fabricate a suggested move.
+        let deadline = Date().addingTimeInterval(8.0)
         while broker.currentSuggestedAction() == nil && Date() < deadline {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         let action = broker.currentSuggestedAction(validating: session)
-        XCTAssertNotNil(action)
+        XCTAssertNotNil(action, "Native Gomoku recommendation must finish within 8 seconds; current policy=\(broker.context?.policyMode ?? "nil")")
         XCTAssertEqual(broker.context?.maleCNS, nil)
     }
 }

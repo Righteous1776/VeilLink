@@ -53,6 +53,19 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var lastDecisionMilliseconds: Int?
     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
     @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
+    /// Explicit local opt-in; the incumbent search remains the default and fallback.
+    @Published private(set) var useExternalGomokuEngine = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.V2.Enabled")
+    @Published private(set) var gomokuFormationMode = GomokuFormationMode(
+        rawValue: UserDefaults.standard.string(forKey: "VeilLink.Gomoku.FormationMode.v1") ?? ""
+    ) ?? .off
+    @Published private(set) var discoveredGomokuFormations = 0
+    @Published private(set) var trainedNativeGames = 0
+    @Published private(set) var isNativeTraining = false
+    @Published private(set) var nativeTrainingCompleted = 0
+    @Published private(set) var nativeTrainingTarget = 0
+    @Published private(set) var nativeTrainingMessage = "原生对弈训练尚未启动。"
+    @Published private(set) var isImportingNativeSeed = false
+    @Published private(set) var useNativeTrainingEvidence = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.UseNativeSelfPlay.v1")
     @Published private(set) var coachProfile: PersonalBoardCoachProfile
     @Published private(set) var coachTip = "每一步都会沉淀为下一局的本地训练证据。"
     @Published private(set) var developerTeachingMode = false
@@ -66,6 +79,9 @@ final class LocalAIGameController: ObservableObject {
     private var aiTask: Task<Void, Never>?
     private let learningStore: AdaptiveBoardLearningStore
     private let formationLibrary: DeveloperFormationLibrary?
+    private let formationDiscovery = GomokuFormationDiscoveryStore()
+    private let nativeTrainingStore: AdaptiveBoardLearningStore?
+    private var nativeTrainingTask: Task<Void, Never>?
     private var learningPlies: [AdaptiveBoardPly] = []
     /// Kept separate from ordinary player history so an owner-authored lesson
     /// never silently becomes public-player learning evidence.
@@ -80,10 +96,21 @@ final class LocalAIGameController: ObservableObject {
         let resolvedLearningStore = learningStore ?? AdaptiveBoardLearningStore.store(for: game)
         self.learningStore = resolvedLearningStore
         self.formationLibrary = formationLibrary
+        if game == .gomoku {
+            let archiveURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("VeilLink", isDirectory: true)
+                .appendingPathComponent("gomoku-native-selfplay-v1.json")
+            nativeTrainingStore = AdaptiveBoardLearningStore(game: .gomoku, fileURL: archiveURL)
+        } else {
+            nativeTrainingStore = nil
+        }
         learningSummary = resolvedLearningStore.summary
         coachProfile = resolvedLearningStore.coachProfile(for: game)
         developerFormationCount = formationLibrary?.lessons.count ?? 0
+        discoveredGomokuFormations = formationDiscovery.candidateCount
+        trainedNativeGames = nativeTrainingStore?.summary.completedGames ?? 0
         sessionID = UUID().uuidString
+        if game == .gomoku { importBundledNativeSeedIfNeeded() }
     }
 
     var canHumanAct: Bool {
@@ -256,6 +283,134 @@ final class LocalAIGameController: ObservableObject {
         tacticalDifficulty = difficulty
     }
 
+    func setExternalGomokuEngineEnabled(_ enabled: Bool) {
+        guard game == .gomoku else { return }
+        useExternalGomokuEngine = enabled
+        UserDefaults.standard.set(enabled, forKey: "VeilLink.Gomoku.V2.Enabled")
+    }
+
+    func setGomokuFormationMode(_ mode: GomokuFormationMode) {
+        guard game == .gomoku else { return }
+        gomokuFormationMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "VeilLink.Gomoku.FormationMode.v1")
+        coachTip = mode.detail
+    }
+
+    /// First-run materialization of real, verified product-native self-play
+    /// generated offline. If the isolated user archive is nonempty, do NOT
+    /// import it again; this prevents duplicate counted games on restart.
+    private func importBundledNativeSeedIfNeeded() {
+        guard game == .gomoku,
+              let store = nativeTrainingStore,
+              store.lastSaveSucceeded,
+              store.summary.completedGames == 0,
+              let url = Bundle.main.url(
+                forResource: GomokuBundledNativeSeed.resourceName,
+                withExtension: "json"
+              ) else { return }
+        isImportingNativeSeed = true
+        nativeTrainingMessage = "正在逐手核验内置原生棋谱（仅首次安装导入）。"
+        Task { @MainActor [weak self] in
+            let verified = await Task.detached(priority: .utility) {
+                try? GomokuBundledNativeSeed.verify(from: url)
+            }.value
+            guard let self else { return }
+            self.isImportingNativeSeed = false
+            guard let verified, !verified.isEmpty else {
+                self.nativeTrainingMessage = "内置棋谱校验失败；未导入任何虚假对局。"
+                return
+            }
+            // Only one archive writes once; a concurrent manual session wins.
+            guard store.summary.completedGames == 0, !self.isNativeTraining else { return }
+            let saved = store.recordCompletedNativeBatch(
+                verified.map { (plies: $0.plies, result: $0.result) }
+            )
+            self.trainedNativeGames = store.summary.completedGames
+            guard saved == verified.count else {
+                self.nativeTrainingMessage = "内置棋谱持久化失败；已保持历史档案不变。"
+                return
+            }
+            self.nativeTrainingMessage = "已导入 \(saved) 局完整原生棋手实战棋谱；重启后仍然有效。"
+            // Do not silently change the active engine from the stronger
+            // external PVS/VCF to native search. The user explicitly opts in
+            // after seeing the verified game count.
+        }
+    }
+
+    func setUseNativeTrainingEvidence(_ enabled: Bool) {
+        guard game == .gomoku else { return }
+        useNativeTrainingEvidence = enabled
+        UserDefaults.standard.set(enabled, forKey: "VeilLink.Gomoku.UseNativeSelfPlay.v1")
+    }
+
+    func startNativeTraining(games target: Int) {
+        guard game == .gomoku, [10, 100, 1_000].contains(target),
+              !isNativeTraining, !isImportingNativeSeed,
+              let store = nativeTrainingStore else { return }
+        if !store.lastSaveSucceeded {
+            nativeTrainingMessage = "训练档案需要修复；未覆盖旧记录。"
+            return
+        }
+        nativeTrainingTarget = target
+        nativeTrainingCompleted = 0
+        isNativeTraining = true
+        setUseNativeTrainingEvidence(true)
+        nativeTrainingMessage = "真正调用原生 Bot 对弈，完整保存后才计数。"
+        let startingSeed = store.summary.completedGames
+        let selectedMode = gomokuFormationMode
+        nativeTrainingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.isNativeTraining = false
+                self.nativeTrainingTask = nil
+            }
+            var failed = 0
+            for gameIndex in 0..<(target * 2) {
+                if Task.isCancelled || self.nativeTrainingCompleted >= target { break }
+                let snapshot = store.snapshot()
+                let seed = startingSeed + gameIndex
+                let worker = Task.detached(priority: .utility) {
+                    NativeGomokuSelfPlay.play(
+                        seed: seed, formationMode: selectedMode, learning: snapshot
+                    )
+                }
+                let finished = await withTaskCancellationHandler(
+                    operation: { await worker.value },
+                    onCancel: { worker.cancel() }
+                )
+                if let finished, finished.completed {
+                    let stored = store.recordCompletedNativeBatch([
+                        (plies: finished.plies, result: finished.result)
+                    ])
+                    if stored == 1 {
+                        self.nativeTrainingCompleted += 1
+                        self.trainedNativeGames = store.summary.completedGames
+                    } else {
+                        self.nativeTrainingMessage = "训练数据保存失败，已停止。"
+                        break
+                    }
+                } else {
+                    failed += 1
+                    if failed >= 10 {
+                        self.nativeTrainingMessage = "对局连续未完成，已停止，不计入经验。"
+                        break
+                    }
+                }
+                await Task.yield()
+            }
+            self.trainedNativeGames = store.summary.completedGames
+            if self.nativeTrainingCompleted == target {
+                self.nativeTrainingMessage = "本轮已保存 \(self.nativeTrainingCompleted) 局原生自对弈。"
+            } else if Task.isCancelled {
+                self.nativeTrainingMessage = "已停止，本轮已保存 \(self.nativeTrainingCompleted) 局。"
+            }
+        }
+    }
+
+    func stopNativeTraining() {
+        nativeTrainingTask?.cancel()
+    }
+
     func setBoardDifficulty(_ difficulty: BoardBotDifficulty) {
         guard game == .gomoku || game == .xiangqi else { return }
         boardDifficulty = difficulty
@@ -290,6 +445,7 @@ final class LocalAIGameController: ObservableObject {
     }
 
     func cancelAI() {
+        stopNativeTraining()
         aiTask?.cancel(); aiTask = nil
         isAIThinking = false
         finalizeLearning(as: .unfinished)
@@ -297,6 +453,14 @@ final class LocalAIGameController: ObservableObject {
 
     func clearBoardLearning() {
         learningStore.clear()
+        if game == .gomoku {
+            stopNativeTraining()
+            formationDiscovery.clear()
+            discoveredGomokuFormations = 0
+            nativeTrainingStore?.clear()
+            trainedNativeGames = nativeTrainingStore?.summary.completedGames ?? 0
+            setUseNativeTrainingEvidence(false)
+        }
         learningPlies.removeAll(keepingCapacity: true)
         learningSummary = learningStore.summary
         coachProfile = learningStore.coachProfile(for: game)
@@ -390,21 +554,69 @@ final class LocalAIGameController: ObservableObject {
         case .gomoku:
             let snapshot = gomoku
             let formation = formationLibrary?.influence(for: learningPlies) ?? .empty
-            let learning = learningStore.snapshot(currentPlies: learningPlies).applying(formation)
+            let humanLearning = learningStore.snapshot(currentPlies: learningPlies).applying(formation)
+            let nativeActive = useNativeTrainingEvidence && trainedNativeGames > 0
+            let learning = nativeActive && nativeTrainingStore != nil
+                ? humanLearning.incorporatingNativeSelfPlay(
+                    nativeTrainingStore!.snapshot(), completedGames: trainedNativeGames
+                )
+                : humanLearning
             let budget = GomokuBotBudget.forDifficulty(
                 boardDifficulty,
                 profileLabel: VeilDevicePerformance.current.label
             ).reinforced(by: learning.trainingLevel)
-            let result = await Task.detached(priority: .userInitiated) {
-                GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
-            }.value
-            guard let result else { return nil }
+            let preference = GomokuFormationPreference(
+                mode: gomokuFormationMode,
+                aiHistory: learningPlies.filter { $0.actor == aiPlayer }.compactMap { Int($0.action) },
+                opponentHistory: learningPlies.filter { $0.actor == humanPlayer }.compactMap { Int($0.action) },
+                discovered: formationDiscovery.eligibleSignatures
+            )
+            var chosen: GomokuBotMove?
+            var engineName = "原生"
+            // Native tactics are the only engine that currently consumes these
+            // formation preferences. Do not claim PVS/VCF uses them.
+            if useExternalGomokuEngine && !preference.enabled && !nativeActive {
+                // A standalone JavaScriptCore actor; the external engine never
+                // touches gameplay/DB and is validated by our own rule gate.
+                let external = await VeilOfflineGomokuEngine.shared.chooseMove(
+                    in: snapshot,
+                    for: .guest,
+                    timeLimitMilliseconds: budget.timeLimitMilliseconds,
+                    maxDepth: boardDifficulty == .master ? 7 : boardDifficulty == .advanced ? 5 : 3
+                )
+                if let external {
+                    var trial = snapshot
+                    if trial.apply(index: external.index, actor: .guest) {
+                        chosen = external
+                        engineName = "PVS/VCF"
+                    }
+                }
+            }
+            if chosen == nil {
+                chosen = await Task.detached(priority: .userInitiated) {
+                    GomokuBot.chooseMove(
+                        in: snapshot, for: .guest, budget: budget,
+                        learning: learning, formationPreference: preference
+                    )
+                }.value
+            }
+            guard let result = chosen else { return nil }
 
             var ruleGate = gomoku
             guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
             let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
             let formationLabel = formation.matchedLessonNames.first.map { " · 阵法：\($0)" } ?? ""
-            lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)\(formationLabel)"
+            // Preserve the incumbent controller's observable status contract.
+            // External PVS/VCF does NOT consume AdaptiveBoardLearningSnapshot:
+            // reporting its training level or Owner formation as applied would
+            // misrepresent actual search inputs.
+            if engineName == "原生" {
+                lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)\(formationLabel)"
+                    + (preference.enabled ? " · \(preference.mode.title)" : "")
+                    + (nativeActive ? " · 原生实战训练 \(trainedNativeGames) 局" : "")
+            } else {
+                lastDecisionMode = "五子棋 · PVS/VCF · \(boardDifficulty.title)"
+            }
             return AgentActionCandidate(
                 actionID: "gomoku:\(result.index)",
                 encodedAction: AgentGameEncoding.encodeInts([result.index]),
@@ -642,6 +854,13 @@ final class LocalAIGameController: ObservableObject {
     private func finalizeLearning(as result: AdaptiveBoardGameResult) {
         guard game == .gomoku || game == .xiangqi, !learningPlies.isEmpty else { return }
         learningStore.record(game: game, plies: learningPlies, result: result)
+        if game == .gomoku {
+            formationDiscovery.record(
+                aiMoves: learningPlies.filter { $0.actor == .guest }.compactMap { Int($0.action) },
+                outcome: result
+            )
+            discoveredGomokuFormations = formationDiscovery.candidateCount
+        }
         learningPlies.removeAll(keepingCapacity: true)
         learningSummary = learningStore.summary
         coachProfile = learningStore.coachProfile(for: game)

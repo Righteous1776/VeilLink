@@ -17,6 +17,29 @@ final class GomokuBotTests: XCTestCase {
         XCTAssertTrue(state.apply(index: result.index, actor: .guest))
     }
 
+    func testNativeBotReturnsLegalMoveEvenWithTightExpiredSearchBudget() {
+        // Even if the search deadline expires before deep evaluation starts,
+        // an ongoing game still needs a legal action; only terminal states
+        // and invalid turn ownership may return nil.
+        let fast = GomokuBotBudget(
+            candidateRadius: 2, rootCandidateLimit: 28,
+            replyCandidateLimit: 16, continuationCandidateLimit: 8,
+            timeLimitMilliseconds: 0
+        )
+        var board = GomokuState()
+        let first = GomokuBot.chooseMove(in: board, for: .host, budget: fast)
+        XCTAssertEqual(first?.index, 112)
+        XCTAssertTrue(board.apply(index: 112, actor: .host))
+        let reply = GomokuBot.chooseMove(in: board, for: .guest, budget: fast)
+        XCTAssertNotNil(reply)
+        if let reply {
+            XCTAssertEqual(board.value(at: reply.index), 0)
+            XCTAssertTrue(board.apply(index: reply.index, actor: .guest))
+        }
+        XCTAssertNil(GomokuBot.chooseMove(in: board, for: .guest, budget: fast),
+                     "Out-of-turn requests must continue to fail closed")
+    }
+
     func testLegacyBudgetIsBounded() {
         let budget = GomokuBotBudget.standard(profileLabel: "LEGACY-COMPACT")
         XCTAssertLessThanOrEqual(budget.timeLimitMilliseconds, 160)
