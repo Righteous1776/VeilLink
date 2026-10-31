@@ -1,0 +1,2018 @@
+{
+  "appVersion" : "27.1",
+  "checksumAlgorithm" : "fnv1a64-canonical-json",
+  "createdAt" : 815117073.152909,
+  "format" : "veillink.board-learning.export.v1",
+  "payload" : {
+    "completedGames" : 3,
+    "positions" : {
+      "x:100bd8a1cb1f2d15" : {
+        "actions" : {
+          "13:21" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:10292f514ac912e1" : {
+        "actions" : {
+          "33:24" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:10c7162005566465" : {
+        "actions" : {
+          "65:58" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:111821b428214b2" : {
+        "actions" : {
+          "4:13" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:11894c62530cb7fa" : {
+        "actions" : {
+          "40:57" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:12d6fc9113715746" : {
+        "actions" : {
+          "30:31" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:17c95c0b8fbc37d" : {
+        "actions" : {
+          "57:12" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:17e6cb1db6095d5a" : {
+        "actions" : {
+          "27:36" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:1ad958c1187b4eaf" : {
+        "actions" : {
+          "2:18" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:1dbb3b7eb98eab1f" : {
+        "actions" : {
+          "89:88" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:1e47d641cc71c28d" : {
+        "actions" : {
+          "82:65" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:1f5d8d752a884225" : {
+        "actions" : {
+          "81:82" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:2018b47c64b2c6e9" : {
+        "actions" : {
+          "56:47" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:230f69c4e032f52d" : {
+        "actions" : {
+          "88:69" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:236e0298ac36f8ac" : {
+        "actions" : {
+          "24:6" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:23b08b8e1d968298" : {
+        "actions" : {
+          "23:34" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:23c97a04f8c6c1d1" : {
+        "actions" : {
+          "16:10" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:2573a282ecb67915" : {
+        "actions" : {
+          "31:40" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:25f6709b0ba03e42" : {
+        "actions" : {
+          "23:24" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:2752a1c95ad32758" : {
+        "actions" : {
+          "56:83" : {
+            "aiReward" : 0,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 1
+      },
+      "x:286a17217b60e6af" : {
+        "actions" : {
+          "22:6" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:29400b7ff7dde4d3" : {
+        "actions" : {
+          "28:10" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:2969c2f5701307ee" : {
+        "actions" : {
+          "17:6" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:2b06c08884292c1f" : {
+        "actions" : {
+          "85:76" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:2c35f431ce640ce9" : {
+        "actions" : {
+          "87:85" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:2c480dfbed704b76" : {
+        "actions" : {
+          "42:43" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:2de7b9c85dd8c86b" : {
+        "actions" : {
+          "89:88" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:2fdc89ec393c11f5" : {
+        "actions" : {
+          "21:20" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:314992d369be16c3" : {
+        "actions" : {
+          "1:20" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:31806f9456cb19c6" : {
+        "actions" : {
+          "9:14" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:345c957f0e1578cc" : {
+        "actions" : {
+          "40:49" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:34906567b2a82138" : {
+        "actions" : {
+          "3:13" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:34cf06b80a37e6ef" : {
+        "actions" : {
+          "19:20" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:3773809d83db00e2" : {
+        "actions" : {
+          "24:17" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:38983f02f2c53d93" : {
+        "actions" : {
+          "64:1" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:38d64a4f0adea12" : {
+        "actions" : {
+          "19:37" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:39b57d235de7baf7" : {
+        "actions" : {
+          "26:19" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:39c605514e64f85c" : {
+        "actions" : {
+          "14:23" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:3a5175e2860b898f" : {
+        "actions" : {
+          "83:11" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:3caff7d5ba4a9d8c" : {
+        "actions" : {
+          "67:69" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:3e03cf120174015d" : {
+        "actions" : {
+          "34:33" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:3e1e29144064fdae" : {
+        "actions" : {
+          "62:53" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:3fe85545bd4184ce" : {
+        "actions" : {
+          "32:33" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:412c4352d353a89" : {
+        "actions" : {
+          "4:13" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:42072b9723ed0aaa" : {
+        "actions" : {
+          "46:51" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:4296e832cdf96c5e" : {
+        "actions" : {
+          "51:40" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:462a6a0a91501c08" : {
+        "actions" : {
+          "0:18" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:485429631d9e6406" : {
+        "actions" : {
+          "29:38" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:4b3d84d9444a4c9" : {
+        "actions" : {
+          "20:56" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:4bca49b5243423b2" : {
+        "actions" : {
+          "8:26" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:4d4d6a5dd3647096" : {
+        "actions" : {
+          "77:68" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:4df602c595fd0fde" : {
+        "actions" : {
+          "86:76" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:5155c20e357647e9" : {
+        "actions" : {
+          "83:67" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:51be9b6e2f16be19" : {
+        "actions" : {
+          "10:1" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:550fa2354c549a46" : {
+        "actions" : {
+          "51:24" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:5667368d203c1ef9" : {
+        "actions" : {
+          "6:15" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:577f54ca98d0c16" : {
+        "actions" : {
+          "58:41" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:57c92299d31a60a7" : {
+        "actions" : {
+          "84:76" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:5845863b592d4423" : {
+        "actions" : {
+          "15:6" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:58c215799541ecc4" : {
+        "actions" : {
+          "82:10" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:590effd834270024" : {
+        "actions" : {
+          "82:65" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:59955ec72654fe6f" : {
+        "actions" : {
+          "25:23" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:5bdf24a8f53a5375" : {
+        "actions" : {
+          "35:44" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:5e360be789e12067" : {
+        "actions" : {
+          "88:25" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:5ea48466df89d337" : {
+        "actions" : {
+          "20:39" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:5fd2dec88ae44856" : {
+        "actions" : {
+          "22:58" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:613524473a475526" : {
+        "actions" : {
+          "51:42" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:616e9ca5ddbbf99b" : {
+        "actions" : {
+          "20:19" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:63be9867f2317dc9" : {
+        "actions" : {
+          "13:3" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:6646810df7c5e7b8" : {
+        "actions" : {
+          "64:46" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:6aa846bede358074" : {
+        "actions" : {
+          "36:45" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:6b69fdf7f91654f6" : {
+        "actions" : {
+          "70:68" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:6e13a4c43e6ec164" : {
+        "actions" : {
+          "88:69" : {
+            "aiReward" : 0,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 1
+      },
+      "x:6f3be35134c37958" : {
+        "actions" : {
+          "29:28" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:702cb8a20bbfeaa3" : {
+        "actions" : {
+          "12:23" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:707a44be5f7819e8" : {
+        "actions" : {
+          "34:51" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:709bddbc0cecef8d" : {
+        "actions" : {
+          "84:76" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:71679923a2c168a7" : {
+        "actions" : {
+          "88:16" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:740003bb191c2907" : {
+        "actions" : {
+          "13:4" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:792c1f381363e7dc" : {
+        "actions" : {
+          "7:26" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:7b016267af695f4c" : {
+        "actions" : {
+          "69:6" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:7c888e6b2aacf18c" : {
+        "actions" : {
+          "58:62" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:7d8f39a013c12ee" : {
+        "actions" : {
+          "45:54" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:7e95a47b5cc587b0" : {
+        "actions" : {
+          "3:12" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:7f499bc254fd14a5" : {
+        "actions" : {
+          "11:2" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:8136d6ba6c3100bb" : {
+        "actions" : {
+          "86:77" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:8163531dfa8ba7f5" : {
+        "actions" : {
+          "19:20" : {
+            "aiReward" : 0,
+            "count" : 1
+          },
+          "19:24" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:81c5ef2f682bcf6b" : {
+        "actions" : {
+          "83:67" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:85a0266da6c00c09" : {
+        "actions" : {
+          "20:56" : {
+            "aiReward" : 0,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 1
+      },
+      "x:879d984e4760a730" : {
+        "actions" : {
+          "35:44" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:884120bb8c45c41b" : {
+        "actions" : {
+          "25:43" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:891e9c66646b1b5a" : {
+        "actions" : {
+          "18:2" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:8abf219a89c5c647" : {
+        "actions" : {
+          "47:38" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:8ad033be394221a2" : {
+        "actions" : {
+          "41:34" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:8ccb1612e92db3fe" : {
+        "actions" : {
+          "12:3" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:8dec13e4a6d8ef54" : {
+        "actions" : {
+          "6:22" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:8f138b5f0b8ad3cd" : {
+        "actions" : {
+          "58:51" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:8fe25f878cfcd62d" : {
+        "actions" : {
+          "19:1" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:94586fb168dbeb74" : {
+        "actions" : {
+          "56:65" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:948b8ade063e973b" : {
+        "actions" : {
+          "88:34" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:9710588087554e99" : {
+        "actions" : {
+          "18:25" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:9773c67b4ea7d151" : {
+        "actions" : {
+          "65:48" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:9fb8650ae982d49" : {
+        "actions" : {
+          "26:25" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:a009118f03f99755" : {
+        "actions" : {
+          "19:20" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:a01d2fd517bce021" : {
+        "actions" : {
+          "60:51" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:a223c696d9c5bd91" : {
+        "actions" : {
+          "1:12" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:a23055692d582a01" : {
+        "actions" : {
+          "2:18" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:a23c9596ebd8f824" : {
+        "actions" : {
+          "27:36" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:a2f1dda499765779" : {
+        "actions" : {
+          "44:53" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:a4b0290ed4ba9da9" : {
+        "actions" : {
+          "1:82" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:a66653a94857c018" : {
+        "actions" : {
+          "25:22" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:a72d38d09209e8e" : {
+        "actions" : {
+          "24:22" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:a7726e97d42ab5c6" : {
+        "actions" : {
+          "29:30" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:a939f49876f5f97a" : {
+        "actions" : {
+          "49:48" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:ab524c939aa633e" : {
+        "actions" : {
+          "56:57" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:abdbd9ee68f022e2" : {
+        "actions" : {
+          "38:47" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:ac9403652f1c08d3" : {
+        "actions" : {
+          "3:13" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:ade67d57c9d20692" : {
+        "actions" : {
+          "77:68" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:af57361e998f421b" : {
+        "actions" : {
+          "89:88" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:b013964e8bc33b8e" : {
+        "actions" : {
+          "47:56" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:b1967d23dd76e323" : {
+        "actions" : {
+          "0:9" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:b495752600d0258d" : {
+        "actions" : {
+          "24:25" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:b62206148c997a44" : {
+        "actions" : {
+          "67:51" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:b80ccbb963e136e4" : {
+        "actions" : {
+          "37:40" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:bda747e457cc3fc8" : {
+        "actions" : {
+          "38:47" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:bed479592ca73a2f" : {
+        "actions" : {
+          "85:86" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:bfd154a997fbb7af" : {
+        "actions" : {
+          "2:22" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:c10270bbda2aa784" : {
+        "actions" : {
+          "88:69" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:c457aff6a7aa306a" : {
+        "actions" : {
+          "5:13" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:c5018594f87526ae" : {
+        "actions" : {
+          "70:7" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:c65d53640c9866ed" : {
+        "actions" : {
+          "85:86" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:c8caded2deaab6d0" : {
+        "actions" : {
+          "76:65" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:c92cdd2ded2b7a37" : {
+        "actions" : {
+          "25:21" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:ca04e0175ab88f84" : {
+        "actions" : {
+          "88:71" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:cb002ad8b7724a23" : {
+        "actions" : {
+          "8:26" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:ce4d3ad2fa632b7c" : {
+        "actions" : {
+          "50:43" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:ceab165fe6daa30c" : {
+        "actions" : {
+          "68:77" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:cec34f6f81e917d9" : {
+        "actions" : {
+          "82:65" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:d0d20aa7d420548d" : {
+        "actions" : {
+          "10:12" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:d1eca30aa6fe03d" : {
+        "actions" : {
+          "38:29" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:d2954d71cef4045e" : {
+        "actions" : {
+          "65:29" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:d2c6ba910544fd95" : {
+        "actions" : {
+          "33:6" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:d4261b0e2f088c84" : {
+        "actions" : {
+          "29:38" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:d556c996a7070d2c" : {
+        "actions" : {
+          "59:56" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:d57033dafbd0d1d7" : {
+        "actions" : {
+          "43:44" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:d59b7728908611a" : {
+        "actions" : {
+          "13:4" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:d6c16d0904f037f0" : {
+        "actions" : {
+          "69:65" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:d88ef265427bf229" : {
+        "actions" : {
+          "24:60" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:da26a3eccc9190e4" : {
+        "actions" : {
+          "82:87" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:daecfb2be45bdb47" : {
+        "actions" : {
+          "23:24" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:db1c3e7856e6cce7" : {
+        "actions" : {
+          "4:13" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:db6115515c2b2f56" : {
+        "actions" : {
+          "69:58" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:dc3866971649b25c" : {
+        "actions" : {
+          "31:32" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:dc5a0d44862e32cf" : {
+        "actions" : {
+          "57:58" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:dd7b33bfb6b4bfb4" : {
+        "actions" : {
+          "81:82" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:df048513b16cf07d" : {
+        "actions" : {
+          "67:83" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:df968987b348e304" : {
+        "actions" : {
+          "57:76" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:dfc196617128b14a" : {
+        "actions" : {
+          "86:85" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:dfe74da60ecca061" : {
+        "actions" : {
+          "7:24" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:e438e7662a8a29b4" : {
+        "actions" : {
+          "64:67" : {
+            "aiReward" : -2,
+            "count" : 1
+          },
+          "70:65" : {
+            "aiReward" : 2,
+            "count" : 2
+          },
+          "70:69" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:e45c2dad79f4f039" : {
+        "actions" : {
+          "24:15" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:e5503391dd92a88a" : {
+        "actions" : {
+          "82:10" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:e598a0e0b1e18811" : {
+        "actions" : {
+          "81:83" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 2
+      },
+      "x:e6146644158d2cc3" : {
+        "actions" : {
+          "20:56" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:e8246b4559997fcd" : {
+        "actions" : {
+          "25:22" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 3
+      },
+      "x:ea01df40c32b1a36" : {
+        "actions" : {
+          "69:50" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:ec2365ab659ae03a" : {
+        "actions" : {
+          "13:3" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:ec62ef5d96292988" : {
+        "actions" : {
+          "25:24" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:eced1fd0e8cde834" : {
+        "actions" : {
+          "58:59" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:ed91ab7b1d8b44" : {
+        "actions" : {
+          "27:36" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:ee7f419649df4837" : {
+        "actions" : {
+          "15:14" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:f2f8075c992eca9b" : {
+        "actions" : {
+          "89:88" : {
+            "aiReward" : 0,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 1
+      },
+      "x:f585f77ab515ab35" : {
+        "actions" : {
+          "3:13" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:f5bde82fb171d2b8" : {
+        "actions" : {
+          "22:58" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      },
+      "x:faf02f06781cee9a" : {
+        "actions" : {
+          "68:70" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 3
+      },
+      "x:fd0dac73fbb99f49" : {
+        "actions" : {
+          "83:67" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "host",
+        "lastSequence" : 4
+      },
+      "x:fe55888ff91ec946" : {
+        "actions" : {
+          "35:44" : {
+            "aiReward" : -2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 4
+      },
+      "x:ff4938bc66431317" : {
+        "actions" : {
+          "60:57" : {
+            "aiReward" : 2,
+            "count" : 1
+          }
+        },
+        "actor" : "guest",
+        "lastSequence" : 2
+      }
+    },
+    "recentGames" : [
+      {
+        "actions" : [
+          "h70:65",
+          "a19:20",
+          "h88:69",
+          "a20:56",
+          "h89:88",
+          "a56:83"
+        ],
+        "finishedAt" : 815105686.926876,
+        "game" : "xiangqi",
+        "result" : "unfinished"
+      },
+      {
+        "actions" : [
+          "h70:65",
+          "a19:24",
+          "h88:69",
+          "a24:60",
+          "h89:88",
+          "a25:24",
+          "h83:67",
+          "a27:36",
+          "h88:25",
+          "a0:18",
+          "h56:47",
+          "a24:22",
+          "h47:38",
+          "a22:58",
+          "h69:58",
+          "a18:25",
+          "h38:29",
+          "a2:18",
+          "h29:30",
+          "a31:40",
+          "h58:41",
+          "a60:57",
+          "h65:29",
+          "a25:23",
+          "h41:34",
+          "a23:24",
+          "h64:46",
+          "a1:12",
+          "h29:28",
+          "a35:44",
+          "h46:51",
+          "a57:58",
+          "h86:76",
+          "a12:23",
+          "h51:24",
+          "a4:13",
+          "h24:25",
+          "a23:34",
+          "h82:65",
+          "a58:59",
+          "h65:48",
+          "a40:49",
+          "h28:10",
+          "a8:26",
+          "h25:21",
+          "a49:48",
+          "h81:83",
+          "a36:45",
+          "h83:11",
+          "a13:4",
+          "h21:20",
+          "a59:56",
+          "h10:1",
+          "a3:13",
+          "h11:2",
+          "a13:3",
+          "h20:19",
+          "a18:2",
+          "h19:37",
+          "a26:19",
+          "h37:40",
+          "a19:1",
+          "h30:31",
+          "a3:13",
+          "h31:32",
+          "a2:22",
+          "h32:33",
+          "a34:51",
+          "h33:24",
+          "a51:40",
+          "h24:15",
+          "a40:57",
+          "h15:6",
+          "a22:6",
+          "h85:86",
+          "a45:54",
+          "h86:85",
+          "a1:82",
+          "h62:53",
+          "a44:53",
+          "h85:86",
+          "a57:76",
+          "h86:77",
+          "a76:65",
+          "h84:76",
+          "a82:87",
+          "h77:68",
+          "a87:85",
+          "h68:77",
+          "a85:76",
+          "h77:68",
+          "a65:58",
+          "h67:51",
+          "a58:51"
+        ],
+        "finishedAt" : 815106027.933532,
+        "game" : "xiangqi",
+        "result" : "aiWon"
+      },
+      {
+        "actions" : [
+          "h64:67",
+          "a25:22",
+          "h82:65",
+          "a7:24",
+          "h81:82",
+          "a19:20",
+          "h70:68",
+          "a20:56",
+          "h60:51",
+          "a27:36",
+          "h88:69",
+          "a35:44",
+          "h89:88",
+          "a29:38",
+          "h88:34",
+          "a38:47",
+          "h34:33",
+          "a8:26",
+          "h69:50",
+          "a3:13",
+          "h51:42",
+          "a2:18",
+          "h50:43",
+          "a26:25",
+          "h68:70",
+          "a25:43",
+          "h42:43",
+          "a24:17",
+          "h43:44",
+          "a1:20",
+          "h70:7",
+          "a0:9",
+          "h67:69",
+          "a13:3",
+          "h69:6",
+          "a17:6",
+          "h33:6",
+          "a9:14",
+          "h6:15",
+          "a5:13",
+          "h15:14",
+          "a13:21",
+          "h14:23",
+          "a20:39",
+          "h23:24",
+          "a4:13",
+          "h82:10",
+          "a13:4",
+          "h24:6"
+        ],
+        "finishedAt" : 815116185.430084,
+        "game" : "xiangqi",
+        "result" : "humanWon"
+      },
+      {
+        "actions" : [
+          "h70:69",
+          "a19:20",
+          "h88:71",
+          "a20:56",
+          "h89:88",
+          "a25:22",
+          "h82:65",
+          "a7:26",
+          "h83:67",
+          "a27:36",
+          "h84:76",
+          "a29:38",
+          "h81:82",
+          "a35:44",
+          "h67:83",
+          "a38:47",
+          "h83:67",
+          "a56:57",
+          "h88:16",
+          "a47:56",
+          "h16:10",
+          "a56:65",
+          "h64:1",
+          "a22:58",
+          "h69:65",
+          "a6:22",
+          "h10:12",
+          "a58:62",
+          "h12:3",
+          "a4:13",
+          "h82:10",
+          "a57:12",
+          "h3:12"
+        ],
+        "finishedAt" : 815116347.919428,
+        "game" : "xiangqi",
+        "result" : "humanWon"
+      }
+    ],
+    "schema" : 1,
+    "sequence" : 4
+  },
+  "payloadChecksum" : "1a4afc528439f3a0"
+}
