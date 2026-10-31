@@ -1,0 +1,30 @@
+{
+  "schema": "veillink.formation.veil-bagua-containment.v2",
+  "name": "Veil 八卦阵",
+  "provenance": "owner-created; user-described dynamic containment rule on 2026-10-31",
+  "game": "gomoku",
+  "boardSize": 15,
+  "ownerSide": "black",
+  "geometry": {
+    "knightOffsets": [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]],
+    "minimumBlackMoves": 3,
+    "minimumOpponentMoves": 2
+  },
+  "policy": {
+    "objective": "strategically constrain the opponent's effective threat frontier while retaining black knight-lattice connectivity",
+    "frontier": "latest opponent displacement vector; recompute whenever direction changes",
+    "maximumStyleBonus": 180,
+    "tacticalPrecedence": ["immediate-win", "mandatory-block", "normal-search", "formation-style"]
+  },
+  "promotion": {
+    "defaultEnabled": false,
+    "required": ["legality", "symmetry", "held-out replay", "paired tournament", "device budget"]
+  },
+  "sourceEvidence": {
+    "profile": "PR #110 bagua_training_profile_v1.json",
+    "games": 28,
+    "positions": 1205,
+    "knightTransitions": 196,
+    "consecutiveBlackTransitions": 672
+  }
+}
