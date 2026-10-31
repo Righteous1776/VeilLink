@@ -1,0 +1,3789 @@
+diff --git a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
+index 7346026..5bb80d1 100644
+--- a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
++++ b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
+@@ -1,16 +1,72 @@
+ import Foundation
+ 
+-/// A compact, on-device repertoire used by the native Gomoku and Xiangqi bots.
+-/// It stores bounded action statistics plus a short rolling game history; no model
+-/// weights, network access, or unbounded database growth are involved.
++/// A game-scoped, on-device repertoire used by the native Gomoku and Xiangqi bots.
++/// Every game and position is retained until the user explicitly clears it.
+ struct AdaptiveBoardLearningSnapshot: Sendable {
+-    static let empty = AdaptiveBoardLearningSnapshot(preferences: [:])
++    static let empty = AdaptiveBoardLearningSnapshot(
++        preferences: [:],
++        rootAdjustments: [:],
++        predictedHumanReplies: [:],
++        trainingLevel: 0
++    )
+ 
+     fileprivate let preferences: [String: [String: Int]]
++    fileprivate let rootAdjustments: [String: Int]
++    fileprivate let predictedHumanReplies: [String: AdaptiveBoardPrediction]
++    /// Bounded compute reinforcement derived from retained local evidence. This
++    /// is independent of the uncapped on-disk history and is safe on old devices.
++    let trainingLevel: Int
+ 
+     func bonus(position: String, action: String) -> Int {
+         preferences[position]?[action] ?? 0
+     }
++
++    /// Outcome-aware sequence memory. Repeating a line that lost (or was repeatedly
++    /// abandoned) is penalised, while lines that held up are reinforced.
++    func rootAdjustment(action: String) -> Int {
++        rootAdjustments[action] ?? 0
++    }
++
++    /// The player's most likely next move after a candidate AI move.
++    func predictedHumanReply(afterAIAction action: String) -> AdaptiveBoardPrediction? {
++        predictedHumanReplies[action]
++    }
++
++    var hasSequenceEvidence: Bool {
++        !rootAdjustments.isEmpty || !predictedHumanReplies.isEmpty
++    }
++}
++
++struct AdaptiveBoardPrediction: Equatable, Sendable {
++    let action: String
++    let evidence: Int
++}
++
++struct DeveloperFormationInfluence: Sendable {
++    static let empty = DeveloperFormationInfluence(rootAdjustments: [:], predictedHumanReplies: [:], matchedLessonNames: [])
++    let rootAdjustments: [String: Int]
++    let predictedHumanReplies: [String: AdaptiveBoardPrediction]
++    let matchedLessonNames: [String]
++}
++
++extension AdaptiveBoardLearningSnapshot {
++    func applying(_ influence: DeveloperFormationInfluence) -> AdaptiveBoardLearningSnapshot {
++        var roots = rootAdjustments
++        for (action, bonus) in influence.rootAdjustments {
++            roots[action, default: 0] = min(2_400, max(-1_200, roots[action, default: 0] + bonus))
++        }
++        var replies = predictedHumanReplies
++        for (action, prediction) in influence.predictedHumanReplies {
++            if let current = replies[action], current.evidence > prediction.evidence { continue }
++            replies[action] = prediction
++        }
++        return AdaptiveBoardLearningSnapshot(
++            preferences: preferences,
++            rootAdjustments: roots,
++            predictedHumanReplies: replies,
++            trainingLevel: trainingLevel
++        )
++    }
+ }
+ 
+ enum AdaptiveBoardPosition {
+@@ -93,6 +149,21 @@ struct AdaptiveBoardLearningImportReport: Equatable, Sendable {
+     let rememberedPositions: Int
+ }
+ 
++/// A local, explainable training portrait. It is derived from the player's own
++/// recorded games rather than a cloud rating or a black-box model.
++struct PersonalBoardCoachProfile: Equatable, Sendable {
++    let level: Int
++    let completedGames: Int
++    let repeatedLineCount: Int
++    let preferredOpening: String
++    let nextLesson: String
++    /// A plain-language, evidence-based post-game direction. It is deliberately
++    /// derived from local results rather than a remote rating or opaque model.
++    let reviewFocus: String
++
++    var levelText: String { "个性化教练 · Lv\(level)" }
++}
++
+ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
+     case unreadable
+     case tooLarge
+@@ -104,7 +175,7 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
+     var errorDescription: String? {
+         switch self {
+         case .unreadable: return "无法读取训练包。"
+-        case .tooLarge: return "训练包超过 1 MB 安全上限。"
++        case .tooLarge: return "训练包大于当前设备可安全处理的可用空间。"
+         case .unsupportedFormat: return "训练包版本不受支持。"
+         case .checksumMismatch: return "训练包完整性校验失败。"
+         case .invalidContent: return "训练包包含无效棋步或越界数据。"
+@@ -115,7 +186,12 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
+ 
+ @MainActor
+ final class AdaptiveBoardLearningStore {
+-    static let shared = AdaptiveBoardLearningStore()
++    static let gomoku = AdaptiveBoardLearningStore(game: .gomoku)
++    static let xiangqi = AdaptiveBoardLearningStore(game: .xiangqi)
++
++    static func store(for game: MiniGameKind) -> AdaptiveBoardLearningStore {
++        game == .xiangqi ? .xiangqi : .gomoku
++    }
+ 
+     private struct ActionStat: Codable {
+         var count: Int
+@@ -152,16 +228,14 @@ final class AdaptiveBoardLearningStore {
+         let payload: Database
+     }
+ 
+-    private static let maximumPositions = 1_600
+-    private static let maximumActionsPerPosition = 8
+-    private static let maximumRecentGames = 40
+-    private static let maximumBytes = 512 * 1_024
+-
+     private let fileURL: URL
++    private let scopedGame: MiniGameKind?
+     private var database: Database
+     private(set) var lastSaveSucceeded = true
++    /// Existing unreadable/invalid stores are retained on disk, never overwritten by autosave.
++    private(set) var requiresRecovery = false
+ 
+-    init(fileURL: URL? = nil) {
++    init(game: MiniGameKind? = nil, fileURL: URL? = nil, legacyURL: URL? = nil) {
+         let resolvedURL: URL
+         if let fileURL {
+             resolvedURL = fileURL
+@@ -169,21 +243,58 @@ final class AdaptiveBoardLearningStore {
+             let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                 .appendingPathComponent("VeilLink", isDirectory: true)
+             try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+-            resolvedURL = root.appendingPathComponent("adaptive-board-learning-v1.json")
++            let suffix = game == .xiangqi ? "xiangqi" : "gomoku"
++            resolvedURL = root.appendingPathComponent("adaptive-board-learning-\(suffix)-v2.json")
+         }
+         self.fileURL = resolvedURL
+-        database = Self.load(from: resolvedURL)
++        scopedGame = game
++        let existingStore = FileManager.default.fileExists(atPath: resolvedURL.path)
++        let loadedStore = Self.load(from: resolvedURL, scopedGame: game)
++        database = loadedStore ?? Database()
++        if existingStore && loadedStore == nil {
++            requiresRecovery = true
++            lastSaveSucceeded = false
++        }
++
++        // One-time, non-destructive migration from V27's shared store. The
++        // legacy file is never moved, truncated or overwritten: each V2 game
++        // database is fully encoded and decoded in a sibling temporary file
++        // before its first atomic placement. A failed migration leaves the old
++        // shared record available for retry on the next launch.
++        let legacy = legacyURL ?? resolvedURL.deletingLastPathComponent()
++            .appendingPathComponent("adaptive-board-learning-v1.json")
++        if (fileURL == nil || legacyURL != nil),
++           !FileManager.default.fileExists(atPath: resolvedURL.path),
++           FileManager.default.fileExists(atPath: legacy.path) {
++            if let migrated = Self.load(from: legacy, scopedGame: game) {
++                if !migrated.positions.isEmpty || !migrated.recentGames.isEmpty {
++                    if Self.writeInitialMigration(migrated, to: resolvedURL) {
++                        database = migrated
++                        lastSaveSucceeded = true
++                    } else {
++                        lastSaveSucceeded = false
++                    }
++                }
++            } else {
++                // A corrupt legacy source is not silently replaced by an empty V2.
++                requiresRecovery = true
++                lastSaveSucceeded = false
++            }
++        }
+     }
+ 
+     var summary: AdaptiveBoardLearningSummary {
+-        AdaptiveBoardLearningSummary(
++        // Metadata read only: the history is intentionally uncapped, so loading
++        // its entire JSON just to display its byte count is a memory hazard.
++        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
++        return AdaptiveBoardLearningSummary(
+             completedGames: database.completedGames,
+             rememberedPositions: database.positions.count,
+-            storedBytes: (try? Data(contentsOf: fileURL).count) ?? 0
++            storedBytes: fileSize
+         )
+     }
+ 
+-    func snapshot() -> AdaptiveBoardLearningSnapshot {
++    func snapshot(currentPlies: [AdaptiveBoardPly] = []) -> AdaptiveBoardLearningSnapshot {
+         var result = Self.seedPreferences()
+         for (position, stat) in database.positions {
+             var actions = result[position] ?? [:]
+@@ -202,11 +313,134 @@ final class AdaptiveBoardLearningStore {
+             }
+             result[position] = actions
+         }
+-        return AdaptiveBoardLearningSnapshot(preferences: result)
++        let sequence = currentPlies.map { ($0.actor == .host ? "h" : "a") + $0.action }
++        var rootAdjustments: [String: Int] = [:]
++        var replyEvidence: [String: [String: Int]] = [:]
++        for record in database.recentGames where record.actions.starts(with: sequence) {
++            guard record.actions.count > sequence.count else { continue }
++            let next = record.actions[sequence.count]
++            guard next.first == "a" else { continue }
++            let aiAction = String(next.dropFirst())
++            let outcome: Int
++            switch record.result {
++            case .aiWon: outcome = 420
++            case .humanWon: outcome = -620
++            case .draw: outcome = -60
++            case .unfinished: outcome = -110
++            }
++            rootAdjustments[aiAction, default: 0] += outcome
++
++            let humanIndex = sequence.count + 1
++            if record.actions.indices.contains(humanIndex) {
++                let reply = record.actions[humanIndex]
++                if reply.first == "h" {
++                    let action = String(reply.dropFirst())
++                    let weight = record.result == .humanWon ? 4 : 1
++                    replyEvidence[aiAction, default: [:]][action, default: 0] += weight
++                }
++            }
++        }
++        let predictions = replyEvidence.compactMapValues { actions -> AdaptiveBoardPrediction? in
++            guard let best = actions.max(by: {
++                $0.value == $1.value ? $0.key > $1.key : $0.value < $1.value
++            }) else { return nil }
++            return AdaptiveBoardPrediction(action: best.key, evidence: best.value)
++        }
++        return AdaptiveBoardLearningSnapshot(
++            preferences: result,
++            rootAdjustments: rootAdjustments.mapValues { min(1_200, max(-1_200, $0)) },
++            predictedHumanReplies: predictions,
++            trainingLevel: min(8, database.completedGames / 3 + database.positions.count / 220)
++        )
++    }
++
++    func coachProfile(for game: MiniGameKind) -> PersonalBoardCoachProfile {
++        let records = database.recentGames.filter { $0.game == game }
++        let completed = records.filter { $0.result != .unfinished }.count
++        let interrupted = records.filter { $0.result == .unfinished }.count
++        let humanWins = records.filter { $0.result == .humanWon }.count
++        let aiWins = records.filter { $0.result == .aiWon }.count
++        // Count each opening once. Rescanning the full history inside max(by:)
++        // would become quadratic as an uncapped training library grows.
++        var openingCounts: [String: Int] = [:]
++        for record in records {
++            if let firstHumanMove = record.actions.first(where: { $0.first == "h" }) {
++                let action = String(firstHumanMove.dropFirst())
++                openingCounts[action, default: 0] += 1
++            }
++        }
++        let repeatedLines = Dictionary(grouping: records) { record in
++            record.actions.prefix(6).joined(separator: ",")
++        }.values.filter { $0.count >= 2 }.count
++        let preferredAction = openingCounts.max(by: { lhs, rhs in
++            if lhs.value != rhs.value { return lhs.value < rhs.value }
++            return lhs.key > rhs.key
++        })?.key
++
++        let preferredOpening: String
++        let nextLesson: String
++        switch game {
++        case .gomoku:
++            if let action = preferredAction, let index = Int(action) {
++                let row = index / GomokuState.size
++                let column = index % GomokuState.size
++                let center = GomokuState.size / 2
++                preferredOpening = abs(row - center) <= 2 && abs(column - center) <= 2
++                    ? "偏好中心起手"
++                    : "偏好边侧起手"
++            } else {
++                preferredOpening = "正在观察你的起手"
++            }
++            nextLesson = repeatedLines > 0
++                ? "下一课：复盘重复阵法中的活三、冲四与防守优先级。"
++                : "下一课：先找对手的威胁，再决定进攻方向。"
++        case .xiangqi:
++            if preferredAction == "64:67" {
++                preferredOpening = "偏好中炮"
++            } else if preferredAction == "82:65" || preferredAction == "88:67" {
++                preferredOpening = "偏好起马"
++            } else if preferredAction != nil {
++                preferredOpening = "偏好多变开局"
++            } else {
++                preferredOpening = "正在观察你的开局"
++            }
++            nextLesson = repeatedLines > 0
++                ? "下一课：针对常用布局练习一手预防与两手反击。"
++                : "下一课：发展子力前，先检查对方将军、吃子与威胁。"
++        default:
++            preferredOpening = "仅支持五子棋和中国象棋"
++            nextLesson = "选择棋类对局后开始建立个人档案。"
++        }
++        let reviewFocus: String
++        if interrupted >= max(2, completed) {
++            reviewFocus = "复盘方向：中断局较多；先完成短对局，观察优势从哪一步开始丢失。"
++        } else if aiWins > humanWins {
++            reviewFocus = "复盘方向：重点回看电脑取得优势前的两手，先处理对方直接威胁。"
++        } else if repeatedLines > 0 {
++            reviewFocus = "复盘方向：你的常用线路已被识别；尝试为同一开局准备一个转向。"
++        } else if humanWins > 0 {
++            reviewFocus = "复盘方向：复走一局胜局，找出可以稳定复用的威胁与防守转换。"
++        } else {
++            reviewFocus = "复盘方向：先完成一局，教练会从开局、结果和重复线路生成针对性建议。"
++        }
++        let level = min(10, max(1, 1 + completed / 3 + database.positions.count / 180))
++        return PersonalBoardCoachProfile(
++            level: level,
++            completedGames: completed,
++            repeatedLineCount: repeatedLines,
++            preferredOpening: preferredOpening,
++            nextLesson: nextLesson,
++            reviewFocus: reviewFocus
++        )
+     }
+ 
+     func record(game: MiniGameKind, plies: [AdaptiveBoardPly], result: AdaptiveBoardGameResult) {
+         guard game == .gomoku || game == .xiangqi, !plies.isEmpty else { return }
++        guard scopedGame == nil || scopedGame == game else { return }
++        guard !requiresRecovery else {
++            lastSaveSucceeded = false
++            return
++        }
+ 
+         database.sequence += 1
+         let sequence = database.sequence
+@@ -218,13 +452,6 @@ final class AdaptiveBoardLearningStore {
+             action.aiReward = max(-32_000, min(32_000, action.aiReward + result.aiReward))
+             position.actions[ply.action] = action
+             position.lastSequence = sequence
+-            if position.actions.count > Self.maximumActionsPerPosition {
+-                let keep = position.actions.sorted { lhs, rhs in
+-                    if lhs.value.count != rhs.value.count { return lhs.value.count > rhs.value.count }
+-                    return lhs.key < rhs.key
+-                }.prefix(Self.maximumActionsPerPosition)
+-                position.actions = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
+-            }
+             database.positions[ply.position] = position
+         }
+ 
+@@ -235,23 +462,25 @@ final class AdaptiveBoardLearningStore {
+             actions: plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
+             finishedAt: Date()
+         ))
+-        prune(positionLimit: Self.maximumPositions, historyLimit: Self.maximumRecentGames)
+         save()
+     }
+ 
+     func clear() {
++        // Persist an empty scoped V2 database as an explicit migration tombstone.
++        // Clear is the user's deliberate reset, including in recovery mode.
++        let previous = database
++        let previousRecovery = requiresRecovery
+         database = Database()
+-        do {
+-            if FileManager.default.fileExists(atPath: fileURL.path) {
+-                try FileManager.default.removeItem(at: fileURL)
+-            }
+-            lastSaveSucceeded = true
+-        } catch {
+-            lastSaveSucceeded = false
++        requiresRecovery = false
++        save()
++        if !lastSaveSucceeded {
++            database = previous
++            requiresRecovery = previousRecovery
+         }
+     }
+ 
+     func exportPackage() throws -> URL {
++        guard !requiresRecovery else { throw AdaptiveBoardLearningPackageError.invalidContent }
+         let encoder = JSONEncoder()
+         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+         let compactEncoder = JSONEncoder()
+@@ -267,13 +496,12 @@ final class AdaptiveBoardLearningStore {
+             payload: database
+         )
+         let data = try encoder.encode(envelope)
+-        guard data.count <= Self.maximumBytes * 2 else { throw AdaptiveBoardLearningPackageError.tooLarge }
+-
+         let formatter = DateFormatter()
+         formatter.locale = Locale(identifier: "en_US_POSIX")
+         formatter.dateFormat = "yyyyMMdd-HHmmss"
++        let gameLabel = scopedGame == .xiangqi ? "Xiangqi" : "Gomoku"
+         let url = FileManager.default.temporaryDirectory
+-            .appendingPathComponent("VeilLink-BoardLearning-\(formatter.string(from: Date())).vltrain.json")
++            .appendingPathComponent("VeilLink-\(gameLabel)Learning-\(formatter.string(from: Date())).vltrain.json")
+         do {
+             try data.write(to: url, options: .atomic)
+             return url
+@@ -288,9 +516,6 @@ final class AdaptiveBoardLearningStore {
+         guard let data = try? Data(contentsOf: url) else {
+             throw AdaptiveBoardLearningPackageError.unreadable
+         }
+-        guard data.count <= Self.maximumBytes * 2 else {
+-            throw AdaptiveBoardLearningPackageError.tooLarge
+-        }
+         guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
+               envelope.format == "veillink.board-learning.export.v1",
+               envelope.checksumAlgorithm == "fnv1a64-canonical-json",
+@@ -309,11 +534,18 @@ final class AdaptiveBoardLearningStore {
+         }
+ 
+         let previous = database
+-        database = envelope.payload
+-        prune(positionLimit: Self.maximumPositions, historyLimit: Self.maximumRecentGames)
++        let previousRecovery = requiresRecovery
++        database = Self.filtered(envelope.payload, for: scopedGame)
++        guard !database.positions.isEmpty || !database.recentGames.isEmpty else {
++            database = previous
++            throw AdaptiveBoardLearningPackageError.invalidContent
++        }
++        // Explicit validated package import is a permitted recovery operation.
++        requiresRecovery = false
+         save()
+         guard lastSaveSucceeded else {
+             database = previous
++            requiresRecovery = previousRecovery
+             throw AdaptiveBoardLearningPackageError.writeFailed
+         }
+         return AdaptiveBoardLearningImportReport(
+@@ -322,30 +554,15 @@ final class AdaptiveBoardLearningStore {
+         )
+     }
+ 
+-    private func prune(positionLimit: Int, historyLimit: Int) {
+-        if database.positions.count > positionLimit {
+-            let keep = database.positions.sorted { lhs, rhs in
+-                if lhs.value.lastSequence != rhs.value.lastSequence {
+-                    return lhs.value.lastSequence > rhs.value.lastSequence
+-                }
+-                return lhs.key < rhs.key
+-            }.prefix(positionLimit)
+-            database.positions = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
+-        }
+-        if database.recentGames.count > historyLimit {
+-            database.recentGames.removeFirst(database.recentGames.count - historyLimit)
+-        }
+-    }
+-
+     private func save() {
++        guard !requiresRecovery else {
++            lastSaveSucceeded = false
++            return
++        }
+         let encoder = JSONEncoder()
+         encoder.outputFormatting = [.sortedKeys]
+         do {
+-            var data = try encoder.encode(database)
+-            if data.count > Self.maximumBytes {
+-                prune(positionLimit: Self.maximumPositions / 2, historyLimit: Self.maximumRecentGames / 2)
+-                data = try encoder.encode(database)
+-            }
++            let data = try encoder.encode(database)
+             try FileManager.default.createDirectory(
+                 at: fileURL.deletingLastPathComponent(),
+                 withIntermediateDirectories: true
+@@ -357,22 +574,66 @@ final class AdaptiveBoardLearningStore {
+         }
+     }
+ 
+-    private static func load(from url: URL) -> Database {
+-        guard let data = try? Data(contentsOf: url), data.count <= maximumBytes * 2,
++    private static func load(from url: URL, scopedGame: MiniGameKind?) -> Database? {
++        guard let data = try? Data(contentsOf: url),
+               let decoded = try? JSONDecoder().decode(Database.self, from: data),
+-              decoded.schema == 1 else { return Database() }
+-        return decoded
++              decoded.schema == 1,
++              isValid(decoded) else { return nil }
++        return filtered(decoded, for: scopedGame)
++    }
++
++    /// Writes an initial V2 database without touching the old shared file. The
++    /// decode-back check prevents a half-written or wrongly-filtered migration
++    /// from becoming the first durable store for either game.
++    private static func writeInitialMigration(_ candidate: Database, to destination: URL) -> Bool {
++        guard isValid(candidate),
++              !FileManager.default.fileExists(atPath: destination.path) else { return false }
++        let directory = destination.deletingLastPathComponent()
++        let staging = directory.appendingPathComponent(
++            ".\(destination.lastPathComponent).migrating-\(UUID().uuidString)"
++        )
++        do {
++            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
++            let encoder = JSONEncoder()
++            encoder.outputFormatting = [.sortedKeys]
++            let data = try encoder.encode(candidate)
++            try data.write(to: staging, options: .atomic)
++            guard let verificationData = try? Data(contentsOf: staging),
++                  let verified = try? JSONDecoder().decode(Database.self, from: verificationData),
++                  isValid(verified),
++                  verified.positions.count == candidate.positions.count,
++                  verified.recentGames.count == candidate.recentGames.count else {
++                try? FileManager.default.removeItem(at: staging)
++                return false
++            }
++            try FileManager.default.moveItem(at: staging, to: destination)
++            return true
++        } catch {
++            try? FileManager.default.removeItem(at: staging)
++            return false
++        }
++    }
++
++    private static func filtered(_ database: Database, for game: MiniGameKind?) -> Database {
++        guard let game else { return database }
++        let prefix = game == .xiangqi ? "x:" : "g:"
++        let positions = database.positions.filter { $0.key.hasPrefix(prefix) }
++        let games = database.recentGames.filter { $0.game == game }
++        return Database(
++            schema: database.schema,
++            completedGames: games.filter { $0.result != .unfinished }.count,
++            sequence: database.sequence,
++            positions: positions,
++            recentGames: games
++        )
+     }
+ 
+     private static func isValid(_ database: Database) -> Bool {
+         guard database.completedGames >= 0,
+-              database.sequence >= 0,
+-              database.positions.count <= maximumPositions,
+-              database.recentGames.count <= maximumRecentGames else { return false }
++              database.sequence >= 0 else { return false }
+         for (position, stat) in database.positions {
+             guard (position.hasPrefix("g:") || position.hasPrefix("x:")),
+-                  position.count <= 32,
+-                  stat.actions.count <= maximumActionsPerPosition else { return false }
++                  position.count <= 96 else { return false }
+             for (action, value) in stat.actions {
+                 guard value.count > 0, value.count <= 65_535,
+                       (-32_000...32_000).contains(value.aiReward),
+@@ -381,7 +642,6 @@ final class AdaptiveBoardLearningStore {
+         }
+         return database.recentGames.allSatisfy { record in
+             (record.game == .gomoku || record.game == .xiangqi)
+-                && record.actions.count <= 225
+                 && record.actions.allSatisfy { $0.count <= 12 }
+         }
+     }
+diff --git a/VeilLink/Agent/Games/DeveloperFormationLibrary.swift b/VeilLink/Agent/Games/DeveloperFormationLibrary.swift
+new file mode 100644
+index 0000000..046b920
+--- /dev/null
++++ b/VeilLink/Agent/Games/DeveloperFormationLibrary.swift
+@@ -0,0 +1,169 @@
++import Combine
++import CryptoKit
++import Foundation
++
++struct DeveloperFormationLesson: Codable, Identifiable, Equatable, Sendable {
++    struct Move: Codable, Equatable, Sendable {
++        let actor: MiniGamePlayer
++        let action: String
++    }
++
++    let id: UUID
++    let game: MiniGameKind
++    let name: String
++    let purpose: String
++    let objective: String
++    let moves: [Move]
++    let createdAt: Date
++}
++
++@MainActor
++final class DeveloperFormationLibrary: ObservableObject {
++    @Published private(set) var lessons: [DeveloperFormationLesson] = []
++
++    private struct Envelope: Codable {
++        let schema: Int
++        let lessons: [DeveloperFormationLesson]
++        let mac: Data
++    }
++
++    private enum Key { static let mac = "board.developer-formations.mac.v1" }
++    private let game: MiniGameKind
++    private let keychain: KeychainStore
++    private let fileURL: URL
++
++    init(game: MiniGameKind, keychain: KeychainStore, fileURL: URL? = nil) {
++        self.game = game
++        self.keychain = keychain
++        if let fileURL {
++            self.fileURL = fileURL
++        } else {
++            let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
++                .appendingPathComponent("VeilLink", isDirectory: true)
++                .appendingPathComponent("DeveloperFormations", isDirectory: true)
++            self.fileURL = root.appendingPathComponent("\(game.rawValue)-v1.json")
++        }
++        load()
++    }
++
++    func capture(name: String, purpose: String, objective: String, plies: [AdaptiveBoardPly]) throws {
++        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
++        let trimmedPurpose = purpose.trimmingCharacters(in: .whitespacesAndNewlines)
++        let trimmedObjective = objective.trimmingCharacters(in: .whitespacesAndNewlines)
++        guard (2...64).contains(trimmedName.count),
++              (2...360).contains(trimmedPurpose.count),
++              (2...240).contains(trimmedObjective.count),
++              plies.count >= 2,
++              plies.contains(where: { $0.actor == .guest }) else {
++            throw DeveloperFormationError.invalidLesson
++        }
++        let lesson = DeveloperFormationLesson(
++            id: UUID(),
++            game: game,
++            name: trimmedName,
++            purpose: trimmedPurpose,
++            objective: trimmedObjective,
++            moves: plies.map { .init(actor: $0.actor, action: $0.action) },
++            createdAt: Date()
++        )
++        lessons.append(lesson)
++        do {
++            try save()
++        } catch {
++            lessons.removeLast()
++            throw error
++        }
++    }
++
++    func remove(_ lesson: DeveloperFormationLesson) {
++        let previous = lessons
++        lessons.removeAll { $0.id == lesson.id }
++        do { try save() } catch { lessons = previous }
++    }
++
++    func influence(for plies: [AdaptiveBoardPly]) -> DeveloperFormationInfluence {
++        let current = plies.map { DeveloperFormationLesson.Move(actor: $0.actor, action: $0.action) }
++        var roots: [String: Int] = [:]
++        var replies: [String: AdaptiveBoardPrediction] = [:]
++        var matchedNames: [String] = []
++        for lesson in lessons where lesson.moves.starts(with: current) {
++            guard lesson.moves.count > current.count else { continue }
++            let nextIndex = current.count
++            let next = lesson.moves[nextIndex]
++            guard next.actor == .guest else { continue }
++            matchedNames.append(lesson.name)
++            roots[next.action, default: 0] += 1_400
++            let replyIndex = nextIndex + 1
++            if lesson.moves.indices.contains(replyIndex), lesson.moves[replyIndex].actor == .host {
++                replies[next.action] = AdaptiveBoardPrediction(
++                    action: lesson.moves[replyIndex].action,
++                    evidence: 99
++                )
++            }
++        }
++        return DeveloperFormationInfluence(
++            rootAdjustments: roots,
++            predictedHumanReplies: replies,
++            matchedLessonNames: matchedNames.sorted()
++        )
++    }
++
++    private func load() {
++        guard let data = try? Data(contentsOf: fileURL),
++              let envelope = try? JSONDecoder().decode(Envelope.self, from: data),
++              envelope.schema == 1,
++              verify(envelope.lessons, mac: envelope.mac) else { return }
++        lessons = envelope.lessons.filter { $0.game == game }
++    }
++
++    private func save() throws {
++        let key = try macKey()
++        let mac = Data(HMAC<SHA256>.authenticationCode(for: canonicalData(for: lessons), using: SymmetricKey(data: key)))
++        let envelope = Envelope(schema: 1, lessons: lessons, mac: mac)
++        let root = fileURL.deletingLastPathComponent()
++        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
++        try JSONEncoder().encode(envelope).write(to: fileURL, options: .atomic)
++    }
++
++    private func verify(_ candidate: [DeveloperFormationLesson], mac: Data) -> Bool {
++        // Verification must never manufacture a replacement key. If Keychain was
++        // reset or is temporarily unavailable, the old on-disk lesson stays
++        // untrusted instead of being silently re-keyed.
++        do {
++            guard let key = try keychain.readData(for: Key.mac), key.count == 32 else { return false }
++            let expected = Data(HMAC<SHA256>.authenticationCode(for: canonicalData(for: candidate), using: SymmetricKey(data: key)))
++            return expected == mac
++        } catch {
++            return false
++        }
++    }
++
++    private func canonicalData(for candidate: [DeveloperFormationLesson]) -> Data {
++        let encoder = JSONEncoder()
++        encoder.outputFormatting = [.sortedKeys]
++        return (try? encoder.encode(candidate)) ?? Data()
++    }
++
++    private func macKey() throws -> Data {
++        if let current = try keychain.readData(for: Key.mac) {
++            guard current.count == 32 else { throw DeveloperFormationError.keyUnavailable }
++            return current
++        }
++        let key = PasswordKDF.randomData(count: 32)
++        guard key.count == 32 else { throw DeveloperFormationError.keyUnavailable }
++        try keychain.set(key, for: Key.mac)
++        return key
++    }
++}
++
++enum DeveloperFormationError: LocalizedError {
++    case invalidLesson
++    case keyUnavailable
++
++    var errorDescription: String? {
++        switch self {
++        case .invalidLesson: return "请录制至少两手、包含电脑应手的合法阵法，并填写名称、用途和目的。"
++        case .keyUnavailable: return "无法取得本机阵法保护密钥。"
++        }
++    }
++}
+diff --git a/VeilLink/Agent/Games/GomokuBot.swift b/VeilLink/Agent/Games/GomokuBot.swift
+index 43af066..40ef9e2 100644
+--- a/VeilLink/Agent/Games/GomokuBot.swift
++++ b/VeilLink/Agent/Games/GomokuBot.swift
+@@ -11,23 +11,55 @@ struct GomokuBotBudget: Equatable, Sendable {
+     let candidateRadius: Int
+     let rootCandidateLimit: Int
+     let replyCandidateLimit: Int
++    let continuationCandidateLimit: Int
+     let timeLimitMilliseconds: Int
+ 
+     static func standard(profileLabel: String) -> GomokuBotBudget {
+         let upper = profileLabel.uppercased()
+         if upper.contains("SE1") || upper.contains("LEGACY") || upper.contains("IPHONE7") {
+-            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 16, replyCandidateLimit: 10, timeLimitMilliseconds: 150)
++            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 16, replyCandidateLimit: 10, continuationCandidateLimit: 0, timeLimitMilliseconds: 150)
+         }
+         if upper.contains("HIGH") || upper.contains("13PRO") {
+-            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 28, replyCandidateLimit: 16, timeLimitMilliseconds: 260)
++            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 28, replyCandidateLimit: 16, continuationCandidateLimit: 8, timeLimitMilliseconds: 260)
+         }
+-        return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 22, replyCandidateLimit: 12, timeLimitMilliseconds: 200)
++        return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 22, replyCandidateLimit: 12, continuationCandidateLimit: 6, timeLimitMilliseconds: 200)
++    }
++
++    static func forDifficulty(_ difficulty: BoardBotDifficulty, profileLabel: String) -> GomokuBotBudget {
++        let legacy = profileLabel.uppercased().contains("SE1")
++            || profileLabel.uppercased().contains("LEGACY")
++            || profileLabel.uppercased().contains("IPHONE7")
++        switch difficulty {
++        case .relaxed:
++            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 12, replyCandidateLimit: 8, continuationCandidateLimit: 0, timeLimitMilliseconds: legacy ? 100 : 130)
++        case .balanced:
++            return standard(profileLabel: profileLabel)
++        case .advanced:
++            return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: legacy ? 22 : 36, replyCandidateLimit: legacy ? 14 : 22, continuationCandidateLimit: legacy ? 6 : 14, timeLimitMilliseconds: legacy ? 240 : 520)
++        case .master:
++            return GomokuBotBudget(candidateRadius: legacy ? 2 : 3, rootCandidateLimit: legacy ? 28 : 48, replyCandidateLimit: legacy ? 16 : 30, continuationCandidateLimit: legacy ? 8 : 20, timeLimitMilliseconds: legacy ? 420 : 950)
++        }
++    }
++
++    func reinforced(by trainingLevel: Int) -> GomokuBotBudget {
++        let reinforcement = max(0, min(8, trainingLevel))
++        guard reinforcement > 0 else { return self }
++        return GomokuBotBudget(
++            candidateRadius: candidateRadius,
++            rootCandidateLimit: min(56, rootCandidateLimit + reinforcement * 2),
++            replyCandidateLimit: min(34, replyCandidateLimit + reinforcement),
++            continuationCandidateLimit: continuationCandidateLimit == 0
++                ? 0
++                : min(22, continuationCandidateLimit + reinforcement),
++            timeLimitMilliseconds: min(1_100, timeLimitMilliseconds + reinforcement * 45)
++        )
+     }
+ 
+     static let deterministicTest = GomokuBotBudget(
+         candidateRadius: 2,
+         rootCandidateLimit: 18,
+         replyCandidateLimit: 10,
++        continuationCandidateLimit: 8,
+         timeLimitMilliseconds: 2_000
+     )
+ }
+@@ -70,7 +102,8 @@ enum GomokuBot {
+         let rankedRoots = candidates
+             .map {
+                 let learned = learning.bonus(position: rootPosition, action: String($0))
+-                return ($0, tacticalPriority(index: $0, state: state, player: player) + learned)
++                let sequence = learning.rootAdjustment(action: String($0))
++                return ($0, tacticalPriority(index: $0, state: state, player: player) + learned + sequence)
+             }
+             .sorted { lhs, rhs in
+                 if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+@@ -93,10 +126,14 @@ enum GomokuBot {
+             } else {
+                 let opponent = player.opponent
+                 let replyPosition = AdaptiveBoardPosition.gomoku(next)
++                let predictedReply = learning.predictedHumanReply(afterAIAction: String(index))
+                 let replies = candidateIndices(in: next, radius: budget.candidateRadius)
+                     .map {
+                         let learned = learning.bonus(position: replyPosition, action: String($0))
+-                        return ($0, tacticalPriority(index: $0, state: next, player: opponent) + learned)
++                        let prediction = predictedReply?.action == String($0)
++                            ? min(4_000, predictedReply!.evidence * 900)
++                            : 0
++                        return ($0, tacticalPriority(index: $0, state: next, player: opponent) + learned + prediction)
+                     }
+                     .sorted { lhs, rhs in
+                         if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+@@ -110,11 +147,49 @@ enum GomokuBot {
+                     nodes += 1
+                     var afterReply = next
+                     guard afterReply.apply(index: reply, actor: opponent) else { continue }
+-                    let replyScore: Int
++                    var replyScore: Int
+                     if afterReply.winner == opponent {
+                         replyScore = lossScore
+                     } else {
+                         replyScore = staticEvaluation(afterReply, root: player)
++                        if budget.continuationCandidateLimit > 0 {
++                            // Swift 5.9 can time out while type-checking the chained
++                            // tuple map/sort/prefix expression. Typed intermediates
++                            // preserve the same ranking and iOS 15 compatibility.
++                            let continuationCandidates: [Int] = candidateIndices(
++                                in: afterReply, radius: budget.candidateRadius
++                            )
++                            var continuationScores: [(index: Int, priority: Int)] = []
++                            continuationScores.reserveCapacity(continuationCandidates.count)
++                            for candidate in continuationCandidates {
++                                let priority: Int = tacticalPriority(
++                                    index: candidate, state: afterReply, player: player
++                                )
++                                continuationScores.append((index: candidate, priority: priority))
++                            }
++                            continuationScores.sort { lhs, rhs in
++                                if lhs.priority != rhs.priority {
++                                    return lhs.priority > rhs.priority
++                                }
++                                return lhs.index < rhs.index
++                            }
++                            let continuationLimit = min(
++                                continuationScores.count, budget.continuationCandidateLimit
++                            )
++                            var bestContinuation = Int.min
++                            for rankedIndex in 0..<continuationLimit {
++                                let continuation = continuationScores[rankedIndex].index
++                                guard Date.timeIntervalSinceReferenceDate < deadline else { break }
++                                nodes += 1
++                                var afterContinuation = afterReply
++                                guard afterContinuation.apply(index: continuation, actor: player) else { continue }
++                                let continuationScore = afterContinuation.winner == player
++                                    ? winScore
++                                    : staticEvaluation(afterContinuation, root: player)
++                                bestContinuation = max(bestContinuation, continuationScore)
++                            }
++                            if bestContinuation != Int.min { replyScore = bestContinuation }
++                        }
+                     }
+                     worstReply = min(worstReply, replyScore)
+                     if worstReply <= lossScore { break }
+@@ -138,6 +213,16 @@ enum GomokuBot {
+         candidateIndices(in: state, radius: radius).count
+     }
+ 
++    static func coachingHint(beforePlaying index: Int, in state: GomokuState, for player: MiniGamePlayer) -> String {
++        let own: Int8 = player == .host ? 1 : 2
++        let opponent: Int8 = player == .host ? 2 : 1
++        let attack = placementPatternScore(index: index, state: state, value: own)
++        let defend = placementPatternScore(index: index, state: state, value: opponent)
++        if defend >= 8_000 { return "教练提示：这手优先封堵了对方的强威胁，防守判断正确。" }
++        if attack >= 2_000 { return "教练提示：你正在建立强进攻形状；下一手留意对方的反冲。" }
++        return "教练提示：落子后先同时检查自己的活三和对方的冲四。"
++    }
++
+     private static func result(index: Int, score: Int, nodes: Int, started: TimeInterval) -> GomokuBotMove {
+         GomokuBotMove(
+             index: index,
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+index f381fae..aef9056 100644
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -1,6 +1,33 @@
+ import Combine
+ import Foundation
+ 
++enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
++    case relaxed
++    case balanced
++    case advanced
++    case master
++
++    var id: String { rawValue }
++
++    var title: String {
++        switch self {
++        case .relaxed: return "轻松"
++        case .balanced: return "均衡"
++        case .advanced: return "进阶"
++        case .master: return "宗师"
++        }
++    }
++
++    var detail: String {
++        switch self {
++        case .relaxed: return "保留明显容错，适合入门练习"
++        case .balanced: return "稳定策略与本地学习"
++        case .advanced: return "更宽候选、更深反击搜索"
++        case .master: return "设备允许时启用最深离线搜索"
++        }
++    }
++}
++
+ @MainActor
+ final class LocalAIGameController: ObservableObject {
+     enum Outcome: Equatable {
+@@ -25,6 +52,11 @@ final class LocalAIGameController: ObservableObject {
+     @Published private(set) var lastDecisionMode = "基础策略"
+     @Published private(set) var lastDecisionMilliseconds: Int?
+     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
++    @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
++    @Published private(set) var coachProfile: PersonalBoardCoachProfile
++    @Published private(set) var coachTip = "每一步都会沉淀为下一局的本地训练证据。"
++    @Published private(set) var developerTeachingMode = false
++    @Published private(set) var developerFormationCount = 0
+ 
+     let game: MiniGameKind
+     let humanPlayer: MiniGamePlayer = .host
+@@ -33,12 +65,24 @@ final class LocalAIGameController: ObservableObject {
+ 
+     private var aiTask: Task<Void, Never>?
+     private let learningStore: AdaptiveBoardLearningStore
++    private let formationLibrary: DeveloperFormationLibrary?
+     private var learningPlies: [AdaptiveBoardPly] = []
+-
+-    init(game: MiniGameKind, learningStore: AdaptiveBoardLearningStore = .shared) {
++    /// Kept separate from ordinary player history so an owner-authored lesson
++    /// never silently becomes public-player learning evidence.
++    private var developerFormationPlies: [AdaptiveBoardPly] = []
++
++    init(
++        game: MiniGameKind,
++        learningStore: AdaptiveBoardLearningStore? = nil,
++        formationLibrary: DeveloperFormationLibrary? = nil
++    ) {
+         self.game = game
+-        self.learningStore = learningStore
+-        learningSummary = learningStore.summary
++        let resolvedLearningStore = learningStore ?? AdaptiveBoardLearningStore.store(for: game)
++        self.learningStore = resolvedLearningStore
++        self.formationLibrary = formationLibrary
++        learningSummary = resolvedLearningStore.summary
++        coachProfile = resolvedLearningStore.coachProfile(for: game)
++        developerFormationCount = formationLibrary?.lessons.count ?? 0
+         sessionID = UUID().uuidString
+     }
+ 
+@@ -86,6 +130,8 @@ final class LocalAIGameController: ObservableObject {
+         sessionID = UUID().uuidString
+         outcome = .playing
+         isAIThinking = false
++        developerFormationPlies.removeAll(keepingCapacity: true)
++        developerTeachingMode = false
+         lastDecisionMode = "规则 Bot"
+         lastDecisionMilliseconds = nil
+     }
+@@ -94,16 +140,63 @@ final class LocalAIGameController: ObservableObject {
+         guard game == .gomoku, canHumanAct else { return }
+         var state = gomoku
+         let position = AdaptiveBoardPosition.gomoku(state)
++        coachTip = GomokuBot.coachingHint(beforePlaying: index, in: state, for: humanPlayer)
+         guard state.apply(index: index, actor: humanPlayer) else { return }
+         learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: humanPlayer))
+         gomoku = state
+         finishOrScheduleAI()
+     }
+ 
++    func setDeveloperTeachingMode(_ enabled: Bool) {
++        guard game == .gomoku else { return }
++        if enabled, !developerTeachingMode {
++            beginDeveloperFormationRecording()
++            return
++        }
++        developerTeachingMode = enabled
++        if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false }
++    }
++
++    func beginDeveloperFormationRecording() {
++        guard game == .gomoku else { return }
++        finalizeLearning(as: .unfinished)
++        aiTask?.cancel(); aiTask = nil
++        gomoku = GomokuState()
++        outcome = .playing
++        isAIThinking = false
++        sessionID = UUID().uuidString
++        developerFormationPlies.removeAll(keepingCapacity: true)
++        developerTeachingMode = true
++        coachTip = "阵法录制已从空棋盘开始：请依次演示双方的攻防走子。"
++    }
++
++    func developerGomokuMove(_ index: Int) {
++        guard game == .gomoku, developerTeachingMode, outcome == .playing else { return }
++        var state = gomoku
++        let actor = state.currentPlayer
++        let position = AdaptiveBoardPosition.gomoku(state)
++        guard state.apply(index: index, actor: actor) else { return }
++        developerFormationPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: actor))
++        gomoku = state
++        updateOutcome()
++    }
++
++    func captureDeveloperFormation(name: String, purpose: String, objective: String) throws {
++        guard game == .gomoku, let formationLibrary else {
++            throw DeveloperFormationError.invalidLesson
++        }
++        try formationLibrary.capture(name: name, purpose: purpose, objective: objective, plies: developerFormationPlies)
++        developerFormationCount = formationLibrary.lessons.count
++        developerFormationPlies.removeAll(keepingCapacity: true)
++        developerTeachingMode = false
++        coachTip = "已保存开发者阵法：后续同一前缀局面会优先使用你录制的应手。"
++    }
++
+     func humanXiangqiMove(from: Int, to: Int) {
+         guard game == .xiangqi, canHumanAct else { return }
+         var state = xiangqi
+         let position = AdaptiveBoardPosition.xiangqi(state)
++        coachTip = XiangqiBot.coachingHint(beforePlayingFrom: from, to: to, in: state, for: humanPlayer)
+         guard state.apply(from: from, to: to, actor: humanPlayer) else { return }
+         learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: humanPlayer))
+         xiangqi = state
+@@ -163,6 +256,11 @@ final class LocalAIGameController: ObservableObject {
+         tacticalDifficulty = difficulty
+     }
+ 
++    func setBoardDifficulty(_ difficulty: BoardBotDifficulty) {
++        guard game == .gomoku || game == .xiangqi else { return }
++        boardDifficulty = difficulty
++    }
++
+     func setTacticalScenario(_ scenario: TacticalSoloScenario) {
+         guard game == .tactical, tacticalScenario != scenario else { return }
+         tacticalScenario = scenario
+@@ -201,6 +299,8 @@ final class LocalAIGameController: ObservableObject {
+         learningStore.clear()
+         learningPlies.removeAll(keepingCapacity: true)
+         learningSummary = learningStore.summary
++        coachProfile = learningStore.coachProfile(for: game)
++        coachTip = "已清空本地训练档案；下一局将从新的个人棋谱开始。"
+     }
+ 
+     func exportBoardLearning() throws -> URL {
+@@ -211,11 +311,14 @@ final class LocalAIGameController: ObservableObject {
+         let report = try learningStore.importPackage(from: url)
+         learningPlies.removeAll(keepingCapacity: true)
+         learningSummary = learningStore.summary
++        coachProfile = learningStore.coachProfile(for: game)
++        coachTip = "训练包已合并到本地档案；下一局会使用其中的阵法证据。"
+         return report
+     }
+ 
+     private func finishOrScheduleAI() {
+         updateOutcome()
++        guard !developerTeachingMode else { return }
+         guard outcome == .playing else { return }
+         scheduleAIIfNeeded()
+     }
+@@ -286,10 +389,12 @@ final class LocalAIGameController: ObservableObject {
+         switch game {
+         case .gomoku:
+             let snapshot = gomoku
+-            let learning = learningStore.snapshot()
+-            let budget = GomokuBotBudget.standard(
++            let formation = formationLibrary?.influence(for: learningPlies) ?? .empty
++            let learning = learningStore.snapshot(currentPlies: learningPlies).applying(formation)
++            let budget = GomokuBotBudget.forDifficulty(
++                boardDifficulty,
+                 profileLabel: VeilDevicePerformance.current.label
+-            )
++            ).reinforced(by: learning.trainingLevel)
+             let result = await Task.detached(priority: .userInitiated) {
+                 GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
+             }.value
+@@ -297,7 +402,9 @@ final class LocalAIGameController: ObservableObject {
+ 
+             var ruleGate = gomoku
+             guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
+-            lastDecisionMode = "五子棋 Bot"
++            let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
++            let formationLabel = formation.matchedLessonNames.first.map { " · 阵法：\($0)" } ?? ""
++            lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)\(formationLabel)"
+             return AgentActionCandidate(
+                 actionID: "gomoku:\(result.index)",
+                 encodedAction: AgentGameEncoding.encodeInts([result.index]),
+@@ -311,10 +418,12 @@ final class LocalAIGameController: ObservableObject {
+ 
+         case .xiangqi:
+             let snapshot = xiangqi
+-            let learning = learningStore.snapshot()
+-            let budget = XiangqiBotBudget.standard(
++            let formation = formationLibrary?.influence(for: learningPlies) ?? .empty
++            let learning = learningStore.snapshot(currentPlies: learningPlies).applying(formation)
++            let budget = XiangqiBotBudget.forDifficulty(
++                boardDifficulty,
+                 profileLabel: VeilDevicePerformance.current.label
+-            )
++            ).reinforced(by: learning.trainingLevel)
+             let result = await Task.detached(priority: .userInitiated) {
+                 XiangqiBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
+             }.value
+@@ -322,9 +431,12 @@ final class LocalAIGameController: ObservableObject {
+ 
+             var ruleGate = xiangqi
+             guard ruleGate.apply(from: result.from, to: result.to, actor: .guest) else { return nil }
+-            lastDecisionMode = result.completedDepth > 0
+-                ? "象棋 Bot D\(result.completedDepth)"
+-                : "象棋 Bot 快速着"
++            let baseMode = result.completedDepth > 0
++                ? "象棋 · \(boardDifficulty.title) D\(result.completedDepth)"
++                : "象棋 · \(boardDifficulty.title) 快速着"
++            lastDecisionMode = learning.hasSequenceEvidence
++                ? baseMode + " · 训练 Lv\(learning.trainingLevel)"
++                : baseMode
+             return AgentActionCandidate(
+                 actionID: "xiangqi:\(result.from):\(result.to)",
+                 encodedAction: AgentGameEncoding.encodeInts([result.from, result.to]),
+@@ -532,5 +644,14 @@ final class LocalAIGameController: ObservableObject {
+         learningStore.record(game: game, plies: learningPlies, result: result)
+         learningPlies.removeAll(keepingCapacity: true)
+         learningSummary = learningStore.summary
++        coachProfile = learningStore.coachProfile(for: game)
++        switch result {
++        case .humanWon:
++            coachTip = "本局已归档：下一局会提高对你常用成功线路的应对强度。"
++        case .aiWon, .unfinished:
++            coachTip = "本局已归档：教练会保留这条线路，下一次给出更有针对性的练习。"
++        case .draw:
++            coachTip = "本局已归档：平衡局面会用于训练攻守转换。"
++        }
+     }
+ }
+diff --git a/VeilLink/Agent/Games/XiangqiBot.swift b/VeilLink/Agent/Games/XiangqiBot.swift
+index 8a10eb8..667f6dd 100644
+--- a/VeilLink/Agent/Games/XiangqiBot.swift
++++ b/VeilLink/Agent/Games/XiangqiBot.swift
+@@ -25,6 +25,31 @@ struct XiangqiBotBudget: Equatable, Sendable {
+         return XiangqiBotBudget(maxDepth: 5, quiescenceDepth: 2, timeLimitMilliseconds: 280)
+     }
+ 
++    static func forDifficulty(_ difficulty: BoardBotDifficulty, profileLabel: String) -> XiangqiBotBudget {
++        let upper = profileLabel.uppercased()
++        let legacy = upper.contains("SE1") || upper.contains("LEGACY") || upper.contains("IPHONE7")
++        switch difficulty {
++        case .relaxed:
++            return XiangqiBotBudget(maxDepth: 3, quiescenceDepth: 1, timeLimitMilliseconds: legacy ? 120 : 180)
++        case .balanced:
++            return standard(profileLabel: profileLabel)
++        case .advanced:
++            return XiangqiBotBudget(maxDepth: legacy ? 5 : 7, quiescenceDepth: 3, timeLimitMilliseconds: legacy ? 380 : 760)
++        case .master:
++            return XiangqiBotBudget(maxDepth: legacy ? 6 : 9, quiescenceDepth: legacy ? 2 : 4, timeLimitMilliseconds: legacy ? 650 : 1_350)
++        }
++    }
++
++    func reinforced(by trainingLevel: Int) -> XiangqiBotBudget {
++        let reinforcement = max(0, min(8, trainingLevel))
++        guard reinforcement > 0 else { return self }
++        return XiangqiBotBudget(
++            maxDepth: min(10, maxDepth + reinforcement / 3),
++            quiescenceDepth: min(4, quiescenceDepth + reinforcement / 5),
++            timeLimitMilliseconds: min(1_500, timeLimitMilliseconds + reinforcement * 55)
++        )
++    }
++
+     static let deterministicTest = XiangqiBotBudget(
+         maxDepth: 2,
+         quiescenceDepth: 1,
+@@ -112,6 +137,26 @@ enum XiangqiBot {
+                     context: &context
+                 )
+ 
++                let action = "\(move.from):\(move.to)"
++                score += learning.rootAdjustment(action: action)
++
++                // Sequence memory must affect the evaluated result, not merely move
++                // ordering. Replay the player's most likely learned reply so a
++                // repeated formation changes the bot's actual choice.
++                if let prediction = learning.predictedHumanReply(afterAIAction: action) {
++                    let parts = prediction.action.split(separator: ":")
++                    if parts.count == 2,
++                       let from = Int(parts[0]),
++                       let to = Int(parts[1]) {
++                        var forecast = next
++                        if forecast.apply(from: from, to: to, actor: player.opponent) {
++                            let forecastScore = evaluate(forecast, root: player)
++                                - min(360, prediction.evidence * 45)
++                            score = min(score, forecastScore)
++                        }
++                    }
++                }
++
+                 // Repetition is legal but usually undesirable when another close move exists.
+                 if next.currentPositionRepetitionCount >= 2 {
+                     score -= 90
+@@ -157,6 +202,23 @@ enum XiangqiBot {
+         orderedLegalMoves(in: state, actor: actor, learning: .empty).count
+     }
+ 
++    static func coachingHint(
++        beforePlayingFrom from: Int,
++        to: Int,
++        in state: XiangqiState,
++        for player: MiniGamePlayer
++    ) -> String {
++        let isCapture = state.piece(at: to) != nil
++        var next = state
++        guard next.apply(from: from, to: to, actor: player) else {
++            return "教练提示：先确认这步是否符合行棋规则。"
++        }
++        if next.winner == player { return "教练提示：将死线路成立，落子非常准确。" }
++        if next.isInCheck(player: player.opponent) { return "教练提示：这步将军后，观察对方所有应将手段。" }
++        if isCapture { return "教练提示：吃子后别急于进攻，先检查被牵制子力和对方反击。" }
++        return "教练提示：走子展开后，下一回合先检查对方将军、吃子和直接威胁。"
++    }
++
+     private static func search(
+         state: XiangqiState,
+         depth: Int,
+diff --git a/VeilLink/Agent/Integration/AgentToolRouter.swift b/VeilLink/Agent/Integration/AgentToolRouter.swift
+index 6e00d8e..60e1c5c 100644
+--- a/VeilLink/Agent/Integration/AgentToolRouter.swift
++++ b/VeilLink/Agent/Integration/AgentToolRouter.swift
+@@ -22,7 +22,7 @@ enum AgentToolRouter {
+             return .refreshBLE
+         case "/db check", "检查数据库", "检查数据库完整性", "数据库完整性检查":
+             return .databaseIntegrity
+-        case "/a9 status", "a9状态", "查看a9状态", "查看 A9 状态":
++        case "/governance status", "治理状态", "查看治理状态", "/a9 status", "a9状态", "查看a9状态", "查看 A9 状态":
+             return .a9Status
+         case "/agent status", "灵核状态", "查看灵核状态":
+             return .agentStatus
+@@ -38,7 +38,7 @@ enum AgentToolRouter {
+     static let advertisedCommands = [
+         "/ble refresh",
+         "/db check",
+-        "/a9 status",
++        "/governance status",
+         "/agent status",
+         "/game status",
+         "/game move"
+diff --git a/VeilLink/App/AppModel.swift b/VeilLink/App/AppModel.swift
+index fe9a7ae..a86289d 100644
+--- a/VeilLink/App/AppModel.swift
++++ b/VeilLink/App/AppModel.swift
+@@ -55,6 +55,7 @@ final class AppModel: ObservableObject {
+     private var messageRefreshTask: Task<Void, Never>?
+     private var a9RefreshTask: Task<Void, Never>?
+     private var a9PeriodicTask: Task<Void, Never>?
++    private var lastAutomatedIntegrityCheckAt: Date?
+     private var a9Cancellables = Set<AnyCancellable>()
+     private var pendingConversationRefresh = false
+     private var hostForegroundActive = true
+@@ -65,6 +66,7 @@ final class AppModel: ObservableObject {
+     let database: DatabaseStore
+     let identity: IdentityManager
+     let appLock: AppLockController
++    let developerLearningGate: DeveloperLearningLabGate
+     let ownerMode: OwnerModeController
+     let bluetooth: BLETransport
+     let lanTurbo: LANTransport
+@@ -96,6 +98,36 @@ final class AppModel: ObservableObject {
+         }
+     }
+ 
++    var activeGovernanceEngineName: String {
++        kernelRuntime.mode.ultraEvaluationEnabled && !kernelRuntime.mode.a9EvaluationEnabled
++            ? "A10 Ultra Ω"
++            : (kernelRuntime.mode == .dualShadow ? "A9 + A10 Ultra Ω" : "A9")
++    }
++
++    var activeGovernanceHealthText: String {
++        if kernelRuntime.mode.ultraEvaluationEnabled,
++           !kernelRuntime.mode.a9EvaluationEnabled {
++            if let decision = a10Ultra.lastRuntimeSample?.ultraDecision {
++                return "H\(decision.healthScore)"
++            }
++            return "采样中"
++        }
++        return "H\(a9Health.decision.healthScore)"
++    }
++
++    func activeGovernanceStatusText() -> String {
++        if kernelRuntime.mode.ultraEvaluationEnabled,
++           !kernelRuntime.mode.a9EvaluationEnabled {
++            guard let sample = a10Ultra.lastRuntimeSample,
++                  let decision = sample.ultraDecision else {
++                return "A10 Ultra Ω：正在生成首个独立治理样本；A9 冻结值不会作为当前数据展示。"
++            }
++            let budget = sample.ultraBudget?.mode ?? "WAITING"
++            return "A10 Ultra Ω：健康度 \(decision.healthScore)/100，级别 L\(decision.level)，预算 \(budget)，数据库 \(a9Health.databaseIntegrity.title)。"
++        }
++        return "\(activeGovernanceEngineName)：健康度 \(a9Health.decision.healthScore)/100，计算模式 \(computeGovernor.plan.mode.title)，焦点 \(computeGovernor.plan.focus.title)，数据库 \(a9Health.databaseIntegrity.title)。"
++    }
++
+     init(keychain: KeychainStore = KeychainStore(), legalConsent: VeilLegalConsentController? = nil) throws {
+         autoSaveReceivedImages = UserDefaults.standard.bool(forKey: Self.autoSaveReceivedImagesKey)
+         self.keychain = keychain
+@@ -107,6 +139,7 @@ final class AppModel: ObservableObject {
+             try? database.adoptLegacyUnscopedRows(localIdentityID: onlyIdentity.id)
+         }
+         appLock = AppLockController(keychain: keychain)
++        developerLearningGate = DeveloperLearningLabGate(keychain: keychain)
+         ownerMode = OwnerModeController()
+         performanceOverrides = PerformanceOverrideController()
+         bluetooth = BLETransport()
+@@ -323,6 +356,7 @@ final class AppModel: ObservableObject {
+     }
+ 
+     func refreshA9Health() {
++        runAutomatedIntegrityCheckIfNeeded()
+         // A9 must reason about operational links, not every UUID passively observed by scanning.
+         let snapshots = bluetooth.linkSnapshots.values.filter(\.isA9Relevant)
+         let liveQualitySnapshots = snapshots.filter(\.contributesLinkQualityToA9)
+@@ -461,9 +495,30 @@ final class AppModel: ObservableObject {
+     func runA9StorageCheck() {
+         let result = database.integrityCheck().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+         a9Health.setDatabaseIntegrity(result == "ok" ? .ok : .failed)
++        lastAutomatedIntegrityCheckAt = Date()
+         refreshA9Health()
+     }
+ 
++    private func runAutomatedIntegrityCheckIfNeeded(now: Date = Date()) {
++        if let lastAutomatedIntegrityCheckAt,
++           now.timeIntervalSince(lastAutomatedIntegrityCheckAt) < 6 * 60 * 60 {
++            return
++        }
++        lastAutomatedIntegrityCheckAt = now
++        let result = database.integrityCheck()
++            .trimmingCharacters(in: .whitespacesAndNewlines)
++            .lowercased()
++        let integrity: VeilA9DatabaseIntegrity = result == "ok" ? .ok : .failed
++        a9Health.setDatabaseIntegrity(integrity)
++        if integrity == .failed {
++            DiagnosticLogStore.shared.log(
++                .error,
++                .storage,
++                event: "governance.integrity_check.failed"
++            )
++        }
++    }
++
+     func clearUserRequestedCaches() {
+         database.clearTransientCaches()
+         sessions.clearTransientCaches()
+@@ -645,6 +700,7 @@ final class AppModel: ObservableObject {
+         agent.handleBackground()
+         appLock.lock()
+         ownerMode.lock()
++        developerLearningGate.lock()
+     }
+ 
+     func createInitialProfile(name: String, password: String, pin: String) -> Bool {
+@@ -856,6 +912,7 @@ final class AppModel: ObservableObject {
+         _ = suspendCommunicationStack(reason: "正在恢复备份")
+         defer {
+             if accessed { url.stopAccessingSecurityScopedResource() }
++            VeilImportedFileAccess.removeStagedCopy(url)
+             if identity.activeIdentity != nil { start() }
+         }
+         do {
+@@ -1077,7 +1134,7 @@ final class AppModel: ObservableObject {
+             result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "本地 SQLite 完整性检查已执行：\(a9Health.databaseIntegrity.title)。没有读取或回显聊天正文。")
+ 
+         case .a9Status:
+-            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: "A9：健康度 \(a9Health.decision.healthScore)/100，计算模式 \(computeGovernor.plan.mode.title)，焦点 \(computeGovernor.plan.focus.title)，数据库 \(a9Health.databaseIntegrity.title)。")
++            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: activeGovernanceStatusText())
+ 
+         case .agentStatus:
+             result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: "灵核运行时：\(agent.runtimeManifest?.displayName ?? LocalTextModelRuntimeFactory.backendName)，状态 \(agent.runtimeState.displayName)；游戏引擎 Native Bot；Control Plane V3 / AutoTune \(agentControls.autoRegulationMode.title)。")
+diff --git a/VeilLink/App/VeilAppLifecycleCoordinator.swift b/VeilLink/App/VeilAppLifecycleCoordinator.swift
+index c98167c..cc2be57 100644
+--- a/VeilLink/App/VeilAppLifecycleCoordinator.swift
++++ b/VeilLink/App/VeilAppLifecycleCoordinator.swift
+@@ -58,6 +58,7 @@ final class VeilAppLifecycleCoordinator: ObservableObject {
+                 model.handleBackgroundTransition()
+                 model.appLock.lock()
+                 model.ownerMode.lock()
++                model.developerLearningGate.lock()
+             case .handleMemoryPressure:
+                 VeilBackgroundContinuityCenter.shared.handleMemoryPressure()
+                 model.handleMemoryPressure()
+diff --git a/VeilLink/Core/Models.swift b/VeilLink/Core/Models.swift
+index 941df12..d80c208 100644
+--- a/VeilLink/Core/Models.swift
++++ b/VeilLink/Core/Models.swift
+@@ -102,11 +102,13 @@ struct OwnerCapability: OptionSet, Codable, Hashable {
+     static let protocolTuning = OwnerCapability(rawValue: 1 << 1)
+     static let groupModeration = OwnerCapability(rawValue: 1 << 2)
+     static let visualEffects = OwnerCapability(rawValue: 1 << 3)
++    static let developerTraining = OwnerCapability(rawValue: 1 << 4)
+ 
+     static let safeDefault: OwnerCapability = [
+         .diagnostics,
+         .protocolTuning,
+         .groupModeration,
+-        .visualEffects
++        .visualEffects,
++        .developerTraining
+     ]
+ }
+diff --git a/VeilLink/Core/VeilImportedFileAccess.swift b/VeilLink/Core/VeilImportedFileAccess.swift
+new file mode 100644
+index 0000000..fcb855a
+--- /dev/null
++++ b/VeilLink/Core/VeilImportedFileAccess.swift
+@@ -0,0 +1,129 @@
++import Foundation
++
++enum VeilImportedFileAccessError: LocalizedError {
++    case unsupportedExtension(expected: [String])
++    case inaccessible
++    case coordinationFailed(String)
++    case cancelled
++
++    var errorDescription: String? {
++        switch self {
++        case .unsupportedExtension(let expected):
++            return "文件类型不受支持，请选择：\(expected.joined(separator: "、"))。"
++        case .inaccessible:
++            return "无法读取所选文件。请确认文件已从 iCloud 或第三方文件提供商下载完成。"
++        case .coordinationFailed(let detail):
++            return "文件提供商没有完成导入：\(detail)"
++        case .cancelled:
++            return "已取消文件导入。"
++        }
++    }
++}
++
++/// Converts a short-lived security-scoped provider URL into an app-owned local
++/// copy while the picker grant is still active. This also asks NSFileCoordinator
++/// to download iCloud/third-party placeholders before the callback returns.
++enum VeilImportedFileAccess {
++    private static let stagingFolderName = "VeilLink-Import-Staging"
++    private static let copyChunkBytes = 1_024 * 1_024
++
++    /// Runs provider coordination and the potentially large local copy away from
++    /// the SwiftUI callback. Cancellation is checked between chunks, so a 200 MiB
++    /// backup or a large image does not monopolise the main thread.
++    static func materializeInBackground(
++        _ sourceURL: URL,
++        acceptedExtensions: Set<String> = []
++    ) async throws -> URL {
++        let worker = Task.detached(priority: .userInitiated) {
++            try materialize(sourceURL, acceptedExtensions: acceptedExtensions)
++        }
++        return try await withTaskCancellationHandler(
++            operation: { try await worker.value },
++            onCancel: { worker.cancel() }
++        )
++    }
++
++    static func materialize(
++        _ sourceURL: URL,
++        acceptedExtensions: Set<String> = []
++    ) throws -> URL {
++        let normalizedExtensions = Set(acceptedExtensions.map { $0.lowercased() })
++        if !normalizedExtensions.isEmpty,
++           !normalizedExtensions.contains(sourceURL.pathExtension.lowercased()) {
++            throw VeilImportedFileAccessError.unsupportedExtension(
++                expected: normalizedExtensions.sorted()
++            )
++        }
++
++        let granted = sourceURL.startAccessingSecurityScopedResource()
++        defer {
++            if granted { sourceURL.stopAccessingSecurityScopedResource() }
++        }
++
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent(stagingFolderName, isDirectory: true)
++            .appendingPathComponent(UUID().uuidString, isDirectory: true)
++        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
++        let destination = root.appendingPathComponent(sourceURL.lastPathComponent)
++
++        var coordinationError: NSError?
++        var copyError: Error?
++        var copied = false
++        let coordinator = NSFileCoordinator()
++        coordinator.coordinate(
++            readingItemAt: sourceURL,
++            options: [.withoutChanges],
++            error: &coordinationError
++        ) { readableURL in
++            do {
++                try copyCancellableFile(from: readableURL, to: destination)
++                copied = true
++            } catch is CancellationError {
++                copyError = VeilImportedFileAccessError.cancelled
++            } catch {
++                copyError = error
++            }
++        }
++
++        if let coordinationError {
++            try? FileManager.default.removeItem(at: root)
++            throw VeilImportedFileAccessError.coordinationFailed(
++                coordinationError.localizedDescription
++            )
++        }
++        if let copyError {
++            try? FileManager.default.removeItem(at: root)
++            throw copyError
++        }
++        guard copied, FileManager.default.isReadableFile(atPath: destination.path) else {
++            try? FileManager.default.removeItem(at: root)
++            throw VeilImportedFileAccessError.inaccessible
++        }
++        return destination
++    }
++
++    static func removeStagedCopy(_ url: URL) {
++        guard url.path.contains("/\(stagingFolderName)/") else { return }
++        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
++    }
++
++    private static func copyCancellableFile(from source: URL, to destination: URL) throws {
++        if Task.isCancelled { throw CancellationError() }
++        guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
++            throw VeilImportedFileAccessError.inaccessible
++        }
++        let input = try FileHandle(forReadingFrom: source)
++        let output = try FileHandle(forWritingTo: destination)
++        defer {
++            try? input.close()
++            try? output.close()
++        }
++
++        while true {
++            if Task.isCancelled { throw CancellationError() }
++            let chunk = try input.read(upToCount: copyChunkBytes) ?? Data()
++            if chunk.isEmpty { return }
++            try output.write(contentsOf: chunk)
++        }
++    }
++}
+diff --git a/VeilLink/Resources/Info.plist b/VeilLink/Resources/Info.plist
+index b211ffc..e26266b 100644
+--- a/VeilLink/Resources/Info.plist
++++ b/VeilLink/Resources/Info.plist
+@@ -22,6 +22,10 @@
+ 	<string>$(CURRENT_PROJECT_VERSION)</string>
+ 	<key>LSRequiresIPhoneOS</key>
+ 	<true/>
++	<key>LSSupportsOpeningDocumentsInPlace</key>
++	<true/>
++	<key>UIFileSharingEnabled</key>
++	<true/>
+ 	<key>NSBluetoothAlwaysUsageDescription</key>
+ 	<string>VeilLink 使用蓝牙发现附近设备并传输端到端加密消息。</string>
+ 	<key>NSBluetoothPeripheralUsageDescription</key>
+diff --git a/VeilLink/Security/DeveloperLearningLabGate.swift b/VeilLink/Security/DeveloperLearningLabGate.swift
+new file mode 100644
+index 0000000..ca6f764
+--- /dev/null
++++ b/VeilLink/Security/DeveloperLearningLabGate.swift
+@@ -0,0 +1,155 @@
++import CryptoKit
++import Foundation
++
++/// Local authorization for developer-only board-training imports. The visible
++/// input is an eight-digit PIN, but it is never stored in plaintext: a high-cost
++/// verifier, device-local 256-bit secret and short-lived HMAC session capability
++/// are all required before a training package may be injected.
++@MainActor
++final class DeveloperLearningLabGate: ObservableObject {
++    @Published private(set) var isConfigured: Bool
++    @Published private(set) var isAuthorized = false
++    @Published private(set) var failedAttempts = 0
++    @Published private(set) var authorizationExpiresAt: Date?
++    @Published var errorMessage: String?
++
++    private struct LockoutState: Codable {
++        var failedAttempts: Int
++        var lockedUntil: Date?
++    }
++
++    private enum Key {
++        static let verifier = "board.developer-lab.verifier.v1"
++        static let deviceSecret = "board.developer-lab.device-secret.v1"
++        static let lockout = "board.developer-lab.lockout.v1"
++    }
++
++    private let keychain: KeychainStore
++    private let encoder = JSONEncoder()
++    private let decoder = JSONDecoder()
++    private var sessionCapability: Data?
++    private var lockedUntil: Date?
++
++    init(keychain: KeychainStore) {
++        self.keychain = keychain
++        isConfigured = keychain.data(for: Key.verifier) != nil && keychain.data(for: Key.deviceSecret)?.count == 32
++        if let data = keychain.data(for: Key.lockout),
++           let state = try? decoder.decode(LockoutState.self, from: data),
++           let deadline = state.lockedUntil,
++           deadline > Date() {
++            failedAttempts = state.failedAttempts
++            lockedUntil = deadline
++        } else {
++            keychain.remove(Key.lockout)
++        }
++    }
++
++    var isLockedOut: Bool {
++        refreshExpiration()
++        return lockedUntil.map { $0 > Date() } ?? false
++    }
++
++    /// Initial setup requires the existing application lock to be configured and
++    /// currently unlocked. This keeps a passer-by from claiming the developer
++    /// gate on a fresh install.
++    func configure(pin: String, appLock: AppLockController) -> Bool {
++        guard appLock.isEnabled, !appLock.isLocked else {
++            errorMessage = "请先启用并解锁应用锁，才能初始化开发者训练密钥。"
++            return false
++        }
++        guard Self.isEightDigitPIN(pin) else {
++            errorMessage = "请输入 8 位数字开发者口令。"
++            return false
++        }
++        do {
++            let verifier = PasswordKDF.makeVerifier(pin, iterations: 240_000)
++            let deviceSecret = PasswordKDF.randomData(count: 32)
++            guard deviceSecret.count == 32 else { throw DeveloperLearningLabGateError.keyGeneration }
++            try keychain.set(try encoder.encode(verifier), for: Key.verifier)
++            try keychain.set(deviceSecret, for: Key.deviceSecret)
++            isConfigured = true
++            clearLockout()
++            return establishSession(using: deviceSecret)
++        } catch {
++            errorMessage = "开发者训练密钥无法保存。"
++            return false
++        }
++    }
++
++    func unlock(pin: String) -> Bool {
++        refreshExpiration()
++        guard !isLockedOut else {
++            errorMessage = "尝试次数过多，请在 \(Int(lockedUntil!.timeIntervalSinceNow.rounded(.up))) 秒后重试。"
++            return false
++        }
++        guard Self.isEightDigitPIN(pin),
++              let verifierData = keychain.data(for: Key.verifier),
++              let verifier = try? decoder.decode(PasswordKDF.Verifier.self, from: verifierData),
++              let deviceSecret = keychain.data(for: Key.deviceSecret),
++              deviceSecret.count == 32,
++              PasswordKDF.verify(pin, against: verifier) else {
++            registerFailure()
++            return false
++        }
++        clearLockout()
++        return establishSession(using: deviceSecret)
++    }
++
++    func lock() {
++        sessionCapability = nil
++        authorizationExpiresAt = nil
++        isAuthorized = false
++    }
++
++    func canImportTraining() -> Bool {
++        refreshExpiration()
++        return isAuthorized && sessionCapability?.count == 32
++    }
++
++    private func establishSession(using deviceSecret: Data) -> Bool {
++        let nonce = PasswordKDF.randomData(count: 32)
++        guard nonce.count == 32 else {
++            errorMessage = "无法生成本次开发者会话。"
++            return false
++        }
++        let capability = HMAC<SHA256>.authenticationCode(for: nonce, using: SymmetricKey(data: deviceSecret))
++        sessionCapability = Data(capability)
++        authorizationExpiresAt = Date().addingTimeInterval(10 * 60)
++        isAuthorized = true
++        errorMessage = nil
++        return true
++    }
++
++    private func refreshExpiration() {
++        if let expiry = authorizationExpiresAt, expiry <= Date() { lock() }
++        if let deadline = lockedUntil, deadline <= Date() { clearLockout() }
++    }
++
++    private func registerFailure() {
++        failedAttempts += 1
++        if failedAttempts >= 8 { lockedUntil = Date().addingTimeInterval(10 * 60) }
++        else if failedAttempts >= 5 { lockedUntil = Date().addingTimeInterval(60) }
++        persistLockout()
++        errorMessage = "开发者口令不正确。"
++    }
++
++    private func persistLockout() {
++        if let data = try? encoder.encode(LockoutState(failedAttempts: failedAttempts, lockedUntil: lockedUntil)) {
++            try? keychain.set(data, for: Key.lockout)
++        }
++    }
++
++    private func clearLockout() {
++        failedAttempts = 0
++        lockedUntil = nil
++        keychain.remove(Key.lockout)
++    }
++
++    private static func isEightDigitPIN(_ pin: String) -> Bool {
++        pin.utf8.count == 8 && pin.utf8.allSatisfy { (48...57).contains($0) }
++    }
++}
++
++private enum DeveloperLearningLabGateError: Error {
++    case keyGeneration
++}
+diff --git a/VeilLink/UI/AgentControlCenterView.swift b/VeilLink/UI/AgentControlCenterView.swift
+index 6b1a32d..11dfe5f 100644
+--- a/VeilLink/UI/AgentControlCenterView.swift
++++ b/VeilLink/UI/AgentControlCenterView.swift
+@@ -4,6 +4,8 @@ import UIKit
+ struct AgentControlCenterView: View {
+     @ObservedObject var model: AppModel
+     @ObservedObject var controls: AgentControlCenterSettings
++    @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
++    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
+ 
+     @State private var showsExperimentalCoreConfirmation = false
+     @State private var showsResetConfirmation = false
+@@ -12,6 +14,8 @@ struct AgentControlCenterView: View {
+     init(model: AppModel) {
+         self.model = model
+         controls = model.agentControls
++        kernelRuntime = model.kernelRuntime
++        a10Ultra = model.a10Ultra
+     }
+ 
+     var body: some View {
+@@ -58,7 +62,7 @@ struct AgentControlCenterView: View {
+                         .foregroundColor(VeilTheme.mutedGold)
+                     Text("灵核 · 双脑控制")
+                         .font(.system(.title3, design: .rounded).weight(.semibold))
+-                    Text("Qwen Runtime + MaleCNS/VFLY + A9")
++                    Text("Qwen Runtime + MaleCNS/VFLY + \(model.activeGovernanceEngineName)")
+                         .font(.caption)
+                         .foregroundColor(VeilTheme.secondaryText)
+                 }
+@@ -67,7 +71,7 @@ struct AgentControlCenterView: View {
+                     Text(model.agent.runtimeState.displayName)
+                         .font(.system(size: 10, weight: .bold, design: .monospaced))
+                         .foregroundColor(runtimeColor)
+-                    Text("H\(model.a9Health.decision.healthScore)")
++                    Text(model.activeGovernanceHealthText)
+                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                         .foregroundColor(VeilTheme.gold)
+                 }
+@@ -79,7 +83,7 @@ struct AgentControlCenterView: View {
+             }
+             HStack(spacing: 8) {
+                 metric("GAME", "Native Bot")
+-                metric("A9", model.computeGovernor.plan.mode.title)
++                metric(model.activeGovernanceEngineName, model.activeGovernanceHealthText)
+             }
+         }
+         .veilCard(emphasized: true)
+@@ -208,7 +212,7 @@ struct AgentControlCenterView: View {
+             sectionHeader("Local Control Plane", icon: "switch.2")
+             detailRow("命令总线", "VeilAppControlCommand")
+             detailRow("BLE", "状态 / 队列 / 刷新 / 启停")
+-            detailRow("系统", "A9 / 缓存 / 性能 / 数据库")
++            detailRow("系统", "\(model.activeGovernanceEngineName) / 缓存 / 性能 / 数据库")
+             detailRow("调度", "自动 / 通信 / 灵核 / 游戏")
+             detailRow("诊断", controls.allowDiagnosticsExport ? "状态 / 可导出" : "状态 / 导出关闭")
+ 
+@@ -231,7 +235,7 @@ struct AgentControlCenterView: View {
+             detailRow("导航", "对话 / 附近 / 游戏 / 灵核 / 设置")
+             detailRow("本地动作", controls.localToolMutationsEnabled ? "允许" : "关闭")
+             detailRow("建议着法执行", controls.allowSuggestedGameMoveExecution ? "允许" : "仅建议")
+-            Text("Control Plane V3 增加 AutoTune：可基于温控、A9 与 BLE 队列自动做安全调度。自动执行白名单只有焦点切换、临时缓存清理和 BLE 刷新；权限提升、数据删除、密钥导出、代发消息与远程设备控制仍不在控制面中。")
++            Text("Control Plane V3 的 AutoTune 会基于温控、当前治理核与 BLE 队列自动做安全调度。自动执行白名单只有焦点切换、临时缓存清理和 BLE 刷新；权限提升、数据删除、密钥导出、代发消息与远程设备控制仍不在控制面中。")
+                 .font(.caption)
+                 .foregroundColor(VeilTheme.secondaryText)
+         }
+@@ -240,7 +244,7 @@ struct AgentControlCenterView: View {
+ 
+     private var resourceCard: some View {
+         VStack(alignment: .leading, spacing: 12) {
+-            sectionHeader("A9 与资源", icon: "gauge.with.dots.needle.67percent")
++            sectionHeader("\(model.activeGovernanceEngineName) 与资源", icon: "gauge.with.dots.needle.67percent")
+             HStack(spacing: 8) {
+                 metric("模式", model.computeGovernor.plan.mode.title)
+                 metric("焦点", model.computeGovernor.plan.focus.title)
+@@ -267,7 +271,7 @@ struct AgentControlCenterView: View {
+             .buttonStyle(.bordered)
+             .tint(VeilTheme.gold)
+ 
+-            Text("A9 仍会覆盖不安全的算力请求，并优先保留 BLE/传输预算；这里不会绕过温控或 iOS 后台限制。")
++            Text("\(model.activeGovernanceEngineName) 会执行当前治理预算并优先保留 BLE/传输资源；这里不会绕过温控或 iOS 后台限制。")
+                 .font(.caption2)
+                 .foregroundColor(VeilTheme.tertiaryText)
+         }
+@@ -278,34 +282,8 @@ struct AgentControlCenterView: View {
+         VStack(alignment: .leading, spacing: 12) {
+             sectionHeader("诊断", icon: "stethoscope")
+ 
+-            Button {
+-                model.runA9StorageCheck()
+-                model.haptics.selection()
+-            } label: {
+-                HStack {
+-                    Label("数据库完整性自检", systemImage: "externaldrive.badge.checkmark")
+-                    Spacer()
+-                    Text(model.a9Health.databaseIntegrity.title)
+-                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+-                        .foregroundColor(VeilTheme.gold)
+-                }
+-            }
+-            .buttonStyle(VeilPressStyle())
+-
+-            Button {
+-                model.bluetooth.refreshLinks()
+-                model.refreshA9Health()
+-                model.haptics.selection()
+-            } label: {
+-                HStack {
+-                    Label("刷新 BLE 链路", systemImage: "antenna.radiowaves.left.and.right")
+-                    Spacer()
+-                    Text("\(model.bluetooth.connectedPeerCount) LINK")
+-                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+-                        .foregroundColor(VeilTheme.gold)
+-                }
+-            }
+-            .buttonStyle(VeilPressStyle())
++            detailRow("数据库巡检", model.a9Health.databaseIntegrity.title)
++            detailRow("链路治理", "\(model.bluetooth.connectedPeerCount) LINK · 后台自动采样")
+ 
+             Button {
+                 UIPasteboard.general.string = model.agentDiagnosticsReport()
+diff --git a/VeilLink/UI/AgentHomeView.swift b/VeilLink/UI/AgentHomeView.swift
+index ef5437f..f8d25c3 100644
+--- a/VeilLink/UI/AgentHomeView.swift
++++ b/VeilLink/UI/AgentHomeView.swift
+@@ -12,7 +12,7 @@ struct AgentHomeView: View {
+ 
+     var body: some View {
+         VStack(spacing: 10) {
+-            AgentStatusView(coordinator: model.agent)
++            AgentStatusView(model: model)
+                 .veilStaggeredEntrance(index: 0)
+             AgentControlSummaryView(model: model, controls: controls)
+                 .veilStaggeredEntrance(index: 1)
+@@ -50,9 +50,7 @@ struct AgentHomeView: View {
+                     Button("运行诊断") { showDiagnostics = true }
+                     Button("刷新蓝牙链路") { model.agent.send("/ble refresh") }
+                         .disabled(!controls.localToolMutationsEnabled)
+-                    Button("检查数据库完整性") { model.agent.send("/db check") }
+-                        .disabled(!controls.localToolMutationsEnabled)
+-                    Button("查看 A9 状态") { model.agent.send("/a9 status") }
++                    Button("查看治理状态") { model.agent.send("/governance status") }
+                     Button("查看灵核运行状态") { model.agent.send("/agent status") }
+                     if model.agent.isGenerating {
+                         Button("停止生成", role: .destructive) { model.agent.stopGeneration() }
+@@ -173,8 +171,8 @@ private struct AgentQuickToolsView: View {
+                 }
+                 .opacity(controls.localToolMutationsEnabled ? 1 : 0.45)
+                 .disabled(!controls.localToolMutationsEnabled)
+-                quickButton("A9", icon: "gauge.with.dots.needle.50percent") {
+-                    model.agent.send("/a9 status")
++                quickButton(model.activeGovernanceEngineName, icon: "gauge.with.dots.needle.50percent") {
++                    model.agent.send("/governance status")
+                 }
+                 quickButton("对局", icon: "gamecontroller") {
+                     model.agent.send("请分析当前对局。只基于本机提供的合法候选动作给建议；如果没有当前对局就直接说明。")
+diff --git a/VeilLink/UI/AgentStatusView.swift b/VeilLink/UI/AgentStatusView.swift
+index f01d136..653487e 100644
+--- a/VeilLink/UI/AgentStatusView.swift
++++ b/VeilLink/UI/AgentStatusView.swift
+@@ -1,7 +1,17 @@
+ import SwiftUI
+ 
+ struct AgentStatusView: View {
++    @ObservedObject var model: AppModel
+     @ObservedObject var coordinator: AgentCoordinator
++    @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
++    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
++
++    init(model: AppModel) {
++        self.model = model
++        coordinator = model.agent
++        kernelRuntime = model.kernelRuntime
++        a10Ultra = model.a10Ultra
++    }
+ 
+     private var stateColor: Color {
+         switch coordinator.runtimeState {
+@@ -60,7 +70,7 @@ struct AgentStatusView: View {
+             }
+ 
+             HStack(spacing: 8) {
+-                AgentStatusChip(title: "A9", value: coordinator.computePlan.mode.title)
++                AgentStatusChip(title: model.activeGovernanceEngineName, value: model.activeGovernanceHealthText)
+                 AgentStatusChip(title: "MODEL", value: LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled ? "GGUF" : "NONE")
+             }
+         }
+diff --git a/VeilLink/UI/BoardDeveloperLearningLabView.swift b/VeilLink/UI/BoardDeveloperLearningLabView.swift
+new file mode 100644
+index 0000000..264f87d
+--- /dev/null
++++ b/VeilLink/UI/BoardDeveloperLearningLabView.swift
+@@ -0,0 +1,179 @@
++import SwiftUI
++import UniformTypeIdentifiers
++
++/// Separate developer-only entrance for injecting reviewed board-learning
++/// packages. Ordinary players can play, learn and export their own history, but
++/// cannot import a package into the active repertoire from the public game UI.
++struct BoardDeveloperLearningLabView: View {
++    @ObservedObject var model: AppModel
++    @ObservedObject var controller: LocalAIGameController
++    let game: MiniGameKind
++
++    @State private var showsImporter = false
++    @State private var message: String?
++    @State private var preparingImport = false
++    @State private var formationName = ""
++    @State private var formationPurpose = ""
++    @State private var formationObjective = ""
++
++    private var gate: DeveloperLearningLabGate { model.developerLearningGate }
++
++    var body: some View {
++        ScrollView {
++            VStack(alignment: .leading, spacing: 14) {
++                header
++                if gate.isAuthorized {
++                    authorizedContent
++                } else {
++                    lockedContent
++                }
++            }
++            .padding(16)
++        }
++        .background(VeilAmbientBackground())
++        .navigationTitle("开发者学习室")
++        .navigationBarTitleDisplayMode(.inline)
++        .fileImporter(
++            isPresented: $showsImporter,
++            allowedContentTypes: [.item],
++            allowsMultipleSelection: false
++        ) { result in
++            guard case .success(let urls) = result, let selectedURL = urls.first else { return }
++            guard gate.canImportTraining() else {
++                message = "开发者会话已失效，请重新验证。"
++                return
++            }
++            preparingImport = true
++            Task {
++                defer { preparingImport = false }
++                do {
++                    let file = try await VeilImportedFileAccess.materializeInBackground(
++                        selectedURL,
++                        acceptedExtensions: ["json"]
++                    )
++                    defer { VeilImportedFileAccess.removeStagedCopy(file) }
++                    let report = try controller.importBoardLearning(from: file)
++                    message = "已写入\(game.title)开发训练：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
++                    model.haptics.resolved()
++                } catch {
++                    message = error.localizedDescription
++                }
++            }
++        }
++        .alert("开发者学习室", isPresented: Binding(
++            get: { message != nil },
++            set: { if !$0 { message = nil } }
++        )) {
++            Button("好", role: .cancel) { message = nil }
++        } message: {
++            Text(message ?? "")
++        }
++    }
++
++    private var header: some View {
++        VStack(alignment: .leading, spacing: 6) {
++            Label("\(game.title) · 私有训练入口", systemImage: "lock.shield")
++                .font(.headline)
++                .foregroundColor(VeilTheme.goldBright)
++            Text("可审阅后导入训练包，也可从空棋盘录制私有阵法。普通对局仍会本地学习，但公开游戏页不提供训练包注入，避免外部文件污染个人棋谱。")
++                .font(.caption)
++                .foregroundColor(VeilTheme.secondaryText)
++        }
++        .veilCard(emphasized: true)
++    }
++
++    @ViewBuilder
++    private var lockedContent: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            Label("开发者模式未授权", systemImage: "lock.fill")
++                .font(.subheadline.weight(.bold))
++                .foregroundColor(VeilTheme.secondaryText)
++            Text("请先在上帝模式的“开发者模式”中完成验证。训练包注入不会在普通游戏页提供密码输入或初始化入口。")
++                .font(.caption)
++                .foregroundColor(VeilTheme.secondaryText)
++        }
++        .veilCard()
++    }
++
++    private var authorizedContent: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            HStack {
++                Label("本地开发者会话有效", systemImage: "checkmark.shield")
++                    .font(.subheadline.weight(.bold))
++                    .foregroundColor(VeilTheme.success)
++                Spacer()
++                Button("锁定") { gate.lock() }
++                    .font(.caption.weight(.semibold))
++            }
++            Text("训练包会先走系统“文件”选择器、安全作用域暂存与校验，再写入当前\(game.title)独立训练库。不会上传网络。")
++                .font(.caption)
++                .foregroundColor(VeilTheme.secondaryText)
++            formationRecorder
++            Button {
++                showsImporter = true
++            } label: {
++                Label(preparingImport ? "正在准备训练包…" : "从“文件”App 导入训练包", systemImage: "square.and.arrow.down")
++            }
++            .buttonStyle(.borderedProminent)
++            .disabled(preparingImport)
++        }
++        .veilCard()
++    }
++
++    private var formationRecorder: some View {
++        VStack(alignment: .leading, spacing: 9) {
++            Divider().background(VeilTheme.hairline)
++            Text("阵法录制与教学")
++                .font(.subheadline.weight(.bold))
++            Text("开启录制会从空棋盘新开一条示范线；返回棋盘后可依次替双方落子来演示攻防，再回到这里为线路命名并解释用途。保存后，Bot 遇到相同前缀会优先采用你录制的电脑应手。")
++                .font(.caption)
++                .foregroundColor(VeilTheme.secondaryText)
++            Toggle("录制模式：手动演示双方走子", isOn: Binding(
++                get: { controller.developerTeachingMode },
++                set: { controller.setDeveloperTeachingMode($0) }
++            ))
++            .font(.caption.weight(.semibold))
++            TextField("阵法名称，例如：中心活三防守", text: $formationName)
++                .textInputAutocapitalization(.never)
++                .padding(10)
++                .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
++            TextEditor(text: $formationPurpose)
++                .frame(minHeight: 62)
++                .padding(6)
++                .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
++                .overlay(alignment: .topLeading) {
++                    if formationPurpose.isEmpty {
++                        Text("阵法用途：它要防什么、制造什么威胁？")
++                            .font(.caption)
++                            .foregroundColor(VeilTheme.tertiaryText)
++                            .padding(.horizontal, 11).padding(.vertical, 14)
++                            .allowsHitTesting(false)
++                    }
++                }
++            TextField("训练目的，例如：优先封堵对方冲四", text: $formationObjective)
++                .padding(10)
++                .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
++            Button("保存当前录制阵法") {
++                do {
++                    try controller.captureDeveloperFormation(
++                        name: formationName,
++                        purpose: formationPurpose,
++                        objective: formationObjective
++                    )
++                    formationName = ""
++                    formationPurpose = ""
++                    formationObjective = ""
++                    model.haptics.resolved()
++                    message = "阵法已保存。后续同一局面前缀会将你录制的电脑应手作为高优先级训练。"
++                } catch {
++                    message = error.localizedDescription
++                }
++            }
++            .buttonStyle(.bordered)
++            Label("已保存 \(controller.developerFormationCount) 条私有阵法", systemImage: "point.3.connected.trianglepath.dotted")
++                .font(.caption2)
++                .foregroundColor(VeilTheme.goldBright)
++        }
++        .padding(.top, 2)
++    }
++}
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+index 40ae5b1..93d46b5 100644
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -789,8 +789,15 @@ struct ChatView: View {
+         ) { result in
+             switch result {
+             case .success(let urls):
+-                if let url = urls.first {
+-                    prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: false))
++                if let selectedURL = urls.first {
++                    Task {
++                        do {
++                            let url = try await VeilImportedFileAccess.materializeInBackground(selectedURL)
++                            prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: true))
++                        } catch {
++                            model.alertMessage = error.localizedDescription
++                        }
++                    }
+                 }
+             case .failure(let error):
+                 model.alertMessage = error.localizedDescription
+diff --git a/VeilLink/UI/DeveloperModeConsoleView.swift b/VeilLink/UI/DeveloperModeConsoleView.swift
+new file mode 100644
+index 0000000..0d1e4a1
+--- /dev/null
++++ b/VeilLink/UI/DeveloperModeConsoleView.swift
+@@ -0,0 +1,114 @@
++import SwiftUI
++
++/// The developer stratum of Owner Mode. It exposes only VeilLink's own
++/// read-only runtime map and separately unlocks controlled training injection;
++/// it does not bypass iOS privacy prompts, the sandbox, encryption or other
++/// users' locks.
++struct DeveloperModeConsoleView: View {
++    @ObservedObject var model: AppModel
++    @ObservedObject private var ownerMode: OwnerModeController
++    @ObservedObject private var gate: DeveloperLearningLabGate
++    @Environment(\.dismiss) private var dismiss
++    @State private var pin = ""
++    @State private var message: String?
++
++    init(model: AppModel) {
++        self.model = model
++        ownerMode = model.ownerMode
++        gate = model.developerLearningGate
++    }
++
++    var body: some View {
++        ScrollView {
++            VStack(alignment: .leading, spacing: 14) {
++                Text("DEVELOPER STRATUM")
++                    .font(.system(.headline, design: .monospaced))
++                    .foregroundColor(VeilTheme.goldBright)
++                Text("Owner Mode 的开发者层。只开放 VeilLink 自身的受控训练入口和只读运行时观测；系统隐私授权、沙盒、端到端加密与应用锁边界保持不变。")
++                    .font(.caption)
++                    .foregroundColor(VeilTheme.secondaryText)
++                runtimeMap
++                authorizationCard
++            }
++            .padding(16)
++        }
++        .background(VeilAmbientBackground())
++        .navigationTitle("开发者模式")
++        .navigationBarTitleDisplayMode(.inline)
++        .onAppear {
++            guard ownerMode.isAuthorized(for: .developerTraining) else { dismiss() }
++        }
++        .alert("开发者模式", isPresented: Binding(
++            get: { message != nil },
++            set: { if !$0 { message = nil } }
++        )) {
++            Button("好", role: .cancel) { message = nil }
++        } message: {
++            Text(message ?? "")
++        }
++    }
++
++    private var runtimeMap: some View {
++        VStack(alignment: .leading, spacing: 8) {
++            Text("LIVE RUNTIME MAP · READ ONLY")
++                .font(.system(.caption, design: .monospaced).weight(.bold))
++                .foregroundColor(VeilTheme.gold)
++            runtimeRow("棋谱训练", value: "独立本地 JSON · 写入受开发者门保护")
++            runtimeRow("五子棋搜索", value: "威胁评估 + 训练强化候选")
++            runtimeRow("中国象棋搜索", value: "Alpha-Beta + 安静搜索 + 训练预判")
++            runtimeRow("治理运行时", value: model.activeGovernanceEngineName)
++            runtimeRow("隐私边界", value: "iOS 授权与应用沙盒仍生效")
++        }
++        .veilCard()
++    }
++
++    private var authorizationCard: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            if gate.isAuthorized {
++                Label("开发者训练已授权", systemImage: "checkmark.shield.fill")
++                    .font(.subheadline.weight(.bold))
++                    .foregroundColor(VeilTheme.success)
++                Text("五子棋页面已显示“开发训练室”；本次授权在离开应用、Owner Mode 退出或十分钟后失效。")
++                    .font(.caption)
++                    .foregroundColor(VeilTheme.secondaryText)
++                Button("锁定开发者训练") { gate.lock() }
++                    .buttonStyle(.bordered)
++            } else {
++                Text(gate.isConfigured ? "验证开发者口令" : "初始化开发者口令")
++                    .font(.subheadline.weight(.bold))
++                Text(gate.isConfigured
++                    ? "输入仅你知道的 8 位数字口令。明文不会保存；设备 Keychain 会保存高成本验证器和随机设备秘密。"
++                    : "首次仅能在已开启的 Owner Mode 中设置。请自选 8 位数字口令；不要发送给任何人。")
++                    .font(.caption)
++                    .foregroundColor(VeilTheme.secondaryText)
++                SecureField("8 位数字口令", text: $pin)
++                    .keyboardType(.numberPad)
++                    .textContentType(.oneTimeCode)
++                    .font(.system(.body, design: .monospaced))
++                    .padding(11)
++                    .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
++                Button(gate.isConfigured ? "验证并开启" : "初始化本机密钥") {
++                    let success = gate.isConfigured
++                        ? gate.unlock(pin: pin)
++                        : gate.configure(pin: pin, appLock: model.appLock)
++                    if success {
++                        pin = ""
++                        model.haptics.resolved()
++                    }
++                    if let error = gate.errorMessage { message = error }
++                }
++                .buttonStyle(.borderedProminent)
++                .disabled(pin.count != 8)
++            }
++        }
++        .veilCard(emphasized: true)
++    }
++
++    private func runtimeRow(_ title: String, value: String) -> some View {
++        HStack(alignment: .firstTextBaseline) {
++            Text(title).font(.caption.weight(.semibold)).foregroundColor(VeilTheme.text)
++            Spacer()
++            Text(value).font(.caption2.monospaced()).foregroundColor(VeilTheme.secondaryText).multilineTextAlignment(.trailing)
++        }
++    }
++}
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+index 7c19021..28dbe99 100644
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -15,7 +15,8 @@ struct GameLobbyView: View {
+                 hero.veilStaggeredEntrance(index: 0)
+                 singlePlayerSection.veilStaggeredEntrance(index: 1)
+                 realtimeArcadeSection.veilStaggeredEntrance(index: 2)
+-                nearbySection.veilStaggeredEntrance(index: 3)
++                interactiveStorySection.veilStaggeredEntrance(index: 3)
++                nearbySection.veilStaggeredEntrance(index: 4)
+             }
+         }
+         .background(VeilAmbientBackground())
+@@ -85,12 +86,12 @@ struct GameLobbyView: View {
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+             NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
+-                gameRow(.gomoku, detail: "你执黑先手 · 威胁识别 + 候选搜索 + 规则校验", enabled: true)
++                gameRow(.gomoku, detail: "你执黑先手 · 四档棋力 · 个性化本地陪练", enabled: true)
+             }
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+             NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
+-                gameRow(.xiangqi, detail: "你执红先手 · Alpha-Beta + 局面评估 + 规则校验", enabled: true)
++                gameRow(.xiangqi, detail: "你执红先手 · 四档棋力 · 自学习阵法预判", enabled: true)
+             }
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+@@ -99,8 +100,8 @@ struct GameLobbyView: View {
+             }
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+-            NavigationLink(destination: LocalAIGameView(model: model, game: .tactical)) {
+-                gameRow(.tactical, detail: "你执曹军先行 · 离线训练策略 + 补给与目标评估", enabled: true)
++            NavigationLink(destination: TacticalV2SoloView(model: model)) {
++                gameRow(.tactical, detail: "48×27 官渡大战场 · 战争迷雾 · 补给 · 袁军实时行动", enabled: true)
+             }
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+@@ -192,6 +193,29 @@ struct GameLobbyView: View {
+                 realtimeGameRow(title: "霓虹节拍", detail: "节拍闪避 · 连击得分 · 超载冲刺", motif: .pulse, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilRhythmR6NativeGameView()) {
++                realtimeGameRow(title: "实时节奏远征", detail: "SpriteKit 实时判定 · 原生渲染 · 自适应画质", motif: .pulse, badge: "2D")
++            }
++            .buttonStyle(.plain)
++            NavigationLink(destination: LatticeClashLabView()) {
++                realtimeGameRow(title: "晶格冲突", detail: "确定性单机策略 · 连锁占领 · 本地 Bot", motif: .circuit, badge: "策略")
++            }
++            .buttonStyle(.plain)
++        }
++    }
++
++    private var interactiveStorySection: some View {
++        VStack(alignment: .leading, spacing: 10) {
++            sectionTitle("互动剧情", subtitle: "剧情与游戏归入大厅，不再藏在工具箱")
++            NavigationLink(destination: VeilStoryLabView()) {
++                realtimeGameRow(
++                    title: "故事实验室",
++                    detail: "原生分支叙事 · 多结局 · 完全离线",
++                    motif: .comet,
++                    badge: "剧情"
++                )
++            }
++            .buttonStyle(.plain)
+         }
+     }
+ 
+@@ -271,6 +295,8 @@ struct GameLobbyView: View {
+ 
+ struct LocalAIGameView: View {
+     @ObservedObject var model: AppModel
++    @ObservedObject private var ownerMode: OwnerModeController
++    @ObservedObject private var developerLearningGate: DeveloperLearningLabGate
+     let game: MiniGameKind
+     @StateObject private var controller: LocalAIGameController
+     @State private var selectedXiangqiIndex: Int?
+@@ -284,8 +310,15 @@ struct LocalAIGameView: View {
+ 
+     init(model: AppModel, game: MiniGameKind) {
+         self.model = model
++        ownerMode = model.ownerMode
++        developerLearningGate = model.developerLearningGate
+         self.game = game
+-        _controller = StateObject(wrappedValue: LocalAIGameController(game: game))
++        _controller = StateObject(wrappedValue: LocalAIGameController(
++            game: game,
++            formationLibrary: game == .gomoku
++                ? DeveloperFormationLibrary(game: game, keychain: model.keychain)
++                : nil
++        ))
+     }
+ 
+     var body: some View {
+@@ -332,6 +365,9 @@ struct LocalAIGameView: View {
+             controller.cancelAI()
+             model.agent.setComputeFocus(.idle)
+         }
++        .onChange(of: developerLearningGate.isAuthorized) { authorized in
++            if !authorized { controller.setDeveloperTeachingMode(false) }
++        }
+         .sheet(isPresented: $showsTacticalGuide) {
+             TacticalSoloGuideView()
+         }
+@@ -342,16 +378,25 @@ struct LocalAIGameView: View {
+         }
+         .fileImporter(
+             isPresented: $showsLearningImporter,
+-            allowedContentTypes: [.json],
++            allowedContentTypes: [.item],
+             allowsMultipleSelection: false
+         ) { result in
+-            guard case .success(let urls) = result, let url = urls.first else { return }
+-            do {
+-                let report = try controller.importBoardLearning(from: url)
+-                learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
+-                model.haptics.selection()
+-            } catch {
+-                learningExchangeMessage = error.localizedDescription
++            guard game == .xiangqi,
++                  case .success(let urls) = result,
++                  let selectedURL = urls.first else { return }
++            Task {
++                do {
++                    let url = try await VeilImportedFileAccess.materializeInBackground(
++                        selectedURL,
++                        acceptedExtensions: ["json"]
++                    )
++                    defer { VeilImportedFileAccess.removeStagedCopy(url) }
++                    let report = try controller.importBoardLearning(from: url)
++                    learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
++                    model.haptics.selection()
++                } catch {
++                    learningExchangeMessage = error.localizedDescription
++                }
+             }
+         }
+         .alert(
+@@ -425,10 +470,57 @@ struct LocalAIGameView: View {
+                     .font(.caption.weight(.semibold))
+                     .foregroundColor(VeilTheme.secondaryText)
+             }
+-            Text("每局自动记住你的走法，并把常见应对加入下一局搜索。最近 40 局保留完整棋谱，更早对局压缩为长期走法权重；全程离线，存储上限 512 KB。")
++            Text("五子棋与中国象棋分别建库；每一局和每个合法局面都会保留。重复阵法会按走子序列预测你的下一步，并把输局与中断局反馈到下一局决策。全程离线，不设固定局面或容量上限，仅受设备可用空间约束。")
+                 .font(.caption)
+                 .foregroundColor(VeilTheme.secondaryText)
+                 .fixedSize(horizontal: false, vertical: true)
++            HStack(spacing: 8) {
++                Label(controller.boardDifficulty.title, systemImage: "slider.horizontal.3")
++                    .font(.caption.weight(.semibold))
++                    .foregroundColor(VeilTheme.goldBright)
++                Text(controller.boardDifficulty.detail)
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.secondaryText)
++                Spacer(minLength: 0)
++                Menu {
++                    ForEach(BoardBotDifficulty.allCases) { difficulty in
++                        Button {
++                            controller.setBoardDifficulty(difficulty)
++                            model.haptics.selection()
++                        } label: {
++                            if difficulty == controller.boardDifficulty {
++                                Label(difficulty.title, systemImage: "checkmark")
++                            } else {
++                                Text(difficulty.title)
++                            }
++                        }
++                    }
++                } label: {
++                    Image(systemName: "chevron.up.chevron.down")
++                        .font(.caption.weight(.bold))
++                        .foregroundColor(VeilTheme.goldBright)
++                }
++            }
++            .padding(9)
++            .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
++            VStack(alignment: .leading, spacing: 3) {
++                Text(controller.coachProfile.levelText + " · " + controller.coachProfile.preferredOpening)
++                    .font(.caption.weight(.semibold))
++                    .foregroundColor(VeilTheme.text)
++                Text(controller.coachProfile.nextLesson)
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.secondaryText)
++                Text(controller.coachProfile.reviewFocus)
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .fixedSize(horizontal: false, vertical: true)
++                Text(controller.coachTip)
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.goldBright)
++                    .fixedSize(horizontal: false, vertical: true)
++            }
++            .padding(9)
++            .background(VeilTheme.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+             HStack(spacing: 10) {
+                 Button {
+                     do {
+@@ -442,12 +534,24 @@ struct LocalAIGameView: View {
+                 }
+                 .buttonStyle(.bordered)
+ 
+-                Button {
+-                    showsLearningImporter = true
+-                } label: {
+-                    Label("导入增强包", systemImage: "square.and.arrow.down")
++                if game == .gomoku {
++                    if ownerMode.isAuthorized(for: .developerTraining),
++                       developerLearningGate.canImportTraining() {
++                        NavigationLink(destination: BoardDeveloperLearningLabView(
++                            model: model,
++                            controller: controller,
++                            game: game
++                        )) {
++                            Label("开发训练室", systemImage: "lock.shield")
++                        }
++                        .buttonStyle(.bordered)
++                    }
++                } else {
++                    Button { showsLearningImporter = true } label: {
++                        Label("从“文件”导入", systemImage: "square.and.arrow.down")
++                    }
++                    .buttonStyle(.bordered)
+                 }
+-                .buttonStyle(.bordered)
+             }
+             .font(.caption.weight(.semibold))
+             if !controller.learningStoreAvailable {
+@@ -463,8 +567,22 @@ struct LocalAIGameView: View {
+     private var board: some View {
+         switch game {
+         case .gomoku:
+-            GomokuBoardView(state: controller.gomoku, localPlayer: .host, enabled: controller.canHumanAct) { index in
+-                controller.humanGomokuMove(index)
++            GomokuBoardView(
++                state: controller.gomoku,
++                localPlayer: .host,
++                enabled: controller.canHumanAct || (
++                    controller.developerTeachingMode
++                        && ownerMode.isAuthorized(for: .developerTraining)
++                        && developerLearningGate.canImportTraining()
++                )
++            ) { index in
++                if controller.developerTeachingMode,
++                   ownerMode.isAuthorized(for: .developerTraining),
++                   developerLearningGate.canImportTraining() {
++                    controller.developerGomokuMove(index)
++                } else {
++                    controller.humanGomokuMove(index)
++                }
+                 model.haptics.impact()
+             }
+         case .xiangqi:
+diff --git a/VeilLink/UI/OnboardingView.swift b/VeilLink/UI/OnboardingView.swift
+index 9d1265f..edd8e5f 100644
+--- a/VeilLink/UI/OnboardingView.swift
++++ b/VeilLink/UI/OnboardingView.swift
+@@ -90,7 +90,7 @@ struct OnboardingView: View {
+                 Button {
+                     showsImporter = true
+                 } label: {
+-                    Label("从加密备份恢复", systemImage: "arrow.counterclockwise.circle")
++                    Label("从 Apple“文件”App 恢复", systemImage: "arrow.counterclockwise.circle")
+                         .font(.body.weight(.medium))
+                         .frame(maxWidth: .infinity)
+                         .padding(.vertical, 13)
+@@ -115,11 +115,20 @@ struct OnboardingView: View {
+             .frame(maxWidth: .infinity)
+         }
+         .background(VeilAmbientBackground())
+-        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
++        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.item]) { result in
+             switch result {
+-            case .success(let url):
+-                restoreURL = url
+-                showsRestorePassword = true
++            case .success(let selectedURL):
++                Task {
++                    do {
++                        restoreURL = try await VeilImportedFileAccess.materializeInBackground(
++                            selectedURL,
++                            acceptedExtensions: ["zip"]
++                        )
++                        showsRestorePassword = true
++                    } catch {
++                        model.alertMessage = error.localizedDescription
++                    }
++                }
+             case .failure(let error):
+                 model.alertMessage = "无法选择备份：\(error.localizedDescription)"
+             }
+diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.swift
+index f6ae543..e86afad 100644
+--- a/VeilLink/UI/OwnerConsoleView.swift
++++ b/VeilLink/UI/OwnerConsoleView.swift
+@@ -56,6 +56,8 @@ struct OwnerConsoleView: View {
+     @ObservedObject var diagnostics: DiagnosticLogStore
+     @ObservedObject var telemetry: DeepTelemetry
+     @ObservedObject var stressTest: DeviceStressTestController
++    @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
++    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
+     @Environment(\.dismiss) private var dismiss
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+     @State private var scanProgress: Double = 0
+@@ -71,6 +73,8 @@ struct OwnerConsoleView: View {
+         diagnostics = DiagnosticLogStore.shared
+         telemetry = DeepTelemetry.shared
+         stressTest = DeviceStressTestController.shared
++        kernelRuntime = model.kernelRuntime
++        a10Ultra = model.a10Ultra
+     }
+ 
+     var body: some View {
+@@ -79,9 +83,11 @@ struct OwnerConsoleView: View {
+                 VStack(alignment: .leading, spacing: 16) {
+                     consoleHeader
+                     diagnosticCard
++                    governanceRuntimeCard
+                     deepTelemetryCard
+                     deviceStressCard
+                     capabilityCard
++                    developerModeCard
+                     performanceOverrideCard
+                     easterEggCard
+                     Text("权限边界：Owner Mode 不读取消息正文、不导出私钥、不绕过其他用户的应用锁。")
+@@ -178,6 +184,64 @@ struct OwnerConsoleView: View {
+         .veilCard()
+     }
+ 
++    private var developerModeCard: some View {
++        let enabled = ownerMode.isAuthorized(for: .developerTraining)
++        return NavigationLink(destination: DeveloperModeConsoleView(model: model)) {
++            HStack(spacing: 12) {
++                Image(systemName: "hammer.fill")
++                    .foregroundColor(enabled ? VeilTheme.goldBright : VeilTheme.secondaryText)
++                VStack(alignment: .leading, spacing: 3) {
++                    Text("DEVELOPER MODE")
++                        .font(.system(.subheadline, design: .monospaced).weight(.bold))
++                        .foregroundColor(VeilTheme.text)
++                    Text("上帝模式内的受控训练与运行时观测入口")
++                        .font(.caption)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++                Spacer()
++                Image(systemName: "chevron.right").font(.caption).foregroundColor(VeilTheme.secondaryText)
++            }
++            .padding(12)
++            .background(VeilTheme.subtleFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
++        }
++        .buttonStyle(.plain)
++        .disabled(!enabled)
++        .veilCard()
++    }
++
++    private var governanceRuntimeCard: some View {
++        let sample = a10Ultra.lastRuntimeSample
++        let decision = sample?.ultraDecision
++        let budget = sample?.ultraBudget
++        return VStack(alignment: .leading, spacing: 12) {
++            HStack {
++                Text("GOVERNANCE RUNTIME")
++                    .font(.system(.subheadline, design: .monospaced))
++                    .foregroundColor(VeilTheme.gold)
++                Spacer()
++                Text(kernelRuntime.mode.title)
++                    .font(.caption2.monospaced())
++                    .foregroundColor(VeilTheme.goldBright)
++            }
++            consoleRow("Authority", value: kernelRuntime.mode.productionAuthority)
++            consoleRow("A9 / A10", value: "\(kernelRuntime.mode.a9EvaluationEnabled ? "ON" : "OFF") / \(kernelRuntime.mode.ultraEvaluationEnabled ? "ON" : "OFF")")
++            consoleRow("Mode samples", value: "\(kernelRuntime.currentModeSampleCount)")
++            if kernelRuntime.mode.ultraEvaluationEnabled {
++                consoleRow("A10 sample", value: sample.map { String($0.sampleID.prefix(8)).uppercased() } ?? "WAITING")
++                consoleRow("A10 health", value: decision.map { "\($0.light) · L\($0.level) · H\($0.healthScore)" } ?? "等待首个独立样本")
++                consoleRow("A10 budget", value: budget.map { "\($0.mode) · CPU \($0.cpuPct)% · GAME \($0.gamePct)%" } ?? "--")
++                consoleRow("A10 backend", value: sample?.runtimeBackend ?? "--")
++            }
++            if let reason = kernelRuntime.lastFallbackReason {
++                consoleRow("Fallback", value: reason)
++            }
++            Text("只读实时面板。诊断、完整性与压力采样由运行时自动调度；这里不再要求用户代替治理核执行检测。")
++                .font(.caption2)
++                .foregroundColor(VeilTheme.tertiaryText)
++        }
++        .veilCard(emphasized: kernelRuntime.mode.ultraEvaluationEnabled)
++    }
++
+ 
+     private var deepTelemetryCard: some View {
+         VStack(alignment: .leading, spacing: 13) {
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+index f4b3a0a..f2b1f34 100644
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -10,6 +10,8 @@ struct SettingsView: View {
+     @ObservedObject var bluetooth: BLETransport
+     @ObservedObject var a9Health: VeilA9HealthMonitor
+     @ObservedObject var computeGovernor: VeilA9ComputeGovernor
++    @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
++    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
+     @ObservedObject var agentControls: AgentControlCenterSettings
+     @ObservedObject var internetRelay: InternetRelayTransport
+     @ObservedObject var legalConsent: VeilLegalConsentController
+@@ -40,6 +42,8 @@ struct SettingsView: View {
+         bluetooth = model.bluetooth
+         a9Health = model.a9Health
+         computeGovernor = model.computeGovernor
++        kernelRuntime = model.kernelRuntime
++        a10Ultra = model.a10Ultra
+         agentControls = model.agentControls
+         internetRelay = model.internetRelay
+         legalConsent = model.legalConsent
+@@ -116,10 +120,18 @@ struct SettingsView: View {
+                 model.exportBackup(password: password)
+             }
+         }
+-        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
+-            if case .success(let url) = result {
+-                restoreURL = url
+-                showsRestorePassword = true
++        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.item]) { result in
++            guard case .success(let selectedURL) = result else { return }
++            Task {
++                do {
++                    restoreURL = try await VeilImportedFileAccess.materializeInBackground(
++                        selectedURL,
++                        acceptedExtensions: ["zip"]
++                    )
++                    showsRestorePassword = true
++                } catch {
++                    model.alertMessage = error.localizedDescription
++                }
+             }
+         }
+         .sheet(isPresented: $showsRestorePassword) {
+@@ -444,11 +456,11 @@ struct SettingsView: View {
+                 }
+             }.buttonStyle(VeilPressStyle())
+             Divider().background(VeilTheme.hairline)
+-            settingButton(title: "导出加密ZIP", detail: "保存到文件或分享", icon: "square.and.arrow.up") {
++            settingButton(title: "导出加密ZIP", detail: "保存到 Apple“文件”App 或分享", icon: "square.and.arrow.up") {
+                 showsBackupSheet = true
+             }
+             Divider().background(VeilTheme.hairline)
+-            settingButton(title: "恢复备份", detail: "导入身份、对话与附件", icon: "arrow.counterclockwise") {
++            settingButton(title: "恢复备份", detail: "从 Apple“文件”App 选择加密 ZIP", icon: "arrow.counterclockwise") {
+                 showsImporter = true
+             }
+             HStack {
+@@ -458,20 +470,12 @@ struct SettingsView: View {
+                     .font(.system(.caption, design: .monospaced))
+                     .foregroundColor(a9DatabaseColor)
+             }
+-            Button {
+-                model.runA9StorageCheck()
+-                haptics.selection()
+-            } label: {
+-                HStack {
+-                    Image(systemName: "checkmark.shield")
+-                    Text("运行本地完整性自检")
+-                    Spacer()
+-                    Text("A9")
+-                        .font(VeilType.terminalLabel)
+-                        .foregroundColor(VeilTheme.mutedGold)
+-                }
+-            }
+-            .buttonStyle(VeilPressStyle())
++            Label(
++                "由 \(model.activeGovernanceEngineName) 自动巡检；失败时写入黑匣子并提示",
++                systemImage: "checkmark.shield"
++            )
++            .font(.caption)
++            .foregroundColor(VeilTheme.secondaryText)
+         }
+         .veilCard()
+     }
+@@ -789,42 +793,75 @@ struct SettingsView: View {
+ 
+     private var a9HealthCard: some View {
+         let decision = a9Health.decision
++        let usesUltra = kernelRuntime.mode == .a10Independent || kernelRuntime.mode == .a10OnlyLab
++        let ultraDecision = a10Ultra.lastRuntimeSample?.ultraDecision
++        let ultraBudget = a10Ultra.lastRuntimeSample?.ultraBudget
++        let engineName = usesUltra ? "A10 Ultra Ω" : "A9"
++        let shownLevel = usesUltra ? (ultraDecision.map { "L\($0.level)" } ?? "--") : decision.level.shortTitle
++        let shownHealth = usesUltra ? (ultraDecision.map { String($0.healthScore) } ?? "--") : String(decision.healthScore)
++        let shownLight = usesUltra ? (ultraDecision?.light ?? "等待首个样本") : decision.light.title
++        let shownRisk = usesUltra ? (ultraDecision.map { String(format: "%.0f", Double($0.riskBasisPoints) / 100) } ?? "--") : String(format: "%.0f", decision.riskPoints)
++        let shownPersistence = usesUltra ? (ultraDecision.map { "\($0.persistenceSeconds)s" } ?? "--") : "\(decision.persistenceRuns)"
++        let shownCell = usesUltra ? (ultraDecision.map { "\($0.latticeCell)" } ?? "--") : "\(decision.latticeIndex)"
+         return VStack(alignment: .leading, spacing: 12) {
+             HStack(spacing: 10) {
+                 Circle()
+-                    .fill(a9LightColor)
++                    .fill(usesUltra ? VeilTheme.goldBright : a9LightColor)
+                     .frame(width: 9, height: 9)
+                 VStack(alignment: .leading, spacing: 2) {
+-                    Text("A9 健康晶格")
++                    Text("\(engineName) 健康治理")
+                         .font(VeilType.cardTitle)
+                         .foregroundColor(VeilTheme.goldBright)
+-                    Text("本地采集 · 144 状态裁决 · Advisory Only")
++                    Text(usesUltra ? "独立采样 · 实时裁决 · A9 本轮不参与" : "本地采集 · 144 状态裁决 · Advisory Only")
+                         .font(.caption2)
+                         .foregroundColor(VeilTheme.secondaryText)
+                 }
+                 Spacer()
+-                Text("\(decision.level.shortTitle) · H\(decision.healthScore)")
++                Text("\(shownLevel) · H\(shownHealth)")
+                     .font(.system(size: 11, weight: .bold, design: .monospaced))
+-                    .foregroundColor(a9LightColor)
++                    .foregroundColor(usesUltra ? VeilTheme.goldBright : a9LightColor)
+             }
+ 
+             HStack(spacing: 8) {
+-                a9Metric(title: "状态", value: decision.light.title)
+-                a9Metric(title: "风险", value: String(format: "%.0f", decision.riskPoints))
+-                a9Metric(title: "持续", value: "\(decision.persistenceRuns)")
+-                a9Metric(title: "CELL", value: "\(decision.latticeIndex)")
++                a9Metric(title: "状态", value: shownLight)
++                a9Metric(title: "风险", value: shownRisk)
++                a9Metric(title: "持续", value: shownPersistence)
++                a9Metric(title: "CELL", value: shownCell)
+             }
+ 
+ 
+-            let compute = computeGovernor.plan
+-            HStack(spacing: 8) {
+-                a9Metric(title: "算力", value: compute.mode.title)
+-                a9Metric(title: "FLY预算", value: compute.maleCNS.tier.rawValue.uppercased())
+-                a9Metric(title: "BLE保留", value: "\(compute.transportReserveUnits)")
+-                a9Metric(title: "视觉", value: "\(compute.vision.sampleIntervalMilliseconds)ms")
++            if usesUltra {
++                HStack(spacing: 8) {
++                    a9Metric(title: "算力", value: ultraBudget?.mode ?? "采样中")
++                    a9Metric(title: "CPU", value: ultraBudget.map { "\($0.cpuPct)%" } ?? "--")
++                    a9Metric(title: "传输保留", value: ultraBudget.map { "\($0.transportReservePct)%" } ?? "--")
++                    a9Metric(title: "视觉", value: ultraBudget.map { "\($0.visionPct)%" } ?? "--")
++                }
++            } else {
++                let compute = computeGovernor.plan
++                HStack(spacing: 8) {
++                    a9Metric(title: "算力", value: compute.mode.title)
++                    a9Metric(title: "FLY预算", value: compute.maleCNS.tier.rawValue.uppercased())
++                    a9Metric(title: "BLE保留", value: "\(compute.transportReserveUnits)")
++                    a9Metric(title: "视觉", value: "\(compute.vision.sampleIntervalMilliseconds)ms")
++                }
+             }
+ 
+-            if decision.issues.isEmpty {
++            if usesUltra {
++                if let ultraDecision, !ultraDecision.issues.isEmpty {
++                    VStack(alignment: .leading, spacing: 5) {
++                        ForEach(Array(ultraDecision.issues.prefix(4)), id: \.code) { issue in
++                            Text("\(issue.severity) · \(issue.source) · \(issue.code)")
++                                .font(.caption.monospaced())
++                                .foregroundColor(VeilTheme.secondaryText)
++                        }
++                    }
++                } else {
++                    Text(ultraDecision == nil ? "A10 Ultra Ω 正在生成首个独立样本…" : "A10 Ultra Ω 当前没有需要裁决的异常。")
++                        .font(.caption)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++            } else if decision.issues.isEmpty {
+                 Text("当前没有需要裁决的异常。A9 不会主动断链、删数据或修改游戏状态。")
+                     .font(.caption)
+                     .foregroundColor(VeilTheme.secondaryText)
+@@ -849,14 +886,9 @@ struct SettingsView: View {
+             }
+ 
+             HStack(spacing: 10) {
+-                Button {
+-                    model.refreshA9Health()
+-                    haptics.selection()
+-                } label: {
+-                    Label("重新采样", systemImage: "waveform.path.ecg")
+-                }
+-                .buttonStyle(.bordered)
+-                .tint(VeilTheme.gold)
++                Label("后台自动采样", systemImage: "waveform.path.ecg")
++                    .font(.caption.weight(.semibold))
++                    .foregroundColor(VeilTheme.secondaryText)
+ 
+                 Button {
+                     UIPasteboard.general.string = model.a9DiagnosticsReport()
+@@ -864,13 +896,15 @@ struct SettingsView: View {
+                     haptics.selection()
+                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { diagnosticsCopied = false }
+                 } label: {
+-                    Label(diagnosticsCopied ? "已复制" : "复制 A9 诊断", systemImage: diagnosticsCopied ? "checkmark.circle.fill" : "doc.on.doc")
++                    Label(diagnosticsCopied ? "已复制" : "复制 \(engineName) 诊断", systemImage: diagnosticsCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                 }
+                 .buttonStyle(.bordered)
+                 .tint(VeilTheme.gold)
+             }
+ 
+-            Text("A9 继续负责算力治理；MaleCNS、VFLY、Qwen 与 llama 实验历史仍保存在仓库中，但未进入 Core 默认发行包。")
++            Text(usesUltra
++                ? "当前卡片直接读取 A10 Ultra Ω 的实时决策与预算；A9 冻结值不会冒充当前数据。"
++                : "当前卡片读取 A9 的实时决策与预算；切换 A10 后会自动改用 A10 数据源。")
+                 .font(.caption2)
+                 .foregroundColor(VeilTheme.tertiaryText)
+         }
+diff --git a/VeilLink/UI/TacticalV2/TacticalLandscapeShellV2.swift b/VeilLink/UI/TacticalV2/TacticalLandscapeShellV2.swift
+index 6ff3705..13fbeb6 100644
+--- a/VeilLink/UI/TacticalV2/TacticalLandscapeShellV2.swift
++++ b/VeilLink/UI/TacticalV2/TacticalLandscapeShellV2.swift
+@@ -16,6 +16,7 @@ struct TacticalLandscapeShellV2: View {
+     @State private var zoom: Double = 0.82
+     @State private var routePlanner = TacticalV2.RouteDragPlannerV2()
+     @State private var routePreview: TacticalV2.RoutePlanV2?
++    @State private var showsCompactCommandPanel = false
+ 
+ 
+     private var objectiveDefinitions: [TacticalV2.ObjectiveDefinitionV2] {
+@@ -66,19 +67,49 @@ struct TacticalLandscapeShellV2: View {
+             topBar
+             Divider().opacity(0.18)
+ 
+-            HStack(spacing: 0) {
+-                battlefield
+-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
++            GeometryReader { proxy in
++                if proxy.size.width >= 700 {
++                    HStack(spacing: 0) {
++                        battlefield
++                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+ 
+-                commandSidebar
+-                    .frame(width: 276)
++                        commandSidebar
++                            .frame(width: 276)
++                    }
++                } else {
++                    battlefield
++                        .frame(maxWidth: .infinity, maxHeight: .infinity)
++                        .overlay(alignment: .topTrailing) {
++                            Button {
++                                showsCompactCommandPanel = true
++                            } label: {
++                                Label("指挥", systemImage: "flag.checkered")
++                                    .font(.caption.weight(.semibold))
++                            }
++                            .buttonStyle(.borderedProminent)
++                            .tint(Color(red: 0.68, green: 0.51, blue: 0.22))
++                            .padding(10)
++                        }
++                }
+             }
+ 
+             Divider().opacity(0.18)
+             overlayBar
+         }
+         .background(Color(red: 0.055, green: 0.052, blue: 0.046))
+-        .preferredColorScheme(.dark)
++        .sheet(isPresented: $showsCompactCommandPanel) {
++            NavigationView {
++                commandSidebar
++                    .navigationTitle("战役指挥")
++                    .navigationBarTitleDisplayMode(.inline)
++                    .toolbar {
++                        ToolbarItem(placement: .confirmationAction) {
++                            Button("完成") { showsCompactCommandPanel = false }
++                        }
++                    }
++            }
++            .accentColor(Color(red: 0.90, green: 0.73, blue: 0.35))
++        }
+     }
+ 
+     private var topBar: some View {
+diff --git a/VeilLink/UI/TacticalV2/TacticalV2LaunchGateView.swift b/VeilLink/UI/TacticalV2/TacticalV2LaunchGateView.swift
+index add2fe7..30752da 100644
+--- a/VeilLink/UI/TacticalV2/TacticalV2LaunchGateView.swift
++++ b/VeilLink/UI/TacticalV2/TacticalV2LaunchGateView.swift
+@@ -81,7 +81,7 @@ struct TacticalV2LaunchGateView: View {
+         detail: String,
+         enabled: Bool
+     ) -> some View {
+-        VStack(spacing: 8) {
++        VStack(spacing: 14) {
+             HStack(spacing: 8) {
+                 ProgressView()
+                     .controlSize(.small)
+@@ -96,15 +96,15 @@ struct TacticalV2LaunchGateView: View {
+                 Spacer()
+             }
+             .padding(.horizontal, 12)
+-
+-            TacticalBoardView(
+-                state: legacyState,
+-                localPlayer: session.localPlayer,
+-                enabled: enabled,
+-                onMove: onLegacyMove,
+-                onPass: onLegacyPass
++            Label(
++                "小战场入口已停用；本局只会进入 48×27 大战场。",
++                systemImage: "map.fill"
+             )
+-            .padding(.horizontal, 10)
++            .font(.caption.weight(.semibold))
++            .foregroundColor(VeilTheme.goldBright)
++            .padding(14)
++            .frame(maxWidth: .infinity)
++            .veilCard(emphasized: true)
+         }
+     }
+ 
+diff --git a/VeilLink/UI/TacticalV2/TacticalV2SoloView.swift b/VeilLink/UI/TacticalV2/TacticalV2SoloView.swift
+new file mode 100644
+index 0000000..91b104f
+--- /dev/null
++++ b/VeilLink/UI/TacticalV2/TacticalV2SoloView.swift
+@@ -0,0 +1,212 @@
++import SwiftUI
++
++/// Offline entry for the original 48×27 Guandu campaign map. It deliberately
++/// bypasses the legacy 7×9 compatibility board used by LocalAIGameView.
++struct TacticalV2SoloView: View {
++    @ObservedObject var model: AppModel
++
++    @State private var map: TacticalV2.Map?
++    @State private var truth: TacticalV2.TruthStateV2?
++    @State private var redacted: TacticalV2.RedactedTacticalViewV2?
++    @State private var supplyField: TacticalV2.SupplyFieldV1?
++    @State private var intelMemory = TacticalV2.IntelMemoryV2()
++    @State private var visibilityCache = TacticalV2.VisibilityCacheV2()
++    @State private var sessionID = UUID().uuidString
++    @State private var statusText = "正在装载 48×27 官渡战场…"
++    @State private var errorText: String?
++
++    var body: some View {
++        Group {
++            if let map, let truth, let redacted {
++                TacticalLandscapeShellV2(
++                    map: map,
++                    redacted: redacted,
++                    supplyField: supplyField,
++                    simulationTurn: truth.simulationTurn,
++                    onSubmitOrder: resolvePlayerOrder
++                )
++            } else if let errorText {
++                VStack(spacing: 14) {
++                    Image(systemName: "exclamationmark.triangle.fill")
++                        .font(.largeTitle)
++                        .foregroundColor(VeilTheme.danger)
++                    Text("大战场载入失败").font(.headline)
++                    Text(errorText)
++                        .font(.caption)
++                        .foregroundColor(VeilTheme.secondaryText)
++                    Button("重新载入") { restart() }
++                        .buttonStyle(.borderedProminent)
++                        .tint(VeilTheme.gold)
++                }
++                .padding(24)
++            } else {
++                ProgressView(statusText)
++            }
++        }
++        .background(VeilTheme.background.ignoresSafeArea())
++        .navigationTitle("三国兵器 · 官渡大战场")
++        .navigationBarTitleDisplayMode(.inline)
++        .toolbar {
++            ToolbarItem(placement: .navigationBarTrailing) {
++                Button("重开") { restart() }
++            }
++        }
++        .safeAreaInset(edge: .bottom) {
++            Text(statusText)
++                .font(.caption2.monospaced())
++                .foregroundColor(VeilTheme.secondaryText)
++                .frame(maxWidth: .infinity)
++                .padding(.vertical, 5)
++                .background(VeilTheme.panel.opacity(0.94))
++        }
++        .onAppear {
++            model.agent.setComputeFocus(.gameDecision)
++            if map == nil { restart() }
++        }
++        .onDisappear {
++            model.agent.setComputeFocus(.idle)
++        }
++    }
++
++    private func restart() {
++        do {
++            let loaded = try TacticalV2.ScenarioBundleV2.loadGuanduMap()
++            sessionID = UUID().uuidString
++            map = loaded
++            truth = TacticalV2.GuanduScenarioV2.initialTruthState(
++                map: loaded,
++                seed: TacticalV2.GuanduScenarioV2.deterministicSeed(
++                    sessionID: sessionID
++                )
++            )
++            intelMemory = TacticalV2.IntelMemoryV2()
++            visibilityCache = TacticalV2.VisibilityCacheV2()
++            statusText = "曹军回合 1 · 选择部队并在大战场拖出路线"
++            errorText = nil
++            refreshPresentation()
++        } catch {
++            map = nil
++            truth = nil
++            redacted = nil
++            errorText = error.localizedDescription
++        }
++    }
++
++    private func resolvePlayerOrder(_ playerOrder: TacticalV2.OrderV2) {
++        guard let map, var next = truth,
++              playerOrder.actor == .cao,
++              playerOrder.issuedTurn == next.simulationTurn else {
++            return
++        }
++
++        do {
++            let enemyOrder = makeEnemyOrder(state: next, map: map)
++            let playerReveal = TacticalV2.RevealV2(
++                actor: .cao,
++                turn: next.simulationTurn,
++                batch: .init(orders: [playerOrder]),
++                nonce: TacticalV2.StableHash64.fnv1a("solo-player|\(sessionID)|\(next.simulationTurn)")
++            )
++            let enemyReveal = TacticalV2.RevealV2(
++                actor: .yuan,
++                turn: next.simulationTurn,
++                batch: .init(orders: [enemyOrder]),
++                nonce: TacticalV2.StableHash64.fnv1a("solo-enemy|\(sessionID)|\(next.simulationTurn)")
++            )
++
++            var round = TacticalV2.WEGORoundV2(turn: next.simulationTurn)
++            try round.commit(playerReveal.commitment())
++            try round.commit(enemyReveal.commitment())
++            try round.beginReveal()
++            try round.reveal(playerReveal, map: map)
++            try round.reveal(enemyReveal, map: map)
++            let frame = try TacticalV2.WEGOResolverV2.resolve(
++                state: &next,
++                map: map,
++                round: &round
++            )
++            try round.markObserved()
++            truth = next
++            let contacts = frame.events.filter { $0.kind == .contact }.count
++            statusText = contacts > 0
++                ? "回合 \(next.simulationTurn + 1) · 发生 \(contacts) 次接触，重新评估路线"
++                : "回合 \(next.simulationTurn + 1) · 袁军已同步行动"
++            refreshPresentation()
++            model.haptics.impact()
++        } catch {
++            errorText = error.localizedDescription
++            model.haptics.error()
++        }
++    }
++
++    private func makeEnemyOrder(
++        state: TacticalV2.TruthStateV2,
++        map: TacticalV2.Map
++    ) -> TacticalV2.OrderV2 {
++        let enemies = state.units
++            .filter { $0.faction == .yuan && $0.steps > 0 }
++            .sorted { $0.id < $1.id }
++        let playerUnits = state.units
++            .filter { $0.faction == .cao && $0.steps > 0 }
++        guard !enemies.isEmpty, !playerUnits.isEmpty else {
++            return passOrder(turn: state.simulationTurn)
++        }
++
++        let unit = enemies[Int(state.simulationTurn) % enemies.count]
++        guard let target = playerUnits.min(by: {
++            map.distance(unit.cell, $0.cell) < map.distance(unit.cell, $1.cell)
++        }) else {
++            return passOrder(turn: state.simulationTurn)
++        }
++
++        let blocked = Set(state.units.filter { $0.steps > 0 }.map(\.cell))
++            .subtracting([unit.cell, target.cell])
++        guard let route = TacticalV2.RoutePlannerV2.plan(
++            map: map,
++            from: unit.cell,
++            to: target.cell,
++            blocked: blocked
++        ), route.cells.count >= 2 else {
++            return passOrder(turn: state.simulationTurn)
++        }
++
++        return TacticalV2.OrderV2(
++            id: "solo-yuan-\(state.simulationTurn)-\(unit.id)",
++            kind: .march,
++            actor: .yuan,
++            issuedTurn: state.simulationTurn,
++            unitID: unit.id,
++            routeCells: route.cells.prefix(2).map { UInt16($0) }
++        )
++    }
++
++    private func passOrder(turn: Int32) -> TacticalV2.OrderV2 {
++        TacticalV2.OrderV2(
++            id: "solo-yuan-pass-\(turn)",
++            kind: .pass,
++            actor: .yuan,
++            issuedTurn: turn,
++            unitID: nil,
++            routeCells: []
++        )
++    }
++
++    private func refreshPresentation() {
++        guard let map, let truth else { return }
++        let intel = intelMemory.project(
++            truthUnits: truth.units,
++            map: map,
++            viewer: .cao,
++            simulationTurn: truth.simulationTurn,
++            visibilityCache: &visibilityCache,
++            revision: truth.revision
++        )
++        let view = TacticalV2.RedactedTacticalViewV2(intel: intel)
++        redacted = view
++        supplyField = TacticalV2.OperationalFieldBuilderV2.playerVisibleSupplyField(
++            map: map,
++            redacted: view,
++            revision: truth.revision.supply
++        )
++    }
++}
+diff --git a/VeilLink/UI/ToolCenterView.swift b/VeilLink/UI/ToolCenterView.swift
+index ac74117..5e879ab 100644
+--- a/VeilLink/UI/ToolCenterView.swift
++++ b/VeilLink/UI/ToolCenterView.swift
+@@ -66,8 +66,17 @@ struct VeilToolCenterView: View {
+                 }
+ 
+                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+-                    if matches("v27 功能库 实验室 游戏 情绪 工具 feature library") {
+-                        toolLink("V27 功能库", detail: "统一搜索 · 按需加载", icon: "square.grid.3x3.fill", destination: VeilV27FeatureHubView())
++                    if matches("效率 模板 差异 合并 时区 productivity") {
++                        toolLink("效率实验室", detail: "模板 · 差异 · 合并 · 时区", icon: "wand.and.stars", destination: VeilProductivityLabView())
++                    }
++                    if matches("二维码 qr 相机 扫描 离线") {
++                        toolLink("离线二维码扫描", detail: "相机识别 · 本地文本交换", icon: "qrcode.viewfinder", destination: VeilOfflineQRReaderView())
++                    }
++                    if matches("html 文件 阅读 正文 搜索") {
++                        toolLink("离线 HTML 阅读器", detail: "文件正文提取 · 本地搜索", icon: "doc.richtext", destination: VeilOfflineHTMLReaderView())
++                    }
++                    if matches("备份 zip 恢复 检查 crc") {
++                        toolLink("备份安全体检", detail: "恢复前检查 ZIP 与完整性", icon: "shippingbox.and.arrow.backward.fill", destination: VeilBackupPreflightView())
+                     }
+                     if matches("手电筒信标 手电筒 信标 闪光灯 sos flashlight beacon") {
+                         toolLink("手电筒信标", detail: "常亮 · 脉冲 · SOS", icon: "flashlight.on.fill", destination: VeilBeaconView())
+@@ -93,9 +102,6 @@ struct VeilToolCenterView: View {
+                     if matches("二维码 qr 临时 文本 分享") {
+                         toolLink("临时二维码", detail: "短文本离线转码", icon: "qrcode", destination: VeilTemporaryQRToolView())
+                     }
+-                    if matches("网络 局域网 lan 蓝牙 ble 链路 诊断") {
+-                        toolLink("链路仪表", detail: "LAN 与 BLE 速览", icon: "wave.3.right.circle.fill", destination: VeilLinkPulseToolView(model: model))
+-                    }
+                     if matches("json 格式化 校验 压缩 pretty minify") {
+                         toolLink("JSON 工坊", detail: "校验 · 整理 · 压缩", icon: "curlybraces", destination: VeilJSONToolView())
+                     }
+diff --git a/VeilLink/UI/VeilBackupPreflightView.swift b/VeilLink/UI/VeilBackupPreflightView.swift
+index e904dfd..0aa18ef 100644
+--- a/VeilLink/UI/VeilBackupPreflightView.swift
++++ b/VeilLink/UI/VeilBackupPreflightView.swift
+@@ -8,6 +8,7 @@ struct VeilBackupPreflightView: View {
+     @State private var result: VeilBackupPreflightPolicy.Report?
+     @State private var working = false
+     @State private var generation = UUID()
++    @State private var importError: String?
+ 
+     var body: some View {
+         ScrollView {
+@@ -21,12 +22,17 @@ struct VeilBackupPreflightView: View {
+                 Button {
+                     presentingPicker = true
+                 } label: {
+-                    Label("从文件选择备份 ZIP", systemImage: "doc.zipper")
++                    Label("从 Apple“文件”App 选择备份 ZIP", systemImage: "doc.zipper")
+                         .frame(maxWidth: .infinity)
+                 }
+                 .buttonStyle(.borderedProminent)
+                 .disabled(working)
+                 if working { ProgressView("只读检查中…") }
++                if let importError {
++                    Label(importError, systemImage: "exclamationmark.triangle")
++                        .font(.footnote)
++                        .foregroundColor(.red)
++                }
+                 if let result {
+                     VStack(alignment: .leading, spacing: 10) {
+                         Text(result.safetyLabel)
+@@ -60,20 +66,32 @@ struct VeilBackupPreflightView: View {
+         .navigationTitle("ZIP 备份安全体检")
+         .navigationBarTitleDisplayMode(.inline)
+         .fileImporter(isPresented: $presentingPicker,
+-                      allowedContentTypes: [.zip], allowsMultipleSelection: false) { pick in
+-            guard case .success(let urls) = pick, let file = urls.first else { return }
++                      allowedContentTypes: [.item], allowsMultipleSelection: false) { pick in
++            guard case .success(let urls) = pick, let selectedURL = urls.first else { return }
++            importError = nil
+             let token = UUID()
+             generation = token
+             working = true
+             result = nil
+             let runDeep = deepCRC
+             Task {
+-                let inspected = await Task.detached(priority: .userInitiated) {
+-                    VeilBackupArchiveInspector.inspect(file, verifyAllCRC: runDeep)
+-                }.value
+-                guard generation == token else { return }
+-                result = inspected
+-                working = false
++                do {
++                    let file = try await VeilImportedFileAccess.materializeInBackground(
++                        selectedURL,
++                        acceptedExtensions: ["zip"]
++                    )
++                    defer { VeilImportedFileAccess.removeStagedCopy(file) }
++                    let inspected = await Task.detached(priority: .userInitiated) {
++                        VeilBackupArchiveInspector.inspect(file, verifyAllCRC: runDeep)
++                    }.value
++                    guard generation == token else { return }
++                    result = inspected
++                    working = false
++                } catch {
++                    guard generation == token else { return }
++                    importError = error.localizedDescription
++                    working = false
++                }
+             }
+         }
+         .onDisappear {
+diff --git a/VeilLink/UI/VeilFileIntegrityToolView.swift b/VeilLink/UI/VeilFileIntegrityToolView.swift
+index b33554d..b9993f7 100644
+--- a/VeilLink/UI/VeilFileIntegrityToolView.swift
++++ b/VeilLink/UI/VeilFileIntegrityToolView.swift
+@@ -68,14 +68,21 @@ struct VeilFileIntegrityToolView: View {
+         .navigationBarTitleDisplayMode(.inline)
+         .fileImporter(
+             isPresented: $showsImporter,
+-            allowedContentTypes: [.data],
++            allowedContentTypes: [.item],
+             allowsMultipleSelection: false
+         ) { result in
+             guard let slot = importingSlot else { return }
+             switch result {
+             case .success(let urls):
+-                guard let url = urls.first else { return }
+-                inspect(url: url, into: slot)
++                guard let selectedURL = urls.first else { return }
++                Task {
++                    do {
++                        let url = try await VeilImportedFileAccess.materializeInBackground(selectedURL)
++                        inspect(url: url, into: slot)
++                    } catch {
++                        errorText = error.localizedDescription
++                    }
++                }
+             case .failure(let error):
+                 errorText = error.localizedDescription
+             }
+@@ -209,6 +216,7 @@ struct VeilFileIntegrityToolView: View {
+         busySlot = slot
+ 
+         inspectionTask = Task {
++            defer { VeilImportedFileAccess.removeStagedCopy(url) }
+             do {
+                 let result = try await Task.detached(priority: .userInitiated) {
+                     try VeilFileIntegrityEngine.inspect(url: url)
+diff --git a/VeilLink/UI/VeilOfflineHTMLReaderView.swift b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
+index 2478cdf..f59b686 100644
+--- a/VeilLink/UI/VeilOfflineHTMLReaderView.swift
++++ b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
+@@ -22,7 +22,7 @@ struct VeilOfflineHTMLReaderView: View {
+                 Button {
+                     showingImporter = true
+                 } label: {
+-                    Label("选择 HTML 文件", systemImage: "folder")
++                    Label("从 Apple“文件”App 选择 HTML", systemImage: "folder")
+                         .frame(maxWidth: .infinity)
+                 }
+                 .buttonStyle(.borderedProminent)
+@@ -95,13 +95,13 @@ struct VeilOfflineHTMLReaderView: View {
+         .navigationTitle("离线资料阅读器")
+         .navigationBarTitleDisplayMode(.inline)
+         .fileImporter(isPresented: $showingImporter,
+-                      allowedContentTypes: [.html, UTType(filenameExtension: "htm") ?? .html],
++                      allowedContentTypes: [.item],
+                       allowsMultipleSelection: false) { result in
+             switch result {
+             case .failure:
+                 errorDescription = "无法获取所选文件；请检查文件访问权限。"
+             case .success(let urls):
+-                guard let url = urls.first else { return }
++                guard let selectedURL = urls.first else { return }
+                 let token = UUID()
+                 importGeneration = token
+                 isLoading = true
+@@ -110,6 +110,11 @@ struct VeilOfflineHTMLReaderView: View {
+                 errorDescription = nil
+                 Task {
+                     do {
++                        let url = try await VeilImportedFileAccess.materializeInBackground(
++                            selectedURL,
++                            acceptedExtensions: ["html", "htm"]
++                        )
++                        defer { VeilImportedFileAccess.removeStagedCopy(url) }
+                         let parsed = try await Task.detached(priority: .userInitiated) {
+                             try VeilOfflineHTMLImporter.load(fileURL: url)
+                         }.value
+diff --git a/VeilLink/UI/VeilSettingsDisclosureSection.swift b/VeilLink/UI/VeilSettingsDisclosureSection.swift
+index 0fb1a42..366a27a 100644
+--- a/VeilLink/UI/VeilSettingsDisclosureSection.swift
++++ b/VeilLink/UI/VeilSettingsDisclosureSection.swift
+@@ -19,7 +19,7 @@ enum VeilSettingsSection: String, CaseIterable, Identifiable, Sendable {
+         switch self {
+         case .appearanceAndData: return "主题、协议、存储、媒体与反馈"
+         case .connectivity: return "蓝牙、后台、运行环境与互联网中继"
+-        case .intelligence: return "灵核助手、A9 健康与内核运行时"
++        case .intelligence: return "灵核助手、健康治理与内核运行时"
+         }
+     }
+ 
+diff --git a/VeilLinkTests/AdaptiveBoardLearningTests.swift b/VeilLinkTests/AdaptiveBoardLearningTests.swift
+index 5eb3806..7d91315 100644
+--- a/VeilLinkTests/AdaptiveBoardLearningTests.swift
++++ b/VeilLinkTests/AdaptiveBoardLearningTests.swift
+@@ -9,7 +9,7 @@ final class AdaptiveBoardLearningTests: XCTestCase {
+             .appendingPathComponent("learning.json")
+     }
+ 
+-    func testLearningPersistsHumanRepertoireWithoutGrowingUnbounded() throws {
++    func testLearningPersistsEveryRecordedPositionWithoutArtificialCap() throws {
+         let url = temporaryURL()
+         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+         let store = AdaptiveBoardLearningStore(fileURL: url)
+@@ -26,14 +26,181 @@ final class AdaptiveBoardLearningTests: XCTestCase {
+         }
+ 
+         XCTAssertEqual(store.summary.completedGames, 80)
+-        XCTAssertLessThanOrEqual(store.summary.rememberedPositions, 1_600)
+-        XCTAssertLessThanOrEqual(store.summary.storedBytes, 512 * 1_024)
++        XCTAssertEqual(store.summary.rememberedPositions, 2_400)
++        XCTAssertGreaterThan(store.summary.storedBytes, 0)
+ 
+         let restored = AdaptiveBoardLearningStore(fileURL: url)
+         XCTAssertEqual(restored.summary.completedGames, 80)
+         XCTAssertEqual(restored.summary.rememberedPositions, store.summary.rememberedPositions)
+     }
+ 
++    func testStoredBytesMatchesFileMetadataAfterUnboundedHistoryWrites() throws {
++        let url = temporaryURL()
++        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
++        let store = AdaptiveBoardLearningStore(fileURL: url)
++        for index in 0..<65 {
++            store.record(
++                game: .gomoku,
++                plies: [AdaptiveBoardPly(position: "g:stat-\(index)", action: "112", actor: .host)],
++                result: .humanWon
++            )
++        }
++        let expectedBytes = try XCTUnwrap(
++            (try FileManager.default.attributesOfItem(atPath: url.path))[.size] as? NSNumber
++        ).intValue
++        XCTAssertGreaterThan(expectedBytes, 0)
++        XCTAssertEqual(store.summary.storedBytes, expectedBytes)
++        XCTAssertEqual(store.summary.completedGames, 65)
++    }
++
++    func testGameScopedStoresDoNotLeakSummariesOrPositions() {
++        let gomokuURL = temporaryURL()
++        let xiangqiURL = temporaryURL()
++        defer {
++            try? FileManager.default.removeItem(at: gomokuURL.deletingLastPathComponent())
++            try? FileManager.default.removeItem(at: xiangqiURL.deletingLastPathComponent())
++        }
++        let gomoku = AdaptiveBoardLearningStore(game: .gomoku, fileURL: gomokuURL)
++        let xiangqi = AdaptiveBoardLearningStore(game: .xiangqi, fileURL: xiangqiURL)
++        gomoku.record(
++            game: .gomoku,
++            plies: [AdaptiveBoardPly(position: "g:opening", action: "112", actor: .host)],
++            result: .humanWon
++        )
++
++        XCTAssertEqual(gomoku.summary.completedGames, 1)
++        XCTAssertEqual(gomoku.summary.rememberedPositions, 1)
++        XCTAssertEqual(xiangqi.summary.completedGames, 0)
++        XCTAssertEqual(xiangqi.summary.rememberedPositions, 0)
++        XCTAssertEqual(xiangqi.snapshot().bonus(position: "g:opening", action: "112"), 0)
++    }
++
++    func testLegacyMigrationSplitsGamesWithoutMutatingSharedSource() throws {
++        let legacyURL = temporaryURL()
++        let gomokuURL = temporaryURL()
++        let xiangqiURL = temporaryURL()
++        defer {
++            try? FileManager.default.removeItem(at: legacyURL.deletingLastPathComponent())
++            try? FileManager.default.removeItem(at: gomokuURL.deletingLastPathComponent())
++            try? FileManager.default.removeItem(at: xiangqiURL.deletingLastPathComponent())
++        }
++        let legacy = AdaptiveBoardLearningStore(fileURL: legacyURL)
++        legacy.record(
++            game: .gomoku,
++            plies: [AdaptiveBoardPly(position: "g:legacy", action: "112", actor: .host)],
++            result: .humanWon
++        )
++        legacy.record(
++            game: .xiangqi,
++            plies: [AdaptiveBoardPly(position: "x:legacy", action: "64:67", actor: .host)],
++            result: .aiWon
++        )
++        let originalLegacy = try Data(contentsOf: legacyURL)
++
++        let gomoku = AdaptiveBoardLearningStore(
++            game: .gomoku,
++            fileURL: gomokuURL,
++            legacyURL: legacyURL
++        )
++        let xiangqi = AdaptiveBoardLearningStore(
++            game: .xiangqi,
++            fileURL: xiangqiURL,
++            legacyURL: legacyURL
++        )
++
++        XCTAssertEqual(gomoku.summary.completedGames, 1)
++        XCTAssertEqual(gomoku.summary.rememberedPositions, 1)
++        XCTAssertEqual(xiangqi.summary.completedGames, 1)
++        XCTAssertEqual(xiangqi.summary.rememberedPositions, 1)
++        XCTAssertEqual(try Data(contentsOf: legacyURL), originalLegacy)
++    }
++
++    func testScopedClearAfterLegacyMigrationPersistsAcrossRestart() throws {
++        let legacyURL = temporaryURL()
++        let scopedURL = temporaryURL()
++        defer {
++            try? FileManager.default.removeItem(at: legacyURL.deletingLastPathComponent())
++            try? FileManager.default.removeItem(at: scopedURL.deletingLastPathComponent())
++        }
++
++        let legacy = AdaptiveBoardLearningStore(fileURL: legacyURL)
++        legacy.record(
++            game: .gomoku,
++            plies: [AdaptiveBoardPly(position: "g:migration-clear-regression", action: "112", actor: .host)],
++            result: .humanWon
++        )
++        let originalLegacy = try Data(contentsOf: legacyURL)
++        let scoped = AdaptiveBoardLearningStore(game: .gomoku, fileURL: scopedURL, legacyURL: legacyURL)
++        XCTAssertEqual(scoped.summary.completedGames, 1)
++        XCTAssertEqual(scoped.summary.rememberedPositions, 1)
++
++        scoped.clear()
++        XCTAssertTrue(scoped.lastSaveSucceeded)
++        XCTAssertTrue(FileManager.default.fileExists(atPath: scopedURL.path),
++                      "Empty scoped database must block legacy re-migration")
++        XCTAssertEqual(scoped.summary.rememberedPositions, 0)
++
++        let restarted = AdaptiveBoardLearningStore(game: .gomoku, fileURL: scopedURL, legacyURL: legacyURL)
++        XCTAssertEqual(restarted.summary.completedGames, 0)
++        XCTAssertEqual(restarted.summary.rememberedPositions, 0)
++        XCTAssertEqual(try Data(contentsOf: legacyURL), originalLegacy)
++    }
++
++    func testCorruptScopedDatabaseCannotBeSilentlyOverwrittenByAutosave() throws {
++        let url = temporaryURL()
++        try FileManager.default.createDirectory(
++            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
++        )
++        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
++        let damagedBytes = Data("{broken V2 payload".utf8)
++        try damagedBytes.write(to: url, options: .atomic)
++
++        let store = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
++        XCTAssertTrue(store.requiresRecovery)
++        XCTAssertFalse(store.lastSaveSucceeded)
++        store.record(
++            game: .gomoku,
++            plies: [AdaptiveBoardPly(position: "g:must-not-overwrite", action: "112", actor: .host)],
++            result: .humanWon
++        )
++        XCTAssertEqual(try Data(contentsOf: url), damagedBytes)
++        XCTAssertEqual(store.summary.completedGames, 0)
++        XCTAssertTrue(store.requiresRecovery)
++
++        store.clear()
++        XCTAssertFalse(store.requiresRecovery)
++        XCTAssertTrue(store.lastSaveSucceeded)
++        let restarted = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
++        XCTAssertFalse(restarted.requiresRecovery)
++        XCTAssertEqual(restarted.summary.completedGames, 0)
++        XCTAssertEqual(restarted.summary.rememberedPositions, 0)
++    }
++
++    func testRepeatedInterruptedLinePenalisesOldAIReplyAndPredictsHumanFormation() {
++        let url = temporaryURL()
++        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
++        let store = AdaptiveBoardLearningStore(game: .xiangqi, fileURL: url)
++        let line = [
++            AdaptiveBoardPly(position: "x:start", action: "64:67", actor: .host),
++            AdaptiveBoardPly(position: "x:after-human", action: "19:22", actor: .guest),
++            AdaptiveBoardPly(position: "x:formation", action: "82:65", actor: .host)
++        ]
++        store.record(game: .xiangqi, plies: line, result: .unfinished)
++        store.record(game: .xiangqi, plies: line, result: .unfinished)
++
++        let snapshot = store.snapshot(currentPlies: [line[0]])
++        XCTAssertLessThan(snapshot.rootAdjustment(action: "19:22"), 0)
++        XCTAssertEqual(
++            snapshot.predictedHumanReply(afterAIAction: "19:22")?.action,
++            "82:65"
++        )
++        let profile = store.coachProfile(for: .xiangqi)
++        XCTAssertEqual(profile.completedGames, 0)
++        XCTAssertEqual(profile.preferredOpening, "偏好中炮")
++        XCTAssertGreaterThanOrEqual(profile.repeatedLineCount, 1)
++        XCTAssertTrue(profile.reviewFocus.contains("中断局"))
++    }
++
+     func testRepeatedPlayerMoveBecomesSearchPreferenceAndCanBeCleared() {
+         let url = temporaryURL()
+         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+diff --git a/VeilLinkTests/DeveloperFormationLibraryTests.swift b/VeilLinkTests/DeveloperFormationLibraryTests.swift
+new file mode 100644
+index 0000000..0be6e86
+--- /dev/null
++++ b/VeilLinkTests/DeveloperFormationLibraryTests.swift
+@@ -0,0 +1,54 @@
++import XCTest
++@testable import VeilLink
++
++@MainActor
++final class DeveloperFormationLibraryTests: XCTestCase {
++    private func makeLibrary() -> (DeveloperFormationLibrary, URL, KeychainStore) {
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent("VeilLinkFormationTests-\(UUID().uuidString)", isDirectory: true)
++        let file = root.appendingPathComponent("gomoku-v1.json")
++        let keychain = KeychainStore(service: "studio.zeo.veillink.tests.formations.\(UUID().uuidString)")
++        return (DeveloperFormationLibrary(game: .gomoku, keychain: keychain, fileURL: file), file, keychain)
++    }
++
++    func testRecordedFormationInfluencesMatchingPrefixAndSurvivesReload() throws {
++        let (library, file, keychain) = makeLibrary()
++        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
++        let line = [
++            AdaptiveBoardPly(position: "g:initial", action: "112", actor: .host),
++            AdaptiveBoardPly(position: "g:after-112", action: "113", actor: .guest),
++            AdaptiveBoardPly(position: "g:after-113", action: "97", actor: .host)
++        ]
++        try library.capture(
++            name: "中心反制",
++            purpose: "以相邻点回应中心落子，限制对方扩张。",
++            objective: "诱导对方回到已验证的防守线路。",
++            plies: line
++        )
++
++        let influence = library.influence(for: [line[0]])
++        XCTAssertEqual(influence.rootAdjustments["113"], 1_400)
++        XCTAssertEqual(influence.predictedHumanReplies["113"], .init(action: "97", evidence: 99))
++        XCTAssertEqual(influence.matchedLessonNames, ["中心反制"])
++
++        let reloaded = DeveloperFormationLibrary(game: .gomoku, keychain: keychain, fileURL: file)
++        XCTAssertEqual(reloaded.lessons.count, 1)
++        XCTAssertEqual(reloaded.influence(for: [line[0]]).rootAdjustments["113"], 1_400)
++    }
++
++    func testLessonRequiresBothSidesAndMeaningfulExplanation() {
++        let (library, file, _) = makeLibrary()
++        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
++        XCTAssertThrowsError(try library.capture(
++            name: "x",
++            purpose: "短",
++            objective: "短",
++            plies: [AdaptiveBoardPly(position: "g:initial", action: "112", actor: .host)]
++        )) { error in
++            guard let formationError = error as? DeveloperFormationError,
++                  case .invalidLesson = formationError else {
++                return XCTFail("expected invalid lesson, got \(error)")
++            }
++        }
++    }
++}
+diff --git a/VeilLinkTests/DeveloperLearningLabGateTests.swift b/VeilLinkTests/DeveloperLearningLabGateTests.swift
+new file mode 100644
+index 0000000..f205319
+--- /dev/null
++++ b/VeilLinkTests/DeveloperLearningLabGateTests.swift
+@@ -0,0 +1,35 @@
++import XCTest
++@testable import VeilLink
++
++@MainActor
++final class DeveloperLearningLabGateTests: XCTestCase {
++    func testDeveloperLabRequiresUnlockedAppLockForFirstEnrollment() {
++        let keychain = KeychainStore(service: "studio.zeo.veillink.tests.developer-lab.\(UUID().uuidString)")
++        let appLock = AppLockController(keychain: keychain)
++        let gate = DeveloperLearningLabGate(keychain: keychain)
++
++        XCTAssertFalse(gate.configure(pin: "12345678", appLock: appLock))
++        XCTAssertFalse(gate.isConfigured)
++
++        XCTAssertTrue(appLock.configure(pin: "123456"))
++        XCTAssertTrue(gate.configure(pin: "12345678", appLock: appLock))
++        XCTAssertTrue(gate.isConfigured)
++        XCTAssertTrue(gate.canImportTraining())
++    }
++
++    func testDeveloperLabStoresNoPlainPINAndLocksSession() {
++        let keychain = KeychainStore(service: "studio.zeo.veillink.tests.developer-lab.\(UUID().uuidString)")
++        let appLock = AppLockController(keychain: keychain)
++        XCTAssertTrue(appLock.configure(pin: "123456"))
++        let gate = DeveloperLearningLabGate(keychain: keychain)
++        XCTAssertTrue(gate.configure(pin: "87654321", appLock: appLock))
++        gate.lock()
++        XCTAssertFalse(gate.canImportTraining())
++        XCTAssertFalse(gate.unlock(pin: "00000000"))
++        XCTAssertTrue(gate.unlock(pin: "87654321"))
++        XCTAssertTrue(gate.canImportTraining())
++        let verifier = keychain.data(for: "board.developer-lab.verifier.v1")
++        XCTAssertNotNil(verifier)
++        XCTAssertNil(verifier?.range(of: Data("87654321".utf8)))
++    }
++}
+diff --git a/VeilLinkTests/GomokuBotTests.swift b/VeilLinkTests/GomokuBotTests.swift
+index b16f8cf..1d6af8c 100644
+--- a/VeilLinkTests/GomokuBotTests.swift
++++ b/VeilLinkTests/GomokuBotTests.swift
+@@ -22,4 +22,17 @@ final class GomokuBotTests: XCTestCase {
+         XCTAssertLessThanOrEqual(budget.timeLimitMilliseconds, 160)
+         XCTAssertLessThanOrEqual(budget.rootCandidateLimit, 18)
+     }
++
++    func testDifficultyBudgetsIncreaseSearchCapacityWhileRetainingLearningPath() {
++        let relaxed = GomokuBotBudget.forDifficulty(.relaxed, profileLabel: "A16-HIGH")
++        let master = GomokuBotBudget.forDifficulty(.master, profileLabel: "A16-HIGH")
++        XCTAssertLessThan(relaxed.rootCandidateLimit, master.rootCandidateLimit)
++        XCTAssertLessThan(relaxed.replyCandidateLimit, master.replyCandidateLimit)
++        XCTAssertLessThan(relaxed.timeLimitMilliseconds, master.timeLimitMilliseconds)
++        XCTAssertEqual(relaxed.continuationCandidateLimit, 0)
++        XCTAssertGreaterThan(master.continuationCandidateLimit, 0)
++        let trainedRelaxed = relaxed.reinforced(by: 8)
++        XCTAssertGreaterThan(trainedRelaxed.rootCandidateLimit, relaxed.rootCandidateLimit)
++        XCTAssertGreaterThan(trainedRelaxed.replyCandidateLimit, relaxed.replyCandidateLimit)
++    }
+ }
+diff --git a/VeilLinkTests/VeilImportedFileAccessTests.swift b/VeilLinkTests/VeilImportedFileAccessTests.swift
+new file mode 100644
+index 0000000..33f6d92
+--- /dev/null
++++ b/VeilLinkTests/VeilImportedFileAccessTests.swift
+@@ -0,0 +1,67 @@
++import Foundation
++import XCTest
++@testable import VeilLink
++
++final class VeilImportedFileAccessTests: XCTestCase {
++    func testNativeFilesAppIntegrationIsDeclared() throws {
++        let repositoryRoot = URL(fileURLWithPath: #filePath)
++            .deletingLastPathComponent()
++            .deletingLastPathComponent()
++        let plistURL = repositoryRoot
++            .appendingPathComponent("VeilLink", isDirectory: true)
++            .appendingPathComponent("Resources", isDirectory: true)
++            .appendingPathComponent("Info.plist")
++        let data = try Data(contentsOf: plistURL)
++        let object = try PropertyListSerialization.propertyList(from: data, format: nil)
++        let plist = try XCTUnwrap(object as? [String: Any])
++        XCTAssertEqual(plist["LSSupportsOpeningDocumentsInPlace"] as? Bool, true)
++        XCTAssertEqual(plist["UIFileSharingEnabled"] as? Bool, true)
++    }
++
++    func testMaterializeCopiesProviderFileBeforeGrantEnds() throws {
++        let source = FileManager.default.temporaryDirectory
++            .appendingPathComponent("import-source-\(UUID().uuidString).vltrain.json")
++        let expected = Data("{\"ok\":true}".utf8)
++        try expected.write(to: source, options: .atomic)
++        defer { try? FileManager.default.removeItem(at: source) }
++
++        let staged = try VeilImportedFileAccess.materialize(
++            source,
++            acceptedExtensions: ["json"]
++        )
++        XCTAssertEqual(try Data(contentsOf: staged), expected)
++        XCTAssertNotEqual(staged.deletingLastPathComponent(), source.deletingLastPathComponent())
++
++        VeilImportedFileAccess.removeStagedCopy(staged)
++        XCTAssertFalse(FileManager.default.fileExists(atPath: staged.path))
++    }
++
++    func testMaterializeRejectsWrongExtensionEvenWhenPickerShowsItem() throws {
++        let source = FileManager.default.temporaryDirectory
++            .appendingPathComponent("import-source-\(UUID().uuidString).txt")
++        try Data("not a backup".utf8).write(to: source, options: .atomic)
++        defer { try? FileManager.default.removeItem(at: source) }
++
++        XCTAssertThrowsError(
++            try VeilImportedFileAccess.materialize(
++                source,
++                acceptedExtensions: ["zip"]
++            )
++        )
++    }
++
++    func testBackgroundMaterializationCopiesLargeFile() async throws {
++        let source = FileManager.default.temporaryDirectory
++            .appendingPathComponent("import-source-\(UUID().uuidString).zip")
++        let expected = Data(repeating: 0x5A, count: 3 * 1_024 * 1_024)
++        try expected.write(to: source, options: .atomic)
++        defer { try? FileManager.default.removeItem(at: source) }
++
++        let staged = try await VeilImportedFileAccess.materializeInBackground(
++            source,
++            acceptedExtensions: ["zip"]
++        )
++        defer { VeilImportedFileAccess.removeStagedCopy(staged) }
++        XCTAssertEqual(try Data(contentsOf: staged), expected)
++    }
++}
+diff --git a/VeilLinkTests/XiangqiBotTests.swift b/VeilLinkTests/XiangqiBotTests.swift
+index b6891e1..f47b277 100644
+--- a/VeilLinkTests/XiangqiBotTests.swift
++++ b/VeilLinkTests/XiangqiBotTests.swift
+@@ -49,4 +49,15 @@ final class XiangqiBotTests: XCTestCase {
+         XCTAssertEqual(budget.maxDepth, 4)
+         XCTAssertLessThanOrEqual(budget.timeLimitMilliseconds, 200)
+     }
++
++    func testDifficultyBudgetsIncreaseSearchDepth() {
++        let relaxed = XiangqiBotBudget.forDifficulty(.relaxed, profileLabel: "A16-HIGH")
++        let master = XiangqiBotBudget.forDifficulty(.master, profileLabel: "A16-HIGH")
++        XCTAssertLessThan(relaxed.maxDepth, master.maxDepth)
++        XCTAssertLessThan(relaxed.quiescenceDepth, master.quiescenceDepth)
++        XCTAssertLessThan(relaxed.timeLimitMilliseconds, master.timeLimitMilliseconds)
++        let trainedRelaxed = relaxed.reinforced(by: 8)
++        XCTAssertGreaterThanOrEqual(trainedRelaxed.maxDepth, relaxed.maxDepth)
++        XCTAssertGreaterThan(trainedRelaxed.timeLimitMilliseconds, relaxed.timeLimitMilliseconds)
++    }
+ }
