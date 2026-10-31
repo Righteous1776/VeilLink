@@ -17,6 +17,33 @@ final class GomokuBotTests: XCTestCase {
         XCTAssertTrue(state.apply(index: result.index, actor: .guest))
     }
 
+    func testTinyTimeBudgetStillReturnsLegalMoveOnEmptyBoard() {
+        let tiny = GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: 20,
+                                   replyCandidateLimit: 10, continuationCandidateLimit: 0,
+                                   timeLimitMilliseconds: 1)
+        let state = GomokuState()
+        let result = GomokuBot.chooseMove(in: state, for: .host, budget: tiny)
+        XCTAssertNotNil(result, "A time-budget exhaustion must not suppress a legal suggestion")
+        guard let result else { return }
+        XCTAssertEqual(state.value(at: result.index), 0)
+        var replay = state
+        XCTAssertTrue(replay.apply(index: result.index, actor: .host))
+    }
+
+    func testZeroRadiusWithOccupiedCenterReturnsAnotherLegalMove() {
+        var state = GomokuState()
+        XCTAssertTrue(state.apply(index: 112, actor: .host))
+        let tiny = GomokuBotBudget(candidateRadius: 0, rootCandidateLimit: 1,
+                                   replyCandidateLimit: 1, continuationCandidateLimit: 0,
+                                   timeLimitMilliseconds: 1)
+        let result = GomokuBot.chooseMove(in: state, for: .guest, budget: tiny)
+        XCTAssertNotNil(result)
+        guard let result else { return }
+        XCTAssertNotEqual(result.index, 112)
+        XCTAssertEqual(state.value(at: result.index), 0)
+        XCTAssertTrue(state.apply(index: result.index, actor: .guest))
+    }
+
     func testLegacyBudgetIsBounded() {
         let budget = GomokuBotBudget.standard(profileLabel: "LEGACY-COMPACT")
         XCTAssertLessThanOrEqual(budget.timeLimitMilliseconds, 160)
