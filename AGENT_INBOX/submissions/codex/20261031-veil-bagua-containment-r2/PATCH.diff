@@ -1,0 +1,38 @@
+diff --git a/VeilLink/Agent/Games/GomokuFormationLearning.swift b/VeilLink/Agent/Games/GomokuFormationLearning.swift
+index 0000000..ADVISORY
+--- a/VeilLink/Agent/Games/GomokuFormationLearning.swift
++++ b/VeilLink/Agent/Games/GomokuFormationLearning.swift
+@@
+ struct GomokuFormationPreference {
++    // R2: supplied from legal plies, never inferred from a screenshot.
++    let opponentHistory: [Int]
++
++    // Evaluate only after normal win/block gates.  Add a bounded score for a
++    // candidate that is knight-linked to the owned lattice and extends toward
++    // the opponent's latest escape vector.  Recalculate per new opponent move.
++    // Do not change Gomoku legality: every vacant intersection remains legal.
+ }
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+index 0000000..ADVISORY
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@
+- let preference = GomokuFormationPreference(mode: mode, aiHistory: aiHistory, discovered: discovered)
++ let preference = GomokuFormationPreference(
++     mode: mode,
++     aiHistory: aiHistory,
++     opponentHistory: opponentHistory,
++     discovered: discovered
++ )
+diff --git a/VeilLinkTests/GomokuFormationLearningTests.swift b/VeilLinkTests/GomokuFormationLearningTests.swift
+index 0000000..ADVISORY
+--- a/VeilLinkTests/GomokuFormationLearningTests.swift
++++ b/VeilLinkTests/GomokuFormationLearningTests.swift
+@@
++ // Add invariant tests for all dihedral board symmetries, boundary rejection,
++ // vector reversal after opponent direction changes, and tactical-gate
++ // precedence over any R2 containment preference.
+
+# This is intentionally an advisory stack patch: the target implementation is
+# Draft PR #114, not `main`. Governor must rebase it onto the accepted stack and
+# replace the placeholder index lines with exact integration-context hunks.
