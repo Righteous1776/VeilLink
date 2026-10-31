@@ -506,6 +506,38 @@ struct LocalAIGameView: View {
                     }
                 }
                 .tint(VeilTheme.gold)
+                Menu {
+                    ForEach(GomokuFormationMode.allCases) { mode in
+                        Button {
+                            controller.setGomokuFormationMode(mode)
+                            model.haptics.selection()
+                        } label: {
+                            if mode == controller.gomokuFormationMode {
+                                Label(mode.title, systemImage: "checkmark")
+                            } else {
+                                Text(mode.title)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "brain.head.profile")
+                        Text("阵法学习")
+                            .font(.caption.weight(.semibold))
+                        Spacer(minLength: 0)
+                        Text(controller.gomokuFormationMode.title)
+                            .font(.caption2)
+                        Image(systemName: "chevron.up.chevron.down")
+                    }
+                    .foregroundColor(VeilTheme.goldBright)
+                    .padding(10)
+                    .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .accessibilityLabel("五子棋阵法学习模式")
+                Text("系统可自主选择八卦、进攻、防守偏好，或由玩家指定。已发现候选：\(controller.discoveredGomokuFormations) 类。阵法不能覆盖必胜/必防；启用阵法偏好时使用原生搜索，PVS/VCF 在关闭阵法后恢复。云盘棋形模型仍处于离线验证阶段。")
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
                 Label(controller.boardDifficulty.title, systemImage: "slider.horizontal.3")
