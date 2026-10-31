@@ -3,6 +3,37 @@ import XCTest
 @testable import VeilLink
 
 final class InternetRelayTests: XCTestCase {
+    func testFirstTransientFailureKeepsReachableProviderAvailable() {
+        let initial = VeilRelayProviderSnapshot(
+            region: .domestic,
+            reachable: true,
+            roundTripMilliseconds: 42,
+            lastSuccessAt: Date(),
+            consecutiveFailures: 0
+        )
+
+        let failedOnce = VeilRelayProviderHealthPolicy.recordingFailure(initial)
+
+        XCTAssertTrue(failedOnce.reachable)
+        XCTAssertEqual(failedOnce.consecutiveFailures, 1)
+    }
+
+    func testConsecutiveFailuresEjectProviderAtThreshold() {
+        let initial = VeilRelayProviderSnapshot(
+            region: .international,
+            reachable: true,
+            roundTripMilliseconds: 80,
+            lastSuccessAt: Date(),
+            consecutiveFailures: 0
+        )
+
+        let failedOnce = VeilRelayProviderHealthPolicy.recordingFailure(initial)
+        let failedTwice = VeilRelayProviderHealthPolicy.recordingFailure(failedOnce)
+
+        XCTAssertFalse(failedTwice.reachable)
+        XCTAssertEqual(failedTwice.consecutiveFailures, VeilRelayProviderHealthPolicy.consecutiveFailureThreshold)
+    }
+
     func testProviderSeparatedRoutes() throws {
         let secret = Data(repeating: 0x31, count: 32)
         let cn = try VeilRelayCrypto.route(pairSecret: secret, senderIdentityID: "A", receiverIdentityID: "B", provider: .domestic, epoch: 100)

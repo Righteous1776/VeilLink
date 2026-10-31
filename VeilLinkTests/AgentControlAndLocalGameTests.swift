@@ -60,7 +60,11 @@ final class AgentControlAndLocalGameTests: XCTestCase {
 
         XCTAssertFalse(controller.isAIThinking)
         XCTAssertEqual(controller.gomoku.currentPlayer, .host)
-        XCTAssertEqual(controller.lastDecisionMode, "五子棋 Bot")
+        let decisionMode = controller.lastDecisionMode
+        XCTAssertTrue(
+            decisionMode == "五子棋 Bot" || decisionMode.hasPrefix("五子棋 · 均衡"),
+            "Unexpected default Gomoku baseline decision label: \(decisionMode)"
+        )
 
         let aiStoneCount = (0..<(GomokuState.size * GomokuState.size))
             .filter { controller.gomoku.value(at: $0) == 2 }

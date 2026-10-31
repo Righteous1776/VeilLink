@@ -502,7 +502,13 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
             publishRunning(running, status: "LAN Turbo 监听失败 · BLE 仍可用")
             scheduleListenerRecoveryLocked()
         case .cancelled:
-            break
+            // stopLocked clears listener before cancelling it, so an event that still owns the
+            // active slot is an unexpected Network.framework cancellation and must be repaired.
+            listener = nil
+            if running {
+                publishRunning(true, status: "LAN Turbo 监听已中断 · 正在恢复")
+                scheduleListenerRecoveryLocked()
+            }
         default:
             break
         }
@@ -522,6 +528,16 @@ final class LANTransport: ObservableObject, @unchecked Sendable {
                 self?.statusText = "局域网发现不可用 · BLE 仍可用"
             }
             scheduleBrowserRecoveryLocked()
+        case .cancelled:
+            // A deliberate stop has already cleared browser and is rejected by the identity
+            // guard above. Rebuild only an unexpectedly cancelled active browser.
+            browser = nil
+            if running {
+                publishMain { [weak self] in
+                    self?.statusText = "局域网发现已中断 · 正在恢复"
+                }
+                scheduleBrowserRecoveryLocked()
+            }
         default:
             break
         }

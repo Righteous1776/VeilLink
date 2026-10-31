@@ -218,6 +218,7 @@ final class BLETransport: NSObject, ObservableObject {
     private var lastRSSIPublishAt: [UUID: TimeInterval] = [:]
     private var lastSeenAt: [UUID: TimeInterval] = [:]
     private var queueProgress = BLEQueueProgressState()
+    private var gattHandshakeWatchdog = BLEGattHandshakeWatchdog()
     private var rssiPollTask: Task<Void, Never>?
     private var lastRSSIMaintenanceAt: TimeInterval = 0
     private var connectionEvents = ConnectionEventGate()
@@ -327,6 +328,7 @@ final class BLETransport: NSObject, ObservableObject {
         centralOutboundQueues.removeAll()
         peripheralOutboundQueues.removeAll()
         queueProgress.clearAll()
+        gattHandshakeWatchdog.resetAll()
         statusText = "蓝牙发现已暂停"
         publishLinkSnapshots(force: true)
     }
@@ -371,6 +373,7 @@ final class BLETransport: NSObject, ObservableObject {
         peripheralOutboundQueues.removeValue(forKey: id)
         remoteCharacteristics.removeValue(forKey: id)
         queueProgress.clear(peerID: id)
+        gattHandshakeWatchdog.disconnected(id)
         assembler.reset(source: id)
     }
 
@@ -413,7 +416,8 @@ final class BLETransport: NSObject, ObservableObject {
     func send(_ data: Data, to transportID: UUID, priority: BLESendPriority = .bulk) -> TransportSendResult {
         if let peripheral = remotePeripherals[transportID],
            let characteristic = remoteCharacteristics[transportID],
-           peripheral.state == .connected {
+           peripheral.state == .connected,
+           characteristic.isNotifying {
             let maximum = peripheral.maximumWriteValueLength(for: .withoutResponse)
             guard let plan = BLEFragment.fragmentationPlan(payloadByteCount: data.count, maximumPacketSize: maximum),
                   plan.fragmentCount <= maxFragmentsPerMessage else { return .unsupportedLink }
@@ -664,7 +668,8 @@ final class BLETransport: NSObject, ObservableObject {
             guard self.isRunning,
                   let peripheral = self.remotePeripherals[id],
                   peripheral.state == .connected,
-                  let characteristic = self.remoteCharacteristics[id] else { return }
+                  let characteristic = self.remoteCharacteristics[id],
+                  characteristic.isNotifying else { return }
             self.drainCentralQueue(peripheral: peripheral, characteristic: characteristic)
         }
         centralDrainWorkItems[id] = work
@@ -761,6 +766,11 @@ final class BLETransport: NSObject, ObservableObject {
             case .disconnected:
                 scheduleReconnect(peripheral, immediate: true)
             case .connected:
+                if remoteCharacteristics[id]?.isNotifying != true {
+                    gattHandshakeWatchdog.physicalLinkConnected(
+                        id, uptime: ProcessInfo.processInfo.systemUptime
+                    )
+                }
                 if remoteCharacteristics[id] == nil {
                     peripheral.discoverServices([Self.serviceUUID])
                 }
@@ -841,6 +851,7 @@ final class BLETransport: NSObject, ObservableObject {
     }
 
     private func recoverStalledTransportQueuesIfNeeded() {
+        recoverStalledGATTHandshakesIfNeeded()
         let now = Date().timeIntervalSinceReferenceDate
         for id in Array(centralOutboundQueues.keys) {
             guard let queue = centralOutboundQueues[id], !queue.isEmpty else { continue }
@@ -865,6 +876,39 @@ final class BLETransport: NSObject, ObservableObject {
             statusText = "检测到蓝牙发送停滞，已切换到应用层重传"
         }
         publishLinkSnapshots()
+    }
+
+    /// The PHY can connect while service discovery/notify subscription never completes.
+    /// A monotonic timeout avoids indefinite PHY_CONNECTED and makes this failure diagnosable.
+    private func recoverStalledGATTHandshakesIfNeeded() {
+        let expired = gattHandshakeWatchdog.timedOutPeerIDs(
+            uptime: ProcessInfo.processInfo.systemUptime
+        )
+        for id in expired {
+            gattHandshakeWatchdog.disconnected(id)
+            guard isRunning,
+                  wantedConnections.contains(id),
+                  let peripheral = remotePeripherals[id],
+                  peripheral.state == .connected,
+                  remoteCharacteristics[id]?.isNotifying != true else { continue }
+            statusText = "蓝牙数据通道握手超时，正在重新建立连接"
+            DiagnosticLogStore.shared.log(
+                .warning, .bluetooth,
+                event: "ble.gatt_handshake_timeout",
+                metadata: ["phase": "notification_wait", "attempt": String(reconnectAttempts[id] ?? 0)]
+            )
+            centralManager.cancelPeripheralConnection(peripheral)
+        }
+    }
+
+    private func failGATTHandshake(_ peripheral: CBPeripheral, phase: String) {
+        statusText = "蓝牙数据通道握手失败，准备退避重连"
+        DiagnosticLogStore.shared.log(
+            .warning, .bluetooth,
+            event: "ble.gatt_handshake_failure",
+            metadata: ["phase": phase, "attempt": String(reconnectAttempts[peripheral.identifier] ?? 0)]
+        )
+        centralManager.cancelPeripheralConnection(peripheral)
     }
 
     private func observeRSSI(_ sample: Int, for id: UUID, forcePublish: Bool = false) {
@@ -911,7 +955,16 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        reconnectAttempts[peripheral.identifier] = 0
+        guard isRunning, wantedConnections.contains(peripheral.identifier) else {
+            central.cancelPeripheralConnection(peripheral)
+            return
+        }
+        // Do not reset reconnectAttempts at PHY_CONNECTED: the attempt only
+        // succeeds after GATT notifications are active. Otherwise a broken
+        // service/subscription loops forever at the first 0.75-second retry.
+        gattHandshakeWatchdog.physicalLinkConnected(
+            peripheral.identifier, uptime: ProcessInfo.processInfo.systemUptime
+        )
         reconnectWorkItems.removeValue(forKey: peripheral.identifier)?.cancel()
         peripheral.delegate = self
         peripheral.discoverServices([Self.serviceUUID])
@@ -922,6 +975,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         let id = peripheral.identifier
+        gattHandshakeWatchdog.disconnected(id)
         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
         remoteCharacteristics.removeValue(forKey: id)
         centralOutboundQueues.removeValue(forKey: id)
@@ -938,6 +992,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         let id = peripheral.identifier
+        gattHandshakeWatchdog.disconnected(id)
         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
         remoteCharacteristics.removeValue(forKey: id)
         centralOutboundQueues.removeValue(forKey: id)
@@ -959,6 +1014,9 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
             remotePeripherals[peripheral.identifier] = peripheral
             peripheral.delegate = self
             if peripheral.state == .connected {
+                gattHandshakeWatchdog.physicalLinkConnected(
+                    peripheral.identifier, uptime: ProcessInfo.processInfo.systemUptime
+                )
                 if wantedConnections.insert(peripheral.identifier).inserted {
                     didChangeIntent = true
                 }
@@ -981,14 +1039,13 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        guard error == nil else {
-            statusText = "服务发现失败，准备重连"
-            centralManager.cancelPeripheralConnection(peripheral)
+        guard error == nil,
+              let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
+            // No matching service is a failed handshake, not a successful PHY link.
+            failGATTHandshake(peripheral, phase: "service_discovery")
             return
         }
-        peripheral.services?
-            .filter { $0.uuid == Self.serviceUUID }
-            .forEach { peripheral.discoverCharacteristics([Self.dataUUID], for: $0) }
+        peripheral.discoverCharacteristics([Self.dataUUID], for: service)
     }
 
     func peripheral(
@@ -997,9 +1054,10 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
         error: Error?
     ) {
         guard error == nil,
-              let characteristic = service.characteristics?.first(where: { $0.uuid == Self.dataUUID }) else {
-            statusText = "数据通道发现失败，准备重连"
-            centralManager.cancelPeripheralConnection(peripheral)
+              let characteristic = service.characteristics?.first(where: { $0.uuid == Self.dataUUID }),
+              characteristic.properties.contains(.notify),
+              characteristic.properties.contains(.writeWithoutResponse) else {
+            failGATTHandshake(peripheral, phase: "characteristic_discovery")
             return
         }
         remoteCharacteristics[peripheral.identifier] = characteristic
@@ -1013,11 +1071,12 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
         didUpdateNotificationStateFor characteristic: CBCharacteristic,
         error: Error?
     ) {
+        guard characteristic.uuid == Self.dataUUID else { return }
         guard error == nil, characteristic.isNotifying else {
-            statusText = "数据通道订阅失败，准备重连"
-            centralManager.cancelPeripheralConnection(peripheral)
+            failGATTHandshake(peripheral, phase: "notify_subscription")
             return
         }
+        gattHandshakeWatchdog.dataChannelReady(peripheral.identifier)
         reconnectAttempts[peripheral.identifier] = 0
         persistWantedConnectionIntent()
         reconcileConnectionEvent(peripheral.identifier)

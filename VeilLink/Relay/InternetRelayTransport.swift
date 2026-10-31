@@ -11,6 +11,19 @@ struct VeilRelayProviderSnapshot: Identifiable, Equatable, Sendable {
     var id: String { region.rawValue }
 }
 
+enum VeilRelayProviderHealthPolicy {
+    static let consecutiveFailureThreshold = 2
+
+    static func recordingFailure(_ snapshot: VeilRelayProviderSnapshot) -> VeilRelayProviderSnapshot {
+        var next = snapshot
+        next.consecutiveFailures += 1
+        if next.consecutiveFailures >= consecutiveFailureThreshold {
+            next.reachable = false
+        }
+        return next
+    }
+}
+
 @MainActor
 final class InternetRelayTransport: ObservableObject {
     @Published private(set) var isRunning = false
@@ -167,7 +180,7 @@ final class InternetRelayTransport: ObservableObject {
         }
 
         Task { @MainActor [weak self] in
-            await self?.sendRequests(requests, allowFallback: providers.count == 1)
+            await self?.sendRequests(requests)
         }
         return .accepted
     }
@@ -237,27 +250,20 @@ final class InternetRelayTransport: ObservableObject {
         providerSnapshots[region]?.roundTripMilliseconds ?? 9_999
     }
 
-    private func sendRequests(_ requests: [(VeilRelayRegion, VeilRelayPushRequest)], allowFallback: Bool) async {
+    private func sendRequests(_ requests: [(VeilRelayRegion, VeilRelayPushRequest)]) async {
         if requests.count >= 2 {
             let first = requests[0]
             let second = requests[1]
             async let firstResult = postJSON(first.1, region: first.0, path: "v1/push")
             async let secondResult = postJSON(second.1, region: second.0, path: "v1/push")
-            let results = await (firstResult, secondResult)
-            if !results.0 && !results.1 {
-                markFailure(first.0)
-                markFailure(second.0)
-            }
+            _ = await (firstResult, secondResult)
             return
         }
         guard let only = requests.first else { return }
-        let succeeded = await postJSON(only.1, region: only.0, path: "v1/push")
-        if !succeeded, allowFallback {
-            // The SessionCoordinator outbox keeps the message pending until the peer ACK arrives.
-            // Marking this provider unhealthy lets the next retry choose the other region without
-            // consuming a second VeilLink sequence number for the same local send attempt.
-            markFailure(only.0)
-        }
+        // postJSON is the single owner of provider health accounting. Counting the result again
+        // here would turn one transient HTTP failure into two consecutive failures and eject a
+        // healthy route before the SessionCoordinator outbox can retry it.
+        _ = await postJSON(only.1, region: only.0, path: "v1/push")
     }
 
     private func probeProviders() async {
@@ -404,10 +410,8 @@ final class InternetRelayTransport: ObservableObject {
     }
 
     private func markFailure(_ region: VeilRelayRegion) {
-        var snapshot = providerSnapshots[region] ?? VeilRelayProviderSnapshot(region: region, reachable: false, roundTripMilliseconds: nil, lastSuccessAt: nil, consecutiveFailures: 0)
-        snapshot.consecutiveFailures += 1
-        if snapshot.consecutiveFailures >= 2 { snapshot.reachable = false }
-        providerSnapshots[region] = snapshot
+        let snapshot = providerSnapshots[region] ?? VeilRelayProviderSnapshot(region: region, reachable: false, roundTripMilliseconds: nil, lastSuccessAt: nil, consecutiveFailures: 0)
+        providerSnapshots[region] = VeilRelayProviderHealthPolicy.recordingFailure(snapshot)
         updateStatus()
     }
 
