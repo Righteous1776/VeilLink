@@ -1,6 +1,6 @@
 # VeilLink 27.2 · Build 64 — Offline Gomoku & Formation Release Candidate
 
-**Status: NOT RELEASED.** This file records the proposed scope of a guarded unsigned iOS Core IPA; it is not evidence of a production rollout or any App Store signature. Candidate branch: `integration/veillink-27-2-b64-staged-20261031`, based on PR #119's native Gomoku integration plus the separately tested native broker XCTest repair PR #121.
+**Release classification: experimental unsigned iOS Core IPA.** Publishing this build as a GitHub Release does not mean it is App Store-signed, installed successfully on a physical iPhone, or certified as a stable production rollout. Verify tag and asset publication directly on GitHub. Candidate branch: `integration/veillink-27-2-b64-staged-20261031`, based on PR #119's native Gomoku integration plus the separately tested native broker XCTest repair PR #121.
 
 ## Verified intended differences from public Build 63
 
