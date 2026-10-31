@@ -201,7 +201,8 @@ def check_script_syntax():
         py_compile.compile(str(path), doraise=True)
     for path in sorted((ROOT / "scripts").glob("*.sh")):
         run(["bash", "-n", str(path)])
-    print("Python/Shell syntax: PASS")
+    run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-p", "test_ci_*.py", "-v"])
+    print("Python/Shell syntax + CI evidence parser tests: PASS")
 
 def check_swift_syntax():
     swift_files = sorted((ROOT / "VeilLink").rglob("*.swift")) + sorted((ROOT / "VeilLinkTests").rglob("*.swift"))

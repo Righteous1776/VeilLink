@@ -23,7 +23,7 @@ packages:
     exactVersion: 2.9.6
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation.git
-    from: 0.9.19
+    exactVersion: 0.9.20
 targets:
   VeilLink:
     type: application
@@ -79,6 +79,7 @@ targets:
     scheme:
       testTargets:
         - VeilLinkTests
+        - VeilLinkUITests
   VeilBackgroundWidget:
     type: app-extension
     platform: iOS
@@ -115,3 +116,15 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.VeilLinkTests
+  VeilLinkUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: VeilLinkUITests
+    dependencies:
+      - target: VeilLink
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.VeilLinkUITests
+        TEST_TARGET_NAME: VeilLink

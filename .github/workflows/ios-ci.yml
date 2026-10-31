@@ -21,7 +21,7 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -43,6 +43,9 @@ jobs:
 
       - name: Install XcodeGen
         run: brew install xcodegen 2>&1 | tee ci-artifacts/install-xcodegen.log
+
+      - name: Record XcodeGen version
+        run: xcodegen --version | tee ci-artifacts/xcodegen-version.log
 
       - name: Generate Xcode project
         run: |
@@ -70,11 +73,29 @@ jobs:
             exit "$build_status"
           fi
 
-      - name: Run unit tests
+      - name: Run unit and UI smoke tests
         run: |
           set -o pipefail
           rm -rf TestResults.xcresult
           bash scripts/ci-test.sh 2>&1 | tee ci-artifacts/unit-tests.log
+          python3 scripts/ci-collect-evidence.py \
+            --workflow "iOS CI" \
+            --status success \
+            --artifact-dir ci-artifacts \
+            --output ci-artifacts/CI_TEST_EVIDENCE.json \
+            --require-tests-passed
+
+      - name: Compile Release for iPhoneOS (no IPA, no signing)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project VeilLink.xcodeproj \
+            -scheme VeilLink \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee ci-artifacts/ios-device-release-build.log
 
       - name: Collect CI evidence
         if: always()
