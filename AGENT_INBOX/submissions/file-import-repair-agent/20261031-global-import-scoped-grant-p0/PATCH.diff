@@ -1,0 +1,109 @@
+diff --git a/VeilLink/Core/VeilImportedFileAccess.swift b/VeilLink/Core/VeilImportedFileAccess.swift
+--- a/VeilLink/Core/VeilImportedFileAccess.swift
++++ b/VeilLink/Core/VeilImportedFileAccess.swift
+@@ -34,30 +34,43 @@
+         _ sourceURL: URL,
+         acceptedExtensions: Set<String> = []
+     ) async throws -> URL {
+-        let worker = Task.detached(priority: .userInitiated) {
+-            try materialize(sourceURL, acceptedExtensions: acceptedExtensions)
+-        }
+-        return try await withTaskCancellationHandler(
+-            operation: { try await worker.value },
+-            onCancel: { worker.cancel() }
+-        )
+-    }
+-
+-    static func materialize(
+-        _ sourceURL: URL,
+-        acceptedExtensions: Set<String> = []
+-    ) throws -> URL {
+-        let normalizedExtensions = Set(acceptedExtensions.map { $0.lowercased() })
+-        if !normalizedExtensions.isEmpty,
+-           !normalizedExtensions.contains(sourceURL.pathExtension.lowercased()) {
+-            throw VeilImportedFileAccessError.unsupportedExtension(
+-                expected: normalizedExtensions.sorted()
+-            )
+-        }
+-
+-        let granted = sourceURL.startAccessingSecurityScopedResource()
+-        defer {
+-            if granted { sourceURL.stopAccessingSecurityScopedResource() }
++        // Open the picker grant on the calling task BEFORE crossing the detached
++        // task boundary. Hold it until the coordinated copy has completed.
++        let granted = sourceURL.startAccessingSecurityScopedResource()
++        defer { if granted { sourceURL.stopAccessingSecurityScopedResource() } }
++
++        let worker = Task.detached(priority: .userInitiated) {
++            try materializeWithHeldScope(sourceURL, acceptedExtensions: acceptedExtensions)
++        }
++        return try await withTaskCancellationHandler(
++            operation: { try await worker.value },
++            onCancel: { worker.cancel() }
++        )
++    }
++
++    static func materialize(
++        _ sourceURL: URL,
++        acceptedExtensions: Set<String> = []
++    ) throws -> URL {
++        let granted = sourceURL.startAccessingSecurityScopedResource()
++        defer { if granted { sourceURL.stopAccessingSecurityScopedResource() } }
++        return try materializeWithHeldScope(sourceURL, acceptedExtensions: acceptedExtensions)
++    }
++
++    private static func materializeWithHeldScope(
++        _ sourceURL: URL,
++        acceptedExtensions: Set<String>
++    ) throws -> URL {
++        guard sourceURL.isFileURL else {
++            throw VeilImportedFileAccessError.inaccessible
++        }
++        if Task.isCancelled { throw CancellationError() }
++        let normalizedExtensions = Set(acceptedExtensions.map { $0.lowercased() })
++        if !normalizedExtensions.isEmpty,
++           !normalizedExtensions.contains(sourceURL.pathExtension.lowercased()) {
++            throw VeilImportedFileAccessError.unsupportedExtension(
++                expected: normalizedExtensions.sorted()
++            )
+         }
+ 
+         let root = FileManager.default.temporaryDirectory
+diff --git a/VeilLink/UI/BoardDeveloperLearningLabView.swift b/VeilLink/UI/BoardDeveloperLearningLabView.swift
+--- a/VeilLink/UI/BoardDeveloperLearningLabView.swift
++++ b/VeilLink/UI/BoardDeveloperLearningLabView.swift
+@@ -46,7 +46,18 @@
+             allowedContentTypes: [.item],
+             allowsMultipleSelection: false
+         ) { result in
+-            guard case .success(let urls) = result, let selectedURL = urls.first else { return }
++            let selectedURL: URL
++            switch result {
++            case .failure(let error):
++                message = "文件选择器未返回文件：" + error.localizedDescription
++                return
++            case .success(let urls):
++                guard let first = urls.first else {
++                    message = "未选择训练包。"
++                    return
++                }
++                selectedURL = first
++            }
+             guard authorizedSession else {
+                 message = "开发者会话已失效，请重新验证。"
+                 return
+diff --git a/VeilLinkTests/VeilImportedFileAccessTests.swift b/VeilLinkTests/VeilImportedFileAccessTests.swift
+--- a/VeilLinkTests/VeilImportedFileAccessTests.swift
++++ b/VeilLinkTests/VeilImportedFileAccessTests.swift
+@@ -35,6 +35,11 @@
+         )
+     }
+ 
++    func testRejectsNonFileProviderURL() throws {
++        let remote = URL(string: "https://invalid.example.org/training.json")!
++        XCTAssertThrowsError(try VeilImportedFileAccess.materialize(remote))
++    }
++
+     func testBackgroundMaterializationCopiesLargeFile() async throws {
+         let source = FileManager.default.temporaryDirectory
+             .appendingPathComponent("import-source-\(UUID().uuidString).zip")
