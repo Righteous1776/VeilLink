@@ -1,0 +1,15 @@
+# Advisory patch receipt — requires stacked PR #114 head 14f2740620c0a73874df1588f146ad0f9a67589c
+#
+# Reviewed isolated candidate files:
+# - VeilLink/Agent/Games/LocalAIGameController.swift
+# - VeilLink/UI/GameLobbyView.swift
+# - VeilLinkTests/AgentControlAndLocalGameTests.swift
+#
+# The candidate changes humanPlayer from fixed host to session-side state, derives
+# aiPlayer as its opponent, restarts and schedules an AI opening for second-side
+# selection, forwards the selected actor to native/PVS Gomoku and Xiangqi engines,
+# and normalises stored learning actors to the existing local-player/computer contract.
+#
+# Source target is Draft PR #114. An Integration Governor must replay/adapt it after
+# stack arbitration rather than applying a misleading partial patch to older main.
+# Candidate static diff: 3 files, 89 insertions, 14 deletions; no schema change.
