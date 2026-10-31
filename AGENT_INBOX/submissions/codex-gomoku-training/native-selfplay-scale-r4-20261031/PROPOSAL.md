@@ -12,7 +12,7 @@
 - 胜负：黑/host 胜 **1,102**；白/guest 胜 **860**；和棋 **38**。
 - 81 个不同的首手种子；双方六类阵法模式的 36 种组合，三档搜索预算。独立 Python 五连线、合法走子和终局复盘：2,000 局发现 **0** 局无效。
 - 原生 Bot 训练偏好 vs 未启用偏好的探索性**450 局**对照（225 个首手、互换执棋）：有训练侧胜 **217**、基线胜 **190**、和棋 **43**，积分率 **53.0%**。不足以证明稳定棋力增益；首手覆盖与训练数据存在重合，**不能称为严格独立盲测**，也没证明优于第三方 PVS/VCF。
-- 已在 Draft PR #114 的 `VeilLink/Resources/GomokuNativeTrainingSeed.json` 提供 2,000 局紧凑棋谱，配套 `GomokuBundledNativeSeed.verify` 的 CRC/FNV64 级逐步校验（**确切是 FNV1a64；不是 CRC**），原有 `AdaptiveBoardLearningStore` 的独立训练库及 10/100/1000 局 App 前台训练入口。**尚非 main/正式版**。
+- 已在 Draft PR #114 的 `VeilLink/Resources/GomokuNativeTrainingSeed.json` 提供 2,000 局紧凑棋谱，配套 `GomokuBundledNativeSeed.verify` 的 FNV1a64 完整性校验与逐手规则复盘（FNV 不是密码学签名），原有 `AdaptiveBoardLearningStore` 的独立训练库及 10/100/1000 局 App 前台训练入口。**尚非 main/正式版**。
 - 训练种子：178,125 bytes；SHA-256 `9f7ddf5c847d6beb972c5a98ad83daa66df189f82171988ac1da68d6142188e0`，FNV1a64 `29e9808a4a69618b`；生成信息见 PR #114 和 `docs/GOMOKU_NATIVE_SELFPLAY_R3_20261031.md`。
 
 ## Codex 的实际任务
