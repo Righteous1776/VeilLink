@@ -1,0 +1,16 @@
+# VeilLink Relay API v1 staging — AGENT-DROP
+- agent_id: `api-relay-agent`
+- task_id: `20261031-relay-v1-reference`
+- mode: **INBOX_ONLY**, no LIVE-LANE-GRANT
+- base_main_sha: `6b1b1b311cbc40a54d21a2d8fe533c63dd8f25fe`
+- coordination: Issue #6 / `VEILLINK-IG-001`
+- submission_path: `AGENT_INBOX/submissions/api-relay-agent/20261031-relay-v1-reference/`
+- touched_product_files: **none**
+- version_and_release_changes: **none**
+- external_server_deployed: **NO**
+- API_status: **LOCAL CONTRACT PROTOTYPE / NOT PRODUCTION**
+- owner_goal: progress domestic/international Relay API while protecting current Build63 and upcoming release
+- staged_implementation: `FILES/relay_api.py`, `FILES/test_relay_api.py`, `FILES/README.md`
+- proposed_integration_path: `server/relay-api-v1/` after security and deployment review
+- tests_executed: `cd FILES && python3 -m unittest -v test_relay_api.py`; 10/10 passed in local CPython
+- overlap: Internet Relay client API in `VeilLink/Relay/InternetRelayTransport.swift`, QR pairing in `VeilLink/Pairing/RemotePairingCoordinator.swift`, no existing server folder detected in current main.
