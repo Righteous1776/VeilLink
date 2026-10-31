@@ -1,0 +1,17 @@
+diff --git a/docs/GOMOKU_CODEX_NATIVE_TRAINING_ACCEPTANCE.md b/docs/GOMOKU_CODEX_NATIVE_TRAINING_ACCEPTANCE.md
+new file mode 100644
+--- /dev/null
++++ b/docs/GOMOKU_CODEX_NATIVE_TRAINING_ACCEPTANCE.md
+@@ -0,0 +1,12 @@
++# Gomoku Codex Training — proposed acceptance checklist
++
++> Inbox-only PROPOSAL; this diff has NOT been applied to product source or main.
++
++- Use the exact VeilLink native Swift GomokuBot and GomokuState for matches.
++- Verify every game to a real terminal winner/draw before counting it.
++- Report preset opening stones separately from Bot-selected moves.
++- Report completed games separately from distinct game sequences and positions.
++- Retain an immutable SHA-256 manifest and resumable shard checkpoints.
++- Evaluate both colors in held-out paired tournaments versus unchanged native Bot.
++- Keep the stronger vendor PVS/VCF default unless Owner opts in after validation.
++- No unapproved release, schema, workflow, signing, or main modification.
