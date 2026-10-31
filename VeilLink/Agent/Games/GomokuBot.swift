@@ -99,6 +99,17 @@ enum GomokuBot {
             }
         }
 
+        // Selected from the tactical-safety Inbox proposal PR #111.
+        // Learning/formation preferences must not outrank blocking an immediate
+        // opponent five. Inspect stone geometry without mutating turn ownership.
+        let opposingStone: Int8 = player == .host ? 2 : 1
+        for index in candidates {
+            nodes += 1
+            if completesFive(index: index, in: state, stone: opposingStone) {
+                return result(index: index, score: winScore / 2, nodes: nodes, started: started)
+            }
+        }
+
         let urgentDefense = formationPreference.enabled
             && GomokuFormationPreference.opponentHasImmediateWin(in: state, player: player)
         let rootPosition = AdaptiveBoardPosition.gomoku(state)
@@ -255,6 +266,20 @@ enum GomokuBot {
             }
         }
         return set.sorted()
+    }
+
+    /// True when a hypothetical legal stone at index connects five in a row.
+    private static func completesFive(index: Int, in state: GomokuState, stone: Int8) -> Bool {
+        guard state.value(at: index) == 0 else { return false }
+        let row = index / size
+        let col = index % size
+        for (dr, dc) in [(1, 0), (0, 1), (1, 1), (1, -1)] {
+            let connected = 1
+                + count(state: state, row: row, col: col, dr: dr, dc: dc, value: stone)
+                + count(state: state, row: row, col: col, dr: -dr, dc: -dc, value: stone)
+            if connected >= 5 { return true }
+        }
+        return false
     }
 
     private static func tacticalPriority(index: Int, state: GomokuState, player: MiniGamePlayer) -> Int {
