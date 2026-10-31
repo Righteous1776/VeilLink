@@ -64,6 +64,7 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var nativeTrainingCompleted = 0
     @Published private(set) var nativeTrainingTarget = 0
     @Published private(set) var nativeTrainingMessage = "原生对弈训练尚未启动。"
+    @Published private(set) var isImportingNativeSeed = false
     @Published private(set) var useNativeTrainingEvidence = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.UseNativeSelfPlay.v1")
     @Published private(set) var coachProfile: PersonalBoardCoachProfile
     @Published private(set) var coachTip = "每一步都会沉淀为下一局的本地训练证据。"
@@ -109,6 +110,7 @@ final class LocalAIGameController: ObservableObject {
         discoveredGomokuFormations = formationDiscovery.candidateCount
         trainedNativeGames = nativeTrainingStore?.summary.completedGames ?? 0
         sessionID = UUID().uuidString
+        if game == .gomoku { importBundledNativeSeedIfNeeded() }
     }
 
     var canHumanAct: Bool {
@@ -294,6 +296,47 @@ final class LocalAIGameController: ObservableObject {
         coachTip = mode.detail
     }
 
+    /// First-run materialization of real, verified product-native self-play
+    /// generated offline. If the isolated user archive is nonempty, do NOT
+    /// import it again; this prevents duplicate counted games on restart.
+    private func importBundledNativeSeedIfNeeded() {
+        guard game == .gomoku,
+              let store = nativeTrainingStore,
+              store.lastSaveSucceeded,
+              store.summary.completedGames == 0,
+              let url = Bundle.main.url(
+                forResource: GomokuBundledNativeSeed.resourceName,
+                withExtension: "json"
+              ) else { return }
+        isImportingNativeSeed = true
+        nativeTrainingMessage = "正在逐手核验内置原生棋谱（仅首次安装导入）。"
+        Task { @MainActor [weak self] in
+            let verified = await Task.detached(priority: .utility) {
+                try? GomokuBundledNativeSeed.verify(from: url)
+            }.value
+            guard let self else { return }
+            self.isImportingNativeSeed = false
+            guard let verified, !verified.isEmpty else {
+                self.nativeTrainingMessage = "内置棋谱校验失败；未导入任何虚假对局。"
+                return
+            }
+            // Only one archive writes once; a concurrent manual session wins.
+            guard store.summary.completedGames == 0, !self.isNativeTraining else { return }
+            let saved = store.recordCompletedNativeBatch(
+                verified.map { (plies: $0.plies, result: $0.result) }
+            )
+            self.trainedNativeGames = store.summary.completedGames
+            guard saved == verified.count else {
+                self.nativeTrainingMessage = "内置棋谱持久化失败；已保持历史档案不变。"
+                return
+            }
+            self.nativeTrainingMessage = "已导入 \(saved) 局完整原生棋手实战棋谱；重启后仍然有效。"
+            if UserDefaults.standard.object(forKey: "VeilLink.Gomoku.UseNativeSelfPlay.v1") == nil {
+                self.setUseNativeTrainingEvidence(true)
+            }
+        }
+    }
+
     func setUseNativeTrainingEvidence(_ enabled: Bool) {
         guard game == .gomoku else { return }
         useNativeTrainingEvidence = enabled
@@ -302,7 +345,8 @@ final class LocalAIGameController: ObservableObject {
 
     func startNativeTraining(games target: Int) {
         guard game == .gomoku, [10, 100, 1_000].contains(target),
-              !isNativeTraining, let store = nativeTrainingStore else { return }
+              !isNativeTraining, !isImportingNativeSeed,
+              let store = nativeTrainingStore else { return }
         if !store.lastSaveSucceeded {
             nativeTrainingMessage = "训练档案需要修复；未覆盖旧记录。"
             return
