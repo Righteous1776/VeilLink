@@ -1,0 +1,28 @@
+{
+  "agent_id": "codex",
+  "task_id": "20261031-game-multiplayer-reliability-r1",
+  "timestamp_utc": "2026-10-31T00:00:00Z",
+  "status": "PARTIAL",
+  "lane": "INBOX_ONLY",
+  "base_main_sha": "403b3dc474746d3925ad52fa4169225905bac7fc",
+  "repo_governance": {
+    "AGENTS.md": "b65585c41c7577cee73e2225d43ea29cd3f34fea77af8ac09eee944b08c2eaf7",
+    "AGENT_INBOX/00_READ_ME_FIRST.md": "2bed74f0b220d4263df7f0736a83059139a221274347cab9501cda80a022f9d3",
+    "AGENT_INBOX/01_GOVERNOR_IDENTITY.md": "a89046ca904e13f3a26dc4c8b7a44be49e225a50274de44d6d6f58b2374435af",
+    "AGENT_INBOX/02_RULES.md": "61c791c77560d84b2622e652f9d9240ab8850841a50ff22a415d08300f44d162",
+    "AGENT_INBOX/03_PROMPT_FOR_AGENTS.md": "5f94ec41f724109b1dd613c453b5439b29731dce729ca1441c8c37b1870e10e5",
+    "AGENT_INBOX/04_INTEGRATION_PROTOCOL.md": "9b4de887df9a2a08d094c24f5e19960f7fd5ceb23999c4f5da12e2ab1a9729b4",
+    "AGENT_INBOX/05_SUBMISSION_FLOW.md": "0a1d481083851df756353b7217ed614c425b7b67de44a73770628e3c0777f1e5",
+    "AGENT_INBOX/06_ASSET_DROP_POLICY.md": "543be161c71cf4036cc274307c1f7d0b4380004c7b9856a83225c052f0632a93",
+    "AGENT_INBOX/ASSET_GRANTS.json": "f147996f36cf7842e63d6ca61cbc74d40c8980a64acd66ddf81554d3ee19af52",
+    "AGENT_INBOX/GOVERNOR_AUTHORITY.json": "528d0fd431fa479aab4d14ac5e629b93b129a8eb80603143cfd8c0d0e2d1b5bb",
+    "AGENT_INBOX/QUEUE.md": "8668db8c5554752faf75740160151e59cb10571c9d4c201433b69bcc71185007"
+  },
+  "learning_gate": {
+    "mandatory_read_set_present": false,
+    "constitution_seal_present": false,
+    "repo_learning_gate_present": false,
+    "result": "PARTIAL_INBOX_ONLY"
+  },
+  "notes": "Unified agent governance and repository governance were studied. Missing machine-verifiable seal/read-set/learning-gate files prevent a FULL claim."
+}
