@@ -10,4 +10,4 @@
 - `proposed files`: `GomokuFormationLearning.swift`, `LocalAIGameController.swift`, formation tests, training-profile resource/export surface.
 - `binary/model/IPA`: none.
 
-Status: `DROPPED` only after Inbox gate passes. This submission neither authorizes nor contains an IPA/release.
+Status at creation: `PUSHED_FOR_GATE`; it becomes `DROPPED` only after the Inbox gate passes. This submission neither authorizes nor contains an IPA/release.
