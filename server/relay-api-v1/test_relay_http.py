@@ -65,6 +65,10 @@ class RealHTTPContractTests(unittest.TestCase):
         self.assertIsInstance(pulled["packets"][0]["receivedAt"],int)
         self.assertEqual(self.request("/v1/ack","POST",dict(version=1,mailbox=mailbox,readToken=read,packetIDs=[packet]))[0],200)
         self.assertEqual(self.request("/v1/pull?mailbox="+mailbox,bearer=read)[1]["packets"],[])
+        repeat_status, repeat_result = self.request("/v1/push", "POST", pushed)
+        self.assertEqual(repeat_status, 200)
+        self.assertTrue(repeat_result.get("duplicate"))
+        self.assertEqual(self.request("/v1/pull?mailbox="+mailbox,bearer=read)[1]["packets"],[])
         self.assertEqual(self.request("/v1/push","POST",dict(pushed,packetID="A"*36,writeToken="Q"*43))[0],403)
 
     def test_unsupported_method_and_bad_json_http(self):

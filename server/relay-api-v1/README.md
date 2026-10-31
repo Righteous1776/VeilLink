@@ -32,3 +32,7 @@ JSON dates use **Unix epoch milliseconds**; the Swift \`Data\` ciphertext body u
 3. Physical iOS ↔ iOS tests of register, push, pull, ack, retry and outage; before promoting the API to a public release.
 4. Unchanged disabled-by-default behavior until 1-3 are met. Do not bundle sample Python into the iOS app, mutate app DB, wire or release tooling.
 5. This branch is separate from the pending VeilLink 27.2 Build64 offline Gomoku release candidate.
+
+## R1: Post-ACK ciphertext replay deduplication
+
+After /v1/ack, the local SQLite reference retains a bounded SHA-256-only packet tombstone until the original message expires. The same packetID, body and expiration returns duplicate=true with no redelivery, while an altered body or expiration returns HTTP 409. ACK receipt creation and deletion are one SQLite transaction; tombstones survive a cold restart and are removed after TTL expiry. No plaintext or extra ciphertext is retained. This does not replace end-to-end authentication, public ingress rate limits or production monitoring; this server still refuses non-loopback binding.

@@ -27,6 +27,7 @@ PACKET = re.compile(r"[a-zA-Z0-9_-]{8,100}\Z")  # UUID has hyphens
 MAX_BODY_BYTES = 512 * 1024
 MAX_FRAME_BYTES = 256 * 1024
 MAX_MAILBOX_PACKETS = 512
+MAX_ACK_RECEIPTS_PER_MAILBOX = 65536  # bounded research-only mailbox receipts
 MAX_REGISTER_TTL_MS = 10 * 24 * 60 * 60 * 1000
 MAX_PACKET_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -78,6 +79,12 @@ class RelayStore:
                 expires_ms INTEGER NOT NULL, received_ms INTEGER NOT NULL,
                 PRIMARY KEY (mailbox, packet_id))""")
             self.db.execute("CREATE INDEX IF NOT EXISTS packet_expiry_idx ON packets(expires_ms)")
+            self.db.execute("""CREATE TABLE IF NOT EXISTS acknowledged_packets (
+                mailbox TEXT NOT NULL REFERENCES mailboxes(mailbox) ON DELETE CASCADE,
+                packet_id TEXT NOT NULL, body_sha256 TEXT NOT NULL,
+                expires_ms INTEGER NOT NULL,
+                PRIMARY KEY (mailbox, packet_id))""")
+            self.db.execute("CREATE INDEX IF NOT EXISTS acknowledged_expiry_idx ON acknowledged_packets(expires_ms)")
 
     def close(self) -> None:
         with self.lock:
@@ -86,6 +93,7 @@ class RelayStore:
     def _prune(self, now_ms: int) -> None:
         self.db.execute("DELETE FROM mailboxes WHERE expires_ms<=?", (now_ms,))
         self.db.execute("DELETE FROM packets WHERE expires_ms<=?", (now_ms,))
+        self.db.execute("DELETE FROM acknowledged_packets WHERE expires_ms<=?", (now_ms,))
 
     def _authorize(self, mailbox: str, key: str, column: str, now_ms: int) -> bool:
         record = self.db.execute(
@@ -178,6 +186,15 @@ class RelayStore:
             return reject(413, "invalid_packet_size")
         if not self._authorize(mailbox, key, "write", now):
             return reject(403, "unauthorized")
+        consumed = self.db.execute(
+            "SELECT body_sha256, expires_ms FROM acknowledged_packets "
+            "WHERE mailbox=? AND packet_id=?", (mailbox, packet),
+        ).fetchone()
+        if consumed is not None:
+            digest = hashlib.sha256(wire).hexdigest()
+            if not compare_digest(consumed[0], digest) or consumed[1] != expires:
+                return reject(409, "packet_id_conflict")
+            return 200, {"ok": True, "duplicate": True}
         existing = self.db.execute(
             "SELECT body_b64, expires_ms FROM packets WHERE mailbox=? AND packet_id=?",
             (mailbox, packet),
@@ -186,6 +203,11 @@ class RelayStore:
             if existing[0] != encoded or existing[1] != expires:
                 return reject(409, "packet_id_conflict")
             return 200, {"ok": True, "duplicate": True}
+        receipts = self.db.execute(
+            "SELECT COUNT(*) FROM acknowledged_packets WHERE mailbox=?", (mailbox,)
+        ).fetchone()[0]
+        if receipts >= MAX_ACK_RECEIPTS_PER_MAILBOX:
+            return reject(429, "ack_receipt_capacity")
         total = self.db.execute("SELECT COUNT(*) FROM packets WHERE mailbox=?", (mailbox,)).fetchone()[0]
         if total >= MAX_MAILBOX_PACKETS:
             return reject(429, "mailbox_capacity")
@@ -226,7 +248,25 @@ class RelayStore:
             return reject(400, "invalid_packetIDs")
         if not self._authorize(mailbox, read_token, "read", now):
             return reject(403, "unauthorized")
-        self.db.executemany("DELETE FROM packets WHERE mailbox=? AND packet_id=?", [(mailbox, x) for x in ids])
+        for packet_id in set(ids):
+            live = self.db.execute(
+                "SELECT body_b64, expires_ms FROM packets WHERE mailbox=? AND packet_id=?",
+                (mailbox, packet_id),
+            ).fetchone()
+            if live is None:
+                continue
+            digest = hashlib.sha256(
+                base64.b64decode(live[0], validate=True)
+            ).hexdigest()
+            self.db.execute(
+                "INSERT OR IGNORE INTO acknowledged_packets"
+                "(mailbox, packet_id, body_sha256, expires_ms) VALUES (?,?,?,?)",
+                (mailbox, packet_id, digest, live[1]),
+            )
+            self.db.execute(
+                "DELETE FROM packets WHERE mailbox=? AND packet_id=?",
+                (mailbox, packet_id),
+            )
         return 200, {"ok": True}
 
 
