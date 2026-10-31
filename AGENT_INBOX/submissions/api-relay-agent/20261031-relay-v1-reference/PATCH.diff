@@ -1,0 +1,13 @@
+diff --git a/server/relay-api-v1/README.md b/server/relay-api-v1/README.md
+new file mode 100644
+--- /dev/null
++++ b/server/relay-api-v1/README.md
+@@ -0,0 +1,8 @@
++# VeilLink Relay API v1
++
++Proposed provider-independent reference server. Source and tests have
++been staged under AGENT_INBOX/submissions/api-relay-agent/
++20261031-relay-v1-reference/FILES and must be imported by the Governor
++only after a security review and cloud-specific deployment plan.
++
++Local prototype: python3 -m unittest -v test_relay_api.py
