@@ -1,0 +1,114 @@
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@
+-    let humanPlayer: MiniGamePlayer = .host
+-    let aiPlayer: MiniGamePlayer = .guest
++    @Published private(set) var humanPlayer: MiniGamePlayer = .host
++    var aiPlayer: MiniGamePlayer { humanPlayer.opponent }
++
++    var boardSeatText: String {
++        switch (game, humanPlayer) {
++        case (.gomoku, .host): return "黑 · 先手"
++        case (.gomoku, .guest): return "白 · 后手"
++        case (.xiangqi, .host): return "红 · 先手"
++        case (.xiangqi, .guest): return "黑 · 后手"
++        default: return "先手"
++        }
++    }
++
++    func setBoardHumanPlayer(_ player: MiniGamePlayer) {
++        guard game == .gomoku || game == .xiangqi, player != humanPlayer else { return }
++        restart()
++        humanPlayer = player
++        scheduleAIIfNeeded()
++    }
++
++    /// Archives encode semantic roles: host is the local human and guest is
++    /// the computer, independently from the physical black/red colour.
++    private func learningActor(for actualActor: MiniGamePlayer) -> MiniGamePlayer {
++        actualActor == aiPlayer ? .guest : .host
++    }
++@@
++-        learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: humanPlayer))
+++        learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: .host))
++@@
++-        learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: humanPlayer))
+++        learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: .host))
+@@
+     private func selectAIMove() async -> AgentActionCandidate? {
++        let computer = aiPlayer
+         switch game {
+@@
+-                    for: .guest,
++                    for: computer,
+@@
+-                    if trial.apply(index: external.index, actor: .guest) {
++                    if trial.apply(index: external.index, actor: computer) {
+@@
+-                        in: snapshot, for: .guest, budget: budget,
++                        in: snapshot, for: computer, budget: budget,
+@@
+-            guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
++            guard ruleGate.apply(index: result.index, actor: computer) else { return nil }
+@@
+-                XiangqiBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
++                XiangqiBot.chooseMove(in: snapshot, for: computer, budget: budget, learning: learning)
+@@
+-            guard ruleGate.apply(from: result.from, to: result.to, actor: .guest) else { return nil }
++            guard ruleGate.apply(from: result.from, to: result.to, actor: computer) else { return nil }
++@@
++-                aiHistory: learningPlies.filter { $0.actor == aiPlayer }.compactMap { Int($0.action) },
++-                opponentHistory: learningPlies.filter { $0.actor == humanPlayer }.compactMap { Int($0.action) },
+++                aiHistory: learningPlies.filter { $0.actor == .guest }.compactMap { Int($0.action) },
+++                opponentHistory: learningPlies.filter { $0.actor == .host }.compactMap { Int($0.action) },
++@@
++-            learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: aiPlayer))
+++            learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: .guest))
++@@
++-            learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: aiPlayer))
+++            learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: .guest))
+
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@
+-                gameRow(.gomoku, detail: "你执黑先手 · 四档棋力 · 个性化本地陪练", enabled: true)
++                gameRow(.gomoku, detail: "可选黑白与先后手 · 四档棋力 · 个性化本地陪练", enabled: true)
+@@
+-                gameRow(.xiangqi, detail: "你执红先手 · 四档棋力 · 自学习阵法预判", enabled: true)
++                gameRow(.xiangqi, detail: "可选红黑与先后手 · 四档棋力 · 自学习阵法预判", enabled: true)
+@@
+     private var statusCard: some View {
+         VStack(alignment: .leading, spacing: 9) {
++            if game == .gomoku || game == .xiangqi {
++                Picker("你的棋子", selection: Binding(
++                    get: { controller.humanPlayer },
++                    set: { controller.setBoardHumanPlayer($0) }
++                )) {
++                    Text(game == .gomoku ? "黑 · 先手" : "红 · 先手").tag(MiniGamePlayer.host)
++                    Text(game == .gomoku ? "白 · 后手" : "黑 · 后手").tag(MiniGamePlayer.guest)
++                }
++                .pickerStyle(.segmented)
++            }
+
+diff --git a/VeilLinkTests/AgentControlAndLocalGameTests.swift b/VeilLinkTests/AgentControlAndLocalGameTests.swift
+--- a/VeilLinkTests/AgentControlAndLocalGameTests.swift
++++ b/VeilLinkTests/AgentControlAndLocalGameTests.swift
+@@
++    func testBoardSideChoiceStartsComputerWhenPlayerSelectsSecondColour() async throws {
++        let controller = LocalAIGameController(game: .gomoku)
++        controller.setBoardHumanPlayer(.guest)
++        XCTAssertEqual(controller.humanPlayer, .guest)
++        XCTAssertEqual(controller.aiPlayer, .host)
++        XCTAssertTrue(controller.isAIThinking)
++        let deadline = Date().addingTimeInterval(8)
++        while controller.isAIThinking && Date() < deadline {
++            try await Task.sleep(nanoseconds: 40_000_000)
++        }
++        XCTAssertEqual(controller.gomoku.currentPlayer, .guest)
++        XCTAssertEqual((0..<225).filter { controller.gomoku.value(at: $0) == 1 }.count, 1)
++        XCTAssertTrue(controller.canHumanAct)
++    }
+
+# Governor should apply this against Build64 exact source and run the tests below.
