@@ -1,0 +1,34 @@
+diff --git a/project.yml b/project.yml
+--- a/project.yml
++++ b/project.yml
+@@ -16,6 +16,9 @@
+     CODE_SIGN_STYLE: Automatic
+ packages:
++  SwiftSoup:
++    url: https://github.com/scinfu/SwiftSoup.git
++    exactVersion: 2.9.6
+   ZIPFoundation:
+     url: https://github.com/weichsel/ZIPFoundation.git
+     from: 0.9.19
+ targets:
+@@ -52,6 +52,7 @@
+     dependencies:
+       - sdk: libsqlite3.tbd
++      - package: SwiftSoup
+       - package: ZIPFoundation
+       - target: VeilBackgroundWidget
+         embed: true
+     settings:
+diff --git a/VeilLink/UI/ToolCenterView.swift b/VeilLink/UI/ToolCenterView.swift
+--- a/VeilLink/UI/ToolCenterView.swift
++++ b/VeilLink/UI/ToolCenterView.swift
+@@ -94,6 +94,9 @@
+                         toolLink("链路仪表", detail: "LAN 与 BLE 速览", icon: "wave.3.right.circle.fill", destination: VeilLinkPulseToolView(model: model))
+                     }
++                    if matches("离线 html htm 网页 资料 阅读器 本地保存 文件导入 SwiftSoup") {
++                        toolLink("离线 HTML 阅读器", detail: "文件导入 · 正文 · 搜索", icon: "doc.richtext", destination: VeilOfflineHTMLReaderView())
++                    }
+                     if matches("json 格式化 校验 压缩 pretty minify") {
+                         toolLink("JSON 工坊", detail: "校验 · 整理 · 压缩", icon: "curlybraces", destination: VeilJSONToolView())
+                     }
+                     if matches("base64 编码 解码 utf8") {
