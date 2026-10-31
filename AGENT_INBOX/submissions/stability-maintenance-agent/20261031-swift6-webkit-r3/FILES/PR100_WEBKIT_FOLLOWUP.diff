@@ -1,0 +1,494 @@
+diff --git a/VeilLink/Narrative/VeilMonogatariGameView.swift b/VeilLink/Narrative/VeilMonogatariGameView.swift
+--- a/VeilLink/Narrative/VeilMonogatariGameView.swift
++++ b/VeilLink/Narrative/VeilMonogatariGameView.swift
+@@ -1,245 +1,245 @@
+-import SwiftUI
+-import WebKit
+-
+-/// A fully offline Monogatari host. It does not receive AppModel, identity, BLE or chat data.
+-struct VeilMonogatariGameView: View {
+-    @Environment(\.dismiss) private var dismiss
+-    @State private var reloadID = UUID()
+-    @State private var mode: VeilMonogatariLoadMode = .verifiedScheme
+-    @State private var fatal: String?
+-    @State private var warning: String?
+-
+-    var body: some View {
+-        ZStack(alignment: .top) {
+-            VeilMonogatariWebContainer(mode: mode) { event in
+-                switch event {
+-                case .ready: fatal = nil
+-                case .warning(let message): warning = message
+-                case .fatal(let message): fatal = message
+-                }
+-            }
+-            .id(reloadID)
+-            .background(Color(red: 0.035, green: 0.055, blue: 0.11))
+-            .ignoresSafeArea(edges: .bottom)
+-
+-            if let message = warning, fatal == nil {
+-                HStack(alignment: .top, spacing: 8) {
+-                    Image(systemName: "exclamationmark.triangle")
+-                    Text(message).font(.caption)
+-                    Spacer()
+-                    Button { warning = nil } label: { Image(systemName: "xmark.circle.fill") }
+-                }
+-                .foregroundColor(.white)
+-                .padding(12)
+-                .background(Color.black.opacity(0.88))
+-                .clipShape(RoundedRectangle(cornerRadius: 12))
+-                .padding(12)
+-            }
+-
+-            if let error = fatal {
+-                Color.black.opacity(0.93).ignoresSafeArea()
+-                VStack(spacing: 14) {
+-                    Image(systemName: "exclamationmark.triangle").font(.title)
+-                    Text("视觉小说启动失败").font(.headline)
+-                    Text(error).font(.caption).multilineTextAlignment(.center)
+-                    Text("重新加载不会清除游戏存档；尚未保存的进度可能丢失。")
+-                        .font(.caption2).multilineTextAlignment(.center)
+-                        .foregroundColor(.gray)
+-                    Button("重新加载") { reload() }
+-                        .buttonStyle(.borderedProminent)
+-                    Button(mode == .verifiedScheme ? "尝试文件兼容模式" : "返回标准模式") {
+-                        mode = mode == .verifiedScheme ? .fileFallback : .verifiedScheme
+-                        reload()
+-                        warning = "不同 WebKit 加载模式的存档可能相互隔离；没有自动迁移存档。"
+-                    }
+-                    .buttonStyle(.bordered)
+-                    Button("返回游戏大厅") { dismiss() }
+-                        .buttonStyle(.bordered)
+-                }
+-                .foregroundColor(.white)
+-                .padding(24)
+-            }
+-        }
+-        .navigationTitle("雨幕之后 · Monogatari")
+-        .navigationBarTitleDisplayMode(.inline)
+-        .toolbar {
+-            ToolbarItem(placement: .navigationBarTrailing) {
+-                Button("退出") { dismiss() }
+-            }
+-        }
+-    }
+-
+-    private func reload() {
+-        fatal = nil
+-        warning = nil
+-        reloadID = UUID()
+-    }
+-}
+-
+-private enum VeilMonogatariLoadMode: Equatable {
+-    case verifiedScheme
+-    case fileFallback
+-}
+-
+-private enum VeilMonogatariHostEvent {
+-    case ready
+-    case warning(String)
+-    case fatal(String)
+-}
+-
+-private struct VeilMonogatariWebContainer: UIViewRepresentable {
+-    let mode: VeilMonogatariLoadMode
+-    let onEvent: (VeilMonogatariHostEvent) -> Void
+-
+-    func makeCoordinator() -> Coordinator { Coordinator(mode: mode, onEvent: onEvent) }
+-
+-    func makeUIView(context: Context) -> WKWebView {
+-        let config = WKWebViewConfiguration()
+-        config.websiteDataStore = .default()
+-        config.defaultWebpagePreferences.allowsContentJavaScript = true
+-        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+-        config.setURLSchemeHandler(VeilMonogatariSchemeHandler(), forURLScheme: VeilMonogatariSchemeHandler.scheme)
+-        config.userContentController.add(context.coordinator, name: "veilNovel")
+-
+-        let web = WKWebView(frame: .zero, configuration: config)
+-        web.navigationDelegate = context.coordinator
+-        web.isOpaque = false
+-        web.backgroundColor = UIColor(red: 0.035, green: 0.055, blue: 0.11, alpha: 1)
+-        web.scrollView.isScrollEnabled = false
+-        web.scrollView.bounces = false
+-        web.scrollView.contentInsetAdjustmentBehavior = .never
+-        web.allowsBackForwardNavigationGestures = false
+-
+-        guard let root = Bundle.main.resourceURL?.appendingPathComponent("VisualNovelBundle", isDirectory: true),
+-              ["index.html", "engine/core/monogatari.js", "js/main.js",
+-               "js/veillink-native.js", "js/veillink-ios15-compat.js", "js/script.js"].allSatisfy({
+-                  FileManager.default.fileExists(atPath: root.appendingPathComponent($0).path)
+-              }) else {
+-            DispatchQueue.main.async {
+-                onEvent(.fatal("无法找到完整的游戏资源目录。请检查 XcodeGen Copy Bundle Resources。"))
+-            }
+-            return web
+-        }
+-
+-        if mode == .fileFallback {
+-            web.loadFileURL(root.appendingPathComponent("index.html"),
+-                            allowingReadAccessTo: root)
+-        } else if let url = URL(string: "veilnovel://game/index.html") {
+-            web.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+-        }
+-        context.coordinator.armDeadline()
+-        return web
+-    }
+-
+-    func updateUIView(_ view: WKWebView, context: Context) {}
+-
+-    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
+-        coordinator.invalidate()
+-        view.stopLoading()
+-        view.navigationDelegate = nil
+-        view.configuration.userContentController.removeScriptMessageHandler(forName: "veilNovel")
+-    }
+-
+-    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+-        private let mode: VeilMonogatariLoadMode
+-        private let onEvent: (VeilMonogatariHostEvent) -> Void
+-        private var ready = false
+-        private var invalid = false
+-
+-        init(mode: VeilMonogatariLoadMode, onEvent: @escaping (VeilMonogatariHostEvent) -> Void) {
+-            self.mode = mode
+-            self.onEvent = onEvent
+-        }
+-
+-        func invalidate() { invalid = true }
+-
+-        func armDeadline() {
+-            DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+-                guard let self = self, !self.invalid, !self.ready else { return }
+-                self.emit(.fatal("20 秒内未收到引擎就绪信号；请尝试兼容模式。"))
+-            }
+-        }
+-
+-        private func emit(_ event: VeilMonogatariHostEvent) {
+-            guard !invalid else { return }
+-            if Thread.isMainThread { onEvent(event) }
+-            else {
+-                DispatchQueue.main.async { [weak self] in
+-                    guard let self = self, !self.invalid else { return }
+-                    self.onEvent(event)
+-                }
+-            }
+-        }
+-
+-        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+-            guard let url = action.request.url, !invalid else {
+-                decisionHandler(.cancel)
+-                return
+-            }
+-            if mode == .fileFallback {
+-                let root = Bundle.main.resourceURL?.appendingPathComponent("VisualNovelBundle", isDirectory: true)
+-                    .standardizedFileURL.resolvingSymlinksInPath()
+-                let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+-                decisionHandler(url.isFileURL && (path == root?.path ||
+-                               path.hasPrefix((root?.path ?? "") + "/")) ? .allow : .cancel)
+-            } else {
+-                decisionHandler(url.scheme == VeilMonogatariSchemeHandler.scheme &&
+-                                url.host == VeilMonogatariSchemeHandler.host &&
+-                                url.user == nil && url.password == nil ? .allow : .cancel)
+-            }
+-        }
+-
+-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+-                     withError error: Error) {
+-            if (error as NSError).code != NSURLErrorCancelled {
+-                emit(.fatal("本地页面打开失败。可以重试或切换资源加载模式。"))
+-            }
+-        }
+-
+-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+-            if (error as NSError).code != NSURLErrorCancelled {
+-                emit(.fatal("页面加载中断，请手动重新加载。"))
+-            }
+-        }
+-
+-        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+-            emit(.fatal("WebKit 页面进程已退出。为避免低内存设备循环崩溃，需要手动恢复。"))
+-        }
+-
+-        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+-            guard !invalid, message.name == "veilNovel", message.frameInfo.isMainFrame,
+-                  let body = message.body as? [String: Any],
+-                  let type = body["type"] as? String else { return }
+-            let origin = message.frameInfo.securityOrigin
+-            let trusted = (mode == .verifiedScheme &&
+-                           origin.protocol == VeilMonogatariSchemeHandler.scheme &&
+-                           origin.host == VeilMonogatariSchemeHandler.host) ||
+-                          (mode == .fileFallback && origin.protocol == "file")
+-            guard trusted else { return }
+-
+-            let markerKey = "veilnovel.storage.expected.r6." +
+-                (mode == .verifiedScheme ? "scheme" : "file")
+-            switch type {
+-            case "ready":
+-                ready = true
+-                emit(.ready)
+-            case "storage-probe-created":
+-                if UserDefaults.standard.bool(forKey: markerKey) {
+-                    emit(.warning("本地存储标记在重新打开后消失，请勿依赖自动存档。"))
+-                }
+-                UserDefaults.standard.set(true, forKey: markerKey)
+-            case "storage-probe-retained":
+-                UserDefaults.standard.set(true, forKey: markerKey)
+-            case "storage-unavailable":
+-                emit(.warning("此加载模式无法写入本地存档，请先尝试另一种加载模式。"))
+-            case "init-failed":
+-                emit(.fatal("Monogatari 初始化失败。"))
+-            case "error":
+-                emit(.warning("脚本遇到异常；如无法继续，请尝试重载。"))
+-            default:
+-                break
+-            }
+-        }
+-    }
+-}
++import SwiftUI
++import WebKit
++
++/// A fully offline Monogatari host. It does not receive AppModel, identity, BLE or chat data.
++struct VeilMonogatariGameView: View {
++    @Environment(\.dismiss) private var dismiss
++    @State private var reloadID = UUID()
++    @State private var mode: VeilMonogatariLoadMode = .verifiedScheme
++    @State private var fatal: String?
++    @State private var warning: String?
++
++    var body: some View {
++        ZStack(alignment: .top) {
++            VeilMonogatariWebContainer(mode: mode) { event in
++                switch event {
++                case .ready: fatal = nil
++                case .warning(let message): warning = message
++                case .fatal(let message): fatal = message
++                }
++            }
++            .id(reloadID)
++            .background(Color(red: 0.035, green: 0.055, blue: 0.11))
++            .ignoresSafeArea(edges: .bottom)
++
++            if let message = warning, fatal == nil {
++                HStack(alignment: .top, spacing: 8) {
++                    Image(systemName: "exclamationmark.triangle")
++                    Text(message).font(.caption)
++                    Spacer()
++                    Button { warning = nil } label: { Image(systemName: "xmark.circle.fill") }
++                }
++                .foregroundColor(.white)
++                .padding(12)
++                .background(Color.black.opacity(0.88))
++                .clipShape(RoundedRectangle(cornerRadius: 12))
++                .padding(12)
++            }
++
++            if let error = fatal {
++                Color.black.opacity(0.93).ignoresSafeArea()
++                VStack(spacing: 14) {
++                    Image(systemName: "exclamationmark.triangle").font(.title)
++                    Text("视觉小说启动失败").font(.headline)
++                    Text(error).font(.caption).multilineTextAlignment(.center)
++                    Text("重新加载不会清除游戏存档；尚未保存的进度可能丢失。")
++                        .font(.caption2).multilineTextAlignment(.center)
++                        .foregroundColor(.gray)
++                    Button("重新加载") { reload() }
++                        .buttonStyle(.borderedProminent)
++                    Button(mode == .verifiedScheme ? "尝试文件兼容模式" : "返回标准模式") {
++                        mode = mode == .verifiedScheme ? .fileFallback : .verifiedScheme
++                        reload()
++                        warning = "不同 WebKit 加载模式的存档可能相互隔离；没有自动迁移存档。"
++                    }
++                    .buttonStyle(.bordered)
++                    Button("返回游戏大厅") { dismiss() }
++                        .buttonStyle(.bordered)
++                }
++                .foregroundColor(.white)
++                .padding(24)
++            }
++        }
++        .navigationTitle("雨幕之后 · Monogatari")
++        .navigationBarTitleDisplayMode(.inline)
++        .toolbar {
++            ToolbarItem(placement: .navigationBarTrailing) {
++                Button("退出") { dismiss() }
++            }
++        }
++    }
++
++    private func reload() {
++        fatal = nil
++        warning = nil
++        reloadID = UUID()
++    }
++}
++
++private enum VeilMonogatariLoadMode: Equatable {
++    case verifiedScheme
++    case fileFallback
++}
++
++private enum VeilMonogatariHostEvent {
++    case ready
++    case warning(String)
++    case fatal(String)
++}
++
++private struct VeilMonogatariWebContainer: UIViewRepresentable {
++    let mode: VeilMonogatariLoadMode
++    let onEvent: (VeilMonogatariHostEvent) -> Void
++
++    func makeCoordinator() -> Coordinator { Coordinator(mode: mode, onEvent: onEvent) }
++
++    func makeUIView(context: Context) -> WKWebView {
++        let config = WKWebViewConfiguration()
++        config.websiteDataStore = .default()
++        config.defaultWebpagePreferences.allowsContentJavaScript = true
++        config.preferences.javaScriptCanOpenWindowsAutomatically = false
++        config.setURLSchemeHandler(VeilMonogatariSchemeHandler(), forURLScheme: VeilMonogatariSchemeHandler.scheme)
++        config.userContentController.add(context.coordinator, name: "veilNovel")
++
++        let web = WKWebView(frame: .zero, configuration: config)
++        web.navigationDelegate = context.coordinator
++        web.isOpaque = false
++        web.backgroundColor = UIColor(red: 0.035, green: 0.055, blue: 0.11, alpha: 1)
++        web.scrollView.isScrollEnabled = false
++        web.scrollView.bounces = false
++        web.scrollView.contentInsetAdjustmentBehavior = .never
++        web.allowsBackForwardNavigationGestures = false
++
++        guard let root = Bundle.main.resourceURL?.appendingPathComponent("VisualNovelBundle", isDirectory: true),
++              ["index.html", "engine/core/monogatari.js", "js/main.js",
++               "js/veillink-native.js", "js/veillink-ios15-compat.js", "js/script.js"].allSatisfy({
++                  FileManager.default.fileExists(atPath: root.appendingPathComponent($0).path)
++              }) else {
++            DispatchQueue.main.async {
++                onEvent(.fatal("无法找到完整的游戏资源目录。请检查 XcodeGen Copy Bundle Resources。"))
++            }
++            return web
++        }
++
++        if mode == .fileFallback {
++            web.loadFileURL(root.appendingPathComponent("index.html"),
++                            allowingReadAccessTo: root)
++        } else if let url = URL(string: "veilnovel://game/index.html") {
++            web.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
++        }
++        context.coordinator.armDeadline()
++        return web
++    }
++
++    func updateUIView(_ view: WKWebView, context: Context) {}
++
++    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
++        coordinator.invalidate()
++        view.stopLoading()
++        view.navigationDelegate = nil
++        view.configuration.userContentController.removeScriptMessageHandler(forName: "veilNovel")
++    }
++
++    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
++        private let mode: VeilMonogatariLoadMode
++        private let onEvent: (VeilMonogatariHostEvent) -> Void
++        private var ready = false
++        private var invalid = false
++
++        init(mode: VeilMonogatariLoadMode, onEvent: @escaping (VeilMonogatariHostEvent) -> Void) {
++            self.mode = mode
++            self.onEvent = onEvent
++        }
++
++        func invalidate() { invalid = true }
++
++        func armDeadline() {
++            DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
++                guard let self = self, !self.invalid, !self.ready else { return }
++                self.emit(.fatal("20 秒内未收到引擎就绪信号；请尝试兼容模式。"))
++            }
++        }
++
++        private func emit(_ event: VeilMonogatariHostEvent) {
++            guard !invalid else { return }
++            if Thread.isMainThread { onEvent(event) }
++            else {
++                DispatchQueue.main.async { [weak self] in
++                    guard let self = self, !self.invalid else { return }
++                    self.onEvent(event)
++                }
++            }
++        }
++
++        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
++                     decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
++            guard let url = action.request.url, !invalid else {
++                decisionHandler(.cancel)
++                return
++            }
++            if mode == .fileFallback {
++                let root = Bundle.main.resourceURL?.appendingPathComponent("VisualNovelBundle", isDirectory: true)
++                    .standardizedFileURL.resolvingSymlinksInPath()
++                let path = url.standardizedFileURL.resolvingSymlinksInPath().path
++                decisionHandler(url.isFileURL && (path == root?.path ||
++                               path.hasPrefix((root?.path ?? "") + "/")) ? .allow : .cancel)
++            } else {
++                decisionHandler(url.scheme == VeilMonogatariSchemeHandler.scheme &&
++                                url.host == VeilMonogatariSchemeHandler.host &&
++                                url.user == nil && url.password == nil ? .allow : .cancel)
++            }
++        }
++
++        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
++                     withError error: Error) {
++            if (error as NSError).code != NSURLErrorCancelled {
++                emit(.fatal("本地页面打开失败。可以重试或切换资源加载模式。"))
++            }
++        }
++
++        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
++            if (error as NSError).code != NSURLErrorCancelled {
++                emit(.fatal("页面加载中断，请手动重新加载。"))
++            }
++        }
++
++        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
++            emit(.fatal("WebKit 页面进程已退出。为避免低内存设备循环崩溃，需要手动恢复。"))
++        }
++
++        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
++            guard !invalid, message.name == "veilNovel", message.frameInfo.isMainFrame,
++                  let body = message.body as? [String: Any],
++                  let type = body["type"] as? String else { return }
++            let origin = message.frameInfo.securityOrigin
++            let trusted = (mode == .verifiedScheme &&
++                           origin.protocol == VeilMonogatariSchemeHandler.scheme &&
++                           origin.host == VeilMonogatariSchemeHandler.host) ||
++                          (mode == .fileFallback && origin.protocol == "file")
++            guard trusted else { return }
++
++            let markerKey = "veilnovel.storage.expected.r6." +
++                (mode == .verifiedScheme ? "scheme" : "file")
++            switch type {
++            case "ready":
++                ready = true
++                emit(.ready)
++            case "storage-probe-created":
++                if UserDefaults.standard.bool(forKey: markerKey) {
++                    emit(.warning("本地存储标记在重新打开后消失，请勿依赖自动存档。"))
++                }
++                UserDefaults.standard.set(true, forKey: markerKey)
++            case "storage-probe-retained":
++                UserDefaults.standard.set(true, forKey: markerKey)
++            case "storage-unavailable":
++                emit(.warning("此加载模式无法写入本地存档，请先尝试另一种加载模式。"))
++            case "init-failed":
++                emit(.fatal("Monogatari 初始化失败。"))
++            case "error":
++                emit(.warning("脚本遇到异常；如无法继续，请尝试重载。"))
++            default:
++                break
++            }
++        }
++    }
++}
