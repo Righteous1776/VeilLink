@@ -22,4 +22,4 @@ The 62,500 matches are in a **new offline surrogate** written for this experimen
 
 ## Deliverable
 
-`PATCH.diff` is advisory and uses the exact main SHA; `FILES/TRAINING_RESULTS_62500.json` preserves measurements/seed protocol. The full runnable local Python training kit is furnished to Owner separately and may be brought into subsequent Inbox revision as plain-text source; never upload binary weights/ZIP into the Inbox. Apple Xcode CI was **not run** in this Inbox-only lane.
+`PATCH.diff` is advisory and uses the exact main SHA; `FILES/TRAINING_RESULTS_62500.json` preserves measurements/seed protocol. The full runnable Python trainer and heldout validator are now staged as plain-text source under `FILES/Training/` (verified byte-exact Git blob against Owner-local trainer), while binary weights/ZIPs remain forbidden in Inbox. The Owner additionally receives a downloadable local training kit. Apple Xcode CI was **not run** in this Inbox-only lane.

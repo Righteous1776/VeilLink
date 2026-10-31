@@ -8,7 +8,7 @@ raw=Path('/mnt/data/VeilLink-GomokuLearning-20261031-132217.vltrain.json').read_
 raw_train={"0":[2942,3058,4000,62.65],"50":[2898,3065,4037,63.91],"200":[2897,3214,3889,62.77],"800":[1818,3596,4586,66.66],"3200":[1501,4391,4108,63.69]}
 train={k:{'win':x[0],'loss':x[1],'draw':x[2],'total':10000,'avg_turns':x[3]} for k,x in raw_train.items()}
 val={}
-_=vt.play(0,0,12345,75.0)
+_ = vt.play(0,0,12345,75.0)
 for w in [0,50,200,800,3200]:
  t=time.perf_counter();win,loss,draw,turn=vt.tournament(w,2500,15000000+1103*w,75.0)
  val[str(w)]={'win':int(win),'loss':int(loss),'draw':int(draw),'total':2500,'avg_turns':round(float(turn)/2500,2)}

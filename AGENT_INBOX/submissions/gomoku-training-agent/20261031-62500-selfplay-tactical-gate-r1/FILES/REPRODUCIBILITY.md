@@ -4,7 +4,7 @@ Synthetic rules: 15x15 freestyle, no renju forbidden moves, alternate black/whit
 
 Input user file SHA256: `034057959faa8bf45b571fee19b63fda646a27344eeee997216e9921157d5243`, FNV payload `c52154f68a0cb20c`. Source already in Owner's earlier Inbox PR #110; **not duplicated** here.
 
-Run source files (Owner-local training kit, not committed as model weights):
+Run source files (now included as audit-ready plain-text scripts under `FILES/Training/`, plus separate Owner-local kit; no model weights):
 - `veillink_gomoku_selfplay_train.py` SHA256 `1d1463beaf4da1567963e1fbf2b5a3424d239c9dba2b4dbd2439b1d3e170ca38`
 - `veillink_gomoku_validate.py` SHA256 `8b36e9b30f7c57df43b162b798465cb116d4206dec5729e02c0efb28e23f310f`
 - JSON report SHA256 `34dc377670535d762fbb066ffb1bd49b069de07a80dc5f188672c27267db6ba5`

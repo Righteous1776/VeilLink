@@ -6,7 +6,7 @@
 - path: AGENT_INBOX/submissions/gomoku-training-agent/20261031-62500-selfplay-tactical-gate-r1/
 - mode: INBOX_ONLY
 - scope: Gomoku-only isolated policy training and one safe forced-block proposal
-- contents: 5 mandatory documents, FILES/TRAINING_RESULTS_62500.json, FILES/EXTERNAL_ENGINE_REVIEW.md, FILES/REPRODUCIBILITY.md
+- contents: 5 mandatory documents, FILES/TRAINING_RESULTS_62500.json, FILES/EXTERNAL_ENGINE_REVIEW.md, FILES/REPRODUCIBILITY.md, FILES/Training/veillink_gomoku_selfplay_train.py, FILES/Training/veillink_gomoku_validate.py
 - proposed_product_paths: VeilLink/Agent/Games/GomokuBot.swift, VeilLinkTests/GomokuBotTests.swift
 - trained_model_weights: none (governance forbids weights in Inbox)
 - signed_products/release: none
