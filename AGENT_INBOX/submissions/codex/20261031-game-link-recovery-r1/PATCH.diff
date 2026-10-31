@@ -1,0 +1,129 @@
+diff --git a/VeilLink/App/AppModel.swift b/VeilLink/App/AppModel.swift
+index 840b6a4..f9c0abf 100644
+--- a/VeilLink/App/AppModel.swift
++++ b/VeilLink/App/AppModel.swift
+@@ -934,6 +934,22 @@ final class AppModel: ObservableObject {
+         )
+     }
+ 
++    /// Game commands are never written optimistically while the authenticated
++    /// session is absent. Recovery probes every enabled transport because a
++    /// disconnected secure session no longer has a preferred transport ID.
++    @discardableResult
++    func ensureRealtimeGameLink(for peerIdentityID: String) -> Bool {
++        if sessions.hasSecureSession(for: peerIdentityID) { return true }
++        bluetooth.refreshLinks()
++        lanTurbo.refresh()
++        internetRelay.refreshNow()
++        RuntimeDiagnosticsBridge.shared.recordSemanticAction(
++            "game.link.recovery_requested",
++            metadata: ["transports": "ble,lan,relay"]
++        )
++        return false
++    }
++
+     @discardableResult
+     func executeAgentSuggestedGameMove() -> String {
+         guard agentControls.allowSuggestedGameMoveExecution else {
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+index dd49d31..a051a4e 100644
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -963,6 +963,12 @@ struct ChatView: View {
+             return
+         }
+ 
++        guard model.ensureRealtimeGameLink(for: conversation.peerIdentityID) else {
++            model.alertMessage = "对手安全链路尚未就绪。正在同时恢复蓝牙、局域网与中继，请稍后重试。"
++            model.haptics.warning()
++            return
++        }
++
+         let packet = MiniGamePacket(game: game, command: .invite)
+         do {
+             try model.sessions.sendMiniGamePacket(packet, to: conversation.peerIdentityID)
+@@ -982,6 +988,11 @@ struct ChatView: View {
+               !session.hostIsLocal,
+               !session.isInvitationExpired,
+               command == .accept || command == .decline else { return }
++        guard model.ensureRealtimeGameLink(for: conversation.peerIdentityID) else {
++            model.alertMessage = "对手安全链路尚未就绪。正在恢复连接；本次回应没有写入对局历史。"
++            model.haptics.warning()
++            return
++        }
+         let packet = MiniGamePacket(
+             sessionID: session.id,
+             game: session.game,
+diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
+index c4d5f76..143d941 100644
+--- a/VeilLink/UI/MiniGameViews.swift
++++ b/VeilLink/UI/MiniGameViews.swift
+@@ -274,7 +274,7 @@ struct MiniGameHubView: View {
+ 
+     private func createGame(_ game: MiniGameKind) {
+         guard creatingGame == nil else { return }
+-        guard ensureRealtimeLink() else {
++        guard model.ensureRealtimeGameLink(for: conversation.peerIdentityID) else {
+             model.alertMessage = "对手安全链路尚未就绪。正在尝试恢复连接，请在链路就绪后再发起对局。"
+             model.haptics.warning()
+             return
+@@ -293,20 +293,6 @@ struct MiniGameHubView: View {
+         creatingGame = nil
+     }
+ 
+-    private func ensureRealtimeLink() -> Bool {
+-        if model.sessions.hasSecureSession(for: conversation.peerIdentityID) { return true }
+-        if let transportID = model.sessions.transportID(for: conversation.peerIdentityID) {
+-            if model.bluetooth.linkSnapshots[transportID]?.isConnected == true {
+-                model.sessions.recoverSecureSession(for: conversation.peerIdentityID)
+-            } else {
+-                model.bluetooth.recover(transportID)
+-            }
+-        } else {
+-            model.bluetooth.refreshLinks()
+-        }
+-        return false
+-    }
+-
+     private func reload() {
+         reloadGeneration &+= 1
+         let generation = reloadGeneration
+@@ -1036,7 +1022,7 @@ struct MiniGameSessionView: View {
+ 
+     private func send(command: MiniGameCommand, turn: Int, move: MiniGameMove?) {
+         guard !isSending, let session else { return }
+-        guard ensureRealtimeLink() else {
++        guard model.ensureRealtimeGameLink(for: conversation.peerIdentityID) else {
+             model.alertMessage = "对手安全链路已断开。正在尝试恢复连接；本次棋步没有假装发送。"
+             model.haptics.warning()
+             return
+@@ -1085,7 +1071,7 @@ struct MiniGameSessionView: View {
+ 
+     private func rematch(_ game: MiniGameKind) {
+         guard !isSending else { return }
+-        guard ensureRealtimeLink() else {
++        guard model.ensureRealtimeGameLink(for: conversation.peerIdentityID) else {
+             model.alertMessage = "对手安全链路尚未就绪。连接恢复后再发起下一局。"
+             model.haptics.warning()
+             return
+@@ -1103,20 +1089,6 @@ struct MiniGameSessionView: View {
+         isSending = false
+     }
+ 
+-    private func ensureRealtimeLink() -> Bool {
+-        if model.sessions.hasSecureSession(for: conversation.peerIdentityID) { return true }
+-        if let transportID = model.sessions.transportID(for: conversation.peerIdentityID) {
+-            if model.bluetooth.linkSnapshots[transportID]?.isConnected == true {
+-                model.sessions.recoverSecureSession(for: conversation.peerIdentityID)
+-            } else {
+-                model.bluetooth.recover(transportID)
+-            }
+-        } else {
+-            model.bluetooth.refreshLinks()
+-        }
+-        return false
+-    }
+-
+     private func reload(notify: Bool) {
+         reloadGeneration &+= 1
+         let generation = reloadGeneration
