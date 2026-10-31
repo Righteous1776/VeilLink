@@ -1,0 +1,98 @@
+diff --git a/VeilLink/App/VeilLinkApp.swift b/VeilLink/App/VeilLinkApp.swift
+index 49b329e..e8d0425 100644
+--- a/VeilLink/App/VeilLinkApp.swift
++++ b/VeilLink/App/VeilLinkApp.swift
+@@ -347,7 +347,9 @@ private struct RootContainer: View {
+     }
+ 
+     private var particleEventToken: String {
+-        "\(legalConsent.isSatisfied)-\(identity.activeIdentity == nil)-\(appLock.isLocked)-\(model.selectedSection.rawValue)"
++        // Bursts mark root lifecycle changes only. Tab navigation keeps the ambient particle
++        // field alive without firing a full-screen celebration on every page switch.
++        "\(legalConsent.isSatisfied)-\(identity.activeIdentity == nil)-\(appLock.isLocked)"
+     }
+ 
+     var body: some View {
+diff --git a/VeilLink/UI/AdaptiveRootView.swift b/VeilLink/UI/AdaptiveRootView.swift
+index d13e966..ce4579b 100644
+--- a/VeilLink/UI/AdaptiveRootView.swift
++++ b/VeilLink/UI/AdaptiveRootView.swift
+@@ -51,6 +51,7 @@ private struct PhoneLayout: View {
+             NavigationView {
+                 ConversationListView(model: model, usesNavigationLinks: true)
+                     .telemetryScreen("chats.list")
++                    .navigationBarTitleDisplayMode(.inline)
+             }
+             .navigationViewStyle(StackNavigationViewStyle())
+             .tabItem { Label("对话", systemImage: SidebarSection.chats.icon) }
+@@ -60,6 +61,7 @@ private struct PhoneLayout: View {
+             NavigationView {
+                 NearbyView(model: model)
+                     .telemetryScreen("nearby")
++                    .navigationBarTitleDisplayMode(.inline)
+             }
+             .navigationViewStyle(StackNavigationViewStyle())
+             .tabItem { Label("附近", systemImage: SidebarSection.nearby.icon) }
+@@ -68,6 +70,7 @@ private struct PhoneLayout: View {
+             NavigationView {
+                 GameLobbyView(model: model)
+                     .telemetryScreen("games.lobby")
++                    .navigationBarTitleDisplayMode(.inline)
+             }
+             .navigationViewStyle(StackNavigationViewStyle())
+             .tabItem { Label("游戏", systemImage: SidebarSection.games.icon) }
+@@ -84,6 +87,7 @@ private struct PhoneLayout: View {
+             NavigationView {
+                 SettingsView(model: model)
+                     .telemetryScreen("settings")
++                    .navigationBarTitleDisplayMode(.inline)
+             }
+             .navigationViewStyle(StackNavigationViewStyle())
+             .tabItem { Label("设置", systemImage: SidebarSection.settings.icon) }
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+index 40ae5b1..eecd0c7 100644
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -94,6 +94,7 @@ struct ConversationListView: View {
+                                 conversationPendingClear = conversation
+                             }
+                         }
++                        .modifier(ConversationListRowChrome())
+                     } else {
+                         Button {
+                             model.haptics.selection()
+@@ -150,6 +151,7 @@ struct ConversationListView: View {
+                                 conversationPendingClear = conversation
+                             }
+                         }
++                        .modifier(ConversationListRowChrome())
+                     }
+                 }
+                 .listStyle(.plain)
+@@ -240,6 +242,15 @@ struct ConversationListView: View {
+     }
+ }
+ 
++private struct ConversationListRowChrome: ViewModifier {
++    func body(content: Content) -> some View {
++        content
++            .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
++            .listRowSeparator(.hidden)
++            .listRowBackground(Color.clear)
++    }
++}
++
+ private struct ConversationRow: View {
+     let conversation: ConversationSummary
+     let isSelected: Bool
+@@ -306,10 +317,6 @@ private struct ConversationRow: View {
+                 .padding(.leading, 11)
+         }
+         .contentShape(VeilPanelShape(cut: 15, radius: 7))
+-        .padding(.vertical, 3)
+-        .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+-        .listRowSeparator(.hidden)
+-        .listRowBackground(Color.clear)
+     }
+ }
+ 
