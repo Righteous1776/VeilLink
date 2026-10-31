@@ -538,6 +538,58 @@ struct LocalAIGameView: View {
                     .font(.caption2)
                     .foregroundColor(VeilTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "repeat.circle")
+                            .foregroundColor(VeilTheme.gold)
+                        Text("原生 Bot 自对弈训练")
+                            .font(.caption.weight(.bold))
+                        Spacer()
+                        Text("已实战 \(controller.trainedNativeGames) 局")
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(VeilTheme.goldBright)
+                    }
+                    Text("真正调用本 App 的 GomokuBot 落子，完整对局保存到独立学习档案；图片分类训练不计入局数。训练仅在此页面前台运行。")
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                    Toggle("允许原生 Bot 使用已保存的自对弈经验", isOn: Binding(
+                        get: { controller.useNativeTrainingEvidence },
+                        set: { controller.setUseNativeTrainingEvidence($0) }
+                    ))
+                    .font(.caption2)
+                    .tint(VeilTheme.gold)
+                    if controller.isNativeTraining {
+                        ProgressView(
+                            value: Double(controller.nativeTrainingCompleted),
+                            total: Double(max(1, controller.nativeTrainingTarget))
+                        )
+                        HStack {
+                            Text("\(controller.nativeTrainingCompleted)/\(controller.nativeTrainingTarget) 局已保存")
+                                .font(.caption.monospacedDigit())
+                            Spacer()
+                            Button("停止训练") { controller.stopNativeTraining() }
+                                .font(.caption.weight(.semibold))
+                        }
+                    } else {
+                        Menu {
+                            Button("原生自对弈 10 局") { controller.startNativeTraining(games: 10) }
+                            Button("原生自对弈 100 局") { controller.startNativeTraining(games: 100) }
+                            Button("原生自对弈 1000 局（长时间前台运行）") {
+                                controller.startNativeTraining(games: 1_000)
+                            }
+                        } label: {
+                            Label("开始真正的 Bot 自对弈", systemImage: "play.circle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(VeilTheme.goldBright)
+                        }
+                    }
+                    Text(controller.nativeTrainingMessage)
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             HStack(spacing: 8) {
                 Label(controller.boardDifficulty.title, systemImage: "slider.horizontal.3")
