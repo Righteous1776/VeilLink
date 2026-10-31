@@ -1,0 +1,1496 @@
+diff --git a/.github/workflows/ios-ci.yml b/.github/workflows/ios-ci.yml
+--- a/.github/workflows/ios-ci.yml
++++ b/.github/workflows/ios-ci.yml
+@@ -1,96 +1,117 @@
+-name: iOS CI
+-
+-on:
+-  push:
+-    branches: [main]
+-    paths-ignore:
+-      - 'AGENT_INBOX/**'
+-  pull_request:
+-    paths-ignore:
+-      - 'AGENT_INBOX/**'
+-  workflow_dispatch:
+-  workflow_call:
+-
+-permissions:
+-  contents: read
+-
+-concurrency:
+-  group: ios-ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+-
+-jobs:
+-  build-and-test:
+-    runs-on: macos-15
+-    timeout-minutes: 35
+-    steps:
+-      - uses: actions/checkout@v4
+-
+-      - name: Prepare evidence directory
+-        run: |
+-          mkdir -p ci-artifacts
+-          {
+-            echo "HEAD=$(git rev-parse HEAD)"
+-            xcodebuild -version
+-            sw_vers
+-            echo "RUNNER_ARCH=${RUNNER_ARCH:-unknown}"
+-            df -h .
+-          } 2>&1 | tee ci-artifacts/environment.log
+-
+-      - name: Static standard preflight
+-        run: |
+-          set -o pipefail
+-          python3 scripts/ci-standard-preflight.py 2>&1 | tee ci-artifacts/static-preflight.log
+-
+-      - name: Install XcodeGen
+-        run: brew install xcodegen 2>&1 | tee ci-artifacts/install-xcodegen.log
+-
+-      - name: Generate Xcode project
+-        run: |
+-          set -o pipefail
+-          xcodegen generate 2>&1 | tee ci-artifacts/xcodegen.log
+-          cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.pbxproj
+-
+-      - name: Build for iOS Simulator
+-        run: |
+-          set -o pipefail
+-          rm -rf ci-artifacts/BuildResults.xcresult
+-          set +e
+-          xcodebuild             -project VeilLink.xcodeproj             -scheme VeilLink             -configuration Debug             -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             -resultBundlePath ci-artifacts/BuildResults.xcresult             CODE_SIGNING_ALLOWED=NO             build 2>&1 | tee ci-artifacts/ios-simulator-build.log
+-          build_status=${PIPESTATUS[0]}
+-          set -e
+-          if [ "$build_status" -ne 0 ]; then
+-            python3 - <<'PY'
+-          from pathlib import Path
+-          log = Path("ci-artifacts/ios-simulator-build.log").read_text(encoding="utf-8", errors="replace")
+-          failures = [line.strip() for line in log.splitlines() if " error:" in line or "fatal error:" in line]
+-          for line in failures[-80:]:
+-              escaped = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+-              print(f"::error title=Xcode build::{escaped}")
+-          PY
+-            exit "$build_status"
+-          fi
+-
+-      - name: Run unit tests
+-        run: |
+-          set -o pipefail
+-          rm -rf TestResults.xcresult
+-          bash scripts/ci-test.sh 2>&1 | tee ci-artifacts/unit-tests.log
+-
+-      - name: Collect CI evidence
+-        if: always()
+-        env:
+-          JOB_STATUS: ${{ job.status }}
+-        run: |
+-          if [ -d TestResults.xcresult ]; then
+-            ditto TestResults.xcresult ci-artifacts/TestResults.xcresult
+-          fi
+-          python3 scripts/ci-collect-evidence.py             --workflow "iOS CI"             --phase "standard-preflight"             --status "$JOB_STATUS"             --artifact-dir ci-artifacts             --output ci-artifacts/CI_EVIDENCE.json
+-
+-      - name: Upload CI evidence
+-        if: always()
+-        uses: actions/upload-artifact@v4
+-        with:
+-          name: VeilLink-iOS-CI-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ci-artifacts
+-          if-no-files-found: error
+-          retention-days: 14
++name: iOS CI
++
++on:
++  push:
++    branches: [main]
++    paths-ignore:
++      - 'AGENT_INBOX/**'
++  pull_request:
++    paths-ignore:
++      - 'AGENT_INBOX/**'
++  workflow_dispatch:
++  workflow_call:
++
++permissions:
++  contents: read
++
++concurrency:
++  group: ios-ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
++  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
++
++jobs:
++  build-and-test:
++    runs-on: macos-15
++    timeout-minutes: 50
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Prepare evidence directory
++        run: |
++          mkdir -p ci-artifacts
++          {
++            echo "HEAD=$(git rev-parse HEAD)"
++            xcodebuild -version
++            sw_vers
++            echo "RUNNER_ARCH=${RUNNER_ARCH:-unknown}"
++            df -h .
++          } 2>&1 | tee ci-artifacts/environment.log
++
++      - name: Static standard preflight
++        run: |
++          set -o pipefail
++          python3 scripts/ci-standard-preflight.py 2>&1 | tee ci-artifacts/static-preflight.log
++
++      - name: Install XcodeGen
++        run: brew install xcodegen 2>&1 | tee ci-artifacts/install-xcodegen.log
++
++      - name: Record XcodeGen version
++        run: xcodegen --version | tee ci-artifacts/xcodegen-version.log
++
++      - name: Generate Xcode project
++        run: |
++          set -o pipefail
++          xcodegen generate 2>&1 | tee ci-artifacts/xcodegen.log
++          cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.pbxproj
++
++      - name: Build for iOS Simulator
++        run: |
++          set -o pipefail
++          rm -rf ci-artifacts/BuildResults.xcresult
++          set +e
++          xcodebuild             -project VeilLink.xcodeproj             -scheme VeilLink             -configuration Debug             -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             -resultBundlePath ci-artifacts/BuildResults.xcresult             CODE_SIGNING_ALLOWED=NO             build 2>&1 | tee ci-artifacts/ios-simulator-build.log
++          build_status=${PIPESTATUS[0]}
++          set -e
++          if [ "$build_status" -ne 0 ]; then
++            python3 - <<'PY'
++          from pathlib import Path
++          log = Path("ci-artifacts/ios-simulator-build.log").read_text(encoding="utf-8", errors="replace")
++          failures = [line.strip() for line in log.splitlines() if " error:" in line or "fatal error:" in line]
++          for line in failures[-80:]:
++              escaped = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
++              print(f"::error title=Xcode build::{escaped}")
++          PY
++            exit "$build_status"
++          fi
++
++      - name: Run unit and UI smoke tests
++        run: |
++          set -o pipefail
++          rm -rf TestResults.xcresult
++          bash scripts/ci-test.sh 2>&1 | tee ci-artifacts/unit-tests.log
++          python3 scripts/ci-collect-evidence.py \
++            --workflow "iOS CI" \
++            --status success \
++            --artifact-dir ci-artifacts \
++            --output ci-artifacts/CI_TEST_EVIDENCE.json \
++            --require-tests-passed
++
++      - name: Compile Release for iPhoneOS (no IPA, no signing)
++        run: |
++          set -o pipefail
++          xcodebuild \
++            -project VeilLink.xcodeproj \
++            -scheme VeilLink \
++            -configuration Release \
++            -sdk iphoneos \
++            -destination 'generic/platform=iOS' \
++            CODE_SIGNING_ALLOWED=NO \
++            build 2>&1 | tee ci-artifacts/ios-device-release-build.log
++
++      - name: Collect CI evidence
++        if: always()
++        env:
++          JOB_STATUS: ${{ job.status }}
++        run: |
++          if [ -d TestResults.xcresult ]; then
++            ditto TestResults.xcresult ci-artifacts/TestResults.xcresult
++          fi
++          python3 scripts/ci-collect-evidence.py             --workflow "iOS CI"             --phase "standard-preflight"             --status "$JOB_STATUS"             --artifact-dir ci-artifacts             --output ci-artifacts/CI_EVIDENCE.json
++
++      - name: Upload CI evidence
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: VeilLink-iOS-CI-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
++          path: ci-artifacts
++          if-no-files-found: error
++          retention-days: 14
+diff --git a/project.yml b/project.yml
+--- a/project.yml
++++ b/project.yml
+@@ -1,112 +1,126 @@
+-name: VeilLink
+-options:
+-  bundleIdPrefix: studio.zeo
+-  deploymentTarget:
+-    iOS: "15.0"
+-  createIntermediateGroups: true
+-settings:
+-  base:
+-    SWIFT_VERSION: 5.9
+-    MARKETING_VERSION: "27.0"
+-    CURRENT_PROJECT_VERSION: "62"
+-    SWIFT_STRICT_CONCURRENCY: complete
+-    IPHONEOS_DEPLOYMENT_TARGET: 15.0
+-    TARGETED_DEVICE_FAMILY: "1,2"
+-    DEVELOPMENT_TEAM: ""
+-    CODE_SIGN_STYLE: Automatic
+-packages:
+-  CodeScanner:
+-    url: https://github.com/twostraws/CodeScanner.git
+-    exactVersion: 2.5.2
+-  SwiftSoup:
+-    url: https://github.com/scinfu/SwiftSoup.git
+-    exactVersion: 2.9.6
+-  ZIPFoundation:
+-    url: https://github.com/weichsel/ZIPFoundation.git
+-    from: 0.9.19
+-targets:
+-  VeilLink:
+-    type: application
+-    platform: iOS
+-    sources:
+-      - path: VeilLink
+-        excludes:
+-          - Agent/MaleCNS
+-          - Agent/Games/TrainedGamePolicyRuntime.swift
+-          - Agent/Games/MaleCNSGameDecisionEncoder.swift
+-          - Agent/Language/LlamaInferenceEngine.swift
+-          - Agent/Language/LlamaLocalTextModelRuntime.swift
+-          - Agent/Language/LlamaRuntimeConfiguration.swift
+-          - Agent/Language/LlamaCancellationGate.swift
+-          - Agent/Language/LocalModelCatalog.swift
+-          - Agent/Language/LocalModelManager.swift
+-          - Resources/VeilFlyCore.vfly
+-          - Resources/VeilFlyLite.vfly
+-          - Resources/VeilFlyAssets.json
+-          - Resources/VFLYInstallationVerification.json
+-          - Resources/MaleCNSGameRankerCoreV1.json
+-          - Resources/MaleCNSGameRankerCoreV1.manifest.json
+-          - Resources/MaleCNSGameRankerLiteV1.json
+-          - Resources/MaleCNSGameRankerLiteV1.manifest.json
+-          - Resources/MaleCNSReadoutCoreV1.json
+-          - Resources/MaleCNSReadoutCoreV1.manifest.json
+-          - Resources/MaleCNSReadoutLiteV1.json
+-          - Resources/MaleCNSReadoutLiteV1.manifest.json
+-          - Resources/AgentModels/game_policy_ranker_v4.vlpol
+-          - Resources/AgentModels/game_policy_ranker_v4.manifest.json
+-          - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
+-    dependencies:
+-      - sdk: libsqlite3.tbd
+-      - package: CodeScanner
+-      - package: SwiftSoup
+-      - package: ZIPFoundation
+-      - target: VeilBackgroundWidget
+-        embed: true
+-    settings:
+-      base:
+-        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink
+-        PRODUCT_NAME: VeilLink
+-        INFOPLIST_FILE: VeilLink/Resources/Info.plist
+-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+-        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+-        SWIFT_OBJC_BRIDGING_HEADER: VeilLink/Native/VeilLink-Bridging-Header.h
+-        SUPPORTS_MACCATALYST: NO
+-    scheme:
+-      testTargets:
+-        - VeilLinkTests
+-  VeilBackgroundWidget:
+-    type: app-extension
+-    platform: iOS
+-    deploymentTarget: "16.1"
+-    sources:
+-      - path: VeilBackgroundWidget
+-      - path: VeilLink/Background/VeilBackgroundActivityAttributes.swift
+-    settings:
+-      base:
+-        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink.backgroundwidget
+-        PRODUCT_NAME: VeilBackgroundWidget
+-        INFOPLIST_FILE: VeilBackgroundWidget/Info.plist
+-        IPHONEOS_DEPLOYMENT_TARGET: 16.1
+-        APPLICATION_EXTENSION_API_ONLY: YES
+-        SKIP_INSTALL: YES
+-        SUPPORTS_MACCATALYST: NO
+-
+-  VeilLinkTests:
+-    type: bundle.unit-test
+-    platform: iOS
+-    sources:
+-      - path: VeilLinkTests
+-        excludes:
+-          - MaleCNSNativeKernelTests.swift
+-          - MaleCNSNativeRolloutPoolTests.swift
+-          - MaleCNSVFLY1Tests.swift
+-          - LocalModelCatalogTests.swift
+-          - RealLocalInferenceSmokeTests.swift
+-          - Fixtures/MaleCNSFixture.vfly
+-          - Fixtures/MaleCNSFixture.vfly.manifest.json
+-    dependencies:
+-      - target: VeilLink
+-    settings:
+-      base:
+-        GENERATE_INFOPLIST_FILE: YES
+-        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.VeilLinkTests
++name: VeilLink
++options:
++  bundleIdPrefix: studio.zeo
++  deploymentTarget:
++    iOS: "15.0"
++  createIntermediateGroups: true
++settings:
++  base:
++    SWIFT_VERSION: 5.9
++    MARKETING_VERSION: "27.0"
++    CURRENT_PROJECT_VERSION: "62"
++    SWIFT_STRICT_CONCURRENCY: complete
++    IPHONEOS_DEPLOYMENT_TARGET: 15.0
++    TARGETED_DEVICE_FAMILY: "1,2"
++    DEVELOPMENT_TEAM: ""
++    CODE_SIGN_STYLE: Automatic
++packages:
++  CodeScanner:
++    url: https://github.com/twostraws/CodeScanner.git
++    exactVersion: 2.5.2
++  SwiftSoup:
++    url: https://github.com/scinfu/SwiftSoup.git
++    exactVersion: 2.9.6
++  ZIPFoundation:
++    url: https://github.com/weichsel/ZIPFoundation.git
++    exactVersion: 0.9.20
++targets:
++  VeilLink:
++    type: application
++    platform: iOS
++    sources:
++      - path: VeilLink
++        excludes:
++          - Agent/MaleCNS
++          - Agent/Games/TrainedGamePolicyRuntime.swift
++          - Agent/Games/MaleCNSGameDecisionEncoder.swift
++          - Agent/Language/LlamaInferenceEngine.swift
++          - Agent/Language/LlamaLocalTextModelRuntime.swift
++          - Agent/Language/LlamaRuntimeConfiguration.swift
++          - Agent/Language/LlamaCancellationGate.swift
++          - Agent/Language/LocalModelCatalog.swift
++          - Agent/Language/LocalModelManager.swift
++          - Resources/VeilFlyCore.vfly
++          - Resources/VeilFlyLite.vfly
++          - Resources/VeilFlyAssets.json
++          - Resources/VFLYInstallationVerification.json
++          - Resources/MaleCNSGameRankerCoreV1.json
++          - Resources/MaleCNSGameRankerCoreV1.manifest.json
++          - Resources/MaleCNSGameRankerLiteV1.json
++          - Resources/MaleCNSGameRankerLiteV1.manifest.json
++          - Resources/MaleCNSReadoutCoreV1.json
++          - Resources/MaleCNSReadoutCoreV1.manifest.json
++          - Resources/MaleCNSReadoutLiteV1.json
++          - Resources/MaleCNSReadoutLiteV1.manifest.json
++          - Resources/AgentModels/game_policy_ranker_v4.vlpol
++          - Resources/AgentModels/game_policy_ranker_v4.manifest.json
++          - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
++    dependencies:
++      - sdk: libsqlite3.tbd
++      - package: CodeScanner
++      - package: SwiftSoup
++      - package: ZIPFoundation
++      - target: VeilBackgroundWidget
++        embed: true
++    settings:
++      base:
++        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink
++        PRODUCT_NAME: VeilLink
++        INFOPLIST_FILE: VeilLink/Resources/Info.plist
++        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
++        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
++        SWIFT_OBJC_BRIDGING_HEADER: VeilLink/Native/VeilLink-Bridging-Header.h
++        SUPPORTS_MACCATALYST: NO
++    scheme:
++      testTargets:
++        - VeilLinkTests
++        - VeilLinkUITests
++  VeilBackgroundWidget:
++    type: app-extension
++    platform: iOS
++    deploymentTarget: "16.1"
++    sources:
++      - path: VeilBackgroundWidget
++      - path: VeilLink/Background/VeilBackgroundActivityAttributes.swift
++    settings:
++      base:
++        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink.backgroundwidget
++        PRODUCT_NAME: VeilBackgroundWidget
++        INFOPLIST_FILE: VeilBackgroundWidget/Info.plist
++        IPHONEOS_DEPLOYMENT_TARGET: 16.1
++        APPLICATION_EXTENSION_API_ONLY: YES
++        SKIP_INSTALL: YES
++        SUPPORTS_MACCATALYST: NO
++
++  VeilLinkTests:
++    type: bundle.unit-test
++    platform: iOS
++    sources:
++      - path: VeilLinkTests
++        excludes:
++          - MaleCNSNativeKernelTests.swift
++          - MaleCNSNativeRolloutPoolTests.swift
++          - MaleCNSVFLY1Tests.swift
++          - LocalModelCatalogTests.swift
++          - RealLocalInferenceSmokeTests.swift
++          - Fixtures/MaleCNSFixture.vfly
++          - Fixtures/MaleCNSFixture.vfly.manifest.json
++    dependencies:
++      - target: VeilLink
++    settings:
++      base:
++        GENERATE_INFOPLIST_FILE: YES
++        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.VeilLinkTests
++
++  VeilLinkUITests:
++    type: bundle.ui-testing
++    platform: iOS
++    sources:
++      - path: VeilLinkUITests
++    dependencies:
++      - target: VeilLink
++    settings:
++      base:
++        GENERATE_INFOPLIST_FILE: YES
++        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.VeilLinkUITests
++        TEST_TARGET_NAME: VeilLink
+diff --git a/scripts/ci-test.sh b/scripts/ci-test.sh
+--- a/scripts/ci-test.sh
++++ b/scripts/ci-test.sh
+@@ -1,32 +1,52 @@
+-#!/bin/bash
+-set -euo pipefail
+-
+-DEVICE_ID="$({ xcrun simctl list devices available -j || true; } | python3 -c '
+-import json, sys
+-try:
+-    data = json.load(sys.stdin)
+-except Exception:
+-    raise SystemExit(1)
+-for runtime, devices in data.get("devices", {}).items():
+-    if "iOS" not in runtime:
+-        continue
+-    for device in devices:
+-        if device.get("isAvailable") and str(device.get("name", "")).startswith("iPhone"):
+-            print(device["udid"])
+-            raise SystemExit(0)
+-raise SystemExit(1)
+-')"
+-
+-if [[ -z "$DEVICE_ID" ]]; then
+-  echo "No available iPhone simulator found." >&2
+-  exit 1
+-fi
+-
+-echo "Using iOS Simulator: $DEVICE_ID"
+-xcodebuild \
+-  -project VeilLink.xcodeproj \
+-  -scheme VeilLink \
+-  -configuration Debug \
+-  -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+-  -resultBundlePath TestResults.xcresult \
+-  test
++#!/bin/bash
++set -euo pipefail
++
++# Prefer a deterministic newest available iPhone runtime. CI records the exact
++# runtime/OS, never silently pretending this proves iOS 15 device compatibility.
++# To require a specific runtime, set VEILLINK_SIMULATOR_RUNTIME (e.g. iOS-18-5).
++mkdir -p ci-artifacts
++xcrun simctl list devices available -j > ci-artifacts/available-simulators.json
++python3 - <<'PY'
++import json, os, re
++from pathlib import Path
++
++catalog = json.loads(Path("ci-artifacts/available-simulators.json").read_text())
++requested = os.environ.get("VEILLINK_SIMULATOR_RUNTIME", "").strip()
++candidates = []
++for runtime, devices in catalog.get("devices", {}).items():
++    if "iOS" not in runtime:
++        continue
++    for device in devices:
++        if not device.get("isAvailable") or not str(device.get("name", "")).startswith("iPhone"):
++            continue
++        version = tuple(int(x) for x in re.findall(r"\d+", runtime))
++        candidates.append((version, runtime, str(device["name"]), str(device["udid"])))
++
++if requested:
++    candidates = [c for c in candidates if requested in c[1]]
++if not candidates:
++    raise SystemExit(f"No available iPhone simulator for required runtime {requested or '(any)'}.")
++candidates.sort(key=lambda x: (x[0], x[1], x[2], x[3]), reverse=True)
++_, runtime, name, udid = candidates[0]
++result = {
++    "device_name": name,
++    "device_id": udid,
++    "runtime": runtime,
++    "requested_runtime": requested or None,
++    "ios15_simulator_verified": "iOS-15-" in runtime,
++    "physical_device_verified": False,
++}
++Path("ci-artifacts/simulator-selection.json").write_text(json.dumps(result, indent=2) + "\n")
++Path("ci-artifacts/selected-simulator-id.txt").write_text(udid + "\n")
++print("CI simulator selected:", name, runtime)
++print("iOS 15 physical device verified: False (separate device gate)")
++PY
++
++DEVICE_ID="$(cat ci-artifacts/selected-simulator-id.txt)"
++xcodebuild \
++  -project VeilLink.xcodeproj \
++  -scheme VeilLink \
++  -configuration Debug \
++  -destination "platform=iOS Simulator,id=$DEVICE_ID" \
++  -resultBundlePath TestResults.xcresult \
++  test
+diff --git a/scripts/ci-collect-evidence.py b/scripts/ci-collect-evidence.py
+--- a/scripts/ci-collect-evidence.py
++++ b/scripts/ci-collect-evidence.py
+@@ -1,140 +1,185 @@
+-#!/usr/bin/env python3
+-import argparse
+-import datetime as dt
+-import hashlib
+-import json
+-import os
+-from pathlib import Path
+-import re
+-import subprocess
+-
+-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+-DIAG_RE = re.compile(
+-    r"(?P<file>[^:\n]+\.(?:swift|m|mm|c|cc|cpp|h)):"
+-    r"(?P<line>\d+):(?P<column>\d+): "
+-    r"(?P<severity>warning|error): (?P<message>.*)"
+-)
+-
+-def command_output(args):
+-    try:
+-        return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+-    except Exception:
+-        return None
+-
+-def sha256_file(path):
+-    h = hashlib.sha256()
+-    with path.open("rb") as f:
+-        while True:
+-            chunk = f.read(1024 * 1024)
+-            if not chunk:
+-                break
+-            h.update(chunk)
+-    return h.hexdigest()
+-
+-def normalize_line(line):
+-    line = ANSI_RE.sub("", line.rstrip())
+-    workspace = os.environ.get("GITHUB_WORKSPACE")
+-    if workspace:
+-        line = line.replace(workspace, "$GITHUB_WORKSPACE")
+-    return line
+-
+-def collect_diagnostics(logs):
+-    errors = []
+-    warnings = []
+-    seen_errors = set()
+-    seen_warnings = set()
+-    for log in logs:
+-        try:
+-            text = log.read_text(encoding="utf-8", errors="replace")
+-        except OSError:
+-            continue
+-        for raw in text.splitlines():
+-            line = normalize_line(raw)
+-            match = DIAG_RE.search(line)
+-            if not match:
+-                continue
+-            item = {
+-                "file": match.group("file"),
+-                "line": int(match.group("line")),
+-                "column": int(match.group("column")),
+-                "message": match.group("message").strip(),
+-                "source_log": log.name,
+-            }
+-            key = (item["file"], item["line"], item["column"], item["message"])
+-            if match.group("severity") == "error":
+-                if key not in seen_errors:
+-                    seen_errors.add(key)
+-                    errors.append(item)
+-            else:
+-                if key not in seen_warnings:
+-                    seen_warnings.add(key)
+-                    warnings.append(item)
+-    return errors[:250], warnings[:500]
+-
+-def main():
+-    parser = argparse.ArgumentParser()
+-    parser.add_argument("--workflow", required=True)
+-    parser.add_argument("--phase", default="job")
+-    parser.add_argument("--status", required=True)
+-    parser.add_argument("--artifact-dir", default="ci-artifacts")
+-    parser.add_argument("--output", default="ci-artifacts/CI_EVIDENCE.json")
+-    args = parser.parse_args()
+-
+-    artifact_dir = Path(args.artifact_dir)
+-    artifact_dir.mkdir(parents=True, exist_ok=True)
+-    logs = sorted(artifact_dir.glob("*.log"))
+-    errors, warnings = collect_diagnostics(logs)
+-
+-    files = []
+-    for p in sorted(artifact_dir.rglob("*")):
+-        if not p.is_file():
+-            continue
+-        entry = {
+-            "path": p.relative_to(artifact_dir).as_posix(),
+-            "bytes": p.stat().st_size,
+-        }
+-        if p.stat().st_size <= 64 * 1024 * 1024:
+-            try:
+-                entry["sha256"] = sha256_file(p)
+-            except OSError:
+-                pass
+-        files.append(entry)
+-
+-    report = {
+-        "schema": 1,
+-        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+-        "workflow": args.workflow,
+-        "phase": args.phase,
+-        "status": args.status,
+-        "git_head": command_output(["git", "rev-parse", "HEAD"]),
+-        "github": {
+-            "run_id": os.environ.get("GITHUB_RUN_ID"),
+-            "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+-            "workflow": os.environ.get("GITHUB_WORKFLOW"),
+-            "event_name": os.environ.get("GITHUB_EVENT_NAME"),
+-            "ref": os.environ.get("GITHUB_REF"),
+-            "sha": os.environ.get("GITHUB_SHA"),
+-        },
+-        "runner": {
+-            "os": os.environ.get("RUNNER_OS"),
+-            "arch": os.environ.get("RUNNER_ARCH"),
+-        },
+-        "xcode": command_output(["xcodebuild", "-version"]),
+-        "system": command_output(["sw_vers"]),
+-        "diagnostics": {
+-            "error_count": len(errors),
+-            "warning_count": len(warnings),
+-            "errors": errors,
+-            "warnings": warnings,
+-        },
+-        "evidence_files": files,
+-    }
+-
+-    out = Path(args.output)
+-    out.parent.mkdir(parents=True, exist_ok=True)
+-    out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+-    print("CI evidence written:", out)
+-    print("errors=", len(errors), "warnings=", len(warnings))
+-
+-if __name__ == "__main__":
+-    main()
++#!/usr/bin/env python3
++import argparse
++import datetime as dt
++import hashlib
++import json
++import os
++from pathlib import Path
++import re
++import subprocess
++
++ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
++DIAG_RE = re.compile(
++    r"(?P<file>[^:\n]+\.(?:swift|m|mm|c|cc|cpp|h)):"
++    r"(?P<line>\d+):(?P<column>\d+): "
++    r"(?P<severity>warning|error): (?P<message>.*)"
++)
++
++def command_output(args):
++    try:
++        return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
++    except Exception:
++        return None
++
++def sha256_file(path):
++    h = hashlib.sha256()
++    with path.open("rb") as f:
++        while True:
++            chunk = f.read(1024 * 1024)
++            if not chunk:
++                break
++            h.update(chunk)
++    return h.hexdigest()
++
++def normalize_line(line):
++    line = ANSI_RE.sub("", line.rstrip())
++    workspace = os.environ.get("GITHUB_WORKSPACE")
++    if workspace:
++        line = line.replace(workspace, "$GITHUB_WORKSPACE")
++    return line
++
++def collect_diagnostics(logs):
++    errors = []
++    warnings = []
++    seen_errors = set()
++    seen_warnings = set()
++    for log in logs:
++        try:
++            text = log.read_text(encoding="utf-8", errors="replace")
++        except OSError:
++            continue
++        for raw in text.splitlines():
++            line = normalize_line(raw)
++            match = DIAG_RE.search(line)
++            if not match:
++                continue
++            item = {
++                "file": match.group("file"),
++                "line": int(match.group("line")),
++                "column": int(match.group("column")),
++                "message": match.group("message").strip(),
++                "source_log": log.name,
++            }
++            key = (item["file"], item["line"], item["column"], item["message"])
++            if match.group("severity") == "error":
++                if key not in seen_errors:
++                    seen_errors.add(key)
++                    errors.append(item)
++            else:
++                if key not in seen_warnings:
++                    seen_warnings.add(key)
++                    warnings.append(item)
++    return errors[:250], warnings[:500]
++
++
++def extract_xctest_summary(log_path):
++    """Structured XCTest report: distinguishes no tests, failures and passes."""
++    if not log_path.is_file():
++        return {"status": "not_run", "all_suites": 0, "failed_cases": [],
++                "latest_reported_tests": None, "latest_reported_failures": None}
++    log = log_path.read_text(encoding="utf-8", errors="replace")
++    suites = re.findall(r"Test Suite 'All tests' (passed|failed) at", log)
++    totals = re.findall(
++        r"Executed\s+(\d+)\s+tests?,\s+with\s+(\d+)\s+failures?"
++        r"\s+\((\d+)\s+unexpected\)", log
++    )
++    failed_cases = sorted(set(re.findall(
++        r"Test Case '-\[(.*?)\]' failed", log
++    )))
++    if not suites or not totals:
++        status = "unverified"
++    elif any(x == "failed" for x in suites) or failed_cases or int(totals[-1][1]):
++        status = "failed"
++    else:
++        status = "passed"
++    return {
++        "status": status,
++        "all_suites": len(suites),
++        "failed_cases": failed_cases[:100],
++        "latest_reported_tests": int(totals[-1][0]) if totals else None,
++        "latest_reported_failures": int(totals[-1][1]) if totals else None,
++        "latest_reported_unexpected": int(totals[-1][2]) if totals else None,
++        "note": "Latest reported count is for the final XCTest suite, not a sum of all nested suites.",
++    }
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--workflow", required=True)
++    parser.add_argument("--phase", default="job")
++    parser.add_argument("--status", required=True)
++    parser.add_argument("--artifact-dir", default="ci-artifacts")
++    parser.add_argument("--output", default="ci-artifacts/CI_EVIDENCE.json")
++    parser.add_argument("--require-tests-passed", action="store_true")
++    args = parser.parse_args()
++
++    artifact_dir = Path(args.artifact_dir)
++    artifact_dir.mkdir(parents=True, exist_ok=True)
++    logs = sorted(artifact_dir.glob("*.log"))
++    errors, warnings = collect_diagnostics(logs)
++    test_summary = extract_xctest_summary(artifact_dir / "unit-tests.log")
++    if args.require_tests_passed and test_summary["status"] != "passed":
++        raise SystemExit("XCTest evidence not passed: " + json.dumps(test_summary, ensure_ascii=False))
++    selected_simulator = artifact_dir / "simulator-selection.json"
++    if selected_simulator.is_file():
++        try:
++            simulator = json.loads(selected_simulator.read_text(encoding="utf-8"))
++        except (OSError, ValueError) as exc:
++            raise SystemExit(f"Invalid simulator selection evidence: {exc}")
++    else:
++        simulator = None
++
++    files = []
++    for p in sorted(artifact_dir.rglob("*")):
++        if not p.is_file():
++            continue
++        entry = {
++            "path": p.relative_to(artifact_dir).as_posix(),
++            "bytes": p.stat().st_size,
++        }
++        if p.stat().st_size <= 64 * 1024 * 1024:
++            try:
++                entry["sha256"] = sha256_file(p)
++            except OSError:
++                pass
++        files.append(entry)
++
++    report = {
++        "schema": 1,
++        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
++        "workflow": args.workflow,
++        "phase": args.phase,
++        "status": args.status,
++        "git_head": command_output(["git", "rev-parse", "HEAD"]),
++        "github": {
++            "run_id": os.environ.get("GITHUB_RUN_ID"),
++            "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
++            "workflow": os.environ.get("GITHUB_WORKFLOW"),
++            "event_name": os.environ.get("GITHUB_EVENT_NAME"),
++            "ref": os.environ.get("GITHUB_REF"),
++            "sha": os.environ.get("GITHUB_SHA"),
++        },
++        "runner": {
++            "os": os.environ.get("RUNNER_OS"),
++            "arch": os.environ.get("RUNNER_ARCH"),
++        },
++        "xcode": command_output(["xcodebuild", "-version"]),
++        "system": command_output(["sw_vers"]),
++        "diagnostics": {
++            "error_count": len(errors),
++            "warning_count": len(warnings),
++            "errors": errors,
++            "warnings": warnings,
++        },
++        "tests": test_summary,
++        "simulator": simulator,
++        "evidence_files": files,
++    }
++
++    out = Path(args.output)
++    out.parent.mkdir(parents=True, exist_ok=True)
++    out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
++    print("CI evidence written:", out)
++    print("errors=", len(errors), "warnings=", len(warnings))
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/ci-standard-preflight.py b/scripts/ci-standard-preflight.py
+--- a/scripts/ci-standard-preflight.py
++++ b/scripts/ci-standard-preflight.py
+@@ -1,270 +1,271 @@
+-#!/usr/bin/env python3
+-import hashlib
+-import json
+-import os
+-import plistlib
+-from pathlib import Path
+-import py_compile
+-import struct
+-import subprocess
+-import sys
+-
+-ROOT = Path(__file__).resolve().parent.parent
+-RES = ROOT / "VeilLink" / "Resources"
+-APPICON = RES / "Assets.xcassets" / "AppIcon.appiconset"
+-
+-EXPECTED_VFLY = {
+-    "VeilFlyCore.vfly": {
+-        "sha256": "cc8b71d824ecb7f20c821412b316262ecb4dd1faee148077c94825b5889d60de",
+-        "bytes": 45360268,
+-    },
+-    "VeilFlyLite.vfly": {
+-        "sha256": "25b4947ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee",
+-        "bytes": 9517364,
+-    },
+-}
+-
+-def fail(message):
+-    print("PREFLIGHT FAIL:", message, file=sys.stderr)
+-    raise SystemExit(1)
+-
+-def sha256(path):
+-    h = hashlib.sha256()
+-    with path.open("rb") as f:
+-        while True:
+-            chunk = f.read(1024 * 1024)
+-            if not chunk:
+-                break
+-            h.update(chunk)
+-    return h.hexdigest()
+-
+-def run(args, *, cwd=ROOT):
+-    print("+", " ".join(map(str, args)))
+-    subprocess.run(args, cwd=cwd, check=True)
+-
+-def png_info(path):
+-    data = path.read_bytes()[:33]
+-    if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n":
+-        fail(f"{path} is not a PNG")
+-    if data[12:16] != b"IHDR":
+-        fail(f"{path} missing IHDR")
+-    width, height = struct.unpack(">II", data[16:24])
+-    bit_depth = data[24]
+-    color_type = data[25]
+-    return width, height, bit_depth, color_type
+-
+-def expected_pixels(size_text, scale_text):
+-    size = float(size_text.split("x")[0])
+-    scale = int(scale_text[:-1])
+-    return int(round(size * scale))
+-
+-def check_plist():
+-    info = RES / "Info.plist"
+-    with info.open("rb") as f:
+-        plist = plistlib.load(f)
+-    if plist.get("CFBundleShortVersionString") != "$(MARKETING_VERSION)":
+-        fail("app Info.plist must inherit MARKETING_VERSION from project.yml")
+-    if plist.get("CFBundleVersion") != "$(CURRENT_PROJECT_VERSION)":
+-        fail("app Info.plist must inherit CURRENT_PROJECT_VERSION from project.yml")
+-    widget_info = ROOT / "VeilBackgroundWidget" / "Info.plist"
+-    with widget_info.open("rb") as f:
+-        widget = plistlib.load(f)
+-    if widget.get("CFBundleShortVersionString") != "$(MARKETING_VERSION)" or widget.get("CFBundleVersion") != "$(CURRENT_PROJECT_VERSION)":
+-        fail("widget release identity must inherit the app build settings")
+-    project = (ROOT / "project.yml").read_text(encoding="utf-8")
+-    if 'MARKETING_VERSION: "27.0"' not in project or 'CURRENT_PROJECT_VERSION: "62"' not in project:
+-        fail("VeilLink 27.0 / Build 62 release identity missing from project.yml")
+-    modes = set(plist.get("UIBackgroundModes", []))
+-    if not {"bluetooth-central", "bluetooth-peripheral"} <= modes:
+-        fail("Bluetooth background modes missing")
+-    print("Info.plist: PASS")
+-
+-def check_appicon():
+-    contents = json.loads((APPICON / "Contents.json").read_text(encoding="utf-8"))
+-    images = contents.get("images", [])
+-    if len(images) != 18:
+-        fail(f"expected 18 AppIcon entries, got {len(images)}")
+-    seen = set()
+-    for item in images:
+-        filename = item.get("filename")
+-        if not filename:
+-            fail("AppIcon entry missing filename")
+-        path = APPICON / filename
+-        if not path.is_file():
+-            fail(f"missing AppIcon file: {filename}")
+-        px = expected_pixels(item["size"], item["scale"])
+-        width, height, bit_depth, color_type = png_info(path)
+-        if (width, height) != (px, px):
+-            fail(f"{filename}: expected {px}x{px}, got {width}x{height}")
+-        if bit_depth != 8:
+-            fail(f"{filename}: expected 8-bit PNG")
+-        if color_type not in (0, 2, 3):
+-            fail(f"{filename}: alpha channel is not allowed for AppIcon (color type {color_type})")
+-        seen.add(filename)
+-    if len(seen) != 18:
+-        fail("duplicate AppIcon filenames")
+-    print("AppIcon: PASS")
+-
+-def check_vfly():
+-    for filename, expected in EXPECTED_VFLY.items():
+-        path = RES / filename
+-        if not path.is_file():
+-            fail(f"missing {filename}")
+-        if path.stat().st_size != expected["bytes"]:
+-            fail(f"{filename}: byte count mismatch")
+-        actual = sha256(path)
+-        if actual != expected["sha256"]:
+-            fail(f"{filename}: SHA256 mismatch")
+-    verify = json.loads((RES / "VFLYInstallationVerification.json").read_text(encoding="utf-8"))
+-    if verify.get("result") != "PASS":
+-        fail("VFLYInstallationVerification result is not PASS")
+-    if (RES / "MaleCNSReference.vfly").exists():
+-        fail("MaleCNSReference.vfly must not be bundled in app resources")
+-    print("VFLY assets: PASS")
+-
+-def check_malecns_manifests():
+-    lite = json.loads((RES / "MaleCNSGameRankerLiteV1.manifest.json").read_text(encoding="utf-8"))
+-    core = json.loads((RES / "MaleCNSGameRankerCoreV1.manifest.json").read_text(encoding="utf-8"))
+-    if lite.get("deployment_eligible") is not True:
+-        fail("Lite ranker must be deployment_eligible")
+-    if core.get("deployment_eligible") is not False:
+-        fail("Core ranker must remain guarded/experimental")
+-    if lite.get("graph_sha256") != EXPECTED_VFLY["VeilFlyLite.vfly"]["sha256"]:
+-        fail("Lite ranker graph SHA mismatch")
+-    if core.get("graph_sha256") != EXPECTED_VFLY["VeilFlyCore.vfly"]["sha256"]:
+-        fail("Core ranker graph SHA mismatch")
+-    run([
+-        sys.executable,
+-        str(ROOT / "scripts" / "verify-malecns-ranker-assets.py"),
+-        "--resources",
+-        str(RES),
+-    ])
+-    print("MaleCNS manifests: PASS")
+-
+-def check_core_project_exclusions():
+-    project = (ROOT / "project.yml").read_text(encoding="utf-8")
+-    required = [
+-        "Resources/VeilFlyCore.vfly",
+-        "Resources/VeilFlyLite.vfly",
+-        "Resources/AgentModels/game_policy_ranker_v4.vlpol",
+-        "Resources/MaleCNSGameRankerCoreV1.json",
+-        "Resources/MaleCNSGameRankerLiteV1.json",
+-    ]
+-    missing = [item for item in required if item not in project]
+-    if missing:
+-        fail("Core project does not exclude heavy resources: " + ", ".join(missing))
+-    print("Core project exclusions: PASS")
+-
+-def check_repo_hygiene():
+-    tracked = subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True).splitlines()
+-    bad = [p for p in tracked if "/__pycache__/" in p or p.endswith(".pyc")]
+-    if bad:
+-        fail("tracked Python cache files: " + ", ".join(bad))
+-    if (RES / "Qwen3-0.6B-Q4_0.gguf").exists():
+-        fail("Qwen GGUF must not be tracked/bundled in standard source tree")
+-    if (ROOT / "project.local-ai.yml").exists():
+-        fail("project.local-ai.yml must be generated by the heavy preparation step")
+-    print("Repository hygiene: PASS")
+-
+-def check_json():
+-    for path in sorted(RES.glob("*.json")):
+-        try:
+-            json.loads(path.read_text(encoding="utf-8"))
+-        except Exception as exc:
+-            fail(f"invalid JSON {path}: {exc}")
+-    print("Resource JSON: PASS")
+-    run([
+-        sys.executable,
+-        str(ROOT / "scripts" / "verify-tactical-v2-assets.py"),
+-        "--repo-root",
+-        str(ROOT),
+-    ])
+-
+-def check_script_syntax():
+-    required = [
+-        ROOT / "scripts" / "verify-core-release.py",
+-        ROOT / "scripts" / "verify-core-source-isolation.py",
+-        ROOT / "scripts" / "verify-recovery-lineage.py",
+-        ROOT / "scripts" / "verify-local-control-plane.py",
+-        ROOT / "scripts" / "verify-control-plane-v2.py",
+-        ROOT / "scripts" / "verify-autoregulation-r7.py",
+-        ROOT / "scripts" / "verify-maintenance-r8.py",
+-        ROOT / "scripts" / "verify-ui-theme-r9.py",
+-        ROOT / "scripts" / "maintenance-health-report.py",
+-        ROOT / "scripts" / "upgrade-transaction.py",
+-        ROOT / "scripts" / "package-unsigned-ipa.sh",
+-    ]
+-    for required_path in required:
+-        if not required_path.is_file():
+-            fail(f"missing release tooling: {required_path}")
+-    for path in sorted((ROOT / "scripts").glob("*.py")):
+-        py_compile.compile(str(path), doraise=True)
+-    for path in sorted((ROOT / "scripts").glob("*.sh")):
+-        run(["bash", "-n", str(path)])
+-    print("Python/Shell syntax: PASS")
+-
+-def check_swift_syntax():
+-    swift_files = sorted((ROOT / "VeilLink").rglob("*.swift")) + sorted((ROOT / "VeilLinkTests").rglob("*.swift"))
+-    if len(swift_files) < 80:
+-        fail(f"unexpectedly small Swift file set: {len(swift_files)}")
+-    for path in swift_files:
+-        run(["xcrun", "swiftc", "-frontend", "-parse", str(path)])
+-    print(f"Swift parse: PASS ({len(swift_files)} files)")
+-
+-def check_tests():
+-    tests = sorted((ROOT / "VeilLinkTests").glob("*.swift"))
+-    if len(tests) < 40:
+-        fail(f"expected at least 40 test source files, got {len(tests)}")
+-    required = {
+-        "AgentNavigationTests.swift",
+-        "AgentIntegrationTests.swift",
+-        "MiniGameTests.swift",
+-        "DatabaseStoreTests.swift",
+-        "CryptoEngineTests.swift",
+-        "RealLocalInferenceSmokeTests.swift",
+-        "AgentControlAndLocalGameTests.swift",
+-        "AgentGameExecutionValidationTests.swift",
+-        "A9RuntimeConstraintTests.swift",
+-        "TacticalV2Tests.swift",
+-        "XiangqiBotTests.swift",
+-        "GomokuBotTests.swift",
+-        "LudoBotTests.swift",
+-        "VeilTalkLiteRuntimeTests.swift",
+-        "NativeGameBrokerTests.swift",
+-        "CoreSourceIsolationTests.swift",
+-        "VeilAppControlPlaneTests.swift",
+-        "VeilAppControlPlaneV2Tests.swift",
+-        "VeilAppControlPlaneV3Tests.swift",
+-        "VeilAutoRegulationTests.swift",
+-        "VeilMaintenanceInvariantTests.swift",
+-        "VeilAppearanceThemeTests.swift",
+-        "VoiceAndPTTTests.swift",
+-    }
+-    missing = sorted(required - {p.name for p in tests})
+-    if missing:
+-        fail("missing required tests: " + ", ".join(missing))
+-    print(f"Test inventory: PASS ({len(tests)} files)")
+-
+-def main():
+-    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-recovery-lineage.py")], cwd=ROOT)
+-    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-core-source-isolation.py")], cwd=ROOT)
+-    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-local-control-plane.py")], cwd=ROOT)
+-    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-control-plane-v2.py")], cwd=ROOT)
+-    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-autoregulation-r7.py")], cwd=ROOT)
+-    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-maintenance-r8.py")], cwd=ROOT)
+-    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-ui-theme-r9.py")], cwd=ROOT)
+-    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-voice-ptt-r10.py")], cwd=ROOT)
+-    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-runtime-maintenance-r12.py")], cwd=ROOT)
+-    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-r5-sqlite-contract.py")], cwd=ROOT)
+-    check_repo_hygiene()
+-    check_plist()
+-    check_appicon()
+-    check_core_project_exclusions()
+-    check_json()
+-    check_tests()
+-    check_script_syntax()
+-    check_swift_syntax()
+-    print("VEILLINK_STANDARD_PREFLIGHT_PASS")
+-
+-if __name__ == "__main__":
+-    main()
++#!/usr/bin/env python3
++import hashlib
++import json
++import os
++import plistlib
++from pathlib import Path
++import py_compile
++import struct
++import subprocess
++import sys
++
++ROOT = Path(__file__).resolve().parent.parent
++RES = ROOT / "VeilLink" / "Resources"
++APPICON = RES / "Assets.xcassets" / "AppIcon.appiconset"
++
++EXPECTED_VFLY = {
++    "VeilFlyCore.vfly": {
++        "sha256": "cc8b71d824ecb7f20c821412b316262ecb4dd1faee148077c94825b5889d60de",
++        "bytes": 45360268,
++    },
++    "VeilFlyLite.vfly": {
++        "sha256": "25b4947ec6c2a33502879d92269299120b708e86110157a538f792e327b7abee",
++        "bytes": 9517364,
++    },
++}
++
++def fail(message):
++    print("PREFLIGHT FAIL:", message, file=sys.stderr)
++    raise SystemExit(1)
++
++def sha256(path):
++    h = hashlib.sha256()
++    with path.open("rb") as f:
++        while True:
++            chunk = f.read(1024 * 1024)
++            if not chunk:
++                break
++            h.update(chunk)
++    return h.hexdigest()
++
++def run(args, *, cwd=ROOT):
++    print("+", " ".join(map(str, args)))
++    subprocess.run(args, cwd=cwd, check=True)
++
++def png_info(path):
++    data = path.read_bytes()[:33]
++    if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n":
++        fail(f"{path} is not a PNG")
++    if data[12:16] != b"IHDR":
++        fail(f"{path} missing IHDR")
++    width, height = struct.unpack(">II", data[16:24])
++    bit_depth = data[24]
++    color_type = data[25]
++    return width, height, bit_depth, color_type
++
++def expected_pixels(size_text, scale_text):
++    size = float(size_text.split("x")[0])
++    scale = int(scale_text[:-1])
++    return int(round(size * scale))
++
++def check_plist():
++    info = RES / "Info.plist"
++    with info.open("rb") as f:
++        plist = plistlib.load(f)
++    if plist.get("CFBundleShortVersionString") != "$(MARKETING_VERSION)":
++        fail("app Info.plist must inherit MARKETING_VERSION from project.yml")
++    if plist.get("CFBundleVersion") != "$(CURRENT_PROJECT_VERSION)":
++        fail("app Info.plist must inherit CURRENT_PROJECT_VERSION from project.yml")
++    widget_info = ROOT / "VeilBackgroundWidget" / "Info.plist"
++    with widget_info.open("rb") as f:
++        widget = plistlib.load(f)
++    if widget.get("CFBundleShortVersionString") != "$(MARKETING_VERSION)" or widget.get("CFBundleVersion") != "$(CURRENT_PROJECT_VERSION)":
++        fail("widget release identity must inherit the app build settings")
++    project = (ROOT / "project.yml").read_text(encoding="utf-8")
++    if 'MARKETING_VERSION: "27.0"' not in project or 'CURRENT_PROJECT_VERSION: "62"' not in project:
++        fail("VeilLink 27.0 / Build 62 release identity missing from project.yml")
++    modes = set(plist.get("UIBackgroundModes", []))
++    if not {"bluetooth-central", "bluetooth-peripheral"} <= modes:
++        fail("Bluetooth background modes missing")
++    print("Info.plist: PASS")
++
++def check_appicon():
++    contents = json.loads((APPICON / "Contents.json").read_text(encoding="utf-8"))
++    images = contents.get("images", [])
++    if len(images) != 18:
++        fail(f"expected 18 AppIcon entries, got {len(images)}")
++    seen = set()
++    for item in images:
++        filename = item.get("filename")
++        if not filename:
++            fail("AppIcon entry missing filename")
++        path = APPICON / filename
++        if not path.is_file():
++            fail(f"missing AppIcon file: {filename}")
++        px = expected_pixels(item["size"], item["scale"])
++        width, height, bit_depth, color_type = png_info(path)
++        if (width, height) != (px, px):
++            fail(f"{filename}: expected {px}x{px}, got {width}x{height}")
++        if bit_depth != 8:
++            fail(f"{filename}: expected 8-bit PNG")
++        if color_type not in (0, 2, 3):
++            fail(f"{filename}: alpha channel is not allowed for AppIcon (color type {color_type})")
++        seen.add(filename)
++    if len(seen) != 18:
++        fail("duplicate AppIcon filenames")
++    print("AppIcon: PASS")
++
++def check_vfly():
++    for filename, expected in EXPECTED_VFLY.items():
++        path = RES / filename
++        if not path.is_file():
++            fail(f"missing {filename}")
++        if path.stat().st_size != expected["bytes"]:
++            fail(f"{filename}: byte count mismatch")
++        actual = sha256(path)
++        if actual != expected["sha256"]:
++            fail(f"{filename}: SHA256 mismatch")
++    verify = json.loads((RES / "VFLYInstallationVerification.json").read_text(encoding="utf-8"))
++    if verify.get("result") != "PASS":
++        fail("VFLYInstallationVerification result is not PASS")
++    if (RES / "MaleCNSReference.vfly").exists():
++        fail("MaleCNSReference.vfly must not be bundled in app resources")
++    print("VFLY assets: PASS")
++
++def check_malecns_manifests():
++    lite = json.loads((RES / "MaleCNSGameRankerLiteV1.manifest.json").read_text(encoding="utf-8"))
++    core = json.loads((RES / "MaleCNSGameRankerCoreV1.manifest.json").read_text(encoding="utf-8"))
++    if lite.get("deployment_eligible") is not True:
++        fail("Lite ranker must be deployment_eligible")
++    if core.get("deployment_eligible") is not False:
++        fail("Core ranker must remain guarded/experimental")
++    if lite.get("graph_sha256") != EXPECTED_VFLY["VeilFlyLite.vfly"]["sha256"]:
++        fail("Lite ranker graph SHA mismatch")
++    if core.get("graph_sha256") != EXPECTED_VFLY["VeilFlyCore.vfly"]["sha256"]:
++        fail("Core ranker graph SHA mismatch")
++    run([
++        sys.executable,
++        str(ROOT / "scripts" / "verify-malecns-ranker-assets.py"),
++        "--resources",
++        str(RES),
++    ])
++    print("MaleCNS manifests: PASS")
++
++def check_core_project_exclusions():
++    project = (ROOT / "project.yml").read_text(encoding="utf-8")
++    required = [
++        "Resources/VeilFlyCore.vfly",
++        "Resources/VeilFlyLite.vfly",
++        "Resources/AgentModels/game_policy_ranker_v4.vlpol",
++        "Resources/MaleCNSGameRankerCoreV1.json",
++        "Resources/MaleCNSGameRankerLiteV1.json",
++    ]
++    missing = [item for item in required if item not in project]
++    if missing:
++        fail("Core project does not exclude heavy resources: " + ", ".join(missing))
++    print("Core project exclusions: PASS")
++
++def check_repo_hygiene():
++    tracked = subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True).splitlines()
++    bad = [p for p in tracked if "/__pycache__/" in p or p.endswith(".pyc")]
++    if bad:
++        fail("tracked Python cache files: " + ", ".join(bad))
++    if (RES / "Qwen3-0.6B-Q4_0.gguf").exists():
++        fail("Qwen GGUF must not be tracked/bundled in standard source tree")
++    if (ROOT / "project.local-ai.yml").exists():
++        fail("project.local-ai.yml must be generated by the heavy preparation step")
++    print("Repository hygiene: PASS")
++
++def check_json():
++    for path in sorted(RES.glob("*.json")):
++        try:
++            json.loads(path.read_text(encoding="utf-8"))
++        except Exception as exc:
++            fail(f"invalid JSON {path}: {exc}")
++    print("Resource JSON: PASS")
++    run([
++        sys.executable,
++        str(ROOT / "scripts" / "verify-tactical-v2-assets.py"),
++        "--repo-root",
++        str(ROOT),
++    ])
++
++def check_script_syntax():
++    required = [
++        ROOT / "scripts" / "verify-core-release.py",
++        ROOT / "scripts" / "verify-core-source-isolation.py",
++        ROOT / "scripts" / "verify-recovery-lineage.py",
++        ROOT / "scripts" / "verify-local-control-plane.py",
++        ROOT / "scripts" / "verify-control-plane-v2.py",
++        ROOT / "scripts" / "verify-autoregulation-r7.py",
++        ROOT / "scripts" / "verify-maintenance-r8.py",
++        ROOT / "scripts" / "verify-ui-theme-r9.py",
++        ROOT / "scripts" / "maintenance-health-report.py",
++        ROOT / "scripts" / "upgrade-transaction.py",
++        ROOT / "scripts" / "package-unsigned-ipa.sh",
++    ]
++    for required_path in required:
++        if not required_path.is_file():
++            fail(f"missing release tooling: {required_path}")
++    for path in sorted((ROOT / "scripts").glob("*.py")):
++        py_compile.compile(str(path), doraise=True)
++    for path in sorted((ROOT / "scripts").glob("*.sh")):
++        run(["bash", "-n", str(path)])
++    run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-p", "test_ci_*.py", "-v"])
++    print("Python/Shell syntax + CI evidence parser tests: PASS")
++
++def check_swift_syntax():
++    swift_files = sorted((ROOT / "VeilLink").rglob("*.swift")) + sorted((ROOT / "VeilLinkTests").rglob("*.swift"))
++    if len(swift_files) < 80:
++        fail(f"unexpectedly small Swift file set: {len(swift_files)}")
++    for path in swift_files:
++        run(["xcrun", "swiftc", "-frontend", "-parse", str(path)])
++    print(f"Swift parse: PASS ({len(swift_files)} files)")
++
++def check_tests():
++    tests = sorted((ROOT / "VeilLinkTests").glob("*.swift"))
++    if len(tests) < 40:
++        fail(f"expected at least 40 test source files, got {len(tests)}")
++    required = {
++        "AgentNavigationTests.swift",
++        "AgentIntegrationTests.swift",
++        "MiniGameTests.swift",
++        "DatabaseStoreTests.swift",
++        "CryptoEngineTests.swift",
++        "RealLocalInferenceSmokeTests.swift",
++        "AgentControlAndLocalGameTests.swift",
++        "AgentGameExecutionValidationTests.swift",
++        "A9RuntimeConstraintTests.swift",
++        "TacticalV2Tests.swift",
++        "XiangqiBotTests.swift",
++        "GomokuBotTests.swift",
++        "LudoBotTests.swift",
++        "VeilTalkLiteRuntimeTests.swift",
++        "NativeGameBrokerTests.swift",
++        "CoreSourceIsolationTests.swift",
++        "VeilAppControlPlaneTests.swift",
++        "VeilAppControlPlaneV2Tests.swift",
++        "VeilAppControlPlaneV3Tests.swift",
++        "VeilAutoRegulationTests.swift",
++        "VeilMaintenanceInvariantTests.swift",
++        "VeilAppearanceThemeTests.swift",
++        "VoiceAndPTTTests.swift",
++    }
++    missing = sorted(required - {p.name for p in tests})
++    if missing:
++        fail("missing required tests: " + ", ".join(missing))
++    print(f"Test inventory: PASS ({len(tests)} files)")
++
++def main():
++    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-recovery-lineage.py")], cwd=ROOT)
++    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-core-source-isolation.py")], cwd=ROOT)
++    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-local-control-plane.py")], cwd=ROOT)
++    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-control-plane-v2.py")], cwd=ROOT)
++    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-autoregulation-r7.py")], cwd=ROOT)
++    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-maintenance-r8.py")], cwd=ROOT)
++    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-ui-theme-r9.py")], cwd=ROOT)
++    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-voice-ptt-r10.py")], cwd=ROOT)
++    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-runtime-maintenance-r12.py")], cwd=ROOT)
++    subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-r5-sqlite-contract.py")], cwd=ROOT)
++    check_repo_hygiene()
++    check_plist()
++    check_appicon()
++    check_core_project_exclusions()
++    check_json()
++    check_tests()
++    check_script_syntax()
++    check_swift_syntax()
++    print("VEILLINK_STANDARD_PREFLIGHT_PASS")
++
++if __name__ == "__main__":
++    main()
+diff --git a/VeilLinkUITests/PreConsentSmokeUITests.swift b/VeilLinkUITests/PreConsentSmokeUITests.swift
+--- /dev/null
++++ b/VeilLinkUITests/PreConsentSmokeUITests.swift
+@@ -0,0 +1,21 @@
++import XCTest
++
++final class PreConsentSmokeUITests: XCTestCase {
++    override func setUpWithError() throws {
++        continueAfterFailure = false
++    }
++
++    @MainActor
++    func testUnsignedFirstLaunchKeepsDiagnosticsReachable() {
++        let app = XCUIApplication()
++        app.launch()
++
++        // The isolated pre-consent exporter must be accessible before sign-in,
++        // without creating a profile or granting Bluetooth/network permission.
++        let export = app.buttons["preconsent.blackbox.export"]
++        XCTAssertTrue(export.waitForExistence(timeout: 20),
++                      "Unsigned launch must expose the isolated black-box control.")
++        XCTAssertTrue(export.isHittable,
++                      "System appearance, safe-area and onboarding overlays must not swallow taps.")
++    }
++}
+diff --git a/scripts/tests/test_ci_evidence.py b/scripts/tests/test_ci_evidence.py
+--- /dev/null
++++ b/scripts/tests/test_ci_evidence.py
+@@ -0,0 +1,46 @@
++import importlib.util
++import tempfile
++import unittest
++from pathlib import Path
++
++SCRIPT = Path(__file__).resolve().parents[1] / "ci-collect-evidence.py"
++spec = importlib.util.spec_from_file_location("veillink_ci_evidence", SCRIPT)
++ci = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(ci)
++
++
++class XCTestEvidenceTests(unittest.TestCase):
++    def inspect(self, text):
++        with tempfile.TemporaryDirectory() as root:
++            path = Path(root) / "unit-tests.log"
++            path.write_text(text, encoding="utf-8")
++            return ci.extract_xctest_summary(path)
++
++    def test_passed_bundle_has_summary(self):
++        result = self.inspect(
++            "Test Suite 'All tests' passed at 2026-10-31\n"
++            "Executed 766 tests, with 0 failures (0 unexpected)\n"
++        )
++        self.assertEqual(result["status"], "passed")
++        self.assertEqual(result["latest_reported_tests"], 766)
++
++    def test_failed_case_is_not_overlooked(self):
++        result = self.inspect(
++            "Test Case '-[VeilLinkTests.GomokuTests testMode]' failed (1.0 seconds).\n"
++            "Test Suite 'All tests' failed at 2026-10-31\n"
++            "Executed 789 tests, with 1 failure (0 unexpected)\n"
++        )
++        self.assertEqual(result["status"], "failed")
++        self.assertEqual(len(result["failed_cases"]), 1)
++
++    def test_no_summary_is_unverified(self):
++        self.assertEqual(self.inspect("** TEST SUCCEEDED **")["status"], "unverified")
++
++    def test_missing_log_is_not_run(self):
++        with tempfile.TemporaryDirectory() as root:
++            self.assertEqual(ci.extract_xctest_summary(
++                Path(root) / "missing.log")["status"], "not_run")
++
++
++if __name__ == "__main__":
++    unittest.main()
