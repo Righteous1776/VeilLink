@@ -1,0 +1,34 @@
+diff --git a/.github/workflows/core-release.yml b/.github/workflows/core-release.yml
+--- a/.github/workflows/core-release.yml
++++ b/.github/workflows/core-release.yml
+@@ -6,8 +6,19 @@
+     paths:
+       - 'project.yml'
+       - 'docs/RELEASE_*_BUILD_*.md'
+-  workflow_dispatch:
+-  workflow_call:
++  workflow_dispatch:
++    inputs:
++      publish_release:
++        description: 'Explicitly opt in to GitHub Release publication from main'
++        required: true
++        type: boolean
++        default: false
++  workflow_call:
++    inputs:
++      publish_release:
++        required: false
++        type: boolean
++        default: false
+ 
+ permissions:
+   contents: write
+@@ -103,7 +114,7 @@
+           retention-days: 30
+ 
+       - name: Publish versioned GitHub Release
+-        if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
++        if: success() && github.ref == 'refs/heads/main' && inputs.publish_release == true
+         env:
+           GH_TOKEN: ${{ github.token }}
+           VERSION: ${{ steps.release_identity.outputs.version }}
