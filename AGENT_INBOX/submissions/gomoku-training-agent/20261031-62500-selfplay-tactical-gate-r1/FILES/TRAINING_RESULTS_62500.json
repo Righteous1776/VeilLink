@@ -1,0 +1,105 @@
+{
+  "schema": "veillink.gomoku.offline-tournament.v1",
+  "engine": "independent numba 15x15 freestyle tactical surrogate, NOT native VeilLink AI",
+  "main_base": "e093e7fb7ab0eb9821a014b753ab2bdc27613ec8",
+  "user_data": {
+    "format": "veillink.board-learning.export.v1",
+    "gomoku_sha256": "034057959faa8bf45b571fee19b63fda646a27344eeee997216e9921157d5243",
+    "records": 28,
+    "valid_replayed": 28,
+    "black_moves": 700,
+    "knight_transitions": 196,
+    "total_transitions": 672
+  },
+  "simulation": {
+    "training_games": 50000,
+    "validation_games": 12500,
+    "turn_cap": 90,
+    "style_bonus_weights": [
+      0,
+      50,
+      200,
+      800,
+      3200
+    ],
+    "seed_train": 1000000,
+    "seed_validation": 15000000
+  },
+  "metric": "win+0.5*draw over total, each policy color alternated; draws include 90-turn cutoff",
+  "training": {
+    "0": {
+      "win": 2942,
+      "loss": 3058,
+      "draw": 4000,
+      "score_percent": 49.42
+    },
+    "50": {
+      "win": 2898,
+      "loss": 3065,
+      "draw": 4037,
+      "score_percent": 49.165
+    },
+    "200": {
+      "win": 2897,
+      "loss": 3214,
+      "draw": 3889,
+      "score_percent": 48.415
+    },
+    "800": {
+      "win": 1818,
+      "loss": 3596,
+      "draw": 4586,
+      "score_percent": 41.11
+    },
+    "3200": {
+      "win": 1501,
+      "loss": 4391,
+      "draw": 4108,
+      "score_percent": 35.55
+    }
+  },
+  "validation": {
+    "0": {
+      "win": 764,
+      "loss": 786,
+      "draw": 950,
+      "score_percent": 49.56
+    },
+    "50": {
+      "win": 763,
+      "loss": 775,
+      "draw": 962,
+      "score_percent": 49.76
+    },
+    "200": {
+      "win": 726,
+      "loss": 792,
+      "draw": 982,
+      "score_percent": 48.68
+    },
+    "800": {
+      "win": 485,
+      "loss": 879,
+      "draw": 1136,
+      "score_percent": 42.12
+    },
+    "3200": {
+      "win": 367,
+      "loss": 1121,
+      "draw": 1012,
+      "score_percent": 34.92
+    }
+  },
+  "tactical_fixtures": {
+    "must_win": 16,
+    "fail_win": 0,
+    "must_block": 16,
+    "fail_block": 0
+  },
+  "policy_decision": "DO_NOT_PROMOTE_FORCED_KNIGHT_BONUS; preserve incumbent tactical decisions; train Bagua recognizer as optional lesson",
+  "source_code_hashes": {
+    "train_py": "1d1463beaf4da1567963e1fbf2b5a3424d239c9dba2b4dbd2439b1d3e170ca38",
+    "validate_py": "8b36e9b30f7c57df43b162b798465cb116d4206dec5729e02c0efb28e23f310f"
+  },
+  "boundary": "not CoreML weights; not native Swift self-play; no verified gain vs Rapfi; no hardware benchmark; no change to main"
+}

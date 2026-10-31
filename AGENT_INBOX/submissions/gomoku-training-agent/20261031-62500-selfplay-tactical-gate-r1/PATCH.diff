@@ -1,0 +1,71 @@
+diff --git a/VeilLink/Agent/Games/GomokuBot.swift b/VeilLink/Agent/Games/GomokuBot.swift
+--- a/VeilLink/Agent/Games/GomokuBot.swift
++++ b/VeilLink/Agent/Games/GomokuBot.swift
+@@ -98,6 +98,17 @@
+             }
+         }
+ 
++        // Tactical safety gate: never let training or formation scores hide a forced block.
++        // Only the current player may call GomokuState.apply, so inspect threat geometry
++        // directly instead of mutating turn ownership.
++        let opposingStone: Int8 = player == .host ? 2 : 1
++        for index in candidates {
++            nodes += 1
++            if completesFive(index: index, in: state, stone: opposingStone) {
++                return result(index: index, score: winScore / 2, nodes: nodes, started: started)
++            }
++        }
++
+         let rootPosition = AdaptiveBoardPosition.gomoku(state)
+         let rankedRoots = candidates
+             .map {
+@@ -253,6 +264,20 @@
+         return set.sorted()
+     }
+ 
++    /// Does placing a hypothetical stone here complete five without changing the state?
++    private static func completesFive(index: Int, in state: GomokuState, stone: Int8) -> Bool {
++        guard state.value(at: index) == 0 else { return false }
++        let row = index / size
++        let col = index % size
++        for (dr, dc) in [(1, 0), (0, 1), (1, 1), (1, -1)] {
++            let connected = 1
++                + count(state: state, row: row, col: col, dr: dr, dc: dc, value: stone)
++                + count(state: state, row: row, col: col, dr: -dr, dc: -dc, value: stone)
++            if connected >= 5 { return true }
++        }
++        return false
++    }
++
+     private static func tacticalPriority(index: Int, state: GomokuState, player: MiniGamePlayer) -> Int {
+         let own: Int8 = player == .host ? 1 : 2
+         let opp: Int8 = player == .host ? 2 : 1
+diff --git a/VeilLinkTests/GomokuBotTests.swift b/VeilLinkTests/GomokuBotTests.swift
+--- a/VeilLinkTests/GomokuBotTests.swift
++++ b/VeilLinkTests/GomokuBotTests.swift
+@@ -17,6 +17,25 @@
+         XCTAssertTrue(state.apply(index: result.index, actor: .guest))
+     }
+ 
++    func testForcedGapBlockPrecedesLearningAndRootRank() {
++        var state = GomokuState()
++        // Black has 7,3 / 7,4 / 7,6 / 7,7; white must occupy 7,5 (index 110).
++        for (ply, index) in [108, 0, 109, 1, 111, 2, 112].enumerated() {
++            XCTAssertTrue(state.apply(index: index, actor: ply.isMultiple(of: 2) ? .host : .guest))
++        }
++        let move = GomokuBot.chooseMove(in: state, for: .guest, budget: .deterministicTest)
++        XCTAssertEqual(move?.index, 110)
++    }
++
++    func testImmediateWinningFiveRemainsFirstPriority() {
++        var state = GomokuState()
++        for (ply, index) in [0, 123, 2, 124, 4, 125, 6, 126, 8].enumerated() {
++            XCTAssertTrue(state.apply(index: index, actor: ply.isMultiple(of: 2) ? .host : .guest))
++        }
++        let move = GomokuBot.chooseMove(in: state, for: .guest, budget: .deterministicTest)
++        XCTAssertTrue([122, 127].contains(move?.index ?? -1))
++    }
++
+     func testLegacyBudgetIsBounded() {
+         let budget = GomokuBotBudget.standard(profileLabel: "LEGACY-COMPACT")
+         XCTAssertLessThanOrEqual(budget.timeLimitMilliseconds, 160)
