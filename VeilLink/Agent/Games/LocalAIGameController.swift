@@ -331,9 +331,9 @@ final class LocalAIGameController: ObservableObject {
                 return
             }
             self.nativeTrainingMessage = "已导入 \(saved) 局完整原生棋手实战棋谱；重启后仍然有效。"
-            if UserDefaults.standard.object(forKey: "VeilLink.Gomoku.UseNativeSelfPlay.v1") == nil {
-                self.setUseNativeTrainingEvidence(true)
-            }
+            // Do not silently change the active engine from the stronger
+            // external PVS/VCF to native search. The user explicitly opts in
+            // after seeing the verified game count.
         }
     }
 
