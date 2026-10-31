@@ -32,7 +32,7 @@ final class NativeGameBrokerTests: XCTestCase {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         let action = broker.currentSuggestedAction(validating: session)
-        XCTAssertNotNil(action, "Native Gomoku recommendation must finish within 8 seconds; current policy=\(broker.context?.policyMode ?? \"nil\")")
+        XCTAssertNotNil(action, "Native Gomoku recommendation must finish within 8 seconds; current policy=\(broker.context?.policyMode ?? "nil")")
         XCTAssertEqual(broker.context?.maleCNS, nil)
     }
 }
