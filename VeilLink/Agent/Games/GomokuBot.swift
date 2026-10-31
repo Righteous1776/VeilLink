@@ -94,9 +94,10 @@ enum GomokuBot {
             candidates = [Self.size * Self.size / 2]
         }
 
-        // Forced win takes priority and is cheap enough to test before ranking.
+        // Mandatory tactics must run even if the wall-clock search budget has
+        // already expired under heavy UI/CI load. This bounded 225-cell scan
+        // cannot be skipped by voluntary time cutoff.
         for index in candidates {
-            guard Date.timeIntervalSinceReferenceDate < deadline else { break }
             nodes += 1
             var next = state
             if next.apply(index: index, actor: player), next.winner == player {
@@ -131,7 +132,12 @@ enum GomokuBot {
             }
             .prefix(max(1, budget.rootCandidateLimit))
 
-        var bestIndex: Int?
+        // A time budget is a *search-quality* bound, not permission to return
+        // no move in an otherwise legal position. A delayed worker can enter
+        // the root loop after its deadline, so retain the best ranked legal
+        // root as the emergency fallback (mandatory win/block scans ran first).
+        let safeFallback = rankedRoots.first
+        var bestIndex: Int? = safeFallback?.0
         var bestScore = Int.min
 
         for (index, priority) in rankedRoots {
@@ -226,7 +232,8 @@ enum GomokuBot {
         }
 
         guard let bestIndex else { return nil }
-        return result(index: bestIndex, score: bestScore, nodes: nodes, started: started)
+        let resolvedScore = bestScore == Int.min ? (safeFallback?.1 ?? 0) : bestScore
+        return result(index: bestIndex, score: resolvedScore, nodes: nodes, started: started)
     }
 
     static func legalCandidateCount(in state: GomokuState, radius: Int = 2) -> Int {
