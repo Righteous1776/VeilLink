@@ -44,7 +44,10 @@ enum NativeGomokuSelfPlay {
         let first = AdaptiveBoardPosition.gomoku(game)
         guard game.apply(index: opening, actor: .host) else { return nil }
         var plies = [AdaptiveBoardPly(position: first, action: String(opening), actor: .host)]
+        // Guest remains the training Bot role in this runner; retain the host
+        // opening history as its live opponent frontier for Veil 八卦阵 R2.
         var aiHistory: [Int] = []
+        var opponentHistory: [Int] = [opening]
         var decisions = 0
 
         while game.winner == nil && !game.isDraw && game.moveCount < moveLimit {
@@ -52,7 +55,12 @@ enum NativeGomokuSelfPlay {
             let actor = game.currentPlayer
             let before = AdaptiveBoardPosition.gomoku(game)
             let preference = actor == .guest
-                ? GomokuFormationPreference(mode: formationMode, aiHistory: aiHistory, discovered: [])
+                ? GomokuFormationPreference(
+                    mode: formationMode,
+                    aiHistory: aiHistory,
+                    opponentHistory: opponentHistory,
+                    discovered: []
+                )
                 : .disabled
             guard let chosen = GomokuBot.chooseMove(
                 in: game,
@@ -65,7 +73,11 @@ enum NativeGomokuSelfPlay {
                 return nil
             }
             plies.append(AdaptiveBoardPly(position: before, action: String(chosen.index), actor: actor))
-            if actor == .guest { aiHistory.append(chosen.index) }
+            if actor == .guest {
+                aiHistory.append(chosen.index)
+            } else {
+                opponentHistory.append(chosen.index)
+            }
             decisions += 1
         }
 

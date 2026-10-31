@@ -567,7 +567,8 @@ final class LocalAIGameController: ObservableObject {
             ).reinforced(by: learning.trainingLevel)
             let preference = GomokuFormationPreference(
                 mode: gomokuFormationMode,
-                aiHistory: learningPlies.filter { $0.actor == .guest }.compactMap { Int($0.action) },
+                aiHistory: learningPlies.filter { $0.actor == aiPlayer }.compactMap { Int($0.action) },
+                opponentHistory: learningPlies.filter { $0.actor == humanPlayer }.compactMap { Int($0.action) },
                 discovered: formationDiscovery.eligibleSignatures
             )
             var chosen: GomokuBotMove?

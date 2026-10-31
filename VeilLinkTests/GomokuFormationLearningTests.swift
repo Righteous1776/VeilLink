@@ -34,6 +34,50 @@ final class GomokuFormationLearningTests: XCTestCase {
         XCTAssertEqual(pref.bonus(index: 112, state: state, player: .guest, urgentDefense: false), 0)
     }
 
+    func testVeilBaguaContainmentFollowsLatestOpponentDirection() {
+        // White moved from (5, 5) to (6, 5), i.e. toward increasing rows.
+        let opponent = [80, 95]
+        XCTAssertEqual(GomokuFormationPreference.opponentEscapeVector(opponent)?.row, 1)
+        XCTAssertEqual(GomokuFormationPreference.opponentEscapeVector(opponent)?.column, 0)
+        XCTAssertGreaterThan(GomokuFormationPreference.frontierAlignment(index: 162, opponentHistory: opponent), 0)
+        XCTAssertLessThan(GomokuFormationPreference.frontierAlignment(index: 50, opponentHistory: opponent), 0)
+
+        let black = [112, 129, 145]
+        let forward = GomokuFormationPreference.containmentBonus(
+            index: 162, aiHistory: black, opponentHistory: opponent
+        )
+        let behind = GomokuFormationPreference.containmentBonus(
+            index: 50, aiHistory: black, opponentHistory: opponent
+        )
+        XCTAssertGreaterThan(forward, 0)
+        XCTAssertEqual(behind, 0)
+        XCTAssertLessThanOrEqual(forward, 180)
+    }
+
+    func testVeilBaguaContainmentRequiresDirectionAndKnightLink() {
+        XCTAssertEqual(
+            GomokuFormationPreference.containmentBonus(index: 162, aiHistory: [112, 129, 145], opponentHistory: [95]),
+            0
+        )
+        XCTAssertEqual(
+            GomokuFormationPreference.containmentBonus(index: 162, aiHistory: [112], opponentHistory: [80, 95]),
+            0
+        )
+    }
+
+    func testVeilBaguaContainmentIsRotationConsistent() {
+        // A downward escape on the original board becomes a rightward escape
+        // after a clockwise rotation; the relative frontier preference holds.
+        let original = GomokuFormationPreference.frontierAlignment(
+            index: 162, opponentHistory: [80, 95]
+        )
+        let rotated = GomokuFormationPreference.frontierAlignment(
+            index: 184, opponentHistory: [84, 83]
+        )
+        XCTAssertGreaterThan(original, 0)
+        XCTAssertGreaterThan(rotated, 0)
+    }
+
     func testDetectsOpponentFourInARow() {
         var state = GomokuState()
         let moves = [105, 0, 106, 1, 107, 2, 108]
