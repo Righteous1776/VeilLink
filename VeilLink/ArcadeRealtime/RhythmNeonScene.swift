@@ -714,6 +714,7 @@ private final class RhythmFallingBeatNode: SKNode {
     }
 }
 
+@MainActor
 private enum RhythmParticleTexture {
     static let shared: SKTexture = {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16))

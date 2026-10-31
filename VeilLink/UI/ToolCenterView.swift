@@ -1006,6 +1006,7 @@ private func privacyNote(_ text: String) -> some View {
         .fixedSize(horizontal: false, vertical: true)
 }
 
+@MainActor
 private func metric(_ title: String, _ value: String) -> some View {
     VStack(spacing: 2) {
         Text(value).font(.caption.bold().monospacedDigit()).foregroundColor(VeilTheme.text)
