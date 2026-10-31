@@ -89,7 +89,7 @@ actor VeilStorageMaintenance {
     init(
         roots: VeilStorageRoots = .live(),
         fileManager: FileManager = .default,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.roots = roots
         self.fileManager = fileManager

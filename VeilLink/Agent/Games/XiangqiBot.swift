@@ -25,6 +25,31 @@ struct XiangqiBotBudget: Equatable, Sendable {
         return XiangqiBotBudget(maxDepth: 5, quiescenceDepth: 2, timeLimitMilliseconds: 280)
     }
 
+    static func forDifficulty(_ difficulty: BoardBotDifficulty, profileLabel: String) -> XiangqiBotBudget {
+        let upper = profileLabel.uppercased()
+        let legacy = upper.contains("SE1") || upper.contains("LEGACY") || upper.contains("IPHONE7")
+        switch difficulty {
+        case .relaxed:
+            return XiangqiBotBudget(maxDepth: 3, quiescenceDepth: 1, timeLimitMilliseconds: legacy ? 120 : 180)
+        case .balanced:
+            return standard(profileLabel: profileLabel)
+        case .advanced:
+            return XiangqiBotBudget(maxDepth: legacy ? 5 : 7, quiescenceDepth: 3, timeLimitMilliseconds: legacy ? 380 : 760)
+        case .master:
+            return XiangqiBotBudget(maxDepth: legacy ? 6 : 9, quiescenceDepth: legacy ? 2 : 4, timeLimitMilliseconds: legacy ? 650 : 1_350)
+        }
+    }
+
+    func reinforced(by trainingLevel: Int) -> XiangqiBotBudget {
+        let reinforcement = max(0, min(8, trainingLevel))
+        guard reinforcement > 0 else { return self }
+        return XiangqiBotBudget(
+            maxDepth: min(10, maxDepth + reinforcement / 3),
+            quiescenceDepth: min(4, quiescenceDepth + reinforcement / 5),
+            timeLimitMilliseconds: min(1_500, timeLimitMilliseconds + reinforcement * 55)
+        )
+    }
+
     static let deterministicTest = XiangqiBotBudget(
         maxDepth: 2,
         quiescenceDepth: 1,
@@ -112,6 +137,26 @@ enum XiangqiBot {
                     context: &context
                 )
 
+                let action = "\(move.from):\(move.to)"
+                score += learning.rootAdjustment(action: action)
+
+                // Sequence memory must affect the evaluated result, not merely move
+                // ordering. Replay the player's most likely learned reply so a
+                // repeated formation changes the bot's actual choice.
+                if let prediction = learning.predictedHumanReply(afterAIAction: action) {
+                    let parts = prediction.action.split(separator: ":")
+                    if parts.count == 2,
+                       let from = Int(parts[0]),
+                       let to = Int(parts[1]) {
+                        var forecast = next
+                        if forecast.apply(from: from, to: to, actor: player.opponent) {
+                            let forecastScore = evaluate(forecast, root: player)
+                                - min(360, prediction.evidence * 45)
+                            score = min(score, forecastScore)
+                        }
+                    }
+                }
+
                 // Repetition is legal but usually undesirable when another close move exists.
                 if next.currentPositionRepetitionCount >= 2 {
                     score -= 90
@@ -155,6 +200,23 @@ enum XiangqiBot {
 
     static func legalMoveCount(in state: XiangqiState, actor: MiniGamePlayer) -> Int {
         orderedLegalMoves(in: state, actor: actor, learning: .empty).count
+    }
+
+    static func coachingHint(
+        beforePlayingFrom from: Int,
+        to: Int,
+        in state: XiangqiState,
+        for player: MiniGamePlayer
+    ) -> String {
+        let isCapture = state.piece(at: to) != nil
+        var next = state
+        guard next.apply(from: from, to: to, actor: player) else {
+            return "教练提示：先确认这步是否符合行棋规则。"
+        }
+        if next.winner == player { return "教练提示：将死线路成立，落子非常准确。" }
+        if next.isInCheck(player: player.opponent) { return "教练提示：这步将军后，观察对方所有应将手段。" }
+        if isCapture { return "教练提示：吃子后别急于进攻，先检查被牵制子力和对方反击。" }
+        return "教练提示：走子展开后，下一回合先检查对方将军、吃子和直接威胁。"
     }
 
     private static func search(

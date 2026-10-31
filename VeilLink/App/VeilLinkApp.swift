@@ -347,7 +347,9 @@ private struct RootContainer: View {
     }
 
     private var particleEventToken: String {
-        "\(legalConsent.isSatisfied)-\(identity.activeIdentity == nil)-\(appLock.isLocked)-\(model.selectedSection.rawValue)"
+        // Bursts mark root lifecycle changes only. Tab navigation keeps the ambient particle
+        // field alive without firing a full-screen celebration on every page switch.
+        "\(legalConsent.isSatisfied)-\(identity.activeIdentity == nil)-\(appLock.isLocked)"
     }
 
     var body: some View {

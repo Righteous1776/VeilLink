@@ -4,6 +4,8 @@ import UIKit
 struct AgentControlCenterView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var controls: AgentControlCenterSettings
+    @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
+    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
 
     @State private var showsExperimentalCoreConfirmation = false
     @State private var showsResetConfirmation = false
@@ -12,6 +14,8 @@ struct AgentControlCenterView: View {
     init(model: AppModel) {
         self.model = model
         controls = model.agentControls
+        kernelRuntime = model.kernelRuntime
+        a10Ultra = model.a10Ultra
     }
 
     var body: some View {
@@ -58,7 +62,7 @@ struct AgentControlCenterView: View {
                         .foregroundColor(VeilTheme.mutedGold)
                     Text("灵核 · 双脑控制")
                         .font(.system(.title3, design: .rounded).weight(.semibold))
-                    Text("Qwen Runtime + MaleCNS/VFLY + A9")
+                    Text("Qwen Runtime + MaleCNS/VFLY + \(model.activeGovernanceEngineName)")
                         .font(.caption)
                         .foregroundColor(VeilTheme.secondaryText)
                 }
@@ -67,7 +71,7 @@ struct AgentControlCenterView: View {
                     Text(model.agent.runtimeState.displayName)
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundColor(runtimeColor)
-                    Text("H\(model.a9Health.decision.healthScore)")
+                    Text(model.activeGovernanceHealthText)
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundColor(VeilTheme.gold)
                 }
@@ -79,7 +83,7 @@ struct AgentControlCenterView: View {
             }
             HStack(spacing: 8) {
                 metric("GAME", "Native Bot")
-                metric("A9", model.computeGovernor.plan.mode.title)
+                metric(model.activeGovernanceEngineName, model.activeGovernanceHealthText)
             }
         }
         .veilCard(emphasized: true)
@@ -208,7 +212,7 @@ struct AgentControlCenterView: View {
             sectionHeader("Local Control Plane", icon: "switch.2")
             detailRow("命令总线", "VeilAppControlCommand")
             detailRow("BLE", "状态 / 队列 / 刷新 / 启停")
-            detailRow("系统", "A9 / 缓存 / 性能 / 数据库")
+            detailRow("系统", "\(model.activeGovernanceEngineName) / 缓存 / 性能 / 数据库")
             detailRow("调度", "自动 / 通信 / 灵核 / 游戏")
             detailRow("诊断", controls.allowDiagnosticsExport ? "状态 / 可导出" : "状态 / 导出关闭")
 
@@ -231,7 +235,7 @@ struct AgentControlCenterView: View {
             detailRow("导航", "对话 / 附近 / 游戏 / 灵核 / 设置")
             detailRow("本地动作", controls.localToolMutationsEnabled ? "允许" : "关闭")
             detailRow("建议着法执行", controls.allowSuggestedGameMoveExecution ? "允许" : "仅建议")
-            Text("Control Plane V3 增加 AutoTune：可基于温控、A9 与 BLE 队列自动做安全调度。自动执行白名单只有焦点切换、临时缓存清理和 BLE 刷新；权限提升、数据删除、密钥导出、代发消息与远程设备控制仍不在控制面中。")
+            Text("Control Plane V3 的 AutoTune 会基于温控、当前治理核与 BLE 队列自动做安全调度。自动执行白名单只有焦点切换、临时缓存清理和 BLE 刷新；权限提升、数据删除、密钥导出、代发消息与远程设备控制仍不在控制面中。")
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
         }
@@ -240,7 +244,7 @@ struct AgentControlCenterView: View {
 
     private var resourceCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("A9 与资源", icon: "gauge.with.dots.needle.67percent")
+            sectionHeader("\(model.activeGovernanceEngineName) 与资源", icon: "gauge.with.dots.needle.67percent")
             HStack(spacing: 8) {
                 metric("模式", model.computeGovernor.plan.mode.title)
                 metric("焦点", model.computeGovernor.plan.focus.title)
@@ -267,7 +271,7 @@ struct AgentControlCenterView: View {
             .buttonStyle(.bordered)
             .tint(VeilTheme.gold)
 
-            Text("A9 仍会覆盖不安全的算力请求，并优先保留 BLE/传输预算；这里不会绕过温控或 iOS 后台限制。")
+            Text("\(model.activeGovernanceEngineName) 会执行当前治理预算并优先保留 BLE/传输资源；这里不会绕过温控或 iOS 后台限制。")
                 .font(.caption2)
                 .foregroundColor(VeilTheme.tertiaryText)
         }
@@ -278,34 +282,8 @@ struct AgentControlCenterView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("诊断", icon: "stethoscope")
 
-            Button {
-                model.runA9StorageCheck()
-                model.haptics.selection()
-            } label: {
-                HStack {
-                    Label("数据库完整性自检", systemImage: "externaldrive.badge.checkmark")
-                    Spacer()
-                    Text(model.a9Health.databaseIntegrity.title)
-                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                        .foregroundColor(VeilTheme.gold)
-                }
-            }
-            .buttonStyle(VeilPressStyle())
-
-            Button {
-                model.bluetooth.refreshLinks()
-                model.refreshA9Health()
-                model.haptics.selection()
-            } label: {
-                HStack {
-                    Label("刷新 BLE 链路", systemImage: "antenna.radiowaves.left.and.right")
-                    Spacer()
-                    Text("\(model.bluetooth.connectedPeerCount) LINK")
-                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                        .foregroundColor(VeilTheme.gold)
-                }
-            }
-            .buttonStyle(VeilPressStyle())
+            detailRow("数据库巡检", model.a9Health.databaseIntegrity.title)
+            detailRow("链路治理", "\(model.bluetooth.connectedPeerCount) LINK · 后台自动采样")
 
             Button {
                 UIPasteboard.general.string = model.agentDiagnosticsReport()

@@ -81,7 +81,7 @@ struct TacticalV2LaunchGateView: View {
         detail: String,
         enabled: Bool
     ) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 14) {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
@@ -96,15 +96,15 @@ struct TacticalV2LaunchGateView: View {
                 Spacer()
             }
             .padding(.horizontal, 12)
-
-            TacticalBoardView(
-                state: legacyState,
-                localPlayer: session.localPlayer,
-                enabled: enabled,
-                onMove: onLegacyMove,
-                onPass: onLegacyPass
+            Label(
+                "小战场入口已停用；本局只会进入 48×27 大战场。",
+                systemImage: "map.fill"
             )
-            .padding(.horizontal, 10)
+            .font(.caption.weight(.semibold))
+            .foregroundColor(VeilTheme.goldBright)
+            .padding(14)
+            .frame(maxWidth: .infinity)
+            .veilCard(emphasized: true)
         }
     }
 

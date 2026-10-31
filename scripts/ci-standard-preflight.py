@@ -72,8 +72,8 @@ def check_plist():
     if widget.get("CFBundleShortVersionString") != "$(MARKETING_VERSION)" or widget.get("CFBundleVersion") != "$(CURRENT_PROJECT_VERSION)":
         fail("widget release identity must inherit the app build settings")
     project = (ROOT / "project.yml").read_text(encoding="utf-8")
-    if 'MARKETING_VERSION: "27.0"' not in project or 'CURRENT_PROJECT_VERSION: "62"' not in project:
-        fail("VeilLink 27.0 / Build 62 release identity missing from project.yml")
+    if 'MARKETING_VERSION: "27.1"' not in project or 'CURRENT_PROJECT_VERSION: "63"' not in project:
+        fail("VeilLink 27.1 / Build 63 release identity missing from project.yml")
     modes = set(plist.get("UIBackgroundModes", []))
     if not {"bluetooth-central", "bluetooth-peripheral"} <= modes:
         fail("Bluetooth background modes missing")
@@ -201,7 +201,8 @@ def check_script_syntax():
         py_compile.compile(str(path), doraise=True)
     for path in sorted((ROOT / "scripts").glob("*.sh")):
         run(["bash", "-n", str(path)])
-    print("Python/Shell syntax: PASS")
+    run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-p", "test_ci_*.py", "-v"])
+    print("Python/Shell syntax + CI evidence parser tests: PASS")
 
 def check_swift_syntax():
     swift_files = sorted((ROOT / "VeilLink").rglob("*.swift")) + sorted((ROOT / "VeilLinkTests").rglob("*.swift"))

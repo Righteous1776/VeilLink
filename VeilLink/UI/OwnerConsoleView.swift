@@ -56,6 +56,8 @@ struct OwnerConsoleView: View {
     @ObservedObject var diagnostics: DiagnosticLogStore
     @ObservedObject var telemetry: DeepTelemetry
     @ObservedObject var stressTest: DeviceStressTestController
+    @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
+    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scanProgress: Double = 0
@@ -71,6 +73,8 @@ struct OwnerConsoleView: View {
         diagnostics = DiagnosticLogStore.shared
         telemetry = DeepTelemetry.shared
         stressTest = DeviceStressTestController.shared
+        kernelRuntime = model.kernelRuntime
+        a10Ultra = model.a10Ultra
     }
 
     var body: some View {
@@ -79,9 +83,11 @@ struct OwnerConsoleView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     consoleHeader
                     diagnosticCard
+                    governanceRuntimeCard
                     deepTelemetryCard
                     deviceStressCard
                     capabilityCard
+                    developerModeCard
                     performanceOverrideCard
                     easterEggCard
                     Text("权限边界：Owner Mode 不读取消息正文、不导出私钥、不绕过其他用户的应用锁。")
@@ -98,6 +104,7 @@ struct OwnerConsoleView: View {
                     Button("退出") {
                         RuntimeDiagnosticsBridge.shared.recordSemanticAction("owner.exit")
                         ownerMode.lock()
+                        model.developerLearningGate.lock()
                         dismiss()
                     }
                 }
@@ -122,6 +129,7 @@ struct OwnerConsoleView: View {
                 showsStressConfiguration = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                     ownerMode.lock()
+                        model.developerLearningGate.lock()
                     dismiss()
                 }
             }
@@ -176,6 +184,64 @@ struct OwnerConsoleView: View {
             consoleRow("Profile", value: VeilDevicePerformance.diagnosticLabel)
         }
         .veilCard()
+    }
+
+    private var developerModeCard: some View {
+        let enabled = ownerMode.isAuthorized(for: .developerTraining)
+        return NavigationLink(destination: DeveloperModeConsoleView(model: model)) {
+            HStack(spacing: 12) {
+                Image(systemName: "hammer.fill")
+                    .foregroundColor(enabled ? VeilTheme.goldBright : VeilTheme.secondaryText)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("DEVELOPER MODE")
+                        .font(.system(.subheadline, design: .monospaced).weight(.bold))
+                        .foregroundColor(VeilTheme.text)
+                    Text("上帝模式内的受控训练与运行时观测入口")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundColor(VeilTheme.secondaryText)
+            }
+            .padding(12)
+            .background(VeilTheme.subtleFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .veilCard()
+    }
+
+    private var governanceRuntimeCard: some View {
+        let sample = kernelRuntime.currentUltraSample(a10Ultra.lastRuntimeSample)
+        let decision = sample?.ultraDecision
+        let budget = sample?.ultraBudget
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("GOVERNANCE RUNTIME")
+                    .font(.system(.subheadline, design: .monospaced))
+                    .foregroundColor(VeilTheme.gold)
+                Spacer()
+                Text(kernelRuntime.mode.title)
+                    .font(.caption2.monospaced())
+                    .foregroundColor(VeilTheme.goldBright)
+            }
+            consoleRow("Authority", value: kernelRuntime.mode.productionAuthority)
+            consoleRow("A9 / A10", value: "\(kernelRuntime.mode.a9EvaluationEnabled ? "ON" : "OFF") / \(kernelRuntime.mode.ultraEvaluationEnabled ? "ON" : "OFF")")
+            consoleRow("Mode samples", value: "\(kernelRuntime.currentModeSampleCount)")
+            if kernelRuntime.mode.ultraEvaluationEnabled {
+                consoleRow("A10 sample", value: sample.map { String($0.sampleID.prefix(8)).uppercased() } ?? "WAITING")
+                consoleRow("A10 health", value: decision.map { "\($0.light) · L\($0.level) · H\($0.healthScore)" } ?? "等待首个独立样本")
+                consoleRow("A10 budget", value: budget.map { "\($0.mode) · CPU \($0.cpuPct)% · GAME \($0.gamePct)%" } ?? "--")
+                consoleRow("A10 backend", value: sample?.runtimeBackend ?? "--")
+            }
+            if let reason = kernelRuntime.lastFallbackReason {
+                consoleRow("Fallback", value: reason)
+            }
+            Text("只读实时面板。诊断、完整性与压力采样由运行时自动调度；这里不再要求用户代替治理核执行检测。")
+                .font(.caption2)
+                .foregroundColor(VeilTheme.tertiaryText)
+        }
+        .veilCard(emphasized: kernelRuntime.mode.ultraEvaluationEnabled)
     }
 
 

@@ -49,4 +49,15 @@ final class XiangqiBotTests: XCTestCase {
         XCTAssertEqual(budget.maxDepth, 4)
         XCTAssertLessThanOrEqual(budget.timeLimitMilliseconds, 200)
     }
+
+    func testDifficultyBudgetsIncreaseSearchDepth() {
+        let relaxed = XiangqiBotBudget.forDifficulty(.relaxed, profileLabel: "A16-HIGH")
+        let master = XiangqiBotBudget.forDifficulty(.master, profileLabel: "A16-HIGH")
+        XCTAssertLessThan(relaxed.maxDepth, master.maxDepth)
+        XCTAssertLessThan(relaxed.quiescenceDepth, master.quiescenceDepth)
+        XCTAssertLessThan(relaxed.timeLimitMilliseconds, master.timeLimitMilliseconds)
+        let trainedRelaxed = relaxed.reinforced(by: 8)
+        XCTAssertGreaterThanOrEqual(trainedRelaxed.maxDepth, relaxed.maxDepth)
+        XCTAssertGreaterThan(trainedRelaxed.timeLimitMilliseconds, relaxed.timeLimitMilliseconds)
+    }
 }

@@ -1,6 +1,33 @@
 import Combine
 import Foundation
 
+enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
+    case relaxed
+    case balanced
+    case advanced
+    case master
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .relaxed: return "轻松"
+        case .balanced: return "均衡"
+        case .advanced: return "进阶"
+        case .master: return "宗师"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .relaxed: return "保留明显容错，适合入门练习"
+        case .balanced: return "稳定策略与本地学习"
+        case .advanced: return "更宽候选、更深反击搜索"
+        case .master: return "设备允许时启用最深离线搜索"
+        }
+    }
+}
+
 @MainActor
 final class LocalAIGameController: ObservableObject {
     enum Outcome: Equatable {
@@ -25,6 +52,11 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var lastDecisionMode = "基础策略"
     @Published private(set) var lastDecisionMilliseconds: Int?
     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
+    @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
+    @Published private(set) var coachProfile: PersonalBoardCoachProfile
+    @Published private(set) var coachTip = "每一步都会沉淀为下一局的本地训练证据。"
+    @Published private(set) var developerTeachingMode = false
+    @Published private(set) var developerFormationCount = 0
 
     let game: MiniGameKind
     let humanPlayer: MiniGamePlayer = .host
@@ -33,12 +65,24 @@ final class LocalAIGameController: ObservableObject {
 
     private var aiTask: Task<Void, Never>?
     private let learningStore: AdaptiveBoardLearningStore
+    private let formationLibrary: DeveloperFormationLibrary?
     private var learningPlies: [AdaptiveBoardPly] = []
+    /// Kept separate from ordinary player history so an owner-authored lesson
+    /// never silently becomes public-player learning evidence.
+    private var developerFormationPlies: [AdaptiveBoardPly] = []
 
-    init(game: MiniGameKind, learningStore: AdaptiveBoardLearningStore = .shared) {
+    init(
+        game: MiniGameKind,
+        learningStore: AdaptiveBoardLearningStore? = nil,
+        formationLibrary: DeveloperFormationLibrary? = nil
+    ) {
         self.game = game
-        self.learningStore = learningStore
-        learningSummary = learningStore.summary
+        let resolvedLearningStore = learningStore ?? AdaptiveBoardLearningStore.store(for: game)
+        self.learningStore = resolvedLearningStore
+        self.formationLibrary = formationLibrary
+        learningSummary = resolvedLearningStore.summary
+        coachProfile = resolvedLearningStore.coachProfile(for: game)
+        developerFormationCount = formationLibrary?.lessons.count ?? 0
         sessionID = UUID().uuidString
     }
 
@@ -86,6 +130,8 @@ final class LocalAIGameController: ObservableObject {
         sessionID = UUID().uuidString
         outcome = .playing
         isAIThinking = false
+        developerFormationPlies.removeAll(keepingCapacity: true)
+        developerTeachingMode = false
         lastDecisionMode = "规则 Bot"
         lastDecisionMilliseconds = nil
     }
@@ -94,16 +140,63 @@ final class LocalAIGameController: ObservableObject {
         guard game == .gomoku, canHumanAct else { return }
         var state = gomoku
         let position = AdaptiveBoardPosition.gomoku(state)
+        coachTip = GomokuBot.coachingHint(beforePlaying: index, in: state, for: humanPlayer)
         guard state.apply(index: index, actor: humanPlayer) else { return }
         learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: humanPlayer))
         gomoku = state
         finishOrScheduleAI()
     }
 
+    func setDeveloperTeachingMode(_ enabled: Bool) {
+        guard game == .gomoku else { return }
+        if enabled, !developerTeachingMode {
+            beginDeveloperFormationRecording()
+            return
+        }
+        developerTeachingMode = enabled
+        if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false }
+    }
+
+    func beginDeveloperFormationRecording() {
+        guard game == .gomoku else { return }
+        finalizeLearning(as: .unfinished)
+        aiTask?.cancel(); aiTask = nil
+        gomoku = GomokuState()
+        outcome = .playing
+        isAIThinking = false
+        sessionID = UUID().uuidString
+        developerFormationPlies.removeAll(keepingCapacity: true)
+        developerTeachingMode = true
+        coachTip = "阵法录制已从空棋盘开始：请依次演示双方的攻防走子。"
+    }
+
+    func developerGomokuMove(_ index: Int) {
+        guard game == .gomoku, developerTeachingMode, outcome == .playing else { return }
+        var state = gomoku
+        let actor = state.currentPlayer
+        let position = AdaptiveBoardPosition.gomoku(state)
+        guard state.apply(index: index, actor: actor) else { return }
+        developerFormationPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: actor))
+        gomoku = state
+        updateOutcome()
+    }
+
+    func captureDeveloperFormation(name: String, purpose: String, objective: String) throws {
+        guard game == .gomoku, let formationLibrary else {
+            throw DeveloperFormationError.invalidLesson
+        }
+        try formationLibrary.capture(name: name, purpose: purpose, objective: objective, plies: developerFormationPlies)
+        developerFormationCount = formationLibrary.lessons.count
+        developerFormationPlies.removeAll(keepingCapacity: true)
+        developerTeachingMode = false
+        coachTip = "已保存开发者阵法：后续同一前缀局面会优先使用你录制的应手。"
+    }
+
     func humanXiangqiMove(from: Int, to: Int) {
         guard game == .xiangqi, canHumanAct else { return }
         var state = xiangqi
         let position = AdaptiveBoardPosition.xiangqi(state)
+        coachTip = XiangqiBot.coachingHint(beforePlayingFrom: from, to: to, in: state, for: humanPlayer)
         guard state.apply(from: from, to: to, actor: humanPlayer) else { return }
         learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: humanPlayer))
         xiangqi = state
@@ -163,6 +256,11 @@ final class LocalAIGameController: ObservableObject {
         tacticalDifficulty = difficulty
     }
 
+    func setBoardDifficulty(_ difficulty: BoardBotDifficulty) {
+        guard game == .gomoku || game == .xiangqi else { return }
+        boardDifficulty = difficulty
+    }
+
     func setTacticalScenario(_ scenario: TacticalSoloScenario) {
         guard game == .tactical, tacticalScenario != scenario else { return }
         tacticalScenario = scenario
@@ -201,6 +299,8 @@ final class LocalAIGameController: ObservableObject {
         learningStore.clear()
         learningPlies.removeAll(keepingCapacity: true)
         learningSummary = learningStore.summary
+        coachProfile = learningStore.coachProfile(for: game)
+        coachTip = "已清空本地训练档案；下一局将从新的个人棋谱开始。"
     }
 
     func exportBoardLearning() throws -> URL {
@@ -211,11 +311,14 @@ final class LocalAIGameController: ObservableObject {
         let report = try learningStore.importPackage(from: url)
         learningPlies.removeAll(keepingCapacity: true)
         learningSummary = learningStore.summary
+        coachProfile = learningStore.coachProfile(for: game)
+        coachTip = "训练包已合并到本地档案；下一局会使用其中的阵法证据。"
         return report
     }
 
     private func finishOrScheduleAI() {
         updateOutcome()
+        guard !developerTeachingMode else { return }
         guard outcome == .playing else { return }
         scheduleAIIfNeeded()
     }
@@ -286,10 +389,12 @@ final class LocalAIGameController: ObservableObject {
         switch game {
         case .gomoku:
             let snapshot = gomoku
-            let learning = learningStore.snapshot()
-            let budget = GomokuBotBudget.standard(
+            let formation = formationLibrary?.influence(for: learningPlies) ?? .empty
+            let learning = learningStore.snapshot(currentPlies: learningPlies).applying(formation)
+            let budget = GomokuBotBudget.forDifficulty(
+                boardDifficulty,
                 profileLabel: VeilDevicePerformance.current.label
-            )
+            ).reinforced(by: learning.trainingLevel)
             let result = await Task.detached(priority: .userInitiated) {
                 GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
             }.value
@@ -297,7 +402,9 @@ final class LocalAIGameController: ObservableObject {
 
             var ruleGate = gomoku
             guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
-            lastDecisionMode = "五子棋 Bot"
+            let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
+            let formationLabel = formation.matchedLessonNames.first.map { " · 阵法：\($0)" } ?? ""
+            lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)\(formationLabel)"
             return AgentActionCandidate(
                 actionID: "gomoku:\(result.index)",
                 encodedAction: AgentGameEncoding.encodeInts([result.index]),
@@ -311,10 +418,12 @@ final class LocalAIGameController: ObservableObject {
 
         case .xiangqi:
             let snapshot = xiangqi
-            let learning = learningStore.snapshot()
-            let budget = XiangqiBotBudget.standard(
+            let formation = formationLibrary?.influence(for: learningPlies) ?? .empty
+            let learning = learningStore.snapshot(currentPlies: learningPlies).applying(formation)
+            let budget = XiangqiBotBudget.forDifficulty(
+                boardDifficulty,
                 profileLabel: VeilDevicePerformance.current.label
-            )
+            ).reinforced(by: learning.trainingLevel)
             let result = await Task.detached(priority: .userInitiated) {
                 XiangqiBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
             }.value
@@ -322,9 +431,12 @@ final class LocalAIGameController: ObservableObject {
 
             var ruleGate = xiangqi
             guard ruleGate.apply(from: result.from, to: result.to, actor: .guest) else { return nil }
-            lastDecisionMode = result.completedDepth > 0
-                ? "象棋 Bot D\(result.completedDepth)"
-                : "象棋 Bot 快速着"
+            let baseMode = result.completedDepth > 0
+                ? "象棋 · \(boardDifficulty.title) D\(result.completedDepth)"
+                : "象棋 · \(boardDifficulty.title) 快速着"
+            lastDecisionMode = learning.hasSequenceEvidence
+                ? baseMode + " · 训练 Lv\(learning.trainingLevel)"
+                : baseMode
             return AgentActionCandidate(
                 actionID: "xiangqi:\(result.from):\(result.to)",
                 encodedAction: AgentGameEncoding.encodeInts([result.from, result.to]),
@@ -532,5 +644,14 @@ final class LocalAIGameController: ObservableObject {
         learningStore.record(game: game, plies: learningPlies, result: result)
         learningPlies.removeAll(keepingCapacity: true)
         learningSummary = learningStore.summary
+        coachProfile = learningStore.coachProfile(for: game)
+        switch result {
+        case .humanWon:
+            coachTip = "本局已归档：下一局会提高对你常用成功线路的应对强度。"
+        case .aiWon, .unfinished:
+            coachTip = "本局已归档：教练会保留这条线路，下一次给出更有针对性的练习。"
+        case .draw:
+            coachTip = "本局已归档：平衡局面会用于训练攻守转换。"
+        }
     }
 }

@@ -7,8 +7,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: 5.9
-    MARKETING_VERSION: "27.0"
-    CURRENT_PROJECT_VERSION: "62"
+    MARKETING_VERSION: "27.1"
+    CURRENT_PROJECT_VERSION: "63"
     SWIFT_STRICT_CONCURRENCY: complete
     IPHONEOS_DEPLOYMENT_TARGET: 15.0
     TARGETED_DEVICE_FAMILY: "1,2"
@@ -23,7 +23,7 @@ packages:
     exactVersion: 2.9.6
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation.git
-    from: 0.9.19
+    exactVersion: 0.9.20
 targets:
   VeilLink:
     type: application
@@ -55,6 +55,15 @@ targets:
           - Resources/AgentModels/game_policy_ranker_v4.vlpol
           - Resources/AgentModels/game_policy_ranker_v4.manifest.json
           - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
+          - Resources/MonogatariHost
+          - Resources/VisualNovelBundle
+      # Preserve relative JS/CSS paths as a bundled folder reference.
+      - path: VeilLink/Resources/MonogatariHost
+        type: folder
+        buildPhase: resources
+      - path: VeilLink/Resources/VisualNovelBundle
+        type: folder
+        buildPhase: resources
     dependencies:
       - sdk: libsqlite3.tbd
       - package: CodeScanner
@@ -74,6 +83,7 @@ targets:
     scheme:
       testTargets:
         - VeilLinkTests
+        - VeilLinkUITests
   VeilBackgroundWidget:
     type: app-extension
     platform: iOS
@@ -110,3 +120,15 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.VeilLinkTests
+  VeilLinkUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: VeilLinkUITests
+    dependencies:
+      - target: VeilLink
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.VeilLinkUITests
+        TEST_TARGET_NAME: VeilLink

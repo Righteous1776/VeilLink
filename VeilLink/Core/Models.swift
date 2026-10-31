@@ -102,11 +102,13 @@ struct OwnerCapability: OptionSet, Codable, Hashable {
     static let protocolTuning = OwnerCapability(rawValue: 1 << 1)
     static let groupModeration = OwnerCapability(rawValue: 1 << 2)
     static let visualEffects = OwnerCapability(rawValue: 1 << 3)
+    static let developerTraining = OwnerCapability(rawValue: 1 << 4)
 
     static let safeDefault: OwnerCapability = [
         .diagnostics,
         .protocolTuning,
         .groupModeration,
-        .visualEffects
+        .visualEffects,
+        .developerTraining
     ]
 }

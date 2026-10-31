@@ -55,6 +55,7 @@ final class AppModel: ObservableObject {
     private var messageRefreshTask: Task<Void, Never>?
     private var a9RefreshTask: Task<Void, Never>?
     private var a9PeriodicTask: Task<Void, Never>?
+    private var lastAutomatedIntegrityCheckAt: Date?
     private var a9Cancellables = Set<AnyCancellable>()
     private var pendingConversationRefresh = false
     private var hostForegroundActive = true
@@ -65,6 +66,7 @@ final class AppModel: ObservableObject {
     let database: DatabaseStore
     let identity: IdentityManager
     let appLock: AppLockController
+    let developerLearningGate: DeveloperLearningLabGate
     let ownerMode: OwnerModeController
     let bluetooth: BLETransport
     let lanTurbo: LANTransport
@@ -96,6 +98,36 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var activeGovernanceEngineName: String {
+        kernelRuntime.mode.ultraEvaluationEnabled && !kernelRuntime.mode.a9EvaluationEnabled
+            ? "A10 Ultra Ω"
+            : (kernelRuntime.mode == .dualShadow ? "A9 + A10 Ultra Ω" : "A9")
+    }
+
+    var activeGovernanceHealthText: String {
+        if kernelRuntime.mode.ultraEvaluationEnabled,
+           !kernelRuntime.mode.a9EvaluationEnabled {
+            if let decision = kernelRuntime.currentUltraSample(a10Ultra.lastRuntimeSample)?.ultraDecision {
+                return "H\(decision.healthScore)"
+            }
+            return "采样中"
+        }
+        return "H\(a9Health.decision.healthScore)"
+    }
+
+    func activeGovernanceStatusText() -> String {
+        if kernelRuntime.mode.ultraEvaluationEnabled,
+           !kernelRuntime.mode.a9EvaluationEnabled {
+            guard let sample = kernelRuntime.currentUltraSample(a10Ultra.lastRuntimeSample),
+                  let decision = sample.ultraDecision else {
+                return "A10 Ultra Ω：正在生成首个独立治理样本；A9 冻结值不会作为当前数据展示。"
+            }
+            let budget = sample.ultraBudget?.mode ?? "WAITING"
+            return "A10 Ultra Ω：健康度 \(decision.healthScore)/100，级别 L\(decision.level)，预算 \(budget)，数据库 \(a9Health.databaseIntegrity.title)。"
+        }
+        return "\(activeGovernanceEngineName)：健康度 \(a9Health.decision.healthScore)/100，计算模式 \(computeGovernor.plan.mode.title)，焦点 \(computeGovernor.plan.focus.title)，数据库 \(a9Health.databaseIntegrity.title)。"
+    }
+
     init(keychain: KeychainStore = KeychainStore(), legalConsent: VeilLegalConsentController? = nil) throws {
         autoSaveReceivedImages = UserDefaults.standard.bool(forKey: Self.autoSaveReceivedImagesKey)
         self.keychain = keychain
@@ -107,6 +139,7 @@ final class AppModel: ObservableObject {
             try? database.adoptLegacyUnscopedRows(localIdentityID: onlyIdentity.id)
         }
         appLock = AppLockController(keychain: keychain)
+        developerLearningGate = DeveloperLearningLabGate(keychain: keychain)
         ownerMode = OwnerModeController()
         performanceOverrides = PerformanceOverrideController()
         bluetooth = BLETransport()
@@ -323,6 +356,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshA9Health() {
+        runAutomatedIntegrityCheckIfNeeded()
         // A9 must reason about operational links, not every UUID passively observed by scanning.
         let snapshots = bluetooth.linkSnapshots.values.filter(\.isA9Relevant)
         let liveQualitySnapshots = snapshots.filter(\.contributesLinkQualityToA9)
@@ -461,7 +495,28 @@ final class AppModel: ObservableObject {
     func runA9StorageCheck() {
         let result = database.integrityCheck().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         a9Health.setDatabaseIntegrity(result == "ok" ? .ok : .failed)
+        lastAutomatedIntegrityCheckAt = Date()
         refreshA9Health()
+    }
+
+    private func runAutomatedIntegrityCheckIfNeeded(now: Date = Date()) {
+        if let lastAutomatedIntegrityCheckAt,
+           now.timeIntervalSince(lastAutomatedIntegrityCheckAt) < 6 * 60 * 60 {
+            return
+        }
+        lastAutomatedIntegrityCheckAt = now
+        let result = database.integrityCheck()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let integrity: VeilA9DatabaseIntegrity = result == "ok" ? .ok : .failed
+        a9Health.setDatabaseIntegrity(integrity)
+        if integrity == .failed {
+            DiagnosticLogStore.shared.log(
+                .error,
+                .storage,
+                event: "governance.integrity_check.failed"
+            )
+        }
     }
 
     func clearUserRequestedCaches() {
@@ -645,6 +700,7 @@ final class AppModel: ObservableObject {
         agent.handleBackground()
         appLock.lock()
         ownerMode.lock()
+        developerLearningGate.lock()
     }
 
     func createInitialProfile(name: String, password: String, pin: String) -> Bool {
@@ -856,6 +912,7 @@ final class AppModel: ObservableObject {
         _ = suspendCommunicationStack(reason: "正在恢复备份")
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
+            VeilImportedFileAccess.removeStagedCopy(url)
             if identity.activeIdentity != nil { start() }
         }
         do {
@@ -1077,7 +1134,7 @@ final class AppModel: ObservableObject {
             result = VeilAppControlResult(commandID: command.id, success: true, didMutate: true, message: "本地 SQLite 完整性检查已执行：\(a9Health.databaseIntegrity.title)。没有读取或回显聊天正文。")
 
         case .a9Status:
-            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: "A9：健康度 \(a9Health.decision.healthScore)/100，计算模式 \(computeGovernor.plan.mode.title)，焦点 \(computeGovernor.plan.focus.title)，数据库 \(a9Health.databaseIntegrity.title)。")
+            result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: activeGovernanceStatusText())
 
         case .agentStatus:
             result = VeilAppControlResult(commandID: command.id, success: true, didMutate: false, message: "灵核运行时：\(agent.runtimeManifest?.displayName ?? LocalTextModelRuntimeFactory.backendName)，状态 \(agent.runtimeState.displayName)；游戏引擎 Native Bot；Control Plane V3 / AutoTune \(agentControls.autoRegulationMode.title)。")

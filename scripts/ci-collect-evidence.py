@@ -71,6 +71,37 @@ def collect_diagnostics(logs):
                     warnings.append(item)
     return errors[:250], warnings[:500]
 
+
+def extract_xctest_summary(log_path):
+    """Structured XCTest report: distinguishes no tests, failures and passes."""
+    if not log_path.is_file():
+        return {"status": "not_run", "all_suites": 0, "failed_cases": [],
+                "latest_reported_tests": None, "latest_reported_failures": None}
+    log = log_path.read_text(encoding="utf-8", errors="replace")
+    suites = re.findall(r"Test Suite 'All tests' (passed|failed) at", log)
+    totals = re.findall(
+        r"Executed\s+(\d+)\s+tests?,\s+with\s+(\d+)\s+failures?"
+        r"\s+\((\d+)\s+unexpected\)", log
+    )
+    failed_cases = sorted(set(re.findall(
+        r"Test Case '-\[(.*?)\]' failed", log
+    )))
+    if not suites or not totals:
+        status = "unverified"
+    elif any(x == "failed" for x in suites) or failed_cases or int(totals[-1][1]):
+        status = "failed"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "all_suites": len(suites),
+        "failed_cases": failed_cases[:100],
+        "latest_reported_tests": int(totals[-1][0]) if totals else None,
+        "latest_reported_failures": int(totals[-1][1]) if totals else None,
+        "latest_reported_unexpected": int(totals[-1][2]) if totals else None,
+        "note": "Latest reported count is for the final XCTest suite, not a sum of all nested suites.",
+    }
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workflow", required=True)
@@ -78,12 +109,24 @@ def main():
     parser.add_argument("--status", required=True)
     parser.add_argument("--artifact-dir", default="ci-artifacts")
     parser.add_argument("--output", default="ci-artifacts/CI_EVIDENCE.json")
+    parser.add_argument("--require-tests-passed", action="store_true")
     args = parser.parse_args()
 
     artifact_dir = Path(args.artifact_dir)
     artifact_dir.mkdir(parents=True, exist_ok=True)
     logs = sorted(artifact_dir.glob("*.log"))
     errors, warnings = collect_diagnostics(logs)
+    test_summary = extract_xctest_summary(artifact_dir / "unit-tests.log")
+    if args.require_tests_passed and test_summary["status"] != "passed":
+        raise SystemExit("XCTest evidence not passed: " + json.dumps(test_summary, ensure_ascii=False))
+    selected_simulator = artifact_dir / "simulator-selection.json"
+    if selected_simulator.is_file():
+        try:
+            simulator = json.loads(selected_simulator.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"Invalid simulator selection evidence: {exc}")
+    else:
+        simulator = None
 
     files = []
     for p in sorted(artifact_dir.rglob("*")):
@@ -127,6 +170,8 @@ def main():
             "errors": errors,
             "warnings": warnings,
         },
+        "tests": test_summary,
+        "simulator": simulator,
         "evidence_files": files,
     }
 

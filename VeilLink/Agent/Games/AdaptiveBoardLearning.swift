@@ -1,15 +1,71 @@
 import Foundation
 
-/// A compact, on-device repertoire used by the native Gomoku and Xiangqi bots.
-/// It stores bounded action statistics plus a short rolling game history; no model
-/// weights, network access, or unbounded database growth are involved.
+/// A game-scoped, on-device repertoire used by the native Gomoku and Xiangqi bots.
+/// Every game and position is retained until the user explicitly clears it.
 struct AdaptiveBoardLearningSnapshot: Sendable {
-    static let empty = AdaptiveBoardLearningSnapshot(preferences: [:])
+    static let empty = AdaptiveBoardLearningSnapshot(
+        preferences: [:],
+        rootAdjustments: [:],
+        predictedHumanReplies: [:],
+        trainingLevel: 0
+    )
 
     fileprivate let preferences: [String: [String: Int]]
+    fileprivate let rootAdjustments: [String: Int]
+    fileprivate let predictedHumanReplies: [String: AdaptiveBoardPrediction]
+    /// Bounded compute reinforcement derived from retained local evidence. This
+    /// is independent of the uncapped on-disk history and is safe on old devices.
+    let trainingLevel: Int
 
     func bonus(position: String, action: String) -> Int {
         preferences[position]?[action] ?? 0
+    }
+
+    /// Outcome-aware sequence memory. Repeating a line that lost (or was repeatedly
+    /// abandoned) is penalised, while lines that held up are reinforced.
+    func rootAdjustment(action: String) -> Int {
+        rootAdjustments[action] ?? 0
+    }
+
+    /// The player's most likely next move after a candidate AI move.
+    func predictedHumanReply(afterAIAction action: String) -> AdaptiveBoardPrediction? {
+        predictedHumanReplies[action]
+    }
+
+    var hasSequenceEvidence: Bool {
+        !rootAdjustments.isEmpty || !predictedHumanReplies.isEmpty
+    }
+}
+
+struct AdaptiveBoardPrediction: Equatable, Sendable {
+    let action: String
+    let evidence: Int
+}
+
+struct DeveloperFormationInfluence: Sendable {
+    static let empty = DeveloperFormationInfluence(rootAdjustments: [:], predictedHumanReplies: [:], matchedLessonNames: [])
+    let rootAdjustments: [String: Int]
+    let predictedHumanReplies: [String: AdaptiveBoardPrediction]
+    let matchedLessonNames: [String]
+}
+
+extension AdaptiveBoardLearningSnapshot {
+    func applying(_ influence: DeveloperFormationInfluence) -> AdaptiveBoardLearningSnapshot {
+        var roots = rootAdjustments
+        for (action, bonus) in influence.rootAdjustments {
+            roots[action, default: 0] = min(2_400, max(-1_200, roots[action, default: 0] + bonus))
+        }
+        var replies = predictedHumanReplies
+        for (action, prediction) in influence.predictedHumanReplies {
+            if let current = replies[action], current.evidence > prediction.evidence { continue }
+            replies[action] = prediction
+        }
+        return AdaptiveBoardLearningSnapshot(
+            preferences: preferences,
+            rootAdjustments: roots,
+            predictedHumanReplies: replies,
+            trainingLevel: trainingLevel
+        )
     }
 }
 
@@ -93,6 +149,21 @@ struct AdaptiveBoardLearningImportReport: Equatable, Sendable {
     let rememberedPositions: Int
 }
 
+/// A local, explainable training portrait. It is derived from the player's own
+/// recorded games rather than a cloud rating or a black-box model.
+struct PersonalBoardCoachProfile: Equatable, Sendable {
+    let level: Int
+    let completedGames: Int
+    let repeatedLineCount: Int
+    let preferredOpening: String
+    let nextLesson: String
+    /// A plain-language, evidence-based post-game direction. It is deliberately
+    /// derived from local results rather than a remote rating or opaque model.
+    let reviewFocus: String
+
+    var levelText: String { "个性化教练 · Lv\(level)" }
+}
+
 enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
     case unreadable
     case tooLarge
@@ -104,7 +175,7 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .unreadable: return "无法读取训练包。"
-        case .tooLarge: return "训练包超过 1 MB 安全上限。"
+        case .tooLarge: return "训练包大于当前设备可安全处理的可用空间。"
         case .unsupportedFormat: return "训练包版本不受支持。"
         case .checksumMismatch: return "训练包完整性校验失败。"
         case .invalidContent: return "训练包包含无效棋步或越界数据。"
@@ -115,7 +186,12 @@ enum AdaptiveBoardLearningPackageError: LocalizedError, Equatable {
 
 @MainActor
 final class AdaptiveBoardLearningStore {
-    static let shared = AdaptiveBoardLearningStore()
+    static let gomoku = AdaptiveBoardLearningStore(game: .gomoku)
+    static let xiangqi = AdaptiveBoardLearningStore(game: .xiangqi)
+
+    static func store(for game: MiniGameKind) -> AdaptiveBoardLearningStore {
+        game == .xiangqi ? .xiangqi : .gomoku
+    }
 
     private struct ActionStat: Codable {
         var count: Int
@@ -152,16 +228,14 @@ final class AdaptiveBoardLearningStore {
         let payload: Database
     }
 
-    private static let maximumPositions = 1_600
-    private static let maximumActionsPerPosition = 8
-    private static let maximumRecentGames = 40
-    private static let maximumBytes = 512 * 1_024
-
     private let fileURL: URL
+    private let scopedGame: MiniGameKind?
     private var database: Database
     private(set) var lastSaveSucceeded = true
+    /// Existing unreadable/invalid stores are retained on disk, never overwritten by autosave.
+    private(set) var requiresRecovery = false
 
-    init(fileURL: URL? = nil) {
+    init(game: MiniGameKind? = nil, fileURL: URL? = nil, legacyURL: URL? = nil) {
         let resolvedURL: URL
         if let fileURL {
             resolvedURL = fileURL
@@ -169,21 +243,58 @@ final class AdaptiveBoardLearningStore {
             let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                 .appendingPathComponent("VeilLink", isDirectory: true)
             try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            resolvedURL = root.appendingPathComponent("adaptive-board-learning-v1.json")
+            let suffix = game == .xiangqi ? "xiangqi" : "gomoku"
+            resolvedURL = root.appendingPathComponent("adaptive-board-learning-\(suffix)-v2.json")
         }
         self.fileURL = resolvedURL
-        database = Self.load(from: resolvedURL)
+        scopedGame = game
+        let existingStore = FileManager.default.fileExists(atPath: resolvedURL.path)
+        let loadedStore = Self.load(from: resolvedURL, scopedGame: game)
+        database = loadedStore ?? Database()
+        if existingStore && loadedStore == nil {
+            requiresRecovery = true
+            lastSaveSucceeded = false
+        }
+
+        // One-time, non-destructive migration from V27's shared store. The
+        // legacy file is never moved, truncated or overwritten: each V2 game
+        // database is fully encoded and decoded in a sibling temporary file
+        // before its first atomic placement. A failed migration leaves the old
+        // shared record available for retry on the next launch.
+        let legacy = legacyURL ?? resolvedURL.deletingLastPathComponent()
+            .appendingPathComponent("adaptive-board-learning-v1.json")
+        if (fileURL == nil || legacyURL != nil),
+           !FileManager.default.fileExists(atPath: resolvedURL.path),
+           FileManager.default.fileExists(atPath: legacy.path) {
+            if let migrated = Self.load(from: legacy, scopedGame: game) {
+                if !migrated.positions.isEmpty || !migrated.recentGames.isEmpty {
+                    if Self.writeInitialMigration(migrated, to: resolvedURL) {
+                        database = migrated
+                        lastSaveSucceeded = true
+                    } else {
+                        lastSaveSucceeded = false
+                    }
+                }
+            } else {
+                // A corrupt legacy source is not silently replaced by an empty V2.
+                requiresRecovery = true
+                lastSaveSucceeded = false
+            }
+        }
     }
 
     var summary: AdaptiveBoardLearningSummary {
-        AdaptiveBoardLearningSummary(
+        // Metadata read only: the history is intentionally uncapped, so loading
+        // its entire JSON just to display its byte count is a memory hazard.
+        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        return AdaptiveBoardLearningSummary(
             completedGames: database.completedGames,
             rememberedPositions: database.positions.count,
-            storedBytes: (try? Data(contentsOf: fileURL).count) ?? 0
+            storedBytes: fileSize
         )
     }
 
-    func snapshot() -> AdaptiveBoardLearningSnapshot {
+    func snapshot(currentPlies: [AdaptiveBoardPly] = []) -> AdaptiveBoardLearningSnapshot {
         var result = Self.seedPreferences()
         for (position, stat) in database.positions {
             var actions = result[position] ?? [:]
@@ -202,11 +313,134 @@ final class AdaptiveBoardLearningStore {
             }
             result[position] = actions
         }
-        return AdaptiveBoardLearningSnapshot(preferences: result)
+        let sequence = currentPlies.map { ($0.actor == .host ? "h" : "a") + $0.action }
+        var rootAdjustments: [String: Int] = [:]
+        var replyEvidence: [String: [String: Int]] = [:]
+        for record in database.recentGames where record.actions.starts(with: sequence) {
+            guard record.actions.count > sequence.count else { continue }
+            let next = record.actions[sequence.count]
+            guard next.first == "a" else { continue }
+            let aiAction = String(next.dropFirst())
+            let outcome: Int
+            switch record.result {
+            case .aiWon: outcome = 420
+            case .humanWon: outcome = -620
+            case .draw: outcome = -60
+            case .unfinished: outcome = -110
+            }
+            rootAdjustments[aiAction, default: 0] += outcome
+
+            let humanIndex = sequence.count + 1
+            if record.actions.indices.contains(humanIndex) {
+                let reply = record.actions[humanIndex]
+                if reply.first == "h" {
+                    let action = String(reply.dropFirst())
+                    let weight = record.result == .humanWon ? 4 : 1
+                    replyEvidence[aiAction, default: [:]][action, default: 0] += weight
+                }
+            }
+        }
+        let predictions = replyEvidence.compactMapValues { actions -> AdaptiveBoardPrediction? in
+            guard let best = actions.max(by: {
+                $0.value == $1.value ? $0.key > $1.key : $0.value < $1.value
+            }) else { return nil }
+            return AdaptiveBoardPrediction(action: best.key, evidence: best.value)
+        }
+        return AdaptiveBoardLearningSnapshot(
+            preferences: result,
+            rootAdjustments: rootAdjustments.mapValues { min(1_200, max(-1_200, $0)) },
+            predictedHumanReplies: predictions,
+            trainingLevel: min(8, database.completedGames / 3 + database.positions.count / 220)
+        )
+    }
+
+    func coachProfile(for game: MiniGameKind) -> PersonalBoardCoachProfile {
+        let records = database.recentGames.filter { $0.game == game }
+        let completed = records.filter { $0.result != .unfinished }.count
+        let interrupted = records.filter { $0.result == .unfinished }.count
+        let humanWins = records.filter { $0.result == .humanWon }.count
+        let aiWins = records.filter { $0.result == .aiWon }.count
+        // Count each opening once. The former max-by-filter implementation
+        // rescanned the entire history for every comparison (quadratic cost).
+        var openingCounts: [String: Int] = [:]
+        for record in records {
+            if let firstHumanMove = record.actions.first(where: { $0.first == "h" }) {
+                let action = String(firstHumanMove.dropFirst())
+                openingCounts[action, default: 0] += 1
+            }
+        }
+        let repeatedLines = Dictionary(grouping: records) { record in
+            record.actions.prefix(6).joined(separator: ",")
+        }.values.filter { $0.count >= 2 }.count
+        let preferredAction = openingCounts.max(by: { lhs, rhs in
+            if lhs.value != rhs.value { return lhs.value < rhs.value }
+            return lhs.key > rhs.key
+        })?.key
+
+        let preferredOpening: String
+        let nextLesson: String
+        switch game {
+        case .gomoku:
+            if let action = preferredAction, let index = Int(action) {
+                let row = index / GomokuState.size
+                let column = index % GomokuState.size
+                let center = GomokuState.size / 2
+                preferredOpening = abs(row - center) <= 2 && abs(column - center) <= 2
+                    ? "偏好中心起手"
+                    : "偏好边侧起手"
+            } else {
+                preferredOpening = "正在观察你的起手"
+            }
+            nextLesson = repeatedLines > 0
+                ? "下一课：复盘重复阵法中的活三、冲四与防守优先级。"
+                : "下一课：先找对手的威胁，再决定进攻方向。"
+        case .xiangqi:
+            if preferredAction == "64:67" {
+                preferredOpening = "偏好中炮"
+            } else if preferredAction == "82:65" || preferredAction == "88:67" {
+                preferredOpening = "偏好起马"
+            } else if preferredAction != nil {
+                preferredOpening = "偏好多变开局"
+            } else {
+                preferredOpening = "正在观察你的开局"
+            }
+            nextLesson = repeatedLines > 0
+                ? "下一课：针对常用布局练习一手预防与两手反击。"
+                : "下一课：发展子力前，先检查对方将军、吃子与威胁。"
+        default:
+            preferredOpening = "仅支持五子棋和中国象棋"
+            nextLesson = "选择棋类对局后开始建立个人档案。"
+        }
+        let reviewFocus: String
+        if interrupted >= max(2, completed) {
+            reviewFocus = "复盘方向：中断局较多；先完成短对局，观察优势从哪一步开始丢失。"
+        } else if aiWins > humanWins {
+            reviewFocus = "复盘方向：重点回看电脑取得优势前的两手，先处理对方直接威胁。"
+        } else if repeatedLines > 0 {
+            reviewFocus = "复盘方向：你的常用线路已被识别；尝试为同一开局准备一个转向。"
+        } else if humanWins > 0 {
+            reviewFocus = "复盘方向：复走一局胜局，找出可以稳定复用的威胁与防守转换。"
+        } else {
+            reviewFocus = "复盘方向：先完成一局，教练会从开局、结果和重复线路生成针对性建议。"
+        }
+        let level = min(10, max(1, 1 + completed / 3 + database.positions.count / 180))
+        return PersonalBoardCoachProfile(
+            level: level,
+            completedGames: completed,
+            repeatedLineCount: repeatedLines,
+            preferredOpening: preferredOpening,
+            nextLesson: nextLesson,
+            reviewFocus: reviewFocus
+        )
     }
 
     func record(game: MiniGameKind, plies: [AdaptiveBoardPly], result: AdaptiveBoardGameResult) {
         guard game == .gomoku || game == .xiangqi, !plies.isEmpty else { return }
+        guard scopedGame == nil || scopedGame == game else { return }
+        guard !requiresRecovery else {
+            lastSaveSucceeded = false
+            return
+        }
 
         database.sequence += 1
         let sequence = database.sequence
@@ -218,13 +452,6 @@ final class AdaptiveBoardLearningStore {
             action.aiReward = max(-32_000, min(32_000, action.aiReward + result.aiReward))
             position.actions[ply.action] = action
             position.lastSequence = sequence
-            if position.actions.count > Self.maximumActionsPerPosition {
-                let keep = position.actions.sorted { lhs, rhs in
-                    if lhs.value.count != rhs.value.count { return lhs.value.count > rhs.value.count }
-                    return lhs.key < rhs.key
-                }.prefix(Self.maximumActionsPerPosition)
-                position.actions = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
-            }
             database.positions[ply.position] = position
         }
 
@@ -235,23 +462,25 @@ final class AdaptiveBoardLearningStore {
             actions: plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
             finishedAt: Date()
         ))
-        prune(positionLimit: Self.maximumPositions, historyLimit: Self.maximumRecentGames)
         save()
     }
 
     func clear() {
+        // Persist an empty scoped V2 database as an explicit migration tombstone.
+        // Clear is the user's deliberate reset, including in recovery mode.
+        let previous = database
+        let previousRecovery = requiresRecovery
         database = Database()
-        do {
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                try FileManager.default.removeItem(at: fileURL)
-            }
-            lastSaveSucceeded = true
-        } catch {
-            lastSaveSucceeded = false
+        requiresRecovery = false
+        save()
+        if !lastSaveSucceeded {
+            database = previous
+            requiresRecovery = previousRecovery
         }
     }
 
     func exportPackage() throws -> URL {
+        guard !requiresRecovery else { throw AdaptiveBoardLearningPackageError.invalidContent }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let compactEncoder = JSONEncoder()
@@ -267,13 +496,12 @@ final class AdaptiveBoardLearningStore {
             payload: database
         )
         let data = try encoder.encode(envelope)
-        guard data.count <= Self.maximumBytes * 2 else { throw AdaptiveBoardLearningPackageError.tooLarge }
-
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let gameLabel = scopedGame == .xiangqi ? "Xiangqi" : "Gomoku"
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("VeilLink-BoardLearning-\(formatter.string(from: Date())).vltrain.json")
+            .appendingPathComponent("VeilLink-\(gameLabel)Learning-\(formatter.string(from: Date())).vltrain.json")
         do {
             try data.write(to: url, options: .atomic)
             return url
@@ -287,9 +515,6 @@ final class AdaptiveBoardLearningStore {
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url) else {
             throw AdaptiveBoardLearningPackageError.unreadable
-        }
-        guard data.count <= Self.maximumBytes * 2 else {
-            throw AdaptiveBoardLearningPackageError.tooLarge
         }
         guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
               envelope.format == "veillink.board-learning.export.v1",
@@ -309,11 +534,18 @@ final class AdaptiveBoardLearningStore {
         }
 
         let previous = database
-        database = envelope.payload
-        prune(positionLimit: Self.maximumPositions, historyLimit: Self.maximumRecentGames)
+        let previousRecovery = requiresRecovery
+        database = Self.filtered(envelope.payload, for: scopedGame)
+        guard !database.positions.isEmpty || !database.recentGames.isEmpty else {
+            database = previous
+            throw AdaptiveBoardLearningPackageError.invalidContent
+        }
+        // Explicit validated package import is a permitted recovery operation.
+        requiresRecovery = false
         save()
         guard lastSaveSucceeded else {
             database = previous
+            requiresRecovery = previousRecovery
             throw AdaptiveBoardLearningPackageError.writeFailed
         }
         return AdaptiveBoardLearningImportReport(
@@ -322,30 +554,15 @@ final class AdaptiveBoardLearningStore {
         )
     }
 
-    private func prune(positionLimit: Int, historyLimit: Int) {
-        if database.positions.count > positionLimit {
-            let keep = database.positions.sorted { lhs, rhs in
-                if lhs.value.lastSequence != rhs.value.lastSequence {
-                    return lhs.value.lastSequence > rhs.value.lastSequence
-                }
-                return lhs.key < rhs.key
-            }.prefix(positionLimit)
-            database.positions = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
-        }
-        if database.recentGames.count > historyLimit {
-            database.recentGames.removeFirst(database.recentGames.count - historyLimit)
-        }
-    }
-
     private func save() {
+        guard !requiresRecovery else {
+            lastSaveSucceeded = false
+            return
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         do {
-            var data = try encoder.encode(database)
-            if data.count > Self.maximumBytes {
-                prune(positionLimit: Self.maximumPositions / 2, historyLimit: Self.maximumRecentGames / 2)
-                data = try encoder.encode(database)
-            }
+            let data = try encoder.encode(database)
             try FileManager.default.createDirectory(
                 at: fileURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
@@ -357,22 +574,66 @@ final class AdaptiveBoardLearningStore {
         }
     }
 
-    private static func load(from url: URL) -> Database {
-        guard let data = try? Data(contentsOf: url), data.count <= maximumBytes * 2,
+    private static func load(from url: URL, scopedGame: MiniGameKind?) -> Database? {
+        guard let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(Database.self, from: data),
-              decoded.schema == 1 else { return Database() }
-        return decoded
+              decoded.schema == 1,
+              isValid(decoded) else { return nil }
+        return filtered(decoded, for: scopedGame)
+    }
+
+    /// Writes an initial V2 database without touching the old shared file. The
+    /// decode-back check prevents a half-written or wrongly-filtered migration
+    /// from becoming the first durable store for either game.
+    private static func writeInitialMigration(_ candidate: Database, to destination: URL) -> Bool {
+        guard isValid(candidate),
+              !FileManager.default.fileExists(atPath: destination.path) else { return false }
+        let directory = destination.deletingLastPathComponent()
+        let staging = directory.appendingPathComponent(
+            ".\(destination.lastPathComponent).migrating-\(UUID().uuidString)"
+        )
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(candidate)
+            try data.write(to: staging, options: .atomic)
+            guard let verificationData = try? Data(contentsOf: staging),
+                  let verified = try? JSONDecoder().decode(Database.self, from: verificationData),
+                  isValid(verified),
+                  verified.positions.count == candidate.positions.count,
+                  verified.recentGames.count == candidate.recentGames.count else {
+                try? FileManager.default.removeItem(at: staging)
+                return false
+            }
+            try FileManager.default.moveItem(at: staging, to: destination)
+            return true
+        } catch {
+            try? FileManager.default.removeItem(at: staging)
+            return false
+        }
+    }
+
+    private static func filtered(_ database: Database, for game: MiniGameKind?) -> Database {
+        guard let game else { return database }
+        let prefix = game == .xiangqi ? "x:" : "g:"
+        let positions = database.positions.filter { $0.key.hasPrefix(prefix) }
+        let games = database.recentGames.filter { $0.game == game }
+        return Database(
+            schema: database.schema,
+            completedGames: games.filter { $0.result != .unfinished }.count,
+            sequence: database.sequence,
+            positions: positions,
+            recentGames: games
+        )
     }
 
     private static func isValid(_ database: Database) -> Bool {
         guard database.completedGames >= 0,
-              database.sequence >= 0,
-              database.positions.count <= maximumPositions,
-              database.recentGames.count <= maximumRecentGames else { return false }
+              database.sequence >= 0 else { return false }
         for (position, stat) in database.positions {
             guard (position.hasPrefix("g:") || position.hasPrefix("x:")),
-                  position.count <= 32,
-                  stat.actions.count <= maximumActionsPerPosition else { return false }
+                  position.count <= 96 else { return false }
             for (action, value) in stat.actions {
                 guard value.count > 0, value.count <= 65_535,
                       (-32_000...32_000).contains(value.aiReward),
@@ -381,7 +642,6 @@ final class AdaptiveBoardLearningStore {
         }
         return database.recentGames.allSatisfy { record in
             (record.game == .gomoku || record.game == .xiangqi)
-                && record.actions.count <= 225
                 && record.actions.allSatisfy { $0.count <= 12 }
         }
     }

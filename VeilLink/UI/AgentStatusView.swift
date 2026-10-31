@@ -1,7 +1,17 @@
 import SwiftUI
 
 struct AgentStatusView: View {
+    @ObservedObject var model: AppModel
     @ObservedObject var coordinator: AgentCoordinator
+    @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
+    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
+
+    init(model: AppModel) {
+        self.model = model
+        coordinator = model.agent
+        kernelRuntime = model.kernelRuntime
+        a10Ultra = model.a10Ultra
+    }
 
     private var stateColor: Color {
         switch coordinator.runtimeState {
@@ -60,7 +70,7 @@ struct AgentStatusView: View {
             }
 
             HStack(spacing: 8) {
-                AgentStatusChip(title: "A9", value: coordinator.computePlan.mode.title)
+                AgentStatusChip(title: model.activeGovernanceEngineName, value: model.activeGovernanceHealthText)
                 AgentStatusChip(title: "MODEL", value: LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled ? "GGUF" : "NONE")
             }
         }

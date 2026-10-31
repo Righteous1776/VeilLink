@@ -12,7 +12,7 @@ struct AgentHomeView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            AgentStatusView(coordinator: model.agent)
+            AgentStatusView(model: model)
                 .veilStaggeredEntrance(index: 0)
             AgentControlSummaryView(model: model, controls: controls)
                 .veilStaggeredEntrance(index: 1)
@@ -50,9 +50,7 @@ struct AgentHomeView: View {
                     Button("运行诊断") { showDiagnostics = true }
                     Button("刷新蓝牙链路") { model.agent.send("/ble refresh") }
                         .disabled(!controls.localToolMutationsEnabled)
-                    Button("检查数据库完整性") { model.agent.send("/db check") }
-                        .disabled(!controls.localToolMutationsEnabled)
-                    Button("查看 A9 状态") { model.agent.send("/a9 status") }
+                    Button("查看治理状态") { model.agent.send("/governance status") }
                     Button("查看灵核运行状态") { model.agent.send("/agent status") }
                     if model.agent.isGenerating {
                         Button("停止生成", role: .destructive) { model.agent.stopGeneration() }
@@ -173,8 +171,8 @@ private struct AgentQuickToolsView: View {
                 }
                 .opacity(controls.localToolMutationsEnabled ? 1 : 0.45)
                 .disabled(!controls.localToolMutationsEnabled)
-                quickButton("A9", icon: "gauge.with.dots.needle.50percent") {
-                    model.agent.send("/a9 status")
+                quickButton(model.activeGovernanceEngineName, icon: "gauge.with.dots.needle.50percent") {
+                    model.agent.send("/governance status")
                 }
                 quickButton("对局", icon: "gamecontroller") {
                     model.agent.send("请分析当前对局。只基于本机提供的合法候选动作给建议；如果没有当前对局就直接说明。")

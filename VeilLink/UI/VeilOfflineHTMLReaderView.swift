@@ -95,13 +95,13 @@ struct VeilOfflineHTMLReaderView: View {
         .navigationTitle("离线资料阅读器")
         .navigationBarTitleDisplayMode(.inline)
         .fileImporter(isPresented: $showingImporter,
-                      allowedContentTypes: [.html, UTType(filenameExtension: "htm") ?? .html],
+                      allowedContentTypes: [.item],
                       allowsMultipleSelection: false) { result in
             switch result {
             case .failure:
                 errorDescription = "无法获取所选文件；请检查文件访问权限。"
             case .success(let urls):
-                guard let url = urls.first else { return }
+                guard let selectedURL = urls.first else { return }
                 let token = UUID()
                 importGeneration = token
                 isLoading = true
@@ -110,6 +110,11 @@ struct VeilOfflineHTMLReaderView: View {
                 errorDescription = nil
                 Task {
                     do {
+                        let url = try await VeilImportedFileAccess.materializeInBackground(
+                            selectedURL,
+                            acceptedExtensions: ["html", "htm"]
+                        )
+                        defer { VeilImportedFileAccess.removeStagedCopy(url) }
                         let parsed = try await Task.detached(priority: .userInitiated) {
                             try VeilOfflineHTMLImporter.load(fileURL: url)
                         }.value

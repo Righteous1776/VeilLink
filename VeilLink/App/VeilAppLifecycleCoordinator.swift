@@ -58,6 +58,7 @@ final class VeilAppLifecycleCoordinator: ObservableObject {
                 model.handleBackgroundTransition()
                 model.appLock.lock()
                 model.ownerMode.lock()
+                model.developerLearningGate.lock()
             case .handleMemoryPressure:
                 VeilBackgroundContinuityCenter.shared.handleMemoryPressure()
                 model.handleMemoryPressure()

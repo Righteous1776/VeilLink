@@ -66,8 +66,17 @@ struct VeilToolCenterView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
-                    if matches("v27 功能库 实验室 游戏 情绪 工具 feature library") {
-                        toolLink("V27 功能库", detail: "统一搜索 · 按需加载", icon: "square.grid.3x3.fill", destination: VeilV27FeatureHubView())
+                    if matches("效率 模板 差异 合并 时区 productivity") {
+                        toolLink("效率实验室", detail: "模板 · 差异 · 合并 · 时区", icon: "wand.and.stars", destination: VeilProductivityLabView())
+                    }
+                    if matches("二维码 qr 相机 扫描 离线") {
+                        toolLink("离线二维码扫描", detail: "相机识别 · 本地文本交换", icon: "qrcode.viewfinder", destination: VeilOfflineQRReaderView())
+                    }
+                    if matches("html 文件 阅读 正文 搜索") {
+                        toolLink("离线 HTML 阅读器", detail: "文件正文提取 · 本地搜索", icon: "doc.richtext", destination: VeilOfflineHTMLReaderView())
+                    }
+                    if matches("备份 zip 恢复 检查 crc") {
+                        toolLink("备份安全体检", detail: "恢复前检查 ZIP 与完整性", icon: "shippingbox.and.arrow.backward.fill", destination: VeilBackupPreflightView())
                     }
                     if matches("手电筒信标 手电筒 信标 闪光灯 sos flashlight beacon") {
                         toolLink("手电筒信标", detail: "常亮 · 脉冲 · SOS", icon: "flashlight.on.fill", destination: VeilBeaconView())
@@ -87,14 +96,8 @@ struct VeilToolCenterView: View {
                     if matches("指纹 hash sha256 文本 校验 摘要") {
                         toolLink("文本指纹", detail: "SHA-256 · 字节统计", icon: "number", destination: VeilFingerprintToolView())
                     }
-                    if matches("文件 完整性 校验 指纹 hash sha256 对比 传输 verify integrity") {
-                        toolLink("文件完整性", detail: "SHA-256 · 双文件对比", icon: "checkmark.shield.fill", destination: VeilFileIntegrityToolView())
-                    }
                     if matches("二维码 qr 临时 文本 分享") {
                         toolLink("临时二维码", detail: "短文本离线转码", icon: "qrcode", destination: VeilTemporaryQRToolView())
-                    }
-                    if matches("网络 局域网 lan 蓝牙 ble 链路 诊断") {
-                        toolLink("链路仪表", detail: "LAN 与 BLE 速览", icon: "wave.3.right.circle.fill", destination: VeilLinkPulseToolView(model: model))
                     }
                     if matches("json 格式化 校验 压缩 pretty minify") {
                         toolLink("JSON 工坊", detail: "校验 · 整理 · 压缩", icon: "curlybraces", destination: VeilJSONToolView())
@@ -1003,6 +1006,7 @@ private func privacyNote(_ text: String) -> some View {
         .fixedSize(horizontal: false, vertical: true)
 }
 
+@MainActor
 private func metric(_ title: String, _ value: String) -> some View {
     VStack(spacing: 2) {
         Text(value).font(.caption.bold().monospacedDigit()).foregroundColor(VeilTheme.text)

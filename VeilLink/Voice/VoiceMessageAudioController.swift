@@ -185,7 +185,16 @@ final class VeilVoicePlaybackController: NSObject, ObservableObject, AVAudioPlay
         isPlaying = false; progress = 0
     }
 
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { stop() }
+    // Match the nonisolated AVAudioPlayerDelegate witness without passing the player across actors.
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let finishedID = ObjectIdentifier(player)
+        Task { @MainActor [weak self] in
+            guard let self,
+                  let active = self.player,
+                  ObjectIdentifier(active) == finishedID else { return }
+            self.stop()
+        }
+    }
 
     private func refresh() {
         guard let player, player.duration > 0 else { stop(); return }

@@ -9,7 +9,7 @@ final class AdaptiveBoardLearningTests: XCTestCase {
             .appendingPathComponent("learning.json")
     }
 
-    func testLearningPersistsHumanRepertoireWithoutGrowingUnbounded() throws {
+    func testLearningPersistsEveryRecordedPositionWithoutArtificialCap() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let store = AdaptiveBoardLearningStore(fileURL: url)
@@ -26,12 +26,181 @@ final class AdaptiveBoardLearningTests: XCTestCase {
         }
 
         XCTAssertEqual(store.summary.completedGames, 80)
-        XCTAssertLessThanOrEqual(store.summary.rememberedPositions, 1_600)
-        XCTAssertLessThanOrEqual(store.summary.storedBytes, 512 * 1_024)
+        XCTAssertEqual(store.summary.rememberedPositions, 2_400)
+        XCTAssertGreaterThan(store.summary.storedBytes, 0)
 
         let restored = AdaptiveBoardLearningStore(fileURL: url)
         XCTAssertEqual(restored.summary.completedGames, 80)
         XCTAssertEqual(restored.summary.rememberedPositions, store.summary.rememberedPositions)
+    }
+
+    func testStoredBytesMatchesFileMetadataAfterUnboundedHistoryWrites() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = AdaptiveBoardLearningStore(fileURL: url)
+        for index in 0..<65 {
+            store.record(
+                game: .gomoku,
+                plies: [AdaptiveBoardPly(position: "g:stat-\(index)", action: "112", actor: .host)],
+                result: .humanWon
+            )
+        }
+        let expectedBytes = try XCTUnwrap(
+            (try FileManager.default.attributesOfItem(atPath: url.path))[.size] as? NSNumber
+        ).intValue
+        XCTAssertGreaterThan(expectedBytes, 0)
+        XCTAssertEqual(store.summary.storedBytes, expectedBytes)
+        XCTAssertEqual(store.summary.completedGames, 65)
+    }
+
+    func testGameScopedStoresDoNotLeakSummariesOrPositions() {
+        let gomokuURL = temporaryURL()
+        let xiangqiURL = temporaryURL()
+        defer {
+            try? FileManager.default.removeItem(at: gomokuURL.deletingLastPathComponent())
+            try? FileManager.default.removeItem(at: xiangqiURL.deletingLastPathComponent())
+        }
+        let gomoku = AdaptiveBoardLearningStore(game: .gomoku, fileURL: gomokuURL)
+        let xiangqi = AdaptiveBoardLearningStore(game: .xiangqi, fileURL: xiangqiURL)
+        gomoku.record(
+            game: .gomoku,
+            plies: [AdaptiveBoardPly(position: "g:opening", action: "112", actor: .host)],
+            result: .humanWon
+        )
+
+        XCTAssertEqual(gomoku.summary.completedGames, 1)
+        XCTAssertEqual(gomoku.summary.rememberedPositions, 1)
+        XCTAssertEqual(xiangqi.summary.completedGames, 0)
+        XCTAssertEqual(xiangqi.summary.rememberedPositions, 0)
+        XCTAssertEqual(xiangqi.snapshot().bonus(position: "g:opening", action: "112"), 0)
+    }
+
+    func testLegacyMigrationSplitsGamesWithoutMutatingSharedSource() throws {
+        let legacyURL = temporaryURL()
+        let gomokuURL = temporaryURL()
+        let xiangqiURL = temporaryURL()
+        defer {
+            try? FileManager.default.removeItem(at: legacyURL.deletingLastPathComponent())
+            try? FileManager.default.removeItem(at: gomokuURL.deletingLastPathComponent())
+            try? FileManager.default.removeItem(at: xiangqiURL.deletingLastPathComponent())
+        }
+        let legacy = AdaptiveBoardLearningStore(fileURL: legacyURL)
+        legacy.record(
+            game: .gomoku,
+            plies: [AdaptiveBoardPly(position: "g:legacy", action: "112", actor: .host)],
+            result: .humanWon
+        )
+        legacy.record(
+            game: .xiangqi,
+            plies: [AdaptiveBoardPly(position: "x:legacy", action: "64:67", actor: .host)],
+            result: .aiWon
+        )
+        let originalLegacy = try Data(contentsOf: legacyURL)
+
+        let gomoku = AdaptiveBoardLearningStore(
+            game: .gomoku,
+            fileURL: gomokuURL,
+            legacyURL: legacyURL
+        )
+        let xiangqi = AdaptiveBoardLearningStore(
+            game: .xiangqi,
+            fileURL: xiangqiURL,
+            legacyURL: legacyURL
+        )
+
+        XCTAssertEqual(gomoku.summary.completedGames, 1)
+        XCTAssertEqual(gomoku.summary.rememberedPositions, 1)
+        XCTAssertEqual(xiangqi.summary.completedGames, 1)
+        XCTAssertEqual(xiangqi.summary.rememberedPositions, 1)
+        XCTAssertEqual(try Data(contentsOf: legacyURL), originalLegacy)
+    }
+
+    func testScopedClearAfterLegacyMigrationPersistsAcrossRestart() throws {
+        let legacyURL = temporaryURL()
+        let scopedURL = temporaryURL()
+        defer {
+            try? FileManager.default.removeItem(at: legacyURL.deletingLastPathComponent())
+            try? FileManager.default.removeItem(at: scopedURL.deletingLastPathComponent())
+        }
+
+        let legacy = AdaptiveBoardLearningStore(fileURL: legacyURL)
+        legacy.record(
+            game: .gomoku,
+            plies: [AdaptiveBoardPly(position: "g:migration-clear-regression", action: "112", actor: .host)],
+            result: .humanWon
+        )
+        let originalLegacy = try Data(contentsOf: legacyURL)
+        let scoped = AdaptiveBoardLearningStore(game: .gomoku, fileURL: scopedURL, legacyURL: legacyURL)
+        XCTAssertEqual(scoped.summary.completedGames, 1)
+        XCTAssertEqual(scoped.summary.rememberedPositions, 1)
+
+        scoped.clear()
+        XCTAssertTrue(scoped.lastSaveSucceeded)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: scopedURL.path),
+                      "Empty scoped database must block legacy re-migration")
+        XCTAssertEqual(scoped.summary.rememberedPositions, 0)
+
+        let restarted = AdaptiveBoardLearningStore(game: .gomoku, fileURL: scopedURL, legacyURL: legacyURL)
+        XCTAssertEqual(restarted.summary.completedGames, 0)
+        XCTAssertEqual(restarted.summary.rememberedPositions, 0)
+        XCTAssertEqual(try Data(contentsOf: legacyURL), originalLegacy)
+    }
+
+    func testCorruptScopedDatabaseCannotBeSilentlyOverwrittenByAutosave() throws {
+        let url = temporaryURL()
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let damagedBytes = Data("{broken V2 payload".utf8)
+        try damagedBytes.write(to: url, options: .atomic)
+
+        let store = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
+        XCTAssertTrue(store.requiresRecovery)
+        XCTAssertFalse(store.lastSaveSucceeded)
+        store.record(
+            game: .gomoku,
+            plies: [AdaptiveBoardPly(position: "g:must-not-overwrite", action: "112", actor: .host)],
+            result: .humanWon
+        )
+        XCTAssertEqual(try Data(contentsOf: url), damagedBytes)
+        XCTAssertEqual(store.summary.completedGames, 0)
+        XCTAssertTrue(store.requiresRecovery)
+
+        // A deliberate clear may resolve the recovery fence, and must persist
+        // a durable V2 tombstone rather than expose the old shared history.
+        store.clear()
+        XCTAssertFalse(store.requiresRecovery)
+        XCTAssertTrue(store.lastSaveSucceeded)
+        let restarted = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
+        XCTAssertFalse(restarted.requiresRecovery)
+        XCTAssertEqual(restarted.summary.completedGames, 0)
+        XCTAssertEqual(restarted.summary.rememberedPositions, 0)
+    }
+
+    func testRepeatedInterruptedLinePenalisesOldAIReplyAndPredictsHumanFormation() {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = AdaptiveBoardLearningStore(game: .xiangqi, fileURL: url)
+        let line = [
+            AdaptiveBoardPly(position: "x:start", action: "64:67", actor: .host),
+            AdaptiveBoardPly(position: "x:after-human", action: "19:22", actor: .guest),
+            AdaptiveBoardPly(position: "x:formation", action: "82:65", actor: .host)
+        ]
+        store.record(game: .xiangqi, plies: line, result: .unfinished)
+        store.record(game: .xiangqi, plies: line, result: .unfinished)
+
+        let snapshot = store.snapshot(currentPlies: [line[0]])
+        XCTAssertLessThan(snapshot.rootAdjustment(action: "19:22"), 0)
+        XCTAssertEqual(
+            snapshot.predictedHumanReply(afterAIAction: "19:22")?.action,
+            "82:65"
+        )
+        let profile = store.coachProfile(for: .xiangqi)
+        XCTAssertEqual(profile.completedGames, 0)
+        XCTAssertEqual(profile.preferredOpening, "偏好中炮")
+        XCTAssertGreaterThanOrEqual(profile.repeatedLineCount, 1)
+        XCTAssertTrue(profile.reviewFocus.contains("中断局"))
     }
 
     func testRepeatedPlayerMoveBecomesSearchPreferenceAndCanBeCleared() {

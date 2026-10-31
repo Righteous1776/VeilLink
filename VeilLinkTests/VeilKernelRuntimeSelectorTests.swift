@@ -73,6 +73,41 @@ final class VeilKernelRuntimeSelectorTests: XCTestCase {
         XCTAssertEqual(selector.mode, .a10Independent)
     }
 
+    func testA10LiveSnapshotRejectsStaleSamplesAndOldModeSessions() {
+        let selector = VeilKernelRuntimeSelector(defaults: makeDefaults())
+        selector.select(.a10OnlyLab)
+        let current = selector.beginSample()
+        let now = Date()
+
+        XCTAssertTrue(selector.isCurrentUltraEnvironment(
+            current, sampledAt: now.addingTimeInterval(-5), now: now
+        ))
+        XCTAssertTrue(selector.isCurrentUltraEnvironment(
+            current, sampledAt: now.addingTimeInterval(-30), now: now
+        ))
+        XCTAssertFalse(selector.isCurrentUltraEnvironment(
+            current, sampledAt: now.addingTimeInterval(-31), now: now
+        ))
+        XCTAssertFalse(selector.isCurrentUltraEnvironment(
+            current, sampledAt: now.addingTimeInterval(1), now: now
+        ))
+        XCTAssertFalse(selector.isCurrentUltraEnvironment(
+            current, sampledAt: now, now: now, maxAge: .nan
+        ))
+
+        selector.select(.dualShadow)
+        XCTAssertFalse(selector.isCurrentUltraEnvironment(
+            current, sampledAt: now, now: now
+        ), "An earlier mode session must never be shown as live")
+    }
+
+    func testA10LiveSnapshotRejectsA9OnlyMode() {
+        let selector = VeilKernelRuntimeSelector(defaults: makeDefaults())
+        selector.select(.a9Only)
+        let a9 = selector.beginSample()
+        XCTAssertFalse(selector.isCurrentUltraEnvironment(a9, sampledAt: Date()))
+    }
+
     func testModeChangeCreatesNewEnvironmentEpochAndSession() {
         let selector = VeilKernelRuntimeSelector(defaults: makeDefaults())
         let before = selector.snapshot()
