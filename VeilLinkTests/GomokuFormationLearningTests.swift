@@ -73,6 +73,39 @@ final class GomokuFormationLearningTests: XCTestCase {
         XCTAssertEqual(archive.candidateCount, 0)
     }
 
+    func testTacticalForcedBlockWinsOverBaguaAndNoveltyBonuses() {
+        var state = GomokuState()
+        for (turn, index) in [108, 0, 109, 1, 111, 2, 112].enumerated() {
+            XCTAssertTrue(state.apply(index: index, actor: turn.isMultiple(of: 2) ? .host : .guest))
+        }
+        for mode in [GomokuFormationMode.off, .automatic, .bagua, .attack, .defense, .discovery] {
+            let pref = GomokuFormationPreference(
+                mode: mode, aiHistory: [112, 129, 145], discovered: ["NDN"]
+            )
+            let move = GomokuBot.chooseMove(
+                in: state, for: .guest, budget: .deterministicTest,
+                formationPreference: pref
+            )
+            XCTAssertEqual(move?.index, 110, "Mode \(mode.rawValue) must block direct five")
+        }
+    }
+
+    func testImmediateWinOutranksAllFormationPreferences() {
+        var state = GomokuState()
+        for (turn, index) in [0, 123, 2, 124, 4, 125, 6, 126, 8].enumerated() {
+            XCTAssertTrue(state.apply(index: index, actor: turn.isMultiple(of: 2) ? .host : .guest))
+        }
+        for mode in [GomokuFormationMode.off, .bagua, .automatic, .discovery] {
+            let pref = GomokuFormationPreference(mode: mode, aiHistory: [112], discovered: ["NDN"])
+            let move = GomokuBot.chooseMove(
+                in: state, for: .guest, budget: .deterministicTest,
+                formationPreference: pref
+            )
+            XCTAssertTrue([122, 127].contains(move?.index ?? -1),
+                          "Mode \(mode.rawValue) must take immediate victory")
+        }
+    }
+
     func testNativeSearchKeepsMoveLegalWithFormationPreference() {
         var state = GomokuState()
         XCTAssertTrue(state.apply(index: 112, actor: .host))
