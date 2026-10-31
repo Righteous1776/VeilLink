@@ -1425,12 +1425,12 @@ diff --git a/VeilLinkUITests/PreConsentSmokeUITests.swift b/VeilLinkUITests/PreC
 @@ -0,0 +1,21 @@
 +import XCTest
 +
-+@MainActor
 +final class PreConsentSmokeUITests: XCTestCase {
 +    override func setUpWithError() throws {
 +        continueAfterFailure = false
 +    }
 +
++    @MainActor
 +    func testUnsignedFirstLaunchKeepsDiagnosticsReachable() {
 +        let app = XCUIApplication()
 +        app.launch()
