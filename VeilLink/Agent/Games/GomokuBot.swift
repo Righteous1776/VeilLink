@@ -73,7 +73,8 @@ enum GomokuBot {
         in state: GomokuState,
         for player: MiniGamePlayer,
         budget: GomokuBotBudget,
-        learning: AdaptiveBoardLearningSnapshot = .empty
+        learning: AdaptiveBoardLearningSnapshot = .empty,
+        formationPreference: GomokuFormationPreference = .disabled
     ) -> GomokuBotMove? {
         guard state.winner == nil,
               !state.isDraw,
@@ -98,12 +99,15 @@ enum GomokuBot {
             }
         }
 
+        let urgentDefense = formationPreference.enabled
+            && GomokuFormationPreference.opponentHasImmediateWin(in: state, player: player)
         let rootPosition = AdaptiveBoardPosition.gomoku(state)
         let rankedRoots = candidates
             .map {
                 let learned = learning.bonus(position: rootPosition, action: String($0))
                 let sequence = learning.rootAdjustment(action: String($0))
-                return ($0, tacticalPriority(index: $0, state: state, player: player) + learned + sequence)
+                return ($0, tacticalPriority(index: $0, state: state, player: player) + learned + sequence
+                    + formationPreference.bonus(index: $0, state: state, player: player, urgentDefense: urgentDefense))
             }
             .sorted { lhs, rhs in
                 if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
