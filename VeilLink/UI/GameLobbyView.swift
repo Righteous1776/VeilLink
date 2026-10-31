@@ -492,6 +492,21 @@ struct LocalAIGameView: View {
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+            if game == .gomoku {
+                Toggle(isOn: Binding(
+                    get: { controller.useExternalGomokuEngine },
+                    set: { controller.setExternalGomokuEngineEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("离线强力引擎 · PVS/VCF")
+                            .font(.caption.weight(.semibold))
+                        Text("实验功能：默认关闭，遇到异常自动回退原生 AI；独立引擎不修改你的棋谱")
+                            .font(.caption2)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                }
+                .tint(VeilTheme.gold)
+            }
             HStack(spacing: 8) {
                 Label(controller.boardDifficulty.title, systemImage: "slider.horizontal.3")
                     .font(.caption.weight(.semibold))

@@ -57,11 +57,15 @@ targets:
           - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
           - Resources/MonogatariHost
           - Resources/VisualNovelBundle
+          - Resources/GomokuEngineV2
       # Preserve relative JS/CSS paths as a bundled folder reference.
       - path: VeilLink/Resources/MonogatariHost
         type: folder
         buildPhase: resources
       - path: VeilLink/Resources/VisualNovelBundle
+        type: folder
+        buildPhase: resources
+      - path: VeilLink/Resources/GomokuEngineV2
         type: folder
         buildPhase: resources
     dependencies:

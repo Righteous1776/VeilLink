@@ -53,6 +53,8 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var lastDecisionMilliseconds: Int?
     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
     @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
+    /// Explicit local opt-in; the incumbent search remains the default and fallback.
+    @Published private(set) var useExternalGomokuEngine = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.V2.Enabled")
     @Published private(set) var coachProfile: PersonalBoardCoachProfile
     @Published private(set) var coachTip = "每一步都会沉淀为下一局的本地训练证据。"
     @Published private(set) var developerTeachingMode = false
@@ -256,6 +258,12 @@ final class LocalAIGameController: ObservableObject {
         tacticalDifficulty = difficulty
     }
 
+    func setExternalGomokuEngineEnabled(_ enabled: Bool) {
+        guard game == .gomoku else { return }
+        useExternalGomokuEngine = enabled
+        UserDefaults.standard.set(enabled, forKey: "VeilLink.Gomoku.V2.Enabled")
+    }
+
     func setBoardDifficulty(_ difficulty: BoardBotDifficulty) {
         guard game == .gomoku || game == .xiangqi else { return }
         boardDifficulty = difficulty
@@ -395,16 +403,37 @@ final class LocalAIGameController: ObservableObject {
                 boardDifficulty,
                 profileLabel: VeilDevicePerformance.current.label
             ).reinforced(by: learning.trainingLevel)
-            let result = await Task.detached(priority: .userInitiated) {
-                GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
-            }.value
-            guard let result else { return nil }
+            var chosen: GomokuBotMove?
+            var engineName = "原生"
+            if useExternalGomokuEngine {
+                // A standalone JavaScriptCore actor; the external engine never
+                // touches gameplay/DB and is validated by our own rule gate.
+                let external = await VeilOfflineGomokuEngine.shared.chooseMove(
+                    in: snapshot,
+                    for: .guest,
+                    timeLimitMilliseconds: budget.timeLimitMilliseconds,
+                    maxDepth: boardDifficulty == .master ? 7 : boardDifficulty == .advanced ? 5 : 3
+                )
+                if let external {
+                    var trial = snapshot
+                    if trial.apply(index: external.index, actor: .guest) {
+                        chosen = external
+                        engineName = "PVS/VCF"
+                    }
+                }
+            }
+            if chosen == nil {
+                chosen = await Task.detached(priority: .userInitiated) {
+                    GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
+                }.value
+            }
+            guard let result = chosen else { return nil }
 
             var ruleGate = gomoku
             guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
             let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
             let formationLabel = formation.matchedLessonNames.first.map { " · 阵法：\($0)" } ?? ""
-            lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)\(formationLabel)"
+            lastDecisionMode = "五子棋 · \(engineName) · \(boardDifficulty.title)\(learned)\(formationLabel)"
             return AgentActionCandidate(
                 actionID: "gomoku:\(result.index)",
                 encodedAction: AgentGameEncoding.encodeInts([result.index]),
