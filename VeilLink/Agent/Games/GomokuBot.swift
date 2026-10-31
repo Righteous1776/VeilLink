@@ -81,6 +81,14 @@ enum GomokuBot {
               state.currentPlayer == player else { return nil }
 
         let started = Date.timeIntervalSinceReferenceDate
+        // The empty board has exactly one native legal root candidate: center.
+        // Avoid a full two-ply search during first-turn recommendation; the
+        // existing candidate generator also returns only index 112 here.
+        // This preserves the result while eliminating a costly synchronous
+        // evaluation under a busy iOS Simulator / older iPhone CPU.
+        if state.moveCount == 0 {
+            return result(index: Self.size * Self.size / 2, score: 0, nodes: 1, started: started)
+        }
         let deadline = started + Double(max(30, budget.timeLimitMilliseconds)) / 1_000.0
         var nodes = 0
         var candidates = candidateIndices(in: state, radius: budget.candidateRadius)
