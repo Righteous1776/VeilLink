@@ -1,0 +1,43 @@
+{
+  "base_main_sha": "501ef814a0a9bea41419fe2d9f48315371b30320",
+  "r7_files_sha256": {
+    "VeilLink/Entertainment/Rendering/VeilFramePacer.swift": "88d216a83f7569219c1632ddba585fe8896cb3e6210d33b1f23897e3fa3caa39",
+    "VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift": "56db348fe3432861c88262ce89f47fa3d303274bdaca20a9b3f05ee76efcd576",
+    "VeilLink/Entertainment/Rendering/VeilRenderGeometry.swift": "0fa43439df737e0fa48c57974642a3c5be0d9e9bd48d69b094fb06aa75bf1938",
+    "VeilLink/Entertainment/Rendering/VeilRhythmNativeScene.swift": "3d699062e957e02c72a00b1fcaf384297241ee163a5001892f53b88201bfde55",
+    "VeilLink/Entertainment/Rendering/VeilRhythmR6NativeGameView.swift": "253a95abc6dcb3ef07176d0bd15b8638b286c19052a74afeee74d07a5f9773f6",
+    "VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift": "13ef88ce0409205330f5e4bf25c5937de714119670d6be56e48ed6902796f5c5",
+    "VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift": "fef8f38f7827aabb765eb6dffbde074ba972aa3ebe7e08a1ca7093bd6aa7cd12",
+    "VeilLinkTests/VeilR6FramePacerTests.swift": "1642e8fa10aec5769715c8e29ab0db7257118d776889c7dee719274bd880b0be",
+    "VeilLinkTests/VeilR6RenderGeometryTests.swift": "e45bdbce792503502a99b981f12fbaa9d28c6de81ec347e93ca99eca51822b19",
+    "VeilLinkTests/VeilR6VisualTimelineTests.swift": "cc378ac2e944c6dbbd5f2a667f7aa25ca988bcd5475b012ab1a38951250fa5b1",
+    "VeilLinkTests/VeilR7FrameStatsTests.swift": "629ccba2cf5ea1f26698fc788caa369d52d869c6ddac8dfb6ef19a408ec7b160",
+    "VeilLinkTests/VeilR7RenderCacheTests.swift": "22cba7d91c443359700babfdbad467eb24b55a31fa24151fe1e669967e80dca9",
+    "VeilLinkTests/VeilRhythmNativeSceneSmokeTests.swift": "0d0024bab0710f45eefb681e359313511500923eba547fd56d0367b46b38329d"
+  },
+  "r7_patch_sha256": "7928f29e249d17350a71318ff2e4fe8d276638e88584a680f66e8a79452d0396",
+  "wave1_candidate_paths": [
+    "VeilLink/Entertainment/Rendering/VeilFramePacer.swift",
+    "VeilLink/Entertainment/Rendering/VeilRenderFrameStats.swift",
+    "VeilLink/Entertainment/Rendering/VeilRenderGeometry.swift",
+    "VeilLink/Entertainment/Rendering/VeilRhythmNativeScene.swift",
+    "VeilLink/Entertainment/Rendering/VeilRhythmR6NativeGameView.swift",
+    "VeilLink/Entertainment/Rendering/VeilRhythmRenderCache.swift",
+    "VeilLink/Entertainment/Rendering/VeilRhythmVisualTimeline.swift",
+    "VeilLink/Entertainment/VeilRhythmExpeditionEngine.swift",
+    "VeilLink/Entertainment/VeilRhythmLiveConductor.swift",
+    "VeilLink/Entertainment/VeilStationChronicleEngine.swift",
+    "VeilLinkTests/VeilEntertainmentR5IntegrationSmokeTests.swift",
+    "VeilLinkTests/VeilR6FramePacerTests.swift",
+    "VeilLinkTests/VeilR6RenderGeometryTests.swift",
+    "VeilLinkTests/VeilR6VisualTimelineTests.swift",
+    "VeilLinkTests/VeilR7FrameStatsTests.swift",
+    "VeilLinkTests/VeilR7RenderCacheTests.swift",
+    "VeilLinkTests/VeilRhythmExpeditionTests.swift",
+    "VeilLinkTests/VeilRhythmLiveConductorTests.swift",
+    "VeilLinkTests/VeilRhythmNativeSceneSmokeTests.swift",
+    "VeilLinkTests/VeilStationChronicleTests.swift"
+  ],
+  "wave1_patch_sha256": "0f34ce788745b16f797f63a4224590c90dc1188506af308304e926bafd4f9014",
+  "status": "INBOX_ONLY; Wave 0 blocking; no Apple SDK/iPhone7 verification"
+}
