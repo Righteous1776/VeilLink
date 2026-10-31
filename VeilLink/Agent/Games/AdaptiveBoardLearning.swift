@@ -37,6 +37,33 @@ struct AdaptiveBoardLearningSnapshot: Sendable {
     }
 }
 
+extension AdaptiveBoardLearningSnapshot {
+    /// The self-play archive is independent from the player's human-match
+    /// sequence history. Only a small portion of its positional preferences
+    /// enters native AI move ranking. It cannot forge human reply predictions.
+    func incorporatingNativeSelfPlay(
+        _ training: AdaptiveBoardLearningSnapshot,
+        completedGames: Int
+    ) -> AdaptiveBoardLearningSnapshot {
+        guard completedGames > 0 else { return self }
+        var blended = preferences
+        for (position, actions) in training.preferences where position.hasPrefix("g:") {
+            var combined = blended[position] ?? [:]
+            for (action, value) in actions {
+                let contribution = max(-30, min(120, value / 8))
+                combined[action] = max(-180, min(900, (combined[action] ?? 0) + contribution))
+            }
+            blended[position] = combined
+        }
+        return AdaptiveBoardLearningSnapshot(
+            preferences: blended,
+            rootAdjustments: rootAdjustments,
+            predictedHumanReplies: predictedHumanReplies,
+            trainingLevel: trainingLevel
+        )
+    }
+}
+
 struct AdaptiveBoardPrediction: Equatable, Sendable {
     let action: String
     let evidence: Int
@@ -463,6 +490,53 @@ final class AdaptiveBoardLearningStore {
             finishedAt: Date()
         ))
         save()
+    }
+
+    /// Atomic batch recording for actual native Bot-vs-Bot completed matches.
+    /// Existing user-facing learning store remains separate; caller supplies
+    /// the dedicated Gomoku self-play archive, never a human match database.
+    /// The count returned is the number of COMPLETE games durably saved.
+    @discardableResult
+    func recordCompletedNativeBatch(
+        _ games: [(plies: [AdaptiveBoardPly], result: AdaptiveBoardGameResult)]
+    ) -> Int {
+        guard scopedGame == .gomoku, !requiresRecovery, !games.isEmpty else { return 0 }
+        let previous = database
+        var accepted = 0
+        for game in games {
+            guard game.result != .unfinished, !game.plies.isEmpty,
+                  game.plies.allSatisfy({
+                      $0.position.hasPrefix("g:")
+                      && Int($0.action).map { (0..<225).contains($0) } == true
+                  }) else { continue }
+            database.sequence += 1
+            let sequence = database.sequence
+            for ply in game.plies {
+                var position = database.positions[ply.position]
+                    ?? PositionStat(actor: ply.actor, actions: [:], lastSequence: sequence)
+                var stat = position.actions[ply.action] ?? ActionStat(count: 0, aiReward: 0)
+                stat.count = min(65_535, stat.count + 1)
+                stat.aiReward = max(-32_000, min(32_000, stat.aiReward + game.result.aiReward))
+                position.actions[ply.action] = stat
+                position.lastSequence = sequence
+                database.positions[ply.position] = position
+            }
+            database.completedGames += 1
+            database.recentGames.append(GameRecord(
+                game: .gomoku,
+                result: game.result,
+                actions: game.plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
+                finishedAt: Date()
+            ))
+            accepted += 1
+        }
+        guard accepted > 0 else { return 0 }
+        save()
+        if !lastSaveSucceeded {
+            database = previous
+            return 0
+        }
+        return accepted
     }
 
     func clear() {
