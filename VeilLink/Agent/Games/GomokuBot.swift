@@ -81,17 +81,32 @@ enum GomokuBot {
               state.currentPlayer == player else { return nil }
 
         let started = Date.timeIntervalSinceReferenceDate
+        // The empty board has exactly one native legal root candidate: center.
+        // Avoid a full two-ply search during first-turn recommendation; the
+        // existing candidate generator also returns only index 112 here.
+        // This preserves the result while eliminating a costly synchronous
+        // evaluation under a busy iOS Simulator / older iPhone CPU.
+        if state.moveCount == 0 {
+            return result(index: Self.size * Self.size / 2, score: 0, nodes: 1, started: started)
+        }
         let deadline = started + Double(max(30, budget.timeLimitMilliseconds)) / 1_000.0
         var nodes = 0
         var candidates = candidateIndices(in: state, radius: budget.candidateRadius)
 
+        // Radius-based candidates may be empty for a pathological but legal
+        // sparse state or a deliberately minimal testing budget. Do not fall
+        // back to an occupied centre stone.
         if candidates.isEmpty {
-            candidates = [Self.size * Self.size / 2]
+            guard let firstLegal = (0..<(Self.size * Self.size)).first(where: { state.value(at: $0) == 0 }) else {
+                return nil
+            }
+            candidates = [firstLegal]
         }
 
         // Forced win takes priority and is cheap enough to test before ranking.
         for index in candidates {
-            guard Date.timeIntervalSinceReferenceDate < deadline else { break }
+            // Forced wins must be checked even if the search time budget has
+            // elapsed: skipping them can lose immediately to a weaker move.
             nodes += 1
             var next = state
             if next.apply(index: index, actor: player), next.winner == player {
@@ -220,7 +235,13 @@ enum GomokuBot {
             }
         }
 
-        guard let bestIndex else { return nil }
+        // On loaded iOS simulators the wall-clock budget can be exhausted
+        // before the first deep evaluation. A valid playing state must still
+        // provide a legal suggestion, rather than returning nil indefinitely.
+        guard let bestIndex else {
+            guard let fallback = rankedRoots.first else { return nil }
+            return result(index: fallback.0, score: fallback.1, nodes: nodes, started: started)
+        }
         return result(index: bestIndex, score: bestScore, nodes: nodes, started: started)
     }
 
