@@ -38,8 +38,20 @@ struct GomokuFormationPreference: Sendable {
     /// The opponent's actual legal placements in chronological order. This is
     /// intentionally separate from the learned preference store: a formation
     /// must respond to the current board, rather than memorising one diagram.
-    let opponentHistory: [Int] = []
+    let opponentHistory: [Int]
     let discovered: [String]
+
+    init(
+        mode: GomokuFormationMode,
+        aiHistory: [Int],
+        opponentHistory: [Int] = [],
+        discovered: [String]
+    ) {
+        self.mode = mode
+        self.aiHistory = aiHistory
+        self.opponentHistory = opponentHistory
+        self.discovered = discovered
+    }
 
     var enabled: Bool { mode != .off }
 
