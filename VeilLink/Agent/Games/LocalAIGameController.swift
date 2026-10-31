@@ -433,7 +433,15 @@ final class LocalAIGameController: ObservableObject {
             guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
             let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
             let formationLabel = formation.matchedLessonNames.first.map { " · 阵法：\($0)" } ?? ""
-            lastDecisionMode = "五子棋 · \(engineName) · \(boardDifficulty.title)\(learned)\(formationLabel)"
+            // Preserve the incumbent controller's observable status contract.
+            // External PVS/VCF does NOT consume AdaptiveBoardLearningSnapshot:
+            // reporting its training level or Owner formation as applied would
+            // misrepresent actual search inputs.
+            if engineName == "原生" {
+                lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)\(formationLabel)"
+            } else {
+                lastDecisionMode = "五子棋 · PVS/VCF · \(boardDifficulty.title)"
+            }
             return AgentActionCandidate(
                 actionID: "gomoku:\(result.index)",
                 encodedAction: AgentGameEncoding.encodeInts([result.index]),
