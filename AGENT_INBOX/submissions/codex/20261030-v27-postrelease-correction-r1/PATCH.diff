@@ -1,5 +1,5 @@
 diff --git a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
-index 7346026..494aa97 100644
+index 7346026..5bb80d1 100644
 --- a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
 +++ b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
 @@ -1,16 +1,72 @@
@@ -124,7 +124,7 @@ index 7346026..494aa97 100644
  
      private struct ActionStat: Codable {
          var count: Int
-@@ -152,16 +228,12 @@ final class AdaptiveBoardLearningStore {
+@@ -152,16 +228,14 @@ final class AdaptiveBoardLearningStore {
          let payload: Database
      }
  
@@ -137,13 +137,15 @@ index 7346026..494aa97 100644
 +    private let scopedGame: MiniGameKind?
      private var database: Database
      private(set) var lastSaveSucceeded = true
++    /// Existing unreadable/invalid stores are retained on disk, never overwritten by autosave.
++    private(set) var requiresRecovery = false
  
 -    init(fileURL: URL? = nil) {
 +    init(game: MiniGameKind? = nil, fileURL: URL? = nil, legacyURL: URL? = nil) {
          let resolvedURL: URL
          if let fileURL {
              resolvedURL = fileURL
-@@ -169,10 +241,33 @@ final class AdaptiveBoardLearningStore {
+@@ -169,21 +243,58 @@ final class AdaptiveBoardLearningStore {
              let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                  .appendingPathComponent("VeilLink", isDirectory: true)
              try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -154,7 +156,13 @@ index 7346026..494aa97 100644
          self.fileURL = resolvedURL
 -        database = Self.load(from: resolvedURL)
 +        scopedGame = game
-+        database = Self.load(from: resolvedURL, scopedGame: game)
++        let existingStore = FileManager.default.fileExists(atPath: resolvedURL.path)
++        let loadedStore = Self.load(from: resolvedURL, scopedGame: game)
++        database = loadedStore ?? Database()
++        if existingStore && loadedStore == nil {
++            requiresRecovery = true
++            lastSaveSucceeded = false
++        }
 +
 +        // One-time, non-destructive migration from V27's shared store. The
 +        // legacy file is never moved, truncated or overwritten: each V2 game
@@ -166,20 +174,33 @@ index 7346026..494aa97 100644
 +        if (fileURL == nil || legacyURL != nil),
 +           !FileManager.default.fileExists(atPath: resolvedURL.path),
 +           FileManager.default.fileExists(atPath: legacy.path) {
-+            let migrated = Self.load(from: legacy, scopedGame: game)
-+            if !migrated.positions.isEmpty || !migrated.recentGames.isEmpty {
-+                if Self.writeInitialMigration(migrated, to: resolvedURL) {
-+                    database = migrated
-+                    lastSaveSucceeded = true
-+                } else {
-+                    lastSaveSucceeded = false
++            if let migrated = Self.load(from: legacy, scopedGame: game) {
++                if !migrated.positions.isEmpty || !migrated.recentGames.isEmpty {
++                    if Self.writeInitialMigration(migrated, to: resolvedURL) {
++                        database = migrated
++                        lastSaveSucceeded = true
++                    } else {
++                        lastSaveSucceeded = false
++                    }
 +                }
++            } else {
++                // A corrupt legacy source is not silently replaced by an empty V2.
++                requiresRecovery = true
++                lastSaveSucceeded = false
 +            }
 +        }
      }
  
      var summary: AdaptiveBoardLearningSummary {
-@@ -183,7 +278,7 @@ final class AdaptiveBoardLearningStore {
+-        AdaptiveBoardLearningSummary(
++        // Metadata read only: the history is intentionally uncapped, so loading
++        // its entire JSON just to display its byte count is a memory hazard.
++        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
++        return AdaptiveBoardLearningSummary(
+             completedGames: database.completedGames,
+             rememberedPositions: database.positions.count,
+-            storedBytes: (try? Data(contentsOf: fileURL).count) ?? 0
++            storedBytes: fileSize
          )
      }
  
@@ -188,7 +209,7 @@ index 7346026..494aa97 100644
          var result = Self.seedPreferences()
          for (position, stat) in database.positions {
              var actions = result[position] ?? [:]
-@@ -202,11 +297,125 @@ final class AdaptiveBoardLearningStore {
+@@ -202,11 +313,134 @@ final class AdaptiveBoardLearningStore {
              }
              result[position] = actions
          }
@@ -240,17 +261,22 @@ index 7346026..494aa97 100644
 +        let interrupted = records.filter { $0.result == .unfinished }.count
 +        let humanWins = records.filter { $0.result == .humanWon }.count
 +        let aiWins = records.filter { $0.result == .aiWon }.count
-+        let openings = records.compactMap { record in
-+            record.actions.first(where: { $0.first == "h" }).map { String($0.dropFirst()) }
++        // Count each opening once. Rescanning the full history inside max(by:)
++        // would become quadratic as an uncapped training library grows.
++        var openingCounts: [String: Int] = [:]
++        for record in records {
++            if let firstHumanMove = record.actions.first(where: { $0.first == "h" }) {
++                let action = String(firstHumanMove.dropFirst())
++                openingCounts[action, default: 0] += 1
++            }
 +        }
 +        let repeatedLines = Dictionary(grouping: records) { record in
 +            record.actions.prefix(6).joined(separator: ",")
 +        }.values.filter { $0.count >= 2 }.count
-+        let preferredAction = openings.max(by: { lhs, rhs in
-+            let left = openings.filter { $0 == lhs }.count
-+            let right = openings.filter { $0 == rhs }.count
-+            return left < right
-+        })
++        let preferredAction = openingCounts.max(by: { lhs, rhs in
++            if lhs.value != rhs.value { return lhs.value < rhs.value }
++            return lhs.key > rhs.key
++        })?.key
 +
 +        let preferredOpening: String
 +        let nextLesson: String
@@ -312,10 +338,14 @@ index 7346026..494aa97 100644
      func record(game: MiniGameKind, plies: [AdaptiveBoardPly], result: AdaptiveBoardGameResult) {
          guard game == .gomoku || game == .xiangqi, !plies.isEmpty else { return }
 +        guard scopedGame == nil || scopedGame == game else { return }
++        guard !requiresRecovery else {
++            lastSaveSucceeded = false
++            return
++        }
  
          database.sequence += 1
          let sequence = database.sequence
-@@ -218,13 +427,6 @@ final class AdaptiveBoardLearningStore {
+@@ -218,13 +452,6 @@ final class AdaptiveBoardLearningStore {
              action.aiReward = max(-32_000, min(32_000, action.aiReward + result.aiReward))
              position.actions[ply.action] = action
              position.lastSequence = sequence
@@ -329,7 +359,7 @@ index 7346026..494aa97 100644
              database.positions[ply.position] = position
          }
  
-@@ -235,7 +437,6 @@ final class AdaptiveBoardLearningStore {
+@@ -235,23 +462,25 @@ final class AdaptiveBoardLearningStore {
              actions: plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
              finishedAt: Date()
          ))
@@ -337,7 +367,33 @@ index 7346026..494aa97 100644
          save()
      }
  
-@@ -267,13 +468,12 @@ final class AdaptiveBoardLearningStore {
+     func clear() {
++        // Persist an empty scoped V2 database as an explicit migration tombstone.
++        // Clear is the user's deliberate reset, including in recovery mode.
++        let previous = database
++        let previousRecovery = requiresRecovery
+         database = Database()
+-        do {
+-            if FileManager.default.fileExists(atPath: fileURL.path) {
+-                try FileManager.default.removeItem(at: fileURL)
+-            }
+-            lastSaveSucceeded = true
+-        } catch {
+-            lastSaveSucceeded = false
++        requiresRecovery = false
++        save()
++        if !lastSaveSucceeded {
++            database = previous
++            requiresRecovery = previousRecovery
+         }
+     }
+ 
+     func exportPackage() throws -> URL {
++        guard !requiresRecovery else { throw AdaptiveBoardLearningPackageError.invalidContent }
+         let encoder = JSONEncoder()
+         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+         let compactEncoder = JSONEncoder()
+@@ -267,13 +496,12 @@ final class AdaptiveBoardLearningStore {
              payload: database
          )
          let data = try encoder.encode(envelope)
@@ -353,7 +409,7 @@ index 7346026..494aa97 100644
          do {
              try data.write(to: url, options: .atomic)
              return url
-@@ -288,9 +488,6 @@ final class AdaptiveBoardLearningStore {
+@@ -288,9 +516,6 @@ final class AdaptiveBoardLearningStore {
          guard let data = try? Data(contentsOf: url) else {
              throw AdaptiveBoardLearningPackageError.unreadable
          }
@@ -363,21 +419,28 @@ index 7346026..494aa97 100644
          guard let envelope = try? JSONDecoder().decode(ExportEnvelope.self, from: data),
                envelope.format == "veillink.board-learning.export.v1",
                envelope.checksumAlgorithm == "fnv1a64-canonical-json",
-@@ -309,8 +506,11 @@ final class AdaptiveBoardLearningStore {
+@@ -309,11 +534,18 @@ final class AdaptiveBoardLearningStore {
          }
  
          let previous = database
 -        database = envelope.payload
 -        prune(positionLimit: Self.maximumPositions, historyLimit: Self.maximumRecentGames)
++        let previousRecovery = requiresRecovery
 +        database = Self.filtered(envelope.payload, for: scopedGame)
 +        guard !database.positions.isEmpty || !database.recentGames.isEmpty else {
 +            database = previous
 +            throw AdaptiveBoardLearningPackageError.invalidContent
 +        }
++        // Explicit validated package import is a permitted recovery operation.
++        requiresRecovery = false
          save()
          guard lastSaveSucceeded else {
              database = previous
-@@ -322,30 +522,11 @@ final class AdaptiveBoardLearningStore {
++            requiresRecovery = previousRecovery
+             throw AdaptiveBoardLearningPackageError.writeFailed
+         }
+         return AdaptiveBoardLearningImportReport(
+@@ -322,30 +554,15 @@ final class AdaptiveBoardLearningStore {
          )
      }
  
@@ -397,6 +460,10 @@ index 7346026..494aa97 100644
 -    }
 -
      private func save() {
++        guard !requiresRecovery else {
++            lastSaveSucceeded = false
++            return
++        }
          let encoder = JSONEncoder()
          encoder.outputFormatting = [.sortedKeys]
          do {
@@ -409,17 +476,19 @@ index 7346026..494aa97 100644
              try FileManager.default.createDirectory(
                  at: fileURL.deletingLastPathComponent(),
                  withIntermediateDirectories: true
-@@ -357,22 +538,65 @@ final class AdaptiveBoardLearningStore {
+@@ -357,22 +574,66 @@ final class AdaptiveBoardLearningStore {
          }
      }
  
 -    private static func load(from url: URL) -> Database {
 -        guard let data = try? Data(contentsOf: url), data.count <= maximumBytes * 2,
-+    private static func load(from url: URL, scopedGame: MiniGameKind?) -> Database {
++    private static func load(from url: URL, scopedGame: MiniGameKind?) -> Database? {
 +        guard let data = try? Data(contentsOf: url),
                let decoded = try? JSONDecoder().decode(Database.self, from: data),
-               decoded.schema == 1 else { return Database() }
+-              decoded.schema == 1 else { return Database() }
 -        return decoded
++              decoded.schema == 1,
++              isValid(decoded) else { return nil }
 +        return filtered(decoded, for: scopedGame)
 +    }
 +
@@ -483,7 +552,7 @@ index 7346026..494aa97 100644
              for (action, value) in stat.actions {
                  guard value.count > 0, value.count <= 65_535,
                        (-32_000...32_000).contains(value.aiReward),
-@@ -381,7 +605,6 @@ final class AdaptiveBoardLearningStore {
+@@ -381,7 +642,6 @@ final class AdaptiveBoardLearningStore {
          }
          return database.recentGames.allSatisfy { record in
              (record.game == .gomoku || record.game == .xiangqi)
@@ -667,7 +736,7 @@ index 0000000..046b920
 +    }
 +}
 diff --git a/VeilLink/Agent/Games/GomokuBot.swift b/VeilLink/Agent/Games/GomokuBot.swift
-index 43af066..92a9e55 100644
+index 43af066..40ef9e2 100644
 --- a/VeilLink/Agent/Games/GomokuBot.swift
 +++ b/VeilLink/Agent/Games/GomokuBot.swift
 @@ -11,23 +11,55 @@ struct GomokuBotBudget: Equatable, Sendable {
@@ -755,7 +824,7 @@ index 43af066..92a9e55 100644
                      }
                      .sorted { lhs, rhs in
                          if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
-@@ -110,11 +147,34 @@ enum GomokuBot {
+@@ -110,11 +147,49 @@ enum GomokuBot {
                      nodes += 1
                      var afterReply = next
                      guard afterReply.apply(index: reply, actor: opponent) else { continue }
@@ -766,17 +835,32 @@ index 43af066..92a9e55 100644
                      } else {
                          replyScore = staticEvaluation(afterReply, root: player)
 +                        if budget.continuationCandidateLimit > 0 {
-+                            let continuations = candidateIndices(in: afterReply, radius: budget.candidateRadius)
-+                                .map { candidate in
-+                                    (
-+                                        candidate,
-+                                        tacticalPriority(index: candidate, state: afterReply, player: player)
-+                                    )
++                            // Swift 5.9 can time out while type-checking the chained
++                            // tuple map/sort/prefix expression. Typed intermediates
++                            // preserve the same ranking and iOS 15 compatibility.
++                            let continuationCandidates: [Int] = candidateIndices(
++                                in: afterReply, radius: budget.candidateRadius
++                            )
++                            var continuationScores: [(index: Int, priority: Int)] = []
++                            continuationScores.reserveCapacity(continuationCandidates.count)
++                            for candidate in continuationCandidates {
++                                let priority: Int = tacticalPriority(
++                                    index: candidate, state: afterReply, player: player
++                                )
++                                continuationScores.append((index: candidate, priority: priority))
++                            }
++                            continuationScores.sort { lhs, rhs in
++                                if lhs.priority != rhs.priority {
++                                    return lhs.priority > rhs.priority
 +                                }
-+                                .sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
-+                                .prefix(budget.continuationCandidateLimit)
++                                return lhs.index < rhs.index
++                            }
++                            let continuationLimit = min(
++                                continuationScores.count, budget.continuationCandidateLimit
++                            )
 +                            var bestContinuation = Int.min
-+                            for (continuation, _) in continuations {
++                            for rankedIndex in 0..<continuationLimit {
++                                let continuation = continuationScores[rankedIndex].index
 +                                guard Date.timeIntervalSinceReferenceDate < deadline else { break }
 +                                nodes += 1
 +                                var afterContinuation = afterReply
@@ -791,7 +875,7 @@ index 43af066..92a9e55 100644
                      }
                      worstReply = min(worstReply, replyScore)
                      if worstReply <= lossScore { break }
-@@ -138,6 +198,16 @@ enum GomokuBot {
+@@ -138,6 +213,16 @@ enum GomokuBot {
          candidateIndices(in: state, radius: radius).count
      }
  
@@ -3250,7 +3334,7 @@ index 0fb1a42..366a27a 100644
      }
  
 diff --git a/VeilLinkTests/AdaptiveBoardLearningTests.swift b/VeilLinkTests/AdaptiveBoardLearningTests.swift
-index 5eb3806..718ba3c 100644
+index 5eb3806..7d91315 100644
 --- a/VeilLinkTests/AdaptiveBoardLearningTests.swift
 +++ b/VeilLinkTests/AdaptiveBoardLearningTests.swift
 @@ -9,7 +9,7 @@ final class AdaptiveBoardLearningTests: XCTestCase {
@@ -3262,7 +3346,7 @@ index 5eb3806..718ba3c 100644
          let url = temporaryURL()
          defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
          let store = AdaptiveBoardLearningStore(fileURL: url)
-@@ -26,14 +26,101 @@ final class AdaptiveBoardLearningTests: XCTestCase {
+@@ -26,14 +26,181 @@ final class AdaptiveBoardLearningTests: XCTestCase {
          }
  
          XCTAssertEqual(store.summary.completedGames, 80)
@@ -3276,6 +3360,25 @@ index 5eb3806..718ba3c 100644
          XCTAssertEqual(restored.summary.rememberedPositions, store.summary.rememberedPositions)
      }
  
++    func testStoredBytesMatchesFileMetadataAfterUnboundedHistoryWrites() throws {
++        let url = temporaryURL()
++        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
++        let store = AdaptiveBoardLearningStore(fileURL: url)
++        for index in 0..<65 {
++            store.record(
++                game: .gomoku,
++                plies: [AdaptiveBoardPly(position: "g:stat-\(index)", action: "112", actor: .host)],
++                result: .humanWon
++            )
++        }
++        let expectedBytes = try XCTUnwrap(
++            (try FileManager.default.attributesOfItem(atPath: url.path))[.size] as? NSNumber
++        ).intValue
++        XCTAssertGreaterThan(expectedBytes, 0)
++        XCTAssertEqual(store.summary.storedBytes, expectedBytes)
++        XCTAssertEqual(store.summary.completedGames, 65)
++    }
++
 +    func testGameScopedStoresDoNotLeakSummariesOrPositions() {
 +        let gomokuURL = temporaryURL()
 +        let xiangqiURL = temporaryURL()
@@ -3336,6 +3439,67 @@ index 5eb3806..718ba3c 100644
 +        XCTAssertEqual(xiangqi.summary.completedGames, 1)
 +        XCTAssertEqual(xiangqi.summary.rememberedPositions, 1)
 +        XCTAssertEqual(try Data(contentsOf: legacyURL), originalLegacy)
++    }
++
++    func testScopedClearAfterLegacyMigrationPersistsAcrossRestart() throws {
++        let legacyURL = temporaryURL()
++        let scopedURL = temporaryURL()
++        defer {
++            try? FileManager.default.removeItem(at: legacyURL.deletingLastPathComponent())
++            try? FileManager.default.removeItem(at: scopedURL.deletingLastPathComponent())
++        }
++
++        let legacy = AdaptiveBoardLearningStore(fileURL: legacyURL)
++        legacy.record(
++            game: .gomoku,
++            plies: [AdaptiveBoardPly(position: "g:migration-clear-regression", action: "112", actor: .host)],
++            result: .humanWon
++        )
++        let originalLegacy = try Data(contentsOf: legacyURL)
++        let scoped = AdaptiveBoardLearningStore(game: .gomoku, fileURL: scopedURL, legacyURL: legacyURL)
++        XCTAssertEqual(scoped.summary.completedGames, 1)
++        XCTAssertEqual(scoped.summary.rememberedPositions, 1)
++
++        scoped.clear()
++        XCTAssertTrue(scoped.lastSaveSucceeded)
++        XCTAssertTrue(FileManager.default.fileExists(atPath: scopedURL.path),
++                      "Empty scoped database must block legacy re-migration")
++        XCTAssertEqual(scoped.summary.rememberedPositions, 0)
++
++        let restarted = AdaptiveBoardLearningStore(game: .gomoku, fileURL: scopedURL, legacyURL: legacyURL)
++        XCTAssertEqual(restarted.summary.completedGames, 0)
++        XCTAssertEqual(restarted.summary.rememberedPositions, 0)
++        XCTAssertEqual(try Data(contentsOf: legacyURL), originalLegacy)
++    }
++
++    func testCorruptScopedDatabaseCannotBeSilentlyOverwrittenByAutosave() throws {
++        let url = temporaryURL()
++        try FileManager.default.createDirectory(
++            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
++        )
++        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
++        let damagedBytes = Data("{broken V2 payload".utf8)
++        try damagedBytes.write(to: url, options: .atomic)
++
++        let store = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
++        XCTAssertTrue(store.requiresRecovery)
++        XCTAssertFalse(store.lastSaveSucceeded)
++        store.record(
++            game: .gomoku,
++            plies: [AdaptiveBoardPly(position: "g:must-not-overwrite", action: "112", actor: .host)],
++            result: .humanWon
++        )
++        XCTAssertEqual(try Data(contentsOf: url), damagedBytes)
++        XCTAssertEqual(store.summary.completedGames, 0)
++        XCTAssertTrue(store.requiresRecovery)
++
++        store.clear()
++        XCTAssertFalse(store.requiresRecovery)
++        XCTAssertTrue(store.lastSaveSucceeded)
++        let restarted = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
++        XCTAssertFalse(restarted.requiresRecovery)
++        XCTAssertEqual(restarted.summary.completedGames, 0)
++        XCTAssertEqual(restarted.summary.rememberedPositions, 0)
 +    }
 +
 +    func testRepeatedInterruptedLinePenalisesOldAIReplyAndPredictsHumanFormation() {
@@ -3428,7 +3592,7 @@ index 0000000..0be6e86
 +}
 diff --git a/VeilLinkTests/DeveloperLearningLabGateTests.swift b/VeilLinkTests/DeveloperLearningLabGateTests.swift
 new file mode 100644
-index 0000000..2591f2b
+index 0000000..f205319
 --- /dev/null
 +++ b/VeilLinkTests/DeveloperLearningLabGateTests.swift
 @@ -0,0 +1,35 @@
@@ -3464,7 +3628,7 @@ index 0000000..2591f2b
 +        XCTAssertTrue(gate.canImportTraining())
 +        let verifier = keychain.data(for: "board.developer-lab.verifier.v1")
 +        XCTAssertNotNil(verifier)
-+        XCTAssertFalse(verifier?.contains(Data("87654321".utf8)) ?? true)
++        XCTAssertNil(verifier?.range(of: Data("87654321".utf8)))
 +    }
 +}
 diff --git a/VeilLinkTests/GomokuBotTests.swift b/VeilLinkTests/GomokuBotTests.swift

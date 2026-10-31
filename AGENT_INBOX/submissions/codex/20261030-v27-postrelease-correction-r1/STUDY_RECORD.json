@@ -23,8 +23,13 @@
     "repository/AGENT_INBOX/01_GOVERNOR_IDENTITY.md",
     "repository/AGENT_INBOX/02_RULES.md",
     "repository/AGENT_INBOX/03_PROMPT_FOR_AGENTS.md",
+    "repository/AGENT_INBOX/04_INTEGRATION_PROTOCOL.md",
+    "repository/AGENT_INBOX/05_SUBMISSION_FLOW.md",
     "repository/AGENT_INBOX/06_ASSET_DROP_POLICY.md",
-    "repository/AGENT_INBOX/ASSET_GRANTS.json"
+    "repository/AGENT_INBOX/ASSET_GRANTS.json",
+    "repository/AGENT_INBOX/GOVERNOR_AUTHORITY.json",
+    "repository/AGENT_INBOX/QUEUE.md",
+    "repository/Issue#6 latest Integration Governor directives through 2026-10-31"
   ],
   "repository_learning_gate": {
     "status": "PARTIAL",
@@ -47,6 +52,7 @@
     "apple_sdk_build": "NOT_AVAILABLE",
     "xctest": "NOT_RUN",
     "device_test": "NOT_RUN",
-    "ipa": "NOT_REQUESTED"
+    "ipa": "NOT_REQUESTED",
+    "integration_observation": "PR #96/#99 exact-head iOS unit-test jobs failed and do not certify this Inbox patch; PR #100 Monogatari exact-head CI run 41110884224 passed, but remains an isolated Draft product candidate."
   }
 }

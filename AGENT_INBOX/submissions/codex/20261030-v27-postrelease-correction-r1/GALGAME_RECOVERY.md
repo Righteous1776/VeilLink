@@ -16,6 +16,8 @@
 
 The native Story Lab is moved into Game Lobby so existing story content is no longer hidden in Tool Center. It is not relabelled as the full Galgame.
 
+As of 2026-10-31, Integration Governor Draft PR #100 (`integrate/monogatari-r6-20261031`, commit `ced1cd0e1f561dfdb702eaa08a9a03da7ec6b00f`) stages a real offline Monogatari v2.8.0 MIT runtime, a SwiftUI/WKWebView host, Game Lobby route and an original Chinese demo. Exact-head iOS CI run `41110884224` completed successfully. This is a verified build/test candidate on an isolated product branch, not a main-branch release and not a byte-for-byte recovery of the missing owner-authored R5 story package.
+
 ## Required recovery input
 
-Reattach the exact R5 ZIP (preferred) or R4/R3 package. Governor must verify its recorded SHA-256, inspect licenses/assets, and ingest it under a dedicated binary asset grant before integration. Rebuilding an approximate replacement is not an exact recovery.
+For exact R5 content recovery, reattach the exact R5 ZIP (preferred) or R4/R3 package. Governor must verify its recorded SHA-256 and inspect licenses/assets before replacing or combining content. PR #100 can satisfy the runtime/host gap, but cannot prove restoration of the unavailable owner-authored R5 story archive.

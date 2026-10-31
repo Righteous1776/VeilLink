@@ -22,7 +22,9 @@ All existing pickers remain Apple's system Files picker. Selection now accepts t
 
 - Gomoku and Xiangqi use separate V2 files, summaries, clear actions and exports.
 - The old shared V1 store is migrated non-destructively by `g:` / `x:` position prefix and recorded game kind. Each V2 target is encode/decode verified in a sibling temporary file before atomic placement; the shared V1 file is never deleted, moved or overwritten.
+- Clearing a scoped V2 store writes a durable empty V2 tombstone instead of deleting it, so preserved V1 history cannot silently migrate back after relaunch. An unreadable/invalid V1 or V2 store enters a fail-closed recovery state: routine autosave and export cannot overwrite its bytes; only an explicit clear or checksum-validated import can resolve it.
 - Removes the fixed 1,600-position, 40-game and 512 KiB pruning limits. Data remains local and grows until the user clears it or the filesystem refuses a write.
+- Size reporting reads filesystem metadata rather than loading the uncapped JSON into memory, and preferred-opening analysis uses a single linear tally instead of rescanning all games for every comparison.
 - Keeps full move sequences. Repeated AI replies in lost or abandoned lines receive a root-score penalty; successful lines receive reinforcement.
 - Predicts the player's next reply after each candidate AI move. Gomoku prioritizes that reply in its adversarial reply search; Xiangqi replays it into the evaluated score, rather than using learning only for move ordering.
 - Decision UI adds “阵法预判” when sequence evidence is active.
@@ -33,6 +35,7 @@ All existing pickers remain Apple's system Files picker. Selection now accepts t
 - Both board games expose four local starting budgets: 轻松、均衡、进阶、宗师.
 - Every tier uses the same per-game training store; no setting disables accumulated personal repertoire, sequence prediction or outcome feedback. As retained local evidence grows, every tier receives a bounded training reinforcement to its legal search budget; higher tiers begin from a larger budget and widen/deepen further.
 - Gomoku gains a third-ply continuation pass at the higher tiers; Xiangqi raises iterative alpha-beta and quiescence depth within a device-aware time budget.
+- Gomoku's third-ply candidate ranking is decomposed into typed intermediate arrays to avoid the confirmed Swift 5.9/iOS 15 type-checker timeout while preserving tactical-priority order, index tie-break and candidate limits.
 - A local coach profile turns completed games, repeated lines and preferred opening choices into an explainable level, next lesson, immediate move feedback and a result-aware “复盘方向”. The latter distinguishes interrupted games, repeated lines, user wins and computer wins so it can recommend a concrete next review instead of presenting a generic rating. It is a practice aid, not an internet rating or an opaque model claim.
 - `THIRD_PARTY_CHESS_ENGINE_AUDIT.md` records the current GitHub intake result. External engine source is not vendored until a permissive licence and iOS integration gate are verified.
 

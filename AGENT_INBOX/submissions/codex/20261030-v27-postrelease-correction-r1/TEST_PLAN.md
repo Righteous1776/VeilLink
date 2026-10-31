@@ -17,14 +17,18 @@
 ## Added automated tests
 
 - all 2,400 synthetic positions persist (old cap regression);
+- stored byte count matches filesystem metadata after uncapped history writes;
 - game-scoped stores do not leak Gomoku data into Xiangqi;
 - two repeated interrupted Xiangqi lines penalize the old AI reply and predict the next human move;
 - import/export checksum round trip remains covered;
 - provider file is materialized and remains readable after picker handoff;
 - wrong extension is rejected after the permissive Apple Files picker.
 - a V1 mixed shared learning file migrates into two scoped V2 stores while its source bytes remain unchanged.
+- clearing a migrated scoped store persists an empty V2 tombstone across relaunch and does not re-import the preserved V1 file;
+- a corrupt scoped V2 file cannot be overwritten by routine record/autosave; explicit clear restores a valid empty store;
 - Gomoku and Xiangqi difficulty budgets monotonically increase search capacity; retained training evidence also reinforces every tier's bounded search budget; a repeated Xiangqi opening produces an explainable personal-coach profile.
 - developer learning enrollment requires an already-unlocked application lock; an eight-digit verifier unlocks a short-lived session and neither a plaintext PIN nor a public import entry is retained.
+- the plaintext-verifier regression uses `Data.range(of:)`, which is available on the iOS 15 target; the former `Data.contains(Data)` expression was iOS 16-only.
 - a developer-recorded formation with a host opening and guest reply survives authenticated reload; its matching prefix yields that guest reply as a high-priority Bot adjustment and its recorded next human move as the predicted adversarial reply; incomplete/one-sided lessons are rejected.
 - the coach profile derives a non-generic review direction from local outcome/interruption and repeated-line evidence, in addition to level, preferred opening and next lesson.
 

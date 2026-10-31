@@ -23,7 +23,7 @@
 
 ## Files
 
-`PATCH.diff` changes 36 product/test files (2,270 insertions, 236 deletions), including new:
+`PATCH.diff` changes 36 product/test files (2,412 insertions, 246 deletions), including new:
 
 - `VeilLink/Core/VeilImportedFileAccess.swift`
 - `VeilLink/UI/TacticalV2/TacticalV2SoloView.swift`
