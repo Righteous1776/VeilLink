@@ -1,0 +1,117 @@
+diff --git a/VeilLink/App/VeilLinkApp.swift b/VeilLink/App/VeilLinkApp.swift
+index e8d0425..2c0347b 100644
+--- a/VeilLink/App/VeilLinkApp.swift
++++ b/VeilLink/App/VeilLinkApp.swift
+@@ -14,6 +14,9 @@ struct VeilLinkApp: App {
+         VeilPreConsentBlackBox.shared.record(.appLaunched, stage: .launch)
+         TacticalLocalRenderCache.warmUp()
+         VeilChrome.configure()
++        Task.detached(priority: .utility) {
++            _ = try? VeilImportStagingLeasePolicy.sweepExpired(activeLeaseIDs: [])
++        }
+     }
+ 
+     var body: some Scene {
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+index dd49d31..16bc513 100644
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -1087,7 +1087,10 @@ struct ChatView: View {
+             let accessed = imported.shouldDeleteAfterUse ? false : imported.url.startAccessingSecurityScopedResource()
+             defer {
+                 if accessed { imported.url.stopAccessingSecurityScopedResource() }
+-                if imported.shouldDeleteAfterUse { try? FileManager.default.removeItem(at: imported.url) }
++                if imported.shouldDeleteAfterUse {
++                    VeilImportedFileAccess.removeStagedCopy(imported.url)
++                    try? FileManager.default.removeItem(at: imported.url)
++                }
+                 isPreparingImage = false
+             }
+             do {
+diff --git a/VeilLink/UI/OnboardingView.swift b/VeilLink/UI/OnboardingView.swift
+index c9ca11b..1c80f41 100644
+--- a/VeilLink/UI/OnboardingView.swift
++++ b/VeilLink/UI/OnboardingView.swift
+@@ -120,10 +120,12 @@ struct OnboardingView: View {
+             case .success(let selectedURL):
+                 Task {
+                     do {
+-                        restoreURL = try await VeilImportedFileAccess.materializeInBackground(
++                        let staged = try await VeilImportedFileAccess.materializeInBackground(
+                             selectedURL,
+                             acceptedExtensions: ["zip"]
+                         )
++                        discardRestoreSnapshot()
++                        restoreURL = staged
+                         showsRestorePassword = true
+                     } catch {
+                         model.alertMessage = error.localizedDescription
+@@ -133,13 +135,19 @@ struct OnboardingView: View {
+                 model.alertMessage = "无法选择备份：\(error.localizedDescription)"
+             }
+         }
+-        .sheet(isPresented: $showsRestorePassword) {
++        .sheet(isPresented: $showsRestorePassword, onDismiss: discardRestoreSnapshot) {
+             BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { backupPassword in
+                 if let restoreURL { model.restoreBackup(url: restoreURL, password: backupPassword) }
+             }
+         }
+     }
+ 
++    private func discardRestoreSnapshot() {
++        guard let restoreURL else { return }
++        VeilImportedFileAccess.removeStagedCopy(restoreURL)
++        self.restoreURL = nil
++    }
++
+     private var canCreate: Bool {
+         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+         password.count >= 8 && password == confirmPassword && pin.utf8.count == 6
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+index 88306b8..bfb9a9d 100644
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -124,17 +124,19 @@ struct SettingsView: View {
+             guard case .success(let selectedURL) = result else { return }
+             Task {
+                 do {
+-                    restoreURL = try await VeilImportedFileAccess.materializeInBackground(
++                    let staged = try await VeilImportedFileAccess.materializeInBackground(
+                         selectedURL,
+                         acceptedExtensions: ["zip"]
+                     )
++                    discardRestoreSnapshot()
++                    restoreURL = staged
+                     showsRestorePassword = true
+                 } catch {
+                     model.alertMessage = error.localizedDescription
+                 }
+             }
+         }
+-        .sheet(isPresented: $showsRestorePassword) {
++        .sheet(isPresented: $showsRestorePassword, onDismiss: discardRestoreSnapshot) {
+             BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { password in
+                 if let restoreURL { model.restoreBackup(url: restoreURL, password: password) }
+             }
+@@ -206,7 +208,7 @@ struct SettingsView: View {
+                 showsBackupSheet = false
+                 showsRestorePassword = false
+                 showsImporter = false
+-                restoreURL = nil
++                discardRestoreSnapshot()
+                 DeviceStressCommandBus.acknowledge(
+                     request,
+                     detail: "settings presentation state cleared"
+@@ -217,6 +219,12 @@ struct SettingsView: View {
+         }
+     }
+ 
++    private func discardRestoreSnapshot() {
++        guard let restoreURL else { return }
++        VeilImportedFileAccess.removeStagedCopy(restoreURL)
++        self.restoreURL = nil
++    }
++
+     private var profileCard: some View {
+         VStack(alignment: .leading, spacing: 14) {
+             HStack(spacing: 13) {
