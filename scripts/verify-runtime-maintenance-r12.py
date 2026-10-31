@@ -61,8 +61,8 @@ for key,value in [('CFBundleShortVersionString','$(MARKETING_VERSION)'),('CFBund
     if not re.search(rf'<key>{key}</key>\s*<string>{re.escape(value)}</string>',info):
         raise SystemExit(f'FAIL plist {key}')
 project=(ROOT/'project.yml').read_text(encoding='utf-8')
-if 'MARKETING_VERSION: "27.1"' not in project or 'CURRENT_PROJECT_VERSION: "63"' not in project:
-    raise SystemExit('FAIL VeilLink 27.1 / Build 63 release identity')
+if 'MARKETING_VERSION: "27.2"' not in project or 'CURRENT_PROJECT_VERSION: "64"' not in project:
+    raise SystemExit('FAIL VeilLink 27.2 / Build 64 release identity')
 if 'NSMicrophoneUsageDescription' not in info:
     raise SystemExit('FAIL microphone permission description')
 
