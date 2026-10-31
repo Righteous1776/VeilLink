@@ -55,6 +55,10 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
     /// Explicit local opt-in; the incumbent search remains the default and fallback.
     @Published private(set) var useExternalGomokuEngine = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.V2.Enabled")
+    @Published private(set) var gomokuFormationMode = GomokuFormationMode(
+        rawValue: UserDefaults.standard.string(forKey: "VeilLink.Gomoku.FormationMode.v1") ?? ""
+    ) ?? .off
+    @Published private(set) var discoveredGomokuFormations = 0
     @Published private(set) var coachProfile: PersonalBoardCoachProfile
     @Published private(set) var coachTip = "每一步都会沉淀为下一局的本地训练证据。"
     @Published private(set) var developerTeachingMode = false
@@ -68,6 +72,7 @@ final class LocalAIGameController: ObservableObject {
     private var aiTask: Task<Void, Never>?
     private let learningStore: AdaptiveBoardLearningStore
     private let formationLibrary: DeveloperFormationLibrary?
+    private let formationDiscovery = GomokuFormationDiscoveryStore()
     private var learningPlies: [AdaptiveBoardPly] = []
     /// Kept separate from ordinary player history so an owner-authored lesson
     /// never silently becomes public-player learning evidence.
@@ -85,6 +90,7 @@ final class LocalAIGameController: ObservableObject {
         learningSummary = resolvedLearningStore.summary
         coachProfile = resolvedLearningStore.coachProfile(for: game)
         developerFormationCount = formationLibrary?.lessons.count ?? 0
+        discoveredGomokuFormations = formationDiscovery.candidateCount
         sessionID = UUID().uuidString
     }
 
@@ -264,6 +270,13 @@ final class LocalAIGameController: ObservableObject {
         UserDefaults.standard.set(enabled, forKey: "VeilLink.Gomoku.V2.Enabled")
     }
 
+    func setGomokuFormationMode(_ mode: GomokuFormationMode) {
+        guard game == .gomoku else { return }
+        gomokuFormationMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "VeilLink.Gomoku.FormationMode.v1")
+        coachTip = mode.detail
+    }
+
     func setBoardDifficulty(_ difficulty: BoardBotDifficulty) {
         guard game == .gomoku || game == .xiangqi else { return }
         boardDifficulty = difficulty
@@ -305,6 +318,10 @@ final class LocalAIGameController: ObservableObject {
 
     func clearBoardLearning() {
         learningStore.clear()
+        if game == .gomoku {
+            formationDiscovery.clear()
+            discoveredGomokuFormations = 0
+        }
         learningPlies.removeAll(keepingCapacity: true)
         learningSummary = learningStore.summary
         coachProfile = learningStore.coachProfile(for: game)
@@ -403,9 +420,16 @@ final class LocalAIGameController: ObservableObject {
                 boardDifficulty,
                 profileLabel: VeilDevicePerformance.current.label
             ).reinforced(by: learning.trainingLevel)
+            let preference = GomokuFormationPreference(
+                mode: gomokuFormationMode,
+                aiHistory: learningPlies.filter { $0.actor == .guest }.compactMap { Int($0.action) },
+                discovered: formationDiscovery.eligibleSignatures
+            )
             var chosen: GomokuBotMove?
             var engineName = "原生"
-            if useExternalGomokuEngine {
+            // Native tactics are the only engine that currently consumes these
+            // formation preferences. Do not claim PVS/VCF uses them.
+            if useExternalGomokuEngine && !preference.enabled {
                 // A standalone JavaScriptCore actor; the external engine never
                 // touches gameplay/DB and is validated by our own rule gate.
                 let external = await VeilOfflineGomokuEngine.shared.chooseMove(
@@ -424,7 +448,10 @@ final class LocalAIGameController: ObservableObject {
             }
             if chosen == nil {
                 chosen = await Task.detached(priority: .userInitiated) {
-                    GomokuBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
+                    GomokuBot.chooseMove(
+                        in: snapshot, for: .guest, budget: budget,
+                        learning: learning, formationPreference: preference
+                    )
                 }.value
             }
             guard let result = chosen else { return nil }
@@ -439,6 +466,7 @@ final class LocalAIGameController: ObservableObject {
             // misrepresent actual search inputs.
             if engineName == "原生" {
                 lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)\(formationLabel)"
+                    + (preference.enabled ? " · \(preference.mode.title)" : "")
             } else {
                 lastDecisionMode = "五子棋 · PVS/VCF · \(boardDifficulty.title)"
             }
@@ -679,6 +707,13 @@ final class LocalAIGameController: ObservableObject {
     private func finalizeLearning(as result: AdaptiveBoardGameResult) {
         guard game == .gomoku || game == .xiangqi, !learningPlies.isEmpty else { return }
         learningStore.record(game: game, plies: learningPlies, result: result)
+        if game == .gomoku {
+            formationDiscovery.record(
+                aiMoves: learningPlies.filter { $0.actor == .guest }.compactMap { Int($0.action) },
+                outcome: result
+            )
+            discoveredGomokuFormations = formationDiscovery.candidateCount
+        }
         learningPlies.removeAll(keepingCapacity: true)
         learningSummary = learningStore.summary
         coachProfile = learningStore.coachProfile(for: game)
