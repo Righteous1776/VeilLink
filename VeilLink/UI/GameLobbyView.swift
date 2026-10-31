@@ -549,7 +549,7 @@ struct LocalAIGameView: View {
                             .font(.caption.monospacedDigit())
                             .foregroundColor(VeilTheme.goldBright)
                     }
-                    Text("真正调用本 App 的 GomokuBot 落子，完整对局保存到独立学习档案；图片分类训练不计入局数。训练仅在此页面前台运行。")
+                    Text("直接运行本 App 原生棋手；完整胜负局才会写入独立档案，棋形识别不计局数。启用训练经验会从 PVS/VCF 切换为原生搜索；关闭后可恢复原引擎。")
                         .font(.caption2)
                         .foregroundColor(VeilTheme.secondaryText)
                     Toggle("允许原生 Bot 使用已保存的自对弈经验", isOn: Binding(
