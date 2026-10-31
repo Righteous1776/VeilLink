@@ -1,0 +1,326 @@
+diff --git a/VeilLink/App/AppModel.swift b/VeilLink/App/AppModel.swift
+--- a/VeilLink/App/AppModel.swift
++++ b/VeilLink/App/AppModel.swift
+@@ -852,14 +852,14 @@
+     }
+ 
+     func restoreBackup(url: URL, password: String) {
+-        let accessed = url.startAccessingSecurityScopedResource()
+         _ = suspendCommunicationStack(reason: "正在恢复备份")
+         defer {
+-            if accessed { url.stopAccessingSecurityScopedResource() }
+             if identity.activeIdentity != nil { start() }
+         }
+         do {
++            try VeilFilesIngress.withRead(from: url, maximumBytes: 200 * 1024 * 1024) { readable in
++                try backups.restoreBackup(from: readable, password: password)
++            }
+-            try backups.restoreBackup(from: url, password: password)
+             resetIdentityScopedRuntimeState()
+             alertMessage = "备份已恢复。"
+         } catch {
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -790,7 +790,20 @@
+             switch result {
+             case .success(let urls):
+                 if let url = urls.first {
++                    Task {
++                        do {
++                            let staged = try await Task.detached(priority: .userInitiated) {
++                                try VeilFilesIngress.stage(from: url, maximumBytes: 80 * 1024 * 1024)
++                            }.value
++                            if isPreparingImage {
++                                VeilFilesIngress.discard(staged)
++                            } else {
++                                prepareAndSendImage(ImportedImageFile(url: staged, shouldDeleteAfterUse: true))
++                            }
++                        } catch {
++                            model.alertMessage = "图片文件无法读取：\(error.localizedDescription)"
++                        }
++                    }
+-                    prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: false))
+                 }
+             case .failure(let error):
+                 model.alertMessage = error.localizedDescription
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -99,8 +99,8 @@
+             }
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
++            NavigationLink(destination: VeilGuanduGrandMapSoloView()) {
++                gameRow(.tactical, detail: "48×27 官渡大战场 · Tactical V2 · 离线 WEGO 对战", enabled: true)
+-            NavigationLink(destination: LocalAIGameView(model: model, game: .tactical)) {
+-                gameRow(.tactical, detail: "你执曹军先行 · 离线训练策略 + 补给与目标评估", enabled: true)
+             }
+             .buttonStyle(VeilPressStyle())
+             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
+@@ -156,6 +156,26 @@
+     private var realtimeArcadeSection: some View {
+         VStack(alignment: .leading, spacing: 10) {
+             sectionTitle("实时渲染游戏", subtitle: "SpriteKit 2D + SceneKit 3D · 稳定帧循环 · 自适应画质")
++            NavigationLink(destination: VeilV27FeatureHubView()) {
++                realtimeGameRow(title: "V27 游戏与剧情库", detail: "筛选已安装游戏 · 动态渲染", motif: .circuit, badge: "导航")
++            }
++            .buttonStyle(.plain)
++            NavigationLink(destination: VeilRhythmR6NativeGameView()) {
++                realtimeGameRow(title: "节奏远征 R7", detail: "原生 SpriteKit · 节拍判定 · 输入分离", motif: .pulse, badge: "R7")
++            }
++            .buttonStyle(.plain)
++            NavigationLink(destination: LatticeClashLabView()) {
++                realtimeGameRow(title: "晶格冲突", detail: "规则对战 · 单机策略", motif: .circuit, badge: "策略")
++            }
++            .buttonStyle(.plain)
++            NavigationLink(destination: VeilStoryLabView()) {
++                realtimeGameRow(title: "分支故事实验室", detail: "可选剧情 · 多结局 · 回放", motif: .tide, badge: "剧情")
++            }
++            .buttonStyle(.plain)
++            NavigationLink(destination: VeilGalgameRecoveryView()) {
++                realtimeGameRow(title: "Galgame 引擎恢复", detail: "Monogatari R5 仍缺完整二进制 · 查看缺件", motif: .tide, badge: "待恢复")
++            }
++            .buttonStyle(.plain)
+             NavigationLink(destination: PrismRift3DGameView()) {
+                 realtimeGameRow(title: "棱镜裂隙 3D", detail: "动态灯光 · 三维隧道 · 3 阶 Boss · 能量与舰体管理", motif: .circuit, badge: "3D")
+             }
+@@ -347,7 +367,9 @@
+         ) { result in
+             guard case .success(let urls) = result, let url = urls.first else { return }
+             do {
++                let report = try VeilFilesIngress.withRead(from: url, maximumBytes: 64 * 1024 * 1024) { readable in
++                    try controller.importBoardLearning(from: readable)
++                }
+-                let report = try controller.importBoardLearning(from: url)
+                 learningExchangeMessage = "增强训练包已导入：\(report.completedGames) 局、\(report.rememberedPositions) 个局面。"
+                 model.haptics.selection()
+             } catch {
+diff --git a/VeilLink/UI/OnboardingView.swift b/VeilLink/UI/OnboardingView.swift
+--- a/VeilLink/UI/OnboardingView.swift
++++ b/VeilLink/UI/OnboardingView.swift
+@@ -118,13 +118,22 @@
+         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
+             switch result {
+             case .success(let url):
++                do {
++                    if let old = restoreURL { VeilFilesIngress.discard(old) }
++                    restoreURL = try VeilFilesIngress.stage(from: url, maximumBytes: 200 * 1024 * 1024)
++                    showsRestorePassword = true
++                } catch {
++                    restoreURL = nil
++                    model.alertMessage = "无法读取备份文件：\(error.localizedDescription)"
++                }
+-                restoreURL = url
+-                showsRestorePassword = true
+             case .failure(let error):
+                 model.alertMessage = "无法选择备份：\(error.localizedDescription)"
+             }
+         }
++        .sheet(isPresented: $showsRestorePassword, onDismiss: {
++            if let restoreURL { VeilFilesIngress.discard(restoreURL) }
++            restoreURL = nil
++        }) {
+-        .sheet(isPresented: $showsRestorePassword) {
+             BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { backupPassword in
+                 if let restoreURL { model.restoreBackup(url: restoreURL, password: backupPassword) }
+             }
+diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.swift
+--- a/VeilLink/UI/OwnerConsoleView.swift
++++ b/VeilLink/UI/OwnerConsoleView.swift
+@@ -54,6 +54,7 @@
+     @ObservedObject var ownerMode: OwnerModeController
+     @ObservedObject var performanceOverrides: PerformanceOverrideController
+     @ObservedObject var diagnostics: DiagnosticLogStore
++    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
+     @ObservedObject var telemetry: DeepTelemetry
+     @ObservedObject var stressTest: DeviceStressTestController
+     @Environment(\.dismiss) private var dismiss
+@@ -69,6 +70,7 @@
+         ownerMode = model.ownerMode
+         performanceOverrides = model.performanceOverrides
+         diagnostics = DiagnosticLogStore.shared
++        a10Ultra = model.a10Ultra
+         telemetry = DeepTelemetry.shared
+         stressTest = DeviceStressTestController.shared
+     }
+@@ -174,6 +176,21 @@
+             consoleRow("Nodes", value: "\(model.sessions.nearbyPeers.count)")
+             consoleRow("Protocol", value: "VL-BLE/4")
+             consoleRow("Profile", value: VeilDevicePerformance.diagnosticLabel)
++            if model.kernelRuntime.mode == .a10OnlyLab ||
++                model.kernelRuntime.mode == .a10Independent {
++                let sample = a10Ultra.lastRuntimeSample
++                let valid = sample?.environment.modeSessionID == model.kernelRuntime.modeSessionID &&
++                    sample?.environment.mode == model.kernelRuntime.mode &&
++                    abs(sample?.timestamp.timeIntervalSinceNow ?? .infinity) <= 30
++                consoleRow("Active Core", value: "A10 Ultra Ω")
++                consoleRow("A10 Live", value: valid ? String(sample!.sampleID.prefix(8)) : "等待新样本")
++                if valid, let decision = sample?.ultraDecision {
++                    consoleRow("A10 Health", value: String(decision.healthScore))
++                }
++            } else {
++                consoleRow("Active Core", value: "A9")
++                consoleRow("A9 Health", value: String(model.a9Health.decision.healthScore))
++            }
+         }
+         .veilCard()
+     }
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -70,7 +70,14 @@
+                 VeilSettingsDisclosureSection(section: .intelligence, isExpanded: $intelligenceExpanded) {
+                     VStack(spacing: 12) {
+                         agentCard
++                        Group {
++                            if model.kernelRuntime.mode == .a10OnlyLab ||
++                                model.kernelRuntime.mode == .a10Independent {
++                                VeilActiveKernelHealthView(model: model)
++                            } else {
++                                a9HealthCard
++                            }
++                        }
+-                        a9HealthCard
+                         kernelRuntimeCard
+                     }
+                 }
+@@ -117,12 +124,24 @@
+             }
+         }
+         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
++            switch result {
++            case .success(let url):
++                do {
++                    if let old = restoreURL { VeilFilesIngress.discard(old) }
++                    restoreURL = try VeilFilesIngress.stage(from: url, maximumBytes: 200 * 1024 * 1024)
++                    showsRestorePassword = true
++                } catch {
++                    restoreURL = nil
++                    model.alertMessage = "无法读取备份文件：\(error.localizedDescription)"
++                }
++            case .failure(let error):
++                model.alertMessage = "无法选择备份：\(error.localizedDescription)"
+-            if case .success(let url) = result {
+-                restoreURL = url
+-                showsRestorePassword = true
+             }
+         }
++        .sheet(isPresented: $showsRestorePassword, onDismiss: {
++            if let restoreURL { VeilFilesIngress.discard(restoreURL) }
++            restoreURL = nil
++        }) {
+-        .sheet(isPresented: $showsRestorePassword) {
+             BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { password in
+                 if let restoreURL { model.restoreBackup(url: restoreURL, password: password) }
+             }
+diff --git a/VeilLink/UI/ToolCenterView.swift b/VeilLink/UI/ToolCenterView.swift
+--- a/VeilLink/UI/ToolCenterView.swift
++++ b/VeilLink/UI/ToolCenterView.swift
+@@ -66,8 +66,8 @@
+                 }
+ 
+                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
++                    if matches("状态 健康 后台 治理 status health governance") {
++                        toolLink("后台运行状态", detail: "只读概览 · 诊断由后台负责", icon: "checkmark.shield", destination: VeilBackgroundGovernanceStatusView(model: model))
+-                    if matches("v27 功能库 实验室 游戏 情绪 工具 feature library") {
+-                        toolLink("V27 功能库", detail: "统一搜索 · 按需加载", icon: "square.grid.3x3.fill", destination: VeilV27FeatureHubView())
+                     }
+                     if matches("手电筒信标 手电筒 信标 闪光灯 sos flashlight beacon") {
+                         toolLink("手电筒信标", detail: "常亮 · 脉冲 · SOS", icon: "flashlight.on.fill", destination: VeilBeaconView())
+@@ -87,15 +87,11 @@
+                     if matches("指纹 hash sha256 文本 校验 摘要") {
+                         toolLink("文本指纹", detail: "SHA-256 · 字节统计", icon: "number", destination: VeilFingerprintToolView())
+                     }
++                    // 文件完整性引擎保留，入口迁至受控治理区，避免将诊断操作暴露在日常工具箱。
+-                    if matches("文件 完整性 校验 指纹 hash sha256 对比 传输 verify integrity") {
+-                        toolLink("文件完整性", detail: "SHA-256 · 双文件对比", icon: "checkmark.shield.fill", destination: VeilFileIntegrityToolView())
+-                    }
+                     if matches("二维码 qr 临时 文本 分享") {
+                         toolLink("临时二维码", detail: "短文本离线转码", icon: "qrcode", destination: VeilTemporaryQRToolView())
+                     }
++                    // BLE/LAN 链路详细采样继续在治理后台，用户工具箱仅显示健康状态。
+-                    if matches("网络 局域网 lan 蓝牙 ble 链路 诊断") {
+-                        toolLink("链路仪表", detail: "LAN 与 BLE 速览", icon: "wave.3.right.circle.fill", destination: VeilLinkPulseToolView(model: model))
+-                    }
+                     if matches("json 格式化 校验 压缩 pretty minify") {
+                         toolLink("JSON 工坊", detail: "校验 · 整理 · 压缩", icon: "curlybraces", destination: VeilJSONToolView())
+                     }
+diff --git a/VeilLink/UI/VeilBackupPreflightView.swift b/VeilLink/UI/VeilBackupPreflightView.swift
+--- a/VeilLink/UI/VeilBackupPreflightView.swift
++++ b/VeilLink/UI/VeilBackupPreflightView.swift
+@@ -7,6 +7,7 @@
+     @State private var deepCRC = false
+     @State private var result: VeilBackupPreflightPolicy.Report?
+     @State private var working = false
++    @State private var fileErrorText: String?
+     @State private var generation = UUID()
+ 
+     var body: some View {
+@@ -27,6 +28,9 @@
+                 .buttonStyle(.borderedProminent)
+                 .disabled(working)
+                 if working { ProgressView("只读检查中…") }
++                if let fileErrorText {
++                    Text(fileErrorText).font(.footnote).foregroundColor(.red)
++                }
+                 if let result {
+                     VStack(alignment: .leading, spacing: 10) {
+                         Text(result.safetyLabel)
+@@ -66,14 +70,22 @@
+             generation = token
+             working = true
+             result = nil
++            fileErrorText = nil
+             let runDeep = deepCRC
+             Task {
++                do {
++                    let inspected = try await Task.detached(priority: .userInitiated) {
++                        try VeilFilesIngress.withRead(from: file, maximumBytes: 200 * 1024 * 1024) { readable in
++                            VeilBackupArchiveInspector.inspect(readable, verifyAllCRC: runDeep)
++                        }
++                    }.value
++                    guard generation == token else { return }
++                    result = inspected
++                } catch {
++                    guard generation == token else { return }
++                    fileErrorText = "备份文件无法读取：\(error.localizedDescription)"
++                }
++                if generation == token { working = false }
+-                let inspected = await Task.detached(priority: .userInitiated) {
+-                    VeilBackupArchiveInspector.inspect(file, verifyAllCRC: runDeep)
+-                }.value
+-                guard generation == token else { return }
+-                result = inspected
+-                working = false
+             }
+         }
+         .onDisappear {
+diff --git a/VeilLink/UI/VeilFileIntegrityToolView.swift b/VeilLink/UI/VeilFileIntegrityToolView.swift
+--- a/VeilLink/UI/VeilFileIntegrityToolView.swift
++++ b/VeilLink/UI/VeilFileIntegrityToolView.swift
+@@ -211,7 +211,9 @@
+         inspectionTask = Task {
+             do {
+                 let result = try await Task.detached(priority: .userInitiated) {
++                    try VeilFilesIngress.withRead(from: url, maximumBytes: 2 * 1024 * 1024 * 1024) { readable in
++                        try VeilFileIntegrityEngine.inspect(url: readable)
++                    }
+-                    try VeilFileIntegrityEngine.inspect(url: url)
+                 }.value
+                 try Task.checkCancellation()
+                 if slot == .first {
+diff --git a/VeilLink/UI/VeilOfflineHTMLReaderView.swift b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
+--- a/VeilLink/UI/VeilOfflineHTMLReaderView.swift
++++ b/VeilLink/UI/VeilOfflineHTMLReaderView.swift
+@@ -111,7 +111,9 @@
+                 Task {
+                     do {
+                         let parsed = try await Task.detached(priority: .userInitiated) {
++                            try VeilFilesIngress.withRead(from: url, maximumBytes: 512 * 1024) { readable in
++                                try VeilOfflineHTMLImporter.load(fileURL: readable)
++                            }
+-                            try VeilOfflineHTMLImporter.load(fileURL: url)
+                         }.value
+                         guard importGeneration == token else { return }
+                         document = parsed
