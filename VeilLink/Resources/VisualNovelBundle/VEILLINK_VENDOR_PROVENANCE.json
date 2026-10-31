@@ -1,0 +1,15 @@
+{
+  "upstream": "Monogatari/Monogatari",
+  "release": "v2.8.0",
+  "officialReleaseSHA256": "16d221485888b0193312e9989ecafa57cb1913978bf2f09ba554552ba3885806",
+  "license": "MIT",
+  "upstreamFiles": 56,
+  "importedFiles": 55,
+  "excluded": [
+    "engine/core/monogatari.js.map"
+  ],
+  "exclusionReason": "Optional 5.4MB debugging source map unavailable through GitHub integration transport; no executable engine code omitted.",
+  "engineCoreBlob": "0211c2f2c9adc56e28d5583feb0dd46b902d37d5",
+  "source": "Owner-supplied verified upstream ZIP + source-tag Git blobs",
+  "appContent": "Original VeilLink branching sci-fi story"
+}

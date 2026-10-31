@@ -216,6 +216,15 @@ struct GameLobbyView: View {
                 )
             }
             .buttonStyle(.plain)
+            NavigationLink(destination: VeilMonogatariGameView()) {
+                realtimeGameRow(
+                    title: "雨幕之后 · Monogatari R6",
+                    detail: "官方 2.8.0 完整引擎 · 东京雨夜 · 四种结局 · 本地存档",
+                    motif: .tide,
+                    badge: "VN"
+                )
+            }
+            .buttonStyle(.plain)
             NavigationLink(destination: VeilMonogatariHostView()) {
                 realtimeGameRow(
                     title: "VeilLink × Monogatari",

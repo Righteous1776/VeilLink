@@ -56,8 +56,12 @@ targets:
           - Resources/AgentModels/game_policy_ranker_v4.manifest.json
           - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
           - Resources/MonogatariHost
+          - Resources/VisualNovelBundle
       # Preserve relative JS/CSS paths as a bundled folder reference.
       - path: VeilLink/Resources/MonogatariHost
+        type: folder
+        buildPhase: resources
+      - path: VeilLink/Resources/VisualNovelBundle
         type: folder
         buildPhase: resources
     dependencies:

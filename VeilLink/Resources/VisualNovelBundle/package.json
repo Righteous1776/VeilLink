@@ -1,0 +1,64 @@
+{
+  "name": "my-game",
+  "version": "0.1.0",
+  "author": "Your Name",
+  "main": "engine/electron/index.js",
+  "devDependencies": {
+    "@electron/notarize": "^3.1.1",
+    "dotenv": "^16.4.5",
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "directories": {
+      "output": "build/electron"
+    },
+    "appId": "com.example.mygame",
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icons/icon.ico"
+    },
+    "mac": {
+      "category": "public.app-category.games",
+      "target": [
+        "zip"
+      ],
+      "type": "distribution",
+      "icon": "assets/icons/icon.icns",
+      "entitlements": "engine/electron/entitlements.mac.plist",
+      "entitlementsInherit": "engine/electron/entitlements.mac.plist",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "linux": {
+      "category": "Game",
+      "target": [
+        "AppImage"
+      ],
+      "synopsis": "A small synopsis of your game",
+      "description": "A more detailed description of your game"
+    },
+    "icon": "assets/icons/512x512.png",
+    "afterSign": "engine/electron/notarize.js"
+  },
+  "description": "A description of your game",
+  "homepage": "https://example.com",
+  "license": "MIT",
+  "productName": "My Game",
+  "scripts": {
+    "serve": "bun --hot serve.ts",
+    "start": "yarn electron . --enable-logging",
+    "start:electrobun": "bunx electrobun build && bunx electrobun dev",
+    "build": "yarn electron-builder -mwl",
+    "build:windows": "yarn electron-builder -w",
+    "build:mac": "yarn electron-builder -m",
+    "build:linux": "yarn electron-builder -l",
+    "build:web": "bun build-web.ts",
+    "build:electrobun": "bunx electrobun build"
+  },
+  "dependencies": {
+    "electrobun": "^1.18.1"
+  }
+}
