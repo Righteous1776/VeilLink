@@ -581,6 +581,9 @@ final class SessionCoordinator: ObservableObject {
         guard hasSecureSession(for: peerIdentityID) else {
             throw NSError(domain: "VeilLink", code: 25, userInfo: [NSLocalizedDescriptionKey: "对手安全链路尚未就绪，小游戏操作未发送。"])
         }
+        guard MiniGameCodec.isValid(packet) else {
+            throw NSError(domain: "VeilLink", code: 26, userInfo: [NSLocalizedDescriptionKey: "小游戏操作结构无效，已在写入发送队列前拦截。"])
+        }
         let encoded = try MiniGameCodec.encode(packet)
         guard encoded.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else {
             throw NSError(domain: "VeilLink", code: 23, userInfo: [NSLocalizedDescriptionKey: "小游戏操作数据超过当前消息上限。"])

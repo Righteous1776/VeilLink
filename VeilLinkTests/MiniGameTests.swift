@@ -5,8 +5,19 @@ final class MiniGameTests: XCTestCase {
     func testCodecRoundTripAndPreview() throws {
         let packet = MiniGamePacket(game: .gomoku, command: .invite)
         let encoded = try MiniGameCodec.encode(packet)
+        XCTAssertTrue(MiniGameCodec.isValid(packet))
         XCTAssertEqual(MiniGameCodec.decode(encoded), packet)
         XCTAssertEqual(MiniGameCodec.previewText(for: encoded), "[小游戏] 邀请你玩五子棋")
+    }
+
+    func testOutboundValidationRejectsMalformedCommandBeforeQueueing() {
+        let malformed = MiniGamePacket(
+            game: .gomoku,
+            command: .accept,
+            turn: 1,
+            move: .gomoku(index: 112)
+        )
+        XCTAssertFalse(MiniGameCodec.isValid(malformed))
     }
 
     func testGomokuDetectsFiveInRow() {
@@ -164,6 +175,46 @@ final class MiniGameTests: XCTestCase {
         let a = pending("00000000-0000-0000-0000-000000000001", offset: 0)
         let b = pending("00000000-0000-0000-0000-000000000002", offset: 1)
         XCTAssertEqual(MiniGameSessionBuilder.coalescedLiveSessions([b, a], now: now).map(\.id), [a.id])
+    }
+
+    func testTerminalHistoryDoesNotHideQuickRematch() {
+        let now = Date(timeIntervalSince1970: 20_000)
+        func snapshot(id: String, status: MiniGameSessionStatus, offset: TimeInterval) -> MiniGameSessionSnapshot {
+            MiniGameSessionSnapshot(
+                id: id,
+                game: .gomoku,
+                hostIsLocal: true,
+                status: status,
+                invitedAt: now.addingTimeInterval(offset),
+                startedAt: status == .invited ? nil : now.addingTimeInterval(offset),
+                lastActivity: now.addingTimeInterval(offset),
+                gomoku: GomokuState(),
+                xiangqi: nil,
+                ludo: nil,
+                endedByResignation: false
+            )
+        }
+
+        let rematch = snapshot(
+            id: "00000000-0000-0000-0000-000000000099",
+            status: .invited,
+            offset: 1
+        )
+        for terminalStatus in [
+            MiniGameSessionStatus.finished(winner: .host),
+            .declined,
+            .cancelled
+        ] {
+            let history = snapshot(
+                id: "00000000-0000-0000-0000-000000000001",
+                status: terminalStatus,
+                offset: 0
+            )
+            XCTAssertEqual(
+                MiniGameSessionBuilder.coalescedLiveSessions([history, rematch], now: now).map(\.id),
+                [rematch.id]
+            )
+        }
     }
 
     func testLudoCaptureMetadataAndFinishedCountersStayConsistent() {

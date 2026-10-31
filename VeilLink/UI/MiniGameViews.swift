@@ -336,7 +336,9 @@ private struct MiniGameLinkStatusView: View {
         return bluetooth.linkSnapshots[transportID] ?? bluetooth.linkSnapshot(for: transportID)
     }
     private var secureReady: Bool { sessions.hasSecureSession(for: peerIdentityID) }
-    private var linkReady: Bool { snapshot?.transportStage == .gattReady && secureReady }
+    // A game can use an authenticated session over BLE, LAN or relay. Requiring a BLE-only
+    // GATT snapshot here falsely reported a working non-BLE game channel as disconnected.
+    private var linkReady: Bool { secureReady }
 
     private var primaryText: String {
         if linkReady { return "SECURE_SESSION_READY · 对手链路已就绪" }
@@ -348,7 +350,9 @@ private struct MiniGameLinkStatusView: View {
     }
 
     private var detailText: String? {
-        guard let snapshot else { return nil }
+        guard let snapshot else {
+            return secureReady ? "加密游戏通道可用 · 支持 ACK 与断线重发" : nil
+        }
         if linkReady { return snapshot.compactDetail }
         if snapshot.pendingPackets > 0 { return "操作会保留在加密待发送队列 · \(snapshot.queueSummary)" }
         return snapshot.rssi.map { "\($0) dBm · \(snapshot.qualityTitle)" }

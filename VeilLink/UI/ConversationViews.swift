@@ -94,6 +94,7 @@ struct ConversationListView: View {
                                 conversationPendingClear = conversation
                             }
                         }
+                        .modifier(ConversationListRowChrome())
                     } else {
                         Button {
                             model.haptics.selection()
@@ -150,6 +151,7 @@ struct ConversationListView: View {
                                 conversationPendingClear = conversation
                             }
                         }
+                        .modifier(ConversationListRowChrome())
                     }
                 }
                 .listStyle(.plain)
@@ -240,6 +242,15 @@ struct ConversationListView: View {
     }
 }
 
+private struct ConversationListRowChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+    }
+}
+
 private struct ConversationRow: View {
     let conversation: ConversationSummary
     let isSelected: Bool
@@ -306,10 +317,6 @@ private struct ConversationRow: View {
                 .padding(.leading, 11)
         }
         .contentShape(VeilPanelShape(cut: 15, radius: 7))
-        .padding(.vertical, 3)
-        .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
     }
 }
 

@@ -51,6 +51,7 @@ private struct PhoneLayout: View {
             NavigationView {
                 ConversationListView(model: model, usesNavigationLinks: true)
                     .telemetryScreen("chats.list")
+                    .navigationBarTitleDisplayMode(.inline)
             }
             .navigationViewStyle(StackNavigationViewStyle())
             .tabItem { Label("对话", systemImage: SidebarSection.chats.icon) }
@@ -60,6 +61,7 @@ private struct PhoneLayout: View {
             NavigationView {
                 NearbyView(model: model)
                     .telemetryScreen("nearby")
+                    .navigationBarTitleDisplayMode(.inline)
             }
             .navigationViewStyle(StackNavigationViewStyle())
             .tabItem { Label("附近", systemImage: SidebarSection.nearby.icon) }
@@ -68,6 +70,7 @@ private struct PhoneLayout: View {
             NavigationView {
                 GameLobbyView(model: model)
                     .telemetryScreen("games.lobby")
+                    .navigationBarTitleDisplayMode(.inline)
             }
             .navigationViewStyle(StackNavigationViewStyle())
             .tabItem { Label("游戏", systemImage: SidebarSection.games.icon) }
@@ -84,6 +87,7 @@ private struct PhoneLayout: View {
             NavigationView {
                 SettingsView(model: model)
                     .telemetryScreen("settings")
+                    .navigationBarTitleDisplayMode(.inline)
             }
             .navigationViewStyle(StackNavigationViewStyle())
             .tabItem { Label("设置", systemImage: SidebarSection.settings.icon) }

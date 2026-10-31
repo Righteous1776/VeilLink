@@ -142,6 +142,14 @@ struct MiniGamePacket: Codable, Hashable, Identifiable {
 enum MiniGameCodec {
     private static let prefix = "\u{2063}VLGM1:"
 
+    static func isValid(_ packet: MiniGamePacket) -> Bool {
+        packet.version == MiniGamePacket.currentVersion
+            && UUID(uuidString: packet.sessionID) != nil
+            && UUID(uuidString: packet.actionID) != nil
+            && packet.turn >= 0
+            && structurallyValid(packet)
+    }
+
     static func encode(_ packet: MiniGamePacket) throws -> String {
         let data = try JSONEncoder().encode(packet)
         return prefix + data.base64EncodedString()
@@ -152,11 +160,7 @@ enum MiniGameCodec {
         let encoded = String(body.dropFirst(prefix.count))
         guard let data = Data(base64Encoded: encoded),
               let packet = try? JSONDecoder().decode(MiniGamePacket.self, from: data),
-              packet.version == MiniGamePacket.currentVersion,
-              UUID(uuidString: packet.sessionID) != nil,
-              UUID(uuidString: packet.actionID) != nil,
-              packet.turn >= 0,
-              structurallyValid(packet) else { return nil }
+              isValid(packet) else { return nil }
         return packet
     }
 
@@ -923,7 +927,10 @@ enum MiniGameSessionBuilder {
         }
 
         return live.filter { candidate in
-            let collisionGroup = sessions.filter { other in
+            // Terminal history is not an invitation contender. Including a just-finished,
+            // declined or cancelled session here made a quick rematch disappear from both the
+            // game hub and its chat card for the whole collision window.
+            let collisionGroup = live.filter { other in
                 guard other.game == candidate.game else { return false }
                 return abs(other.invitedAt.timeIntervalSince(candidate.invitedAt)) <= concurrentInviteCollisionWindow
             }
