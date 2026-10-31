@@ -170,11 +170,13 @@ final class AgentGameContextBroker: ObservableObject {
             return false
         }
 
-        return adapter.enumerateLegalActions()
-            .filter(adapter.validate)
-            .contains { candidate in
-                Self.move(for: candidate, game: session.game) == action.move
-            }
+        // Validate just the matching candidate. The earlier filter invoked
+        // adapter.validate() on every legal action, each of which performed
+        // another full legal-action enumeration (quadratic work).
+        return adapter.enumerateLegalActions().contains { candidate in
+            Self.move(for: candidate, game: session.game) == action.move
+                && adapter.validate(candidate)
+        }
     }
 
     func markSuggestedActionExecuted(_ action: AgentSuggestedGameAction) {

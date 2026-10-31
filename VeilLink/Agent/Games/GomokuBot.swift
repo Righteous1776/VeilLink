@@ -81,6 +81,11 @@ enum GomokuBot {
               state.currentPlayer == player else { return nil }
 
         let started = Date.timeIntervalSinceReferenceDate
+        // First move has only one native search candidate: the center.
+        // Avoid expensive full static search for the unambiguous empty board.
+        if state.moveCount == 0 {
+            return result(index: Self.size * Self.size / 2, score: 0, nodes: 1, started: started)
+        }
         let deadline = started + Double(max(30, budget.timeLimitMilliseconds)) / 1_000.0
         var nodes = 0
         var candidates = candidateIndices(in: state, radius: budget.candidateRadius)
