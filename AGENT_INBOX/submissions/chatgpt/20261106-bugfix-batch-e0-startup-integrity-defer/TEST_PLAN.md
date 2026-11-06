@@ -1,0 +1,12 @@
+# E0 validation
+- [x] Main source anchors verified unique and consistent with main@ccafebab147e069fbabfff579dbf323b0d54f191.
+- [x] Inert, scoped patch only: AppModel.swift; no SQLite schema, protocol, key lifecycle, CI, or release changes.
+- [ ] Xcode / XCTest / instruments: NOT_RUN.
+- [ ] Cold launch with small vs large databases: capture signposts from Batch B #138; first frame before completion of full integrity check.
+- [ ] PRAGMA result stays UNCHECKED until actual result; no false OK, error logs on failed result.
+- [ ] Foreground->background before 750ms -> no full integrity work; next foreground triggers check.
+- [ ] Concurrent message insert/fetch during utility check: no data race and acceptable latency (DatabaseStore serialized queue may block app reads).
+- [ ] Explicit manual integrity check wins over delayed async result.
+- [ ] Post-launch 6h cadence preserved, no repeated immediate checks.
+- [ ] Device memory/thermal tests on iPhone 13 and other supported lower-memory devices.
+- [ ] Check PR #138 startup signposts and PR #137 telemetry overhead after application.
