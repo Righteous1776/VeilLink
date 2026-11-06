@@ -12,10 +12,12 @@ public final class GameSessionModel: ObservableObject {
  @Published public var selectedTile: Int = 1
  let scene: GameBoardScene
  private var queue: [ViewCommand] = []
- private var animating = false
+ @Published private var animating = false
  private var driving = false
+ private let configuredHumanCount: Int
 
  public init(seed: UInt64 = 1729123, humanCount: Int = 1) {
+  configuredHumanCount = humanCount
   let initial = GameFactory.make(seed: seed, humanCount: humanCount)
   game = initial
   scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
@@ -67,9 +69,10 @@ public final class GameSessionModel: ObservableObject {
  public func dismissCard() { shownCard = nil }
  public func reset(seed: UInt64) {
   guard !animating else { return }
-  let newState = GameFactory.make(seed: seed, humanCount: 1)
+  let newState = GameFactory.make(seed: seed, humanCount: configuredHumanCount)
   game = newState; shownCard = nil; queue = []; errorMessage = nil
   scene.display(newState)
+  if configuredHumanCount == 0 { drive() }
  }
  private func drive() {
   guard !animating && !driving else { return }
@@ -200,8 +203,8 @@ public struct VeilopolyGameView: View {
  }
  @ViewBuilder private var actionPanel: some View {
   if model.game.winner != nil { settlementPanel }
-  else if !model.waitingForHuman { Text("AI 正在行动……").foregroundStyle(.secondary) }
   else if model.pending { ProgressView("动画播放中") }
+  else if !model.waitingForHuman { Text("AI 正在行动……").foregroundStyle(.secondary) }
   else {
    switch model.game.turn.phase {
    case .roll:
