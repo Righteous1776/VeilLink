@@ -56,7 +56,9 @@ public protocol GameTransport {
  func receive() -> AsyncThrowingStream<GameEnvelope, Error>
 }
 
-public enum GameSyncError: String, Error, Equatable { case seqGap, hashMismatch, invalidMove, corruptSnapshot }
+public enum GameSyncError: String, Error, Equatable {
+ case seqGap, hashMismatch, invalidMove, corruptSnapshot, staleSnapshot, sessionMismatch
+}
 public struct AuthoritativeHost {
  public private(set) var game: GameState
  public private(set) var committed: [AuthoritativeMove]
@@ -89,7 +91,16 @@ public struct ReplicaClient {
   }
  }
  public mutating func resync(_ snapshot: GameSnapshot) -> Result<String, GameSyncError> {
-  guard snapshot.lastAppliedSeq == snapshot.game.nextSeq - 1,
+  // Snapshots are accepted only from the same seeded session. An older snapshot
+  // must never silently roll a replica back after it has applied newer packets.
+  // Same-sequence snapshots remain allowed to heal local divergence; the P5
+  // transport adapter must authenticate the host and gameId before this call.
+  guard snapshot.game.seed == game.seed else { return .failure(.sessionMismatch) }
+  guard snapshot.game.nextSeq >= game.nextSeq else { return .failure(.staleSnapshot) }
+  guard snapshot.game.nextSeq >= 0,
+        snapshot.game.moveLog.count == snapshot.game.nextSeq,
+        snapshot.game.moveLog.enumerated().allSatisfy({ $0.element.seq == $0.offset }),
+        snapshot.lastAppliedSeq == snapshot.game.nextSeq - 1,
         StateDigest.hash(snapshot.game) == snapshot.stateHash else { return .failure(.corruptSnapshot) }
   game = snapshot.game
   return .success(snapshot.stateHash)

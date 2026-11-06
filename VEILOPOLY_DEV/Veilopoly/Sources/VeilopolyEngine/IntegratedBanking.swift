@@ -95,9 +95,21 @@ public enum IntegratedBanking {
   ledger.terms.isWellFormed() && ledger.accounts.allSatisfy { acc in
    (0...4).contains(acc.borrowCount) && acc.savings.count <= 1000 &&
    acc.loans.count <= 4 && acc.positions.count <= 1000 &&
-   acc.savings.allSatisfy { (1...1_000_000).contains($0.principal) && $0.unlockPeriod >= 0 } &&
-   acc.loans.allSatisfy { (1...1_000_000).contains($0.principal) && $0.totalDue >= $0.principal } &&
-   acc.positions.allSatisfy { (1...1_000_000).contains($0.principal) && $0.duePeriod >= 0 }
+   acc.savings.allSatisfy {
+    $0.id >= 0 && [.demandDeposit, .fixedDeposit].contains($0.feature) &&
+    (1...1_000_000).contains($0.principal) && (0...1_000_000).contains($0.unlockPeriod) &&
+    (0...10_000).contains($0.payoutBasisPoints)
+   } &&
+   acc.loans.allSatisfy {
+    $0.id >= 0 && (1...1_000_000).contains($0.principal) &&
+    (0...10_000).contains($0.interestBasisPoints) &&
+    (1...12).contains($0.periods) && (0...1_000_000).contains($0.duePeriod) &&
+    ($0.principal...1_000_000_000).contains($0.totalDue)
+   } &&
+   acc.positions.allSatisfy {
+    $0.id >= 0 && [.managedFund, .ventureSimulation, .stockSimulation].contains($0.feature) &&
+    (1...1_000_000).contains($0.principal) && (0...1_000_000).contains($0.duePeriod)
+   }
   }
  }
 

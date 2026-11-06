@@ -52,6 +52,13 @@ public enum VeilopolyEngine {
    guard move.player == expected else { throw GameError.notYourTurn }
    guard ctx.allowedMoves.contains(move.type) else { throw GameError.wrongPhase }
    try transition(&g, move, &effects)
+   // Validate the output as well as the input. A large legal receipt must not
+   // produce an out-of-range persisted state that crashes the next turn.
+   guard g.players.allSatisfy({ (0...1_000_000_000).contains($0.cash) }),
+         (g.banking.map { IntegratedBanking.validate($0) } ?? true),
+         (0...32).contains(g.bank.houses) && (0...12).contains(g.bank.hotels) else {
+    throw GameError.invalidState
+   }
    g.moveLog.append(move)
    g.nextSeq += 1
    return .success((g, effects))
