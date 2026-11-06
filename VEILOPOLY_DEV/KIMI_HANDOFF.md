@@ -62,3 +62,12 @@ ChatGPT 当前 SpriteKit 资源名称：`pawnBlue`、`carRed`、`shipGreen`、`p
 - 已有 14 张 PNG 与 12 个 WAV 放在 `VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/`；既有别名不要无映射重命名。
 - 资源 SHA-256、字节大小与 Git Blob SHA 位于 `VEILOPOLY_DEV/Veilopoly/docs/RESOURCE_INTEGRITY.json`。
 - 最新源码入库与本地验证记录见 `VEILOPOLY_DEV/CHECKPOINT.md`，iOS 渲染尚未验收。K1 请优先冻结新的视觉 API、Sprite Map、iPhone/iPad 布局和素材来源，不要重新实现 Swift 引擎。
+
+## K1 补充：横屏全屏与胶囊规范（2026-11-06）
+
+- Owner 明确要求 **真实横向全屏**（不是竖屏页面中的小横板）。主程序现已在独立 P4 Swift Package 实现横屏全屏 presentation 代码，实际 VeilLink 主程序接入属于 P5，尚未授权。
+- 棋盘左、操作 HUD 右；四棋子、40 格均可见；不得设计必须在整页上下滑动才能看完的布局。参考 `Veilopoly/docs/LANDSCAPE_PRESENTATION.md`。
+- 右上角胶囊：左 `•••` 更多，右圆环退出；由 ChatGPT 使用 SwiftUI 矢量绘制，**Kimi 无需额外为胶囊建模**。可给色彩与间距建议，但不要强制覆盖触摸/VoiceOver 的 46×44pt 最小命中区。
+- 临时材料/资源审核清单：`Veilopoly/docs/ASSET_GAP_REGISTER.md`，已将 14 PNG/12 WAV 标记为已有。其它列为**待核对**，不是已确认缺少。
+- **Owner 将先上传 Kimi 已制作的一部分模型**。收到并审查已完成内容前，不输出终版缺失清单，不重复建模；当前优先准备模型版本、alias/尺寸、素材出处、许可证、移动端导出方案。
+- 提醒：Owner 参考截图包含个人信息，不把原图加入公开仓库；只按胶囊语义与外形实现。
