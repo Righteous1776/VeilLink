@@ -111,3 +111,11 @@ The Owner has added photographed reference rules for bank loans, deposits, simul
 ChatGPT 已制作事件提示 HUD、地块高亮与速览、真人卡牌确认/AI 自动继续、SpriteKit 地块扩散环、现金浮字及回合/胜利横幅，均为**可以被 Kimi 替换的视觉 fallback**。请 K2/K3 只交付高清美术和规格：`fxTilePulseAtlas`、`fxCashChipAtlas`、`fxTurnBanner`、`fxVictoryBadge`、`fxPawnShadowAtlas`、`uiCardFaceFrame`（可提出别名映射，不改变逻辑协议）。按事件名与最终落点提供 atlas frame/anchor/zPosition/timing、减少动态效果静态帧、许可证、SHA-256。
 
 不要重做已提交的骰子六面图集或主动增加规则玩法；不能将模型资产返回当作 SwiftUI/SpriteKit 的运行通过证据。
+
+## 2026-11-06 · Astra 接手部分 Kimi 视觉工作（避免重复制作）
+
+Owner 最新授权：Astra 不再做源码审计或 SwiftUI 编码，而是为 Kimi **分担批量 2D 美术制作**。具体任务：`ASTRA_TASKS/ASTRA_ART_B01.md`（高品质横屏 HUD、购买/竞拍/交易/银行/结算面板及可用 2D UI 素材），`ASTRA_TASKS/ASTRA_ART_B02.md`（可替换 2D 特效图集和时间轴）。
+
+**Kimi 保留且优先：** 2.5D 棋盘结构/地块立体纹理、四枚棋子源模型与导出、房屋/旅馆模型及透视适配、材质和复杂场景动画；并对 Astra 的平面美术资产提供整体视觉一致性审查。Kimi 不重复制作已经交付验收的 Astra UI 面板/2D VFX；若需要替代或重绘，先由 Owner 裁决。
+
+两 Agent 不直接改 GitHub 产品源码；素材由 Owner 转交 ChatGPT 审核许可证、SHA、别名、性能和 SpriteKit 可用性后入 `dev/veilopoly:VEILOPOLY_DEV/**`。没有上传的 Astra/Kimi 素材不得标为已入库。P5、main、发布、协议及数据库仍不授权。

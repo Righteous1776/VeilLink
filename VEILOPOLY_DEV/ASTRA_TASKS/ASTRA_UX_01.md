@@ -1,3 +1,15 @@
+**已废止：此文件原为 Astra 的“只读源码审计”任务。Owner 已改为 Astra 分担 Kimi 的美术制作。**
+
+请不要执行本文件原来的审计要求，也不要按它生成 SwiftUI 源码。
+
+当前有效 Astra 分工：
+- 优先执行 `VEILOPOLY_DEV/ASTRA_TASKS/ASTRA_ART_B01.md`（批量制作高品质横屏 2D UI 美术与可拆分资源）。
+- 额度许可再执行 `VEILOPOLY_DEV/ASTRA_TASKS/ASTRA_ART_B02.md`（批量制作 2D VFX 序列帧/贴图/时间轴）。
+
+Kimi 保留 2.5D 棋盘/棋子/建筑建模；ChatGPT 保留 Swift 引擎、交互代码与入库集成。
+
+---
+
 # ASTRA-UX-01 · 横屏 UE 只读审计
 
 优先级：P0。仓库 `Righteous1776/VeilLink`，分支 `dev/veilopoly`，工程 `VEILOPOLY_DEV/Veilopoly/`。
