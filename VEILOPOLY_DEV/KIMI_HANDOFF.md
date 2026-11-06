@@ -119,3 +119,9 @@ Owner 最新授权：Astra 不再做源码审计或 SwiftUI 编码，而是为 K
 **Kimi 保留且优先：** 2.5D 棋盘结构/地块立体纹理、四枚棋子源模型与导出、房屋/旅馆模型及透视适配、材质和复杂场景动画；并对 Astra 的平面美术资产提供整体视觉一致性审查。Kimi 不重复制作已经交付验收的 Astra UI 面板/2D VFX；若需要替代或重绘，先由 Owner 裁决。
 
 两 Agent 不直接改 GitHub 产品源码；素材由 Owner 转交 ChatGPT 审核许可证、SHA、别名、性能和 SpriteKit 可用性后入 `dev/veilopoly:VEILOPOLY_DEV/**`。没有上传的 Astra/Kimi 素材不得标为已入库。P5、main、发布、协议及数据库仍不授权。
+
+## Astra B01 v1.1 · runtime 13-asset integration (2026-11-07)
+
+The Owner-authorized Astra B01 visuals now have a first SwiftUI runtime bridge in `dev/veilopoly`: 13 selected assets (action buttons, panel/card skins, event feedback, BUY/BANK/SETTLEMENT tickets and two staged AUCTION/TRADE skins). The original 91-alias set remains preserved under `INCOMING_ASSETS/ASTRA_B01_v1_1`, no Kimi art was replaced. **Kimi should not reproduce these B01 2D panels, tickets, or buttons.** Continue K2 2.5D board/tiles/pawns/buildings and independently deliver renderable assets/complex scene animation, then check color/material coherence with Astra. B02 2D VFX remains a separate pending Astra task.
+
+Actual Apple iOS UI compile, SpriteKit composition and touchscreen acceptance are pending. See `Veilopoly/docs/ASTRA_B01_RUNTIME_INTEGRATION_20261107.md`.

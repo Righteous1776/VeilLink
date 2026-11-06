@@ -112,3 +112,12 @@
 - Portable UI tests **8/8 PASS** in local Swift 6.2.1/Linux (`CardRevealGateTests` 5, `VeilopolyEventFeedbackTests` 3). Extended general test run was stopped before completion due to long deterministic tests and does NOT establish a new full-suite PASS.
 - Visual and interaction handoff: `Veilopoly/docs/P4_INTERACTION_AND_VFX_V2_20261106.md`. iOS 16 Xcode/SpriteKit/SwiftUI type-check and physical graphics/touch acceptance **NOT VERIFIED**.
 - Live branch remains isolated from VeilLink product main, transport, SQLite V8, workflows, IPA; P5 requires separate permission.
+
+## Astra B01 v1.1 — first runtime UI wiring (2026-11-07)
+
+- Source asset intake `b2e200c1b7ea68f42a534ea475ac60972de0367d` holds **91 Astra aliases** (90 runtime/1 reference), 15 iPhone/iPad landscape previews, SVG/PNG editing sources and manifest; no Swift runtime integration in intake commit.
+- `32249410a6613ee25efd856693bbe996c9519305`: 13 selected B01 PNGs copied into `VeilopolyUI/Resources/` by identical Git blob SHA; 268 KiB compressed sum according to Astra manifest and ~8.94 MiB fully decoded RGBA estimate (not actual GPU measurement). Full 91 alias kit remains in `INCOMING_ASSETS`, not Swift Package resources.
+- `107896e32b402141b8e40eefd0a74a2903b7db00`: `AstraB01AssetNames.swift`, `AstraB01Skin.swift`, `AstraB01AssetRegistryTests.swift`, `UI.swift` skin wiring. LIVE: button normal/pressed/disabled, action/glass panels, feedback/error backgrounds, readable long card modal, data-bound BUY/BANK/SETTLEMENT hero tickets. Auction/trade hero PNGs are staged only, as their painted +/- and amount fields cannot be presented as dead controls.
+- Strict fallback: existing engine state, SwiftUI Button callbacks, numeric fields, Player cash, rent, winner and bank balances remain authoritative. No static preview art is rendered as a game view. No Kimi 2.5D/character/building assets or P5 host app were modified.
+- Static repo audit: 13/13 runtime image aliases have package resources and byte-identical Git blob SHA to the checked-in Astra source; existing manifest nine-slice insets are within logical bounds. The PNG selection is deliberately limited for compact iPhone memory.
+- `Veilopoly/docs/ASTRA_B01_RUNTIME_INTEGRATION_20261107.md` documents integration and acceptance risks. **Xcode iOS compile, artwork brightness, safe areas, keyboard, Dynamic Type, VoiceOver, touch hit-testing and GPU timing NOT VERIFIED.** No hosted CI/IPA run was started.
