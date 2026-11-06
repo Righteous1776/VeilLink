@@ -16,6 +16,10 @@ final class GameBoardScene: SKScene {
  var onBoardTap: ((Int?) -> Void)?
  var reduceMotion = false
  private var pieces: [Int: SKSpriteNode] = [:]
+ private var tokenShadows: [Int: SKSpriteNode] = [:]
+ private var tokenShadowFrames: [SKTexture] = []
+ private var victoryBadge: SKSpriteNode?
+ private var dayFelt = false
  private var improvements: [Int: SKLabelNode] = [:]
  private var mortgageMarks: [Int: SKShapeNode] = [:]
  private let focus = SKCameraNode()
@@ -85,6 +89,18 @@ final class GameBoardScene: SKScene {
   guard let offset = VeilopolyTokenFormation.offset(player: player) else { return center }
   return CGPoint(x: center.x + CGFloat(offset.x), y: center.y + CGFloat(offset.y))
  }
+ private func shadowPoint(_ tile: Int, player: Int) -> CGPoint {
+  let landing = tokenPoint(tile, player: player)
+  return CGPoint(x: landing.x, y: landing.y - 18)
+ }
+ /// Kimi board theme is a purely visual preference, never a reducer command.
+ func setDayFelt(_ enabled: Bool) {
+  dayFelt = enabled
+  kimiSkin?.setLight(enabled)
+  backgroundColor = enabled ? SKColor(red: 0.96, green: 0.94, blue: 0.90, alpha: 1)
+                            : SKColor(red: 0.065, green: 0.09, blue: 0.13, alpha: 1)
+ }
+ var isDayFelt: Bool { dayFelt }
  private func buildBoard() {
   // Promote only when the COMPLETE dark K2 asset set is present in Bundle.module.
   // The older procedural board remains available on a resource lookup failure.
@@ -205,8 +221,28 @@ final class GameBoardScene: SKScene {
   vignette.fillColor = .clear
   vignette.strokeColor = SKColor(white: 0.0, alpha: 0.15)
   vignette.lineWidth = 32; vignette.zPosition = 90; addChild(vignette)
+  // Four original Kimi shadow frames. A resting pawn uses frame 0;
+  // movement loops the atlas temporarily without keeping idle GPU actions.
+  if kimiSkin != nil, let atlas = image("kimiFxPawnShadowAtlas") {
+   tokenShadowFrames = (0..<4).map { frame in
+    let texture = SKTexture(rect: CGRect(x: CGFloat(frame) / 4,
+                                         y: 0, width: 0.25, height: 1), in: atlas)
+    texture.filteringMode = .linear
+    return texture
+   }
+  }
   let icons = ["pawnBlue","carRed","shipGreen","planeYellow"]
   for i in 0..<4 {
+   if let resting = tokenShadowFrames.first {
+    let shadow = SKSpriteNode(texture: resting)
+    shadow.size = CGSize(width: 52, height: 25)
+    shadow.position = shadowPoint(0, player: i)
+    shadow.zPosition = 28 + CGFloat(i)
+    shadow.alpha = 0.68
+    shadow.name = "KimiK2/token-shadow-\(i)"
+    addChild(shadow)
+    tokenShadows[i] = shadow
+   }
    // Kimi K2 normalized token skins are optional; keep the verified Kenney fallback.
    let preferred = KimiVisualAssetNames.tokenCandidate(for: i).flatMap { image($0) }
    let token = SKSpriteNode(texture: preferred ?? image(icons[i]))
@@ -264,14 +300,51 @@ final class GameBoardScene: SKScene {
   if snapTokens {
    for p in state.players where !p.bankrupt {
     pieces[p.id]?.position = tokenPoint(p.position, player: p.id)
+    tokenShadows[p.id]?.position = shadowPoint(p.position, player: p.id)
    }
   }
   for p in state.players {
    pieces[p.id]?.isHidden = p.bankrupt
+   tokenShadows[p.id]?.isHidden = p.bankrupt
    // Position is assigned once from the tile + stable player offset.
    // Do not accumulate x-offsets on repeated snapshots or move animations.
    pieces[p.id]?.zPosition = 30 + CGFloat(p.id)
   }
+  updateVictoryBadge(state)
+ }
+
+ private func updateVictoryBadge(_ state: GameState) {
+  guard let winnerID = state.winner, state.players.indices.contains(winnerID),
+        kimiSkin != nil, let texture = image("kimiFxVictoryBadge") else {
+   victoryBadge?.removeFromParent()
+   victoryBadge = nil
+   return
+  }
+  // The real winner comes from Engine. The badge is decoration only;
+  // Astra's settlement panel remains the accessible source of result data.
+  if victoryBadge == nil {
+   let badge = SKSpriteNode(texture: texture)
+   badge.size = CGSize(width: 116, height: 116)
+   badge.position = CGPoint(x: 512, y: 628)
+   badge.zPosition = 65
+   badge.name = "KimiK2/victoryBadge"
+   let title = SKLabelNode(text: "")
+   title.name = "winnerName"
+   title.fontName = "AvenirNext-DemiBold"
+   title.fontSize = 20
+   title.fontColor = SKColor(red: 0.95, green: 0.85, blue: 0.66, alpha: 1)
+   title.position = CGPoint(x: 0, y: -78)
+   title.zPosition = 1
+   badge.addChild(title)
+   addChild(badge)
+   victoryBadge = badge
+   if !reduceMotion {
+    badge.setScale(0.84)
+    badge.run(.scale(to: 1, duration: 0.28), withKey: "winner-pop")
+   }
+  }
+  (victoryBadge?.childNode(withName: "winnerName") as? SKLabelNode)?.text =
+    state.players[winnerID].name
  }
 
  /// Tap-to-inspect: game input remains in the SwiftUI coordinator.
@@ -315,7 +388,11 @@ final class GameBoardScene: SKScene {
      node.zRotation = 0
     }
    case .tokenMove(let player, let path):
-    if let last = path.last { pieces[player]?.position = tokenPoint(last, player: player) }
+    if let last = path.last {
+     pieces[player]?.position = tokenPoint(last, player: player)
+     tokenShadows[player]?.position = shadowPoint(last, player: player)
+     tokenShadows[player]?.texture = tokenShadowFrames.first
+    }
    case .cardShow: sound("card")
    case .banner: sound("turn")
    case .cashFloat: sound("cash")
@@ -360,6 +437,17 @@ final class GameBoardScene: SKScene {
    run(SKAction.sequence([action, SKAction.run(ack)]), withKey: "command")
   case .tokenMove(let id, let path):
    guard let token = pieces[id] else { ack(); return }
+   let shadow = tokenShadows[id]
+   if let shadow {
+    let shadowMoves = path.map { tile in
+     SKAction.move(to: shadowPoint(tile, player: id), duration: 0.15)
+    }
+    shadow.run(.sequence(shadowMoves), withKey: "command")
+    if tokenShadowFrames.count == 4 {
+     shadow.run(.repeatForever(.animate(with: tokenShadowFrames, timePerFrame: 0.10)),
+                withKey: "moving-shadow")
+    }
+   }
    let moves = path.map { tile -> SKAction in
     let time: TimeInterval = 0.15
     let position = tokenPoint(tile, player: id)
@@ -368,7 +456,14 @@ final class GameBoardScene: SKScene {
                                               SKAction.moveBy(x: 0,y: -14,duration: time/2)])])
    }
    finishImmediately = { [weak self] in
-    if let last = path.last { token.position = self?.tokenPoint(last, player: id) ?? token.position }
+    guard let self else { return }
+    if let last = path.last {
+     token.position = self.tokenPoint(last, player: id)
+     shadow?.position = self.shadowPoint(last, player: id)
+    }
+    shadow?.removeAction(forKey: "command")
+    shadow?.removeAction(forKey: "moving-shadow")
+    shadow?.texture = self.tokenShadowFrames.first
    }
    sound("step")
    // Repeat the audible step cue for each intermediate board square.
@@ -376,6 +471,12 @@ final class GameBoardScene: SKScene {
    focus.run(SKAction.scale(to: 0.83, duration: 0.2), withKey: "focus")
    activeCommandNode = token
    token.run(SKAction.sequence(withCues + [SKAction.run { [weak self] in
+    shadow?.removeAction(forKey: "command")
+    shadow?.removeAction(forKey: "moving-shadow")
+    shadow?.texture = self?.tokenShadowFrames.first
+    if let last = path.last, let self {
+     shadow?.position = self.shadowPoint(last, player: id)
+    }
     self?.focus.run(SKAction.scale(to: 1, duration: 0.3))
     ack()
    }]), withKey: "command")
@@ -517,6 +618,10 @@ final class GameBoardScene: SKScene {
   removeAction(forKey: "command")
   activeCommandNode?.removeAction(forKey: "command")
   pieces.values.forEach { $0.removeAction(forKey: "command") }
+  tokenShadows.values.forEach {
+   $0.removeAction(forKey: "command")
+   $0.removeAction(forKey: "moving-shadow")
+  }
   dice.forEach { $0.removeAllActions() }
   tiles.values.forEach { $0.removeAction(forKey: "command") }
   finishImmediately?(); finishImmediately = nil
