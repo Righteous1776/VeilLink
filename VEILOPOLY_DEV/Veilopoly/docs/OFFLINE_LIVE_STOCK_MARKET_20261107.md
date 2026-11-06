@@ -37,6 +37,16 @@
 
 折线图使用 SwiftUI Canvas 的轻量实现，参考常见金融图表的分层方式（网格、面积、价格线），不引入网络或第三方二进制依赖，保证离线构建和资源可审计。
 
+### 交易终端 V2
+
+- 独立 `VeilopolyStockMarketPanel` 采用深蓝灰、克制金色描边和玻璃层次，与 Astra HUD、Kimi 棋盘保持职责隔离；没有替换或复制二者素材。
+- 五标的横向行情带带有迷你走势、涨跌符号和停牌状态；主图同时绘制价格、面积、成交量、昨收参考线和最新点。
+- 买入/卖出切换、1/5/10/100 快捷股数、Stepper 和“最大”数量均为真实交互。订单区展示成交额、手续费、预计支出/到账以及引擎现价。
+- UI 订单预览与 reducer 共用 `StockTradeEstimate`，最大可买使用精确二分计算，因此不会出现界面金额与实际扣款舍入不一致。
+- 持仓区汇总市值、浮动盈亏、已实现盈亏；逐标的显示股数、成本、现价和盈亏，点击持仓可切换主行情。
+- 买卖成功使用轻触反馈，失败使用错误触感；涨跌同时显示正负号和数值，不只依赖红绿颜色。中国金融配色为上涨暖红、下跌薄荷绿。
+- 终端位于既有可滚动操作抽屉内，提交按钮保持至少 44pt 高；顶部 More/Exit 和底部操作入口的最新分离规则未改变。
+
 ## 验证边界
 
 新增 Engine 测试覆盖：2,000 tick 确定性与价格边界、独立 RNG、费用/平均成本/盈亏、reducer 结构化事件、失败原子性、停牌、债务自动卖股、旧账本兼容。
@@ -46,12 +56,13 @@
 ```sh
 cd VEILOPOLY_DEV/Veilopoly
 swift build --jobs 2                              # PASS
-swift test --jobs 2 --filter StockMarketTests     # 11/11 PASS
-swift test --jobs 2                               # 121/121 PASS
+swift test --jobs 2 --filter StockMarketTests     # 12/12 PASS
+swift test --jobs 2                               # 130/130 PASS
 swiftc -frontend -parse -target arm64-apple-ios17.0 \
   Sources/VeilopolyUI/UI.swift \
+  Sources/VeilopolyUI/StockMarketPanel.swift \
   Sources/VeilopolyUI/StockLineChart.swift \
   Sources/VeilopolyUI/VeilopolyEventFeedback.swift # PASS（仅语法）
 ```
 
-全量测试包括 500 个受步数上限保护的 AI 种子和 20 个探索长局；不等于 500 局自然完赛。Linux 会条件排除 SwiftUI/SpriteKit 类型检查，因此 iOS 16 Canvas、2 秒 ticker、横屏键盘、VoiceOver、后台任务取消和实际帧率仍需 Xcode/Simulator 或真机验收。
+全量测试包括 500 个受步数上限保护的 AI 种子和 20 个探索长局；不等于 500 局自然完赛。Linux 会条件排除 SwiftUI/SpriteKit 类型检查，因此 iOS 16 Canvas、2 秒 ticker、横屏键盘、VoiceOver、触感、后台任务取消和实际帧率仍需 Xcode/Simulator 或真机验收。

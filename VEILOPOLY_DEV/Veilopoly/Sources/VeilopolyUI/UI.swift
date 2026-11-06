@@ -2,6 +2,7 @@
 import Foundation
 import SwiftUI
 import SpriteKit
+import UIKit
 import VeilopolyEngine
 import VeilopolyAI
 
@@ -60,7 +61,11 @@ public final class GameSessionModel: ObservableObject {
  private func applyMove(_ move: Move) {
   let result = VeilopolyEngine.apply(game, currentContext, move)
   switch result {
-  case .failure(let err): errorMessage = err.rawValue
+  case .failure(let err):
+   errorMessage = err.rawValue
+   if move.type == .stockBuy || move.type == .stockSell {
+    UINotificationFeedbackGenerator().notificationOccurred(.error)
+   }
   case .success((let newState, let effects)):
    errorMessage = nil
    if let feedback = VeilopolyEventFeedback.summary(effects) { lastFeedback = feedback }
@@ -68,6 +73,9 @@ public final class GameSessionModel: ObservableObject {
    game = newState
    scene.display(newState, snapTokens: !effects.contains(where: { $0.kind == .playerMoved }))
    queue.append(contentsOf: commands)
+   if effects.contains(where: { $0.kind == .stockBought || $0.kind == .stockSold }) {
+    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+   }
    if !animating { presentNext() }
   }
  }
@@ -860,131 +868,16 @@ public struct VeilopolyGameView: View {
  private var stockMarketPanel: some View {
   let ledger = IntegratedBanking.ledger(model.game)
   let market = ledger.market ?? StockMarketEngine.initial(seed: model.game.seed)
-  let selected = StockMarketEngine.quote(market, symbol: stockSymbol) ?? market.quotes[0]
-  let portfolio = market.portfolios.indices.contains(model.actor)
-   ? market.portfolios[model.actor] : StockPortfolio()
-  let owned = portfolio.position(symbol: selected.symbol)?.shares ?? 0
-  let shares = max(0, Int(stockShares) ?? 0)
-  let marketValue = StockMarketEngine.portfolioMarketValueCents(market, player: model.actor)
-  let unrealized = StockMarketEngine.unrealizedPnLCents(market, player: model.actor)
-  return VStack(alignment: .leading, spacing: 9) {
-   Divider()
-   HStack {
-    Label("本地实时股市", systemImage: "chart.xyaxis.line")
-     .font(.subheadline.weight(.semibold))
-    Spacer()
-    Text("T+\(market.tick) · \(stockRegimeName(market.regime))")
-     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-   }
-   Picker("股票", selection: $stockSymbol) {
-    ForEach(market.quotes) { quote in
-     Text("\(quote.symbol) · \(quote.name)").tag(quote.symbol)
-    }
-   }
-   .pickerStyle(.menu)
-   .accessibilityHint("选择要查看和交易的虚构股票")
-
-   HStack(alignment: .firstTextBaseline) {
-    VStack(alignment: .leading, spacing: 2) {
-     Text("\(selected.symbol)  \(selected.name)").font(.headline)
-     Text("\(selected.sector) · 成交量 \(selected.sessionVolume)")
-      .font(.caption2).foregroundStyle(.secondary)
-    }
-    Spacer()
-    VStack(alignment: .trailing, spacing: 2) {
-     Text(stockMoney(selected.currentPriceCents))
-      .font(.system(size: 20, weight: .bold, design: .monospaced))
-     Text(stockPercent(selected.changeBasisPoints))
-      .font(.caption.weight(.semibold))
-      .foregroundStyle(selected.changeBasisPoints >= 0 ? Color.green : Color.red)
-    }
-   }
-   VeilopolyStockLineChart(quote: selected)
-    .frame(height: 132)
-   HStack(spacing: 7) {
-    stockMetric("开", selected.sessionOpenCents)
-    stockMetric("高", selected.highCents)
-    stockMetric("低", selected.lowCents)
-    Spacer(minLength: 0)
-    if selected.isHalted {
-     Label("暂停 \(selected.haltedTicks) tick", systemImage: "pause.circle.fill")
-      .font(.caption2.weight(.semibold)).foregroundStyle(.orange)
-    }
-   }
-
-   HStack(spacing: 8) {
-    TextField("股数", text: $stockShares)
-     .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-     .accessibilityLabel("交易股数")
-    Stepper("", value: Binding(
-     get: { max(1, min(10_000, Int(stockShares) ?? 1)) },
-     set: { stockShares = String($0) }), in: 1...10_000)
-     .labelsHidden().fixedSize()
-   }
-   HStack(spacing: 8) {
-    action("买入 \(shares) 股", symbol: "arrow.up.right") {
-     model.perform(.stockBuy, stockSymbol: selected.symbol, stockShares: shares)
-    }
-    .disabled(shares < 1 || selected.isHalted)
-    action("卖出 \(shares) 股", symbol: "arrow.down.right", secondary: true) {
-     model.perform(.stockSell, stockSymbol: selected.symbol, stockShares: shares)
-    }
-    .disabled(shares < 1 || shares > owned || selected.isHalted)
-   }
-
-   HStack {
-    Text("持仓市值 \(stockMoney(marketValue))")
-    Spacer()
-    Text("浮动 \(signedStockMoney(unrealized))")
-     .foregroundStyle(unrealized >= 0 ? Color.green : Color.red)
-   }
-   .font(.caption.weight(.semibold))
-   ForEach(portfolio.positions) { position in
-    let quote = StockMarketEngine.quote(market, symbol: position.symbol)
-    let pnl = position.shares * ((quote?.currentPriceCents ?? position.averageCostCents) - position.averageCostCents)
-    HStack {
-     Text(position.symbol).font(.caption.weight(.bold))
-     Text("\(position.shares) 股 · 成本 \(stockMoney(position.averageCostCents))")
-      .font(.caption2).foregroundStyle(.secondary)
-     Spacer()
-     Text(signedStockMoney(pnl)).font(.caption.monospacedDigit())
-      .foregroundStyle(pnl >= 0 ? Color.green : Color.red)
-    }
-   }
-   Text("手续费 0.50%（最低 ¥1）· 单日模拟涨跌幅 ±10% · 整股交易")
-    .font(.caption2).foregroundStyle(.secondary)
-  }
-  .padding(10)
-  .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 12))
- }
-
- private func stockMetric(_ label: String, _ cents: Int) -> some View {
-  VStack(alignment: .leading, spacing: 1) {
-   Text(label).font(.system(size: 9)).foregroundStyle(.secondary)
-   Text(stockMoney(cents)).font(.caption2.monospacedDigit())
-  }
- }
- private func stockMoney(_ cents: Int) -> String {
-  let value = max(0, cents)
-  let fraction = value % 100
-  return "¥\(value / 100).\(fraction < 10 ? "0" : "")\(fraction)"
- }
- private func signedStockMoney(_ cents: Int) -> String {
-  cents < 0 ? "−\(stockMoney(-cents))" : "+\(stockMoney(cents))"
- }
- private func stockPercent(_ basisPoints: Int) -> String {
-  let sign = basisPoints >= 0 ? "+" : "−"
-  let value = abs(basisPoints)
-  return "\(sign)\(value / 100).\(value % 100 < 10 ? "0" : "")\(value % 100)%"
- }
- private func stockRegimeName(_ regime: Int) -> String {
-  switch regime {
-  case -2: return "深度回调"
-  case -1: return "偏弱"
-  case 1: return "偏强"
-  case 2: return "强势"
-  default: return "震荡"
-  }
+  return VeilopolyStockMarketPanel(
+   market: market, player: model.actor,
+   cash: model.game.players[model.actor].cash,
+   selectedSymbol: $stockSymbol, shareText: $stockShares,
+   onBuy: { symbol, shares in
+    model.perform(.stockBuy, stockSymbol: symbol, stockShares: shares)
+   },
+   onSell: { symbol, shares in
+    model.perform(.stockSell, stockSymbol: symbol, stockShares: shares)
+   })
  }
  private var tradeResponsePanel: some View {
   VStack(spacing: 12) {

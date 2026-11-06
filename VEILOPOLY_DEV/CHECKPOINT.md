@@ -142,3 +142,11 @@
 - Three pre-existing branch test/build blockers were minimally repaired while validating: public member initializers for finance records, explicit Astra auction hit-zone names in its test, and removal of an AI reference to a nonexistent `freeHouseCredits` field. No gameplay replacement behavior was invented for that missing field.
 - Exact design, bounds and verification commands: `Veilopoly/docs/OFFLINE_LIVE_STOCK_MARKET_20261107.md`. Xcode/iOS SDK type-check, simulator/device interaction, VoiceOver, keyboard, background behavior, frame time, host P5, main merge, workflow and IPA remain **UNVERIFIED / NOT PERFORMED**.
 
+## Offline stock terminal UI/UE V2 — local verification (2026-11-06)
+
+- Continuation task `VEILOPOLY-STOCK-MARKET-UI-002`, baseline `29db11b5b3679a879f589cf8eaa8dcfc3c210f3d`. Added a standalone SwiftUI trading terminal under the authorized `dev/veilopoly:VEILOPOLY_DEV/**` lane; latest Kimi K2 board, Astra interactive cards, lower-right operation entry and upper-right More/Exit separation remain unchanged.
+- New terminal UX: five-symbol ticker strip and sparklines; price/volume Canvas chart with last-close reference; OHLC/volume/regime/halt hierarchy; buy/sell segmented ticket; exact estimated gross/fee/cash delta; 1/5/10/100/max shortcuts; explicit invalid-order reason; collapsible portfolio value, realized/unrealized P&L and per-symbol rows. Successful and rejected manual stock orders have separate iOS haptic feedback.
+- Engine now exposes `StockTradeEstimate`, `estimateBuy`, `estimateSell` and exact `maximumBuyableShares`; reducer buy/sell uses the same estimate path as UI, preventing rounding drift. One new regression locks fee-aware maximum sizing and position capacity.
+- Local Swift 6.2.1/Linux: `swift build --jobs 2` PASS; `StockMarketTests` **12/12 PASS**; full package **130/130 PASS**, including the newly merged Kimi resource/geometry tests, capped 500-seed AI smoke and 20 exploratory long games. ARM64 iOS frontend parse of UI, terminal, chart and feedback source PASS for grammar only.
+- No new image/font/binary/third-party dependency was added. Xcode/iOS SDK type-check, actual 844×390 / 852×393 / iPad visual density, number-pad dismissal, VoiceOver order, haptic feel, Reduce Motion, GPU/frame time and physical touch remain **UNVERIFIED**.
+

@@ -52,6 +52,10 @@ final class StockMarketTests: XCTestCase {
  func testBuySellAverageCostFeesAndRealizedPnL() throws {
   var market = StockMarketEngine.initial(seed: 77)
   var cash = 1_500
+  let buyPreview = try StockMarketEngine.estimateBuy(market, player: 0, symbol: "VTL", shares: 10)
+  XCTAssertEqual(buyPreview, StockTradeEstimate(symbol: "VTL", shares: 10,
+                                                priceCents: 1_850, grossCash: 185,
+                                                fee: 1, cashDelta: -186))
   let buy = try StockMarketEngine.buy(&market, player: 0, symbol: "VTL", shares: 10, cash: &cash)
   XCTAssertEqual(buy.priceCents, 1_850)
   XCTAssertEqual(buy.fee, 1)
@@ -64,6 +68,21 @@ final class StockMarketTests: XCTestCase {
   XCTAssertEqual(cash, 1_387)
   XCTAssertEqual(market.portfolios[0].position(symbol: "VTL")?.shares, 6)
   XCTAssertEqual(market.portfolios[0].feesPaid, 2)
+ }
+
+ func testMaximumBuyableSharesUsesExactFeesAndPositionCapacity() throws {
+  var market = StockMarketEngine.initial(seed: 80)
+  XCTAssertEqual(StockMarketEngine.maximumBuyableShares(
+   market, player: 0, symbol: "VTL", cash: 186), 10)
+  XCTAssertEqual(StockMarketEngine.maximumBuyableShares(
+   market, player: 0, symbol: "VTL", cash: 185), 9)
+  XCTAssertEqual(StockMarketEngine.maximumBuyableShares(
+   market, player: 0, symbol: "REAL", cash: 10_000), 0)
+  var cash = 1_000_000
+  _ = try StockMarketEngine.buy(&market, player: 0, symbol: "VTL", shares: 10_000, cash: &cash)
+  market.portfolios[0].positions[0].shares = 99_995
+  XCTAssertEqual(StockMarketEngine.maximumBuyableShares(
+   market, player: 0, symbol: "VTL", cash: cash), 5)
  }
 
  func testHighPriceSingleShareIncludesPercentageFeeInValidCostBasis() throws {

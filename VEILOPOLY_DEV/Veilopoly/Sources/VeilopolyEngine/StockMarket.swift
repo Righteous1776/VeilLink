@@ -91,6 +91,22 @@ public struct StockTradeReceipt: Equatable {
  public var realizedPnLCents: Int
 }
 
+/// Exact pre-trade cash calculation shared by the reducer and order-ticket UI.
+/// Game cash is an integer credit; share prices and P&L retain cent precision.
+public struct StockTradeEstimate: Equatable {
+ public var symbol: String
+ public var shares: Int
+ public var priceCents: Int
+ public var grossCash: Int
+ public var fee: Int
+ public var cashDelta: Int
+ public init(symbol: String, shares: Int, priceCents: Int, grossCash: Int,
+             fee: Int, cashDelta: Int) {
+  self.symbol = symbol; self.shares = shares; self.priceCents = priceCents
+  self.grossCash = grossCash; self.fee = fee; self.cashDelta = cashDelta
+ }
+}
+
 /// Offline market micro-simulator. It borrows familiar market primitives—regime,
 /// common factor, idiosyncratic volatility, mean reversion and a 10% session limit—
 /// but contains no network call, wall clock, real company, recommendation or wager.
@@ -164,6 +180,60 @@ public enum StockMarketEngine {
   }
  }
 
+ public static func estimateBuy(_ market: StockMarketState, player: Int,
+                                symbol: String, shares: Int) throws -> StockTradeEstimate {
+  guard validate(market), market.portfolios.indices.contains(player),
+        (1...10_000).contains(shares) else { throw GameError.invalidPayload }
+  guard let quote = quote(market, symbol: symbol) else { throw GameError.stockNotFound }
+  guard !quote.isHalted else { throw GameError.stockTradingHalted }
+  let owned = market.portfolios[player].position(symbol: symbol)?.shares ?? 0
+  guard owned <= 100_000 - shares else { throw GameError.invalidPayload }
+  let grossCents = quote.currentPriceCents * shares
+  let grossCash = (grossCents + 99) / 100
+  let fee = max(1, grossCash * feeBasisPoints / 10_000)
+  guard grossCash <= 1_000_000_000 - fee else { throw GameError.invalidPayload }
+  return StockTradeEstimate(symbol: symbol, shares: shares,
+                            priceCents: quote.currentPriceCents,
+                            grossCash: grossCash, fee: fee,
+                            cashDelta: -(grossCash + fee))
+ }
+
+ public static func estimateSell(_ market: StockMarketState, player: Int,
+                                 symbol: String, shares: Int) throws -> StockTradeEstimate {
+  guard validate(market), market.portfolios.indices.contains(player),
+        (1...10_000).contains(shares) else { throw GameError.invalidPayload }
+  guard let quote = quote(market, symbol: symbol) else { throw GameError.stockNotFound }
+  guard !quote.isHalted else { throw GameError.stockTradingHalted }
+  let owned = market.portfolios[player].position(symbol: symbol)?.shares ?? 0
+  guard owned >= shares else { throw GameError.insufficientShares }
+  let grossCash = quote.currentPriceCents * shares / 100
+  let fee = max(1, grossCash * feeBasisPoints / 10_000)
+  guard grossCash > fee else { throw GameError.invalidPayload }
+  return StockTradeEstimate(symbol: symbol, shares: shares,
+                            priceCents: quote.currentPriceCents,
+                            grossCash: grossCash, fee: fee,
+                            cashDelta: grossCash - fee)
+ }
+
+ /// Largest legal one-order purchase at the current quote. A binary search
+ /// keeps the answer exact even around integer-credit rounding and min fees.
+ public static func maximumBuyableShares(_ market: StockMarketState, player: Int,
+                                         symbol: String, cash: Int) -> Int {
+  guard cash > 0, market.portfolios.indices.contains(player),
+        let quote = quote(market, symbol: symbol), !quote.isHalted else { return 0 }
+  let owned = market.portfolios[player].position(symbol: symbol)?.shares ?? 0
+  var low = 0
+  var high = max(0, min(10_000, 100_000 - owned))
+  while low < high {
+   let middle = (low + high + 1) / 2
+   guard let estimate = try? estimateBuy(market, player: player, symbol: symbol, shares: middle) else {
+    high = middle - 1; continue
+   }
+   if -estimate.cashDelta <= cash { low = middle } else { high = middle - 1 }
+  }
+  return low
+ }
+
  public static func advance(_ market: inout StockMarketState) throws -> [String] {
   guard validate(market), market.tick < 1_000_000 else { throw GameError.invalidState }
   market.tick += 1
@@ -216,69 +286,56 @@ public enum StockMarketEngine {
 
  public static func buy(_ market: inout StockMarketState, player: Int, symbol: String,
                         shares: Int, cash: inout Int) throws -> StockTradeReceipt {
-  guard validate(market), market.portfolios.indices.contains(player), (1...10_000).contains(shares) else {
-   throw GameError.invalidPayload
-  }
+  let estimate = try estimateBuy(market, player: player, symbol: symbol, shares: shares)
   var nextMarket = market
   var nextCash = cash
-  guard let quote = quote(nextMarket, symbol: symbol) else { throw GameError.stockNotFound }
-  guard !quote.isHalted else { throw GameError.stockTradingHalted }
-  let grossCents = quote.currentPriceCents * shares
-  let grossCash = (grossCents + 99) / 100
-  let fee = max(1, grossCash * feeBasisPoints / 10_000)
-  guard grossCash <= 1_000_000_000 - fee else { throw GameError.invalidPayload }
-  let totalCash = grossCash + fee
+  let grossCents = estimate.priceCents * shares
+  let totalCash = -estimate.cashDelta
   guard nextCash >= totalCash else { throw GameError.noCash }
   var portfolio = nextMarket.portfolios[player]
   if let index = portfolio.positions.firstIndex(where: { $0.symbol == symbol }) {
    let old = portfolio.positions[index]
-   guard old.shares <= 100_000 - shares else { throw GameError.invalidPayload }
-   let combinedCost = old.averageCostCents * old.shares + grossCents + fee * 100
+   let combinedCost = old.averageCostCents * old.shares + grossCents + estimate.fee * 100
    portfolio.positions[index].shares += shares
    portfolio.positions[index].averageCostCents = combinedCost / portfolio.positions[index].shares
   } else {
    portfolio.positions.append(StockPosition(symbol: symbol, shares: shares,
-                                             averageCostCents: (grossCents + fee * 100) / shares))
+                                             averageCostCents: (grossCents + estimate.fee * 100) / shares))
   }
   portfolio.positions.sort { $0.symbol < $1.symbol }
-  portfolio.feesPaid += fee
+  portfolio.feesPaid += estimate.fee
   nextCash -= totalCash
   nextMarket.portfolios[player] = portfolio
   guard validate(nextMarket) else { throw GameError.invalidState }
   market = nextMarket
   cash = nextCash
-  return StockTradeReceipt(symbol: symbol, shares: shares, priceCents: quote.currentPriceCents,
-                           cashDelta: -totalCash, fee: fee, realizedPnLCents: 0)
+  return StockTradeReceipt(symbol: symbol, shares: shares, priceCents: estimate.priceCents,
+                           cashDelta: estimate.cashDelta, fee: estimate.fee, realizedPnLCents: 0)
  }
 
  public static func sell(_ market: inout StockMarketState, player: Int, symbol: String,
                          shares: Int, cash: inout Int) throws -> StockTradeReceipt {
-  guard validate(market), market.portfolios.indices.contains(player), (1...10_000).contains(shares) else {
-   throw GameError.invalidPayload
-  }
+  let estimate = try estimateSell(market, player: player, symbol: symbol, shares: shares)
   var nextMarket = market
   var nextCash = cash
-  guard let quote = quote(nextMarket, symbol: symbol) else { throw GameError.stockNotFound }
-  guard !quote.isHalted else { throw GameError.stockTradingHalted }
   var portfolio = nextMarket.portfolios[player]
-  guard let index = portfolio.positions.firstIndex(where: { $0.symbol == symbol }),
-        portfolio.positions[index].shares >= shares else { throw GameError.insufficientShares }
+  guard let index = portfolio.positions.firstIndex(where: { $0.symbol == symbol }) else {
+   throw GameError.insufficientShares
+  }
   let position = portfolio.positions[index]
-  let grossCash = quote.currentPriceCents * shares / 100
-  let fee = max(1, grossCash * feeBasisPoints / 10_000)
-  guard grossCash > fee, nextCash <= 1_000_000_000 - (grossCash - fee) else { throw GameError.invalidState }
-  let netCash = grossCash - fee
+  let netCash = estimate.cashDelta
+  guard nextCash <= 1_000_000_000 - netCash else { throw GameError.invalidState }
   let realized = netCash * 100 - position.averageCostCents * shares
   nextCash += netCash
-  portfolio.realizedPnLCents += realized; portfolio.feesPaid += fee
+  portfolio.realizedPnLCents += realized; portfolio.feesPaid += estimate.fee
   portfolio.positions[index].shares -= shares
   if portfolio.positions[index].shares == 0 { portfolio.positions.remove(at: index) }
   nextMarket.portfolios[player] = portfolio
   guard validate(nextMarket) else { throw GameError.invalidState }
   market = nextMarket
   cash = nextCash
-  return StockTradeReceipt(symbol: symbol, shares: shares, priceCents: quote.currentPriceCents,
-                           cashDelta: netCash, fee: fee, realizedPnLCents: realized)
+  return StockTradeReceipt(symbol: symbol, shares: shares, priceCents: estimate.priceCents,
+                           cashDelta: netCash, fee: estimate.fee, realizedPnLCents: realized)
  }
 
  private static func random(in range: ClosedRange<Int>, market: inout StockMarketState) -> Int {
