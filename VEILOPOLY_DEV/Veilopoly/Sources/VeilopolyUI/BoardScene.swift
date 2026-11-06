@@ -190,7 +190,9 @@ final class GameBoardScene: SKScene {
   guard let touch = touches.first else { return }
   let local = touch.location(in: self)
   // contains(_:) expects coordinates local to each tile node, not the scene.
-  let hit = tiles.first(where: { _, node in node.contains(node.convert(local, from: self)) })?.key
+  let hit = tiles.first(where: { element in
+   element.value.contains(element.value.convert(local, from: self))
+  })?.key
   onBoardTap?(hit)
  }
 
