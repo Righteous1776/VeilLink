@@ -15,6 +15,7 @@ final class GameBoardScene: SKScene {
  private var dice: [SKSpriteNode] = []
  private var sounds: [String: AVAudioPlayer] = [:]
  private var currentCompletion: (() -> Void)?
+ private var acknowledgements = RenderCommandAckGate()
  private weak var activeCommandNode: SKNode?
  private var finishImmediately: (() -> Void)?
  private var audioMap: [String: String] = [
@@ -147,11 +148,16 @@ final class GameBoardScene: SKScene {
 
  func play(_ command: ViewCommand, finished: @escaping () -> Void) {
   removeAction(forKey: "command")
+  let commandID = acknowledgements.begin()
   currentCompletion = finished
   activeCommandNode = nil
+  // Never let a delayed SpriteKit completion acknowledge a newer command.
   let ack = { [weak self] in
-   guard let self, let completion = self.currentCompletion else { return }
-   self.currentCompletion = nil; self.finishImmediately = nil; self.activeCommandNode = nil; completion()
+   guard let self, self.acknowledgements.acknowledge(commandID),
+         let completion = self.currentCompletion else { return }
+   self.currentCompletion = nil; self.finishImmediately = nil
+   self.activeCommandNode = nil
+   completion()
   }
   switch command {
   case .diceRoll(let anim):
@@ -246,7 +252,9 @@ final class GameBoardScene: SKScene {
   }
  }
  func fastForward() {
-  guard let completion = currentCompletion else { return }
+  guard let commandID = acknowledgements.pending,
+        acknowledgements.acknowledge(commandID),
+        let completion = currentCompletion else { return }
   removeAction(forKey: "command")
   activeCommandNode?.removeAction(forKey: "command")
   pieces.values.forEach { $0.removeAction(forKey: "command") }
