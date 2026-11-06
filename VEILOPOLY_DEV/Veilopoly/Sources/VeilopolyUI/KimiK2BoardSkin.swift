@@ -2,22 +2,34 @@
 import SpriteKit
 import VeilopolyEngine
 
-/// Kimi K2 original-pixel 2.5D board visuals. All game rules remain in Engine.
-/// An all-or-nothing resource preflight prevents half-skinned scenes.
+/// Kimi K2 original-pixel 2.5D board. Render-only; Engine owns all game rules.
+/// The entire atlas is preflighted before any new SKNode enters the live scene.
+/// Optional ownership/building overlays are allocated only when in use.
 @MainActor
 final class KimiK2BoardSkin {
  let tiles: [Int: SKSpriteNode]
- private let ownerStrips: [Int: SKSpriteNode]
- private let mortgageOverlays: [Int: SKSpriteNode]
- private let improvementShadows: [Int: SKSpriteNode]
- private let ownerTextures: [SKTexture]
+ let usesBuildingSprites: Bool
 
- private init(tiles: [Int: SKSpriteNode], owners: [Int: SKSpriteNode],
-              mortgages: [Int: SKSpriteNode], shadows: [Int: SKSpriteNode],
-              ownerTextures: [SKTexture]) {
-  self.tiles=tiles; self.ownerStrips=owners
-  self.mortgageOverlays=mortgages; self.improvementShadows=shadows
-  self.ownerTextures=ownerTextures
+ private let ownerTextures: [SKTexture]
+ private let mortgageTexture: SKTexture
+ private let buildingShadowTexture: SKTexture
+ private let houseTexture: SKTexture?
+ private let hotelTexture: SKTexture?
+ private var ownerStrips: [Int: SKSpriteNode] = [:]
+ private var mortgageOverlays: [Int: SKSpriteNode] = [:]
+ private var improvementShadows: [Int: SKSpriteNode] = [:]
+ private var buildingSprites: [Int: [SKSpriteNode]] = [:]
+ private var lastBuildingState: [Int: Int] = [:]
+
+ private init(tiles: [Int: SKSpriteNode], ownerTextures: [SKTexture],
+              mortgageTexture: SKTexture, shadowTexture: SKTexture,
+              houseTexture: SKTexture?, hotelTexture: SKTexture?) {
+  self.tiles=tiles; self.ownerTextures=ownerTextures
+  self.mortgageTexture=mortgageTexture
+  self.buildingShadowTexture=shadowTexture
+  self.houseTexture=houseTexture
+  self.hotelTexture=hotelTexture
+  usesBuildingSprites = houseTexture != nil && hotelTexture != nil
  }
 
  static func install(in scene: SKScene, load: (String) -> SKTexture?) -> KimiK2BoardSkin? {
@@ -37,24 +49,23 @@ final class KimiK2BoardSkin {
         let mortgage = textures["kimiK2TileMortgageOverlay"],
         let shadow = textures["kimiK2BuildingShadow"] else { return nil }
 
-  // Validate all UVs BEFORE adding anything to the live scene.
   let frames: [SKTexture]? = {
    var result: [SKTexture] = []
    for tile in KimiK2TileMap.tiles {
     let frame = KimiK2AtlasGeometry.Rect(tile.pixelX, tile.pixelY,
                                           tile.pixelWidth, tile.pixelHeight)
     guard let uv = KimiK2AtlasGeometry.bottomUV(frame: frame) else { return nil }
-    let spriteTexture = SKTexture(rect: CGRect(x: CGFloat(uv.x), y: CGFloat(uv.y),
-                                               width: CGFloat(uv.width), height: CGFloat(uv.height)), in: atlas)
-    spriteTexture.filteringMode = .linear
-    result.append(spriteTexture)
+    let subtexture = SKTexture(rect: CGRect(x: CGFloat(uv.x), y: CGFloat(uv.y),
+                                             width: CGFloat(uv.width), height: CGFloat(uv.height)), in: atlas)
+    subtexture.filteringMode = .linear
+    result.append(subtexture)
    }
    return result
   }()
   guard let frames, frames.count == 40 else { return nil }
 
-  // L0/L1 artwork is already baked into the projected design canvas.
-  // Never apply an additional 15-degree yScale to these full-size images.
+  // The Kimi base, edge and frame already contain the projected board shape.
+  // Do not add a second yScale or reinterpret their 1024×940 canvas.
   for (name, z) in [
    ("kimiK2BoardTableDark", CGFloat(0)),
    ("kimiK2BoardEdgeDark", CGFloat(1)),
@@ -62,12 +73,12 @@ final class KimiK2BoardSkin {
    ("kimiK2BoardFrameDark", CGFloat(3))
   ] {
    guard let texture = textures[name] else { continue }
-   let node = SKSpriteNode(texture: texture)
-   node.position = CGPoint(x: 512, y: 470)
-   node.size = CGSize(width: 1024, height: 940)
-   node.zPosition = z
-   node.name = "KimiK2/" + name
-   scene.addChild(node)
+   let background = SKSpriteNode(texture: texture)
+   background.position = CGPoint(x: 512, y: 470)
+   background.size = CGSize(width: 1024, height: 940)
+   background.zPosition = z
+   background.name = "KimiK2/" + name
+   scene.addChild(background)
   }
   if let texture = textures["kimiK2BoardCenterEmblem"] {
    let emblem = SKSpriteNode(texture: texture)
@@ -78,14 +89,11 @@ final class KimiK2BoardSkin {
    scene.addChild(emblem)
   }
 
-  let ownerTextures: [SKTexture] = (0..<4).map { i in
-   SKTexture(rect: CGRect(x: CGFloat(i) / 4.0, y: 0, width: 0.25, height: 1),
+  let ownerTextures: [SKTexture] = (0..<4).map { index in
+   SKTexture(rect: CGRect(x: CGFloat(index)/4.0, y: 0, width: 0.25, height: 1),
              in: owners)
   }
-  var sprites: [Int: SKSpriteNode] = [:]
-  var ownership: [Int: SKSpriteNode] = [:]
-  var mortgages: [Int: SKSpriteNode] = [:]
-  var shadows: [Int: SKSpriteNode] = [:]
+  var tileSprites: [Int: SKSpriteNode] = [:]
   for (index, tile) in KimiK2TileMap.tiles.enumerated() {
    let sprite = SKSpriteNode(texture: frames[index])
    sprite.position = CGPoint(x: CGFloat(tile.centerX), y: CGFloat(tile.centerY))
@@ -94,48 +102,90 @@ final class KimiK2BoardSkin {
    sprite.zPosition = 4
    sprite.name = tile.id
    scene.addChild(sprite)
-   sprites[index] = sprite
-
-   let stripe = SKSpriteNode(texture: ownerTextures[0])
-   stripe.size = CGSize(width: max(24, CGFloat(tile.displayWidth) - 10), height: 9)
-   stripe.position = CGPoint(x: 0, y: -CGFloat(tile.displayHeight)/2 + 10)
-   stripe.zPosition = 1
-   stripe.isHidden = true
-   sprite.addChild(stripe)
-   ownership[index] = stripe
-
-   let overlay = SKSpriteNode(texture: mortgage)
-   overlay.size = sprite.size
-   overlay.zPosition = 1.5
-   overlay.alpha = 0.77
-   overlay.isHidden = true
-   sprite.addChild(overlay)
-   mortgages[index] = overlay
-
-   let buildingShadow = SKSpriteNode(texture: shadow)
-   buildingShadow.position = CGPoint(x: 0, y: CGFloat(tile.displayHeight)/2 - 23)
-   buildingShadow.size = CGSize(width: 25, height: 12)
-   buildingShadow.zPosition = 1.8
-   buildingShadow.isHidden = true
-   sprite.addChild(buildingShadow)
-   shadows[index] = buildingShadow
+   tileSprites[index] = sprite
   }
-  return KimiK2BoardSkin(tiles:sprites, owners:ownership, mortgages:mortgages,
-                         shadows:shadows, ownerTextures:ownerTextures)
+  return KimiK2BoardSkin(tiles: tileSprites, ownerTextures: ownerTextures,
+                         mortgageTexture: mortgage, shadowTexture: shadow,
+                         houseTexture: load("house"), hotelTexture: load("hotel"))
  }
 
  func apply(_ state: GameState) {
   for tile in state.board {
-   if let stripe = ownerStrips[tile.i] {
-    if let owner = tile.owner, ownerTextures.indices.contains(owner) {
-     stripe.texture = ownerTextures[owner]
-     stripe.isHidden = false
-    } else {
-     stripe.isHidden = true
+   guard let art = tiles[tile.i] else { continue }
+   if let owner = tile.owner, ownerTextures.indices.contains(owner) {
+    let stripe: SKSpriteNode
+    if let existing = ownerStrips[tile.i] { stripe = existing }
+    else {
+     stripe = SKSpriteNode(texture: ownerTextures[owner])
+     stripe.size = CGSize(width: max(24, art.size.width - 10), height: 9)
+     stripe.position = CGPoint(x: 0, y: -art.size.height/2 + 10)
+     stripe.zPosition = 1
+     art.addChild(stripe)
+     ownerStrips[tile.i] = stripe
     }
+    stripe.texture = ownerTextures[owner]
+   } else {
+    ownerStrips.removeValue(forKey: tile.i)?.removeFromParent()
    }
-   mortgageOverlays[tile.i]?.isHidden = !tile.mortgaged
-   improvementShadows[tile.i]?.isHidden = tile.houses == 0 && !tile.hotel
+
+   if tile.mortgaged {
+    if mortgageOverlays[tile.i] == nil {
+     let overlay = SKSpriteNode(texture: mortgageTexture)
+     overlay.size = art.size
+     overlay.zPosition = 3.5
+     overlay.alpha = 0.77
+     art.addChild(overlay)
+     mortgageOverlays[tile.i] = overlay
+    }
+   } else {
+    mortgageOverlays.removeValue(forKey: tile.i)?.removeFromParent()
+   }
+
+   let targetCount = tile.hotel ? 5 : max(0, min(4, tile.houses))
+   if targetCount > 0 {
+    if improvementShadows[tile.i] == nil {
+     let shadow = SKSpriteNode(texture: buildingShadowTexture)
+     shadow.position = CGPoint(x: 0, y: art.size.height/2 - 23)
+     shadow.size = CGSize(width: 28, height: 13)
+     shadow.zPosition = 1.8
+     art.addChild(shadow)
+     improvementShadows[tile.i] = shadow
+    }
+   } else {
+    improvementShadows.removeValue(forKey: tile.i)?.removeFromParent()
+   }
+
+   // Rebuild only on the actual house/hotel state transition. Assets are
+   // inherited Kenney K1; no static Kimi preview content changes gameplay.
+   if usesBuildingSprites && lastBuildingState[tile.i] != targetCount {
+    lastBuildingState[tile.i] = targetCount
+    buildingSprites.removeValue(forKey: tile.i)?.forEach { $0.removeFromParent() }
+    var visuals: [SKSpriteNode] = []
+    if targetCount == 5, let hotelTexture {
+     let hotel = SKSpriteNode(texture: hotelTexture)
+     hotel.size = CGSize(width: 21, height: 21)
+     hotel.position = CGPoint(x: 0, y: art.size.height/2 - 23)
+     hotel.zPosition = 2
+     art.addChild(hotel)
+     visuals.append(hotel)
+    } else if targetCount > 0, let houseTexture {
+     let positions: [CGPoint] = [
+      CGPoint(x: -13, y: art.size.height/2 - 19),
+      CGPoint(x:  13, y: art.size.height/2 - 19),
+      CGPoint(x: -13, y: art.size.height/2 - 32),
+      CGPoint(x:  13, y: art.size.height/2 - 32)
+     ]
+     for i in 0..<min(4, targetCount) {
+      let house = SKSpriteNode(texture: houseTexture)
+      house.size = CGSize(width: 14, height: 14)
+      house.position = positions[i]
+      house.zPosition = 2
+      art.addChild(house)
+      visuals.append(house)
+     }
+    }
+    buildingSprites[tile.i] = visuals
+   }
   }
  }
 }
