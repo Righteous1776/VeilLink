@@ -111,52 +111,51 @@ public struct VeilopolyGameView: View {
  @State private var chosenOffer: Set<Int> = []
  @State private var chosenRequest: Set<Int> = []
  @State private var showRestart = false
- public init(seed: UInt64 = 1729123, humanCount: Int = 1) {
+ @State private var showMore = false
+ @State private var showExitConfirmation = false
+ @State private var showGameInfo = false
+ @Environment(\.dismiss) private var dismiss
+ private let onExit: (() -> Void)?
+ public init(seed: UInt64 = 1729123, humanCount: Int = 1, onExit: (() -> Void)? = nil) {
   _model = StateObject(wrappedValue: GameSessionModel(seed: seed, humanCount: humanCount))
+  self.onExit = onExit
  }
  public var body: some View {
-  ZStack {
-   LinearGradient(colors: [Color(red: 0.05,green: 0.08,blue: 0.13), Color(red: 0.09,green: 0.14,blue: 0.20)],
-                  startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
-   ScrollView {
-    VStack(spacing: 14) {
-     HStack {
-      VStack(alignment: .leading, spacing: 2) {
-       Text("VEILOPOLY").font(.system(size: 27,weight: .black,design: .rounded)).tracking(2)
-       Text("四人策略棋盘 · 单机模式").font(.caption).foregroundStyle(.secondary)
-      }
-      Spacer()
-      Button { showRestart = true } label: { Image(systemName:"arrow.counterclockwise").font(.title3) }
-       .accessibilityLabel("重新开始")
-     }
-     playerStrip
-     SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
-      .aspectRatio(1024.0/940.0, contentMode: .fit)
-      .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 16))
-      .overlay(alignment: .bottom) {
-       if model.pending {
-        Text("轻触棋盘快进动画").font(.caption2).padding(7)
-         .background(.thinMaterial, in: Capsule()).padding(8)
-       }
-      }
-      .contentShape(Rectangle())
-      .onTapGesture { model.fastForward() }
-     Text("当前：\(model.game.players[model.actor].name) · \(phaseLabel(model.game.turn.phase))")
-      .font(.subheadline.weight(.semibold))
-      .frame(maxWidth: .infinity,alignment: .leading)
-     if let error = model.errorMessage {
-      Text("操作失败：\(error)").foregroundStyle(.orange).font(.caption)
-     }
-     actionPanel
-     Text("仅本地运行 · 不接入 VeilLink 消息通道（P5）")
-      .font(.caption2).foregroundStyle(.secondary)
+  GeometryReader { geometry in
+   ZStack {
+    LinearGradient(colors: [Color(red: 0.05,green: 0.08,blue: 0.13),
+                            Color(red: 0.09,green: 0.14,blue: 0.20)],
+                   startPoint: .topLeading, endPoint: .bottomTrailing)
+     .ignoresSafeArea()
+    if VeilopolyLandscapeLayout.isLandscape(width: Double(geometry.size.width), height: Double(geometry.size.height)) {
+     landscapeContent(availableWidth: geometry.size.width)
+    } else {
+     portraitFallback
     }
-    .padding(16)
    }
+   .frame(width: geometry.size.width, height: geometry.size.height)
   }
   .preferredColorScheme(.dark)
+  .statusBarHidden()
+  .confirmationDialog("更多", isPresented: $showMore) {
+   Button("重新开局") { showRestart = true }
+   Button("本局信息") { showGameInfo = true }
+   Button("取消", role: .cancel) {}
+  }
   .confirmationDialog("重新开始本局？", isPresented: $showRestart) {
    Button("重开", role: .destructive) { model.reset(seed: model.game.seed &+ 1) }
+   Button("取消", role: .cancel) {}
+  }
+  .confirmationDialog("退出 Veilopoly？", isPresented: $showExitConfirmation) {
+   Button("退出游戏", role: .destructive) { exitGame() }
+   Button("继续游戏", role: .cancel) {}
+  } message: {
+   Text("退出后返回上一级界面；当前单机对局暂不自动保存。")
+  }
+  .alert("本局信息", isPresented: $showGameInfo) {
+   Button("知道了", role: .cancel) {}
+  } message: {
+   Text("随机种子：\(model.game.seed)\n本地单机 · 4 名玩家\nP5 联机尚未集成。")
   }
   .overlay {
    if let card = model.shownCard {
@@ -166,11 +165,126 @@ public struct VeilopolyGameView: View {
      Text(card).font(.title3).multilineTextAlignment(.center)
      Button("收起卡牌") { model.dismissCard() }.buttonStyle(.borderedProminent)
     }
-    .frame(maxWidth: 280).padding(30)
+    .frame(maxWidth: 320).padding(24)
     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
     .transition(.opacity.combined(with:.scale))
    }
   }
+ }
+
+ // A true landscape composition. No ScrollView around the chessboard: the entire
+ // SpriteKit scene remains visible, with independently scrollable controls at right.
+ private func landscapeContent(availableWidth: CGFloat) -> some View {
+  let sideWidth = CGFloat(VeilopolyLandscapeLayout.sidebarWidth(for: Double(availableWidth)))
+  return HStack(spacing: 12) {
+   boardViewport
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .layoutPriority(1)
+   VStack(spacing: 8) {
+    HStack(spacing: 8) {
+     VStack(alignment: .leading, spacing: 2) {
+      Text("VEILOPOLY")
+       .font(.system(size: 19, weight: .black, design: .rounded)).tracking(1.5)
+      Text("单机 · 四人策略棋盘")
+       .font(.system(size: 10)).foregroundStyle(.secondary)
+     }
+     Spacer(minLength: 0)
+     capsuleControls
+    }
+    .frame(minHeight: 44)
+    playerStrip
+    ScrollView(.vertical) {
+     VStack(alignment: .leading, spacing: 10) {
+      Text("当前：\(model.game.players[model.actor].name) · \(phaseLabel(model.game.turn.phase))")
+       .font(.subheadline.weight(.semibold))
+      if let error = model.errorMessage {
+       Text("操作失败：\(error)").foregroundStyle(.orange).font(.caption)
+      }
+      actionPanel
+      Text("独立单机开发版 · VeilLink 入口留待 P5 集成")
+       .font(.caption2).foregroundStyle(.secondary)
+     }
+     .frame(maxWidth: .infinity, alignment: .leading)
+     .padding(.horizontal, 2)
+    }
+    .scrollIndicators(.hidden)
+   }
+   .frame(width: sideWidth)
+   .frame(maxHeight: .infinity, alignment: .top)
+  }
+  .padding(.horizontal, 10)
+  .padding(.vertical, 6)
+ }
+
+ private var boardViewport: some View {
+  GeometryReader { box in
+   let measured = VeilopolyLandscapeLayout.boardSize(availableWidth: Double(box.size.width),
+                                                      availableHeight: Double(box.size.height))
+   let width = CGFloat(measured.width)
+   let height = CGFloat(measured.height)
+   SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
+    .frame(width: width, height: height)
+    .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 12))
+    .overlay(alignment: .bottom) {
+     if model.pending {
+      Text("轻触棋盘快进").font(.caption2).padding(6)
+       .background(.thinMaterial, in: Capsule()).padding(6)
+     }
+    }
+    .contentShape(Rectangle())
+    .onTapGesture { model.fastForward() }
+    .position(x: box.size.width / 2, y: box.size.height / 2)
+  }
+  .accessibilityLabel("大富翁棋盘，40 格")
+ }
+
+ private var portraitFallback: some View {
+  VStack(spacing: 16) {
+   Image(systemName: "iphone.gen3.radiowaves.left.and.right")
+    .font(.system(size: 42)).symbolRenderingMode(.hierarchical)
+   Text("请横向握持设备").font(.title3.bold())
+   Text("Veilopoly 使用真正的横向全屏棋盘。若设备无法旋转，请确认 VeilLink 宿主已允许横屏方向。")
+    .font(.caption).multilineTextAlignment(.center)
+    .foregroundStyle(.secondary)
+    .frame(maxWidth: 340)
+   capsuleControls
+  }
+  .padding(24)
+ }
+
+ // Two-part control matching WeChat mini-program's upper-right capsule:
+ // left ellipsis = More; right target = Exit. Both touch areas >= 44 pt.
+ private var capsuleControls: some View {
+  HStack(spacing: 0) {
+   Button { showMore = true } label: {
+    Image(systemName: "ellipsis")
+     .font(.system(size: 20, weight: .bold))
+     .frame(width: 46, height: 44)
+   }
+   .accessibilityLabel("更多")
+   .accessibilityHint("打开重新开局和本局信息")
+   Rectangle().fill(.black.opacity(0.14))
+    .frame(width: 1, height: 24)
+   Button { showExitConfirmation = true } label: {
+    ZStack {
+     Circle().strokeBorder(.black, lineWidth: 2.5)
+      .frame(width: 22, height: 22)
+     Circle().fill(.black).frame(width: 9, height: 9)
+    }
+    .frame(width: 46, height: 44)
+   }
+   .accessibilityLabel("退出游戏")
+   .accessibilityHint("询问是否退出 Veilopoly")
+  }
+  .foregroundStyle(.black)
+  .background(.white.opacity(0.95), in: Capsule())
+  .overlay { Capsule().strokeBorder(.black.opacity(0.10), lineWidth: 1) }
+  .fixedSize()
+ }
+
+ private func exitGame() {
+  if let onExit { onExit() }
+  else { dismiss() }
  }
  private var playerStrip: some View {
   HStack(spacing: 6) {

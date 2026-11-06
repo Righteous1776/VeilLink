@@ -16,6 +16,7 @@ let package = Package(
   .target(name: "VeilopolyUI", dependencies: ["VeilopolyEngine", "VeilopolyAI", "VeilopolyNet"], resources: [.process("Resources")]),
   .testTarget(name: "VeilopolyEngineTests", dependencies: ["VeilopolyEngine"]),
   .testTarget(name: "VeilopolyAITests", dependencies: ["VeilopolyAI", "VeilopolyEngine"]),
-  .testTarget(name: "VeilopolyNetTests", dependencies: ["VeilopolyNet", "VeilopolyEngine"])
+  .testTarget(name: "VeilopolyNetTests", dependencies: ["VeilopolyNet", "VeilopolyEngine"]),
+  .testTarget(name: "VeilopolyUITests", dependencies: ["VeilopolyUI"])
  ]
 )
