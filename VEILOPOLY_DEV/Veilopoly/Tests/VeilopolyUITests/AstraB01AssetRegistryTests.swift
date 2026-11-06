@@ -4,7 +4,7 @@ import XCTest
 final class AstraB01AssetRegistryTests: XCTestCase {
  func testRuntimeResourcesHaveUniqueNames() {
   XCTAssertEqual(AstraB01AssetNames.imported.count, 20)
-  XCTAssertEqual(Set(AstraB01AssetNames.imported).count, 13)
+  XCTAssertEqual(Set(AstraB01AssetNames.imported).count, AstraB01AssetNames.imported.count)
   XCTAssertTrue(AstraB01AssetNames.imported.allSatisfy { $0.hasPrefix("astra") })
  }
  func testButtonStateNeverSelectsPressedWhileDisabled() {
