@@ -75,6 +75,11 @@ final class GameBoardScene: SKScene {
   else { x = 10; y = CGFloat(40-i) }
   return CGPoint(x: 85 + x * 85, y: 85 + y * 78) // 12-15 degree faux perspective
  }
+ private func tokenPoint(_ tile: Int, player: Int) -> CGPoint {
+  let center = point(tile)
+  guard let offset = VeilopolyTokenFormation.offset(player: player) else { return center }
+  return CGPoint(x: center.x + CGFloat(offset.x), y: center.y + CGFloat(offset.y))
+ }
  private func buildBoard() {
   let base = SKShapeNode(rect: CGRect(x: 43, y: 45, width: 934, height: 850), cornerRadius: 15)
   base.fillColor = SKColor(red: 0.11, green: 0.18, blue: 0.22, alpha: 1)
@@ -137,8 +142,9 @@ final class GameBoardScene: SKScene {
   let icons = ["pawnBlue","carRed","shipGreen","planeYellow"]
   for i in 0..<4 {
    let token = SKSpriteNode(texture: image(icons[i]))
-   token.size = CGSize(width: 42, height: 42)
-   token.position = point(0); token.zPosition = 30
+   token.size = CGSize(width: VeilopolyTokenFormation.tokenSize,
+                       height: VeilopolyTokenFormation.tokenSize)
+   token.position = tokenPoint(0, player: i); token.zPosition = 30
    addChild(token); pieces[i] = token
   }
   for d in 0..<2 {
@@ -169,13 +175,13 @@ final class GameBoardScene: SKScene {
   }
   if snapTokens {
    for p in state.players where !p.bankrupt {
-    pieces[p.id]?.position = point(p.position)
+    pieces[p.id]?.position = tokenPoint(p.position, player: p.id)
    }
   }
   for p in state.players {
    pieces[p.id]?.isHidden = p.bankrupt
-   let offset = CGFloat(p.id) - 1.5
-   pieces[p.id]?.position.x += snapTokens ? (offset * 8) : 0
+   // Position is assigned once from the tile + stable player offset.
+   // Do not accumulate x-offsets on repeated snapshots or move animations.
    pieces[p.id]?.zPosition = 30 + CGFloat(p.id)
   }
  }
@@ -221,7 +227,7 @@ final class GameBoardScene: SKScene {
      node.zRotation = 0
     }
    case .tokenMove(let player, let path):
-    if let last = path.last { pieces[player]?.position = point(last) }
+    if let last = path.last { pieces[player]?.position = tokenPoint(last, player: player) }
    case .cardShow: sound("card")
    case .banner: sound("turn")
    case .cashFloat: sound("cash")
@@ -268,12 +274,14 @@ final class GameBoardScene: SKScene {
    guard let token = pieces[id] else { ack(); return }
    let moves = path.map { tile -> SKAction in
     let time: TimeInterval = 0.15
-    let position = point(tile)
+    let position = tokenPoint(tile, player: id)
     return SKAction.group([SKAction.move(to: position, duration: time),
                            SKAction.sequence([SKAction.moveBy(x: 0,y: 14,duration: time/2),
                                               SKAction.moveBy(x: 0,y: -14,duration: time/2)])])
    }
-   finishImmediately = { [weak self] in if let last = path.last { token.position = self?.point(last) ?? token.position } }
+   finishImmediately = { [weak self] in
+    if let last = path.last { token.position = self?.tokenPoint(last, player: id) ?? token.position }
+   }
    sound("step")
    // Repeat the audible step cue for each intermediate board square.
    let withCues = moves.map { SKAction.sequence([SKAction.run { [weak self] in self?.sound("step") }, $0]) }
