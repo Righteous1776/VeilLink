@@ -447,11 +447,29 @@ final class GameBoardScene: SKScene {
    label.position = CGPoint(x: min(860, max(160, origin.x)),
                             y: min(790, max(160, origin.y + 56)))
    label.zPosition = 70; addChild(label)
-   finishImmediately = { label.removeFromParent() }
+   var chip: SKSpriteNode?
+   if kimiSkin != nil, let atlas = image("kimiFxCashChipAtlas") {
+    let frames = (0..<4).map { index in
+     SKTexture(rect: CGRect(x: CGFloat(index) / 4, y: 0,
+                            width: 0.25, height: 1), in: atlas)
+    }
+    let sparkle = SKSpriteNode(texture: frames[0])
+    sparkle.size = CGSize(width: 42, height: 42)
+    sparkle.position = CGPoint(x: label.position.x - 76, y: label.position.y)
+    sparkle.zPosition = 69
+    addChild(sparkle)
+    sparkle.run(SKAction.repeatForever(SKAction.animate(with: frames, timePerFrame: 0.12)),
+                withKey: "coin-rotation")
+    sparkle.run(SKAction.group([.moveBy(x: 0, y: 50, duration: 0.7),
+                                .fadeOut(withDuration: 0.7)]))
+    chip = sparkle
+   }
+   finishImmediately = { label.removeFromParent(); chip?.removeFromParent() }
    activeCommandNode = label
    label.run(SKAction.sequence([SKAction.group([.moveBy(x: 0,y: 50,duration: 0.7), .fadeOut(withDuration: 0.7)]),
                                 .run {
                                  label.removeFromParent()
+                                 chip?.removeFromParent()
                                  ack()
                                 }]), withKey: "command")
   case .cardShow(_, _):
@@ -460,11 +478,20 @@ final class GameBoardScene: SKScene {
    finishImmediately = {}
   case .banner(let info):
    sound("turn")
-   let plate = SKShapeNode(rectOf: CGSize(width: 510, height: 84), cornerRadius: 20)
+   let plate: SKNode
+   if kimiSkin != nil, let texture = image("kimiFxTurnBanner") {
+    let sprite = SKSpriteNode(texture: texture)
+    sprite.size = CGSize(width: 520, height: 76)
+    plate = sprite
+   } else {
+    let shape = SKShapeNode(rectOf: CGSize(width: 510, height: 84), cornerRadius: 20)
+    shape.fillColor = SKColor(red: 0.08, green: 0.18, blue: 0.23, alpha: 0.96)
+    shape.strokeColor = SKColor(red: 0.50, green: 0.89, blue: 0.80, alpha: 0.88)
+    shape.lineWidth = 2
+    plate = shape
+   }
    plate.position = CGPoint(x: 512, y: 470)
-   plate.fillColor = SKColor(red: 0.08, green: 0.18, blue: 0.23, alpha: 0.96)
-   plate.strokeColor = SKColor(red: 0.50, green: 0.89, blue: 0.80, alpha: 0.88)
-   plate.lineWidth = 2; plate.zPosition = 80; plate.alpha = 0
+   plate.zPosition = 80; plate.alpha = 0
    let title = SKLabelNode(text: info.text)
    title.fontName = "AvenirNext-DemiBold"; title.fontSize = 31
    title.fontColor = .white; title.verticalAlignmentMode = .center
