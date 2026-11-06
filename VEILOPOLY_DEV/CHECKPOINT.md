@@ -83,3 +83,13 @@
 - Verification on local Swift 6.2.1/Linux source snapshot: `swift build --jobs 2` PASS and **`swift test --jobs 2`: 55/55 PASS, 0 failures**, including 11 new finance/tabletop tests and the two original long AI tests. Git blobs of six new files were cross-checked with local source hashes. This is NOT iOS SDK/VeilLink product CI proof.
 - Remaining hard gates: Owner approves deposit brackets/maturity, loan overdue & collateral 4+, product dice payout schedule, star tie/build effects, and separate classic/printed mode entry; followed by versioned integration with GameState, standardized Moves/Effects, AI, UI and snapshot replay.
 - Kimi visual follow-up: `Veilopoly/docs/KIMI_FINANCE_HUD_REQUEST_20261106.md`. P5 integration remains NOT AUTHORIZED.
+
+
+## Unified rules · finance AI regression (2026-11-06)
+
+- Owner directed **one Veilopoly ruleset**, not separate Classic/Bank modes. The previously merged canonical banking reducer is in `VeilopolyEngine`; this lane only extends AI spending behavior without creating a second ledger or random source.
+- `30a0d6b28b345b5b17dce6cdc8c9db239adc5d2e` adds `VeilopolyAI/FinancePolicyAdvisor.swift` and hooks existing AI purchase/auction/build/bail cash-reserve checks to **known next-turn loan obligations**. Reports are pure integer functions: reserve, due now/within horizon, shortfall, authoritative RuleJudge next action.
+- `FinancePolicyAdvisorTests.swift` (5 tests) includes **320 seeded no-mutation/no-external-RNG cases**. `CanonicalFinanceHashTests.swift` (2 tests) verifies enum-key payout dictionary insertion order cannot change `StateDigest`, plus reject/no-mutation.
+- `Veilopoly/docs/FINANCE_AI_RULE_REGRESSION_20261106.md` documents policy semantics and Kimi animation boundary.
+- **Local Linux snapshot test:** Swift 6.2.1 `swift test --jobs 2` **53/53 PASS**, of which the original AI 500-seed test is capped at 500 moves (1 naturally finished within bound); these numbers are from a local workspace containing separate uncommitted parallel star/rules edits, so **this is not an exact GitHub HEAD/CI certification**. The new seven targeted tests passed in the isolated workspace.
+- P4 Apple SDK/SwiftUI/SpriteKit, IPA, P5 host, Protocol 4, VLGM1 and SQLite V8 remain unchanged/unverified. No trained neural network or ML weights claimed; 'rule-model training' refers to deterministic regression/self-play evaluation.
