@@ -1,0 +1,275 @@
+diff --git a/VeilLink/App/AppModel.swift b/VeilLink/App/AppModel.swift
+index 840b6a4c7d85e7ddeadb11d1406dfb656f9a6141..3c53062e3e14782c550a4fe98ada5c6e5eea617b 100644
+--- a/VeilLink/App/AppModel.swift
++++ b/VeilLink/App/AppModel.swift
+@@ -1,5 +1,6 @@
+ import Combine
+ import Foundation
++import OSLog
+ 
+ struct VeilTransportHealthRollup: Equatable {
+     let coverage: VeilA9TransportCoverage
+@@ -32,6 +33,10 @@ struct VeilTransportHealthRollup: Equatable {
+ 
+ @MainActor
+ final class AppModel: ObservableObject {
++    private static let startupSignposter = OSSignposter(
++        subsystem: "studio.zeo.veillink",
++        category: "startup"
++    )
+     @Published var conversations: [ConversationSummary] = []
+     @Published var selectedConversation: ConversationSummary?
+     @Published var selectedSection: SidebarSection = .chats
+@@ -129,6 +134,8 @@ final class AppModel: ObservableObject {
+     }
+ 
+     init(keychain: KeychainStore = KeychainStore(), legalConsent: VeilLegalConsentController? = nil) throws {
++        let startupState = Self.startupSignposter.beginInterval("app_model.init")
++        defer { Self.startupSignposter.endInterval("app_model.init", startupState) }
+         autoSaveReceivedImages = UserDefaults.standard.bool(forKey: Self.autoSaveReceivedImagesKey)
+         self.keychain = keychain
+         self.legalConsent = legalConsent ?? VeilLegalConsentController(keychain: keychain)
+diff --git a/VeilLink/App/VeilLinkApp.swift b/VeilLink/App/VeilLinkApp.swift
+index e8d04255bcf23649ab6b2cd1e52b2fba8798dfd5..8cd2706bc09001bff63d6ee707981762c733dbb1 100644
+--- a/VeilLink/App/VeilLinkApp.swift
++++ b/VeilLink/App/VeilLinkApp.swift
+@@ -1,9 +1,15 @@
+ import Combine
++import OSLog
+ import SwiftUI
+ import UIKit
+ 
+ @main
++@MainActor
+ struct VeilLinkApp: App {
++    private static let startupSignposter = OSSignposter(
++        subsystem: "studio.zeo.veillink",
++        category: "startup"
++    )
+     @UIApplicationDelegateAdaptor(VeilBackgroundAppDelegate.self) private var backgroundDelegate
+     @StateObject private var bootstrap = AppBootstrap()
+     @StateObject private var lifecycle = VeilAppLifecycleCoordinator()
+@@ -11,6 +17,8 @@ struct VeilLinkApp: App {
+     @Environment(\.scenePhase) private var scenePhase
+ 
+     init() {
++        let state = Self.startupSignposter.beginInterval("app.init")
++        defer { Self.startupSignposter.endInterval("app.init", state) }
+         VeilPreConsentBlackBox.shared.record(.appLaunched, stage: .launch)
+         TacticalLocalRenderCache.warmUp()
+         VeilChrome.configure()
+@@ -226,6 +234,10 @@ enum VeilChrome {
+ 
+ @MainActor
+ private final class AppBootstrap: ObservableObject {
++    private static let startupSignposter = OSSignposter(
++        subsystem: "studio.zeo.veillink",
++        category: "startup"
++    )
+     @Published private(set) var model: AppModel?
+     @Published private(set) var errorMessage = ""
+     let legal: VeilLegalConsentController
+@@ -265,6 +277,8 @@ private final class AppBootstrap: ObservableObject {
+ 
+     private func initializeModel() {
+         guard legal.isSatisfied, onboarding.isCompleted, model == nil else { return }
++        let startupState = Self.startupSignposter.beginInterval("app.model_init")
++        defer { Self.startupSignposter.endInterval("app.model_init", startupState) }
+         let diagnostics = RuntimeDiagnosticsBridge.shared
+         diagnostics.recordStartupBegin()
+         do {
+diff --git a/VeilLink/Core/MediaTransferPolicy.swift b/VeilLink/Core/MediaTransferPolicy.swift
+index 4d4eddc50d8d7fb9bf57503f30ffdb48d5290c29..6244945f373ba30869ec40665e77f200e5f367b3 100644
+--- a/VeilLink/Core/MediaTransferPolicy.swift
++++ b/VeilLink/Core/MediaTransferPolicy.swift
+@@ -16,3 +16,20 @@ enum MediaTransferPolicy {
+         supportedImageMIMETypes.contains(mimeType.lowercased())
+     }
+ }
++
++enum ImagePayloadPolicy {
++    /// A BLE image should complete in a bounded interval on the measured 20–40 KB/s link.
++    /// Keep this below the Wire v4 maximum without changing that protocol-level contract.
++    static let bluetoothMaxBytes = 800 * 1_024
++    static let fastTransportMaxBytes = MediaTransferPolicy.maximumImageBytes
++
++    static func maximumBytes(for transport: VeilSessionTransportKind?) -> Int {
++        switch transport {
++        case .lan, .internet:
++            return fastTransportMaxBytes
++        case .ble, .none:
++            // A queued image can later be delivered over BLE, so unknown routes fail closed.
++            return bluetoothMaxBytes
++        }
++    }
++}
+diff --git a/VeilLink/Media/ImageTranscoder.swift b/VeilLink/Media/ImageTranscoder.swift
+index 8117f8f7ccef26b97e83a09b9dd0637da3a556d4..2ede17384a19ae97948beae99c138b4bd6053e7c 100644
+--- a/VeilLink/Media/ImageTranscoder.swift
++++ b/VeilLink/Media/ImageTranscoder.swift
+@@ -27,13 +27,15 @@ struct PreparedImage: Sendable {
+ enum ImagePreparationError: LocalizedError {
+     case unreadable
+     case unsupported
+-    case stillTooLarge
++    case stillTooLarge(maximumBytes: Int)
+ 
+     var errorDescription: String? {
+         switch self {
+         case .unreadable: return "无法读取这张图片。"
+         case .unsupported: return "当前系统无法解码这种图片或 RAW 格式。"
+-        case .stillTooLarge: return "在优先保证画质的压缩策略下，图片仍超过 3 MB。"
++        case .stillTooLarge(let maximumBytes):
++            let maximum = ByteCountFormatter.string(fromByteCount: Int64(maximumBytes), countStyle: .file)
++            return "在优先保证画质的压缩策略下，图片仍超过当前链路的 \(maximum) 上限。"
+         }
+     }
+ }
+@@ -42,24 +44,36 @@ enum ImageTranscoder {
+     private static let qualitySteps: [CGFloat] = [0.94, 0.90, 0.86, 0.82, 0.78, 0.72, 0.66]
+     private static let dimensionSteps = [4_096, 3_584, 3_072, 2_560, 2_048, 1_600]
+ 
+-    static func prepare(at url: URL) async throws -> PreparedImage {
++    static func prepare(
++        at url: URL,
++        maximumBytes: Int = MediaTransferPolicy.maximumImageBytes
++    ) async throws -> PreparedImage {
+         try await Task.detached(priority: .userInitiated) {
+-            try prepareSynchronously(at: url)
++            try prepareSynchronously(at: url, maximumBytes: maximumBytes)
+         }.value
+     }
+ 
+-    static func prepareSynchronously(at url: URL) throws -> PreparedImage {
++    static func prepareSynchronously(
++        at url: URL,
++        maximumBytes: Int = MediaTransferPolicy.maximumImageBytes
++    ) throws -> PreparedImage {
++        let maximumBytes = min(maximumBytes, MediaTransferPolicy.maximumImageBytes)
++        guard maximumBytes > 0 else { throw ImagePreparationError.stillTooLarge(maximumBytes: 0) }
+         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+             // Some RAW variants are only exposed through Core Image. Keep going if CI can open it.
+             guard CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) != nil else {
+                 throw ImagePreparationError.unreadable
+             }
+-            return try transcode(url: url, source: nil)
++            return try transcode(url: url, source: nil, maximumBytes: maximumBytes)
+         }
+-        return try transcode(url: url, source: source)
++        return try transcode(url: url, source: source, maximumBytes: maximumBytes)
+     }
+ 
+-    private static func transcode(url: URL, source: CGImageSource?) throws -> PreparedImage {
++    private static func transcode(
++        url: URL,
++        source: CGImageSource?,
++        maximumBytes: Int
++    ) throws -> PreparedImage {
+         let originalByteCount = fileSize(at: url)
+         guard originalByteCount > 0 else { throw ImagePreparationError.unreadable }
+         let sourceType = sourceUTType(for: url, source: source)
+@@ -71,7 +85,8 @@ enum ImageTranscoder {
+             byteCount: originalByteCount,
+             type: sourceType,
+             sourceFormat: sourceFormat,
+-            dimensions: sourceInfo
++            dimensions: sourceInfo,
++            maximumBytes: maximumBytes
+         ) {
+             return preserved
+         }
+@@ -93,8 +108,8 @@ enum ImageTranscoder {
+                     pixelHeight: cgImage.height,
+                     wasTranscoded: true
+                 )
+-                if encoded.count <= MediaTransferPolicy.targetImageBytes { return prepared }
+-                if bestUnderHardLimit == nil, encoded.count <= MediaTransferPolicy.maximumImageBytes {
++                if encoded.count <= min(MediaTransferPolicy.targetImageBytes, maximumBytes) { return prepared }
++                if bestUnderHardLimit == nil, encoded.count <= maximumBytes {
+                     bestUnderHardLimit = prepared
+                 }
+             }
+@@ -120,8 +135,8 @@ enum ImageTranscoder {
+                         pixelHeight: cgImage.height,
+                         wasTranscoded: true
+                     )
+-                    if encoded.count <= MediaTransferPolicy.targetImageBytes { return prepared }
+-                    if bestUnderHardLimit == nil, encoded.count <= MediaTransferPolicy.maximumImageBytes {
++                    if encoded.count <= min(MediaTransferPolicy.targetImageBytes, maximumBytes) { return prepared }
++                    if bestUnderHardLimit == nil, encoded.count <= maximumBytes {
+                         bestUnderHardLimit = prepared
+                     }
+                 }
+@@ -129,7 +144,9 @@ enum ImageTranscoder {
+         }
+ 
+         if let bestUnderHardLimit { return bestUnderHardLimit }
+-        throw sourceType?.conforms(to: .image) == true ? ImagePreparationError.stillTooLarge : ImagePreparationError.unsupported
++        throw sourceType?.conforms(to: .image) == true
++            ? ImagePreparationError.stillTooLarge(maximumBytes: maximumBytes)
++            : ImagePreparationError.unsupported
+     }
+ 
+     private static func preserveIfAppropriate(
+@@ -137,19 +154,20 @@ enum ImageTranscoder {
+         byteCount: Int,
+         type: UTType?,
+         sourceFormat: String,
+-        dimensions: (width: Int, height: Int)?
++        dimensions: (width: Int, height: Int)?,
++        maximumBytes: Int
+     ) throws -> PreparedImage? {
+         guard let type, let dimensions,
+               max(dimensions.width, dimensions.height) <= MediaTransferPolicy.maximumImageDimension else { return nil }
+ 
+         let mapping: (mime: String, label: String, limit: Int)?
+         if type.conforms(to: .jpeg) {
+-            mapping = ("image/jpeg", "JPEG", MediaTransferPolicy.targetImageBytes)
++            mapping = ("image/jpeg", "JPEG", min(MediaTransferPolicy.targetImageBytes, maximumBytes))
+         } else if type == .heic {
+-            mapping = ("image/heic", "HEIC", MediaTransferPolicy.targetImageBytes)
++            mapping = ("image/heic", "HEIC", min(MediaTransferPolicy.targetImageBytes, maximumBytes))
+         } else if type.conforms(to: .png) {
+             // Keep smaller screenshots/graphics lossless instead of forcing a lossy photo codec.
+-            mapping = ("image/png", "PNG", MediaTransferPolicy.maximumImageBytes)
++            mapping = ("image/png", "PNG", maximumBytes)
+         } else {
+             mapping = nil
+         }
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+index dd49d313876159d63a5624163314454f4f1e1efc..d87db1df81a09b978a99302ea450bc9527e9f83d 100644
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -1091,7 +1091,15 @@ struct ChatView: View {
+                 isPreparingImage = false
+             }
+             do {
+-                let prepared = try await ImageTranscoder.prepare(at: imported.url)
++                let transport = model.sessions.preferredTransportKind(for: conversation.peerIdentityID)
++                let maximumBytes = ImagePayloadPolicy.maximumBytes(for: transport)
++                let prepared = try await ImageTranscoder.prepare(
++                    at: imported.url,
++                    maximumBytes: maximumBytes
++                )
++                guard prepared.data.count <= maximumBytes else {
++                    throw ImagePreparationError.stillTooLarge(maximumBytes: maximumBytes)
++                }
+                 try model.sessions.sendImage(prepared.data, mimeType: prepared.mimeType, to: conversation.peerIdentityID)
+                 let status = prepared.summary
+                 withAnimation(.easeOut(duration: 0.18)) { mediaStatus = status }
+diff --git a/VeilLinkTests/MediaTransferPolicyTests.swift b/VeilLinkTests/MediaTransferPolicyTests.swift
+index 44c37a356fee8adc5397cbf711da9c5e7a83e717..bc653e43d0e4e0a1f8b365fbfa5e095cc6307cfe 100644
+--- a/VeilLinkTests/MediaTransferPolicyTests.swift
++++ b/VeilLinkTests/MediaTransferPolicyTests.swift
+@@ -16,4 +16,11 @@ final class MediaTransferPolicyTests: XCTestCase {
+         XCTAssertEqual(MediaTransferPolicy.maximumImageBytes, 3_000_000)
+         XCTAssertEqual(MediaTransferPolicy.maximumImageDimension, 4_096)
+     }
++
++    func testImagePayloadPolicyUsesConservativeBudgetForBLEAndUnknownRoutes() {
++        XCTAssertEqual(ImagePayloadPolicy.maximumBytes(for: .ble), 800 * 1_024)
++        XCTAssertEqual(ImagePayloadPolicy.maximumBytes(for: nil), 800 * 1_024)
++        XCTAssertEqual(ImagePayloadPolicy.maximumBytes(for: .lan), MediaTransferPolicy.maximumImageBytes)
++        XCTAssertEqual(ImagePayloadPolicy.maximumBytes(for: .internet), MediaTransferPolicy.maximumImageBytes)
++    }
+ }
