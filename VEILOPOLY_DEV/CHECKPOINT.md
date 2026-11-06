@@ -1,31 +1,30 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
-**Branch:** `dev/veilopoly`; **base:** `main@ccafebab147e069fbabfff579dbf323b0d54f191`. No changes to main or protected product surfaces.
+**Branch:** `dev/veilopoly` (from `main@ccafebab147e069fbabfff579dbf323b0d54f191`). This is a parallel **development lane**, not the product main branch.
 
-## GitHub committed
+## GitHub source import — COMPLETE for standalone P1–P4
 
-- Development charter, scope and owner-specified parallel development arrangement.
-- `COLLABORATION.md`: ChatGPT Swift engine / integration; Kimi visuals, CC0 assets and 2.5D modeling.
-- `KIMI_HANDOFF.md`, `INCOMING_ASSETS/README.md`: resource integration protocol and handoff templates.
-- `Veilopoly/Package.swift`: checkpoint Swift Package declaration.
-- 23 actual XCTest source files under `Veilopoly/Tests/` (atomic commit `4a47ccb86ab4eaf2d66f75020823bb8fd859505a`).
-- `Veilopoly/IMPORT_STATUS.md`: authoritative **partial source import** inventory.
+- `1f270948f429af06ec2a1176d57beac1c728adea`: 43 Swift Package text files (Package.swift, README, Engine/AI/Net/UI source, test files, game/model/render specs, validation/license docs).
+- `a356d9b9741e25214fac63ee77a376e7b8cfb352`: 26 licensed resource blobs = 14 PNG and 12 WAV (225,915 bytes), plus `Veilopoly/docs/RESOURCE_INTEGRITY.json` with original SHA-256, size and Git blob SHA.
+- Earlier branch commits had already introduced this isolated work area, Kimi handoff, permissions and an initial test-file import. The above commits finish the source migration without modifying `main`, transport, Protocol 4, VLGM1 or SQLite V8.
+- The newer source baseline is `Veilopoly_P1-P4_Full_Source_20261106.zip`; the five legacy `Veilopoly/INBOX/*` handoff files are superseded by the branch-local `GOVERNANCE.md`, `COLLABORATION.md` and `KIMI_HANDOFF.md` and were not duplicated.
 
-## Not yet in GitHub branch
+## Verified locally, NOT on GitHub CI / iOS SDK
 
-- 10 implementation Swift files (Engine/AI/Net/UI), 5 original specification/license Markdown docs, 26 CC0 PNG/WAV resources.
-- The 64-file standalone checkpoint ZIP has been audited locally and repackaged to a GitHub-rooted tree, but ZIP delivery is **not** GitHub source integration.
+- `swift build --jobs 2`: **PASS**, Linux Swift 6.2.1.
+- `swift test --jobs 2 --skip 'LongSimTests|AutoplayTests'`: **29/29 PASS**.
+- `swift test --jobs 2 --filter 'LongSimTests|AutoplayTests'`: **2/2 PASS**.
+- Thus **31/31 checks** passed in two local selections against the same imported source state; earlier whole-suite log also reports 31 passed. Linux conditionally excludes SwiftUI/SpriteKit runtime compilation/behavior.
+- AI smoke: **500 seeds × max 500 moves** ran without illegal engine moves; **0/500** naturally completed within that short bound. Exploratory **20 seeds × max 6000 moves**: 14 completed, 6 capped. Do NOT claim 500 fully finished games.
+- Historical engine coverage evidence: 732/745 lines = **98.26%** for selected Engine+AI tests; no independent coverage run against this exact GitHub branch commit.
+- iOS 16 Xcode build, simulator/physical device, FPS, touches, sound and animation ACK **NOT VERIFIED**.
 
-## Verification boundary
+## Next engineering gate
 
-Earlier independent Linux Swift toolchain tests were reported passing. This GitHub branch **cannot currently compile** as a package without implementation and resource files; no branch CI or iOS 16 simulator/device verification has been executed. Do not claim P1–P4 branch tests or P4 deployment are complete.
+1. Run the checked-in package from the `dev/veilopoly` branch in a clean macOS/Xcode iOS 16 SDK environment and full XCTest inventory.
+2. Validate SpriteKit command queue: 1.2s dice, 150ms/tile, skip once and only once, phase ACK, L0–L7, touch and sound.
+3. Resolve rules ambiguities in `Veilopoly/docs/SPEC_DECISIONS_REQUIRED.md` with Owner; sample cards and unresolved boundaries remain non-production.
+4. Accept Kimi visual K1 package with license/alias/hash and verify mapping without touching Engine logic.
+5. After P1–P4 acceptance, request separate authorization for P5 VeilLink adapter / game hall / product release.
 
-## Next gate
-
-1. Exact file-by-file bulk import from checkpoint into this branch and SHA-256 verification.
-2. Swift package build & full XCTest; report exact branch SHA.
-3. macOS/Xcode iOS 16 SpriteKit/SwiftUI build, animation ack, touch, sound and 4-player tests.
-4. Kimi K1 texture alias/layout specification handoff; apply only after provenance and interface review.
-5. P5 VeilLink GameTransport adapter/UI integration remains out of scope until separate authorization.
-
-**Coordinating record:** https://github.com/Righteous1776/VeilLink/issues/6
+**Coordination:** https://github.com/Righteous1776/VeilLink/issues/6
