@@ -1,0 +1,611 @@
+diff --git a/VeilLink/Voice/VoiceMessageAudioController.swift b/VeilLink/Voice/VoiceMessageAudioController.swift
+--- a/VeilLink/Voice/VoiceMessageAudioController.swift
++++ b/VeilLink/Voice/VoiceMessageAudioController.swift
+@@ -2,6 +2,52 @@
+ import Combine
+ import Foundation
+ 
++enum VeilAudioLaneRole: Sendable {
++    case messageCapture, messagePlayback, pttCapture, pttPlayback
++}
++
++/// A serial lease for AVAudioSession, which is shared across the entire process.
++/// This does not allocate any dedicated OS thread or a separate Bluetooth radio.
++enum VeilAudioLeasePolicy {
++    static func allows(currentOwner: UUID?, incomingOwner: UUID) -> Bool {
++        currentOwner == nil || currentOwner == incomingOwner
++    }
++}
++
++@MainActor
++final class VeilAudioSessionArbiter {
++    static let shared = VeilAudioSessionArbiter()
++    private var ownerID: UUID?
++    private init() {}
++
++    func acquire(owner: UUID, role: VeilAudioLaneRole, bufferDuration: TimeInterval? = nil) throws {
++        guard VeilAudioLeasePolicy.allows(currentOwner: ownerID, incomingOwner: owner) else {
++            throw NSError(domain: "VeilAudioSession", code: 1, userInfo: [
++                NSLocalizedDescriptionKey: "音频正在由另一个功能使用，请结束当前录音或播放后再试。"
++            ])
++        }
++        let session = AVAudioSession.sharedInstance()
++        switch role {
++        case .messageCapture:
++            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth])
++        case .pttCapture, .pttPlayback:
++            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
++        case .messagePlayback:
++            // Let iOS select its active output route (speaker / A2DP headphones).
++            try session.setCategory(.playback, mode: .spokenAudio, options: [])
++        }
++        if let bufferDuration { try session.setPreferredIOBufferDuration(bufferDuration) }
++        try session.setActive(true)
++        ownerID = owner
++    }
++
++    func release(owner: UUID) {
++        guard ownerID == owner else { return }
++        ownerID = nil
++        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
++    }
++}
++
+ struct VeilVoiceRecording: Sendable {
+     let data: Data
+     let durationSeconds: Double
+@@ -18,6 +64,7 @@
+     var onAutomaticFinish: ((VeilVoiceRecording) -> Void)?
+ 
+     private var recorder: AVAudioRecorder?
++    private let audioOwner = UUID()
+     private var meterTimer: Timer?
+     private var startedAt: Date?
+     private var currentURL: URL?
+@@ -49,6 +96,7 @@
+ 
+     func finish(cancelled: Bool = false) -> VeilVoiceRecording? {
+         guard isRecording else { return nil }
++        defer { VeilAudioSessionArbiter.shared.release(owner: audioOwner) }
+         meterTimer?.invalidate(); meterTimer = nil
+         maximumTimer?.invalidate(); maximumTimer = nil
+         recorder?.stop()
+@@ -73,10 +121,10 @@
+ 
+     private func startRecording() -> Bool {
+         do {
+-            let session = AVAudioSession.sharedInstance()
+-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth])
+-            try session.setPreferredIOBufferDuration(tuning.preferredIOBufferDuration)
+-            try session.setActive(true)
++            try VeilAudioSessionArbiter.shared.acquire(
++                owner: audioOwner, role: .messageCapture,
++                bufferDuration: tuning.preferredIOBufferDuration
++            )
+             let url = FileManager.default.temporaryDirectory
+                 .appendingPathComponent("VeilVoice-\(UUID().uuidString).m4a")
+             let settings: [String: Any] = [
+@@ -110,6 +158,7 @@
+             }
+             return true
+         } catch {
++            VeilAudioSessionArbiter.shared.release(owner: audioOwner)
+             lastError = "录音启动失败：\(error.localizedDescription)"
+             isRecording = false
+             return false
+@@ -145,6 +194,7 @@
+     @Published private(set) var isPlaying = false
+     @Published private(set) var progress: Double = 0
+     private var player: AVAudioPlayer?
++    private let audioOwner = UUID()
+     private var timer: Timer?
+     private let tuning = VeilRealtimeAudioTuning.resolved(performanceLabel: VeilDevicePerformance.current.label)
+ 
+@@ -152,14 +202,15 @@
+         if isPlaying { stop(); return }
+         do {
+             VeilVoicePlaybackArbiter.shared.claim(self)
+-            let session = AVAudioSession.sharedInstance()
+-            try session.setCategory(.playback, mode: .spokenAudio, options: [.defaultToSpeaker])
+-            try session.setActive(true)
++            try VeilAudioSessionArbiter.shared.acquire(
++                owner: audioOwner, role: .messagePlayback
++            )
+             let player = try AVAudioPlayer(data: data)
+             player.delegate = self
+             player.prepareToPlay()
+             self.player = player
+             isPlaying = player.play()
++            guard isPlaying else { stop(); return }
+             timer?.invalidate()
+             let timer = Timer(timeInterval: tuning.playbackProgressInterval, repeats: true) { [weak self] _ in
+                 Task { @MainActor in self?.refresh() }
+@@ -177,12 +228,14 @@
+         timer?.invalidate(); timer = nil
+         isPlaying = false; progress = 0
+         VeilVoicePlaybackArbiter.shared.release(self)
++        VeilAudioSessionArbiter.shared.release(owner: audioOwner)
+     }
+ 
+     fileprivate func stopFromArbiter() {
+         player?.stop(); player = nil
+         timer?.invalidate(); timer = nil
+         isPlaying = false; progress = 0
++        VeilAudioSessionArbiter.shared.release(owner: audioOwner)
+     }
+ 
+     // Match the nonisolated AVAudioPlayerDelegate witness without passing the player across actors.
+diff --git a/VeilLink/Voice/WalkieTalkieAudioController.swift b/VeilLink/Voice/WalkieTalkieAudioController.swift
+--- a/VeilLink/Voice/WalkieTalkieAudioController.swift
++++ b/VeilLink/Voice/WalkieTalkieAudioController.swift
+@@ -35,6 +35,8 @@
+     var sendAudioFrame: ((VeilPTTAudioFrame, [String]) -> VeilPTTSendReport)?
+ 
+     private let captureEngine = AVAudioEngine()
++    private let audioOwner = UUID()
++    private var captureTapInstalled = false
+     private let playbackEngine = AVAudioEngine()
+     private let playerNode = AVAudioPlayerNode()
+     private let tuning: VeilRealtimeAudioTuning
+@@ -80,7 +82,7 @@
+ 
+     func beginTransmit(recipients: [String]) {
+         let unique = Array(Set(recipients)).sorted()
+-        guard !unique.isEmpty, state != .transmitting else { return }
++        guard !unique.isEmpty, state != .transmitting, state != .preparing else { return }
+         if case .receiving = state { return } // half-duplex: current RX owns the channel
+         self.recipients = unique
+         state = .preparing
+@@ -101,7 +103,10 @@
+ 
+     func endTransmit() {
+         guard state == .transmitting || state == .preparing else { return }
+-        captureEngine.inputNode.removeTap(onBus: 0)
++        if captureTapInstalled {
++            captureEngine.inputNode.removeTap(onBus: 0)
++            captureTapInstalled = false
++        }
+         captureEngine.stop()
+         let pendingCount = pendingMuLaw.count - pendingMuLawOffset
+         if state == .transmitting,
+@@ -122,6 +127,7 @@
+         recipients = []
+         meter = 0
+         state = .idle
++        VeilAudioSessionArbiter.shared.release(owner: audioOwner)
+     }
+ 
+     func receiveControl(_ incoming: VeilPTTIncomingControl) {
+@@ -135,7 +141,11 @@
+             publishJitterSnapshot(force: true)
+             lastIncomingAt = Date()
+             state = .receiving(incoming.peerIdentityID)
+-            preparePlaybackIfNeeded()
++            guard preparePlaybackIfNeeded() else {
++                stopAll()
++                state = .error("音频播放通道不可用")
++                return
++            }
+             startPlayoutTimer(frameDurationMilliseconds: incoming.packet.frameDurationMilliseconds)
+         case .end:
+             guard receivingTalkID == incoming.packet.talkID,
+@@ -159,17 +169,24 @@
+         if state == .transmitting || state == .preparing { endTransmit() }
+         playoutTimer?.invalidate(); playoutTimer = nil
+         playerNode.stop(); playbackEngine.stop()
++        if captureTapInstalled {
++            captureEngine.inputNode.removeTap(onBus: 0)
++            captureTapInstalled = false
++        }
++        captureEngine.stop()
++        VeilAudioSessionArbiter.shared.release(owner: audioOwner)
+         receivingTalkID = nil; receivingPeerID = nil; lastIncomingAt = nil
+         jitter.reset(); publishJitterSnapshot(force: true)
+         meter = 0; state = .idle
+     }
+ 
+     private func startCapture() {
++        guard state == .preparing else { return } // permission can arrive after cancellation
+         do {
+-            let session = AVAudioSession.sharedInstance()
+-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+-            try session.setPreferredIOBufferDuration(tuning.preferredIOBufferDuration)
+-            try session.setActive(true)
++            try VeilAudioSessionArbiter.shared.acquire(
++                owner: audioOwner, role: .pttCapture,
++                bufferDuration: tuning.preferredIOBufferDuration
++            )
+             let input = captureEngine.inputNode
+             let format = input.inputFormat(forBus: 0)
+             guard format.channelCount > 0, format.sampleRate > 0 else { throw NSError(domain: "VeilPTT", code: 1) }
+@@ -186,12 +203,13 @@
+                 guard !encoded.isEmpty else { return }
+                 Task { @MainActor [weak self] in self?.consumeCaptured(encoded) }
+             }
++            captureTapInstalled = true
+             captureEngine.prepare()
+             try captureEngine.start()
+             state = .transmitting
+         } catch {
+-            state = .error("PTT 启动失败")
+             stopAll()
++            state = .error("PTT 启动失败或音频通道被占用")
+         }
+     }
+ 
+@@ -258,6 +276,9 @@
+         lastIncomingAt = nil
+         meter = 0
+         state = .idle
++        playerNode.stop()
++        playbackEngine.stop()
++        VeilAudioSessionArbiter.shared.release(owner: audioOwner)
+     }
+ 
+     private func publishJitterSnapshot(force: Bool = false) {
+@@ -272,15 +293,23 @@
+         lastJitterPublishAt = now
+     }
+ 
+-    private func preparePlaybackIfNeeded() {
++    @discardableResult
++    private func preparePlaybackIfNeeded() -> Bool {
+         do {
+-            let session = AVAudioSession.sharedInstance()
+-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+-            try session.setPreferredIOBufferDuration(tuning.preferredIOBufferDuration)
+-            try session.setActive(true)
++            try VeilAudioSessionArbiter.shared.acquire(
++                owner: audioOwner, role: .pttPlayback,
++                bufferDuration: tuning.preferredIOBufferDuration
++            )
+             if !playbackEngine.isRunning { playbackEngine.prepare(); try playbackEngine.start() }
+             if !playerNode.isPlaying { playerNode.play() }
+-        } catch { state = .error("扬声器启动失败") }
++            return true
++        } catch {
++            playerNode.stop()
++            playbackEngine.stop()
++            VeilAudioSessionArbiter.shared.release(owner: audioOwner)
++            state = .error("音频播放通道被占用或无法启动")
++            return false
++        }
+     }
+ 
+     private func schedulePlayback(_ bytes: Data) {
+@@ -292,7 +321,9 @@
+             let decoded = Float(VeilMuLaw.decode(byte)) / Float(Int16.max)
+             channel[i] = max(-1, min(1, decoded * playbackGain))
+         }
+-        if !playbackEngine.isRunning || !playerNode.isPlaying { preparePlaybackIfNeeded() }
++        if !playbackEngine.isRunning || !playerNode.isPlaying {
++            guard preparePlaybackIfNeeded() else { return }
++        }
+         playerNode.scheduleBuffer(buffer)
+     }
+ 
+diff --git a/VeilLinkTests/VoiceAndPTTTests.swift b/VeilLinkTests/VoiceAndPTTTests.swift
+--- a/VeilLinkTests/VoiceAndPTTTests.swift
++++ b/VeilLinkTests/VoiceAndPTTTests.swift
+@@ -3,6 +3,24 @@
+ @testable import VeilLink
+ 
+ final class VoiceAndPTTTests: XCTestCase {
++    func testConcurrentFabricDefinesFiveLogicalResponsibilitiesPlusSQLiteSerialQueue() {
++        XCTAssertEqual(VeilConcurrentFabricLane.allCases.count, 5)
++        XCTAssertEqual(
++            Set(VeilConcurrentFabricLane.allCases.map(\.rawValue)),
++            Set(["control", "bulk", "audioCapture", "audioPlayback", "maintenance"])
++        )
++        XCTAssertEqual(VeilConcurrentFabricPolicy.storageQueueLabel, "studio.zeo.veillink.sqlite")
++    }
++
++
++    func testConcurrentFabricAudioLeaseDoesNotStealAnotherActiveEngine() {
++        let owner = UUID(), competing = UUID()
++        XCTAssertTrue(VeilAudioLeasePolicy.allows(currentOwner: nil, incomingOwner: owner))
++        XCTAssertTrue(VeilAudioLeasePolicy.allows(currentOwner: owner, incomingOwner: owner))
++        XCTAssertFalse(VeilAudioLeasePolicy.allows(currentOwner: owner, incomingOwner: competing))
++    }
++
++
+     func testVoiceMetadataRoundTrip() {
+         let body = VoiceMessageCodec.encode(durationSeconds: 3.42)
+         let decoded = VoiceMessageCodec.decode(body)
+diff --git a/VeilLink/Core/RuntimeMaintenanceTuning.swift b/VeilLink/Core/RuntimeMaintenanceTuning.swift
+--- a/VeilLink/Core/RuntimeMaintenanceTuning.swift
++++ b/VeilLink/Core/RuntimeMaintenanceTuning.swift
+@@ -1,5 +1,33 @@
+ import Foundation
+ 
++/// This is a logical scheduler topology; iOS chooses the actual worker threads.
++enum VeilConcurrentFabricLane: String, CaseIterable, Sendable {
++    case control, bulk, audioCapture, audioPlayback, maintenance
++}
++
++enum VeilConcurrentFabricPolicy {
++    static let storageQueueLabel = "studio.zeo.veillink.sqlite"
++
++    /// Preserve existing transport queue priorities; bound one active drain burst
++    /// so realtime audio can run between long bulk packet bursts.
++    static func bleDrainBurst(configuredLimit: Int, realtimePending: Bool) -> Int {
++        let base = max(1, configuredLimit)
++        return realtimePending ? min(base, 8) : base
++    }
++
++    static func maintenanceInterval(
++        tuning: VeilRuntimeMaintenanceTuning,
++        foreground: Bool,
++        queued: Bool,
++        connected: Bool
++    ) -> UInt64 {
++        if !foreground { return tuning.bleIdleMaintenanceNanoseconds }
++        if queued { return tuning.bleQueuedMaintenanceNanoseconds }
++        if connected { return tuning.bleConnectedMaintenanceNanoseconds }
++        return tuning.bleIdleMaintenanceNanoseconds
++    }
++}
++
+ struct VeilRuntimeMaintenanceTuning: Equatable, Sendable {
+     let outboundRetryIntervalNanoseconds: UInt64
+     let bleIdleMaintenanceNanoseconds: UInt64
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -1,3 +1,4 @@
++import AVFoundation
+ import Combine
+ import CoreBluetooth
+ import Foundation
+@@ -158,6 +159,7 @@
+     var pendingCount: Int { control.pendingCount + realtime.pendingCount + bulk.pendingCount }
+     var pendingBytes: Int { control.pendingBytes + realtime.pendingBytes + bulk.pendingBytes }
+     var controlPendingCount: Int { control.pendingCount }
++    var realtimePendingCount: Int { realtime.pendingCount }
+     var isEmpty: Bool { control.isEmpty && realtime.isEmpty && bulk.isEmpty }
+ 
+     @discardableResult
+@@ -185,6 +187,22 @@
+     var first: Data? { control.first ?? realtime.first ?? bulk.first }
+ }
+ 
++/// Audio routing does not create independent Bluetooth radio channels.
++/// Reduce optional scan/RSSI work during HFP/A2DP/LE headset activity while
++/// preserving CoreBluetooth's authenticated connections and queue watchdog.
++enum BLEAudioCoexistencePolicy {
++    static func allowsDuplicateDiscoveries(foreground: Bool, bluetoothAudioActive: Bool) -> Bool {
++        foreground && !bluetoothAudioActive
++    }
++
++    static func shouldPollRSSI(
++        foreground: Bool, bluetoothAudioActive: Bool,
++        elapsed: TimeInterval, interval: TimeInterval
++    ) -> Bool {
++        foreground && !bluetoothAudioActive && elapsed >= interval
++    }
++}
++
+ @MainActor
+ final class BLETransport: NSObject, ObservableObject {
+     static let serviceUUID = CBUUID(string: "5D0F88D4-21A2-4DC4-A1E8-A2DF8C9AC001")
+@@ -223,6 +241,9 @@
+     private var lastRSSIMaintenanceAt: TimeInterval = 0
+     private var connectionEvents = ConnectionEventGate()
+     private var foregroundActive = true
++    private var bluetoothAudioActive = false
++    private var lastScanAllowsDuplicates: Bool?
++    private var audioRouteSubscription: AnyCancellable?
+     private var linkSnapshotRefreshWorkItem: DispatchWorkItem?
+     private var lastLinkSnapshotPublishAt: TimeInterval = 0
+ 
+@@ -263,10 +284,30 @@
+             queue: nil,
+             options: [CBPeripheralManagerOptionRestoreIdentifierKey: "VeilLink.Peripheral.v2"]
+         )
++        audioRouteSubscription = NotificationCenter.default.publisher(
++            for: AVAudioSession.routeChangeNotification
++        ).sink { [weak self] _ in
++            Task { @MainActor [weak self] in self?.refreshBluetoothAudioRoute() }
++        }
++        refreshBluetoothAudioRoute()
+     }
+ 
++    private func refreshBluetoothAudioRoute() {
++        let route = AVAudioSession.sharedInstance().currentRoute
++        let active = (route.inputs + route.outputs).contains { port in
++            switch port.portType {
++            case .bluetoothHFP, .bluetoothA2DP, .bluetoothLE: return true
++            default: return false
++            }
++        }
++        guard bluetoothAudioActive != active else { return }
++        bluetoothAudioActive = active
++        if isRunning { beginScanningIfPossible() }
++    }
++
+     func start() {
+         isRunning = true
++        refreshBluetoothAudioRoute()
+         startRSSIPolling()
+         beginScanningIfPossible()
+         beginAdvertisingIfPossible()
+@@ -276,8 +317,11 @@
+ 
+     func setForegroundActive(_ active: Bool) {
+         foregroundActive = active
+-        guard active, isRunning else { return }
+-        refreshLinks()
++        guard isRunning else { return }
++        // Keep UUID-filtered background discovery, but allow the OS to coalesce
++        // repeated advertisements rather than consuming audio/radio airtime.
++        beginScanningIfPossible()
++        if active { refreshBluetoothAudioRoute(); refreshLinks() }
+     }
+ 
+     func refreshLinks() {
+@@ -288,8 +332,10 @@
+         beginScanningIfPossible()
+         beginAdvertisingIfPossible()
+         recoverStalledTransportQueuesIfNeeded()
+-        for peripheral in remotePeripherals.values where peripheral.state == .connected {
+-            peripheral.readRSSI()
++        if foregroundActive && !bluetoothAudioActive {
++            for peripheral in remotePeripherals.values where peripheral.state == .connected {
++                peripheral.readRSSI()
++            }
+         }
+         publishLinkSnapshots(force: true)
+     }
+@@ -297,6 +343,7 @@
+     func stop(preserveConnectionIntent: Bool = false) {
+         isRunning = false
+         centralManager.stopScan()
++        lastScanAllowsDuplicates = nil
+         peripheralManager.stopAdvertising()
+         for peripheral in remotePeripherals.values where peripheral.state == .connected || peripheral.state == .connecting {
+             centralManager.cancelPeripheralConnection(peripheral)
+@@ -483,8 +530,12 @@
+         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
+         guard var queue = centralOutboundQueues[id] else { return }
+         let tuning = linkTuning(for: id)
++        let burstLimit = VeilConcurrentFabricPolicy.bleDrainBurst(
++            configuredLimit: tuning.packetBurstLimit,
++            realtimePending: queue.realtimePendingCount > 0
++        )
+         var sent = 0
+-        while sent < tuning.packetBurstLimit, peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
++        while sent < burstLimit, peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
+             peripheral.writeValue(packet, for: characteristic, type: .withoutResponse)
+             sent += 1
+             queueProgress.recordProgress(.central, peerID: id, at: Date().timeIntervalSinceReferenceDate)
+@@ -511,8 +562,12 @@
+         }
+         guard var queue = peripheralOutboundQueues[centralID] else { return }
+         let tuning = linkTuning(for: centralID)
++        let burstLimit = VeilConcurrentFabricPolicy.bleDrainBurst(
++            configuredLimit: tuning.packetBurstLimit,
++            realtimePending: queue.realtimePendingCount > 0
++        )
+         var sent = 0
+-        while sent < tuning.packetBurstLimit, let packet = queue.first {
++        while sent < burstLimit, let packet = queue.first {
+             guard peripheralManager.updateValue(packet, for: characteristic, onSubscribedCentrals: [central]) else {
+                 peripheralOutboundQueues[centralID] = queue
+                 return
+@@ -784,10 +839,16 @@
+ 
+     private func beginScanningIfPossible() {
+         guard isRunning, centralManager.state == .poweredOn else { return }
++        let duplicates = BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
++            foreground: foregroundActive, bluetoothAudioActive: bluetoothAudioActive
++        )
++        guard !centralManager.isScanning || lastScanAllowsDuplicates != duplicates else { return }
++        if centralManager.isScanning { centralManager.stopScan() }
+         centralManager.scanForPeripherals(
+             withServices: [Self.serviceUUID],
+-            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
++            options: [CBCentralManagerScanOptionAllowDuplicatesKey: duplicates]
+         )
++        lastScanAllowsDuplicates = duplicates
+         statusText = "正在发现附近设备"
+     }
+ 
+@@ -828,26 +889,34 @@
+                 try? await Task.sleep(nanoseconds: interval)
+                 guard !Task.isCancelled, self.isRunning else { continue }
+                 let now = Date().timeIntervalSinceReferenceDate
+-                if now - self.lastRSSIMaintenanceAt >= self.maintenanceTuning.rssiPollInterval {
++                if BLEAudioCoexistencePolicy.shouldPollRSSI(
++                    foreground: self.foregroundActive,
++                    bluetoothAudioActive: self.bluetoothAudioActive,
++                    elapsed: now - self.lastRSSIMaintenanceAt,
++                    interval: self.maintenanceTuning.rssiPollInterval
++                ) {
+                     for peripheral in self.remotePeripherals.values where peripheral.state == .connected {
+                         peripheral.readRSSI()
+                     }
+                     self.lastRSSIMaintenanceAt = now
+                 }
++                // Never stop connection recovery, queued payload progress, or GATT watchdog.
+                 self.recoverStalledTransportQueuesIfNeeded()
+             }
+         }
+     }
+ 
+     private func currentMaintenanceIntervalNanoseconds() -> UInt64 {
+-        if !foregroundActive { return maintenanceTuning.bleIdleMaintenanceNanoseconds }
+         let hasQueuedPackets = centralOutboundQueues.values.contains { !$0.isEmpty }
+             || peripheralOutboundQueues.values.contains { !$0.isEmpty }
+-        if hasQueuedPackets { return maintenanceTuning.bleQueuedMaintenanceNanoseconds }
+         let hasConnectedPeer = remotePeripherals.values.contains { $0.state == .connected }
+             || !subscribedCentrals.isEmpty
+-        if hasConnectedPeer { return maintenanceTuning.bleConnectedMaintenanceNanoseconds }
+-        return maintenanceTuning.bleIdleMaintenanceNanoseconds
++        return VeilConcurrentFabricPolicy.maintenanceInterval(
++            tuning: maintenanceTuning,
++            foreground: foregroundActive,
++            queued: hasQueuedPackets,
++            connected: hasConnectedPeer
++        )
+     }
+ 
+     private func recoverStalledTransportQueuesIfNeeded() {
+diff --git a/VeilLinkTests/BLETransportSafetyTests.swift b/VeilLinkTests/BLETransportSafetyTests.swift
+--- a/VeilLinkTests/BLETransportSafetyTests.swift
++++ b/VeilLinkTests/BLETransportSafetyTests.swift
+@@ -2,6 +2,55 @@
+ @testable import VeilLink
+ 
+ final class BLETransportSafetyTests: XCTestCase {
++final class BLETransportSafetyTests: XCTestCase {
++    func testBluetoothHeadsetCoexistenceOnlyReducesOptionalScanWork() {
++        XCTAssertTrue(BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
++            foreground: true, bluetoothAudioActive: false
++        ))
++        XCTAssertFalse(BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
++            foreground: true, bluetoothAudioActive: true
++        ))
++        XCTAssertFalse(BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
++            foreground: false, bluetoothAudioActive: false
++        ))
++        XCTAssertFalse(BLEAudioCoexistencePolicy.shouldPollRSSI(
++            foreground: true, bluetoothAudioActive: true, elapsed: 20, interval: 2
++        ))
++        XCTAssertFalse(BLEAudioCoexistencePolicy.shouldPollRSSI(
++            foreground: false, bluetoothAudioActive: false, elapsed: 20, interval: 2
++        ))
++        XCTAssertFalse(BLEAudioCoexistencePolicy.shouldPollRSSI(
++            foreground: true, bluetoothAudioActive: false, elapsed: 1, interval: 2
++        ))
++        XCTAssertTrue(BLEAudioCoexistencePolicy.shouldPollRSSI(
++            foreground: true, bluetoothAudioActive: false, elapsed: 2, interval: 2
++        ))
++    }
++
++    func testConcurrentFabricBLEBurstKeepsRealtimeFairWithoutChangingPriority() {
++        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 64, realtimePending: true), 8)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 64, realtimePending: false), 64)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 3, realtimePending: true), 3)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 0, realtimePending: false), 1)
++    }
++
++    func testConcurrentFabricMaintainsIdleCadenceWhenBackgrounded() {
++        let tuning = VeilRuntimeMaintenanceTuning.resolved(performanceLabel: "13PRO")
++        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
++            tuning: tuning, foreground: false, queued: true, connected: true
++        ), tuning.bleIdleMaintenanceNanoseconds)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
++            tuning: tuning, foreground: true, queued: true, connected: true
++        ), tuning.bleQueuedMaintenanceNanoseconds)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
++            tuning: tuning, foreground: true, queued: false, connected: true
++        ), tuning.bleConnectedMaintenanceNanoseconds)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
++            tuning: tuning, foreground: true, queued: false, connected: false
++        ), tuning.bleIdleMaintenanceNanoseconds)
++    }
++
++
+     func testFragmentationPlanAcceptsExactUInt16BoundaryAtLegacyATTSize() {
+         let packetSize = 20
+         let payloadBytes = (packetSize - BLEFragment.headerSize) * BLEFragment.maximumFragmentCount
