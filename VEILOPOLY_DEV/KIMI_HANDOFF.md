@@ -71,3 +71,13 @@ ChatGPT 当前 SpriteKit 资源名称：`pawnBlue`、`carRed`、`shipGreen`、`p
 - 临时材料/资源审核清单：`Veilopoly/docs/ASSET_GAP_REGISTER.md`，已将 14 PNG/12 WAV 标记为已有。其它列为**待核对**，不是已确认缺少。
 - **Owner 将先上传 Kimi 已制作的一部分模型**。收到并审查已完成内容前，不输出终版缺失清单，不重复建模；当前优先准备模型版本、alias/尺寸、素材出处、许可证、移动端导出方案。
 - 提醒：Owner 参考截图包含个人信息，不把原图加入公开仓库；只按胶囊语义与外形实现。
+
+## K1 已接收，下一项唯一视觉任务：K2 横向全屏差量交付
+
+已将 `Veilopoly_Kimi_K1_v1.zip` 实际解包写入 `INCOMING_ASSETS/KIMI_K1_v1/`，含两张既有预览、4 个 SVG 源、骰子图集、备选卡背、音频、JSON/MD 规格；原包保持不变。可直接访问 `VEILOPOLY_DEV/Veilopoly/docs/KIMI_K1_INTEGRATION_REVIEW.md` 查看审计结果。
+
+**优先读取并按其执行：** `VEILOPOLY_DEV/Veilopoly/docs/KIMI_K2_LANDSCAPE_DELTA.md`。新增最高优先级是 iPhone 横向全屏 + 微信小程序式右上角双段胶囊的视觉样张和各阶段横屏操作面板，不能继续用 K1 竖屏主稿替代。原有 14 PNG +12 WAV 和 K1 新增贴图已存，不要重复造轮子。
+
+K1 内容还有 **2 项旧资源 SHA-256 记录错误**（`die4.png` 和 `mortgage.wav`，实际二进制无须重做）、四个 SVG 缺失 `viewBox`、骰子 XML 原始文件名失配（工程侧已修复副本）。修订 K2 manifest 并补充准确原始素材 URL；不必重发未变动的大包。
+
+务必记住：`sources/board.json`、`sources/cards.json` 属于未被 Owner 批准的规则提案；不得因为已有预览就把它们变成引擎正式源。
