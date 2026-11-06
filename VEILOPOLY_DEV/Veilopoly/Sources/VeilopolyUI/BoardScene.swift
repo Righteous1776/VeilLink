@@ -227,10 +227,13 @@ final class GameBoardScene: SKScene {
    sound(key)
    if case .build = kind { sound("buildClick") }
    activeCommandNode = node
-   node?.run(SKAction.sequence([SKAction.scale(to: 1.12, duration: duration/2),
-                                SKAction.scale(to: 1, duration: duration/2), SKAction.run(ack)]), withKey: "command")
-   if node == nil { ack() }
+   // Register terminal state before a possible synchronous nil-node ACK:
+   // that ACK may immediately start the next render command.
    finishImmediately = { node?.setScale(1) }
+   if let node {
+    node.run(SKAction.sequence([SKAction.scale(to: 1.12, duration: duration/2),
+                                SKAction.scale(to: 1, duration: duration/2), SKAction.run(ack)]), withKey: "command")
+   } else { ack() }
   case .cashFloat(_, let amount):
    sound("cash")
    let label = SKLabelNode(text: (amount > 0 ? "+" : "") + "¥\(amount)")
