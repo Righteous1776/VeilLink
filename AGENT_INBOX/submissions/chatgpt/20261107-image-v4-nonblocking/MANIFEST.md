@@ -1,0 +1,12 @@
+# Image V4, nonblocking BLE
+- agent_id: chatgpt
+- task_id: 20261107-image-v4-nonblocking
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- submission_path: AGENT_INBOX/submissions/chatgpt/20261107-image-v4-nonblocking/
+- mode: INBOX_ONLY
+- status: DROPPED
+- proposed_files:
+  - VeilLink/Core/MediaTransferPolicy.swift
+  - VeilLink/Media/ImageTranscoder.swift
+  - VeilLink/UI/ConversationViews.swift
+  - VeilLinkTests/MediaTransferPolicyTests.swift
