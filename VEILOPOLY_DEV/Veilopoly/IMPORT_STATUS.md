@@ -1,34 +1,29 @@
 # Source import status · 2026-11-06
 
-**Source ZIP:** `Veilopoly_P1-P4_checkpoint_20261106.zip`, SHA-256 `d999d29f9e369899cbd666e1cfcb0744a2e17d3d976deb4e2e6a591a5e1923c1`.
+**Checkpoint source archive:** `Veilopoly_P1-P4_checkpoint_20261106.zip`, SHA-256 `d999d29f9e369899cbd666e1cfcb0744a2e17d3d976deb4e2e6a591a5e1923c1`.
 
-**Archive inspected locally:** 64 files (33 Swift source/test files, 5 specification/license Markdown documents, 26 PNG/WAV resources); 38 non-binary entries and 26 binary entries. The ZIP did not include a standalone root README. Local workspace contains later experimental edits not present in the checkpoint ZIP. Do not silently mix the two.
+Locally audited source archive: 64 files = 38 nonbinary source/specification/test files and 26 binary CC0 PNG/WAV assets. Includes 33 Swift files (engine, AI, network, UI, tests).
 
-**GitHub import stage:** package manifest and coordination documents committed. The bulk source tree, XCTest files, and binary resources are **NOT yet committed** into this branch. Do not mistake the ZIP previously issued in ChatGPT for an automatically synchronized GitHub folder.
+## Actual GitHub branch status
 
-The `Package.swift` targets will compile only after their matching Sources/Tests/Resources directories are imported. The current branch is NOT a complete Swift package and has not passed its own CI.
+- **COMMITTED**: dedicated branch `dev/veilopoly`; governance, coordination, Kimi handoff and asset intake documents.
+- **COMMITTED**: `Veilopoly/Package.swift` copied from checkpoint.
+- **COMMITTED**: 23 exact checkpoint Swift XCTest files in `Veilopoly/Tests/` via one atomic commit `4a47ccb86ab4eaf2d66f75020823bb8fd859505a`.
+- **NOT COMMITTED**: 10 Swift source implementation files under `Veilopoly/Sources/` (Engine, AI, Net, UI).
+- **NOT COMMITTED**: 5 checkpoint Markdown specifications/licenses under `Veilopoly/docs/` (their originals exist in locally validated ZIP).
+- **NOT COMMITTED**: 26 PNG/WAV media resources under `Veilopoly/Sources/VeilopolyUI/Resources/`.
+- **NOT VERIFIED**: Swift Package build/test of this GitHub branch; a manifest and tests alone cannot compile. iOS 16 SpriteKit/SwiftUI also unverified.
 
-## Expected incoming folders
+**DO NOT CLAIM `SOURCE_IMPORTED`, `TESTS_GREEN`, `IOS_READY` or `P4_COMPLETE` for the branch.**
 
-```text
-Veilopoly/
-├── Package.swift                     # committed
-├── Sources/
-│   ├── VeilopolyEngine/             # pending: Models, Board, Rules, SampleCards
-│   ├── VeilopolyAI/                 # pending: AI.swift
-│   ├── VeilopolyNet/                # pending: Net.swift
-│   └── VeilopolyUI/                 # pending: UI, BoardScene, RenderCommands, Resources
-├── Tests/
-│   ├── VeilopolyEngineTests/        # pending: 20 move/determinism/support test files
-│   ├── VeilopolyAITests/            # pending: 2 test files
-│   └── VeilopolyNetTests/           # pending: 1 test file
-└── docs/                            # pending: game/modeling/rendering specs & licenses
-```
+The independent local ZIP had previously been tested on Linux, but its results do not transfer to the incomplete GitHub branch. User can find the fully structured 64-file source snapshot under `Veilopoly_GitHub_ImportReady_20261106.zip` from ChatGPT, intended to be unpacked into `VEILOPOLY_DEV/Veilopoly/` on branch `dev/veilopoly`. The ZIP must not itself be committed into Git history; import its individual files instead.
 
-## Native test claims
+## Migration gate
 
-The checkpoint package was previously tested with the Linux Swift toolchain, and earlier results reported 24 passing XCTest checks. This status report has NOT rerun iOS SDK tests for this GitHub branch. Never relabel ZIP-local tests as CI results from this branch.
+1. Finish exact checkpoint `Sources/**` + `docs/**` + licensed `Resources/**` import, verifying file hashes against the archive manifest;
+2. build and test with Swift toolchain on exact branch revision;
+3. iOS 16/macOS Xcode SDK compile & run SpriteKit/SwiftUI/sound/ack tests;
+4. update issue #6 with SHA, test inventory and actual evidence;
+5. P5 remains prohibited pending separate Owner authorization.
 
-## Mandatory next work
-
-Complete exact file-by-file import of the ZIP into `dev/veilopoly:VEILOPOLY_DEV/Veilopoly/`, verifying hashes and source license. Then run Swift package build and tests; separately validate SwiftUI/SpriteKit on iOS via Xcode. Only after all exact resources are committed may the directory be marked `SOURCE_IMPORTED`.
+**Working protocol:** ChatGPT codes and owns engine/UI integration. Kimi owns visual assets, 2.5D modeling and rendering specifications, delivers via Owner for verified import.
