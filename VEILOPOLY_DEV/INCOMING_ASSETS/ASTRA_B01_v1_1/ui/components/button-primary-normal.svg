@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="48" viewBox="0 0 240 48"><defs>
+<linearGradient id="metal" x2="0.8" y2="1"><stop stop-color="#293E4D"/><stop offset=".48" stop-color="#162735"/><stop offset="1" stop-color="#101D29"/></linearGradient>
+<linearGradient id="gold" x2=".3" y2="1"><stop stop-color="#E1CCA0"/><stop offset=".5" stop-color="#C9AC74"/><stop offset="1" stop-color="#AD8955"/></linearGradient>
+<linearGradient id="glass" x2="1" y2="1"><stop stop-color="#A6CDDA" stop-opacity=".18"/><stop offset=".6" stop-color="#345361" stop-opacity=".12"/><stop offset="1" stop-color="#92B6BD" stop-opacity=".06"/></linearGradient>
+<radialGradient id="ambient"><stop stop-color="#233B48"/><stop offset="1" stop-color="#0B1420"/></radialGradient>
+<pattern id="grain" width="4" height="4" patternUnits="userSpaceOnUse"><path d="M0 .5H4" stroke="#CBDFE4" stroke-opacity=".025"/></pattern>
+<linearGradient id="paper" x2=".4" y2="1"><stop stop-color="#F7F3E5"/><stop offset="1" stop-color="#E7E6D3"/></linearGradient>
+<pattern id="paperfiber" width="12" height="12" patternUnits="userSpaceOnUse"><path d="M1 2h3m3 5h4M2 11h2" stroke="#5B796C" stroke-width=".35" opacity=".1"/></pattern>
+</defs><rect x="0.5" y="0.5" width="239" height="47" rx="10" fill="url(#gold)" stroke="#D8C08D" stroke-width="1" /><path d="M12 2H228" stroke="#F2E5C9" opacity="0.25"/></svg>
