@@ -1,7 +1,7 @@
 diff --git a/VeilLink/Core/MediaTransferPolicy.swift b/VeilLink/Core/MediaTransferPolicy.swift
 --- a/VeilLink/Core/MediaTransferPolicy.swift
 +++ b/VeilLink/Core/MediaTransferPolicy.swift
-@@ -12,8 +12,36 @@
+@@ -12,7 +12,35 @@
          "image/png"
      ]
  
@@ -41,7 +41,6 @@ diff --git a/VeilLink/Core/MediaTransferPolicy.swift b/VeilLink/Core/MediaTransf
 +        }
 +    }
 +}
- 
 diff --git a/VeilLink/Core/VeilImportedFileAccess.swift b/VeilLink/Core/VeilImportedFileAccess.swift
 --- a/VeilLink/Core/VeilImportedFileAccess.swift
 +++ b/VeilLink/Core/VeilImportedFileAccess.swift
@@ -90,11 +89,11 @@ diff --git a/VeilLink/Core/VeilImportedFileAccess.swift b/VeilLink/Core/VeilImpo
          _ sourceURL: URL,
 -        acceptedExtensions: Set<String> = []
 -    ) throws -> URL {
--        let normalizedExtensions
+-        let normalizedExtensions = Set(acceptedExtensions.map { $0.lowercased() })
 +        acceptedExtensions: Set<String> = [],
 +        maximumBytes: Int? = nil
 +    ) throws -> URL {
-+        let normalizedExtensions
++        let normalizedExtensions = Set(acceptedExtensions.map { $0.lowercased() })
          if !normalizedExtensions.isEmpty,
             !normalizedExtensions.contains(sourceURL.pathExtension.lowercased()) {
              throw VeilImportedFileAccessError.unsupportedExtension(
@@ -112,13 +111,13 @@ diff --git a/VeilLink/Core/VeilImportedFileAccess.swift b/VeilLink/Core/VeilImpo
      }
  
 -    private static func copyCancellableFile(from source: URL, to destination: URL) throws {
--        if Task.isCancelled
+-        if Task.isCancelled { throw CancellationError() }
 +    private static func copyCancellableFile(from source: URL, to destination: URL, maximumBytes: Int?) throws {
-+        if Task.isCancelled
++        if Task.isCancelled { throw CancellationError() }
          guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
              throw VeilImportedFileAccessError.inaccessible
          }
-@@ -119,12 +124,17 @@
+@@ -119,11 +124,16 @@
              try? output.close()
          }
  
@@ -141,7 +140,6 @@ diff --git a/VeilLink/Core/VeilImportedFileAccess.swift b/VeilLink/Core/VeilImpo
 +        }
      }
  }
- 
 diff --git a/VeilLinkTests/MediaTransferPolicyTests.swift b/VeilLinkTests/MediaTransferPolicyTests.swift
 --- a/VeilLinkTests/MediaTransferPolicyTests.swift
 +++ b/VeilLinkTests/MediaTransferPolicyTests.swift
