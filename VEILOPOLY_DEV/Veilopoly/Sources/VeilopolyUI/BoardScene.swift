@@ -464,12 +464,13 @@ final class GameBoardScene: SKScene {
                                 .fadeOut(withDuration: 0.7)]))
     chip = sparkle
    }
-   finishImmediately = { label.removeFromParent(); chip?.removeFromParent() }
+   let finishedChip = chip
+   finishImmediately = { label.removeFromParent(); finishedChip?.removeFromParent() }
    activeCommandNode = label
    label.run(SKAction.sequence([SKAction.group([.moveBy(x: 0,y: 50,duration: 0.7), .fadeOut(withDuration: 0.7)]),
                                 .run {
                                  label.removeFromParent()
-                                 chip?.removeFromParent()
+                                 finishedChip?.removeFromParent()
                                  ack()
                                 }]), withKey: "command")
   case .cardShow(_, _):
