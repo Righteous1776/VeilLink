@@ -158,19 +158,43 @@ final class GameBoardScene: SKScene {
      : SKColor(red: 0.10, green: 0.22, blue: 0.23, alpha: 1)
    caption.verticalAlignmentMode = .center
    caption.horizontalAlignmentMode = .center
+   caption.name = "LiveTileName"
    caption.position = kimiSkin == nil ? CGPoint(x: spot.x, y: spot.y - 15)
-                                      : CGPoint(x: 0, y: 0)
+                                      : CGPoint(x: 0, y: 4)
    caption.zPosition = kimiSkin == nil ? 7 : 2.5
    if let art = kimiSkin?.tiles[i] { art.addChild(caption) }
    else { addChild(caption) }
    tileCaptions[i] = caption
 
    if let art = kimiSkin?.tiles[i] {
+    // K2's preview tiles have sample labels/prices baked into their atlas.
+    // Cover ONLY the exact text regions declared in SPRITE_MAP.json;
+    // keep frame, color-band, ownership and special icons visible.
+    let inkPaper = SKColor(red: 0.94, green: 0.92, blue: 0.86, alpha: 0.985)
+    let localTextWidth = max(20, tileSize.width - 10)
+    let namePlate = SKShapeNode(rect: CGRect(x: -localTextWidth / 2,
+                                             y: -12, width: localTextWidth, height: 32),
+                                cornerRadius: 2)
+    namePlate.name = "LiveNameMask"
+    namePlate.fillColor = inkPaper
+    namePlate.strokeColor = .clear
+    namePlate.zPosition = 2.2
+    art.addChild(namePlate)
+    let pricePlate = SKShapeNode(rect: CGRect(x: -localTextWidth / 2,
+                                              y: -33, width: localTextWidth, height: 14),
+                                 cornerRadius: 2)
+    pricePlate.name = "LivePriceMask"
+    pricePlate.fillColor = inkPaper
+    pricePlate.strokeColor = .clear
+    pricePlate.zPosition = 2.2
+    art.addChild(pricePlate)
     let price = SKLabelNode(text: "")
+    price.name = "LiveTilePrice"
     price.fontName = "AvenirNext-DemiBold"
     price.fontSize = 10
+    price.verticalAlignmentMode = .center
     price.fontColor = SKColor(red: 0.16, green: 0.27, blue: 0.29, alpha: 1)
-    price.position = CGPoint(x: 0, y: -tileSize.height / 2 + 25)
+    price.position = CGPoint(x: 0, y: -26)
     price.zPosition = 2.5
     art.addChild(price)
     tilePriceLabels[i] = price
