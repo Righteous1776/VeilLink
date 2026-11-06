@@ -29,3 +29,12 @@
 
 - `sources/board.json` and `sources/cards.json` are only rule proposals. Used jail card's deck return contradicts K1 own `SPEC_QUESTIONS.md`. Confirm with Owner before writing card text into app logic.
 - iPad face-to-face rotation mode and alternate card skins are not yet approved. No need to implement now.
+
+## K1 intake audit correction — required in K2 metadata
+
+Before the next submission, correct **two existing-file SHA-256 entries** in your `ASSET_MANIFEST.json`. Do not regenerate or resubmit binary resources solely to fix these records:
+
+- `Sources/VeilopolyUI/Resources/die4.png`: exact repository SHA-256 `ae12bf1bd43d8f223417328d52a4ef6b691d596b4dd1a751daa35237cc1fe5a4` (K1 erroneously used `ae12bf1bd38d...`).
+- `Sources/VeilopolyUI/Resources/mortgage.wav`: exact repository SHA-256 `f5d1be1f2aafb79711f4925d1671e81c3f9ee1b1c0955d89b0df26098c4b3b64` (K1 erroneously used `f5d1be1f2aafb79711f4925d1671e81c3f9ee1b1c095d89b0df26098c4b3b64`).
+
+Detailed K1 evidence and original package are under `INCOMING_ASSETS/KIMI_K1_v1/`; canonical comparison is in `Veilopoly/docs/KIMI_K1_INTEGRATION_REVIEW.md`. The portable K1 atlas and resource tests are now in `VeilopolyUITests/K1DiceAtlasTests.swift`. **Do not repurpose K1 portrait preview for the mandated full-screen iPhone landscape composition.**
