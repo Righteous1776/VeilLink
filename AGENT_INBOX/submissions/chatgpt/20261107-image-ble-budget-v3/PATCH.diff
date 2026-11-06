@@ -1,0 +1,390 @@
+diff --git a/VeilLink/Core/MediaTransferPolicy.swift b/VeilLink/Core/MediaTransferPolicy.swift
+--- a/VeilLink/Core/MediaTransferPolicy.swift
++++ b/VeilLink/Core/MediaTransferPolicy.swift
+@@ -1,11 +1,44 @@
+ import Foundation
+ 
++enum ImageTransferProfile: Sendable, Equatable {
++    case bluetooth, fastLAN
++}
++
+ enum MediaTransferPolicy {
+     static let targetImageBytes = 1_800_000
+     static let maximumImageBytes = 3_000_000
+     static let maximumImageDimension = 4_096
+     static let minimumImageDimension = 1_600
++    static let bluetoothTargetImageBytes = 200_000
++    static let bluetoothMaximumImageBytes = 384_000
++    static let bluetoothMaximumDimension = 1_600
+ 
++    static func targetImageBytes(for profile: ImageTransferProfile) -> Int {
++        profile == .bluetooth ? bluetoothTargetImageBytes : targetImageBytes
++    }
++
++    static func maximumImageBytes(for profile: ImageTransferProfile) -> Int {
++        profile == .bluetooth ? bluetoothMaximumImageBytes : maximumImageBytes
++    }
++
++    static func maximumImageDimension(for profile: ImageTransferProfile) -> Int {
++        profile == .bluetooth ? bluetoothMaximumDimension : maximumImageDimension
++    }
++
++    static func qualityRange(for profile: ImageTransferProfile) -> (initial: Double, minimum: Double) {
++        profile == .bluetooth ? (0.88, 0.56) : (0.95, 0.80)
++    }
++
++    static func nextCompressionQuality(
++        current: Double, encodedBytes: Int, maximumBytes: Int, floor: Double
++    ) -> Double? {
++        guard maximumBytes > 0, encodedBytes > maximumBytes,
++              floor >= 0, current > floor + 0.025 else { return nil }
++        let ratio = max(0.05, min(1, Double(maximumBytes) / Double(encodedBytes)))
++        let adjusted = max(floor, min(current - 0.06, current * sqrt(ratio)))
++        return adjusted < current - 0.025 ? adjusted : nil
++    }
++
+     static let supportedImageMIMETypes: Set<String> = [
+         "image/jpeg",
+         "image/heic",
+diff --git a/VeilLink/Media/ImageTranscoder.swift b/VeilLink/Media/ImageTranscoder.swift
+--- a/VeilLink/Media/ImageTranscoder.swift
++++ b/VeilLink/Media/ImageTranscoder.swift
+@@ -33,33 +33,36 @@
+         switch self {
+         case .unreadable: return "无法读取这张图片。"
+         case .unsupported: return "当前系统无法解码这种图片或 RAW 格式。"
+-        case .stillTooLarge: return "在优先保证画质的压缩策略下，图片仍超过 3 MB。"
++        case .stillTooLarge: return "无法在当前链路的大小限制内保留可传输的图片；可尝试高速局域网。"
+         }
+     }
+ }
+ 
+ enum ImageTranscoder {
+-    private static let qualitySteps: [CGFloat] = [0.94, 0.90, 0.86, 0.82, 0.78, 0.72, 0.66]
+-    private static let dimensionSteps = [4_096, 3_584, 3_072, 2_560, 2_048, 1_600]
++    private static let dimensionSteps = [4_096, 3_072, 2_560, 2_048, 1_600, 1_280, 1_024, 800, 640]
+ 
+-    static func prepare(at url: URL) async throws -> PreparedImage {
++    static func prepare(at url: URL, profile: ImageTransferProfile = .bluetooth) async throws -> PreparedImage {
+         try await Task.detached(priority: .userInitiated) {
+-            try prepareSynchronously(at: url)
++            try prepareSynchronously(at: url, profile: profile)
+         }.value
+     }
+ 
+-    static func prepareSynchronously(at url: URL) throws -> PreparedImage {
++    static func prepareSynchronously(
++        at url: URL, profile: ImageTransferProfile = .bluetooth
++    ) throws -> PreparedImage {
+         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+             // Some RAW variants are only exposed through Core Image. Keep going if CI can open it.
+             guard CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) != nil else {
+                 throw ImagePreparationError.unreadable
+             }
+-            return try transcode(url: url, source: nil)
++            return try transcode(url: url, source: nil, profile: profile)
+         }
+-        return try transcode(url: url, source: source)
++        return try transcode(url: url, source: source, profile: profile)
+     }
+ 
+-    private static func transcode(url: URL, source: CGImageSource?) throws -> PreparedImage {
++    private static func transcode(
++        url: URL, source: CGImageSource?, profile: ImageTransferProfile
++    ) throws -> PreparedImage {
+         let originalByteCount = fileSize(at: url)
+         guard originalByteCount > 0 else { throw ImagePreparationError.unreadable }
+         let sourceType = sourceUTType(for: url, source: source)
+@@ -71,64 +74,79 @@
+             byteCount: originalByteCount,
+             type: sourceType,
+             sourceFormat: sourceFormat,
+-            dimensions: sourceInfo
++            dimensions: sourceInfo,
++            profile: profile
+         ) {
+             return preserved
+         }
+ 
+-        let preferredEncoding = preferredOutputEncoding()
+-        var bestUnderHardLimit: PreparedImage?
++        let hardLimit = MediaTransferPolicy.maximumImageBytes(for: profile)
++        let dimensions = effectiveDimensions(original: sourceInfo, profile: profile)
+ 
+-        for dimension in effectiveDimensions(original: sourceInfo) {
+-            guard let cgImage = decodeImage(url: url, source: source, maximumDimension: dimension) else { continue }
+-            for quality in qualitySteps {
+-                guard let encoded = encode(cgImage, as: preferredEncoding.type, quality: quality) else { continue }
+-                let prepared = PreparedImage(
+-                    data: encoded,
+-                    mimeType: preferredEncoding.mimeType,
+-                    sourceFormat: sourceFormat,
+-                    outputFormat: preferredEncoding.label,
+-                    originalByteCount: originalByteCount,
+-                    pixelWidth: cgImage.width,
+-                    pixelHeight: cgImage.height,
+-                    wasTranscoded: true
+-                )
+-                if encoded.count <= MediaTransferPolicy.targetImageBytes { return prepared }
+-                if bestUnderHardLimit == nil, encoded.count <= MediaTransferPolicy.maximumImageBytes {
+-                    bestUnderHardLimit = prepared
++        // Preserve transparency in large PNG screenshots; no silent flattening.
++        if sourceType?.conforms(to: .png) == true,
++           let firstDimension = dimensions.first,
++           let preview = decodeImage(url: url, source: source, maximumDimension: firstDimension),
++           imageHasAlpha(preview) {
++            for dimension in dimensions {
++                try Task.checkCancellation()
++                guard let cgImage = decodeImage(
++                    url: url, source: source, maximumDimension: dimension
++                ), let png = encode(
++                    cgImage, as: UTType.png.identifier as CFString, quality: 1
++                ) else { continue }
++                if png.count <= hardLimit {
++                    return PreparedImage(
++                        data: png, mimeType: "image/png", sourceFormat: sourceFormat,
++                        outputFormat: "PNG", originalByteCount: originalByteCount,
++                        pixelWidth: cgImage.width, pixelHeight: cgImage.height,
++                        wasTranscoded: true
++                    )
+                 }
+             }
++            throw ImagePreparationError.stillTooLarge
+         }
+ 
+-        // Quality wins over hitting the soft target. If HEIC produced a high-quality image
+-        // under the hard protocol limit, keep it instead of needlessly switching codecs.
+-        if let bestUnderHardLimit { return bestUnderHardLimit }
+-
+-        // HEIC encoding can be unavailable on unusual devices/OS builds. JPEG is the fallback.
+-        if preferredEncoding.mimeType != "image/jpeg" {
+-            for dimension in effectiveDimensions(original: sourceInfo) {
+-                guard let cgImage = decodeImage(url: url, source: source, maximumDimension: dimension) else { continue }
+-                for quality in qualitySteps {
+-                    guard let encoded = encode(cgImage, as: UTType.jpeg.identifier as CFString, quality: quality) else { continue }
+-                    let prepared = PreparedImage(
+-                        data: encoded,
+-                        mimeType: "image/jpeg",
+-                        sourceFormat: sourceFormat,
+-                        outputFormat: "JPEG",
+-                        originalByteCount: originalByteCount,
+-                        pixelWidth: cgImage.width,
+-                        pixelHeight: cgImage.height,
+-                        wasTranscoded: true
+-                    )
+-                    if encoded.count <= MediaTransferPolicy.targetImageBytes { return prepared }
+-                    if bestUnderHardLimit == nil, encoded.count <= MediaTransferPolicy.maximumImageBytes {
+-                        bestUnderHardLimit = prepared
++        let preferredEncoding = preferredOutputEncoding()
++        let encodings: [(type: CFString, mime: String, label: String)] =
++            preferredEncoding.mimeType == "image/jpeg"
++                ? [(preferredEncoding.type, "image/jpeg", "JPEG")]
++                : [
++                    (preferredEncoding.type, "image/heic", "HEIC"),
++                    (UTType.jpeg.identifier as CFString, "image/jpeg", "JPEG")
++                ]
++        let range = MediaTransferPolicy.qualityRange(for: profile)
++        for encoding in encodings {
++            for dimension in dimensions {
++                try Task.checkCancellation()
++                guard let cgImage = decodeImage(
++                    url: url, source: source, maximumDimension: dimension
++                ) else { continue }
++                var quality = range.initial
++                for _ in 0..<3 {
++                    try Task.checkCancellation()
++                    guard let bytes = encode(
++                        cgImage, as: encoding.type, quality: CGFloat(quality)
++                    ) else { break }
++                    if bytes.count <= hardLimit {
++                        // Once safe for this route, preserve pixels and quality.
++                        return PreparedImage(
++                            data: bytes, mimeType: encoding.mime,
++                            sourceFormat: sourceFormat, outputFormat: encoding.label,
++                            originalByteCount: originalByteCount,
++                            pixelWidth: cgImage.width, pixelHeight: cgImage.height,
++                            wasTranscoded: true
++                        )
+                     }
++                    guard let next = MediaTransferPolicy.nextCompressionQuality(
++                        current: quality, encodedBytes: bytes.count,
++                        maximumBytes: hardLimit, floor: range.minimum
++                    ) else { break }
++                    quality = next
+                 }
+             }
+         }
+ 
+-        if let bestUnderHardLimit { return bestUnderHardLimit }
+         throw sourceType?.conforms(to: .image) == true ? ImagePreparationError.stillTooLarge : ImagePreparationError.unsupported
+     }
+ 
+@@ -137,19 +155,20 @@
+         byteCount: Int,
+         type: UTType?,
+         sourceFormat: String,
+-        dimensions: (width: Int, height: Int)?
++        dimensions: (width: Int, height: Int)?,
++        profile: ImageTransferProfile
+     ) throws -> PreparedImage? {
+         guard let type, let dimensions,
+-              max(dimensions.width, dimensions.height) <= MediaTransferPolicy.maximumImageDimension else { return nil }
++              max(dimensions.width, dimensions.height) <= MediaTransferPolicy.maximumImageDimension(for: profile) else { return nil }
+ 
+         let mapping: (mime: String, label: String, limit: Int)?
+         if type.conforms(to: .jpeg) {
+-            mapping = ("image/jpeg", "JPEG", MediaTransferPolicy.targetImageBytes)
++            mapping = ("image/jpeg", "JPEG", MediaTransferPolicy.targetImageBytes(for: profile))
+         } else if type == .heic {
+-            mapping = ("image/heic", "HEIC", MediaTransferPolicy.targetImageBytes)
++            mapping = ("image/heic", "HEIC", MediaTransferPolicy.targetImageBytes(for: profile))
+         } else if type.conforms(to: .png) {
+             // Keep smaller screenshots/graphics lossless instead of forcing a lossy photo codec.
+-            mapping = ("image/png", "PNG", MediaTransferPolicy.maximumImageBytes)
++            mapping = ("image/png", "PNG", MediaTransferPolicy.targetImageBytes(for: profile))
+         } else {
+             mapping = nil
+         }
+@@ -168,13 +187,16 @@
+         )
+     }
+ 
+-    private static func effectiveDimensions(original: (width: Int, height: Int)?) -> [Int] {
+-        let originalMaximum = original.map { max($0.width, $0.height) } ?? MediaTransferPolicy.maximumImageDimension
+-        if originalMaximum <= MediaTransferPolicy.minimumImageDimension { return [max(originalMaximum, 1)] }
+-        let ceiling = min(originalMaximum, MediaTransferPolicy.maximumImageDimension)
++    private static func effectiveDimensions(
++        original: (width: Int, height: Int)?, profile: ImageTransferProfile
++    ) -> [Int] {
++        let originalMaximum = original.map { max($0.width, $0.height) }
++            ?? MediaTransferPolicy.maximumImageDimension(for: profile)
++        let ceiling = max(1, min(originalMaximum, MediaTransferPolicy.maximumImageDimension(for: profile)))
+         var values = [ceiling]
+-        for candidate in dimensionSteps where candidate < ceiling && candidate >= MediaTransferPolicy.minimumImageDimension {
+-            if !values.contains(candidate) { values.append(candidate) }
++        for candidate in dimensionSteps where candidate < ceiling &&
++            candidate >= (profile == .bluetooth ? 640 : MediaTransferPolicy.minimumImageDimension) {
++            values.append(candidate)
+         }
+         return values
+     }
+@@ -202,6 +224,13 @@
+         return CIContext(options: [.cacheIntermediates: false]).createCGImage(output, from: output.extent)
+     }
+ 
++    private static func imageHasAlpha(_ image: CGImage) -> Bool {
++        switch image.alphaInfo {
++        case .none, .noneSkipFirst, .noneSkipLast: return false
++        default: return true
++        }
++    }
++
+     private static func encode(_ image: CGImage, as type: CFString, quality: CGFloat) -> Data? {
+         let mutable = NSMutableData()
+         guard let destination = CGImageDestinationCreateWithData(mutable, type, 1, nil) else { return nil }
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -1091,8 +1091,17 @@
+                 isPreparingImage = false
+             }
+             do {
+-                let prepared = try await ImageTranscoder.prepare(at: imported.url)
+-                try model.sessions.sendImage(prepared.data, mimeType: prepared.mimeType, to: conversation.peerIdentityID)
++                // Unknown and Internet routes use the conservative BLE budget.
++                let profile: ImageTransferProfile =
++                    model.sessions.preferredTransportKind(for: conversation.peerIdentityID) == .lan
++                    ? .fastLAN : .bluetooth
++                let prepared = try await ImageTranscoder.prepare(
++                    at: imported.url, profile: profile
++                )
++                try model.sessions.sendImage(
++                    prepared.data, mimeType: prepared.mimeType,
++                    to: conversation.peerIdentityID, profile: profile
++                )
+                 let status = prepared.summary
+                 withAnimation(.easeOut(duration: 0.18)) { mediaStatus = status }
+                 reload()
+diff --git a/VeilLink/Security/SessionCoordinator.swift b/VeilLink/Security/SessionCoordinator.swift
+--- a/VeilLink/Security/SessionCoordinator.swift
++++ b/VeilLink/Security/SessionCoordinator.swift
+@@ -623,8 +623,22 @@
+         )
+     }
+ 
+-    func sendImage(_ imageData: Data, mimeType: String, to peerIdentityID: String) throws {
+-        guard imageData.count <= WireProtocol.maximumImageBytes else { throw NSError(domain: "VeilLink", code: 12, userInfo: [NSLocalizedDescriptionKey: "图片处理后仍超过 3 MB。"] ) }
++    func sendImage(
++        _ imageData: Data, mimeType: String, to peerIdentityID: String,
++        profile: ImageTransferProfile = .bluetooth
++    ) throws {
++        guard !imageData.isEmpty,
++              imageData.count <= MediaTransferPolicy.maximumImageBytes(for: profile),
++              imageData.count <= WireProtocol.maximumImageBytes else {
++            throw NSError(domain: "VeilLink", code: 12, userInfo: [
++                NSLocalizedDescriptionKey: "图片超过当前传输链路允许的压缩大小。"
++            ])
++        }
++        if profile == .fastLAN && preferredTransportKind(for: peerIdentityID) != .lan {
++            throw NSError(domain: "VeilLink", code: 13, userInfo: [
++                NSLocalizedDescriptionKey: "高速局域网已切换，请重新选择图片发送。"
++            ])
++        }
+         guard MediaTransferPolicy.supportsImageMIMEType(mimeType) else { throw NSError(domain: "VeilLink", code: 14, userInfo: [NSLocalizedDescriptionKey: "当前传输层不支持这种图片编码。"] ) }
+         try queueContent(WireChatContent(kind: .image, text: nil, attachment: imageData, mimeType: mimeType, sentAt: Date(), attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil), preview: "[图片]", to: peerIdentityID)
+     }
+@@ -1127,6 +1141,15 @@
+ 
+     private func sendAttachmentStep(message: ChatMessage, attachment: ChatAttachment, peerIdentityID: String, transportID: UUID, localIdentityID: String, keys: SessionKeyMaterial, context: inout SessionContext) throws -> Bool {
+         let isVoice = VoiceMessageCodec.isVoiceMIMEType(attachment.mimeType)
++        // Already-queued LAN media must not suddenly flood BLE on failover.
++        if !isVoice, (transportKinds[transportID] ?? .ble) != .lan,
++           attachment.byteCount > MediaTransferPolicy.bluetoothMaximumImageBytes {
++            lastError = "大图等待高速局域网恢复，不会经蓝牙发送。"
++            return try applySendResult(
++                .temporarilyUnavailable, message: message,
++                peerIdentityID: peerIdentityID, localIdentityID: localIdentityID
++            )
++        }
+         let maximumBytes = isVoice ? WireProtocol.maximumVoiceBytes : WireProtocol.maximumImageBytes
+         let supportedType = isVoice || MediaTransferPolicy.supportsImageMIMEType(attachment.mimeType)
+         guard let cached = cachedOutboundAttachment(messageID: message.id, attachment: attachment),
+diff --git a/VeilLinkTests/MediaTransferPolicyTests.swift b/VeilLinkTests/MediaTransferPolicyTests.swift
+--- a/VeilLinkTests/MediaTransferPolicyTests.swift
++++ b/VeilLinkTests/MediaTransferPolicyTests.swift
+@@ -2,6 +2,35 @@
+ @testable import VeilLink
+ 
+ final class MediaTransferPolicyTests: XCTestCase {
++    func testBLEBudgetIsMuchSmallerThanWireCeiling() {
++        XCTAssertEqual(MediaTransferPolicy.bluetoothTargetImageBytes, 200_000)
++        XCTAssertEqual(MediaTransferPolicy.bluetoothMaximumImageBytes, 384_000)
++        XCTAssertEqual(MediaTransferPolicy.maximumImageBytes(for: .bluetooth), 384_000)
++        XCTAssertEqual(MediaTransferPolicy.maximumImageDimension(for: .bluetooth), 1_600)
++        XCTAssertEqual(MediaTransferPolicy.maximumImageBytes(for: .fastLAN), 3_000_000)
++        XCTAssertEqual(MediaTransferPolicy.targetImageBytes(for: .fastLAN), 1_800_000)
++        XCTAssertLessThan(
++            MediaTransferPolicy.maximumImageBytes(for: .bluetooth),
++            WireProtocol.maximumImageBytes
++        )
++    }
++
++    func testCompressionQualityFeedbackNeverGrowsPayloadForOverBudgetImage() {
++        let minimum = MediaTransferPolicy.qualityRange(for: .bluetooth).minimum
++        XCTAssertNil(MediaTransferPolicy.nextCompressionQuality(
++            current: 0.88, encodedBytes: 300_000, maximumBytes: 384_000, floor: minimum
++        ))
++        let next = MediaTransferPolicy.nextCompressionQuality(
++            current: 0.88, encodedBytes: 900_000, maximumBytes: 384_000, floor: minimum
++        )
++        XCTAssertNotNil(next)
++        XCTAssertLessThan(next ?? 1, 0.88)
++        XCTAssertGreaterThanOrEqual(next ?? 0, minimum)
++        XCTAssertNil(MediaTransferPolicy.nextCompressionQuality(
++            current: minimum, encodedBytes: 900_000, maximumBytes: 384_000, floor: minimum
++        ))
++    }
++
+     func testTransferLayerAcceptsSafeOutputFormats() {
+         XCTAssertTrue(MediaTransferPolicy.supportsImageMIMEType("image/jpeg"))
+         XCTAssertTrue(MediaTransferPolicy.supportsImageMIMEType("image/heic"))
