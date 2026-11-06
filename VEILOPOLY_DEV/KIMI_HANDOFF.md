@@ -8,7 +8,7 @@
 - 开发区：`VEILOPOLY_DEV/`
 - 协作协议：`VEILOPOLY_DEV/COLLABORATION.md`
 - 你的交付通过 Owner 传给 ChatGPT，由 ChatGPT 导入分支和审计。**禁止将提交误报为已推送 GitHub**。
-- 旧规范：`VEILOPOLY_DEV/Veilopoly/docs/{GAME_DESIGN,MODELING_SPEC,RENDERING_SPEC}.md`（迁入完成后可在分支直接读）；也可以使用 Owner 先前给你的策划 ZIP。
+- 旧规范：`VEILOPOLY_DEV/Veilopoly/docs/{GAME_DESIGN,MODELING_SPEC,RENDERING_SPEC}.md`（现已在分支直接可读）；也可以使用 Owner 先前给你的策划 ZIP。
 
 ## 你的核心任务
 
@@ -54,3 +54,11 @@ Veilopoly_Kimi_K1_v1.zip
 ChatGPT 当前 SpriteKit 资源名称：`pawnBlue`、`carRed`、`shipGreen`、`planeYellow`、`die1..die6`、`house`、`hotel`、`cardChance`、`cardChest`；声音 `diceShuffle`、`diceThrow`、`moveClick`、`purchase`、`cash`、`drawCard`、`build`、`mortgage`、`trade`、`jail`、`bankrupt`、`turn`。以上名称可增加，但需给出旧名映射，避免断链。
 
 精确定义的视觉工程权属于 Kimi，Swift 引擎与项目入库权属于 ChatGPT；规格裁决与发布权分别属于 Owner 与治理流程。
+
+## 当前可直接引用的工程资产（2026-11-06）
+
+- GitHub 源码已同步；`VEILOPOLY_DEV/Veilopoly/Package.swift` 可见。
+- 规格直接阅读 `VEILOPOLY_DEV/Veilopoly/docs/GAME_DESIGN.md`、`MODELING_SPEC.md`、`RENDERING_SPEC.md`；未定项见 `SPEC_DECISIONS_REQUIRED.md`。
+- 已有 14 张 PNG 与 12 个 WAV 放在 `VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/`；既有别名不要无映射重命名。
+- 资源 SHA-256、字节大小与 Git Blob SHA 位于 `VEILOPOLY_DEV/Veilopoly/docs/RESOURCE_INTEGRITY.json`。
+- 最新源码入库与本地验证记录见 `VEILOPOLY_DEV/CHECKPOINT.md`，iOS 渲染尚未验收。K1 请优先冻结新的视觉 API、Sprite Map、iPhone/iPad 布局和素材来源，不要重新实现 Swift 引擎。
