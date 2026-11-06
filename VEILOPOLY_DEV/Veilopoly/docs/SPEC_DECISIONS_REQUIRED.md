@@ -19,3 +19,18 @@ The three design files have been read in full. The following specification gaps 
 | A13 | Hardware budgets and 25–45min average game time require real measurements | No wall-clock claim and no 60fps claim | Set target telemetry protocol + seed corpus + human game playtest plan |
 
 None of these rulings should be inferred from green Linux unit tests.
+
+
+## A14–A20: owner photo references (2026-11-06)
+
+| ID | Owner-source ambiguity or clash | Interim engineering decision |
+|---|---|---|
+| A14 | Classic salary +200 (including exact GO) versus printed +1000 when passing GO, zero on exact stop | Add alternative printed-mode pure policy only; do NOT change GameState/Move |
+| A15 | Printed hotel after 2 houses; classic 4-house rule with 32-house / 12-hotel bank | Separate policy only until mode and supply rules approved |
+| A16 | Demand/fixed bank deposit table has edits, missing bands and unclear flat-value vs interest-percent interpretation | Configurable deposit accounts; default no yield/maturity, so action refuses with termsAwaitOwnerRuling |
+| A17 | Loan tiers 20/30/40/45%, caps 500/1000/4000/7000; maturity/payment/late fees and >=4 collateral not defined | Implement four-tier safe sandbox quote, refuse unknown 4+ land case, don't write GameState |
+| A18 | Managed / venture / stock products describe 5/4/3 periods and dice outcomes; exact positive payout multipliers and settlement sequence uncertain | Product slots and seeded outcome reducer exist, but active payout table requires approved injected policy |
+| A19 | Printed star pool of 8 and possible multi-leader hotel prize; precise event triggers/tie adjudication not specified | 8-token pure collect/reset ledger and tied leader reporting only, no hotel board mutation |
+| A20 | 60/90-minute printed end condition requires real time; Engine forbids Date() or ambient clock | Separate pure calculation accepts owner/host-injected elapsed-minute input, never uses Date() |
+
+No rulebook text or printed game's proprietary illustrations/branding are copied into source. The user-provided rule examples are paraphrased and kept distinct from unconfirmed engineering proposals.

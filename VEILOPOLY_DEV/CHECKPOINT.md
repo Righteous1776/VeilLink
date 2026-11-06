@@ -72,3 +72,14 @@
 - The 500-seed smoke uses **500 move cap**; 0/500 finished naturally. The 20-seed longer sample finished 14/20 within 6,000 moves.
 - `swiftc -frontend -parse` passes grammar only; real iOS SwiftUI/SpriteKit type-check, orientation, texture drawing, touch and ACK race on iOS remain **unverified**. No workflow dispatched.
 - Exact test evidence and device checklist: `Veilopoly/docs/P4_ACK_GATE_VALIDATION.md`. No Kimi asset or Engine/Net mutation in this change.
+
+
+## Owner banking / printed tabletop research lane (2026-11-06)
+
+- Owner provided two photographed rule references (handwritten savings/loans/investments and printed property banking table game). Photos are not put into source.
+- Source-derived specifications and conflict register: `Veilopoly/docs/OWNER_FINANCE_AND_TABLETOP_RULES_20261106.md`.
+- Implemented in the **standalone pure Swift experimental layer**, not existing GameState: `FinanceExpansion.swift` with deterministic borrow quotes, 4 rate tiers / land collateral caps, configurable savings products, simulated managed/venture/stocks outcomes, period advancement, no-stake dice challenge, seededRNG-only outcomes, replayable move log; `PrintedTabletopReference.swift` with alternative Start salary, 8-star cycle, injected elapsed-time cash leadership.
+- The printed reference's GO +1000 (not on exact arrival) and hotel after two houses **conflict** with classic GO +200 and four-house build. No classic game rules or state hashes changed.
+- Verification on local Swift 6.2.1/Linux source snapshot: `swift build --jobs 2` PASS and **`swift test --jobs 2`: 55/55 PASS, 0 failures**, including 11 new finance/tabletop tests and the two original long AI tests. Git blobs of six new files were cross-checked with local source hashes. This is NOT iOS SDK/VeilLink product CI proof.
+- Remaining hard gates: Owner approves deposit brackets/maturity, loan overdue & collateral 4+, product dice payout schedule, star tie/build effects, and separate classic/printed mode entry; followed by versioned integration with GameState, standardized Moves/Effects, AI, UI and snapshot replay.
+- Kimi visual follow-up: `Veilopoly/docs/KIMI_FINANCE_HUD_REQUEST_20261106.md`. P5 integration remains NOT AUTHORIZED.

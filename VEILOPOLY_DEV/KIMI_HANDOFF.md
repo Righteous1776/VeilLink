@@ -92,3 +92,14 @@ K1 内容还有 **2 项旧资源 SHA-256 记录错误**（`die4.png` 和 `mortga
 - `cards.json`、`board.json` 属于**候选规则资料**，不得自行宣布为游戏正式规则。出狱卡移出/回牌池冲突由 Owner 裁决后才能修订引擎。
 - 每个 K2 增量文件务必给 `alias/path/sha256/bytes/dimensions/anchor/atlas metadata/original_asset_url/license`，注明是 `new`、`updated` 还是 `unchanged-K1`。Owner 转给 ChatGPT 复核后才算入库。
 - iOS 16 真机方向、卡片触摸、动画 ACK、音效没有通过 Apple SDK 实测；请不要标记为 DONE。
+
+
+## K3 · Owner financial rule expansion (2026-11-06)
+
+The Owner has added photographed reference rules for bank loans, deposits, simulated financial products and an alternative property/collectible-star mode. **Do not start coding them in Swift or invent payout tables.**
+
+- Source and ambiguities: `Veilopoly/docs/OWNER_FINANCE_AND_TABLETOP_RULES_20261106.md`.
+- Specific Kimi visual assignment: `Veilopoly/docs/KIMI_FINANCE_HUD_REQUEST_20261106.md`.
+- After the current K2 landscape full-screen deliverable, provide K3 **finance HUD** preview states: deposits and loan quote, period timeline, virtual product cards, loan collateral badge, original 8-star visual in printed mode. Existing More/Exit capsule stays.
+- Financial amounts and rule outcomes must come from provided data or show a clearly disabled/undecided state; no real-money gambling or wagering interfaces.
+- Kimi does not change VeilopolyEngine, AI/Net, main, protocols, version/IPA; file manifest and license provenance are required for new visuals.
