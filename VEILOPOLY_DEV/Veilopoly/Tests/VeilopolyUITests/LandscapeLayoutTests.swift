@@ -55,8 +55,13 @@ final class LandscapeLayoutTests: XCTestCase {
   XCTAssertEqual(VeilopolyLandscapeLayout.overlayDrawerWidth(for: 844), 371.36, accuracy: 0.01)
   XCTAssertEqual(VeilopolyLandscapeLayout.overlayDrawerWidth(for: 568), 292, accuracy: 0.001)
   XCTAssertEqual(VeilopolyLandscapeLayout.overlayDrawerHeight(for: 390), 326, accuracy: 0.001)
-  let board = VeilopolyLandscapeLayout.maximizedBoardSize(availableWidth: 844, availableHeight: 390)
-  XCTAssertEqual(board.width, VeilopolyLandscapeLayout.maximizedBoardSize(availableWidth: 844, availableHeight: 390).width)
+  // A permanent drawer would shrink this iPad's complete 40-tile board;
+  // the floating drawer must not participate in the aspect-fit calculation.
+  let board = VeilopolyLandscapeLayout.maximizedBoardSize(availableWidth: 1180, availableHeight: 820)
+  let artificiallyReserved = VeilopolyLandscapeLayout.boardSize(
+   availableWidth: 1180 - VeilopolyLandscapeLayout.overlayDrawerWidth(for: 1180),
+   availableHeight: 820 - 2 * VeilopolyLandscapeLayout.boardVerticalInset)
+  XCTAssertGreaterThan(board.width, artificiallyReserved.width)
   XCTAssertGreaterThanOrEqual(VeilopolyLandscapeLayout.capsuleButtonWidth, 44)
  }
 
