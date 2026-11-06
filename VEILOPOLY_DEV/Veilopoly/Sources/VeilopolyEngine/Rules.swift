@@ -409,6 +409,7 @@ public enum VeilopolyEngine {
   guard amount >= 0 else { throw GameError.invalidPayload }
   if amount == 0 { return }
   if g.players[p].cash < amount {
+   IntegratedBanking.releaseAvailableSavingsForDebt(&g, debtor: p, amount: amount, effects: &fx)
    // 1. Mortgage every unimproved eligible lot, index order.
    for i in g.board.indices where g.players[p].cash < amount {
     if g.board[i].owner == p && mayMortgage(g, i) { mortgageOne(&g, tile: i, &fx) }

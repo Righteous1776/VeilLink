@@ -225,6 +225,27 @@ public enum IntegratedBanking {
   g.banking = ledger
  }
 
+ /// Automatic liquidation is deterministic: withdraw only unlocked savings,
+ /// in original deposit order, before touching property. Never break fixed-term locks.
+ public static func releaseAvailableSavingsForDebt(_ g: inout GameState,
+                                                   debtor p: Int, amount: Int,
+                                                   effects: inout [Effect]) {
+  guard amount > 0, g.players.indices.contains(p), g.players[p].cash < amount,
+        var ledger = g.banking, ledger.accounts.indices.contains(p) else { return }
+  var i = 0
+  while i < ledger.accounts[p].savings.count && g.players[p].cash < amount {
+   let item = ledger.accounts[p].savings[i]
+   if ledger.completedTurns < item.unlockPeriod { i += 1; continue }
+   let payout = item.principal + item.principal * item.payoutBasisPoints / 10_000
+   guard payout <= 1_000_000_000 - g.players[p].cash else { break }
+   g.players[p].cash += payout
+   ledger.accounts[p].savings.remove(at: i)
+   effects.append(Effect(.bankWithdrawn, player: p, amount: payout,
+                         text: "automaticDebtCover"))
+  }
+  g.banking = ledger
+ }
+
  /// Provisional bankruptcy safety: accessible savings principal enters the estate
  /// before normal creditor distribution. Unsettled market positions yield zero,
  /// and outstanding bank loans are archived pending the Owner's priority decision.

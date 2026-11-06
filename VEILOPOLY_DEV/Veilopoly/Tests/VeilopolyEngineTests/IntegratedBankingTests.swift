@@ -132,3 +132,40 @@ final class IntegratedBankingTests: XCTestCase {
   XCTAssertEqual(g.players[0].cash, current)
  }
 }
+
+extension IntegratedBankingTests {
+ func testUnlockedSavingsLiquidateBeforeRentCausesBankruptcy() throws {
+  var g = Fixture.game(.manage)
+  let deposit = Move(.bankDeposit, player: 0, seq: g.nextSeq, amount: 400,
+                     financeProduct: .demandDeposit)
+  switch VeilopolyEngine.apply(g, VeilopolyEngine.context(g), deposit) {
+  case .success((let next, _)): g = next
+  case .failure(let e): throw e
+  }
+  g.players[0].cash = 10
+  var effects: [Effect] = []
+  IntegratedBanking.releaseAvailableSavingsForDebt(&g, debtor: 0, amount: 300, effects: &effects)
+  XCTAssertEqual(g.players[0].cash, 410)
+  XCTAssertEqual(g.banking?.accounts[0].savings.count, 0)
+  XCTAssertEqual(effects.first?.kind, .bankWithdrawn)
+  XCTAssertEqual(effects.first?.text, "automaticDebtCover")
+ }
+ func testLockedFixedSavingsCannotAutoRelease() throws {
+  var g = Fixture.game(.manage)
+  var policy = FinanceSandboxPolicy()
+  policy.fixedYieldBasisPoints = 500
+  policy.fixedLockPeriods = 5
+  g = try XCTUnwrap(IntegratedBanking.configured(g, terms: policy))
+  let m = Move(.bankDeposit, player: 0, seq: 0, amount: 400, financeProduct: .fixedDeposit)
+  switch VeilopolyEngine.apply(g, VeilopolyEngine.context(g), m) {
+  case .success((let next, _)): g = next
+  case .failure(let e): throw e
+  }
+  g.players[0].cash = 10
+  var effects: [Effect] = []
+  IntegratedBanking.releaseAvailableSavingsForDebt(&g, debtor: 0, amount: 300, effects: &effects)
+  XCTAssertEqual(g.players[0].cash, 10)
+  XCTAssertEqual(g.banking?.accounts[0].savings.count, 1)
+  XCTAssertTrue(effects.isEmpty)
+ }
+}
