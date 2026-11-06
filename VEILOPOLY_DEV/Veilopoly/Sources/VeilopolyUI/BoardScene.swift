@@ -8,6 +8,8 @@ import VeilopolyEngine
 @MainActor
 final class GameBoardScene: SKScene {
  private var tiles: [Int: SKShapeNode] = [:]
+ private var kimiSkin: KimiK2BoardSkin?
+ private var tilePriceLabels: [Int: SKLabelNode] = [:]
  private var tileCaptions: [Int: SKLabelNode] = [:]
  private let activeTileMarker = SKShapeNode(rectOf: CGSize(width: 84, height: 76), cornerRadius: 8)
  private let inspectionMarker = SKShapeNode(rectOf: CGSize(width: 80, height: 72), cornerRadius: 8)
@@ -68,6 +70,9 @@ final class GameBoardScene: SKScene {
   }
  }
  private func point(_ i: Int) -> CGPoint {
+  if kimiSkin != nil, let geometry = KimiK2TileMap.visual(for: i) {
+   return CGPoint(x: CGFloat(geometry.centerX), y: CGFloat(geometry.centerY))
+  }
   let x: CGFloat; let y: CGFloat
   if i <= 10 { x = CGFloat(10-i); y = 0 }
   else if i <= 20 { x = 0; y = CGFloat(i-10) }
@@ -81,46 +86,107 @@ final class GameBoardScene: SKScene {
   return CGPoint(x: center.x + CGFloat(offset.x), y: center.y + CGFloat(offset.y))
  }
  private func buildBoard() {
-  let base = SKShapeNode(rect: CGRect(x: 43, y: 45, width: 934, height: 850), cornerRadius: 15)
-  base.fillColor = SKColor(red: 0.11, green: 0.18, blue: 0.22, alpha: 1)
-  base.strokeColor = SKColor(red: 0.26, green: 0.45, blue: 0.48, alpha: 1)
-  base.lineWidth = 4; base.zPosition = 1; addChild(base)
-  let center = SKLabelNode(text: "VEILOPOLY")
-  center.fontName = "AvenirNext-Heavy"; center.fontSize = 78
-  center.fontColor = SKColor(red: 0.66, green: 0.85, blue: 0.87, alpha: 0.22)
-  center.position = CGPoint(x: 510, y: 465); center.zPosition = 2; addChild(center)
+  // Promote only when the COMPLETE dark K2 asset set is present in Bundle.module.
+  // The older procedural board remains available on a resource lookup failure.
+  kimiSkin = KimiK2BoardSkin.install(in: self, load: { name in image(name) })
+  if kimiSkin == nil {
+   let base = SKShapeNode(rect: CGRect(x: 43, y: 45, width: 934, height: 850), cornerRadius: 15)
+   base.fillColor = SKColor(red: 0.11, green: 0.18, blue: 0.22, alpha: 1)
+   base.strokeColor = SKColor(red: 0.26, green: 0.45, blue: 0.48, alpha: 1)
+   base.lineWidth = 4; base.zPosition = 1; addChild(base)
+   let center = SKLabelNode(text: "VEILOPOLY")
+   center.fontName = "AvenirNext-Heavy"; center.fontSize = 78
+   center.fontColor = SKColor(red: 0.66, green: 0.85, blue: 0.87, alpha: 0.22)
+   center.position = CGPoint(x: 510, y: 465); center.zPosition = 2; addChild(center)
+  }
   for i in 0..<40 {
    let spot = point(i)
-   let tile = SKShapeNode(rectOf: CGSize(width: 81, height: 73), cornerRadius: 7)
-   tile.position = spot; tile.zPosition = 4
-   tile.fillColor = SKColor(red: 0.16, green: 0.23, blue: 0.28, alpha: 1)
-   tile.strokeColor = SKColor(red: 0.37, green: 0.52, blue: 0.55, alpha: 0.6)
-   tile.lineWidth = 1.5; addChild(tile); tiles[i] = tile
-   let index = SKLabelNode(text: String(i))
-   index.fontName = "AvenirNext-DemiBold"; index.fontSize = 18
-   index.fontColor = SKColor(white: 0.85, alpha: 1)
-   index.verticalAlignmentMode = .center
-   index.position = CGPoint(x: spot.x, y: spot.y + 13)
-   index.zPosition = 6; addChild(index)
-   // Text remains data-driven; Kimi K2 may replace only the presentation skin.
+   let spec = kimiSkin == nil ? nil : KimiK2TileMap.visual(for: i)
+   let tileSize = CGSize(width: CGFloat(spec?.displayWidth ?? 81),
+                         height: CGFloat(spec?.displayHeight ?? 73))
+   // Invisible K2 hit regions retain the established action and tap pipeline.
+   // The fallback keeps the original visible SKShapeNode tiles.
+   let tile = SKShapeNode(rectOf: tileSize, cornerRadius: kimiSkin == nil ? 7 : 3)
+   tile.position = spot
+   tile.zRotation = CGFloat(spec?.rotationRadians ?? 0)
+   tile.zPosition = kimiSkin == nil ? 4 : 4.5
+   if kimiSkin == nil {
+    tile.fillColor = SKColor(red: 0.16, green: 0.23, blue: 0.28, alpha: 1)
+    tile.strokeColor = SKColor(red: 0.37, green: 0.52, blue: 0.55, alpha: 0.6)
+    tile.lineWidth = 1.5
+   } else {
+    tile.fillColor = .clear
+    tile.strokeColor = .clear
+    tile.lineWidth = 0
+   }
+   addChild(tile)
+   tiles[i] = tile
+
+   if kimiSkin == nil {
+    let index = SKLabelNode(text: String(i))
+    index.fontName = "AvenirNext-DemiBold"; index.fontSize = 18
+    index.fontColor = SKColor(white: 0.85, alpha: 1)
+    index.verticalAlignmentMode = .center
+    index.position = CGPoint(x: spot.x, y: spot.y + 13)
+    index.zPosition = 6
+    addChild(index)
+   }
+
+   // No Kimi preview text is embedded in the live game: authoritative Engine
+   // names and property prices are painted into native SpriteKit labels.
    let caption = SKLabelNode(text: "")
-   caption.fontName = "AvenirNext-Medium"; caption.fontSize = 11
-   caption.fontColor = SKColor(white: 0.96, alpha: 0.93)
-   caption.position = CGPoint(x: spot.x, y: spot.y - 15)
-   caption.zPosition = 7; addChild(caption); tileCaptions[i] = caption
-   // L2 construction indicator; one reusable glyph per tile, no runtime node churn.
+   caption.fontName = "AvenirNext-DemiBold"
+   caption.fontSize = kimiSkin == nil ? 11 : 11
+   caption.fontColor = kimiSkin == nil
+     ? SKColor(white: 0.96, alpha: 0.93)
+     : SKColor(red: 0.10, green: 0.22, blue: 0.23, alpha: 1)
+   caption.verticalAlignmentMode = .center
+   caption.horizontalAlignmentMode = .center
+   caption.position = kimiSkin == nil ? CGPoint(x: spot.x, y: spot.y - 15)
+                                      : CGPoint(x: 0, y: 0)
+   caption.zPosition = kimiSkin == nil ? 7 : 2.5
+   if let art = kimiSkin?.tiles[i] { art.addChild(caption) }
+   else { addChild(caption) }
+   tileCaptions[i] = caption
+
+   if let art = kimiSkin?.tiles[i] {
+    let price = SKLabelNode(text: "")
+    price.fontName = "AvenirNext-DemiBold"
+    price.fontSize = 10
+    price.fontColor = SKColor(red: 0.16, green: 0.27, blue: 0.29, alpha: 1)
+    price.position = CGPoint(x: 0, y: -tileSize.height / 2 + 25)
+    price.zPosition = 2.5
+    art.addChild(price)
+    tilePriceLabels[i] = price
+   }
+
    let buildings = SKLabelNode(text: "")
-   buildings.fontName = "AvenirNext-Bold"; buildings.fontSize = 20
-   buildings.fontColor = .systemGreen
-   buildings.position = CGPoint(x: spot.x + 3, y: spot.y - 27)
-   buildings.zPosition = 5; addChild(buildings); improvements[i] = buildings
-   let redSlash = SKShapeNode()
-   let slash = CGMutablePath()
-   slash.move(to: CGPoint(x: -31, y: -27)); slash.addLine(to: CGPoint(x: 31, y: 27))
-   redSlash.path = slash
-   redSlash.strokeColor = .systemRed; redSlash.lineWidth = 5
-   redSlash.position = spot; redSlash.zPosition = 8
-   redSlash.isHidden = true; addChild(redSlash); mortgageMarks[i] = redSlash
+   buildings.fontName = "AvenirNext-Bold"
+   buildings.fontSize = kimiSkin == nil ? 20 : 13
+   buildings.fontColor = kimiSkin == nil ? .systemGreen :
+      SKColor(red: 0.07, green: 0.43, blue: 0.24, alpha: 1)
+   buildings.position = kimiSkin == nil
+     ? CGPoint(x: spot.x + 3, y: spot.y - 27)
+     : CGPoint(x: 0, y: tileSize.height / 2 - 26)
+   buildings.zPosition = kimiSkin == nil ? 5 : 2.6
+   if let art = kimiSkin?.tiles[i] { art.addChild(buildings) }
+   else { addChild(buildings) }
+   improvements[i] = buildings
+
+   if kimiSkin == nil {
+    let redSlash = SKShapeNode()
+    let slash = CGMutablePath()
+    slash.move(to: CGPoint(x: -31, y: -27))
+    slash.addLine(to: CGPoint(x: 31, y: 27))
+    redSlash.path = slash
+    redSlash.strokeColor = .systemRed
+    redSlash.lineWidth = 5
+    redSlash.position = spot
+    redSlash.zPosition = 8
+    redSlash.isHidden = true
+    addChild(redSlash)
+    mortgageMarks[i] = redSlash
+   }
   }
   activeTileMarker.fillColor = .clear
   activeTileMarker.strokeColor = SKColor(red: 0.78, green: 0.98, blue: 0.93, alpha: 0.88)
@@ -157,22 +223,41 @@ final class GameBoardScene: SKScene {
   }
  }
 
+ private func configureMarker(_ marker: SKShapeNode, at index: Int) {
+  marker.position = point(index)
+  if let geometry = kimiSkin == nil ? nil : KimiK2TileMap.visual(for: index) {
+   let width = CGFloat(geometry.displayWidth) + 5
+   let height = CGFloat(geometry.displayHeight) + 5
+   marker.path = CGPath(roundedRect: CGRect(x: -width / 2, y: -height / 2,
+                                            width: width, height: height),
+                        cornerWidth: 7, cornerHeight: 7, transform: nil)
+   marker.zRotation = CGFloat(geometry.rotationRadians)
+  } else {
+   marker.zRotation = 0
+  }
+ }
+
  func display(_ state: GameState, snapTokens: Bool = true) {
+  kimiSkin?.apply(state)
   for tile in state.board {
-   if let n = tiles[tile.i] {
+   if kimiSkin == nil, let n = tiles[tile.i] {
     n.fillColor = tile.mortgaged ? SKColor(white: 0.23, alpha: 1) :
       (tile.owner == nil ? colorFor(tile.color).withAlphaComponent(tile.color == nil ? 0.13 : 0.42)
        : colorFor(tile.color).withAlphaComponent(0.78))
     n.strokeColor = tile.owner == nil ? SKColor(white: 0.45, alpha: 0.6)
-     : [.systemBlue, .systemRed, .systemGreen, .systemYellow][tile.owner!]
+     : (tile.owner.flatMap { [SKColor.systemBlue, .systemRed, .systemGreen, .systemYellow].indices.contains($0)
+         ? [SKColor.systemBlue, .systemRed, .systemGreen, .systemYellow][$0] : nil }
+        ?? SKColor(white: 0.45, alpha: 0.6))
    }
    mortgageMarks[tile.i]?.isHidden = !tile.mortgaged
    improvements[tile.i]?.text = tile.hotel ? "▣" : (tile.houses > 0 ? "⌂×\(tile.houses)" : "")
-   let caption = tile.name.count > 5 ? String(tile.name.prefix(4)) + "…" : tile.name
+   let labelLimit = kimiSkin == nil ? 5 : 4
+   let caption = tile.name.count > labelLimit ? String(tile.name.prefix(labelLimit)) + "…" : tile.name
    if tileCaptions[tile.i]?.text != caption { tileCaptions[tile.i]?.text = caption }
+   tilePriceLabels[tile.i]?.text = tile.purchasable ? "¥\(tile.price)" : ""
   }
   if state.players.indices.contains(state.turn.player) {
-   activeTileMarker.position = point(state.players[state.turn.player].position)
+   configureMarker(activeTileMarker, at: state.players[state.turn.player].position)
    activeTileMarker.isHidden = state.winner != nil
   }
   if snapTokens {
@@ -191,7 +276,7 @@ final class GameBoardScene: SKScene {
  /// Tap-to-inspect: game input remains in the SwiftUI coordinator.
  func highlightTile(_ index: Int) {
   guard tiles[index] != nil else { inspectionMarker.isHidden = true; return }
-  inspectionMarker.position = point(index)
+  configureMarker(inspectionMarker, at: index)
   inspectionMarker.isHidden = false
  }
  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -294,7 +379,9 @@ final class GameBoardScene: SKScene {
     ack()
    }]), withKey: "command")
   case .tileFx(let i, let kind):
-   let node = tiles[i]
+   let node: SKNode?
+   if let skinned = kimiSkin?.tiles[i] { node = skinned }
+   else { node = tiles[i] }
    let key: String
    let duration: TimeInterval
    switch kind {
