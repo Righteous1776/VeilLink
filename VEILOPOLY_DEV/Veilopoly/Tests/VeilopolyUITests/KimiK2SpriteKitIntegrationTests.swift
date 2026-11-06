@@ -51,9 +51,9 @@ final class KimiK2SpriteKitIntegrationTests: XCTestCase {
   let model = GameSessionModel(seed: 12345, humanCount: 1)
   let scene = model.scene
   for i in 0..<4 {
-   XCTAssertNotNil(scene.childNode(withName: "KimiK2/token-shadow-\(i)"))
+   XCTAssertNotNil(scene.children.first(where: { $0.name == "KimiK2/token-shadow-\(i)" }))
   }
-  let shadow = scene.childNode(withName: "KimiK2/token-shadow-0")
+  let shadow = scene.children.first(where: { $0.name == "KimiK2/token-shadow-0" })
   let start = shadow?.position
   var moved = model.game
   moved.players[0].position = 20
@@ -70,17 +70,17 @@ final class KimiK2SpriteKitIntegrationTests: XCTestCase {
  func testWinnerBadgeBindsToActualEngineWinnerAndClearsOnReset() {
   let model = GameSessionModel(seed: 2468, humanCount: 1)
   let scene = model.scene
-  XCTAssertNil(scene.childNode(withName: "KimiK2/victoryBadge"))
+  XCTAssertNil(scene.children.first(where: { $0.name == "KimiK2/victoryBadge" }))
   var state = model.game
   state.winner = 0
   scene.display(state)
-  let badge = scene.childNode(withName: "KimiK2/victoryBadge")
+  let badge = scene.children.first(where: { $0.name == "KimiK2/victoryBadge" })
   XCTAssertNotNil(badge)
   XCTAssertEqual((badge?.childNode(withName: "winnerName") as? SKLabelNode)?.text,
                  state.players[0].name)
   state.winner = nil
   scene.display(state)
-  XCTAssertNil(scene.childNode(withName: "KimiK2/victoryBadge"))
+  XCTAssertNil(scene.children.first(where: { $0.name == "KimiK2/victoryBadge" }))
  }
 
 }
