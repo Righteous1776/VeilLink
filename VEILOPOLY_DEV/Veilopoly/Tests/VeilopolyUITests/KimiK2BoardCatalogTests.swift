@@ -34,4 +34,28 @@ final class KimiK2BoardCatalogTests: XCTestCase {
   XCTAssertEqual(KimiK2AtlasGeometry.radians(-90), -Double.pi/2, accuracy:1e-12)
   XCTAssertEqual(KimiK2AtlasGeometry.radians(180), Double.pi, accuracy:1e-12)
  }
+ func testFortyTileVisualGeometryIDsAndUV() {
+  let tiles = KimiK2TileMap.tiles
+  XCTAssertEqual(tiles.count,40)
+  XCTAssertEqual(Set(tiles.map(\.id)).count,40)
+  for (i,tile) in tiles.enumerated() {
+   XCTAssertEqual(tile.index,i)
+   XCTAssertEqual(tile.id,String(format:"VL-K2-TILE-%03d",i))
+   XCTAssertGreaterThanOrEqual(tile.centerX,0)
+   XCTAssertLessThanOrEqual(tile.centerX,KimiK2TileMap.designWidth)
+   XCTAssertGreaterThanOrEqual(tile.centerY,0)
+   XCTAssertLessThanOrEqual(tile.centerY,KimiK2TileMap.designHeight)
+   XCTAssertGreaterThanOrEqual(tile.uvX,0)
+   XCTAssertGreaterThanOrEqual(tile.uvY,0)
+   XCTAssertLessThanOrEqual(tile.uvX+tile.uvWidth,1.000001)
+   XCTAssertLessThanOrEqual(tile.uvY+tile.uvHeight,1.000001)
+  }
+  XCTAssertNil(KimiK2TileMap.visual(for:-1))
+  XCTAssertNil(KimiK2TileMap.visual(for:40))
+  XCTAssertEqual(KimiK2TileMap.visual(for:0)?.rotationDegrees,0)
+  XCTAssertEqual(KimiK2TileMap.visual(for:10)?.rotationDegrees,-90)
+  XCTAssertEqual(KimiK2TileMap.visual(for:20)?.rotationDegrees,180)
+  XCTAssertEqual(KimiK2TileMap.visual(for:30)?.rotationDegrees,90)
+ }
+
 }
