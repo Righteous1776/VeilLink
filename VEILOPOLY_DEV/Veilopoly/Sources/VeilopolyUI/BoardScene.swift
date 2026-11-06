@@ -394,25 +394,50 @@ final class GameBoardScene: SKScene {
    }
    sound(key)
    if case .build = kind { sound("buildClick") }
-   // L6 procedural pulse: an inexpensive ring that Kimi can replace later.
-   let ring = SKShapeNode(circleOfRadius: 38)
-   ring.position = point(i); ring.zPosition = 23
-   ring.fillColor = .clear
-   ring.strokeColor = kind == .bankrupt ? .systemRed : .systemMint
-   ring.lineWidth = 5; ring.alpha = 0.85
-   ring.setScale(0.72)
-   addChild(ring)
-   ring.run(SKAction.sequence([
+   // Kimi's six original pulse frames are layered over the correct live tile;
+   // if its atlas is absent, retain the lightweight procedural SpriteKit ring.
+   let pulse: SKNode
+   if kimiSkin != nil, let atlas = image("kimiFxTilePulseAtlas") {
+    let frame: (column: Int, row: Int)
+    switch kind {
+    case .purchase: frame = (0, 0)
+    case .build: frame = (1, 0)
+    case .mortgage: frame = (2, 0)
+    case .jail: frame = (0, 1)
+    case .bankrupt: frame = (1, 1)
+    case .cash: frame = (2, 1)
+    }
+    let subtexture = SKTexture(
+     rect: CGRect(x: CGFloat(frame.column) / 3,
+                  y: CGFloat(1 - frame.row) / 2,
+                  width: 1.0 / 3, height: 1.0 / 2),
+     in: atlas)
+    let sprite = SKSpriteNode(texture: subtexture)
+    sprite.size = CGSize(width: 115, height: 115)
+    pulse = sprite
+   } else {
+    let ring = SKShapeNode(circleOfRadius: 38)
+    ring.fillColor = .clear
+    ring.strokeColor = kind == .bankrupt ? .systemRed : .systemMint
+    ring.lineWidth = 5
+    pulse = ring
+   }
+   pulse.position = point(i)
+   pulse.zPosition = 23
+   pulse.alpha = 0.85
+   pulse.setScale(0.72)
+   addChild(pulse)
+   pulse.run(SKAction.sequence([
     .group([.scale(to: 1.32, duration: duration), .fadeOut(withDuration: duration)]),
     .removeFromParent()
    ]))
    activeCommandNode = node
-   // Initialize fallback before synchronous ACK; skip removes the ring.
-   finishImmediately = { node?.setScale(1); ring.removeFromParent() }
+   // Keep exactly-once render ACK and fast-forward cleanup as before.
+   finishImmediately = { node?.setScale(1); pulse.removeFromParent() }
    if let node {
     node.run(SKAction.sequence([SKAction.scale(to: 1.08, duration: duration/2),
                                 SKAction.scale(to: 1, duration: duration/2), SKAction.run(ack)]), withKey: "command")
-   } else { ring.removeFromParent(); ack() }
+   } else { pulse.removeFromParent(); ack() }
   case .cashFloat(let player, let amount):
    sound("cash")
    let label = SKLabelNode(text: (amount > 0 ? "+" : "") + "¥\(amount)")
