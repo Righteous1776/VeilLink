@@ -26,3 +26,12 @@ Additional parallel stock-market change was checked at `b69f2644d4a870de4423686f
 - **NOT RUN:** exact-head Xcode iOS 16+ build, complete SwiftPM XCTest on macOS, simulated/physical iPhone touch/safe-area/VoiceOver, GPU texture memory/60-fps, 500-seed AI, P5 host integration.
 - Both light and dark atlases are preloaded on skin initialization; memory pressure must be measured before release. Keep original fallback and avoid claiming optimized GPU memory.
 - Did not modify `main`, versions, build workflows, signing, IPA, transport, bank/stock rules, or other Agent branch state.
+
+## Follow-up: dynamic tile text overlays (2026-11-07)
+
+- Original Kimi atlas artwork contains **static demo text**. Using it without an edit would show both demo names/prices and actual Engine names/prices on top of each other.
+- `BoardScene.swift` now adds two small opaque parchment plates under the live label nodes on each of the 40 2.5D tile sprites, covering exactly the regions declared in the original `SPRITE_MAP.json`: name `[−(w−10)/2, −12, w−10, 32]`, price `[−(w−10)/2, −33, w−10, 14]`.
+- An independent local source check compared these formulas against the original JSON for **all 40/40 tiles: PASS**. Kimi color bands/frame remain, label text/price are always read from `GameState`.
+- Added `testFortyKimiTilesMaskPreviewTextAndUseEngineLabels` to the iOS-only SpriteKit test source. It must still run under Apple Xcode; no device success is claimed.
+- Added a safe fallback guard: `更多 → 切换日间棋盘` is disabled if Kimi textures were unavailable and the original procedural board was selected.
+- At final branch audit `e04cbb0bf01e31b1414c06d8784940ad6d0c4b29`, 10 additional commits vs original `29db11b5` were detected, including an unrelated **parallel stock-market feature**. These files were preserved, not cherry-picked or overwritten by the visual audit. GitHub returned **no CI statuses** for that head.
