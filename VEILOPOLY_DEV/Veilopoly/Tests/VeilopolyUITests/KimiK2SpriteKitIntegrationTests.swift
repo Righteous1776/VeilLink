@@ -83,5 +83,28 @@ final class KimiK2SpriteKitIntegrationTests: XCTestCase {
   XCTAssertNil(scene.children.first(where: { $0.name == "KimiK2/victoryBadge" }))
  }
 
+ func testFortyKimiTilesMaskPreviewTextAndUseEngineLabels() {
+  let model = GameSessionModel(seed: 8877, humanCount: 1)
+  let scene = model.scene
+  for index in 0..<40 {
+   let spec = KimiK2TileMap.tiles[index]
+   guard let tile = scene.childNode(withName: spec.id) as? SKSpriteNode else {
+    XCTFail("Missing Kimi tile \(index)"); continue
+   }
+   let nameMasks = tile.children.filter { $0.name == "LiveNameMask" }
+   let priceMasks = tile.children.filter { $0.name == "LivePriceMask" }
+   XCTAssertEqual(nameMasks.count, 1)
+   XCTAssertEqual(priceMasks.count, 1)
+   let liveName = tile.children.first { $0.name == "LiveTileName" } as? SKLabelNode
+   let livePrice = tile.children.first { $0.name == "LiveTilePrice" } as? SKLabelNode
+   let fromEngine = model.game.board[index]
+   let expectedName = fromEngine.name.count > 4
+      ? String(fromEngine.name.prefix(4)) + "…" : fromEngine.name
+   XCTAssertEqual(liveName?.text, expectedName)
+   XCTAssertEqual(livePrice?.text,
+                  fromEngine.purchasable ? "¥\(fromEngine.price)" : "")
+  }
+ }
+
 }
 #endif
