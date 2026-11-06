@@ -574,8 +574,8 @@ public struct VeilopolyGameView: View {
      Color.clear.frame(width: 44, height: 44).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .position(x: AstraB01AuctionHitZones.minus.centerX,
-              y: AstraB01AuctionHitZones.minus.centerY)
+    .position(x: CGFloat(AstraB01AuctionHitZones.minus.centerX),
+              y: CGFloat(AstraB01AuctionHitZones.minus.centerY))
     .accessibilityLabel("降低竞价金额")
     .disabled(model.game.players[model.actor].cash <= auction.currentBid)
     TextField("竞价金额", text: $bidderCash)
@@ -585,15 +585,15 @@ public struct VeilopolyGameView: View {
      .foregroundColor(Color(red: 0.19, green: 0.30, blue: 0.34))
      .multilineTextAlignment(.center)
      .frame(width: 132, height: 44)
-     .position(x: AstraB01AuctionHitZones.input.centerX,
-               y: AstraB01AuctionHitZones.input.centerY)
+     .position(x: CGFloat(AstraB01AuctionHitZones.input.centerX),
+               y: CGFloat(AstraB01AuctionHitZones.input.centerY))
      .accessibilityLabel("竞价金额")
     Button { adjustAuctionBid(by: 1) } label: {
      Color.clear.frame(width: 44, height: 44).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .position(x: AstraB01AuctionHitZones.plus.centerX,
-              y: AstraB01AuctionHitZones.plus.centerY)
+    .position(x: CGFloat(AstraB01AuctionHitZones.plus.centerX),
+              y: CGFloat(AstraB01AuctionHitZones.plus.centerY))
     .accessibilityLabel("提高竞价金额")
     .disabled(model.game.players[model.actor].cash <= auction.currentBid)
    }
