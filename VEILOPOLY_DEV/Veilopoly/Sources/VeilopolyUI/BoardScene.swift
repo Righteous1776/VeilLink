@@ -10,6 +10,8 @@ final class GameBoardScene: SKScene {
  private var tiles: [Int: SKShapeNode] = [:]
  private var tileCaptions: [Int: SKLabelNode] = [:]
  private let activeTileMarker = SKShapeNode(rectOf: CGSize(width: 84, height: 76), cornerRadius: 8)
+ private let inspectionMarker = SKShapeNode(rectOf: CGSize(width: 80, height: 72), cornerRadius: 8)
+ var onBoardTap: ((Int?) -> Void)?
  var reduceMotion = false
  private var pieces: [Int: SKSpriteNode] = [:]
  private var improvements: [Int: SKLabelNode] = [:]
@@ -121,6 +123,12 @@ final class GameBoardScene: SKScene {
   activeTileMarker.zPosition = 12
   activeTileMarker.isHidden = true
   addChild(activeTileMarker)
+  inspectionMarker.fillColor = .clear
+  inspectionMarker.strokeColor = .systemYellow
+  inspectionMarker.lineWidth = 3
+  inspectionMarker.zPosition = 14
+  inspectionMarker.isHidden = true
+  addChild(inspectionMarker)
   // L7: feather-like edge vignette, deliberately translucent to preserve legibility.
   let vignette = SKShapeNode(rect: CGRect(x: 4, y: 3, width: 1016, height: 934), cornerRadius: 25)
   vignette.fillColor = .clear
@@ -170,6 +178,19 @@ final class GameBoardScene: SKScene {
    pieces[p.id]?.position.x += snapTokens ? (offset * 8) : 0
    pieces[p.id]?.zPosition = 30 + CGFloat(p.id)
   }
+ }
+
+ /// Tap-to-inspect: game input remains in the SwiftUI coordinator.
+ func highlightTile(_ index: Int) {
+  guard tiles[index] != nil else { inspectionMarker.isHidden = true; return }
+  inspectionMarker.position = point(index)
+  inspectionMarker.isHidden = false
+ }
+ override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+  guard let touch = touches.first else { return }
+  let local = touch.location(in: self)
+  let hit = tiles.first(where: { $0.value.contains(local) })?.key
+  onBoardTap?(hit)
  }
 
  func play(_ command: ViewCommand, finished: @escaping () -> Void) {

@@ -11,7 +11,9 @@ public final class GameSessionModel: ObservableObject {
  @Published public private(set) var shownCard: String?
  @Published public private(set) var lastFeedback: String = "准备开始 · 轮到第一位玩家"
  private var cardGate = CardRevealGate()
- @Published public var selectedTile: Int = 1
+ @Published public var selectedTile: Int = 1 {
+  didSet { scene.highlightTile(selectedTile) }
+ }
  let scene: GameBoardScene
  private var queue: [ViewCommand] = []
  @Published private var animating = false
@@ -24,6 +26,12 @@ public final class GameSessionModel: ObservableObject {
   game = initial
   scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
   scene.display(initial)
+  scene.highlightTile(selectedTile)
+  scene.onBoardTap = { [weak self] tile in
+   guard let self else { return }
+   if self.animating { self.fastForward() }
+   else if let tile { self.selectedTile = tile }
+  }
   if humanCount == 0 { Task { @MainActor [weak self] in self?.drive() } }
  }
  public var actor: Int { game.auction?.turn ?? game.trade?.to ?? game.pendingDebt?.player ?? game.turn.player }
@@ -92,6 +100,7 @@ public final class GameSessionModel: ObservableObject {
   game = newState; shownCard = nil; cardGate.reset(); queue = []; errorMessage = nil
   lastFeedback = "新的一局已经准备好"
   scene.display(newState)
+  selectedTile = 1
   if configuredHumanCount == 0 { drive() }
  }
  private func drive() {
@@ -252,6 +261,7 @@ public struct VeilopolyGameView: View {
         .padding(8).frame(maxWidth: .infinity, alignment: .leading)
         .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
       }
+      tileInspector
       actionPanel
       Text("独立单机开发版 · VeilLink 入口留待 P5 集成")
        .font(.caption2).foregroundStyle(.secondary)
@@ -279,18 +289,51 @@ public struct VeilopolyGameView: View {
     .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 12))
     .overlay(alignment: .bottom) {
      if model.pending && model.shownCard == nil {
-      Label("轻触棋盘跳过动画", systemImage: "forward.end.fill")
-       .font(.caption2.weight(.semibold)).padding(.horizontal, 11)
-       .padding(.vertical, 7)
-       .background(.regularMaterial, in: Capsule())
-       .padding(8)
+      Button { model.fastForward() } label: {
+       Label("跳过当前动画", systemImage: "forward.end.fill")
+        .font(.caption2.weight(.semibold)).padding(.horizontal, 11)
+        .padding(.vertical, 7)
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(.mint)
+      .accessibilityHint("立即完成当前动画，进入下一个视觉事件")
+      .padding(8)
      }
     }
     .contentShape(Rectangle())
-    .onTapGesture { model.fastForward() }
     .position(x: box.size.width / 2, y: box.size.height / 2)
   }
   .accessibilityLabel("大富翁棋盘，40 格")
+ }
+
+ private var tileInspector: some View {
+  let tile = model.game.board[model.selectedTile]
+  let ownerName = tile.owner.map { model.game.players[$0].name } ?? "尚未购买"
+  return HStack(spacing: 8) {
+   Button { model.selectedTile = (model.selectedTile + 39) % 40 } label: {
+    Image(systemName: "chevron.left").frame(width: 44, height: 44)
+   }
+   .buttonStyle(.plain)
+   .accessibilityLabel("查看上一格")
+   VStack(alignment: .leading, spacing: 2) {
+    Text("#\(tile.i) · \(tile.name)")
+     .font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
+    HStack(spacing: 6) {
+     Text(tile.purchasable ? "¥\(tile.price)" : "特殊地块")
+     Text(tile.mortgaged ? "已抵押" : ownerName)
+    }
+    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+   }
+   .frame(maxWidth: .infinity, alignment: .leading)
+   Button { model.selectedTile = (model.selectedTile + 1) % 40 } label: {
+    Image(systemName: "chevron.right").frame(width: 44, height: 44)
+   }
+   .buttonStyle(.plain)
+   .accessibilityLabel("查看下一格")
+  }
+  .padding(.horizontal, 5)
+  .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+  .accessibilityElement(children: .contain)
  }
 
  private var portraitFallback: some View {
