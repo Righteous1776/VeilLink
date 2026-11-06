@@ -1,5 +1,6 @@
 /// Stable, source-hashed Kimi K2 2.5D board candidate registry.
-/// Metadata only; no texture is present in Bundle.module until independently staged.
+/// K2 texture aliases are now present in SwiftPM Resources. BoardScene performs a runtime
+/// all-assets resource preflight; this flag controls preference, not guaranteed device support.
 public struct KimiK2Asset: Sendable, Equatable {
  public let id: String
  public let alias: String
@@ -23,7 +24,7 @@ public enum KimiK2BoardCatalog {
  public static let atlasWidthPx = 2048
  public static let atlasHeightPx = 1280
  public static let selectedBytes = 519024
- public static let runtimeEnabled = false
+ public static let runtimeEnabled = true
  public static let assets: [KimiK2Asset] = [
   .init(id:"VL-K2-ART-001", alias:"kimiK2BoardTableDark", sourceAlias:"boardTableDark", sha256:"c1c33252c8276b297c7d63793e97666a3c08d7688dfb68c4c1d2a3acd020f628", expectedGitBlobSHA1:"3dbc97ee27a3a4730f093c80f084e6bf79729c96", byteCount:24488, layer:"L0"),
   .init(id:"VL-K2-ART-002", alias:"kimiK2BoardTableLight", sourceAlias:"boardTableLight", sha256:"c2ca43189a2581ffdd95f43941c57779c1f24028ee7541e7198b7fc034dc7569", expectedGitBlobSHA1:"1db8f9885e5b0ca12f99f48780542d743d5cfba4", byteCount:23323, layer:"L0"),

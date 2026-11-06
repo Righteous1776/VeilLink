@@ -12,7 +12,7 @@ final class KimiK2BoardCatalogTests: XCTestCase {
   XCTAssertTrue(all.allSatisfy { $0.id.hasPrefix("VL-K2-ART-") && $0.alias.hasPrefix("kimiK2") })
   XCTAssertTrue(all.allSatisfy { $0.sha256.count == 64 && $0.expectedGitBlobSHA1.count == 40 })
   XCTAssertTrue(Set(all.map(\.alias)).isDisjoint(with: Set(AstraB01AssetNames.imported)))
-  XCTAssertFalse(KimiK2BoardCatalog.runtimeEnabled)
+  XCTAssertTrue(KimiK2BoardCatalog.runtimeEnabled)
  }
  func testDarkAndLightCandidateMappingsHaveNoRuntimeActivation() {
   XCTAssertEqual(KimiK2BoardCatalog.tileAtlas(light: false)?.sourceAlias, "tilesDark")
