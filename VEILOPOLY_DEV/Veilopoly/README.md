@@ -2,7 +2,7 @@
 
 > 交付：P1 纯 Swift 引擎 + P2 单机 AI 回合驱动 + P3 联机抽象 + P4 SpriteKit/SwiftUI 代码。
 >
-> **未写入 VeilLink 仓库、未构建 IPA。** P5 VeilLink 实际接入须另行授权与集成。所有演示数据与规则争议列于 `docs/SPEC_DECISIONS_REQUIRED.md`。
+> **已写入 VeilLink 的独立 `dev/veilopoly` 分支；未合并 main、未构建 IPA。** P5 VeilLink 实际接入须另行授权与集成。所有演示数据与规则争议列于 `docs/SPEC_DECISIONS_REQUIRED.md`。
 
 ## Requirements
 
@@ -84,4 +84,4 @@ Kenney graphics and audio are CC0 (see `docs/ASSET_LICENSES.md`). The source-spe
 
 ## Governance
 
-`INBOX/` contains a 5-part governance handoff. No GitHub main, Protocol 4, VLGM1 v1, SQLite V8, A9/A10 gates, or VeilLink code has been changed. The historical `ccafebab` anchor from the planning archive was *not* reconfirmed against today's GitHub main.
+`INBOX/` contains a 5-part governance handoff. No GitHub main, Protocol 4, VLGM1 v1, SQLite V8, A9/A10 gates, or VeilLink code has been changed. This development branch was explicitly created from verified `main@ccafebab147e069fbabfff579dbf323b0d54f191` on 2026-11-06. The branch is not a release or product integration.
