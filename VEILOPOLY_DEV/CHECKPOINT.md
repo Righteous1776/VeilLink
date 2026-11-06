@@ -28,3 +28,9 @@
 5. After P1–P4 acceptance, request separate authorization for P5 VeilLink adapter / game hall / product release.
 
 **Coordination:** https://github.com/Righteous1776/VeilLink/issues/6
+
+## Post-import P4 UI hardening (source-only)
+
+- Commit `f03583a6252cd1df48c0a7b713d37692bbd84d59` updates `VeilopolyUI/UI.swift` so `animating` is `@Published` (SwiftUI action panel refreshes when the animation queue ACK completes), keeps `configuredHumanCount` through Restart, re-drives an AI-only session after Restart and prioritizes the animation-in-progress panel.
+- Local Linux `swift build` and 29 selected non-AI XCTest checks PASS after patch; **the iOS-only SwiftUI source is conditional and did not compile in Linux**, so P4 iOS/Xcode behavior is still unverified.
+- Next gate remains macOS/Xcode iOS 16 Simulator and device validation with real SpriteKit frames and ACKs.
