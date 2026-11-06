@@ -1,0 +1,14 @@
+# [AGENT-DROP] VeilLink Image V4 — gentle BLE fallback
+- agent_id: chatgpt
+- task_id: 20261107-image-ble-graceful-v4
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- mode: INBOX_ONLY
+- status: DROPPED
+- submission_path: AGENT_INBOX/submissions/chatgpt/20261107-image-ble-graceful-v4/
+- proposed_files:
+  - VeilLink/Core/MediaTransferPolicy.swift
+  - VeilLink/Media/ImageTranscoder.swift
+  - VeilLink/UI/ConversationViews.swift
+  - VeilLinkTests/MediaTransferPolicyTests.swift
+- wire_protocol: V4 unchanged
+- assets: none
