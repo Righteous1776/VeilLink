@@ -34,3 +34,13 @@
 - Commit `f03583a6252cd1df48c0a7b713d37692bbd84d59` updates `VeilopolyUI/UI.swift` so `animating` is `@Published` (SwiftUI action panel refreshes when the animation queue ACK completes), keeps `configuredHumanCount` through Restart, re-drives an AI-only session after Restart and prioritizes the animation-in-progress panel.
 - Local Linux `swift build` and 29 selected non-AI XCTest checks PASS after patch; **the iOS-only SwiftUI source is conditional and did not compile in Linux**, so P4 iOS/Xcode behavior is still unverified.
 - Next gate remains macOS/Xcode iOS 16 Simulator and device validation with real SpriteKit frames and ACKs.
+
+## P4 landscape-fullscreen / capsule UI checkpoint — 2026-11-06
+
+- Commit `a9cf562dad13457a42d42bbe47f802cf9af592da` adds true landscape screen composition: full-screen SwiftUI cover, iOS 16 UIWindowScene orientation request + best-effort restore, 40-tile board non-scrollable left with independent action sidebar right, and portrait-orientation failure explanation.
+- Right-top two-segment capsule is SwiftUI vector (no additional PNG): `•••` More, circular Exit; 46×44pt independent targets; More opens Restart/Game Info, Exit confirms and calls provided exit/dismiss.
+- New `VeilopolyLandscapeLayout` pure layout constants, `VeilopolyUITests/LandscapeLayoutTests.swift` and `Package.swift` test target.
+- Source contract and future P5 host requirements: `Veilopoly/docs/LANDSCAPE_PRESENTATION.md`.
+- Existing resource inventory and Kimi pending-asset audit: `Veilopoly/docs/ASSET_GAP_REGISTER.md`. Kimi already owns some unsubmitted modeling; those items remain **PENDING_EXISTING_WORK_REVIEW**, NOT confirmed missing.
+- Linux local `swift build --jobs 2` and selected `swift test --jobs 2 --skip 'AutoplayTests|LongSimTests'` **PASS (34 tests, 0 failures)**; `LandscapeLayoutTests` alone **5/5 PASS**. SwiftUI/UIKit iOS code compiled conditionally out on Linux; iOS SDK, physical rotation, safe area, capsule, SpriteKit and host app P5 still **UNVERIFIED**.
+- P5 real VeilLink entry and host Info.plist/navigation orientation support remain outside this branch's write authorization. Do not claim orientation rotates actual VeilLink build before P5 integration.
