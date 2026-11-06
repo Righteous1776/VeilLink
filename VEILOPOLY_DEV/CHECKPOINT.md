@@ -63,3 +63,12 @@
 - K1 outstanding discrepancies: K1 phone portrait layout superseded by Owner's landscape requirement; 4 SVG token sources lack usable canvas bounds; K1 XML asset filename corrected only in runtime copy; manifest hashes for `die4.png` and `mortgage.wav` have typos; exact file-level third-party asset provenance needs confirmation; jail-card deck return contradictory within K1.
 - Kimi next phase: `Veilopoly/docs/KIMI_K2_LANDSCAPE_DELTA.md` and refreshed `ASSET_GAP_REGISTER.md`. `KIMI_HANDOFF.md` points to K2 without asking for duplicate K1 work.
 - P5 remains **NOT AUTHORIZED**. Actual VeilLink full-screen rotation requires host Info.plist/UIViewController support; no iOS Simulator/device landscape, VoiceOver, touch, audio, frame-rate or ACK acceptance has occurred.
+
+## P4 Render ACK one-shot gate (2026-11-06)
+
+- New `VeilopolyUI/RenderCommandAckGate.swift` + five `RenderCommandAckGateTests.swift` XCTest cases: exactly-once completion tokens prevent stale/duplicate/fast-forwarded SpriteKit callbacks from advancing a later ViewCommand. Commit `ac06449da20d65221e2ed371ea609b65cfed9add`.
+- `BoardScene.swift` now registers `tileFx` terminal state before a potentially synchronous nil-node ACK; commit `a417901dbb66878a7455a69cc2cc101ccee8b5cc`.
+- Swift 6.2.1/Linux local `swift build` PASSED; 42 non-AI XCTest PASSED; separately 500-seed AI smoke and 20-seed long-run tests PASSED (44 unique tests total). K1 dice atlas + landscape + ACK targeted tests 13/13 PASSED, overlapping with the 42.
+- The 500-seed smoke uses **500 move cap**; 0/500 finished naturally. The 20-seed longer sample finished 14/20 within 6,000 moves.
+- `swiftc -frontend -parse` passes grammar only; real iOS SwiftUI/SpriteKit type-check, orientation, texture drawing, touch and ACK race on iOS remain **unverified**. No workflow dispatched.
+- Exact test evidence and device checklist: `Veilopoly/docs/P4_ACK_GATE_VALIDATION.md`. No Kimi asset or Engine/Net mutation in this change.
