@@ -93,3 +93,13 @@
 - `Veilopoly/docs/FINANCE_AI_RULE_REGRESSION_20261106.md` documents policy semantics and Kimi animation boundary.
 - **Local Linux snapshot test:** Swift 6.2.1 `swift test --jobs 2` **53/53 PASS**, of which the original AI 500-seed test is capped at 500 moves (1 naturally finished within bound); these numbers are from a local workspace containing separate uncommitted parallel star/rules edits, so **this is not an exact GitHub HEAD/CI certification**. The new seven targeted tests passed in the isolated workspace.
 - P4 Apple SDK/SwiftUI/SpriteKit, IPA, P5 host, Protocol 4, VLGM1 and SQLite V8 remain unchanged/unverified. No trained neural network or ML weights claimed; 'rule-model training' refers to deterministic regression/self-play evaluation.
+
+
+## P3/P4 state consistency and repayment safeguard (2026-11-06)
+
+- `8efabadfd8402412e88fc11cc49c3d2df5a299f7` hardens 3 existing modules, adds 2 test suites (8 test cases) and `Veilopoly/docs/ENGINE_INTEGRITY_HARDENING_20261106.md`.
+- `ReplicaClient.resync`: reject stale snapshots (would roll back already applied moves), foreign seed/session, noncontiguous move logs and inconsistent seq/hash. Same-sequence recovery is intentionally supported; future P5 must authenticate the host before snapshot acceptance.
+- `IntegratedBanking.validate`: bound historical savings yield, loan interest/term/maturity/amount, investment kinds/periods and record IDs to prevent corrupt values from reaching arithmetic.
+- `VeilopolyEngine.apply`: post-validate all player cash bounds, financial ledger integrity, and bank inventory (0…32 houses, 0…12 hotels) **before** committing a move. Failure keeps original GameState and RNG unchanged.
+- **Local test evidence:** Swift 6.2.1/Linux `swift test --jobs 2` **61/61 PASS, 0 failures**, including original AI bounded tests and the 8 new regression cases. This is the previous local working tree with parallel, not-yet-promoted edits, **not a clean checkout of the exact GitHub branch HEAD**. No hosted CI/iOS SDK run is claimed.
+- Kimi visual assets, GameTransport P5 adapter, Protocol 4, VLGM1, SQLite Schema V8, VeilLink main, IPA/workflows untouched.
