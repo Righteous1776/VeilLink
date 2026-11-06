@@ -5,6 +5,8 @@
 - PASS: Read repository constitution and Issue #6; confirmed INBOX_ONLY and restricted outputs.
 - PASS: Anchored every proposed edit to exactly one original source block at this commit, with no overlapping edit spans.
 - PASS: Generated four path-targeted unified-diff sections with calculated old/new hunk line counts.
+- PASS (post-submission): Independently replayed all 13 unified-diff hunks against exact main source snapshots in four files; every original context line and old/new line count matched. This is a structural patch-apply check, not a Swift compile, XCTest run, or Apple SDK check.
+- PASS (post-submission): PR #139 contains exactly five files under the declared Inbox submission, and main remains identical to the recorded base.
 - PASS: Confirmed CREATE TABLE messages uses an ordinary rowid table; no WITHOUT ROWID in its declaration.
 - PASS: New XCTest design covers local insertion ordering when UUID-string order opposes saved order, across three database reads.
 - NOT_RUN: XCTest and Xcode/iPhoneOS build (no Apple SDK in this environment).
