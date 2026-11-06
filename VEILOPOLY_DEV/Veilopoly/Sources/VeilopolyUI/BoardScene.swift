@@ -19,7 +19,8 @@ final class GameBoardScene: SKScene {
  private var finishImmediately: (() -> Void)?
  private var audioMap: [String: String] = [
   "roll":"diceThrow", "step":"moveClick", "purchase":"purchase", "build":"build",
-  "mortgage":"mortgage", "jail":"jail", "bankrupt":"bankrupt", "card":"drawCard", "cash":"cash", "turn":"turn"
+  "mortgage":"mortgage", "jail":"jail", "bankrupt":"bankrupt", "card":"drawCard", "cash":"cash", "turn":"turn",
+  "diceShuffle":"diceShuffle", "buildClick":"buildClick"
  ]
  override init(size: CGSize) {
   super.init(size: size)
@@ -154,8 +155,19 @@ final class GameBoardScene: SKScene {
   }
   switch command {
   case .diceRoll(let anim):
+   sound("diceShuffle")
    sound("roll")
-   let frames = (1...6).compactMap { image("die\($0)") }
+   // Kimi K1 six-frame sheet (SpriteKit bottom-origin), with old dice PNG
+   // fallback for missing/invalid art. No RNG or phase work lives here.
+   let frames: [SKTexture]
+   if let sheet = image("diceSheetWhite") {
+    frames = (1...6).compactMap { face in
+     guard let uv = VeilopolyDiceAtlasMap.frame(face: face) else { return nil }
+     return SKTexture(rect: CGRect(x: CGFloat(uv.x), y: CGFloat(uv.y), width: CGFloat(uv.width), height: CGFloat(uv.height)), in: sheet)
+    }
+   } else {
+    frames = (1...6).compactMap { image("die\($0)") }
+   }
    let values = anim.values
    let action = SKAction.customAction(withDuration: 1.2) { [weak self] _, elapsed in
     guard let self else { return }
@@ -169,7 +181,8 @@ final class GameBoardScene: SKScene {
    finishImmediately = { [weak self] in
     guard let self else { return }
     for (i,node) in self.dice.enumerated() {
-     node.texture = self.image("die\(max(1,min(6,values[i])))")
+     let face = max(1,min(6,values[i]))
+     node.texture = frames.count == 6 ? frames[face - 1] : self.image("die\(face)")
      node.zRotation = 0
     }
    }
@@ -206,6 +219,7 @@ final class GameBoardScene: SKScene {
    case .cash: key = "cash"; duration = 0.3
    }
    sound(key)
+   if case .build = kind { sound("buildClick") }
    activeCommandNode = node
    node?.run(SKAction.sequence([SKAction.scale(to: 1.12, duration: duration/2),
                                 SKAction.scale(to: 1, duration: duration/2), SKAction.run(ack)]), withKey: "command")
