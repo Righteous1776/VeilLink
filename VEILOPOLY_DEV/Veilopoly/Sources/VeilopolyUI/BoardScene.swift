@@ -304,7 +304,10 @@ final class GameBoardScene: SKScene {
    finishImmediately = { label.removeFromParent() }
    activeCommandNode = label
    label.run(SKAction.sequence([SKAction.group([.moveBy(x: 0,y: 50,duration: 0.7), .fadeOut(withDuration: 0.7)]),
-                                .removeFromParent(), .run(ack)]), withKey: "command")
+                                .run {
+                                 label.removeFromParent()
+                                 ack()
+                                }]), withKey: "command")
   case .cardShow(_, _):
    sound("card")
    run(SKAction.sequence([.wait(forDuration: 0.5),.run(ack)]),withKey: "command")
@@ -326,7 +329,10 @@ final class GameBoardScene: SKScene {
    plate.run(SKAction.sequence([.fadeIn(withDuration: 0.15),
                                 .wait(forDuration: 0.80),
                                 .fadeOut(withDuration: 0.25),
-                                .removeFromParent(), .run(ack)]), withKey: "command")
+                                .run {
+                                 plate.removeFromParent()
+                                 ack()
+                                }]), withKey: "command")
   }
  }
  func fastForward() {
