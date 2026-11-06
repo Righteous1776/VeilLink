@@ -1,23 +1,31 @@
-# Veilopoly 开发断点（2026-11-06）
+# Veilopoly Development Checkpoint — 2026-11-06
 
-## 本分支起点
+**Branch:** `dev/veilopoly`; **base:** `main@ccafebab147e069fbabfff579dbf323b0d54f191`. No changes to main or protected product surfaces.
 
-- 基于 `main@ccafebab147e069fbabfff579dbf323b0d54f191` 创建 `dev/veilopoly`。
-- 本次提交仅创建独立研发区域及权限/任务文档；**没有改变 VeilLink 主产品源码、传输层、SQLite 或发布流程**。
-- 此前在当前会话交付过独立 Swift Package 工程 `Veilopoly_P1-P4_checkpoint_20261106.zip`（约 214 KiB）；该 ZIP **尚未同步为 GitHub 本分支的 Swift 源码**。今后迁入应写入 `VEILOPOLY_DEV/Veilopoly/`，保留原始 docs、单测和 CC0 来源清单；不可声称此分支已包含 P1–P4 代码。
+## GitHub committed
 
-## 以前的本地验证记录（非 GitHub CI）
+- Development charter, scope and owner-specified parallel development arrangement.
+- `COLLABORATION.md`: ChatGPT Swift engine / integration; Kimi visuals, CC0 assets and 2.5D modeling.
+- `KIMI_HANDOFF.md`, `INCOMING_ASSETS/README.md`: resource integration protocol and handoff templates.
+- `Veilopoly/Package.swift`: checkpoint Swift Package declaration.
+- 23 actual XCTest source files under `Veilopoly/Tests/` (atomic commit `4a47ccb86ab4eaf2d66f75020823bb8fd859505a`).
+- `Veilopoly/IMPORT_STATUS.md`: authoritative **partial source import** inventory.
 
-- Swift 6.2.1/Linux：已记录 24 个 XCTest 全部通过、无失败；
-- 500 个种子的 AI 自动回合测试是有界模拟，每局至多 500 步，并非 500 局全部自然完局；
-- SwiftUI / SpriteKit 及 iOS 16 真机验证**未完成**；
-- P3 只有协议级 transport 抽象；P5 真实 VeilLink 对接**未授权**。
+## Not yet in GitHub branch
 
-## 下次开始的唯一优先事项
+- 10 implementation Swift files (Engine/AI/Net/UI), 5 original specification/license Markdown docs, 26 CC0 PNG/WAV resources.
+- The 64-file standalone checkpoint ZIP has been audited locally and repackaged to a GitHub-rooted tree, but ZIP delivery is **not** GitHub source integration.
 
-1. 将当前会话交付的独立 Swift Package 源码/测试/规范/授权素材导入 `VEILOPOLY_DEV/Veilopoly/`；
-2. 按哈希和文件表审计导入一致性，检查 .gitignore/资源许可证；
-3. 用 iOS 16 SDK 编译运行，执行完整 XCTest、触摸和动画 ack 断点；
-4. 将实际测试结果写入 `VEILOPOLY_DEV/reviews/`，再申请 P4 集成审查。
+## Verification boundary
 
-开发队列和授权边界以 `GOVERNANCE.md`、`ROADMAP.md` 为准。
+Earlier independent Linux Swift toolchain tests were reported passing. This GitHub branch **cannot currently compile** as a package without implementation and resource files; no branch CI or iOS 16 simulator/device verification has been executed. Do not claim P1–P4 branch tests or P4 deployment are complete.
+
+## Next gate
+
+1. Exact file-by-file bulk import from checkpoint into this branch and SHA-256 verification.
+2. Swift package build & full XCTest; report exact branch SHA.
+3. macOS/Xcode iOS 16 SpriteKit/SwiftUI build, animation ack, touch, sound and 4-player tests.
+4. Kimi K1 texture alias/layout specification handoff; apply only after provenance and interface review.
+5. P5 VeilLink GameTransport adapter/UI integration remains out of scope until separate authorization.
+
+**Coordinating record:** https://github.com/Righteous1776/VeilLink/issues/6
