@@ -8,12 +8,16 @@ import VeilopolyEngine
 @MainActor
 final class GameBoardScene: SKScene {
  private var tiles: [Int: SKShapeNode] = [:]
+ private var tileCaptions: [Int: SKLabelNode] = [:]
+ private let activeTileMarker = SKShapeNode(rectOf: CGSize(width: 84, height: 76), cornerRadius: 8)
+ var reduceMotion = false
  private var pieces: [Int: SKSpriteNode] = [:]
  private var improvements: [Int: SKLabelNode] = [:]
  private var mortgageMarks: [Int: SKShapeNode] = [:]
  private let focus = SKCameraNode()
  private var dice: [SKSpriteNode] = []
  private var sounds: [String: AVAudioPlayer] = [:]
+ private var textureCache: [String: SKTexture] = [:]
  private var currentCompletion: (() -> Void)?
  private var acknowledgements = RenderCommandAckGate()
  private weak var activeCommandNode: SKNode?
@@ -33,9 +37,12 @@ final class GameBoardScene: SKScene {
  required init?(coder: NSCoder) { fatalError("Use init(size:)") }
 
  private func image(_ name: String) -> SKTexture? {
+  if let cached = textureCache[name] { return cached }
   guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
         let im = UIImage(contentsOfFile: url.path) else { return nil }
-  return SKTexture(image: im)
+  let texture = SKTexture(image: im)
+  textureCache[name] = texture
+  return texture
  }
  private func sound(_ key: String) {
   guard let name = audioMap[key], let url = Bundle.module.url(forResource: name, withExtension: "wav") else { return }
@@ -85,8 +92,15 @@ final class GameBoardScene: SKScene {
    let index = SKLabelNode(text: String(i))
    index.fontName = "AvenirNext-DemiBold"; index.fontSize = 18
    index.fontColor = SKColor(white: 0.85, alpha: 1)
-   index.verticalAlignmentMode = .center; index.position = spot
+   index.verticalAlignmentMode = .center
+   index.position = CGPoint(x: spot.x, y: spot.y + 13)
    index.zPosition = 6; addChild(index)
+   // Text remains data-driven; Kimi K2 may replace only the presentation skin.
+   let caption = SKLabelNode(text: "")
+   caption.fontName = "AvenirNext-Medium"; caption.fontSize = 11
+   caption.fontColor = SKColor(white: 0.96, alpha: 0.93)
+   caption.position = CGPoint(x: spot.x, y: spot.y - 15)
+   caption.zPosition = 7; addChild(caption); tileCaptions[i] = caption
    // L2 construction indicator; one reusable glyph per tile, no runtime node churn.
    let buildings = SKLabelNode(text: "")
    buildings.fontName = "AvenirNext-Bold"; buildings.fontSize = 20
@@ -101,6 +115,12 @@ final class GameBoardScene: SKScene {
    redSlash.position = spot; redSlash.zPosition = 8
    redSlash.isHidden = true; addChild(redSlash); mortgageMarks[i] = redSlash
   }
+  activeTileMarker.fillColor = .clear
+  activeTileMarker.strokeColor = SKColor(red: 0.78, green: 0.98, blue: 0.93, alpha: 0.88)
+  activeTileMarker.lineWidth = 3
+  activeTileMarker.zPosition = 12
+  activeTileMarker.isHidden = true
+  addChild(activeTileMarker)
   // L7: feather-like edge vignette, deliberately translucent to preserve legibility.
   let vignette = SKShapeNode(rect: CGRect(x: 4, y: 3, width: 1016, height: 934), cornerRadius: 25)
   vignette.fillColor = .clear
@@ -132,6 +152,12 @@ final class GameBoardScene: SKScene {
    }
    mortgageMarks[tile.i]?.isHidden = !tile.mortgaged
    improvements[tile.i]?.text = tile.hotel ? "▣" : (tile.houses > 0 ? "⌂×\(tile.houses)" : "")
+   let caption = tile.name.count > 5 ? String(tile.name.prefix(4)) + "…" : tile.name
+   if tileCaptions[tile.i]?.text != caption { tileCaptions[tile.i]?.text = caption }
+  }
+  if state.players.indices.contains(state.turn.player) {
+   activeTileMarker.position = point(state.players[state.turn.player].position)
+   activeTileMarker.isHidden = state.winner != nil
   }
   if snapTokens {
    for p in state.players where !p.bankrupt {
@@ -158,6 +184,27 @@ final class GameBoardScene: SKScene {
    self.currentCompletion = nil; self.finishImmediately = nil
    self.activeCommandNode = nil
    completion()
+  }
+  // System Reduce Motion: apply terminal visual state and release the same
+  // one-shot acknowledgment. The deterministic engine does not see this flag.
+  if reduceMotion {
+   switch command {
+   case .diceRoll(let values):
+    for (index, node) in dice.enumerated() {
+     if values.values.indices.contains(index) {
+      node.texture = image("die\(max(1, min(6, values.values[index])))")
+     }
+     node.zRotation = 0
+    }
+   case .tokenMove(let player, let path):
+    if let last = path.last { pieces[player]?.position = point(last) }
+   case .cardShow: sound("card")
+   case .banner: sound("turn")
+   case .cashFloat: sound("cash")
+   case .tileFx: break
+   }
+   ack()
+   return
   }
   switch command {
   case .diceRoll(let anim):
@@ -195,8 +242,8 @@ final class GameBoardScene: SKScene {
    run(SKAction.sequence([action, SKAction.run(ack)]), withKey: "command")
   case .tokenMove(let id, let path):
    guard let token = pieces[id] else { ack(); return }
-   let moves = path.enumerated().map { ix, tile -> SKAction in
-    let time: TimeInterval = path.count > 8 && ix < path.count - 2 ? 0.08 : 0.15
+   let moves = path.map { tile -> SKAction in
+    let time: TimeInterval = 0.15
     let position = point(tile)
     return SKAction.group([SKAction.move(to: position, duration: time),
                            SKAction.sequence([SKAction.moveBy(x: 0,y: 14,duration: time/2),
@@ -226,20 +273,34 @@ final class GameBoardScene: SKScene {
    }
    sound(key)
    if case .build = kind { sound("buildClick") }
+   // L6 procedural pulse: an inexpensive ring that Kimi can replace later.
+   let ring = SKShapeNode(circleOfRadius: 38)
+   ring.position = point(i); ring.zPosition = 23
+   ring.fillColor = .clear
+   ring.strokeColor = kind == .bankrupt ? .systemRed : .systemMint
+   ring.lineWidth = 5; ring.alpha = 0.85
+   ring.setScale(0.72)
+   addChild(ring)
+   ring.run(SKAction.sequence([
+    .group([.scale(to: 1.32, duration: duration), .fadeOut(withDuration: duration)]),
+    .removeFromParent()
+   ]))
    activeCommandNode = node
-   // Register terminal state before a possible synchronous nil-node ACK:
-   // that ACK may immediately start the next render command.
-   finishImmediately = { node?.setScale(1) }
+   // Initialize fallback before synchronous ACK; skip removes the ring.
+   finishImmediately = { node?.setScale(1); ring.removeFromParent() }
    if let node {
-    node.run(SKAction.sequence([SKAction.scale(to: 1.12, duration: duration/2),
+    node.run(SKAction.sequence([SKAction.scale(to: 1.08, duration: duration/2),
                                 SKAction.scale(to: 1, duration: duration/2), SKAction.run(ack)]), withKey: "command")
-   } else { ack() }
-  case .cashFloat(_, let amount):
+   } else { ring.removeFromParent(); ack() }
+  case .cashFloat(let player, let amount):
    sound("cash")
    let label = SKLabelNode(text: (amount > 0 ? "+" : "") + "¥\(amount)")
    label.fontName = "AvenirNext-Bold"; label.fontSize = 36
    label.fontColor = amount >= 0 ? .systemGreen : .systemRed
-   label.position = CGPoint(x: 510, y: 550); label.zPosition = 70; addChild(label)
+   let origin = pieces[player]?.position ?? CGPoint(x: 510, y: 490)
+   label.position = CGPoint(x: min(860, max(160, origin.x)),
+                            y: min(790, max(160, origin.y + 56)))
+   label.zPosition = 70; addChild(label)
    finishImmediately = { label.removeFromParent() }
    activeCommandNode = label
    label.run(SKAction.sequence([SKAction.group([.moveBy(x: 0,y: 50,duration: 0.7), .fadeOut(withDuration: 0.7)]),
@@ -248,10 +309,24 @@ final class GameBoardScene: SKScene {
    sound("card")
    run(SKAction.sequence([.wait(forDuration: 0.5),.run(ack)]),withKey: "command")
    finishImmediately = {}
-  case .banner(_):
+  case .banner(let info):
    sound("turn")
-   run(SKAction.sequence([.wait(forDuration: 1.6),.run(ack)]),withKey: "command")
-   finishImmediately = {}
+   let plate = SKShapeNode(rectOf: CGSize(width: 510, height: 84), cornerRadius: 20)
+   plate.position = CGPoint(x: 512, y: 470)
+   plate.fillColor = SKColor(red: 0.08, green: 0.18, blue: 0.23, alpha: 0.96)
+   plate.strokeColor = SKColor(red: 0.50, green: 0.89, blue: 0.80, alpha: 0.88)
+   plate.lineWidth = 2; plate.zPosition = 80; plate.alpha = 0
+   let title = SKLabelNode(text: info.text)
+   title.fontName = "AvenirNext-DemiBold"; title.fontSize = 31
+   title.fontColor = .white; title.verticalAlignmentMode = .center
+   title.zPosition = 1
+   plate.addChild(title); addChild(plate)
+   activeCommandNode = plate
+   finishImmediately = { plate.removeFromParent() }
+   plate.run(SKAction.sequence([.fadeIn(withDuration: 0.15),
+                                .wait(forDuration: 0.80),
+                                .fadeOut(withDuration: 0.25),
+                                .removeFromParent(), .run(ack)]), withKey: "command")
   }
  }
  func fastForward() {
