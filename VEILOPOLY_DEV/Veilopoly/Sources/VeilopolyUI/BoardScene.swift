@@ -250,7 +250,8 @@ final class GameBoardScene: SKScene {
         ?? SKColor(white: 0.45, alpha: 0.6))
    }
    mortgageMarks[tile.i]?.isHidden = !tile.mortgaged
-   improvements[tile.i]?.text = tile.hotel ? "▣" : (tile.houses > 0 ? "⌂×\(tile.houses)" : "")
+   improvements[tile.i]?.text = kimiSkin?.usesBuildingSprites == true ? "" :
+     (tile.hotel ? "▣" : (tile.houses > 0 ? "⌂×\(tile.houses)" : ""))
    let labelLimit = kimiSkin == nil ? 5 : 4
    let caption = tile.name.count > labelLimit ? String(tile.name.prefix(labelLimit)) + "…" : tile.name
    if tileCaptions[tile.i]?.text != caption { tileCaptions[tile.i]?.text = caption }
