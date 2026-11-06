@@ -189,7 +189,8 @@ final class GameBoardScene: SKScene {
  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
   guard let touch = touches.first else { return }
   let local = touch.location(in: self)
-  let hit = tiles.first(where: { $0.value.contains(local) })?.key
+  // contains(_:) expects coordinates local to each tile node, not the scene.
+  let hit = tiles.first(where: { _, node in node.contains(node.convert(local, from: self)) })?.key
   onBoardTap?(hit)
  }
 
