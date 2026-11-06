@@ -1,0 +1,242 @@
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -1,6 +1,7 @@
+-import Combine
+-import CoreBluetooth
+-import Foundation
++import AVFoundation
++import Combine
++import CoreBluetooth
++import Foundation
+ 
+ struct BLEQueueAdmissionPolicy {
+     private static func reservedCapacity(
+@@ -185,8 +186,24 @@
+     var first: Data? { control.first ?? realtime.first ?? bulk.first }
+ }
+ 
+-@MainActor
+-final class BLETransport: NSObject, ObservableObject {
++/// Audio routing does not create independent Bluetooth radio channels.
++    /// Reduce optional scan/RSSI work during HFP/A2DP/LE headset activity while
++    /// preserving CoreBluetooth's authenticated connections and queue watchdog.
++enum BLEAudioCoexistencePolicy {
++    static func allowsDuplicateDiscoveries(foreground: Bool, bluetoothAudioActive: Bool) -> Bool {
++        foreground && !bluetoothAudioActive
++    }
++
++    static func shouldPollRSSI(
++        foreground: Bool, bluetoothAudioActive: Bool,
++        elapsed: TimeInterval, interval: TimeInterval
++    ) -> Bool {
++        foreground && !bluetoothAudioActive && elapsed >= interval
++    }
++}
++
++@MainActor
++final class BLETransport: NSObject, ObservableObject {
+     static let serviceUUID = CBUUID(string: "5D0F88D4-21A2-4DC4-A1E8-A2DF8C9AC001")
+     static let dataUUID = CBUUID(string: "5D0F88D4-21A2-4DC4-A1E8-A2DF8C9AC002")
+ 
+@@ -222,8 +239,11 @@
+     private var rssiPollTask: Task<Void, Never>?
+     private var lastRSSIMaintenanceAt: TimeInterval = 0
+     private var connectionEvents = ConnectionEventGate()
+-    private var foregroundActive = true
+-    private var linkSnapshotRefreshWorkItem: DispatchWorkItem?
++    private var foregroundActive = true
++    private var bluetoothAudioActive = false
++    private var lastScanAllowsDuplicates: Bool?
++    private var audioRouteSubscription: AnyCancellable?
++    private var linkSnapshotRefreshWorkItem: DispatchWorkItem?
+     private var lastLinkSnapshotPublishAt: TimeInterval = 0
+ 
+     private let maxFragmentsPerMessage = 16_384
+@@ -258,16 +278,36 @@
+             queue: nil,
+             options: [CBCentralManagerOptionRestoreIdentifierKey: "VeilLink.Central.v2"]
+         )
+-        peripheralManager = CBPeripheralManager(
+-            delegate: self,
+-            queue: nil,
+-            options: [CBPeripheralManagerOptionRestoreIdentifierKey: "VeilLink.Peripheral.v2"]
+-        )
+-    }
+-
+-    func start() {
+-        isRunning = true
+-        startRSSIPolling()
++        peripheralManager = CBPeripheralManager(
++            delegate: self,
++            queue: nil,
++            options: [CBPeripheralManagerOptionRestoreIdentifierKey: "VeilLink.Peripheral.v2"]
++        )
++        audioRouteSubscription = NotificationCenter.default.publisher(
++            for: AVAudioSession.routeChangeNotification
++        ).sink { [weak self] _ in
++            Task { @MainActor [weak self] in self?.refreshBluetoothAudioRoute() }
++        }
++        refreshBluetoothAudioRoute()
++    }
++
++    private func refreshBluetoothAudioRoute() {
++        let route = AVAudioSession.sharedInstance().currentRoute
++        let active = (route.inputs + route.outputs).contains { port in
++            switch port.portType {
++            case .bluetoothHFP, .bluetoothA2DP, .bluetoothLE: return true
++            default: return false
++            }
++        }
++        guard bluetoothAudioActive != active else { return }
++        bluetoothAudioActive = active
++        if isRunning { beginScanningIfPossible() }
++    }
++
++    func start() {
++        isRunning = true
++        refreshBluetoothAudioRoute()
++        startRSSIPolling()
+         beginScanningIfPossible()
+         beginAdvertisingIfPossible()
+         restoreWantedPeripheralsIfPossible()
+@@ -274,11 +314,14 @@
+         publishLinkSnapshots(force: true)
+     }
+ 
+-    func setForegroundActive(_ active: Bool) {
+-        foregroundActive = active
+-        guard active, isRunning else { return }
+-        refreshLinks()
+-    }
++    func setForegroundActive(_ active: Bool) {
++        foregroundActive = active
++        guard isRunning else { return }
++        // Keep UUID-filtered background discovery, but allow the OS to coalesce
++        // repeated advertisements rather than consuming audio/radio airtime.
++        beginScanningIfPossible()
++        if active { refreshBluetoothAudioRoute(); refreshLinks() }
++    }
+ 
+     func refreshLinks() {
+         guard isRunning else {
+@@ -288,10 +331,12 @@
+         beginScanningIfPossible()
+         beginAdvertisingIfPossible()
+         recoverStalledTransportQueuesIfNeeded()
+-        for peripheral in remotePeripherals.values where peripheral.state == .connected {
+-            peripheral.readRSSI()
+-        }
+-        publishLinkSnapshots(force: true)
++        if foregroundActive && !bluetoothAudioActive {
++            for peripheral in remotePeripherals.values where peripheral.state == .connected {
++                peripheral.readRSSI()
++            }
++        }
++        publishLinkSnapshots(force: true)
+     }
+ 
+     func stop(preserveConnectionIntent: Bool = false) {
+@@ -296,8 +341,9 @@
+ 
+     func stop(preserveConnectionIntent: Bool = false) {
+         isRunning = false
+-        centralManager.stopScan()
+-        peripheralManager.stopAdvertising()
++        centralManager.stopScan()
++        lastScanAllowsDuplicates = nil
++        peripheralManager.stopAdvertising()
+         for peripheral in remotePeripherals.values where peripheral.state == .connected || peripheral.state == .connecting {
+             centralManager.cancelPeripheralConnection(peripheral)
+         }
+@@ -782,14 +828,19 @@
+         publishLinkSnapshots()
+     }
+ 
+-    private func beginScanningIfPossible() {
+-        guard isRunning, centralManager.state == .poweredOn else { return }
+-        centralManager.scanForPeripherals(
+-            withServices: [Self.serviceUUID],
+-            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+-        )
+-        statusText = "正在发现附近设备"
+-    }
++    private func beginScanningIfPossible() {
++        guard isRunning, centralManager.state == .poweredOn else { return }
++        let duplicates = BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
++            foreground: foregroundActive, bluetoothAudioActive: bluetoothAudioActive
++        )
++        guard !centralManager.isScanning || lastScanAllowsDuplicates != duplicates else { return }
++        centralManager.scanForPeripherals(
++            withServices: [Self.serviceUUID],
++            options: [CBCentralManagerScanOptionAllowDuplicatesKey: duplicates]
++        )
++        lastScanAllowsDuplicates = duplicates
++        statusText = "正在发现附近设备"
++    }
+ 
+     private func beginAdvertisingIfPossible() {
+         guard isRunning, peripheralManager.state == .poweredOn else { return }
+@@ -828,13 +879,19 @@
+                 try? await Task.sleep(nanoseconds: interval)
+                 guard !Task.isCancelled, self.isRunning else { continue }
+                 let now = Date().timeIntervalSinceReferenceDate
+-                if now - self.lastRSSIMaintenanceAt >= self.maintenanceTuning.rssiPollInterval {
+-                    for peripheral in self.remotePeripherals.values where peripheral.state == .connected {
+-                        peripheral.readRSSI()
+-                    }
+-                    self.lastRSSIMaintenanceAt = now
+-                }
+-                self.recoverStalledTransportQueuesIfNeeded()
++                if BLEAudioCoexistencePolicy.shouldPollRSSI(
++                    foreground: self.foregroundActive,
++                    bluetoothAudioActive: self.bluetoothAudioActive,
++                    elapsed: now - self.lastRSSIMaintenanceAt,
++                    interval: self.maintenanceTuning.rssiPollInterval
++                ) {
++                    for peripheral in self.remotePeripherals.values where peripheral.state == .connected {
++                        peripheral.readRSSI()
++                    }
++                    self.lastRSSIMaintenanceAt = now
++                }
++                // Never stop connection recovery, queued payload progress, or GATT watchdog.
++                self.recoverStalledTransportQueuesIfNeeded()
+             }
+         }
+     }
+diff --git a/VeilLinkTests/BLETransportSafetyTests.swift b/VeilLinkTests/BLETransportSafetyTests.swift
+--- a/VeilLinkTests/BLETransportSafetyTests.swift
++++ b/VeilLinkTests/BLETransportSafetyTests.swift
+@@ -1,7 +1,31 @@
+ import XCTest
+ @testable import VeilLink
+ 
+-final class BLETransportSafetyTests: XCTestCase {
++final class BLETransportSafetyTests: XCTestCase {
++    func testBluetoothHeadsetCoexistenceOnlyReducesOptionalScanWork() {
++        XCTAssertTrue(BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
++            foreground: true, bluetoothAudioActive: false
++        ))
++        XCTAssertFalse(BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
++            foreground: true, bluetoothAudioActive: true
++        ))
++        XCTAssertFalse(BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
++            foreground: false, bluetoothAudioActive: false
++        ))
++        XCTAssertFalse(BLEAudioCoexistencePolicy.shouldPollRSSI(
++            foreground: true, bluetoothAudioActive: true, elapsed: 20, interval: 2
++        ))
++        XCTAssertFalse(BLEAudioCoexistencePolicy.shouldPollRSSI(
++            foreground: false, bluetoothAudioActive: false, elapsed: 20, interval: 2
++        ))
++        XCTAssertFalse(BLEAudioCoexistencePolicy.shouldPollRSSI(
++            foreground: true, bluetoothAudioActive: false, elapsed: 1, interval: 2
++        ))
++        XCTAssertTrue(BLEAudioCoexistencePolicy.shouldPollRSSI(
++            foreground: true, bluetoothAudioActive: false, elapsed: 2, interval: 2
++        ))
++    }
++
+     func testFragmentationPlanAcceptsExactUInt16BoundaryAtLegacyATTSize() {
+         let packetSize = 20
+         let payloadBytes = (packetSize - BLEFragment.headerSize) * BLEFragment.maximumFragmentCount
