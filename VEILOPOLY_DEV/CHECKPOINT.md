@@ -121,3 +121,15 @@
 - Strict fallback: existing engine state, SwiftUI Button callbacks, numeric fields, Player cash, rent, winner and bank balances remain authoritative. No static preview art is rendered as a game view. No Kimi 2.5D/character/building assets or P5 host app were modified.
 - Static repo audit: 13/13 runtime image aliases have package resources and byte-identical Git blob SHA to the checked-in Astra source; existing manifest nine-slice insets are within logical bounds. The PNG selection is deliberately limited for compact iPhone memory.
 - `Veilopoly/docs/ASTRA_B01_RUNTIME_INTEGRATION_20261107.md` documents integration and acceptance risks. **Xcode iOS compile, artwork brightness, safe areas, keyboard, Dynamic Type, VoiceOver, touch hit-testing and GPU timing NOT VERIFIED.** No hosted CI/IPA run was started.
+
+
+## Astra B01 second-stage concurrent UI intake and regression fix (2026-11-07)
+
+- `c30d192ee9ec...`: 7 extra textures were staged by another scoped UI Agent (secondary button normal/pressed/disabled + current/jailed/bankrupt/normal player HUD), bringing selected B01 runtime PNGs from **13 to 20**. No Kimi textures or game Engine were overwritten.
+- `b5669cc5c95ad075f2892415308ea73f2f51dfa5`: uses explicit @2x `UIImage` scale via cached `AstraB01Artwork.image` for pixel-to-point correctness; enables secondary action skins and dedicated four-player status skins. This was a concurrent branch change, preserved rather than overwritten.
+- `cc0958a6e9987b9e9ec20fd62b49e6d42b4f1cc9`: card/financial UI quality follow-up on current source: prevent Astra feedback background's baked icon from overlapping a duplicate SF Symbol, show "余额不足", disable BUY when available cash is below cost, and disable a bid below or equal to current high bid.
+- `d6662637d4678a162ed048a68a0f606d7098e32c`: fix a definite stale test assertion expecting 13 unique names after the asset set grew to 20; compare unique count to registered runtime count.
+- Static Git tree audit confirms **20/20** imported B01 PNG aliases have corresponding Resources paths with blob SHA identical to Astra intake originals; per-manifest compressed PNG total **333,980 bytes** and decoded RGBA estimate **10.21 MiB** if all decoded at once (not device GPU telemetry). Nine-slice source cap insets remain within each original logical asset size.
+- The broader 91-alias Astra package still lives in `INCOMING_ASSETS/`, and **AUCTION/TRADE hero controls remain staged but not actively overlaid**. Kimi B02 and P5 are not part of this change.
+- No exact branch-hosted XCTest, Xcode iOS build, safe-area, haptic, keyboard/VoiceOver, GPU/frame-time, or IPA verification was performed in this turn.
+
