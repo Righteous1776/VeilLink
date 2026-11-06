@@ -140,6 +140,7 @@ public enum MoveKind: String, Codable, CaseIterable {
  case proposeTrade, counterTrade, acceptTrade, rejectTrade
  case payBail, useJailCard, declareBankruptcy, endTurn
  case bankDeposit, bankWithdraw, bankBorrow, bankRepay, bankInvest, bankSettle
+ case stockBuy, stockSell, stockTick
 }
 public struct Move: Codable, Equatable {
  public var type: MoveKind
@@ -154,11 +155,15 @@ public struct Move: Codable, Equatable {
  public var financeProduct: FinancialFeature?
  public var financePeriods: Int?
  public var financeID: Int?
+ public var stockSymbol: String?
+ public var stockShares: Int?
  public init(_ type: MoveKind, player: Int, seq: Int,
              tile: Int? = nil, amount: Int? = nil, to: Int? = nil,
              offer: TradeTransfer? = nil, request: TradeTransfer? = nil, deck: DeckKind? = nil,
-             financeProduct: FinancialFeature? = nil, financePeriods: Int? = nil, financeID: Int? = nil) {
+             financeProduct: FinancialFeature? = nil, financePeriods: Int? = nil, financeID: Int? = nil,
+             stockSymbol: String? = nil, stockShares: Int? = nil) {
   self.financeProduct = financeProduct; self.financePeriods = financePeriods; self.financeID = financeID
+  self.stockSymbol = stockSymbol; self.stockShares = stockShares
   self.type = type; self.player = player; self.seq = seq
   self.tile = tile; self.amount = amount; self.to = to; self.offer = offer; self.request = request; self.deck = deck
  }
@@ -168,6 +173,7 @@ public enum EffectKind: String, Codable {
  case bought, auctionStarted, bid, bidFold, auctionWon, built, soldBuilding, mortgaged, redeemed
  case tradeProposed, traded, tradeRejected, liquidation, bankrupt, turnEnded, extraRoll, gameWon
  case bankDeposited, bankWithdrawn, bankBorrowed, bankRepaid, bankInvestmentOpened, bankInvestmentSettled, bankMatured
+ case stockBought, stockSold, stockTicked, stockHalted
 }
 public struct Effect: Codable, Equatable {
  public var kind: EffectKind
@@ -180,11 +186,16 @@ public struct Effect: Codable, Equatable {
  public var dice: [Int]?
  public var text: String?
  public var deck: DeckKind?
+ public var stockSymbol: String?
+ public var stockShares: Int?
+ public var stockPriceCents: Int?
  public init(_ kind: EffectKind, player: Int? = nil, tile: Int? = nil, from: Int? = nil,
              to: Int? = nil, amount: Int? = nil, steps: Int? = nil, dice: [Int]? = nil,
-             text: String? = nil, deck: DeckKind? = nil) {
+             text: String? = nil, deck: DeckKind? = nil,
+             stockSymbol: String? = nil, stockShares: Int? = nil, stockPriceCents: Int? = nil) {
   self.kind = kind; self.player = player; self.tile = tile; self.from = from; self.to = to
   self.amount = amount; self.steps = steps; self.dice = dice; self.text = text; self.deck = deck
+  self.stockSymbol = stockSymbol; self.stockShares = stockShares; self.stockPriceCents = stockPriceCents
  }
 }
 public struct GameState: Codable, Equatable {
@@ -233,6 +244,8 @@ public enum GameError: String, Error, Codable, Equatable {
  case inJail = "InJail", noJailCard = "NoJailCard", noDebt = "NoDebt", alreadyBankrupt = "AlreadyBankrupt"
  case gameFinished = "GameFinished", invalidContext = "InvalidContext", invalidState = "InvalidState"
  case financeTermsPending = "FinanceTermsPending", financePositionLocked = "FinancePositionLocked"
+ case stockNotFound = "StockNotFound", insufficientShares = "InsufficientShares"
+ case stockTradingHalted = "StockTradingHalted"
 }
 
 public enum StateDigest {

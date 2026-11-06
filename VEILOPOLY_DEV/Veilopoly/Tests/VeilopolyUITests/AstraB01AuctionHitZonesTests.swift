@@ -3,7 +3,11 @@ import XCTest
 
 final class AstraB01AuctionHitZonesTests: XCTestCase {
  func testHitRegionsStayWithinTheArt() {
-  for rect in [AstraB01AuctionHitZones.minus, .input, .plus] {
+  for rect in [
+   AstraB01AuctionHitZones.minus,
+   AstraB01AuctionHitZones.input,
+   AstraB01AuctionHitZones.plus,
+  ] {
    XCTAssertGreaterThanOrEqual(rect.x, 0)
    XCTAssertGreaterThanOrEqual(rect.y, 0)
    XCTAssertLessThanOrEqual(rect.x + rect.width, AstraB01AuctionHitZones.canvasWidth)

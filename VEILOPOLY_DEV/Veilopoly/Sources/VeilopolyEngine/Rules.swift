@@ -11,7 +11,8 @@ public enum VeilopolyEngine {
   case .tileResolve: choices = g.turn.pendingPurchase == nil ? [.resolveTile] : [.buyProperty, .startAuction]
   case .auction: choices = [.bid]
   case .manage: choices = [.buildHouse, .sellHouse, .mortgage, .redeem, .proposeTrade, .endTurn,
-                           .bankDeposit, .bankWithdraw, .bankBorrow, .bankRepay, .bankInvest, .bankSettle]
+                           .bankDeposit, .bankWithdraw, .bankBorrow, .bankRepay, .bankInvest, .bankSettle,
+                           .stockBuy, .stockSell, .stockTick]
   case .trade: choices = [.counterTrade, .acceptTrade, .rejectTrade]
   case .debt: choices = [.declareBankruptcy]
   case .finished: choices = []
@@ -241,7 +242,8 @@ public enum VeilopolyEngine {
    guard let debt = g.pendingDebt, debt.player == p else { throw GameError.noDebt }
    bankrupt(&g, debtor: p, creditor: debt.creditor, &fx)
    g.pendingDebt = nil
-  case .bankDeposit, .bankWithdraw, .bankBorrow, .bankRepay, .bankInvest, .bankSettle:
+  case .bankDeposit, .bankWithdraw, .bankBorrow, .bankRepay, .bankInvest, .bankSettle,
+       .stockBuy, .stockSell, .stockTick:
    try IntegratedBanking.apply(&g, move: m, effects: &fx)
   case .endTurn:
    g.pendingCard = nil

@@ -1,4 +1,5 @@
 #if os(iOS) && canImport(SwiftUI) && canImport(SpriteKit)
+import Foundation
 import SwiftUI
 import SpriteKit
 import VeilopolyEngine
@@ -42,13 +43,19 @@ public final class GameSessionModel: ObservableObject {
  public func perform(_ kind: MoveKind, tile: Int? = nil, amount: Int? = nil,
                      to: Int? = nil, offer: TradeTransfer? = nil, request: TradeTransfer? = nil,
                      deck: DeckKind? = nil, financeProduct: FinancialFeature? = nil,
-                     financePeriods: Int? = nil, financeID: Int? = nil) {
+                     financePeriods: Int? = nil, financeID: Int? = nil,
+                     stockSymbol: String? = nil, stockShares: Int? = nil) {
   guard !animating && !cardGate.isPresented else { return }
   let move = Move(kind, player: actor, seq: game.nextSeq, tile: tile, amount: amount,
                   to: to, offer: offer, request: request, deck: deck,
-                  financeProduct: financeProduct, financePeriods: financePeriods, financeID: financeID)
+                  financeProduct: financeProduct, financePeriods: financePeriods, financeID: financeID,
+                  stockSymbol: stockSymbol, stockShares: stockShares)
   applyMove(move)
   drive()
+ }
+ public func advanceStockMarket() {
+  guard !animating && !cardGate.isPresented && waitingForHuman && game.turn.phase == .manage else { return }
+  applyMove(Move(.stockTick, player: actor, seq: game.nextSeq))
  }
  private func applyMove(_ move: Move) {
   let result = VeilopolyEngine.apply(game, currentContext, move)
@@ -144,6 +151,8 @@ public struct VeilopolyGameView: View {
  @State private var bidderCash = "10"
  @State private var bankAmount = "200"
  @State private var bankPeriods = "3"
+ @State private var stockSymbol = "VTL"
+ @State private var stockShares = "1"
  @State private var tradeTarget = 1
  @State private var chosenOffer: Set<Int> = []
  @State private var chosenRequest: Set<Int> = []
@@ -179,6 +188,14 @@ public struct VeilopolyGameView: View {
   .statusBarHidden()
   .onAppear { model.scene.reduceMotion = reduceMotion }
   .onChange(of: reduceMotion) { model.scene.reduceMotion = $0 }
+  .task {
+   // Wall time only schedules explicit reducer moves. Price generation itself
+   // remains seeded and replayable; leaving the view cancels this local ticker.
+   while !Task.isCancelled {
+    try? await Task.sleep(nanoseconds: 2_000_000_000)
+    model.advanceStockMarket()
+   }
+  }
   .confirmationDialog("更多", isPresented: $showMore) {
    Button("重新开局") { showRestart = true }
    Button("本局信息") { showGameInfo = true }
@@ -829,8 +846,139 @@ public struct VeilopolyGameView: View {
     Text("金融期数：\(ledger.completedTurns)")
      .font(.caption2).foregroundStyle(.secondary)
    }
-   Text("定期收益、股票和风险投资的正式回报表待规格裁决；仅使用游戏内虚拟货币。")
+   stockMarketPanel
+   Text("股票为种子驱动的离线模拟行情，不连接真实交易所；定期和风险投资回报表仍待规格裁决。")
     .font(.caption2).foregroundStyle(.secondary)
+  }
+ }
+
+ private var stockMarketPanel: some View {
+  let ledger = IntegratedBanking.ledger(model.game)
+  let market = ledger.market ?? StockMarketEngine.initial(seed: model.game.seed)
+  let selected = StockMarketEngine.quote(market, symbol: stockSymbol) ?? market.quotes[0]
+  let portfolio = market.portfolios.indices.contains(model.actor)
+   ? market.portfolios[model.actor] : StockPortfolio()
+  let owned = portfolio.position(symbol: selected.symbol)?.shares ?? 0
+  let shares = max(0, Int(stockShares) ?? 0)
+  let marketValue = StockMarketEngine.portfolioMarketValueCents(market, player: model.actor)
+  let unrealized = StockMarketEngine.unrealizedPnLCents(market, player: model.actor)
+  return VStack(alignment: .leading, spacing: 9) {
+   Divider()
+   HStack {
+    Label("本地实时股市", systemImage: "chart.xyaxis.line")
+     .font(.subheadline.weight(.semibold))
+    Spacer()
+    Text("T+\(market.tick) · \(stockRegimeName(market.regime))")
+     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+   }
+   Picker("股票", selection: $stockSymbol) {
+    ForEach(market.quotes) { quote in
+     Text("\(quote.symbol) · \(quote.name)").tag(quote.symbol)
+    }
+   }
+   .pickerStyle(.menu)
+   .accessibilityHint("选择要查看和交易的虚构股票")
+
+   HStack(alignment: .firstTextBaseline) {
+    VStack(alignment: .leading, spacing: 2) {
+     Text("\(selected.symbol)  \(selected.name)").font(.headline)
+     Text("\(selected.sector) · 成交量 \(selected.sessionVolume)")
+      .font(.caption2).foregroundStyle(.secondary)
+    }
+    Spacer()
+    VStack(alignment: .trailing, spacing: 2) {
+     Text(stockMoney(selected.currentPriceCents))
+      .font(.system(size: 20, weight: .bold, design: .monospaced))
+     Text(stockPercent(selected.changeBasisPoints))
+      .font(.caption.weight(.semibold))
+      .foregroundStyle(selected.changeBasisPoints >= 0 ? Color.green : Color.red)
+    }
+   }
+   VeilopolyStockLineChart(quote: selected)
+    .frame(height: 132)
+   HStack(spacing: 7) {
+    stockMetric("开", selected.sessionOpenCents)
+    stockMetric("高", selected.highCents)
+    stockMetric("低", selected.lowCents)
+    Spacer(minLength: 0)
+    if selected.isHalted {
+     Label("暂停 \(selected.haltedTicks) tick", systemImage: "pause.circle.fill")
+      .font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+    }
+   }
+
+   HStack(spacing: 8) {
+    TextField("股数", text: $stockShares)
+     .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+     .accessibilityLabel("交易股数")
+    Stepper("", value: Binding(
+     get: { max(1, min(10_000, Int(stockShares) ?? 1)) },
+     set: { stockShares = String($0) }), in: 1...10_000)
+     .labelsHidden().fixedSize()
+   }
+   HStack(spacing: 8) {
+    action("买入 \(shares) 股", symbol: "arrow.up.right") {
+     model.perform(.stockBuy, stockSymbol: selected.symbol, stockShares: shares)
+    }
+    .disabled(shares < 1 || selected.isHalted)
+    action("卖出 \(shares) 股", symbol: "arrow.down.right", secondary: true) {
+     model.perform(.stockSell, stockSymbol: selected.symbol, stockShares: shares)
+    }
+    .disabled(shares < 1 || shares > owned || selected.isHalted)
+   }
+
+   HStack {
+    Text("持仓市值 \(stockMoney(marketValue))")
+    Spacer()
+    Text("浮动 \(signedStockMoney(unrealized))")
+     .foregroundStyle(unrealized >= 0 ? Color.green : Color.red)
+   }
+   .font(.caption.weight(.semibold))
+   ForEach(portfolio.positions) { position in
+    let quote = StockMarketEngine.quote(market, symbol: position.symbol)
+    let pnl = position.shares * ((quote?.currentPriceCents ?? position.averageCostCents) - position.averageCostCents)
+    HStack {
+     Text(position.symbol).font(.caption.weight(.bold))
+     Text("\(position.shares) 股 · 成本 \(stockMoney(position.averageCostCents))")
+      .font(.caption2).foregroundStyle(.secondary)
+     Spacer()
+     Text(signedStockMoney(pnl)).font(.caption.monospacedDigit())
+      .foregroundStyle(pnl >= 0 ? Color.green : Color.red)
+    }
+   }
+   Text("手续费 0.50%（最低 ¥1）· 单日模拟涨跌幅 ±10% · 整股交易")
+    .font(.caption2).foregroundStyle(.secondary)
+  }
+  .padding(10)
+  .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 12))
+ }
+
+ private func stockMetric(_ label: String, _ cents: Int) -> some View {
+  VStack(alignment: .leading, spacing: 1) {
+   Text(label).font(.system(size: 9)).foregroundStyle(.secondary)
+   Text(stockMoney(cents)).font(.caption2.monospacedDigit())
+  }
+ }
+ private func stockMoney(_ cents: Int) -> String {
+  let value = max(0, cents)
+  let fraction = value % 100
+  return "¥\(value / 100).\(fraction < 10 ? "0" : "")\(fraction)"
+ }
+ private func signedStockMoney(_ cents: Int) -> String {
+  cents < 0 ? "−\(stockMoney(-cents))" : "+\(stockMoney(cents))"
+ }
+ private func stockPercent(_ basisPoints: Int) -> String {
+  let sign = basisPoints >= 0 ? "+" : "−"
+  let value = abs(basisPoints)
+  return "\(sign)\(value / 100).\(value % 100 < 10 ? "0" : "")\(value % 100)%"
+ }
+ private func stockRegimeName(_ regime: Int) -> String {
+  switch regime {
+  case -2: return "深度回调"
+  case -1: return "偏弱"
+  case 1: return "偏强"
+  case 2: return "强势"
+  default: return "震荡"
   }
  }
  private var tradeResponsePanel: some View {
@@ -868,8 +1016,12 @@ public struct VeilopolyGameView: View {
   }
  }
  private func netWorth(_ p: Player) -> Int {
-  p.cash + model.game.board.filter { $0.owner == p.id }
+  let properties = model.game.board.filter { $0.owner == p.id }
    .reduce(0) { $0 + ($1.mortgaged ? $1.price / 2 : $1.price) + $1.houses * $1.houseCost + ($1.hotel ? 5 * $1.houseCost : 0) }
+  let stocks = model.game.banking?.market.map {
+   StockMarketEngine.portfolioMarketValueCents($0, player: p.id) / 100
+  } ?? 0
+  return p.cash + properties + stocks
  }
 }
 #else

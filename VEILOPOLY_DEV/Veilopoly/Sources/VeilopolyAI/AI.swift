@@ -61,8 +61,7 @@ public enum VeilopolyAI {
     let level = tile.hotel ? 5 : tile.houses
     let low = group.map { $0.hotel ? 5 : $0.houses }.min() ?? 0
     if level == low && level < 5 &&
-       (p.cash - tile.houseCost >= reserve ||
-        (level < 4 && (g.banking?.freeHouseCredits[me] ?? 0) > 0)) &&
+       p.cash - tile.houseCost >= reserve &&
        (level == 4 ? g.bank.hotels > 0 : g.bank.houses > 0) {
      return m(.buildHouse, tile: tile.i)
     }

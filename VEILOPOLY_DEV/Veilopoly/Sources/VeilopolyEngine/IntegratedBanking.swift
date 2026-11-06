@@ -15,16 +15,20 @@ public struct IntegratedBankLedger: Codable, Equatable {
  public var completedTurns: Int
  public var terms: FinanceSandboxPolicy
  public var accounts: [IntegratedBankAccount]
- public init(completedTurns: Int = 0, terms: FinanceSandboxPolicy = FinanceSandboxPolicy()) {
+ /// Optional keeps snapshots from before the live simulator backward compatible.
+ public var market: StockMarketState?
+ public init(completedTurns: Int = 0, terms: FinanceSandboxPolicy = FinanceSandboxPolicy(),
+             market: StockMarketState? = nil) {
   self.completedTurns = completedTurns
   self.terms = terms
   self.accounts = Array(repeating: IntegratedBankAccount(), count: 4)
+  self.market = market
  }
 
  // FinanceSandboxPolicy has enum-keyed dictionaries. Swift encodes these as
  // unkeyed key/value arrays, whose iteration order is unstable between runs.
  // Explicit string-keyed DTOs make the entire GameState hash reproducible.
- private enum CodingKeys: String, CodingKey { case completedTurns, terms, accounts }
+ private enum CodingKeys: String, CodingKey { case completedTurns, terms, accounts, market }
  private struct CanonicalTerms: Codable {
   var loanInterestBasisPoints: [Int]
   var loanCapsByProperties: [Int]
@@ -67,18 +71,22 @@ public struct IntegratedBankLedger: Codable, Equatable {
   try c.encode(completedTurns, forKey: .completedTurns)
   try c.encode(CanonicalTerms(terms), forKey: .terms)
   try c.encode(accounts, forKey: .accounts)
+  try c.encodeIfPresent(market, forKey: .market)
  }
  public init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
   completedTurns = try c.decode(Int.self, forKey: .completedTurns)
   terms = try c.decode(CanonicalTerms.self, forKey: .terms).policy()
   accounts = try c.decode([IntegratedBankAccount].self, forKey: .accounts)
+  market = try c.decodeIfPresent(StockMarketState.self, forKey: .market)
  }
 }
 
 public enum IntegratedBanking {
  public static func ledger(_ g: GameState) -> IntegratedBankLedger {
-  g.banking ?? IntegratedBankLedger(completedTurns: g.moveLog.filter { $0.type == .endTurn }.count)
+  var result = g.banking ?? IntegratedBankLedger(completedTurns: g.moveLog.filter { $0.type == .endTurn }.count)
+  if result.market == nil { result.market = StockMarketEngine.initial(seed: g.seed) }
+  return result
  }
 
  /// Deterministic and auditable policy injection. To ratify a yield/market table,
@@ -86,13 +94,15 @@ public enum IntegratedBanking {
  public static func configured(_ g: GameState, terms: FinanceSandboxPolicy) -> GameState? {
   guard terms.isWellFormed(), g.banking == nil else { return nil }
   var updated = g
-  updated.banking = IntegratedBankLedger(completedTurns: g.moveLog.filter { $0.type == .endTurn }.count, terms: terms)
+  updated.banking = IntegratedBankLedger(completedTurns: g.moveLog.filter { $0.type == .endTurn }.count,
+                                         terms: terms, market: StockMarketEngine.initial(seed: g.seed))
   return updated
  }
 
  public static func validate(_ ledger: IntegratedBankLedger) -> Bool {
   (0...1_000_000).contains(ledger.completedTurns) && ledger.accounts.count == 4 &&
-  ledger.terms.isWellFormed() && ledger.accounts.allSatisfy { acc in
+  ledger.terms.isWellFormed() && (ledger.market.map(StockMarketEngine.validate) ?? true) &&
+  ledger.accounts.allSatisfy { acc in
    (0...4).contains(acc.borrowCount) && acc.savings.count <= 1000 &&
    acc.loans.count <= 4 && acc.positions.count <= 1000 &&
    acc.savings.allSatisfy {
@@ -217,6 +227,34 @@ public enum IntegratedBanking {
    g.players[p].cash += payout
    ledger.accounts[p].positions.remove(at: ix)
    effects.append(Effect(.bankInvestmentSettled, player: p, amount: payout, dice: [rolled], text: position.feature.rawValue))
+  case .stockTick:
+   guard var market = ledger.market else { throw GameError.invalidState }
+   let halted = try StockMarketEngine.advance(&market)
+   ledger.market = market
+   effects.append(Effect(.stockTicked, amount: market.tick,
+                         text: "regime:\(market.regime)"))
+   for symbol in halted {
+    effects.append(Effect(.stockHalted, text: symbol, stockSymbol: symbol))
+   }
+  case .stockBuy:
+   guard var market = ledger.market, let symbol = m.stockSymbol,
+         let shares = m.stockShares else { throw GameError.invalidPayload }
+   let receipt = try StockMarketEngine.buy(&market, player: p, symbol: symbol,
+                                           shares: shares, cash: &g.players[p].cash)
+   ledger.market = market
+   effects.append(Effect(.stockBought, player: p, amount: receipt.cashDelta,
+                         text: "fee:\(receipt.fee)", stockSymbol: receipt.symbol,
+                         stockShares: receipt.shares, stockPriceCents: receipt.priceCents))
+  case .stockSell:
+   guard var market = ledger.market, let symbol = m.stockSymbol,
+         let shares = m.stockShares else { throw GameError.invalidPayload }
+   let receipt = try StockMarketEngine.sell(&market, player: p, symbol: symbol,
+                                            shares: shares, cash: &g.players[p].cash)
+   ledger.market = market
+   effects.append(Effect(.stockSold, player: p, amount: receipt.cashDelta,
+                         text: "fee:\(receipt.fee);pnlCents:\(receipt.realizedPnLCents)",
+                         stockSymbol: receipt.symbol, stockShares: receipt.shares,
+                         stockPriceCents: receipt.priceCents))
   default: throw GameError.invalidPayload
   }
   g.banking = ledger
@@ -228,6 +266,11 @@ public enum IntegratedBanking {
   guard var ledger = g.banking, ledger.completedTurns < 1_000_000 else { return }
   ledger.completedTurns += 1
   let now = ledger.completedTurns
+  if var market = ledger.market, let halted = try? StockMarketEngine.advance(&market) {
+   ledger.market = market
+   effects.append(Effect(.stockTicked, amount: market.tick, text: "turnClose"))
+   for symbol in halted { effects.append(Effect(.stockHalted, text: symbol, stockSymbol: symbol)) }
+  }
   for p in ledger.accounts.indices where !g.players[p].bankrupt {
    let due = ledger.accounts[p].savings.contains { $0.unlockPeriod == now } ||
              ledger.accounts[p].loans.contains { $0.duePeriod == now } ||
@@ -255,18 +298,50 @@ public enum IntegratedBanking {
    effects.append(Effect(.bankWithdrawn, player: p, amount: payout,
                          text: "automaticDebtCover"))
   }
+  // A liquid portfolio may cover debt after unlocked cash savings. Trading
+  // halts are honored, and sales use the same fee/cost basis as manual orders.
+  if g.players[p].cash < amount, var market = ledger.market,
+     market.portfolios.indices.contains(p) {
+   let symbols = market.portfolios[p].positions.map(\.symbol).sorted()
+   for symbol in symbols where g.players[p].cash < amount {
+    while g.players[p].cash < amount,
+          let position = market.portfolios[p].position(symbol: symbol), position.shares > 0,
+          let quote = StockMarketEngine.quote(market, symbol: symbol), !quote.isHalted {
+     let shortfall = amount - g.players[p].cash
+     let needed = max(1, min(position.shares, min(10_000,
+       (shortfall * 100 + quote.currentPriceCents - 1) / quote.currentPriceCents + 1)))
+     guard let receipt = try? StockMarketEngine.sell(&market, player: p, symbol: symbol,
+                                                     shares: needed, cash: &g.players[p].cash) else { break }
+     effects.append(Effect(.stockSold, player: p, amount: receipt.cashDelta,
+                           text: "automaticDebtCover", stockSymbol: symbol,
+                           stockShares: receipt.shares, stockPriceCents: receipt.priceCents))
+    }
+   }
+   ledger.market = market
+  }
   g.banking = ledger
  }
 
- /// Provisional bankruptcy safety: accessible savings principal enters the estate
- /// before normal creditor distribution. Unsettled market positions yield zero,
- /// and outstanding bank loans are archived pending the Owner's priority decision.
+ /// Bankruptcy safety: accessible savings and the last quoted stock value enter
+ /// the estate before normal creditor distribution. Outstanding loans are archived
+ /// pending the Owner's priority decision.
  public static func closeBankruptAccount(_ g: inout GameState, player p: Int, effects: inout [Effect]) {
   guard var ledger = g.banking, ledger.accounts.indices.contains(p) else { return }
   let savings = ledger.accounts[p].savings.reduce(0) { $0 + $1.principal }
   if savings > 0 && savings <= 1_000_000_000 - g.players[p].cash {
    g.players[p].cash += savings
    effects.append(Effect(.bankWithdrawn, player: p, amount: savings, text: "estatePrincipal"))
+  }
+  if var market = ledger.market, market.portfolios.indices.contains(p) {
+   let marketValueCents = StockMarketEngine.portfolioMarketValueCents(market, player: p)
+   let proceeds = marketValueCents / 100
+   if proceeds > 0 && proceeds <= 1_000_000_000 - g.players[p].cash {
+    g.players[p].cash += proceeds
+    effects.append(Effect(.stockSold, player: p, amount: proceeds,
+                          text: "estateLiquidation"))
+   }
+   market.portfolios[p] = StockPortfolio()
+   ledger.market = market
   }
   ledger.accounts[p] = IntegratedBankAccount()
   g.banking = ledger

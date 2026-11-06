@@ -54,6 +54,14 @@ public struct SandboxSaving: Codable, Equatable {
  public var principal: Int
  public var unlockPeriod: Int
  public var payoutBasisPoints: Int
+ public init(id: Int, feature: FinancialFeature, principal: Int,
+             unlockPeriod: Int, payoutBasisPoints: Int) {
+  self.id = id
+  self.feature = feature
+  self.principal = principal
+  self.unlockPeriod = unlockPeriod
+  self.payoutBasisPoints = payoutBasisPoints
+ }
 }
 public struct SandboxLoan: Codable, Equatable {
  public var id: Int
@@ -62,12 +70,27 @@ public struct SandboxLoan: Codable, Equatable {
  public var duePeriod: Int
  public var periods: Int
  public var totalDue: Int
+ public init(id: Int, principal: Int, interestBasisPoints: Int,
+             duePeriod: Int, periods: Int, totalDue: Int) {
+  self.id = id
+  self.principal = principal
+  self.interestBasisPoints = interestBasisPoints
+  self.duePeriod = duePeriod
+  self.periods = periods
+  self.totalDue = totalDue
+ }
 }
 public struct SandboxPosition: Codable, Equatable {
  public var id: Int
  public var feature: FinancialFeature
  public var principal: Int
  public var duePeriod: Int
+ public init(id: Int, feature: FinancialFeature, principal: Int, duePeriod: Int) {
+  self.id = id
+  self.feature = feature
+  self.principal = principal
+  self.duePeriod = duePeriod
+ }
 }
 public struct SandboxAccount: Codable, Equatable {
  public var cash: Int

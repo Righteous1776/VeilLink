@@ -133,3 +133,12 @@
 - The broader 91-alias Astra package still lives in `INCOMING_ASSETS/`, and **AUCTION/TRADE hero controls remain staged but not actively overlaid**. Kimi B02 and P5 are not part of this change.
 - No exact branch-hosted XCTest, Xcode iOS build, safe-area, haptic, keyboard/VoiceOver, GPU/frame-time, or IPA verification was performed in this turn.
 
+## Offline live stock market — implemented and locally verified (2026-11-06)
+
+- Task `VEILOPOLY-STOCK-MARKET-001` was implemented on `dev/veilopoly` from baseline `27d6938955f4b97ed28e1358c7e9594b6ef16688`. It is a wholly local game simulation: five fictional instruments, seeded common/idiosyncratic movement, regime changes, mean reversion, bounded shocks, ±10% session limits, short halts, volume and a bounded 96-point tape. It performs no network request and represents no real security or recommendation.
+- New authoritative moves/effects cover market tick, buy and sell. Whole-share orders use cash, 0.50% fee with ¥1 minimum, weighted cost basis, realized/unrealized P&L and atomic rejection. Stock value participates in debt cover, bankruptcy estate and settlement net worth. Old ledgers without a `market` field remain decodable.
+- SwiftUI adds a 2-second reducer-driven ticker during a human manage phase, symbol selector, live price/change/OHLC/volume/regime, Canvas line/area chart, share stepper, buy/sell buttons and portfolio rows. Dynamic values remain programmatic; no Astra or Kimi art was replaced.
+- Local Swift 6.2.1/Linux evidence: `swift build --jobs 2` PASS; stock suite **11/11 PASS** including a 2,000-tick deterministic run; complete suite **121/121 PASS** including capped 500-seed AI smoke and 20 exploratory long games. ARM64 iOS `swiftc -frontend -parse` of the changed UI files PASS for grammar only.
+- Three pre-existing branch test/build blockers were minimally repaired while validating: public member initializers for finance records, explicit Astra auction hit-zone names in its test, and removal of an AI reference to a nonexistent `freeHouseCredits` field. No gameplay replacement behavior was invented for that missing field.
+- Exact design, bounds and verification commands: `Veilopoly/docs/OFFLINE_LIVE_STOCK_MARKET_20261107.md`. Xcode/iOS SDK type-check, simulator/device interaction, VoiceOver, keyboard, background behavior, frame time, host P5, main merge, workflow and IPA remain **UNVERIFIED / NOT PERFORMED**.
+

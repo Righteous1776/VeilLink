@@ -17,6 +17,11 @@ public enum VeilopolyEventFeedback {
    case .bankWithdrawn: return "存款取回成功"
    case .bankInvestmentOpened: return "模拟投资已开启"
    case .bankInvestmentSettled: return "投资到期 · 结算已完成"
+   case .stockBought:
+    return "股票买入成交 · \(event.stockSymbol ?? "--") \(event.stockShares ?? 0) 股"
+   case .stockSold:
+    return "股票卖出成交 · \(event.stockSymbol ?? "--") \(event.stockShares ?? 0) 股"
+   case .stockHalted: return "行情触及涨跌幅限制 · \(event.stockSymbol ?? "--") 暂停交易"
    case .passedGo: return "经过起点 · 已结算奖励"
    case .extraRoll: return "掷出双骰 · 获得额外回合"
    case .turnEnded: return "下一位玩家开始行动"
