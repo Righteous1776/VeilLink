@@ -1,0 +1,13 @@
+# [AGENT-DROP] E2A — Safe generic-file import prerequisites
+- agent_id: chatgpt
+- task_id: 20261106-bugfix-batch-e2-file-import-safety
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- submission_path: AGENT_INBOX/submissions/chatgpt/20261106-bugfix-batch-e2-file-import-safety/
+- mode: INBOX_ONLY
+- status: DROPPED
+- proposed_files:
+  - VeilLink/Core/MediaTransferPolicy.swift
+  - VeilLink/Core/VeilImportedFileAccess.swift
+  - VeilLinkTests/MediaTransferPolicyTests.swift
+  - VeilLinkTests/VeilImportedFileAccessTests.swift
+- scope: bounded Files provider copying + filename validation and candidate capability bit. Generic peer transmission NOT implemented in this batch.
