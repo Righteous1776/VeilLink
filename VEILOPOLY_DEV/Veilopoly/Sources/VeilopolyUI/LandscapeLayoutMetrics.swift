@@ -7,6 +7,10 @@ public enum VeilopolyLandscapeLayout {
  public static let capsuleButtonWidth = 46.0
  public static let capsuleTouchHeight = 44.0
  public static let capsuleDividerWidth = 1.0
+ public static let boardHorizontalInset = 6.0
+ public static let boardVerticalInset = 4.0
+ public static let drawerTopInset = 54.0
+ public static let drawerBottomInset = 10.0
 
  public static func isLandscape(width: Double, height: Double) -> Bool {
   width > height
@@ -24,4 +28,22 @@ public enum VeilopolyLandscapeLayout {
   let width = min(w, h * boardAspect)
   return (width, width / boardAspect)
  }
+ /// With no permanent sidebar, maximize the whole 40-tile board to the safe
+ /// viewport height and retain its original aspect ratio. Never crop cells.
+ public static func maximizedBoardSize(availableWidth: Double, availableHeight: Double) -> (width: Double, height: Double) {
+  boardSize(availableWidth: max(0, availableWidth - 2 * boardHorizontalInset),
+            availableHeight: max(0, availableHeight - 2 * boardVerticalInset))
+ }
+
+ /// Overlay is intentionally separate from board layout: collapsing it
+ /// must never trigger a new board size or camera target.
+ public static func overlayDrawerWidth(for width: Double) -> Double {
+  let available = max(0, width - 12)
+  return min(available, min(max(width * 0.44, 292), 395))
+ }
+
+ public static func overlayDrawerHeight(for height: Double) -> Double {
+  max(0, height - drawerTopInset - drawerBottomInset)
+ }
+
 }

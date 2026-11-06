@@ -151,6 +151,7 @@ public struct VeilopolyGameView: View {
  @State private var showMore = false
  @State private var showExitConfirmation = false
  @State private var showGameInfo = false
+ @State private var controlsExpanded = false
  @Environment(\.dismiss) private var dismiss
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
  private let onExit: (() -> Void)?
@@ -166,7 +167,8 @@ public struct VeilopolyGameView: View {
                    startPoint: .topLeading, endPoint: .bottomTrailing)
      .ignoresSafeArea()
     if VeilopolyLandscapeLayout.isLandscape(width: Double(geometry.size.width), height: Double(geometry.size.height)) {
-     landscapeContent(availableWidth: geometry.size.width)
+     landscapeContent(availableWidth: geometry.size.width,
+                      availableHeight: geometry.size.height)
     } else {
      portraitFallback
     }
@@ -235,66 +237,155 @@ public struct VeilopolyGameView: View {
   }
  }
 
- // A true landscape composition. No ScrollView around the chessboard: the entire
- // SpriteKit scene remains visible, with independently scrollable controls at right.
- private func landscapeContent(availableWidth: CGFloat) -> some View {
-  let sideWidth = CGFloat(VeilopolyLandscapeLayout.sidebarWidth(for: Double(availableWidth)))
-  return HStack(spacing: 12) {
+ // The board always uses the largest aspect-fit size allowed by safe-area
+ // geometry. A floating capsule/drawer never steals permanent board width.
+ // This keeps all 40 cells visible rather than stretching or cropping the map.
+ private func landscapeContent(availableWidth: CGFloat, availableHeight: CGFloat) -> some View {
+  let measured = VeilopolyLandscapeLayout.maximizedBoardSize(
+   availableWidth: Double(availableWidth),
+   availableHeight: Double(availableHeight))
+  let boardWidth = CGFloat(measured.width)
+  let boardHeight = CGFloat(measured.height)
+  let drawerWidth = CGFloat(VeilopolyLandscapeLayout.overlayDrawerWidth(for: Double(availableWidth)))
+  let drawerHeight = CGFloat(VeilopolyLandscapeLayout.overlayDrawerHeight(for: Double(availableHeight)))
+  return ZStack(alignment: .topTrailing) {
    boardViewport
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .layoutPriority(1)
-   VStack(spacing: 8) {
-    HStack(spacing: 8) {
-     VStack(alignment: .leading, spacing: 2) {
-      Text("VEILOPOLY")
-       .font(.system(size: 19, weight: .black, design: .rounded)).tracking(1.5)
-      Text("单机 · 四人策略棋盘")
-       .font(.system(size: 10)).foregroundStyle(.secondary)
+    .frame(width: boardWidth, height: boardHeight)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    .padding(.horizontal, CGFloat(VeilopolyLandscapeLayout.boardHorizontalInset))
+    .padding(.vertical, CGFloat(VeilopolyLandscapeLayout.boardVerticalInset))
+    .zIndex(0)
+
+   if controlsExpanded {
+    controlsDrawer
+     .frame(width: drawerWidth, height: drawerHeight)
+     .padding(.top, CGFloat(VeilopolyLandscapeLayout.drawerTopInset))
+     .padding(.trailing, 6)
+     .transition(.move(edge: .trailing).combined(with: .opacity))
+     .zIndex(1)
+   }
+
+   VStack(alignment: .trailing, spacing: 8) {
+    HStack(spacing: 7) {
+     Button {
+      withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
+       controlsExpanded.toggle()
+      }
+     } label: {
+      Image(systemName: controlsExpanded ? "chevron.right" : "slider.horizontal.3")
+       .font(.system(size: 17, weight: .semibold))
+       .frame(width: 46, height: 44)
+       .foregroundStyle(.black)
+       .background(.white.opacity(0.95), in: Capsule())
+       .overlay { Capsule().strokeBorder(.black.opacity(0.10), lineWidth: 1) }
      }
-     Spacer(minLength: 0)
+     .buttonStyle(.plain)
+     .accessibilityLabel(controlsExpanded ? "收起操作面板" : "展开操作面板")
+     .accessibilityHint("不改变棋盘大小")
      capsuleControls
     }
-    .frame(minHeight: 44)
-    playerStrip
-    ScrollView(.vertical) {
-     VStack(alignment: .leading, spacing: 10) {
-      Text("当前：\(model.game.players[model.actor].name) · \(phaseLabel(model.game.turn.phase))")
-       .font(.subheadline.weight(.semibold))
-      HStack(alignment: .top, spacing: 7) {
-       Image(systemName: "sparkles").foregroundStyle(.mint)
-       Text(model.lastFeedback).font(.caption.weight(.medium))
-        .fixedSize(horizontal: false, vertical: true).lineLimit(3)
-       Spacer(minLength: 0)
-      }
-      .padding(9)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(AstraB01PanelSkin(.glass))
-      .accessibilityLabel("最近事件：\(model.lastFeedback)")
-      if let error = model.errorMessage {
-       Label("操作未完成：\(error)", systemImage: "exclamationmark.triangle.fill")
-        .labelStyle(.titleOnly)
-        .foregroundColor(.white).font(.caption.weight(.medium))
-        .padding(.leading, 48).padding(.trailing, 10).padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AstraB01FeedbackSkin(error: true))
-      }
-      tileInspector
-      actionPanel
-       .padding(8)
-       .background(AstraB01PanelSkin(.action))
-      Text("独立单机开发版 · VeilLink 入口留待 P5 集成")
-       .font(.caption2).foregroundStyle(.secondary)
-     }
-     .frame(maxWidth: .infinity, alignment: .leading)
-     .padding(.horizontal, 2)
+    Spacer(minLength: 0)
+    if !controlsExpanded {
+     collapsedStatusButton
+      .transition(.opacity)
     }
-    .scrollIndicators(.hidden)
    }
-   .frame(width: sideWidth)
-   .frame(maxHeight: .infinity, alignment: .top)
+   .padding(.trailing, 6)
+   .padding(.vertical, 5)
+   .zIndex(2)
   }
-  .padding(.horizontal, 10)
-  .padding(.vertical, 6)
+  .frame(width: availableWidth, height: availableHeight)
+ }
+
+ /// Keep Astra's real actions and HUD. Only the panel's placement changes:
+ /// on iPhone it floats over otherwise unused right-side space; on iPad it
+ /// may temporarily cover the board edge until collapsed.
+ private var controlsDrawer: some View {
+  VStack(alignment: .leading, spacing: 8) {
+   HStack(spacing: 8) {
+    Text("操作面板")
+     .font(.system(size: 17, weight: .bold, design: .rounded))
+    Spacer(minLength: 0)
+    Text(phaseLabel(model.game.turn.phase))
+     .font(.caption2.weight(.semibold))
+     .foregroundStyle(.mint)
+   }
+   .frame(minHeight: 34)
+   ScrollView(.vertical) {
+    VStack(alignment: .leading, spacing: 10) {
+     Text("当前：\(model.game.players[model.actor].name)")
+      .font(.subheadline.weight(.semibold))
+     // Immediate decisions come first; account details are available below.
+     actionPanel
+      .padding(8)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(AstraB01PanelSkin(.action))
+     tileInspector
+     playerStrip
+     HStack(alignment: .top, spacing: 7) {
+      Image(systemName: "sparkles").foregroundStyle(.mint)
+      Text(model.lastFeedback)
+       .font(.caption.weight(.medium))
+       .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
+     }
+     .padding(9)
+     .frame(maxWidth: .infinity, alignment: .leading)
+     .background(AstraB01PanelSkin(.glass))
+     .accessibilityLabel("最近事件：\(model.lastFeedback)")
+     if let error = model.errorMessage {
+      Label("操作未完成：\(error)", systemImage: "exclamationmark.triangle.fill")
+       .labelStyle(.titleOnly)
+       .foregroundColor(.white).font(.caption.weight(.medium))
+       .padding(.leading, 48).padding(.trailing, 10).padding(.vertical, 12)
+       .frame(maxWidth: .infinity, alignment: .leading)
+       .background(AstraB01FeedbackSkin(error: true))
+     }
+     Text("单机开发版 · 联机入口需 P5 集成")
+      .font(.caption2).foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+   }
+   .scrollIndicators(.hidden)
+  }
+  .padding(10)
+  .background(AstraB01PanelSkin(.action))
+  .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+  .overlay { RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.14)) }
+  .shadow(color: .black.opacity(0.42), radius: 14, x: -5, y: 7)
+  .accessibilityElement(children: .contain)
+ }
+
+ /// A small, live, tappable status badge replaces the permanent 40%-width
+ /// sidebar while leaving phase-specific engine actions one tap away.
+ private var collapsedStatusButton: some View {
+  Button {
+   withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
+    controlsExpanded = true
+   }
+  } label: {
+   HStack(spacing: 10) {
+    VStack(alignment: .leading, spacing: 2) {
+     Text("\(model.game.players[model.actor].name) · \(phaseLabel(model.game.turn.phase))")
+      .font(.caption.weight(.semibold))
+      .lineLimit(1)
+     Text("¥\(model.game.players[model.actor].cash) · " +
+          (model.pending ? "动画中" : (model.waitingForHuman ? "点击进行操作" : "AI 行动中")))
+      .font(.caption2)
+      .lineLimit(1)
+    }
+    Image(systemName: "chevron.left")
+     .font(.caption.weight(.bold))
+   }
+   .foregroundStyle(.white)
+   .padding(.horizontal, 14)
+   .padding(.vertical, 10)
+   .background(AstraB01PanelSkin(.glass))
+   .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+  }
+  .buttonStyle(.plain)
+  .accessibilityLabel("展开操作面板，当前\(model.game.players[model.actor].name)，\(phaseLabel(model.game.turn.phase))")
+  .accessibilityHint("可使用掷骰、购买、拍卖、交易、银行和管理功能")
  }
 
  private var boardViewport: some View {

@@ -34,4 +34,38 @@ final class LandscapeLayoutTests: XCTestCase {
   XCTAssertEqual(board.width, 0)
   XCTAssertEqual(board.height, 0)
  }
+ func testMaximizedBoardPreservesFullSquareOnLandscapePhone() {
+  let oldWidth = 844.0 - 20 - 12 - VeilopolyLandscapeLayout.sidebarWidth(for: 844)
+  let legacy = VeilopolyLandscapeLayout.boardSize(availableWidth: oldWidth, availableHeight: 390 - 12)
+  let board = VeilopolyLandscapeLayout.maximizedBoardSize(availableWidth: 844, availableHeight: 390)
+  XCTAssertGreaterThan(board.width, legacy.width)
+  XCTAssertLessThanOrEqual(board.width, 844 - 12)
+  XCTAssertLessThanOrEqual(board.height, 390 - 8)
+  XCTAssertEqual(board.width / board.height, VeilopolyLandscapeLayout.boardAspect, accuracy: 0.0001)
+ }
+
+ func testMaximizedBoardRespectsIPadViewportAndNeverConsumesSidebarWidth() {
+  let board = VeilopolyLandscapeLayout.maximizedBoardSize(availableWidth: 1180, availableHeight: 820)
+  XCTAssertEqual(board.height, 812, accuracy: 0.001)
+  XCTAssertEqual(board.width, 812 * VeilopolyLandscapeLayout.boardAspect, accuracy: 0.001)
+  XCTAssertLessThan(board.width, 1180 - 12)
+ }
+
+ func testFloatingDrawerIsTouchSizedButNotPartOfBoardMeasurement() {
+  XCTAssertEqual(VeilopolyLandscapeLayout.overlayDrawerWidth(for: 844), 371.36, accuracy: 0.01)
+  XCTAssertEqual(VeilopolyLandscapeLayout.overlayDrawerWidth(for: 568), 292, accuracy: 0.001)
+  XCTAssertEqual(VeilopolyLandscapeLayout.overlayDrawerHeight(for: 390), 326, accuracy: 0.001)
+  let board = VeilopolyLandscapeLayout.maximizedBoardSize(availableWidth: 844, availableHeight: 390)
+  XCTAssertEqual(board.width, VeilopolyLandscapeLayout.maximizedBoardSize(availableWidth: 844, availableHeight: 390).width)
+  XCTAssertGreaterThanOrEqual(VeilopolyLandscapeLayout.capsuleButtonWidth, 44)
+ }
+
+ func testTinyOrInvalidViewportReturnsSafeNonNegativeDimensions() {
+  let board = VeilopolyLandscapeLayout.maximizedBoardSize(availableWidth: 5, availableHeight: 4)
+  XCTAssertEqual(board.width, 0)
+  XCTAssertEqual(board.height, 0)
+  XCTAssertEqual(VeilopolyLandscapeLayout.overlayDrawerWidth(for: -5), 0)
+  XCTAssertEqual(VeilopolyLandscapeLayout.overlayDrawerHeight(for: -5), 0)
+ }
+
 }
