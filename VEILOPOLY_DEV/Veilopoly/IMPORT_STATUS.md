@@ -1,29 +1,18 @@
-# Source import status · 2026-11-06
+# Source Import Status — 2026-11-06
 
-**Checkpoint source archive:** `Veilopoly_P1-P4_checkpoint_20261106.zip`, SHA-256 `d999d29f9e369899cbd666e1cfcb0744a2e17d3d976deb4e2e6a591a5e1923c1`.
+**Status: STANDALONE SOURCE IMPORTED; IOS UNVERIFIED.**
 
-Locally audited source archive: 64 files = 38 nonbinary source/specification/test files and 26 binary CC0 PNG/WAV assets. Includes 33 Swift files (engine, AI, network, UI, tests).
+## What was imported into `dev/veilopoly`
 
-## Actual GitHub branch status
+- `1f270948f429af06ec2a1176d57beac1c728adea`: 43 text files from the newer `Veilopoly_P1-P4_Full_Source_20261106.zip` checkpoint.
+- `a356d9b9741e25214fac63ee77a376e7b8cfb352`: 26 binary Kenney CC0 resources (14 PNG, 12 WAV), preserved as Git blobs and recorded in `docs/RESOURCE_INTEGRITY.json`.
+- Existing `Package.swift`, move tests and branch governance were preserved/updated as needed; `main` and protected VeilLink files are not changed.
+- Five old `INBOX/*` handoff documents from the ZIP are intentionally not duplicated. The branch-level `GOVERNANCE.md`, `COLLABORATION.md`, and `KIMI_HANDOFF.md` now serve those coordination needs.
 
-- **COMMITTED**: dedicated branch `dev/veilopoly`; governance, coordination, Kimi handoff and asset intake documents.
-- **COMMITTED**: `Veilopoly/Package.swift` copied from checkpoint.
-- **COMMITTED**: 23 exact checkpoint Swift XCTest files in `Veilopoly/Tests/` via one atomic commit `4a47ccb86ab4eaf2d66f75020823bb8fd859505a`.
-- **NOT COMMITTED**: 10 Swift source implementation files under `Veilopoly/Sources/` (Engine, AI, Net, UI).
-- **NOT COMMITTED**: 5 checkpoint Markdown specifications/licenses under `Veilopoly/docs/` (their originals exist in locally validated ZIP).
-- **NOT COMMITTED**: 26 PNG/WAV media resources under `Veilopoly/Sources/VeilopolyUI/Resources/`.
-- **NOT VERIFIED**: Swift Package build/test of this GitHub branch; a manifest and tests alone cannot compile. iOS 16 SpriteKit/SwiftUI also unverified.
+## Verification and caution
 
-**DO NOT CLAIM `SOURCE_IMPORTED`, `TESTS_GREEN`, `IOS_READY` or `P4_COMPLETE` for the branch.**
+Linux Swift 6.2.1: `swift build` passed. 29 focused tests and 2 AI stress tests passed separately (31/31); 500 AI seeds capped at 500 moves had no engine errors but no natural completions; 14/20 longer AI games finished within 6000 moves. This is not iOS compilation verification. Historical 98.26% engine line coverage is from a separate local selected run; no on-branch GitHub CI coverage claim.
 
-The independent local ZIP had previously been tested on Linux, but its results do not transfer to the incomplete GitHub branch. User can find the fully structured 64-file source snapshot under `Veilopoly_GitHub_ImportReady_20261106.zip` from ChatGPT, intended to be unpacked into `VEILOPOLY_DEV/Veilopoly/` on branch `dev/veilopoly`. The ZIP must not itself be committed into Git history; import its individual files instead.
+**NOT VERIFIED:** iOS SDK simulator/device, SpriteKit, SwiftUI, touch, sound, four-device network, or real VeilLink transport. P5 integration forbidden until separately authorized. Do not claim `IOS_READY`, `P4_COMPLETE`, `GAME_RELEASED`, or `500_FINISHED_GAMES`.
 
-## Migration gate
-
-1. Finish exact checkpoint `Sources/**` + `docs/**` + licensed `Resources/**` import, verifying file hashes against the archive manifest;
-2. build and test with Swift toolchain on exact branch revision;
-3. iOS 16/macOS Xcode SDK compile & run SpriteKit/SwiftUI/sound/ack tests;
-4. update issue #6 with SHA, test inventory and actual evidence;
-5. P5 remains prohibited pending separate Owner authorization.
-
-**Working protocol:** ChatGPT codes and owns engine/UI integration. Kimi owns visual assets, 2.5D modeling and rendering specifications, delivers via Owner for verified import.
+Next gate: Xcode + iOS 16 and latest main/branch diff review. Current rules ambiguities must go to Owner. Kimi visuals are parallel but require explicit Owner transfer to ChatGPT before GitHub admission.
