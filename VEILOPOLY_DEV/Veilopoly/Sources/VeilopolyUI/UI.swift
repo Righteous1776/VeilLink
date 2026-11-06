@@ -9,6 +9,8 @@ public final class GameSessionModel: ObservableObject {
  @Published public private(set) var game: GameState
  @Published public private(set) var errorMessage: String?
  @Published public private(set) var shownCard: String?
+ @Published public private(set) var lastFeedback: String = "准备开始 · 轮到第一位玩家"
+ private var cardGate = CardRevealGate()
  @Published public var selectedTile: Int = 1
  let scene: GameBoardScene
  private var queue: [ViewCommand] = []
@@ -33,7 +35,7 @@ public final class GameSessionModel: ObservableObject {
                      to: Int? = nil, offer: TradeTransfer? = nil, request: TradeTransfer? = nil,
                      deck: DeckKind? = nil, financeProduct: FinancialFeature? = nil,
                      financePeriods: Int? = nil, financeID: Int? = nil) {
-  guard !animating else { return }
+  guard !animating && !cardGate.isPresented else { return }
   let move = Move(kind, player: actor, seq: game.nextSeq, tile: tile, amount: amount,
                   to: to, offer: offer, request: request, deck: deck,
                   financeProduct: financeProduct, financePeriods: financePeriods, financeID: financeID)
@@ -46,6 +48,7 @@ public final class GameSessionModel: ObservableObject {
   case .failure(let err): errorMessage = err.rawValue
   case .success((let newState, let effects)):
    errorMessage = nil
+   if let feedback = VeilopolyEventFeedback.summary(effects) { lastFeedback = feedback }
    let commands = CommandTranslator.translate(effects)
    game = newState
    scene.display(newState, snapTokens: !effects.contains(where: { $0.kind == .playerMoved }))
@@ -61,18 +64,33 @@ public final class GameSessionModel: ObservableObject {
   }
   animating = true
   let command = queue.removeFirst()
-  if case .cardShow(_,let message) = command { shownCard = message }
+  if case .cardShow(_,let message) = command {
+   cardGate.present()
+   shownCard = message
+  }
   scene.play(command) { [weak self] in
    guard let self else { return }
-   self.presentNext()
+   if self.cardGate.animationDidComplete() { self.presentNext() }
   }
  }
- public func fastForward() { if animating { scene.fastForward() } }
- public func dismissCard() { shownCard = nil }
+ public func fastForward() {
+  // Card reading is a deliberate decision, not a skippable scene effect.
+  if animating && !cardGate.isPresented { scene.fastForward() }
+ }
+ public func dismissCard() {
+  guard shownCard != nil else { return }
+  shownCard = nil
+  switch cardGate.dismiss() {
+  case .advanceQueue: presentNext()
+  case .finishAnimation: scene.fastForward()
+  case .none: break
+  }
+ }
  public func reset(seed: UInt64) {
   guard !animating else { return }
   let newState = GameFactory.make(seed: seed, humanCount: configuredHumanCount)
-  game = newState; shownCard = nil; queue = []; errorMessage = nil
+  game = newState; shownCard = nil; cardGate.reset(); queue = []; errorMessage = nil
+  lastFeedback = "新的一局已经准备好"
   scene.display(newState)
   if configuredHumanCount == 0 { drive() }
  }
@@ -119,6 +137,7 @@ public struct VeilopolyGameView: View {
  @State private var showExitConfirmation = false
  @State private var showGameInfo = false
  @Environment(\.dismiss) private var dismiss
+ @Environment(\.accessibilityReduceMotion) private var reduceMotion
  private let onExit: (() -> Void)?
  public init(seed: UInt64 = 1729123, humanCount: Int = 1, onExit: (() -> Void)? = nil) {
   _model = StateObject(wrappedValue: GameSessionModel(seed: seed, humanCount: humanCount))
@@ -141,6 +160,8 @@ public struct VeilopolyGameView: View {
   }
   .preferredColorScheme(.dark)
   .statusBarHidden()
+  .onAppear { model.scene.reduceMotion = reduceMotion }
+  .onChange(of: reduceMotion) { model.scene.reduceMotion = $0 }
   .confirmationDialog("更多", isPresented: $showMore) {
    Button("重新开局") { showRestart = true }
    Button("本局信息") { showGameInfo = true }
@@ -163,15 +184,29 @@ public struct VeilopolyGameView: View {
   }
   .overlay {
    if let card = model.shownCard {
-    VStack(spacing: 14) {
-     Image("cardChance", bundle: .module).resizable().scaledToFit().frame(width: 80,height: 90)
-     Text("命运之牌").font(.headline)
-     Text(card).font(.title3).multilineTextAlignment(.center)
-     Button("收起卡牌") { model.dismissCard() }.buttonStyle(.borderedProminent)
+    ZStack {
+     // Modal screen blocks the underlying board and financial action controls.
+     Color.black.opacity(0.70).ignoresSafeArea()
+     VStack(spacing: 12) {
+      Image("cardChance", bundle: .module)
+       .resizable().scaledToFit().frame(width: 66, height: 72)
+       .accessibilityHidden(true)
+      Label("命运卡片", systemImage: "rectangle.on.rectangle.angled")
+       .font(.headline).foregroundStyle(.mint)
+      Text(card).font(.system(size: 18, weight: .semibold))
+       .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+      Button("确认并继续") { model.dismissCard() }
+       .buttonStyle(.borderedProminent)
+       .frame(minWidth: 160, minHeight: 44)
+       .accessibilityHint("阅读完毕后继续播放游戏事件")
+     }
+     .frame(maxWidth: 360).padding(22)
+     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+     .overlay { RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.16)) }
+     .padding(.horizontal, 16)
+     .transition(.opacity.combined(with: .scale(scale: 0.97)))
     }
-    .frame(maxWidth: 320).padding(24)
-    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
-    .transition(.opacity.combined(with:.scale))
+    .zIndex(100)
    }
   }
  }
@@ -201,8 +236,21 @@ public struct VeilopolyGameView: View {
      VStack(alignment: .leading, spacing: 10) {
       Text("当前：\(model.game.players[model.actor].name) · \(phaseLabel(model.game.turn.phase))")
        .font(.subheadline.weight(.semibold))
+      HStack(alignment: .top, spacing: 7) {
+       Image(systemName: "sparkles").foregroundStyle(.mint)
+       Text(model.lastFeedback).font(.caption.weight(.medium))
+        .fixedSize(horizontal: false, vertical: true).lineLimit(3)
+       Spacer(minLength: 0)
+      }
+      .padding(9)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+      .accessibilityLabel("最近事件：\(model.lastFeedback)")
       if let error = model.errorMessage {
-       Text("操作失败：\(error)").foregroundStyle(.orange).font(.caption)
+       Label("操作未完成：\(error)", systemImage: "exclamationmark.triangle.fill")
+        .foregroundStyle(.orange).font(.caption)
+        .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
       }
       actionPanel
       Text("独立单机开发版 · VeilLink 入口留待 P5 集成")
@@ -230,9 +278,12 @@ public struct VeilopolyGameView: View {
     .frame(width: width, height: height)
     .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 12))
     .overlay(alignment: .bottom) {
-     if model.pending {
-      Text("轻触棋盘快进").font(.caption2).padding(6)
-       .background(.thinMaterial, in: Capsule()).padding(6)
+     if model.pending && model.shownCard == nil {
+      Label("轻触棋盘跳过动画", systemImage: "forward.end.fill")
+       .font(.caption2.weight(.semibold)).padding(.horizontal, 11)
+       .padding(.vertical, 7)
+       .background(.regularMaterial, in: Capsule())
+       .padding(8)
      }
     }
     .contentShape(Rectangle())
@@ -355,7 +406,7 @@ public struct VeilopolyGameView: View {
  }
  private func action(_ title: String, symbol: String, pressed: @escaping () -> Void) -> some View {
   Button(action: pressed) { Label(title, systemImage: symbol).lineLimit(1).minimumScaleFactor(0.8)
-   .frame(maxWidth:.infinity,minHeight: 37) }
+   .frame(maxWidth: .infinity, minHeight: 44) }
    .buttonStyle(.borderedProminent)
  }
  private var auctionPanel: some View {
