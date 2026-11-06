@@ -19,6 +19,7 @@ final class FinanceExpansionTests: XCTestCase {
   XCTAssertEqual(try? FinanceSandbox.loanQuote(principal: 1000, periods: 3, ownedLots: 1, ordinal: 2).get(), 2200)
   XCTAssertEqual(try? FinanceSandbox.loanQuote(principal: 1000, periods: 3, ownedLots: 1, ordinal: 3).get(), 2350)
   XCTAssertEqual(FinanceSandbox.loanQuote(principal: 1000, periods: 3, ownedLots: 0, ordinal: 0), .failure(.collateralCapExceeded))
+  XCTAssertEqual(FinanceSandbox.loanQuote(principal: 1000, periods: 3, ownedLots: 4, ordinal: 0), .failure(.termsAwaitOwnerRuling))
  }
 
  func testBorrowAndRepayOnlyOnMaturity() throws {

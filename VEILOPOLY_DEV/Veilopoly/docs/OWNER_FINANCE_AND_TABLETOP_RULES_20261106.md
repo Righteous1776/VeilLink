@@ -19,7 +19,7 @@ This is an engineering record in our own words, not a verbatim copy of the print
 ### Items requiring Owner ruling, not automatic guessing
 
 - D01: Verify full demand/fixed deposit balance brackets, interpretation of crossed-out values and what numerical interest means (flat ¥ vs percent); define time to pay interest, and whether withdrawal is allowed early.
-- D02: Borrowed-land valuation: whether the 0/1/2/3-lot table is hard cap, and what 4+ holdings or mortgaged holdings count as; whether first 20% is per period. Decide repayment installments, overdue costs, collateral default and simultaneous borrowing.
+- D02: Borrowed-land valuation: whether the 0/1/2/3-lot table is hard cap, and what 4+ holdings or mortgaged holdings count as (4+ currently blocked, not treated as 3); whether first 20% is per period. Decide repayment installments, overdue costs, collateral default and simultaneous borrowing.
 - D03: For 1.5×/2×/2.5× products, whether the multiplier applies to principal, interest only, or only dice face 6; settle six explicit payout values with rounding, and whether roll happens once or more.
 - D04: Are “periods” individual player turns or a full table round? Define if finance matures before or after Start/GO settlement.
 - D05: Whether deposits, loans and simulation positions count toward endgame net worth and bankruptcy liquidation.

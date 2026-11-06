@@ -20,7 +20,7 @@ public struct PrintedTabletopProfile: Codable, Equatable {
 public struct FinanceSandboxPolicy: Codable, Equatable {
  /// Rates for borrowing first, second, third and fourth time, from handwritten sheet.
  public var loanInterestBasisPoints: [Int] = [2000, 3000, 4000, 4500]
- /// Caps for 0, 1, 2 or 3+ owned unmortgaged lots; 4+ is not separately specified.
+ /// Caps for 0, 1, 2 or exactly 3 owned unmortgaged lots; 4+ requires Owner ruling.
  public var loanCapsByProperties: [Int] = [500, 1000, 4000, 7000]
  /// Yield and deposit maturity remain absent pending owner clarification.
  public var demandYieldBasisPoints: Int? = nil
@@ -38,6 +38,9 @@ public struct FinanceSandboxPolicy: Codable, Equatable {
   loanCapsByProperties.allSatisfy { (0...1_000_000).contains($0) } &&
   [demandYieldBasisPoints, fixedYieldBasisPoints].allSatisfy { $0 == nil || (0...10_000).contains($0!) } &&
   (fixedLockPeriods == nil || (1...100).contains(fixedLockPeriods!)) &&
+  draftDurations.allSatisfy { key, periods in
+   [.managedFund, .ventureSimulation, .stockSimulation].contains(key) && (1...100).contains(periods)
+  } &&
   payouts.allSatisfy { key, table in
    [.managedFund, .ventureSimulation, .stockSimulation].contains(key) &&
    table.count == 6 && table.allSatisfy { (0...30_000).contains($0) }
@@ -138,7 +141,8 @@ public enum FinanceSandbox {
                               policy: FinanceSandboxPolicy = .init()) -> Result<Int, FinancialSandboxError> {
   guard policy.isWellFormed(), (1...12).contains(periods), (0...3).contains(ordinal), ownedLots >= 0,
         principal > 0 else { return .failure(.invalidAmount) }
-  guard principal <= policy.loanCapsByProperties[min(3, ownedLots)] else { return .failure(.collateralCapExceeded) }
+  guard ownedLots <= 3 else { return .failure(.termsAwaitOwnerRuling) }
+  guard principal <= policy.loanCapsByProperties[ownedLots] else { return .failure(.collateralCapExceeded) }
   let rate = policy.loanInterestBasisPoints[ordinal]
   let perPeriod = principal * rate / 10_000
   return .success(principal + perPeriod * periods)
@@ -146,7 +150,8 @@ public enum FinanceSandbox {
 
  public static func apply(_ state: FinancialSandboxState, _ move: FinancialSandboxMove,
                           policy: FinanceSandboxPolicy = .init()) -> Transition {
-  guard policy.isWellFormed(), state.accounts.count == 4, state.period >= 0,
+  guard policy.isWellFormed(), state.accounts.count == 4, (0...1_000_000).contains(state.period),
+        (0...1_000_000).contains(state.nextSeq),
         state.accounts.allSatisfy({ (0...1_000_000_000).contains($0.cash) && $0.ownedLots >= 0 })
   else { return .failure(.invalidState) }
   guard move.seq == state.nextSeq else { return .failure(.invalidSequence) }
