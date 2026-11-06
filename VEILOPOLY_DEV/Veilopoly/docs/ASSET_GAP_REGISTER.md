@@ -1,8 +1,8 @@
 # Veilopoly P4 · 素材与建模差异登记（临时）
 
-**状态：PENDING_KIMI_EXISTING_WORK_REVIEW — 不是最终缺失清单。**
+**状态：K1_REVIEWED / K2_DELTA_REQUIRED。K1 素材已实际收到并提交到独立开发分支；此处记录仍待 Kimi K2 提供的部分。**
 
-用户说明 Kimi 已完成部分建模但尚未上传；不得在查看前要求 Kimi 重新制作或将“仓库中没有”误判为“从未制作”。
+K1 已上传：新增 9 项，其中 4 SVG 为源稿（缺 viewBox/尺寸）、1 骰子 PNG+XML、2 卡背备选、1 buildClick.ogg；已保存原始文件和审计报告。程序仍使用现有 40 格占位棋盘，K2 需补可用的 2.5D 材质和横屏适配。
 
 ## 已有且可识别的项目资源
 
@@ -20,17 +20,17 @@
 
 | ID | 需求 / 候选资源别名 | 目标用途 | 当前状态 |
 |---|---|---|---|
-| V-K01 | `boardTableDark`, `boardBase`, `boardFrame` | L0/L1 桌布与 2.5D 棋盘底板 | 未见独立贴图，待 Kimi 包审核 |
+| V-K01 | `boardTableDark`, `boardBase`, `boardFrame` | L0/L1 桌布与 2.5D 棋盘底板 | 未见独立贴图，K1 未提供最终可用的 2.5D 出图；待 K2 补齐 |
 | V-K02 | `tileProperty8`, `tileCorner4`, `tileSpecial` | 40 格地块的统一图集/角格/功能格 | 程序可绘制占位，待视觉素材 |
-| V-K03 | `railroadIcon`, `utilityIcon`, `taxIcon`, `chanceIcon`, `chestIcon` | 地块 L3 图标 | 待 Kimi 包审核 |
-| V-K04 | `pieceShadow`, `pieceHighlight`, `houseShadow`, `hotelShadow` | L2/L4 柔阴影和高光 | 待 Kimi 包审核；可程序实现 |
-| V-K05 | `diceAtlas`, `diceShadow`, `diceGlow` | L5 骰子旋转、落地和光效 | 6 帧静态骰面已有，附加帧待审核 |
-| V-K06 | `tileOwnerStripe`, `tileMortgageOverlay`, `tileUpgradeMarkers` | 地产归属、抵押、房屋层级 | 程序占位已有，待 Kimi 包审核 |
-| V-K07 | `cardFaceFrame`, `cardDeckShadow` | 翻牌卡面/卡堆阴影 | 牌背已有，文字由 SwiftUI 绘制 |
-| V-K08 | `jailBars`, `passGoFx`, `cashFloatFx`, `bankruptFx` | L6 特效 | 先用程序化 fallback，待 Kimi 包审核 |
+| V-K03 | `railroadIcon`, `utilityIcon`, `taxIcon`, `chanceIcon`, `chestIcon` | 地块 L3 图标 | K1 尚不完整；待 K2 横屏视觉稿 |
+| V-K04 | `pieceShadow`, `pieceHighlight`, `houseShadow`, `hotelShadow` | L2/L4 柔阴影和高光 | SVG 源和部分视觉规范已收到；仍需要独立透明切图、阴影、锚点和 viewBox |
+| V-K05 | `diceAtlas`, `diceShadow`, `diceGlow` | L5 骰子旋转、落地和光效 | 6 帧静态骰面已有；K1 diceSheetWhite.png 图集已接收并配有 iOS 坐标测试（实际渲染待验收） |
+| V-K06 | `tileOwnerStripe`, `tileMortgageOverlay`, `tileUpgradeMarkers` | 地产归属、抵押、房屋层级 | 程序占位已有，待 K2 |
+| V-K07 | `cardFaceFrame`, `cardDeckShadow` | 翻牌卡面/卡堆阴影 | K1 已补充 cardChanceAlt/cardChestAlt 备用卡背；卡面 frame 与牌堆阴影仍待 K2 |
+| V-K08 | `jailBars`, `passGoFx`, `cashFloatFx`, `bankruptFx` | L6 特效 | 先用程序化 fallback，待 K2 |
 | V-K09 | `overlayBuy`, `overlayAuction`, `overlayTrade`, `overlayManage`, `overlaySettlement` | 横向 HUD 面板规范 | SwiftUI 基础面板已有，待视觉稿/切图 |
-| V-K10 | `boardThemeDark`, `boardThemeLight` | 主题色与 iPad 适配 | 待 Kimi 包审核 |
-| V-K11 | sprite atlas metadata + size/anchor map | 导出与 Swift 引用的一对一索引 | 待 Kimi 包审核 |
+| V-K10 | `boardThemeDark`, `boardThemeLight` | 主题色与 iPad 适配 | 待 K2 |
+| V-K11 | sprite atlas metadata + size/anchor map | 导出与 Swift 引用的一对一索引 | 待 K2 |
 
 ## 特别说明：右上角胶囊
 
@@ -44,3 +44,12 @@
 4. 对照 V-K01～V-K11 勾除已有物件，不补做相同素材；
 5. 更新经确认的最终需求，并由用户转发 Kimi，仅补缺失部分；
 6. 任何需要真 3D 的实现方案须先审查是否与当前 `RENDERING_SPEC` 的 SpriteKit 2.5D 技术选择冲突，不在引擎中自行导入 SceneKit。
+
+
+## K1 验收补充（2026-11-06）
+
+- 原包检查：22/22 SHA256SUMS 项匹配；9/9 新素材的 SHA-256 与 Kimi 清单匹配；26 条在库记录有 2 条错误（die4.png、mortgage.wav，参见 K1_INTEGRATION_REVIEW）。
+- 原始资料存于 `VEILOPOLY_DEV/INCOMING_ASSETS/KIMI_K1_v1/`；不将 K1 未批准的 `board.json/cards.json` 写入引擎。
+- **与 Owner 新要求冲突：** K1 给出的 iPhone 主图仍是竖屏。K2 需优先提供可直接给 SpriteKit/SwiftUI 对接的真实横屏全屏 iPhone 版、iPad 横屏适配及全阶段 HUD。
+- 胶囊的更多/退出符号无需另交图片素材，已由 SwiftUI 按参考实现。真实宿主方向切换与 iOS 16 实机触控仍待验收。
+- 其他缺口与源文件问题详见 `Veilopoly/docs/KIMI_K2_LANDSCAPE_DELTA.md`。
