@@ -1,0 +1,246 @@
+#if os(iOS) && canImport(SwiftUI) && canImport(SpriteKit)
+import SwiftUI
+import SpriteKit
+import AVFoundation
+import UIKit
+import VeilopolyEngine
+
+@MainActor
+final class GameBoardScene: SKScene {
+ private var tiles: [Int: SKShapeNode] = [:]
+ private var pieces: [Int: SKSpriteNode] = [:]
+ private var improvements: [Int: SKLabelNode] = [:]
+ private var mortgageMarks: [Int: SKShapeNode] = [:]
+ private let focus = SKCameraNode()
+ private var dice: [SKSpriteNode] = []
+ private var sounds: [String: AVAudioPlayer] = [:]
+ private var currentCompletion: (() -> Void)?
+ private weak var activeCommandNode: SKNode?
+ private var finishImmediately: (() -> Void)?
+ private var audioMap: [String: String] = [
+  "roll":"diceThrow", "step":"moveClick", "purchase":"purchase", "build":"build",
+  "mortgage":"mortgage", "jail":"jail", "bankrupt":"bankrupt", "card":"drawCard", "cash":"cash", "turn":"turn"
+ ]
+ override init(size: CGSize) {
+  super.init(size: size)
+  scaleMode = .aspectFit
+  backgroundColor = SKColor(red: 0.065, green: 0.09, blue: 0.13, alpha: 1)
+  buildBoard()
+  camera = focus; focus.position = CGPoint(x: 512, y: 470); addChild(focus)
+ }
+ required init?(coder: NSCoder) { fatalError("Use init(size:)") }
+
+ private func image(_ name: String) -> SKTexture? {
+  guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
+        let im = UIImage(contentsOfFile: url.path) else { return nil }
+  return SKTexture(image: im)
+ }
+ private func sound(_ key: String) {
+  guard let name = audioMap[key], let url = Bundle.module.url(forResource: name, withExtension: "wav") else { return }
+  if let existing = sounds[key] { existing.currentTime = 0; existing.play(); return }
+  if let player = try? AVAudioPlayer(contentsOf: url) {
+   player.volume = key == "step" ? 0.40 : 0.65
+   sounds[key] = player; player.prepareToPlay(); player.play()
+  }
+ }
+ private func colorFor(_ c: ColorGroup?) -> SKColor {
+  switch c {
+  case .brown: return .brown
+  case .lightBlue: return SKColor(red: 0.49, green: 0.78, blue: 0.93, alpha: 1)
+  case .pink: return SKColor(red: 0.92, green: 0.38, blue: 0.64, alpha: 1)
+  case .orange: return .orange
+  case .red: return .red
+  case .yellow: return .yellow
+  case .green: return .green
+  case .darkBlue: return SKColor(red: 0.13, green: 0.24, blue: 0.76, alpha: 1)
+  case .none: return SKColor(red: 0.80, green: 0.88, blue: 0.92, alpha: 1)
+  }
+ }
+ private func point(_ i: Int) -> CGPoint {
+  let x: CGFloat; let y: CGFloat
+  if i <= 10 { x = CGFloat(10-i); y = 0 }
+  else if i <= 20 { x = 0; y = CGFloat(i-10) }
+  else if i <= 30 { x = CGFloat(i-20); y = 10 }
+  else { x = 10; y = CGFloat(40-i) }
+  return CGPoint(x: 85 + x * 85, y: 85 + y * 78) // 12-15 degree faux perspective
+ }
+ private func buildBoard() {
+  let base = SKShapeNode(rect: CGRect(x: 43, y: 45, width: 934, height: 850), cornerRadius: 15)
+  base.fillColor = SKColor(red: 0.11, green: 0.18, blue: 0.22, alpha: 1)
+  base.strokeColor = SKColor(red: 0.26, green: 0.45, blue: 0.48, alpha: 1)
+  base.lineWidth = 4; base.zPosition = 1; addChild(base)
+  let center = SKLabelNode(text: "VEILOPOLY")
+  center.fontName = "AvenirNext-Heavy"; center.fontSize = 78
+  center.fontColor = SKColor(red: 0.66, green: 0.85, blue: 0.87, alpha: 0.22)
+  center.position = CGPoint(x: 510, y: 465); center.zPosition = 2; addChild(center)
+  for i in 0..<40 {
+   let spot = point(i)
+   let tile = SKShapeNode(rectOf: CGSize(width: 81, height: 73), cornerRadius: 7)
+   tile.position = spot; tile.zPosition = 4
+   tile.fillColor = SKColor(red: 0.16, green: 0.23, blue: 0.28, alpha: 1)
+   tile.strokeColor = SKColor(red: 0.37, green: 0.52, blue: 0.55, alpha: 0.6)
+   tile.lineWidth = 1.5; addChild(tile); tiles[i] = tile
+   let index = SKLabelNode(text: String(i))
+   index.fontName = "AvenirNext-DemiBold"; index.fontSize = 18
+   index.fontColor = SKColor(white: 0.85, alpha: 1)
+   index.verticalAlignmentMode = .center; index.position = spot
+   index.zPosition = 6; addChild(index)
+   // L2 construction indicator; one reusable glyph per tile, no runtime node churn.
+   let buildings = SKLabelNode(text: "")
+   buildings.fontName = "AvenirNext-Bold"; buildings.fontSize = 20
+   buildings.fontColor = .systemGreen
+   buildings.position = CGPoint(x: spot.x + 3, y: spot.y - 27)
+   buildings.zPosition = 5; addChild(buildings); improvements[i] = buildings
+   let redSlash = SKShapeNode()
+   let slash = CGMutablePath()
+   slash.move(to: CGPoint(x: -31, y: -27)); slash.addLine(to: CGPoint(x: 31, y: 27))
+   redSlash.path = slash
+   redSlash.strokeColor = .systemRed; redSlash.lineWidth = 5
+   redSlash.position = spot; redSlash.zPosition = 8
+   redSlash.isHidden = true; addChild(redSlash); mortgageMarks[i] = redSlash
+  }
+  // L7: feather-like edge vignette, deliberately translucent to preserve legibility.
+  let vignette = SKShapeNode(rect: CGRect(x: 4, y: 3, width: 1016, height: 934), cornerRadius: 25)
+  vignette.fillColor = .clear
+  vignette.strokeColor = SKColor(white: 0.0, alpha: 0.15)
+  vignette.lineWidth = 32; vignette.zPosition = 90; addChild(vignette)
+  let icons = ["pawnBlue","carRed","shipGreen","planeYellow"]
+  for i in 0..<4 {
+   let token = SKSpriteNode(texture: image(icons[i]))
+   token.size = CGSize(width: 42, height: 42)
+   token.position = point(0); token.zPosition = 30
+   addChild(token); pieces[i] = token
+  }
+  for d in 0..<2 {
+   let token = SKSpriteNode(texture: image("die1"))
+   token.size = CGSize(width: 88, height: 88)
+   token.position = CGPoint(x: 460 + CGFloat(d) * 110, y: 475)
+   token.zPosition = 44; addChild(token); dice.append(token)
+  }
+ }
+
+ func display(_ state: GameState, snapTokens: Bool = true) {
+  for tile in state.board {
+   if let n = tiles[tile.i] {
+    n.fillColor = tile.mortgaged ? SKColor(white: 0.23, alpha: 1) :
+      (tile.owner == nil ? colorFor(tile.color).withAlphaComponent(tile.color == nil ? 0.13 : 0.42)
+       : colorFor(tile.color).withAlphaComponent(0.78))
+    n.strokeColor = tile.owner == nil ? SKColor(white: 0.45, alpha: 0.6)
+     : [.systemBlue, .systemRed, .systemGreen, .systemYellow][tile.owner!]
+   }
+   mortgageMarks[tile.i]?.isHidden = !tile.mortgaged
+   improvements[tile.i]?.text = tile.hotel ? "▣" : (tile.houses > 0 ? "⌂×\(tile.houses)" : "")
+  }
+  if snapTokens {
+   for p in state.players where !p.bankrupt {
+    pieces[p.id]?.position = point(p.position)
+   }
+  }
+  for p in state.players {
+   pieces[p.id]?.isHidden = p.bankrupt
+   let offset = CGFloat(p.id) - 1.5
+   pieces[p.id]?.position.x += snapTokens ? (offset * 8) : 0
+   pieces[p.id]?.zPosition = 30 + CGFloat(p.id)
+  }
+ }
+
+ func play(_ command: ViewCommand, finished: @escaping () -> Void) {
+  removeAction(forKey: "command")
+  currentCompletion = finished
+  activeCommandNode = nil
+  let ack = { [weak self] in
+   guard let self, let completion = self.currentCompletion else { return }
+   self.currentCompletion = nil; self.finishImmediately = nil; self.activeCommandNode = nil; completion()
+  }
+  switch command {
+  case .diceRoll(let anim):
+   sound("roll")
+   let frames = (1...6).compactMap { image("die\($0)") }
+   let values = anim.values
+   let action = SKAction.customAction(withDuration: 1.2) { [weak self] _, elapsed in
+    guard let self else { return }
+    for (i,node) in self.dice.enumerated() {
+     let face = elapsed < 0.96 ? Int(elapsed * 12 + CGFloat(i)) % max(frames.count,1)
+        : max(0, min(5, values[i]-1))
+     if !frames.isEmpty { node.texture = frames[face] }
+     node.zRotation = elapsed < 0.85 ? CGFloat(elapsed) * 8 : 0
+    }
+   }
+   finishImmediately = { [weak self] in
+    guard let self else { return }
+    for (i,node) in self.dice.enumerated() {
+     node.texture = self.image("die\(max(1,min(6,values[i])))")
+     node.zRotation = 0
+    }
+   }
+   run(SKAction.sequence([action, SKAction.run(ack)]), withKey: "command")
+  case .tokenMove(let id, let path):
+   guard let token = pieces[id] else { ack(); return }
+   let moves = path.enumerated().map { ix, tile -> SKAction in
+    let time: TimeInterval = path.count > 8 && ix < path.count - 2 ? 0.08 : 0.15
+    let position = point(tile)
+    return SKAction.group([SKAction.move(to: position, duration: time),
+                           SKAction.sequence([SKAction.moveBy(x: 0,y: 14,duration: time/2),
+                                              SKAction.moveBy(x: 0,y: -14,duration: time/2)])])
+   }
+   finishImmediately = { [weak self] in if let last = path.last { token.position = self?.point(last) ?? token.position } }
+   sound("step")
+   // Repeat the audible step cue for each intermediate board square.
+   let withCues = moves.map { SKAction.sequence([SKAction.run { [weak self] in self?.sound("step") }, $0]) }
+   focus.run(SKAction.scale(to: 0.83, duration: 0.2), withKey: "focus")
+   activeCommandNode = token
+   token.run(SKAction.sequence(withCues + [SKAction.run { [weak self] in
+    self?.focus.run(SKAction.scale(to: 1, duration: 0.3))
+    ack()
+   }]), withKey: "command")
+  case .tileFx(let i, let kind):
+   let node = tiles[i]
+   let key: String
+   let duration: TimeInterval
+   switch kind {
+   case .purchase: key = "purchase"; duration = 0.5
+   case .build: key = "build"; duration = 0.35
+   case .mortgage: key = "mortgage"; duration = 0.4
+   case .jail: key = "jail"; duration = 0.6
+   case .bankrupt: key = "bankrupt"; duration = 1.2
+   case .cash: key = "cash"; duration = 0.3
+   }
+   sound(key)
+   activeCommandNode = node
+   node?.run(SKAction.sequence([SKAction.scale(to: 1.12, duration: duration/2),
+                                SKAction.scale(to: 1, duration: duration/2), SKAction.run(ack)]), withKey: "command")
+   if node == nil { ack() }
+   finishImmediately = { node?.setScale(1) }
+  case .cashFloat(_, let amount):
+   sound("cash")
+   let label = SKLabelNode(text: (amount > 0 ? "+" : "") + "¥\(amount)")
+   label.fontName = "AvenirNext-Bold"; label.fontSize = 36
+   label.fontColor = amount >= 0 ? .systemGreen : .systemRed
+   label.position = CGPoint(x: 510, y: 550); label.zPosition = 70; addChild(label)
+   finishImmediately = { label.removeFromParent() }
+   activeCommandNode = label
+   label.run(SKAction.sequence([SKAction.group([.moveBy(x: 0,y: 50,duration: 0.7), .fadeOut(withDuration: 0.7)]),
+                                .removeFromParent(), .run(ack)]), withKey: "command")
+  case .cardShow(_, _):
+   sound("card")
+   run(SKAction.sequence([.wait(forDuration: 0.5),.run(ack)]),withKey: "command")
+   finishImmediately = {}
+  case .banner(_):
+   sound("turn")
+   run(SKAction.sequence([.wait(forDuration: 1.6),.run(ack)]),withKey: "command")
+   finishImmediately = {}
+  }
+ }
+ func fastForward() {
+  guard let completion = currentCompletion else { return }
+  removeAction(forKey: "command")
+  activeCommandNode?.removeAction(forKey: "command")
+  pieces.values.forEach { $0.removeAction(forKey: "command") }
+  dice.forEach { $0.removeAllActions() }
+  tiles.values.forEach { $0.removeAction(forKey: "command") }
+  finishImmediately?(); finishImmediately = nil
+  focus.removeAction(forKey: "focus"); focus.setScale(1)
+  currentCompletion = nil; activeCommandNode = nil; completion()
+ }
+}
+#endif

@@ -1,0 +1,87 @@
+# Veilopoly · iOS 大富翁（独立 Swift Package）
+
+> 交付：P1 纯 Swift 引擎 + P2 单机 AI 回合驱动 + P3 联机抽象 + P4 SpriteKit/SwiftUI 代码。
+>
+> **未写入 VeilLink 仓库、未构建 IPA。** P5 VeilLink 实际接入须另行授权与集成。所有演示数据与规则争议列于 `docs/SPEC_DECISIONS_REQUIRED.md`。
+
+## Requirements
+
+- Swift 5.9+
+- iOS 16+
+- SpriteKit + SwiftUI (UI target is iOS-only)
+- No third-party runtime dependencies
+- Engine imports Foundation only; no UIKit, SwiftUI, AVFoundation, Date/UUID, ambient RNG, or floating-point comparison.
+
+## Modules
+
+- `VeilopolyEngine`: Codable `GameState`, 40-cell board, deterministic `seededRNG`, 18 concrete move case handlers corresponding to the specification's 15 grouped rows, cards and ledger, bankruptcy, stable `stateHash`.
+- `VeilopolyAI`: 3-tier deterministic policy and bounded AI test runner, no model data or network required.
+- `VeilopolyNet`: `GameTransport` interface, authoritative move packets, seq replay, mismatch handling and full-state snapshot; VeilLink adapter is intentionally not implemented.
+- `VeilopolyUI`: iOS-only `VeilopolyGameView`; layered SpriteKit board, SwiftUI panels, `ViewCommand` queue and animation ack coordinator. Audio was converted from Kenney OGG to native WAV for iOS compatibility.
+
+## Use from an iOS app
+
+In Xcode, **File → Add Package Dependencies → Add Local…**, select this folder.
+Link `VeilopolyUI`, which transitively depends on Engine, AI, Net.
+
+```swift
+import SwiftUI
+import VeilopolyUI
+
+struct ContentView: View {
+    var body: some View {
+        VeilopolyGameView(seed: 1729123, humanCount: 1)
+    }
+}
+```
+
+`humanCount` may be 0, 1, 2, 3 or 4 (in pure state); missing seats are AI. AI levels are configured in `GameFactory.make(seed:humanCount:levels:cards:)`. The default UI constructor assumes 1 local human. **Changing host transport or VeilLink chat UI is not part of this package.**
+
+## Engine API
+
+```swift
+let g = GameFactory.make(seed: 1729123)
+let ctx = VeilopolyEngine.context(g)
+let move = Move(.rollDice, player: 0, seq: g.nextSeq)
+switch VeilopolyEngine.apply(g, ctx, move) {
+case .success((let next, let effects)):
+    print(StateDigest.hash(next), effects)
+case .failure(let error):
+    print(error.rawValue)
+}
+```
+
+Source of truth is the full project `.swift` files, not a code sketch. `Move.seq` is exactly `state.nextSeq`; rejected moves must leave the state unchanged.
+
+## Tests
+
+Run on any platform with Swift 5.9+ toolchain (the iOS-only code is conditionally compiled):
+
+```sh
+swift build
+swift test
+swift test --enable-code-coverage --filter 'VeilopolyEngineTests|AutoplayTests'
+swift test --show-codecov-path
+```
+
+Validated on Swift 6.2.1 / Linux x86_64:
+
+- **18** named per-move test files for every `MoveKind` case.
+- Deterministic replay with canonical JSON, same seed and same moves, hash checks.
+- 500 AI seeds × 500 move cap: all ran without engine illegal moves; **0 finished within that bound**.
+- 20 long AI seeds × 6000 move cap: **14 finished**, **6 did not finish in cap**, no engine errors.
+- Network packet replay, missing-seq recovery, hash mismatch, and snapshot recovery, pure engine-level.
+- **98.26% engine line coverage (732/745)** in 27-test engine+AI coverage run.
+- iOS app, UI, FPS, touch, and runtime audio **not verified**: no Xcode/iOS SDK in this environment.
+
+See `docs/VALIDATION_REPORT.md` for precise acceptance status.
+
+## Resources
+
+`Sources/VeilopolyUI/Resources` contains the 14 normalized Kenney PNG sprites and 12 native WAV sound clips actually referenced by the UI, not the original 1470-file source pack. The attached original planning archive contains the complete Kenney distribution if you want alternate tokens/icons.
+
+Kenney graphics and audio are CC0 (see `docs/ASSET_LICENSES.md`). The source-spec filenames such as `pieceBlue00.png` were **not present as stated** in the upstream pack; the normalized files were extracted from `pieceBlue_single00.png` etc. Likewise source OGG has been converted to WAV for native iOS audio. The game mechanics and names are a proof-of-integration fixture pending rules-owner approval.
+
+## Governance
+
+`INBOX/` contains a 5-part governance handoff. No GitHub main, Protocol 4, VLGM1 v1, SQLite V8, A9/A10 gates, or VeilLink code has been changed. The historical `ccafebab` anchor from the planning archive was *not* reconfirmed against today's GitHub main.
