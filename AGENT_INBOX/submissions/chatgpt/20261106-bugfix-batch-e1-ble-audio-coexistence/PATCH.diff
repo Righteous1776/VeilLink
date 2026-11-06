@@ -19,8 +19,8 @@ diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETrans
 -@MainActor
 -final class BLETransport: NSObject, ObservableObject {
 +/// Audio routing does not create independent Bluetooth radio channels.
-+    /// Reduce optional scan/RSSI work during HFP/A2DP/LE headset activity while
-+    /// preserving CoreBluetooth's authenticated connections and queue watchdog.
++/// Reduce optional scan/RSSI work during HFP/A2DP/LE headset activity while
++/// preserving CoreBluetooth's authenticated connections and queue watchdog.
 +enum BLEAudioCoexistencePolicy {
 +    static func allowsDuplicateDiscoveries(foreground: Bool, bluetoothAudioActive: Bool) -> Bool {
 +        foreground && !bluetoothAudioActive
@@ -137,9 +137,7 @@ diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETrans
      }
  
      func stop(preserveConnectionIntent: Bool = false) {
-@@ -296,8 +341,9 @@
- 
-     func stop(preserveConnectionIntent: Bool = false) {
+@@ -298,6 +343,7 @@
          isRunning = false
 -        centralManager.stopScan()
 -        peripheralManager.stopAdvertising()
