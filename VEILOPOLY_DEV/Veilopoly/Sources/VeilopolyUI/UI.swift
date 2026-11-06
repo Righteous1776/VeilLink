@@ -73,8 +73,14 @@ public final class GameSessionModel: ObservableObject {
   animating = true
   let command = queue.removeFirst()
   if case .cardShow(_,let message) = command {
-   cardGate.present()
-   shownCard = message
+   // Only a human player's card requires a tap to proceed. AI-only games
+   // must continue after the visual/audio timeline without blocking on UI.
+   if game.players[game.turn.player].kind == .human {
+    cardGate.present()
+    shownCard = message
+   } else {
+    lastFeedback = "AI 卡牌 · " + message
+   }
   }
   scene.play(command) { [weak self] in
    guard let self else { return }
