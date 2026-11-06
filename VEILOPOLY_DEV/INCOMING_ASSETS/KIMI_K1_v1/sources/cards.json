@@ -1,0 +1,354 @@
+{
+ "chance": [
+  {
+   "id": "C01",
+   "text": "前进到起点 GO（领 ¥200）",
+   "effects": [
+    {
+     "kind": "moveTo",
+     "tile": 0,
+     "collectGo": true
+    }
+   ]
+  },
+  {
+   "id": "C02",
+   "text": "前进到伊利诺伊大道（路过 GO 领钱）",
+   "effects": [
+    {
+     "kind": "moveTo",
+     "tile": 24,
+     "collectGo": true
+    }
+   ]
+  },
+  {
+   "id": "C03",
+   "text": "前进到圣查尔斯广场（路过 GO 领钱）",
+   "effects": [
+    {
+     "kind": "moveTo",
+     "tile": 11,
+     "collectGo": true
+    }
+   ]
+  },
+  {
+   "id": "C04",
+   "text": "前进到木板路",
+   "effects": [
+    {
+     "kind": "moveTo",
+     "tile": 39,
+     "collectGo": false
+    }
+   ]
+  },
+  {
+   "id": "C05",
+   "text": "前进到最近的铁路：若无主可买，否则付双倍租金",
+   "effects": [
+    {
+     "kind": "moveNearest",
+     "set": "railroad",
+     "mode": "buyOrDoubleRent"
+    }
+   ]
+  },
+  {
+   "id": "C06",
+   "text": "前进到最近的铁路：若无主可买，否则付双倍租金",
+   "effects": [
+    {
+     "kind": "moveNearest",
+     "set": "railroad",
+     "mode": "buyOrDoubleRent"
+    }
+   ]
+  },
+  {
+   "id": "C07",
+   "text": "前进到最近的公用事业：可购买，或付 10×骰子点",
+   "effects": [
+    {
+     "kind": "moveNearest",
+     "set": "utility",
+     "mode": "buyOr10x"
+    }
+   ]
+  },
+  {
+   "id": "C08",
+   "text": "后退 3 格",
+   "effects": [
+    {
+     "kind": "moveRelative",
+     "delta": -3
+    }
+   ]
+  },
+  {
+   "id": "C09",
+   "text": "直接去监狱（不经过 GO）",
+   "effects": [
+    {
+     "kind": "goToJail"
+    }
+   ]
+  },
+  {
+   "id": "C10",
+   "text": "出狱卡（保留待用）",
+   "effects": [
+    {
+     "kind": "jailCard"
+    }
+   ]
+  },
+  {
+   "id": "C11",
+   "text": "旅行到阅读铁路（领 ¥200）",
+   "effects": [
+    {
+     "kind": "moveTo",
+     "tile": 5,
+     "collectGo": true
+    }
+   ]
+  },
+  {
+   "id": "C12",
+   "text": "银行付你分红 ¥50",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 50,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "C13",
+   "text": "超速罚款 ¥15",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": -15,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "C14",
+   "text": "修缮房屋：每房 ¥25，每旅馆 ¥100",
+   "effects": [
+    {
+     "kind": "repair",
+     "perHouse": 25,
+     "perHotel": 100
+    }
+   ]
+  },
+  {
+   "id": "C15",
+   "text": "建筑贷款到期：收 ¥150",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 150,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "C16",
+   "text": "当选董事长：付每位玩家 ¥50",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": -50,
+     "target": "allOthers"
+    }
+   ]
+  }
+ ],
+ "communityChest": [
+  {
+   "id": "T01",
+   "text": "前进到起点 GO（领 ¥200）",
+   "effects": [
+    {
+     "kind": "moveTo",
+     "tile": 0,
+     "collectGo": true
+    }
+   ]
+  },
+  {
+   "id": "T02",
+   "text": "直接去监狱（不经过 GO）",
+   "effects": [
+    {
+     "kind": "goToJail"
+    }
+   ]
+  },
+  {
+   "id": "T03",
+   "text": "出狱卡（保留待用）",
+   "effects": [
+    {
+     "kind": "jailCard"
+    }
+   ]
+  },
+  {
+   "id": "T04",
+   "text": "银行差错：收 ¥200",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 200,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "T05",
+   "text": "医疗费：付 ¥50",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": -50,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "T06",
+   "text": "股票获利：收 ¥50",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 50,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "T07",
+   "text": "假日基金到期：收 ¥100",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 100,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "T08",
+   "text": "退税：收 ¥20",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 20,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "T09",
+   "text": "生日：每位玩家付你 ¥10",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 10,
+     "target": "allOthers"
+    }
+   ]
+  },
+  {
+   "id": "T10",
+   "text": "人寿保险到期：收 ¥100",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 100,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "T11",
+   "text": "住院费：付 ¥100",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": -100,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "T12",
+   "text": "学费：付 ¥50",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": -50,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "T13",
+   "text": "咨询费收入 ¥25",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 25,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "T14",
+   "text": "街道修缮：每房 ¥25，每旅馆 ¥100",
+   "effects": [
+    {
+     "kind": "repair",
+     "perHouse": 25,
+     "perHotel": 100
+    }
+   ]
+  },
+  {
+   "id": "T15",
+   "text": "选美冠军：赢 ¥10",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 10,
+     "target": "self"
+    }
+   ]
+  },
+  {
+   "id": "T16",
+   "text": "遗产继承：收 ¥100",
+   "effects": [
+    {
+     "kind": "cash",
+     "amount": 100,
+     "target": "self"
+    }
+   ]
+  }
+ ],
+ "rules": {
+  "deckSize": 16,
+  "cursorWrap": true,
+  "jailCardReturnsToDeck": true
+ }
+}

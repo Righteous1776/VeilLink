@@ -1,0 +1,435 @@
+{
+ "schema": "veillopoly.asset-manifest.k1.v1",
+ "generated": "2026-11-06",
+ "frozen_aliases": {
+  "images": [
+   "pawnBlue",
+   "carRed",
+   "shipGreen",
+   "planeYellow",
+   "die1",
+   "die2",
+   "die3",
+   "die4",
+   "die5",
+   "die6",
+   "house",
+   "hotel",
+   "cardChance",
+   "cardChest"
+  ],
+  "audio": [
+   "diceShuffle",
+   "diceThrow",
+   "moveClick",
+   "purchase",
+   "cash",
+   "drawCard",
+   "build",
+   "mortgage",
+   "trade",
+   "jail",
+   "bankrupt",
+   "turn"
+  ]
+ },
+ "items": [
+  {
+   "path": "Sources/VeilopolyUI/Resources/bankrupt.wav",
+   "alias": "bankrupt",
+   "status": "in-repo",
+   "sha256": "cf2844a49464fa3e550c61fc2d1be5a5ad317031f1bf64d925c664275986839b",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/build.wav",
+   "alias": "build",
+   "status": "in-repo",
+   "sha256": "3819dfe091e071e16d8c53ce4f26975b01705ae13cd814217bd6f78469068849",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/carRed.png",
+   "alias": "carRed",
+   "status": "in-repo",
+   "sha256": "0db88d794e8758e062a4fdc87ab7a09c32835dd43ca0900c5fa7eca830553937",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "token-car",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Pieces (Red)/pieceRed_border05.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/cardChance.png",
+   "alias": "cardChance",
+   "status": "in-repo",
+   "sha256": "614da407c01c5a8ddf6ace09bf394ebe533944cfeb0a573df3cd03eccb0cb17d",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "cardback-chance",
+   "dimensions": [
+    140,
+    190
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Cards/cardBack_blue2.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/cardChest.png",
+   "alias": "cardChest",
+   "status": "in-repo",
+   "sha256": "9523703a1734eb983861cc9c03836b21e8e9a6a63cd7adc825ed0d1feba6bece",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "cardback-chest",
+   "dimensions": [
+    140,
+    190
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Cards/cardBack_green2.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/cash.wav",
+   "alias": "cash",
+   "status": "in-repo",
+   "sha256": "94271edbcd622ade961661b55ffa6ba6562716189bb77c78a40f92e717b0c16a",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/diceShuffle.wav",
+   "alias": "diceShuffle",
+   "status": "in-repo",
+   "sha256": "1aabbc13be5295e99c1ba1b4eeb997e1ddd597a3838594e526dbc1c591c66d0d",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/diceThrow.wav",
+   "alias": "diceThrow",
+   "status": "in-repo",
+   "sha256": "308dbcc102ad53ccf692c051c53b1ae28f0dab0014a69af80c9d9f1ee9e7b118",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/die1.png",
+   "alias": "die1",
+   "status": "in-repo",
+   "sha256": "e66f8bfa63fc4dff5a240472a6ba13db9baf994fcd99cad6c096298a8a13b4c1",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "die-1",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Dice/dieWhite1.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/die2.png",
+   "alias": "die2",
+   "status": "in-repo",
+   "sha256": "61190f77fcdc029e39b824af3641ab604ee6244d4892d613837ea290a90c1c62",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "die-2",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Dice/dieWhite2.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/die3.png",
+   "alias": "die3",
+   "status": "in-repo",
+   "sha256": "d42e0b2be194afd0b728c3f83e8ccd35af4f07a6a392bf7a97099c80cfa9b619",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "die-3",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Dice/dieWhite3.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/die4.png",
+   "alias": "die4",
+   "status": "in-repo",
+   "sha256": "ae12bf1bd38d223417328d52a4ef6b691d596b4dd1a751daa35237cc1fe5a4",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "die-4",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Dice/dieWhite4.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/die5.png",
+   "alias": "die5",
+   "status": "in-repo",
+   "sha256": "38b27c333b011d71588fc6b75824812b04880e693c5fde3e1523112e41b640d5",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "die-5",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Dice/dieWhite5.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/die6.png",
+   "alias": "die6",
+   "status": "in-repo",
+   "sha256": "d11793d127cb3069408ad7ae25d562b79d4cf8295dd6a155ed35eb1c993b236d",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "die-6",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Dice/dieWhite6.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/drawCard.wav",
+   "alias": "drawCard",
+   "status": "in-repo",
+   "sha256": "d1373520fdd72c8e2284621f92dcff71189bf2b63dde87767ff7a6924c8df7a7",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/hotel.png",
+   "alias": "hotel",
+   "status": "in-repo",
+   "sha256": "fa6a4836cf196510a5f2c76f3e10faac9172436ea19a955d12510ba4a54e5606",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "build-hotel",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Pieces (White)/pieceWhite_border07.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/house.png",
+   "alias": "house",
+   "status": "in-repo",
+   "sha256": "71af1f38f5193eb64b1ea6af7669788a528d9122e8bb7b7c8584308e2180c673",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "build-house",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Pieces (White)/pieceWhite_border13.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/jail.wav",
+   "alias": "jail",
+   "status": "in-repo",
+   "sha256": "1ce560f4a58fbc7111d9ee2983699010b019027bfda8ae542ec001754be3b7fb",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/mortgage.wav",
+   "alias": "mortgage",
+   "status": "in-repo",
+   "sha256": "f5d1be1f2aafb79711f4925d1671e81c3f9ee1b1c095d89b0df26098c4b3b64",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/moveClick.wav",
+   "alias": "moveClick",
+   "status": "in-repo",
+   "sha256": "a3e16f2c23bd712d89cc35e391225ec03906e02d9418813d19911f9ba9ebfa58",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/pawnBlue.png",
+   "alias": "pawnBlue",
+   "status": "in-repo",
+   "sha256": "2aab9046f83f85ae00a87d32dde0b511bc0a610d50ca2179a8414caffc8fc824",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "token-pawn",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Pieces (Blue)/pieceBlue_border00.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/planeYellow.png",
+   "alias": "planeYellow",
+   "status": "in-repo",
+   "sha256": "91e4d854ced64922751f505697228391944e7c48200a55b33962e51e3a10f468",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "token-plane",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Pieces (Yellow)/pieceYellow_border03.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/purchase.wav",
+   "alias": "purchase",
+   "status": "in-repo",
+   "sha256": "2ac3db0c24305c25e95d010c32143370697ff86210a461d70ebb65973ff38121",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/shipGreen.png",
+   "alias": "shipGreen",
+   "status": "in-repo",
+   "sha256": "ad4ec9123130806a07b1ef4a4d3d5dfa8d95e3ab9b689f78d70b0d79dd8507d8",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "kimi_alias": "token-ship",
+   "dimensions": [
+    64,
+    64
+   ],
+   "source_file": "kenney_boardgame-pack/PNG/Pieces (Green)/pieceGreen_border01.png"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/trade.wav",
+   "alias": "trade",
+   "status": "in-repo",
+   "sha256": "23fcfd11b5243af0ab5357c3ac61d392918cf446e642668acde21cf2bb5851e2",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "Sources/VeilopolyUI/Resources/turn.wav",
+   "alias": "turn",
+   "status": "in-repo",
+   "sha256": "021fe532a34e290b0f76c9adab7eac2986ff8de0afe96d4faa5ef205e408d2a4",
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "note": "音频派生自 Kenney ogg（工程侧已转 wav）"
+  },
+  {
+   "path": "assets/tokenPawnBlue.svg",
+   "alias": "tokenPawnBlue",
+   "status": "new-K1",
+   "sha256": "504b1823eb3bb1356f36583fe6b8a0215692fc01dc1d29f18a7c6340bca2e223",
+   "bytes": 71697,
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets"
+  },
+  {
+   "path": "assets/tokenCarRed.svg",
+   "alias": "tokenCarRed",
+   "status": "new-K1",
+   "sha256": "827bfdf9af566a034e81f8ffe3f481fa1ac9ddf1840c4c9517b7cbc945661e5d",
+   "bytes": 71706,
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets"
+  },
+  {
+   "path": "assets/tokenShipGreen.svg",
+   "alias": "tokenShipGreen",
+   "status": "new-K1",
+   "sha256": "c98d0cee52b11c6a52ab517277ac4eba3c3ab5e6844f96426f743c2aec0e4e14",
+   "bytes": 71699,
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets"
+  },
+  {
+   "path": "assets/tokenPlaneYellow.svg",
+   "alias": "tokenPlaneYellow",
+   "status": "new-K1",
+   "sha256": "729c4d1c7936e979ad8d9f17e39cfe5454f6c5f176337dc93fbd7f0ebdf1637b",
+   "bytes": 71701,
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets"
+  },
+  {
+   "path": "assets/diceSheetWhite.png",
+   "alias": "diceSheetWhite",
+   "status": "new-K1",
+   "sha256": "0183f017b8b532b0cf04374b51a342af9b6a2900af25384e4d00cddd32277b74",
+   "bytes": 2731,
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "dimensions": [
+    256,
+    128
+   ]
+  },
+  {
+   "path": "assets/diceSheetWhite.xml",
+   "alias": "diceSheetWhiteFrames",
+   "status": "new-K1",
+   "sha256": "f539fc29d6a0b7f4935d42ca724f1510b08a0f74e028ea900cd8eafd9bd3d765",
+   "bytes": 487,
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets"
+  },
+  {
+   "path": "assets/cardChanceAlt.png",
+   "alias": "cardChanceAlt",
+   "status": "new-K1",
+   "sha256": "2e831270e3c882ac38d13d417321372f75c8c232021e84aa1c92a891cc40154c",
+   "bytes": 1687,
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "dimensions": [
+    140,
+    190
+   ]
+  },
+  {
+   "path": "assets/cardChestAlt.png",
+   "alias": "cardChestAlt",
+   "status": "new-K1",
+   "sha256": "0c2f912a9f139ad66e987adae3cac7e44e2b4bb764a8efcd6d276a68d66a60ad",
+   "bytes": 1674,
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets",
+   "dimensions": [
+    140,
+    190
+   ]
+  },
+  {
+   "path": "assets/buildClick.ogg",
+   "alias": "buildClick",
+   "status": "new-K1",
+   "sha256": "52d41e0bb012731bf2a391d53ffb52265ef21589c7701e66b391d5e36a65b293",
+   "bytes": 4532,
+   "license": "CC0 (Kenney.nl)",
+   "original_url": "https://kenney.nl/assets"
+  }
+ ]
+}

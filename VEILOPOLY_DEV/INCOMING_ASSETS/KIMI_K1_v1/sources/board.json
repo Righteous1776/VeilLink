@@ -1,0 +1,890 @@
+{
+ "meta": {
+  "unit": 24,
+  "cellEdge": [
+   2,
+   3
+  ],
+  "cellCorner": 3,
+  "origin": "bottom-left, x→right y↑, 渲染时 y 翻转",
+  "clockwise": true,
+  "diceFrames": {
+   "dieWhite1.png": {
+    "x": 64,
+    "y": 0,
+    "width": 64,
+    "height": 64
+   },
+   "dieWhite2.png": {
+    "x": 128,
+    "y": 0,
+    "width": 64,
+    "height": 64
+   },
+   "dieWhite3.png": {
+    "x": 64,
+    "y": 64,
+    "width": 64,
+    "height": 64
+   },
+   "dieWhite4.png": {
+    "x": 128,
+    "y": 64,
+    "width": 64,
+    "height": 64
+   },
+   "dieWhite5.png": {
+    "x": 0,
+    "y": 64,
+    "width": 64,
+    "height": 64
+   },
+   "dieWhite6.png": {
+    "x": 0,
+    "y": 0,
+    "width": 64,
+    "height": 64
+   }
+  }
+ },
+ "tiles": [
+  {
+   "i": 0,
+   "kind": "go",
+   "name": "起点 GO",
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "br",
+    "x": 21,
+    "y": 0,
+    "w": 3,
+    "h": 3
+   }
+  },
+  {
+   "i": 1,
+   "kind": "street",
+   "name": "地中海大道",
+   "color": "brown",
+   "set": "brown",
+   "setSize": 2,
+   "price": 60,
+   "rent": [
+    2,
+    10,
+    30,
+    90,
+    160,
+    250
+   ],
+   "houseCost": 50,
+   "colorHex": "#8B5E34",
+   "layout": {
+    "side": "b",
+    "x": 19,
+    "y": 0,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 2,
+   "kind": "chest",
+   "name": "命运",
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "b",
+    "x": 17,
+    "y": 0,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 3,
+   "kind": "street",
+   "name": "波罗的海大道",
+   "color": "brown",
+   "set": "brown",
+   "setSize": 2,
+   "price": 60,
+   "rent": [
+    2,
+    10,
+    30,
+    90,
+    160,
+    250
+   ],
+   "houseCost": 50,
+   "colorHex": "#8B5E34",
+   "layout": {
+    "side": "b",
+    "x": 15,
+    "y": 0,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 4,
+   "kind": "tax",
+   "name": "所得税",
+   "price": 200,
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "b",
+    "x": 13,
+    "y": 0,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 5,
+   "kind": "railroad",
+   "name": "阅读铁路",
+   "price": 200,
+   "rent": [
+    25,
+    50,
+    100,
+    200
+   ],
+   "colorHex": "#222222",
+   "layout": {
+    "side": "b",
+    "x": 11,
+    "y": 0,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 6,
+   "kind": "street",
+   "name": "东方大道",
+   "color": "lightblue",
+   "set": "lightblue",
+   "setSize": 3,
+   "price": 100,
+   "rent": [
+    6,
+    30,
+    90,
+    270,
+    400,
+    550
+   ],
+   "houseCost": 50,
+   "colorHex": "#AAD8E6",
+   "layout": {
+    "side": "b",
+    "x": 9,
+    "y": 0,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 7,
+   "kind": "chance",
+   "name": "机会",
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "b",
+    "x": 7,
+    "y": 0,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 8,
+   "kind": "street",
+   "name": "佛蒙特大道",
+   "color": "lightblue",
+   "set": "lightblue",
+   "setSize": 3,
+   "price": 100,
+   "rent": [
+    6,
+    30,
+    90,
+    270,
+    400,
+    550
+   ],
+   "houseCost": 50,
+   "colorHex": "#AAD8E6",
+   "layout": {
+    "side": "b",
+    "x": 5,
+    "y": 0,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 9,
+   "kind": "street",
+   "name": "康涅狄格大道",
+   "color": "lightblue",
+   "set": "lightblue",
+   "setSize": 3,
+   "price": 120,
+   "rent": [
+    8,
+    40,
+    100,
+    300,
+    450,
+    600
+   ],
+   "houseCost": 50,
+   "colorHex": "#AAD8E6",
+   "layout": {
+    "side": "b",
+    "x": 3,
+    "y": 0,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 10,
+   "kind": "jail",
+   "name": "监狱",
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "bl",
+    "x": 0,
+    "y": 0,
+    "w": 3,
+    "h": 3
+   }
+  },
+  {
+   "i": 11,
+   "kind": "street",
+   "name": "圣查尔斯广场",
+   "color": "pink",
+   "set": "pink",
+   "setSize": 3,
+   "price": 140,
+   "rent": [
+    10,
+    50,
+    150,
+    450,
+    625,
+    750
+   ],
+   "houseCost": 100,
+   "colorHex": "#D93A96",
+   "layout": {
+    "side": "l",
+    "x": 0,
+    "y": 3,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 12,
+   "kind": "utility",
+   "name": "电力公司",
+   "price": 150,
+   "colorHex": "#C0C0C0",
+   "layout": {
+    "side": "l",
+    "x": 0,
+    "y": 5,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 13,
+   "kind": "street",
+   "name": "州议会大道",
+   "color": "pink",
+   "set": "pink",
+   "setSize": 3,
+   "price": 140,
+   "rent": [
+    10,
+    50,
+    150,
+    450,
+    625,
+    750
+   ],
+   "houseCost": 100,
+   "colorHex": "#D93A96",
+   "layout": {
+    "side": "l",
+    "x": 0,
+    "y": 7,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 14,
+   "kind": "street",
+   "name": "弗吉尼亚大道",
+   "color": "pink",
+   "set": "pink",
+   "setSize": 3,
+   "price": 160,
+   "rent": [
+    12,
+    60,
+    180,
+    500,
+    700,
+    900
+   ],
+   "houseCost": 100,
+   "colorHex": "#D93A96",
+   "layout": {
+    "side": "l",
+    "x": 0,
+    "y": 9,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 15,
+   "kind": "railroad",
+   "name": "宾夕法尼亚铁路",
+   "price": 200,
+   "rent": [
+    25,
+    50,
+    100,
+    200
+   ],
+   "colorHex": "#222222",
+   "layout": {
+    "side": "l",
+    "x": 0,
+    "y": 11,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 16,
+   "kind": "street",
+   "name": "圣詹姆斯广场",
+   "color": "orange",
+   "set": "orange",
+   "setSize": 3,
+   "price": 180,
+   "rent": [
+    14,
+    70,
+    200,
+    550,
+    750,
+    950
+   ],
+   "houseCost": 100,
+   "colorHex": "#F7922E",
+   "layout": {
+    "side": "l",
+    "x": 0,
+    "y": 13,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 17,
+   "kind": "chest",
+   "name": "命运",
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "l",
+    "x": 0,
+    "y": 15,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 18,
+   "kind": "street",
+   "name": "田纳西大道",
+   "color": "orange",
+   "set": "orange",
+   "setSize": 3,
+   "price": 180,
+   "rent": [
+    14,
+    70,
+    200,
+    550,
+    750,
+    950
+   ],
+   "houseCost": 100,
+   "colorHex": "#F7922E",
+   "layout": {
+    "side": "l",
+    "x": 0,
+    "y": 17,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 19,
+   "kind": "street",
+   "name": "纽约大道",
+   "color": "orange",
+   "set": "orange",
+   "setSize": 3,
+   "price": 200,
+   "rent": [
+    16,
+    80,
+    220,
+    600,
+    800,
+    1000
+   ],
+   "houseCost": 100,
+   "colorHex": "#F7922E",
+   "layout": {
+    "side": "l",
+    "x": 0,
+    "y": 19,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 20,
+   "kind": "freeparking",
+   "name": "免费停车",
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "tl",
+    "x": 0,
+    "y": 21,
+    "w": 3,
+    "h": 3
+   }
+  },
+  {
+   "i": 21,
+   "kind": "street",
+   "name": "肯塔基大道",
+   "color": "red",
+   "set": "red",
+   "setSize": 3,
+   "price": 220,
+   "rent": [
+    18,
+    90,
+    250,
+    700,
+    875,
+    1050
+   ],
+   "houseCost": 150,
+   "colorHex": "#ED1B24",
+   "layout": {
+    "side": "t",
+    "x": 3,
+    "y": 21,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 22,
+   "kind": "chance",
+   "name": "机会",
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "t",
+    "x": 5,
+    "y": 21,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 23,
+   "kind": "street",
+   "name": "印第安纳大道",
+   "color": "red",
+   "set": "red",
+   "setSize": 3,
+   "price": 220,
+   "rent": [
+    18,
+    90,
+    250,
+    700,
+    875,
+    1050
+   ],
+   "houseCost": 150,
+   "colorHex": "#ED1B24",
+   "layout": {
+    "side": "t",
+    "x": 7,
+    "y": 21,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 24,
+   "kind": "street",
+   "name": "伊利诺伊大道",
+   "color": "red",
+   "set": "red",
+   "setSize": 3,
+   "price": 240,
+   "rent": [
+    20,
+    100,
+    300,
+    750,
+    925,
+    1100
+   ],
+   "houseCost": 150,
+   "colorHex": "#ED1B24",
+   "layout": {
+    "side": "t",
+    "x": 9,
+    "y": 21,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 25,
+   "kind": "railroad",
+   "name": "B&O 铁路",
+   "price": 200,
+   "rent": [
+    25,
+    50,
+    100,
+    200
+   ],
+   "colorHex": "#222222",
+   "layout": {
+    "side": "t",
+    "x": 11,
+    "y": 21,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 26,
+   "kind": "street",
+   "name": "大西洋大道",
+   "color": "yellow",
+   "set": "yellow",
+   "setSize": 3,
+   "price": 260,
+   "rent": [
+    22,
+    110,
+    330,
+    800,
+    975,
+    1150
+   ],
+   "houseCost": 150,
+   "colorHex": "#FEF200",
+   "layout": {
+    "side": "t",
+    "x": 13,
+    "y": 21,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 27,
+   "kind": "street",
+   "name": "文特诺大道",
+   "color": "yellow",
+   "set": "yellow",
+   "setSize": 3,
+   "price": 260,
+   "rent": [
+    22,
+    110,
+    330,
+    800,
+    975,
+    1150
+   ],
+   "houseCost": 150,
+   "colorHex": "#FEF200",
+   "layout": {
+    "side": "t",
+    "x": 15,
+    "y": 21,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 28,
+   "kind": "utility",
+   "name": "自来水公司",
+   "price": 150,
+   "colorHex": "#C0C0C0",
+   "layout": {
+    "side": "t",
+    "x": 17,
+    "y": 21,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 29,
+   "kind": "street",
+   "name": "马文花园",
+   "color": "yellow",
+   "set": "yellow",
+   "setSize": 3,
+   "price": 280,
+   "rent": [
+    24,
+    120,
+    360,
+    850,
+    1025,
+    1200
+   ],
+   "houseCost": 150,
+   "colorHex": "#FEF200",
+   "layout": {
+    "side": "t",
+    "x": 19,
+    "y": 21,
+    "w": 2,
+    "h": 3
+   }
+  },
+  {
+   "i": 30,
+   "kind": "gotojail",
+   "name": "入狱",
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "tr",
+    "x": 21,
+    "y": 21,
+    "w": 3,
+    "h": 3
+   }
+  },
+  {
+   "i": 31,
+   "kind": "street",
+   "name": "太平洋大道",
+   "color": "green",
+   "set": "green",
+   "setSize": 3,
+   "price": 300,
+   "rent": [
+    26,
+    130,
+    390,
+    900,
+    1100,
+    1275
+   ],
+   "houseCost": 200,
+   "colorHex": "#1FB25A",
+   "layout": {
+    "side": "r",
+    "x": 21,
+    "y": 21,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 32,
+   "kind": "street",
+   "name": "北卡罗来纳大道",
+   "color": "green",
+   "set": "green",
+   "setSize": 3,
+   "price": 300,
+   "rent": [
+    26,
+    130,
+    390,
+    900,
+    1100,
+    1275
+   ],
+   "houseCost": 200,
+   "colorHex": "#1FB25A",
+   "layout": {
+    "side": "r",
+    "x": 21,
+    "y": 19,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 33,
+   "kind": "chest",
+   "name": "命运",
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "r",
+    "x": 21,
+    "y": 17,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 34,
+   "kind": "street",
+   "name": "宾夕法尼亚大道",
+   "color": "green",
+   "set": "green",
+   "setSize": 3,
+   "price": 320,
+   "rent": [
+    28,
+    150,
+    450,
+    1000,
+    1200,
+    1400
+   ],
+   "houseCost": 200,
+   "colorHex": "#1FB25A",
+   "layout": {
+    "side": "r",
+    "x": 21,
+    "y": 15,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 35,
+   "kind": "railroad",
+   "name": "短线铁路",
+   "price": 200,
+   "rent": [
+    25,
+    50,
+    100,
+    200
+   ],
+   "colorHex": "#222222",
+   "layout": {
+    "side": "r",
+    "x": 21,
+    "y": 13,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 36,
+   "kind": "chance",
+   "name": "机会",
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "r",
+    "x": 21,
+    "y": 11,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 37,
+   "kind": "street",
+   "name": "公园广场",
+   "color": "darkblue",
+   "set": "darkblue",
+   "setSize": 2,
+   "price": 350,
+   "rent": [
+    35,
+    175,
+    500,
+    1100,
+    1300,
+    1500
+   ],
+   "houseCost": 200,
+   "colorHex": "#0036AB",
+   "layout": {
+    "side": "r",
+    "x": 21,
+    "y": 9,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 38,
+   "kind": "tax",
+   "name": "奢侈税",
+   "price": 100,
+   "colorHex": "#EEEEEE",
+   "layout": {
+    "side": "r",
+    "x": 21,
+    "y": 7,
+    "w": 3,
+    "h": 2
+   }
+  },
+  {
+   "i": 39,
+   "kind": "street",
+   "name": "木板路",
+   "color": "darkblue",
+   "set": "darkblue",
+   "setSize": 2,
+   "price": 400,
+   "rent": [
+    50,
+    200,
+    600,
+    1400,
+    1700,
+    2000
+   ],
+   "houseCost": 200,
+   "colorHex": "#0036AB",
+   "layout": {
+    "side": "r",
+    "x": 21,
+    "y": 5,
+    "w": 3,
+    "h": 2
+   }
+  }
+ ]
+}
