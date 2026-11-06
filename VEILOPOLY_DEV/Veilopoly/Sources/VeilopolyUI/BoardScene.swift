@@ -141,7 +141,9 @@ final class GameBoardScene: SKScene {
   vignette.lineWidth = 32; vignette.zPosition = 90; addChild(vignette)
   let icons = ["pawnBlue","carRed","shipGreen","planeYellow"]
   for i in 0..<4 {
-   let token = SKSpriteNode(texture: image(icons[i]))
+   // Kimi K2 normalized token skins are optional; keep the verified Kenney fallback.
+   let preferred = KimiVisualAssetNames.tokenCandidate(for: i).flatMap { image($0) }
+   let token = SKSpriteNode(texture: preferred ?? image(icons[i]))
    token.size = CGSize(width: VeilopolyTokenFormation.tokenSize,
                        height: VeilopolyTokenFormation.tokenSize)
    token.position = tokenPoint(0, player: i); token.zPosition = 30
