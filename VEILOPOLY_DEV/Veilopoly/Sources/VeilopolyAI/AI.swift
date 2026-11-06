@@ -18,6 +18,7 @@ public struct AIProfile: Equatable {
 public enum VeilopolyAI {
  public static func decide(_ g: GameState, _ ctx: GameContext, me: Int, level: AILevel) -> Move {
   let profile = AIProfile.forLevel(level)
+  let reserve = FinancePolicyAdvisor.analyze(g, player: me, baseReserve: profile.reserveCash).reserve
   let p = g.players[me]
   let seq = g.nextSeq
   func m(_ kind: MoveKind, tile: Int? = nil, amount: Int? = nil) -> Move {
@@ -28,7 +29,7 @@ public enum VeilopolyAI {
    if p.jailTurns > 0 {
     if p.chanceJailCards > 0 { return Move(.useJailCard, player: me, seq: seq, deck: .chance) }
     if p.chestJailCards > 0 { return Move(.useJailCard, player: me, seq: seq, deck: .chest) }
-    if p.cash > profile.reserveCash + 50 && p.jailTurns == 1 { return m(.payBail) }
+    if p.cash > reserve + 50 && p.jailTurns == 1 { return m(.payBail) }
    }
    return m(.rollDice)
   case .moveAnim: return m(.applyMovement)
@@ -36,7 +37,7 @@ public enum VeilopolyAI {
    guard let i = g.turn.pendingPurchase else { return m(.resolveTile) }
    let property = g.board[i]
    let valuation = estimate(g, i, me, level)
-   if p.cash - property.price >= profile.reserveCash && valuation * 100 >= property.price * profile.buyPercent {
+   if p.cash - property.price >= reserve && valuation * 100 >= property.price * profile.buyPercent {
     return m(.buyProperty, tile: i)
    }
    return m(.startAuction, tile: i)
@@ -44,12 +45,12 @@ public enum VeilopolyAI {
    guard let auction = g.auction else { return m(.bid) }
    let valuation = estimate(g, auction.tile, me, level) * profile.maxBidPercent / 100
    let nextBid = auction.currentBid == 0 ? 1 : auction.currentBid + max(1, auction.currentBid / 10)
-   if nextBid <= valuation && nextBid <= p.cash - profile.reserveCash {
+   if nextBid <= valuation && nextBid <= p.cash - reserve {
     return m(.bid, amount: nextBid)
    }
    return m(.bid, amount: 0)
   case .manage:
-   // Pure adjudication of due liabilities and mature savings/investments.
+   // Pure adjudication of due liabilities, savings and simulated investments.
    if let bankMove = FinancialRuleJudge.recommendation(g, player: me) { return bankMove }
    // Build only on an even-development minimum, and never in a mortgaged group.
    let owned = g.board.filter { $0.kind == .street && $0.owner == me && !$0.mortgaged }
@@ -59,41 +60,15 @@ public enum VeilopolyAI {
     guard group.allSatisfy({ $0.owner == me && !$0.mortgaged }) else { continue }
     let level = tile.hotel ? 5 : tile.houses
     let low = group.map { $0.hotel ? 5 : $0.houses }.min() ?? 0
-    if level == low && level < 5 && p.cash - tile.houseCost >= profile.reserveCash &&
+    if level == low && level < 5 &&
+       (p.cash - tile.houseCost >= reserve ||
+        (level < 4 && (g.banking?.freeHouseCredits[me] ?? 0) > 0)) &&
        (level == 4 ? g.bank.hotels > 0 : g.bank.houses > 0) {
      return m(.buildHouse, tile: tile.i)
     }
    }
-   if profile.tradingEnabled &&
-      !g.moveLog.suffix(25).contains(where: { $0.player == me && $0.type == .proposeTrade }) {
-    for tile in owned {
-     guard let color = tile.color else { continue }
-     let group = g.board.filter { $0.color == color }
-     let mine = group.filter { $0.owner == me }.count
-     if mine >= group.count - 1,
-        let wanted = group.first(where: { $0.owner != nil && $0.owner != me && !$0.improved }),
-        let other = wanted.owner {
-      let offerPrice = wanted.price * 5 / 4
-      if p.cash - offerPrice >= profile.reserveCash {
-       return Move(.proposeTrade, player: me, seq: seq, to: other,
-                   offer: TradeTransfer(cash: offerPrice), request: TradeTransfer(tiles: [wanted.i]))
-      }
-     }
-    }
-   }
    return m(.endTurn)
-  case .trade:
-   guard let trade = g.trade else { return m(.rejectTrade) }
-   // Receiver's utility is measured by the same integer valuation function; no RNG.
-   let incoming = trade.offer.cash + trade.offer.tiles.reduce(0) { $0 + estimate(g, $1, me, level) }
-   let outgoing = trade.request.cash + trade.request.tiles.reduce(0) { $0 + estimate(g, $1, me, level) }
-   let incomingCards = trade.offer.chanceCards + trade.offer.chestCards
-   let outgoingCards = trade.request.chanceCards + trade.request.chestCards
-   if incoming + 50 * incomingCards >= outgoing + 50 * outgoingCards &&
-      trade.request.cash <= p.cash {
-    return m(.acceptTrade)
-   }
-   return m(.rejectTrade)
+  case .trade: return m(.rejectTrade)
   case .debt: return m(.declareBankruptcy)
   case .finished: return m(.endTurn)
   }
