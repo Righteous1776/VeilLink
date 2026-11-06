@@ -210,6 +210,7 @@ public struct VeilopolyGameView: View {
     dayFelt.toggle()
     model.scene.setDayFelt(dayFelt)
    }
+   .disabled(!model.scene.supportsDayFelt)
    Button("重新开局") { showRestart = true }
    Button("本局信息") { showGameInfo = true }
    Button("取消", role: .cancel) {}

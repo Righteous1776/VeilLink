@@ -95,11 +95,14 @@ final class GameBoardScene: SKScene {
  }
  /// Kimi board theme is a purely visual preference, never a reducer command.
  func setDayFelt(_ enabled: Bool) {
+  // Do not claim a light procedural fallback when the Kimi art is absent.
+  guard let kimiSkin else { dayFelt = false; return }
   dayFelt = enabled
-  kimiSkin?.setLight(enabled)
+  kimiSkin.setLight(enabled)
   backgroundColor = enabled ? SKColor(red: 0.96, green: 0.94, blue: 0.90, alpha: 1)
                             : SKColor(red: 0.065, green: 0.09, blue: 0.13, alpha: 1)
  }
+ var supportsDayFelt: Bool { kimiSkin != nil }
  var isDayFelt: Bool { dayFelt }
  private func buildBoard() {
   // Promote only when the COMPLETE dark K2 asset set is present in Bundle.module.
