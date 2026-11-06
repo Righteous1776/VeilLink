@@ -125,3 +125,8 @@ Owner 最新授权：Astra 不再做源码审计或 SwiftUI 编码，而是为 K
 The Owner-authorized Astra B01 visuals now have a first SwiftUI runtime bridge in `dev/veilopoly`: 13 selected assets (action buttons, panel/card skins, event feedback, BUY/BANK/SETTLEMENT tickets and two staged AUCTION/TRADE skins). The original 91-alias set remains preserved under `INCOMING_ASSETS/ASTRA_B01_v1_1`, no Kimi art was replaced. **Kimi should not reproduce these B01 2D panels, tickets, or buttons.** Continue K2 2.5D board/tiles/pawns/buildings and independently deliver renderable assets/complex scene animation, then check color/material coherence with Astra. B02 2D VFX remains a separate pending Astra task.
 
 Actual Apple iOS UI compile, SpriteKit composition and touchscreen acceptance are pending. See `Veilopoly/docs/ASTRA_B01_RUNTIME_INTEGRATION_20261107.md`.
+
+
+## Astra B01 runtime v1.1 · twenty selected 2D skins (2026-11-07)
+
+Astra B01 first runtime stage has been expanded to **20 selected textures**: primary/secondary button states, four compact player HUD statuses, action/glass panels, error/positive feedback, card face, and five scene hero ticket skins. The latest package is still present at `INCOMING_ASSETS/ASTRA_B01_v1_1/` with original SVG/PNG/source manifests. BUY/BANK/SETTLEMENT tickets now have actual data-bound UI; AUCTION/TRADE hero artwork is staged only pending safe interactive hit overlays. **Do not redo this 2D work**; keep Kimi assigned to board/tiles/pawns/buildings and complex animation. Review aesthetic alignment with the 2D skins when K2 2.5D exports arrive. Astra B02 2D effect frames are a separate future batch. Apple SDK verification remains pending.
