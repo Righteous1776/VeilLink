@@ -28,6 +28,17 @@ No changes to `VeilopolyEngine`, `Move`, `Effect`, `GameState`, RNG, transport i
 ## Acceptance state
 
 - K1 upload/asset hashing: PASS.
-- K1 staging in dedicated GitHub branch: pending until commit.
+- K1 staging in dedicated GitHub branch: COMPLETE (development-only; see GitHub source admission below).
 - Game assets as valid visible runtime skin: **partial only**; alternate card backs & dice sprite atlas have been copied for further UI work.
 - Actual iOS 16 build, rotated full-screen presentation, safe-area capsule hit testing, animation ACK: **NOT VERIFIED**.
+
+## Cross-manifest hash audit (K1 vs exact repository resources)
+
+- `Sources/VeilopolyUI/Resources/die4.png`: Kimi K1 manifest SHA-256 `ae12bf1bd38d223417328d52a4ef6b691d596b4dd1a751daa35237cc1fe5a4`; actual original repo resource SHA-256 `ae12bf1bd43d8f223417328d52a4ef6b691d596b4dd1a751daa35237cc1fe5a4`. **K1 inventory typo — do not replace working binary**.
+- `Sources/VeilopolyUI/Resources/mortgage.wav`: Kimi K1 manifest SHA-256 `f5d1be1f2aafb79711f4925d1671e81c3f9ee1b1c095d89b0df26098c4b3b64`; actual original repo resource SHA-256 `f5d1be1f2aafb79711f4925d1671e81c3f9ee1b1c0955d89b0df26098c4b3b64`. **K1 inventory typo — do not replace working binary**.
+
+The original supplied K1 manifest remains immutable in intake. The K2 delta should correct these exact two metadata entries; the 9 newly delivered files still match their own supplied SHA-256 checksums.
+
+## GitHub source admission
+
+Original K1 source ZIP was extracted (not committed as ZIP) into `VEILOPOLY_DEV/INCOMING_ASSETS/KIMI_K1_v1/` by commit `38f8c90bb2b60b39dbf4905d305937390033712e`. Supplementary atlas/card PNG and converted iOS WAV assets were added to the development-only SwiftPM resources. Swift interface tests were added at `Veilopoly/Tests/VeilopolyUITests/K1DiceAtlasTests.swift`; no product main merge, P5 or IPA action.
