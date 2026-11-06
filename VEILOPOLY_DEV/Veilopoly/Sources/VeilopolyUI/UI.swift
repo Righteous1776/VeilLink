@@ -272,8 +272,10 @@ public struct VeilopolyGameView: View {
       .accessibilityLabel("最近事件：\(model.lastFeedback)")
       if let error = model.errorMessage {
        Label("操作未完成：\(error)", systemImage: "exclamationmark.triangle.fill")
-        .foregroundStyle(.orange).font(.caption)
-        .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+        .labelStyle(.titleOnly)
+        .foregroundColor(.white).font(.caption.weight(.medium))
+        .padding(.leading, 48).padding(.trailing, 10).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(AstraB01FeedbackSkin(error: true))
       }
       tileInspector
@@ -467,6 +469,7 @@ public struct VeilopolyGameView: View {
       astraBuyHero(model.game.board[i])
       HStack {
        action("购买",symbol:"house") { model.perform(.buyProperty,tile:i) }
+        .disabled(model.game.players[model.actor].cash < model.game.board[i].price)
        action("送入拍卖",symbol:"gavel",secondary:true) { model.perform(.startAuction,tile:i) }
       }
      }
@@ -505,7 +508,8 @@ public struct VeilopolyGameView: View {
     .frame(width: 256, height: 174).accessibilityHidden(true)
    astraHeroField(tile.name, x: 156, y: 56, width: 160)
    astraHeroField("¥\(tile.price)", x: 189, y: 94, width: 94)
-   astraHeroField("¥\(model.game.players[model.actor].cash - tile.price)",
+   astraHeroField(model.game.players[model.actor].cash >= tile.price
+                   ? "¥\(model.game.players[model.actor].cash - tile.price)" : "余额不足",
                   x: 189, y: 120, width: 94)
    astraHeroField("¥\(tile.rent.first ?? 0)", x: 189, y: 146, width: 94)
   }
@@ -555,6 +559,7 @@ public struct VeilopolyGameView: View {
      TextField("竞价金额",text:$bidderCash).keyboardType(.numberPad)
       .textFieldStyle(.roundedBorder)
      action("出价",symbol:"hand.raised") { model.perform(.bid,amount:Int(bidderCash) ?? 0) }
+      .disabled((Int(bidderCash) ?? 0) <= auction.currentBid)
      action("弃权",symbol:"xmark.circle",secondary:true) { model.perform(.bid,amount:0) }
     }
    }
