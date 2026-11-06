@@ -81,3 +81,14 @@ ChatGPT 当前 SpriteKit 资源名称：`pawnBlue`、`carRed`、`shipGreen`、`p
 K1 内容还有 **2 项旧资源 SHA-256 记录错误**（`die4.png` 和 `mortgage.wav`，实际二进制无须重做）、四个 SVG 缺失 `viewBox`、骰子 XML 原始文件名失配（工程侧已修复副本）。修订 K2 manifest 并补充准确原始素材 URL；不必重发未变动的大包。
 
 务必记住：`sources/board.json`、`sources/cards.json` 属于未被 Owner 批准的规则提案；不得因为已有预览就把它们变成引擎正式源。
+
+## K1 已接收，后续请按 K2 增量交付（2026-11-06）
+
+- 已收到 `Veilopoly_Kimi_K1_v1.zip` 并解包到 `VEILOPOLY_DEV/INCOMING_ASSETS/KIMI_K1_v1/`；补充贴图、图集与 WAV 已加入独立 SwiftPM 资源，未触及 VeilLink main。
+- **下一任务改为 K2，而非重新制作 K1。** 请直接读取 `Veilopoly/docs/KIMI_K2_LANDSCAPE_DELTA.md`（精确工作项）及 `Veilopoly/docs/ASSET_GAP_REGISTER.md`（已收到/待补对照）。旧 K1 文件仅供源资产/历史设计参考。
+- 优先 iPhone **真实横向全屏** 两个机型设计稿：844×390pt 与 852×393pt，配 iPad 1180×820pt。左侧 40 格完整棋盘，右侧状态与操作，右上角微信小程序式双按钮胶囊。现有 iPhone 竖屏预览不得作为主界面直接落地。
+- 请补齐四个 SVG 棋子的 `viewBox`/画布尺寸/分层或透明独立 PNG 纹理、棋盘 2.5D 分层 atlas、地产图标、HUD 各阶段样式、深浅色、动画及实际来源 URL；详见 K2 文档。当前骰子六帧/旧 PNG 回退已由 SpriteKit 代码接线，勿再次交相同图集。
+- K1 旧 `ASSET_MANIFEST.json` 中 `die4.png`、`mortgage.wav` 的 SHA 与仓库资源不一致；新 manifest 请修正，不要替换正确原资源。
+- `cards.json`、`board.json` 属于**候选规则资料**，不得自行宣布为游戏正式规则。出狱卡移出/回牌池冲突由 Owner 裁决后才能修订引擎。
+- 每个 K2 增量文件务必给 `alias/path/sha256/bytes/dimensions/anchor/atlas metadata/original_asset_url/license`，注明是 `new`、`updated` 还是 `unchanged-K1`。Owner 转给 ChatGPT 复核后才算入库。
+- iOS 16 真机方向、卡片触摸、动画 ACK、音效没有通过 Apple SDK 实测；请不要标记为 DONE。
