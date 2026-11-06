@@ -222,7 +222,7 @@ public struct VeilopolyGameView: View {
      }
      .frame(maxWidth: 300).padding(22)
      .background {
-      Image(AstraB01AssetNames.cardFace, bundle: .module)
+      AstraB01Artwork.image(AstraB01AssetNames.cardFace)
        .resizable(capInsets: EdgeInsets(top: 88, leading: 26, bottom: 26, trailing: 26),
                   resizingMode: .stretch)
        .allowsHitTesting(false)
@@ -402,23 +402,34 @@ public struct VeilopolyGameView: View {
   else { dismiss() }
  }
  private var playerStrip: some View {
-  HStack(spacing: 6) {
+  // Two columns preserve readable names and money values on a narrow
+  // landscape phone sidebar; each player keeps a genuine state skin.
+  LazyVGrid(columns: [GridItem(.flexible(minimum: 0), spacing: 6),
+                      GridItem(.flexible(minimum: 0), spacing: 6)], spacing: 6) {
    ForEach(model.game.players, id: \.id) { p in
-    VStack(spacing: 4) {
-     Circle().fill([Color.blue,.red,.green,.yellow][p.id]).frame(width: 9,height: 9)
-     Text(p.name).font(.caption2).lineLimit(1)
-     Text("¥\(p.cash)").font(.system(size: 12,weight:.bold,design:.monospaced))
+    VStack(alignment: .leading, spacing: 2) {
+     Text(p.name)
+      .font(.system(size: 10, weight: .semibold))
+      .lineLimit(1).minimumScaleFactor(0.75)
+     Text("¥\(p.cash)")
+      .font(.system(size: 12, weight: .bold, design: .monospaced))
+      .lineLimit(1).minimumScaleFactor(0.70)
      Text(p.bankrupt ? "已破产" : (p.jailTurns > 0 ? "监狱" : "#\(p.position)"))
-      .font(.system(size: 10)).foregroundStyle(.secondary)
+      .font(.system(size: 9))
+      .lineLimit(1)
     }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical,8)
-    .background(AstraB01PanelSkin(.glass))
-    .overlay {
-     RoundedRectangle(cornerRadius: 11)
-      .stroke(p.id == model.actor ? Color.yellow.opacity(0.8) : .clear,
-              lineWidth: 1.5)
+    .foregroundColor(.white)
+    .padding(.leading, 43).padding(.trailing, 3)
+    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+    .background {
+     AstraB01PlayerSkin(AstraB01AssetNames.playerSkin(
+      bankrupt: p.bankrupt, jailed: p.jailTurns > 0,
+      current: p.id == model.actor))
     }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("\(p.name)，现金 ¥\(p.cash)，" +
+      (p.bankrupt ? "已破产" : p.jailTurns > 0 ? "在监狱" : "位于第 \(p.position) 格") +
+      (p.id == model.actor ? "，当前行动玩家" : ""))
    }
   }
  }
@@ -456,7 +467,7 @@ public struct VeilopolyGameView: View {
       astraBuyHero(model.game.board[i])
       HStack {
        action("购买",symbol:"house") { model.perform(.buyProperty,tile:i) }
-       action("送入拍卖",symbol:"gavel") { model.perform(.startAuction,tile:i) }
+       action("送入拍卖",symbol:"gavel",secondary:true) { model.perform(.startAuction,tile:i) }
       }
      }
     }
@@ -468,11 +479,12 @@ public struct VeilopolyGameView: View {
    }
   }
  }
- private func action(_ title: String, symbol: String, pressed: @escaping () -> Void) -> some View {
+ private func action(_ title: String, symbol: String,
+                     secondary: Bool = false, pressed: @escaping () -> Void) -> some View {
   Button(action: pressed) {
    Text(title).frame(maxWidth: .infinity, minHeight: 44)
   }
-  .buttonStyle(AstraB01ButtonStyle())
+  .buttonStyle(AstraB01ButtonStyle(secondary: secondary))
   .accessibilityLabel(title)
  }
  // Astra B01 runtime cards: backgrounds are decorative; all values below
@@ -489,7 +501,7 @@ public struct VeilopolyGameView: View {
  }
  private func astraBuyHero(_ tile: Tile) -> some View {
   ZStack(alignment: .topLeading) {
-   Image(AstraB01AssetNames.buyHero, bundle: .module).resizable()
+   AstraB01Artwork.image(AstraB01AssetNames.buyHero).resizable()
     .frame(width: 256, height: 174).accessibilityHidden(true)
    astraHeroField(tile.name, x: 156, y: 56, width: 160)
    astraHeroField("¥\(tile.price)", x: 189, y: 94, width: 94)
@@ -507,7 +519,7 @@ public struct VeilopolyGameView: View {
   let savings = account?.savings.reduce(0) { $0 + $1.principal } ?? 0
   let loans = account?.loans.reduce(0) { $0 + $1.totalDue } ?? 0
   return ZStack(alignment: .topLeading) {
-   Image(AstraB01AssetNames.bankHero, bundle: .module).resizable()
+   AstraB01Artwork.image(AstraB01AssetNames.bankHero).resizable()
     .frame(width: 256, height: 174).accessibilityHidden(true)
    astraHeroField("¥\(model.game.players[model.actor].cash)",
                   x: 146, y: 48, width: 116, height: 28)
@@ -523,7 +535,7 @@ public struct VeilopolyGameView: View {
   let winner = model.game.players[model.game.winner ?? 0]
   let propertyCount = model.game.board.filter { $0.owner == winner.id }.count
   return ZStack(alignment: .topLeading) {
-   Image(AstraB01AssetNames.settlementHero, bundle: .module).resizable()
+   AstraB01Artwork.image(AstraB01AssetNames.settlementHero).resizable()
     .frame(width: 256, height: 174).accessibilityHidden(true)
    astraHeroField(winner.name, x: 128, y: 75, width: 208, height: 22)
    astraHeroField("¥\(netWorth(winner))", x: 128, y: 123, width: 208, height: 29)
@@ -543,7 +555,7 @@ public struct VeilopolyGameView: View {
      TextField("竞价金额",text:$bidderCash).keyboardType(.numberPad)
       .textFieldStyle(.roundedBorder)
      action("出价",symbol:"hand.raised") { model.perform(.bid,amount:Int(bidderCash) ?? 0) }
-     action("弃权",symbol:"xmark.circle") { model.perform(.bid,amount:0) }
+     action("弃权",symbol:"xmark.circle",secondary:true) { model.perform(.bid,amount:0) }
     }
    }
   }
@@ -561,11 +573,11 @@ public struct VeilopolyGameView: View {
    }
    HStack {
     action("建造",symbol:"hammer") { model.perform(.buildHouse,tile:model.selectedTile) }
-    action("卖房",symbol:"minus.square") { model.perform(.sellHouse,tile:model.selectedTile) }
+    action("卖房",symbol:"minus.square",secondary:true) { model.perform(.sellHouse,tile:model.selectedTile) }
    }
    HStack {
     action("抵押",symbol:"lock") { model.perform(.mortgage,tile:model.selectedTile) }
-    action("赎回",symbol:"lock.open") { model.perform(.redeem,tile:model.selectedTile) }
+    action("赎回",symbol:"lock.open",secondary:true) { model.perform(.redeem,tile:model.selectedTile) }
    }
    Divider()
    Text("交易提案").font(.subheadline.weight(.semibold))
@@ -663,7 +675,7 @@ public struct VeilopolyGameView: View {
    }
    HStack {
     action("接受",symbol:"checkmark") { model.perform(.acceptTrade) }
-    action("拒绝",symbol:"xmark") { model.perform(.rejectTrade) }
+    action("拒绝",symbol:"xmark",secondary:true) { model.perform(.rejectTrade) }
    }
    action("还价（交换现金条件）",symbol:"arrow.triangle.2.circlepath") {
     guard let trade = model.game.trade else { return }
