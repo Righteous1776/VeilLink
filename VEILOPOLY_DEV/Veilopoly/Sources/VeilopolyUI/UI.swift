@@ -265,27 +265,13 @@ public struct VeilopolyGameView: View {
      .zIndex(1)
    }
 
+   // The top-right capsule is RESERVED for More / Exit only.
+   // Do not put gameplay toggles next to Exit: an accidental tap is costly.
    VStack(alignment: .trailing, spacing: 8) {
-    HStack(spacing: 7) {
-     Button {
-      withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
-       controlsExpanded.toggle()
-      }
-     } label: {
-      Image(systemName: controlsExpanded ? "chevron.right" : "slider.horizontal.3")
-       .font(.system(size: 17, weight: .semibold))
-       .frame(width: 46, height: 44)
-       .foregroundStyle(.black)
-       .background(.white.opacity(0.95), in: Capsule())
-       .overlay { Capsule().strokeBorder(.black.opacity(0.10), lineWidth: 1) }
-     }
-     .buttonStyle(.plain)
-     .accessibilityLabel(controlsExpanded ? "收起操作面板" : "展开操作面板")
-     .accessibilityHint("不改变棋盘大小")
-     capsuleControls
-    }
+    capsuleControls
     Spacer(minLength: 0)
     if !controlsExpanded {
+     // Daily gameplay operations have their own bottom-right entry.
      collapsedStatusButton
       .transition(.opacity)
     }
@@ -303,14 +289,33 @@ public struct VeilopolyGameView: View {
  private var controlsDrawer: some View {
   VStack(alignment: .leading, spacing: 8) {
    HStack(spacing: 8) {
+    // Far-left inside the floating drawer; not near the top-right Exit.
+    Button {
+     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
+      controlsExpanded = false
+     }
+    } label: {
+     Label("收起", systemImage: "chevron.right")
+      .font(.caption.weight(.semibold))
+      .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.drawerCloseMinWidth),
+             minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .background(.white.opacity(0.12), in: Capsule())
+    .accessibilityLabel("收起操作面板")
+    .accessibilityHint("返回最大化棋盘；与退出按钮分离")
     Text("操作面板")
-     .font(.system(size: 17, weight: .bold, design: .rounded))
+     .font(.system(size: 15, weight: .bold, design: .rounded))
+     .lineLimit(1)
+     .minimumScaleFactor(0.8)
     Spacer(minLength: 0)
     Text(phaseLabel(model.game.turn.phase))
      .font(.caption2.weight(.semibold))
      .foregroundStyle(.mint)
+     .lineLimit(1)
    }
-   .frame(minHeight: 34)
+   .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
    ScrollView(.vertical) {
     VStack(alignment: .leading, spacing: 10) {
      Text("当前：\(model.game.players[model.actor].name)")
@@ -356,8 +361,8 @@ public struct VeilopolyGameView: View {
   .accessibilityElement(children: .contain)
  }
 
- /// A small, live, tappable status badge replaces the permanent 40%-width
- /// sidebar while leaving phase-specific engine actions one tap away.
+ /// Bottom-right gameplay entry is separated from the top-right More/Exit
+ /// capsule. This live status button replaces the permanent wide sidebar.
  private var collapsedStatusButton: some View {
   Button {
    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
@@ -380,6 +385,7 @@ public struct VeilopolyGameView: View {
    .foregroundStyle(.white)
    .padding(.horizontal, 14)
    .padding(.vertical, 10)
+   .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
    .background(AstraB01PanelSkin(.glass))
    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
   }

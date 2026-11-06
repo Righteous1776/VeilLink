@@ -11,6 +11,20 @@ public enum VeilopolyLandscapeLayout {
  public static let boardVerticalInset = 4.0
  public static let drawerTopInset = 54.0
  public static let drawerBottomInset = 10.0
+ public static let drawerCloseMinWidth = 78.0
+
+ /// Conservative center-to-center distances in design points, used for
+ /// regression checks. Top-right Exit center is 22pt from top; the
+ /// collapsed status entry is anchored near the bottom. Drawer-close
+ /// sits at the LEFT end of the overlay, away from the exit capsule.
+ public static func topExitToBottomActionVerticalDistance(viewportHeight: Double) -> Double {
+  max(0, viewportHeight - 2 * (boardVerticalInset + capsuleTouchHeight / 2))
+ }
+
+ public static func topExitToDrawerCloseHorizontalDistance(viewportWidth: Double) -> Double {
+  let drawer = overlayDrawerWidth(for: viewportWidth)
+  return max(0, drawer - 10 - drawerCloseMinWidth / 2 - capsuleButtonWidth / 2)
+ }
 
  public static func isLandscape(width: Double, height: Double) -> Bool {
   width > height

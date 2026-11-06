@@ -73,4 +73,23 @@ final class LandscapeLayoutTests: XCTestCase {
   XCTAssertEqual(VeilopolyLandscapeLayout.overlayDrawerHeight(for: -5), 0)
  }
 
+ func testOperationEntryIsFarFromTopRightExit() {
+  // A typical iPhone landscape viewport: intentionally separated by >300pt.
+  XCTAssertGreaterThan(
+   VeilopolyLandscapeLayout.topExitToBottomActionVerticalDistance(viewportHeight: 390), 300)
+  XCTAssertGreaterThan(
+   VeilopolyLandscapeLayout.topExitToBottomActionVerticalDistance(viewportHeight: 320), 200)
+  XCTAssertGreaterThan(
+   VeilopolyLandscapeLayout.topExitToDrawerCloseHorizontalDistance(viewportWidth: 844), 280)
+  XCTAssertGreaterThan(
+   VeilopolyLandscapeLayout.topExitToDrawerCloseHorizontalDistance(viewportWidth: 568), 200)
+ }
+
+ func testDrawerCollapseTargetStaysTouchSized() {
+  XCTAssertGreaterThanOrEqual(VeilopolyLandscapeLayout.drawerCloseMinWidth, 44)
+  XCTAssertGreaterThanOrEqual(VeilopolyLandscapeLayout.capsuleTouchHeight, 44)
+  XCTAssertEqual(
+   VeilopolyLandscapeLayout.topExitToBottomActionVerticalDistance(viewportHeight: -1), 0)
+ }
+
 }
