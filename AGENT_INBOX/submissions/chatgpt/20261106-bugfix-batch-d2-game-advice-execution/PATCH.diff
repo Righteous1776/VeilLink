@@ -1,0 +1,205 @@
+diff --git a/VeilLink/App/AppModel.swift b/VeilLink/App/AppModel.swift
+--- a/VeilLink/App/AppModel.swift
++++ b/VeilLink/App/AppModel.swift
+@@ -934,8 +934,40 @@
+         )
+     }
+ 
+-    @discardableResult
+-    func executeAgentSuggestedGameMove() -> String {
++    /// Rebuild from the authenticated, persisted conversation instead of using
++    /// a potentially stale SwiftUI sheet snapshot. This only requests a native
++    /// legal-action recommendation; it never executes or sends a move.
++    @discardableResult
++    func refreshAgentGameRecommendation() -> String {
++        guard let context = gameIntelligence.context,
++              let game = MiniGameKind(rawValue: context.gameID),
++              [.gomoku, .xiangqi, .ludo].contains(game) else {
++            return "本游戏暂不支持可执行的原生规则建议，只能查看局面分析。"
++        }
++        guard let localIdentityID = identity.activeIdentity?.id,
++              let conversationID = database.conversationID(
++                localIdentityID: localIdentityID,
++                for: context.peerIdentityID
++              ),
++              let latestSession = MiniGameSessionBuilder.session(
++                id: context.sessionID,
++                from: database.fetchMessages(conversationID: conversationID)
++              ),
++              latestSession.status == .active else {
++            return "未找到当前有效对局；不能用过期棋谱生成可执行建议。"
++        }
++        gameIntelligence.update(
++            session: latestSession,
++            conversationTitle: context.conversationTitle,
++            peerIdentityID: context.peerIdentityID
++        )
++        return latestSession.isLocalTurn
++            ? "已重新读取最新棋局，原生规则 Bot 正在生成合法建议。"
++            : "当前轮到对方；可查看局面，但无法执行我方落子。"
++    }
++
++    @discardableResult
++    func executeAgentSuggestedGameMove() -> String {
+         guard agentControls.allowSuggestedGameMoveExecution else {
+             return "AI 控制中心当前禁止执行建议着法。你仍可以查看分析或手动在棋盘操作。"
+         }
+diff --git a/VeilLink/UI/AgentGameAssistantSheet.swift b/VeilLink/UI/AgentGameAssistantSheet.swift
+--- a/VeilLink/UI/AgentGameAssistantSheet.swift
++++ b/VeilLink/UI/AgentGameAssistantSheet.swift
+@@ -5,8 +5,9 @@
+     let conversation: ConversationSummary
+     let session: MiniGameSessionSnapshot
+ 
+-    @ObservedObject private var intelligence: AgentGameContextBroker
+-    @Environment(\.dismiss) private var dismiss
++    @ObservedObject private var intelligence: AgentGameContextBroker
++    @ObservedObject private var controls: AgentControlCenterSettings
++    @Environment(\.dismiss) private var dismiss
+     @State private var actionStatus: String?
+ 
+     init(model: AppModel, conversation: ConversationSummary, session: MiniGameSessionSnapshot) {
+@@ -13,10 +14,15 @@
+         self.model = model
+         self.conversation = conversation
+         self.session = session
+-        _intelligence = ObservedObject(wrappedValue: model.gameIntelligence)
+-    }
+-
+-    var body: some View {
++        _intelligence = ObservedObject(wrappedValue: model.gameIntelligence)
++        _controls = ObservedObject(wrappedValue: model.agentControls)
++    }
++
++    private var nativeMoveSupported: Bool {
++        [.gomoku, .xiangqi, .ludo].contains(session.game)
++    }
++
++    var body: some View {
+         NavigationView {
+             VStack(spacing: 12) {
+                 contextCard
+@@ -93,7 +99,13 @@
+                     }
+                 }
+ 
+-                if let fly = context.maleCNS {
++                if nativeMoveSupported && !controls.allowSuggestedGameMoveExecution {
++                    Text("执行建议着法默认关闭。可以只查看推荐；若要手动发送，需先在下方明确开启权限。")
++                        .font(.caption2)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++
++                if let fly = context.maleCNS {
+                     Text("MaleCNS 辅助：\(fly.topReadouts.prefix(2).joined(separator: " · "))")
+                         .font(.caption2.monospaced())
+                         .foregroundColor(VeilTheme.tertiaryText)
+@@ -118,27 +130,62 @@
+         .overlay(VeilPanelShape(cut: 11, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+     }
+ 
+-    private var quickActions: some View {
+-        HStack(spacing: 8) {
+-            Button {
+-                model.agent.send("请分析当前对局。只使用本机提供的局面和合法候选动作，说明你推荐哪一步以及理由；不要发明候选列表之外的着法。")
+-            } label: {
+-                Label("分析", systemImage: "sparkles")
+-                    .frame(maxWidth: .infinity)
+-            }
+-            .buttonStyle(VeilGameSecondaryButtonStyle())
+-
+-            Button {
+-                actionStatus = model.executeAgentSuggestedGameMove()
+-            } label: {
+-                Label("执行建议", systemImage: "play.fill")
+-                    .frame(maxWidth: .infinity)
+-            }
+-            .buttonStyle(VeilGamePrimaryButtonStyle())
+-            .disabled(intelligence.currentSuggestedAction() == nil)
+-        }
+-        .font(.caption.weight(.semibold))
+-    }
++    private var quickActions: some View {
++        VStack(alignment: .leading, spacing: 8) {
++            if nativeMoveSupported {
++                Toggle(isOn: Binding(
++                    get: { controls.allowSuggestedGameMoveExecution },
++                    set: { model.setAgentSuggestedGameMoveExecutionEnabled($0) }
++                )) {
++                    Text("允许手动执行规则引擎建议")
++                        .font(.caption.weight(.semibold))
++                }
++                .tint(VeilTheme.gold)
++                Text("默认关闭。只有点击“执行建议”才会发送着法；发送前仍会读取最新棋谱并重新校验合法性。")
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.secondaryText)
++            } else {
++                Text("当前游戏没有可执行的原生规则建议。灵核仅提供局面解释，不能代替专用游戏 Bot 操作。")
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.secondaryText)
++            }
++
++            HStack(spacing: 8) {
++                Button {
++                    model.agent.send("请分析当前对局。仅引用本机局面和已列出的合法候选；如果没有合法候选，请明确说无法推荐可执行动作，不能编造着法。")
++                } label: {
++                    Label("只读分析", systemImage: "sparkles")
++                        .frame(maxWidth: .infinity)
++                }
++                .buttonStyle(VeilGameSecondaryButtonStyle())
++
++                if nativeMoveSupported {
++                    Button {
++                        actionStatus = model.executeAgentSuggestedGameMove()
++                    } label: {
++                        Label("执行建议", systemImage: "play.fill")
++                            .frame(maxWidth: .infinity)
++                    }
++                    .buttonStyle(VeilGamePrimaryButtonStyle())
++                    .disabled(
++                        !controls.allowSuggestedGameMoveExecution
++                            || intelligence.currentSuggestedAction() == nil
++                    )
++                }
++            }
++
++            if nativeMoveSupported {
++                Button {
++                    actionStatus = model.refreshAgentGameRecommendation()
++                } label: {
++                    Label("按最新棋谱刷新合法建议", systemImage: "arrow.clockwise")
++                        .frame(maxWidth: .infinity)
++                }
++                .buttonStyle(VeilGameSecondaryButtonStyle())
++            }
++        }
++        .font(.caption.weight(.semibold))
++    }
+ 
+     private func infoChip(_ title: String, _ value: String) -> some View {
+         HStack(spacing: 4) {
+diff --git a/VeilLinkTests/AgentControlAndLocalGameTests.swift b/VeilLinkTests/AgentControlAndLocalGameTests.swift
+--- a/VeilLinkTests/AgentControlAndLocalGameTests.swift
++++ b/VeilLinkTests/AgentControlAndLocalGameTests.swift
+@@ -34,9 +34,18 @@
+ 
+         let settings = AgentControlCenterSettings(defaults: defaults)
+ 
+-        XCTAssertFalse(settings.allowSuggestedGameMoveExecution)
+-        XCTAssertEqual(settings.gameDecisionMode, .baselineOnly)
+-    }
++        XCTAssertFalse(settings.allowSuggestedGameMoveExecution)
++        XCTAssertEqual(settings.gameDecisionMode, .baselineOnly)
++
++        // An explicit local toggle must persist, without changing safe defaults.
++        settings.allowSuggestedGameMoveExecution = true
++        XCTAssertTrue(settings.allowSuggestedGameMoveExecution)
++        let reloaded = AgentControlCenterSettings(defaults: defaults)
++        XCTAssertTrue(reloaded.allowSuggestedGameMoveExecution)
++        reloaded.resetToSafeDefaults()
++        XCTAssertFalse(reloaded.allowSuggestedGameMoveExecution)
++        XCTAssertFalse(AgentControlCenterSettings(defaults: defaults).allowSuggestedGameMoveExecution)
++    }
+ 
+     func testLocalGomokuFallsBackToBaselineAndCompletesAITurn() async throws {
+         let (defaults, suite) = isolatedDefaults()
