@@ -103,3 +103,12 @@
 - `VeilopolyEngine.apply`: post-validate all player cash bounds, financial ledger integrity, and bank inventory (0…32 houses, 0…12 hotels) **before** committing a move. Failure keeps original GameState and RNG unchanged.
 - **Local test evidence:** Swift 6.2.1/Linux `swift test --jobs 2` **61/61 PASS, 0 failures**, including original AI bounded tests and the 8 new regression cases. This is the previous local working tree with parallel, not-yet-promoted edits, **not a clean checkout of the exact GitHub branch HEAD**. No hosted CI/iOS SDK run is claimed.
 - Kimi visual assets, GameTransport P5 adapter, Protocol 4, VLGM1, SQLite Schema V8, VeilLink main, IPA/workflows untouched.
+
+## P4 UI/UE & procedural VFX V2 (2026-11-06)
+
+- Source commits `d08e74fea8edaf199f618160da87f45eb1b4a57f`, `aa229b7131fe987cc2949e86da17c33cc0b4a420`, `695e4fa57ba6ec1dbe319460f3bebe8eb4bf3f36`, `1bab79e9a625f5e41c51d4b854df812da2955a77`, `594ba969c3c05c8c0a9d9bb175bccdc69f92d2e6`, `38c03a531c0d9499fca3241aea53102debf15020`.
+- UI interaction: an explicit 44pt action standard and skip button, 40-tile inspector with scene-local touch hit-test + yellow focus marker, prominent last-Event HUD, error feedback, modal card reading gate (human dismiss vs AI autoplay), and Reduce Motion terminal states.
+- Procedural art placeholders: board tile captions, mint current-position marker, pulse ring, pawn-local cash float, readable turn/bonus/win banner, per-scene texture cache; no Kimi assets modified.
+- Portable UI tests **8/8 PASS** in local Swift 6.2.1/Linux (`CardRevealGateTests` 5, `VeilopolyEventFeedbackTests` 3). Extended general test run was stopped before completion due to long deterministic tests and does NOT establish a new full-suite PASS.
+- Visual and interaction handoff: `Veilopoly/docs/P4_INTERACTION_AND_VFX_V2_20261106.md`. iOS 16 Xcode/SpriteKit/SwiftUI type-check and physical graphics/touch acceptance **NOT VERIFIED**.
+- Live branch remains isolated from VeilLink product main, transport, SQLite V8, workflows, IPA; P5 requires separate permission.

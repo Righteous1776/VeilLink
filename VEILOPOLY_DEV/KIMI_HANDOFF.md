@@ -103,3 +103,11 @@ The Owner has added photographed reference rules for bank loans, deposits, simul
 - After the current K2 landscape full-screen deliverable, provide K3 **finance HUD** preview states: deposits and loan quote, period timeline, virtual product cards, loan collateral badge, original 8-star visual in printed mode. Existing More/Exit capsule stays.
 - Financial amounts and rule outcomes must come from provided data or show a clearly disabled/undecided state; no real-money gambling or wagering interfaces.
 - Kimi does not change VeilopolyEngine, AI/Net, main, protocols, version/IPA; file manifest and license provenance are required for new visuals.
+
+## P4 UI/UE V2 已有程序化特效，Kimi 请直接精修（2026-11-06）
+
+最新 VFX 对接规格：`Veilopoly/docs/P4_INTERACTION_AND_VFX_V2_20261106.md`。
+
+ChatGPT 已制作事件提示 HUD、地块高亮与速览、真人卡牌确认/AI 自动继续、SpriteKit 地块扩散环、现金浮字及回合/胜利横幅，均为**可以被 Kimi 替换的视觉 fallback**。请 K2/K3 只交付高清美术和规格：`fxTilePulseAtlas`、`fxCashChipAtlas`、`fxTurnBanner`、`fxVictoryBadge`、`fxPawnShadowAtlas`、`uiCardFaceFrame`（可提出别名映射，不改变逻辑协议）。按事件名与最终落点提供 atlas frame/anchor/zPosition/timing、减少动态效果静态帧、许可证、SHA-256。
+
+不要重做已提交的骰子六面图集或主动增加规则玩法；不能将模型资产返回当作 SwiftUI/SpriteKit 的运行通过证据。
