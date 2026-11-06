@@ -9,6 +9,12 @@ import VeilopolyEngine
 final class KimiK2BoardSkin {
  let tiles: [Int: SKSpriteNode]
  let usesBuildingSprites: Bool
+ private(set) var isLight = false
+ private let backgrounds: [String: SKSpriteNode]
+ private let darkBackgroundTextures: [String: SKTexture]
+ private let lightBackgroundTextures: [String: SKTexture]
+ private let darkTileFrames: [SKTexture]
+ private let lightTileFrames: [SKTexture]
 
  private let ownerTextures: [SKTexture]
  private let mortgageTexture: SKTexture
@@ -21,10 +27,19 @@ final class KimiK2BoardSkin {
  private var buildingSprites: [Int: [SKSpriteNode]] = [:]
  private var lastBuildingState: [Int: Int] = [:]
 
- private init(tiles: [Int: SKSpriteNode], ownerTextures: [SKTexture],
-              mortgageTexture: SKTexture, shadowTexture: SKTexture,
-              houseTexture: SKTexture?, hotelTexture: SKTexture?) {
-  self.tiles=tiles; self.ownerTextures=ownerTextures
+ private init(tiles: [Int: SKSpriteNode], backgrounds: [String: SKSpriteNode],
+              darkBackgroundTextures: [String: SKTexture],
+              lightBackgroundTextures: [String: SKTexture],
+              darkTileFrames: [SKTexture], lightTileFrames: [SKTexture],
+              ownerTextures: [SKTexture], mortgageTexture: SKTexture,
+              shadowTexture: SKTexture, houseTexture: SKTexture?, hotelTexture: SKTexture?) {
+  self.tiles=tiles
+  self.backgrounds=backgrounds
+  self.darkBackgroundTextures=darkBackgroundTextures
+  self.lightBackgroundTextures=lightBackgroundTextures
+  self.darkTileFrames=darkTileFrames
+  self.lightTileFrames=lightTileFrames
+  self.ownerTextures=ownerTextures
   self.mortgageTexture=mortgageTexture
   self.buildingShadowTexture=shadowTexture
   self.houseTexture=houseTexture
@@ -34,10 +49,15 @@ final class KimiK2BoardSkin {
 
  static func install(in scene: SKScene, load: (String) -> SKTexture?) -> KimiK2BoardSkin? {
   guard KimiK2BoardCatalog.runtimeEnabled, KimiK2TileMap.tiles.count == 40 else { return nil }
+  // All eight theme-specific PNGs have already passed Git object/byte audit.
+  // Treat theme loading as one transaction: missing art falls back to the
+  // original procedural board instead of leaving a half-skinned state.
   let names = [
    "kimiK2BoardTableDark", "kimiK2BoardEdgeDark", "kimiK2BoardBaseDark",
-   "kimiK2BoardFrameDark", "kimiK2BoardCenterEmblem", "kimiK2TilesDark",
-   "kimiK2OwnerStripes", "kimiK2TileMortgageOverlay", "kimiK2BuildingShadow"
+   "kimiK2BoardFrameDark", "kimiK2BoardTableLight", "kimiK2BoardEdgeLight",
+   "kimiK2BoardBaseLight", "kimiK2BoardFrameLight", "kimiK2BoardCenterEmblem",
+   "kimiK2TilesDark", "kimiK2TilesLight", "kimiK2OwnerStripes",
+   "kimiK2TileMortgageOverlay", "kimiK2BuildingShadow"
   ]
   var textures: [String: SKTexture] = [:]
   for name in names {
@@ -45,11 +65,12 @@ final class KimiK2BoardSkin {
    textures[name] = resource
   }
   guard let atlas = textures["kimiK2TilesDark"],
+        let lightAtlas = textures["kimiK2TilesLight"],
         let owners = textures["kimiK2OwnerStripes"],
         let mortgage = textures["kimiK2TileMortgageOverlay"],
         let shadow = textures["kimiK2BuildingShadow"] else { return nil }
 
-  let frames: [SKTexture]? = {
+  func frames(for atlas: SKTexture) -> [SKTexture]? {
    var result: [SKTexture] = []
    for tile in KimiK2TileMap.tiles {
     let frame = KimiK2AtlasGeometry.Rect(tile.pixelX, tile.pixelY,
@@ -60,24 +81,30 @@ final class KimiK2BoardSkin {
     subtexture.filteringMode = .linear
     result.append(subtexture)
    }
-   return result
-  }()
-  guard let frames, frames.count == 40 else { return nil }
+   return result.count == 40 ? result : nil
+  }
+  guard let darkFrames = frames(for: atlas),
+        let lightFrames = frames(for: lightAtlas) else { return nil }
 
-  // The Kimi base, edge and frame already contain the projected board shape.
-  // Do not add a second yScale or reinterpret their 1024×940 canvas.
-  for (name, z) in [
-   ("kimiK2BoardTableDark", CGFloat(0)),
-   ("kimiK2BoardEdgeDark", CGFloat(1)),
-   ("kimiK2BoardBaseDark", CGFloat(2)),
-   ("kimiK2BoardFrameDark", CGFloat(3))
-  ] {
-   guard let texture = textures[name] else { continue }
-   let background = SKSpriteNode(texture: texture)
+  // K2 projected layers share a single fixed canvas. Never apply a second
+  // perspective transform when swapping day/night art at runtime.
+  let backgroundKeys: [(key: String, z: CGFloat)] = [
+   ("BoardTable", 0), ("BoardEdge", 1), ("BoardBase", 2), ("BoardFrame", 3)
+  ]
+  var backgrounds: [String: SKSpriteNode] = [:]
+  var darkBackgrounds: [String: SKTexture] = [:]
+  var lightBackgrounds: [String: SKTexture] = [:]
+  for item in backgroundKeys {
+   guard let dark = textures["kimiK2" + item.key + "Dark"],
+         let light = textures["kimiK2" + item.key + "Light"] else { return nil }
+   darkBackgrounds[item.key] = dark
+   lightBackgrounds[item.key] = light
+   let background = SKSpriteNode(texture: dark)
    background.position = CGPoint(x: 512, y: 470)
    background.size = CGSize(width: 1024, height: 940)
-   background.zPosition = z
-   background.name = "KimiK2/" + name
+   background.zPosition = item.z
+   background.name = "KimiK2/" + item.key
+   backgrounds[item.key] = background
    scene.addChild(background)
   }
   if let texture = textures["kimiK2BoardCenterEmblem"] {
@@ -95,7 +122,7 @@ final class KimiK2BoardSkin {
   }
   var tileSprites: [Int: SKSpriteNode] = [:]
   for (index, tile) in KimiK2TileMap.tiles.enumerated() {
-   let sprite = SKSpriteNode(texture: frames[index])
+   let sprite = SKSpriteNode(texture: darkFrames[index])
    sprite.position = CGPoint(x: CGFloat(tile.centerX), y: CGFloat(tile.centerY))
    sprite.size = CGSize(width: CGFloat(tile.displayWidth), height: CGFloat(tile.displayHeight))
    sprite.zRotation = CGFloat(tile.rotationRadians)
@@ -104,9 +131,27 @@ final class KimiK2BoardSkin {
    scene.addChild(sprite)
    tileSprites[index] = sprite
   }
-  return KimiK2BoardSkin(tiles: tileSprites, ownerTextures: ownerTextures,
+  return KimiK2BoardSkin(tiles: tileSprites, backgrounds: backgrounds,
+                         darkBackgroundTextures: darkBackgrounds,
+                         lightBackgroundTextures: lightBackgrounds,
+                         darkTileFrames: darkFrames, lightTileFrames: lightFrames,
+                         ownerTextures: ownerTextures,
                          mortgageTexture: mortgage, shadowTexture: shadow,
                          houseTexture: load("house"), hotelTexture: load("hotel"))
+ }
+
+ /// Swap preloaded visual textures without recreating Engine, tile nodes,
+ /// touch regions, dynamic owner/building state, or the camera.
+ func setLight(_ light: Bool) {
+  guard isLight != light else { return }
+  isLight = light
+  for (key, node) in backgrounds {
+   node.texture = light ? lightBackgroundTextures[key] : darkBackgroundTextures[key]
+  }
+  let selected = light ? lightTileFrames : darkTileFrames
+  for (index, node) in tiles where selected.indices.contains(index) {
+   node.texture = selected[index]
+  }
  }
 
  func apply(_ state: GameState) {
