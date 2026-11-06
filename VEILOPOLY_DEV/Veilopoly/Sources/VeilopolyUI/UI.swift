@@ -207,17 +207,26 @@ public struct VeilopolyGameView: View {
        .resizable().scaledToFit().frame(width: 66, height: 72)
        .accessibilityHidden(true)
       Label("命运卡片", systemImage: "rectangle.on.rectangle.angled")
-       .font(.headline).foregroundStyle(.mint)
-      Text(card).font(.system(size: 18, weight: .semibold))
-       .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+       .font(.headline).foregroundColor(Color(red: 0.19, green: 0.30, blue: 0.34))
+      ScrollView {
+       Text(card).font(.system(size: 16, weight: .semibold))
+        .foregroundColor(Color(red: 0.19, green: 0.30, blue: 0.34))
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+      }
+      .frame(maxHeight: 116)
       Button("确认并继续") { model.dismissCard() }
-       .buttonStyle(.borderedProminent)
+       .buttonStyle(AstraB01ButtonStyle())
        .frame(minWidth: 160, minHeight: 44)
        .accessibilityHint("阅读完毕后继续播放游戏事件")
      }
-     .frame(maxWidth: 360).padding(22)
-     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-     .overlay { RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.16)) }
+     .frame(maxWidth: 300).padding(22)
+     .background {
+      Image(AstraB01AssetNames.cardFace, bundle: .module)
+       .resizable(capInsets: EdgeInsets(top: 88, leading: 26, bottom: 26, trailing: 26),
+                  resizingMode: .stretch)
+       .allowsHitTesting(false)
+     }
      .padding(.horizontal, 16)
      .transition(.opacity.combined(with: .scale(scale: 0.97)))
     }
@@ -259,16 +268,18 @@ public struct VeilopolyGameView: View {
       }
       .padding(9)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+      .background(AstraB01PanelSkin(.glass))
       .accessibilityLabel("最近事件：\(model.lastFeedback)")
       if let error = model.errorMessage {
        Label("操作未完成：\(error)", systemImage: "exclamationmark.triangle.fill")
         .foregroundStyle(.orange).font(.caption)
         .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .background(AstraB01FeedbackSkin(error: true))
       }
       tileInspector
       actionPanel
+       .padding(8)
+       .background(AstraB01PanelSkin(.action))
       Text("独立单机开发版 · VeilLink 入口留待 P5 集成")
        .font(.caption2).foregroundStyle(.secondary)
      }
@@ -402,8 +413,12 @@ public struct VeilopolyGameView: View {
     }
     .frame(maxWidth: .infinity)
     .padding(.vertical,8)
-    .background(p.id == model.actor ? Color.white.opacity(0.15) : Color.white.opacity(0.05),
-                in: RoundedRectangle(cornerRadius: 11))
+    .background(AstraB01PanelSkin(.glass))
+    .overlay {
+     RoundedRectangle(cornerRadius: 11)
+      .stroke(p.id == model.actor ? Color.yellow.opacity(0.8) : .clear,
+              lineWidth: 1.5)
+    }
    }
   }
  }
@@ -438,7 +453,7 @@ public struct VeilopolyGameView: View {
    case .tileResolve:
     if let i = model.game.turn.pendingPurchase {
      VStack(alignment: .leading,spacing:10) {
-      Text("\(model.game.board[i].name) · ¥\(model.game.board[i].price)").font(.headline)
+      astraBuyHero(model.game.board[i])
       HStack {
        action("购买",symbol:"house") { model.perform(.buyProperty,tile:i) }
        action("送入拍卖",symbol:"gavel") { model.perform(.startAuction,tile:i) }
@@ -454,10 +469,70 @@ public struct VeilopolyGameView: View {
   }
  }
  private func action(_ title: String, symbol: String, pressed: @escaping () -> Void) -> some View {
-  Button(action: pressed) { Label(title, systemImage: symbol).lineLimit(1).minimumScaleFactor(0.8)
-   .frame(maxWidth: .infinity, minHeight: 44) }
-   .buttonStyle(.borderedProminent)
+  Button(action: pressed) {
+   Text(title).frame(maxWidth: .infinity, minHeight: 44)
+  }
+  .buttonStyle(AstraB01ButtonStyle())
+  .accessibilityLabel(title)
  }
+ // Astra B01 runtime cards: backgrounds are decorative; all values below
+ // come from the current authoritative GameState, never baked into PNGs.
+ private func astraHeroField(_ value: String, x: CGFloat, y: CGFloat,
+                             width: CGFloat, height: CGFloat = 24,
+                             textColor: Color = Color(red: 0.19, green: 0.30, blue: 0.34)) -> some View {
+  Text(value)
+   .font(.system(size: 13, weight: .semibold, design: .rounded))
+   .foregroundColor(textColor)
+   .lineLimit(1).minimumScaleFactor(0.70)
+   .frame(width: width, height: height)
+   .position(x: x, y: y)
+ }
+ private func astraBuyHero(_ tile: Tile) -> some View {
+  ZStack(alignment: .topLeading) {
+   Image(AstraB01AssetNames.buyHero, bundle: .module).resizable()
+    .frame(width: 256, height: 174).accessibilityHidden(true)
+   astraHeroField(tile.name, x: 156, y: 56, width: 160)
+   astraHeroField("¥\(tile.price)", x: 189, y: 94, width: 94)
+   astraHeroField("¥\(model.game.players[model.actor].cash - tile.price)",
+                  x: 189, y: 120, width: 94)
+   astraHeroField("¥\(tile.rent.first ?? 0)", x: 189, y: 146, width: 94)
+  }
+  .frame(width: 256, height: 174)
+  .accessibilityElement(children: .combine)
+ }
+ private var astraBankHero: some View {
+  let account = model.game.banking.flatMap { ledger in
+   ledger.accounts.indices.contains(model.actor) ? ledger.accounts[model.actor] : nil
+  }
+  let savings = account?.savings.reduce(0) { $0 + $1.principal } ?? 0
+  let loans = account?.loans.reduce(0) { $0 + $1.totalDue } ?? 0
+  return ZStack(alignment: .topLeading) {
+   Image(AstraB01AssetNames.bankHero, bundle: .module).resizable()
+    .frame(width: 256, height: 174).accessibilityHidden(true)
+   astraHeroField("¥\(model.game.players[model.actor].cash)",
+                  x: 146, y: 48, width: 116, height: 28)
+   astraHeroField("¥\(savings)", x: 61, y: 155, width: 98,
+                  textColor: .white)
+   astraHeroField("¥\(loans)", x: 195, y: 155, width: 98,
+                  textColor: .white)
+  }
+  .frame(width: 256, height: 174)
+  .accessibilityElement(children: .combine)
+ }
+ private var astraSettlementHero: some View {
+  let winner = model.game.players[model.game.winner ?? 0]
+  let propertyCount = model.game.board.filter { $0.owner == winner.id }.count
+  return ZStack(alignment: .topLeading) {
+   Image(AstraB01AssetNames.settlementHero, bundle: .module).resizable()
+    .frame(width: 256, height: 174).accessibilityHidden(true)
+   astraHeroField(winner.name, x: 128, y: 75, width: 208, height: 22)
+   astraHeroField("¥\(netWorth(winner))", x: 128, y: 123, width: 208, height: 29)
+   astraHeroField("\(propertyCount)", x: 188, y: 156, width: 88)
+  }
+  .frame(width: 256, height: 174)
+  .accessibilityElement(children: .combine)
+ }
+
  private var auctionPanel: some View {
   VStack(alignment: .leading,spacing: 9) {
    if let auction = model.game.auction {
@@ -536,6 +611,7 @@ public struct VeilopolyGameView: View {
   VStack(alignment: .leading, spacing: 8) {
    Divider()
    Text("银行与金融").font(.subheadline.weight(.semibold))
+   astraBankHero
    HStack(spacing: 8) {
     TextField("金额", text: $bankAmount)
      .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
@@ -598,8 +674,7 @@ public struct VeilopolyGameView: View {
  }
  private var settlementPanel: some View {
   VStack(spacing: 12) {
-   Image(systemName:"trophy.fill").font(.system(size:44)).foregroundStyle(.yellow)
-   Text("本局胜者：\(model.game.players[model.game.winner ?? 0].name)").font(.title2.bold())
+   astraSettlementHero
    ForEach(model.game.players.sorted(by:{ a,b in netWorth(a) > netWorth(b) }),id:\.id) { p in
     HStack {
      Text(p.name); Spacer()
