@@ -139,6 +139,7 @@ public enum MoveKind: String, Codable, CaseIterable {
  case buildHouse, sellHouse, mortgage, redeem
  case proposeTrade, counterTrade, acceptTrade, rejectTrade
  case payBail, useJailCard, declareBankruptcy, endTurn
+ case bankDeposit, bankWithdraw, bankBorrow, bankRepay, bankInvest, bankSettle
 }
 public struct Move: Codable, Equatable {
  public var type: MoveKind
@@ -150,9 +151,14 @@ public struct Move: Codable, Equatable {
  public var offer: TradeTransfer?
  public var request: TradeTransfer?
  public var deck: DeckKind?
+ public var financeProduct: FinancialFeature?
+ public var financePeriods: Int?
+ public var financeID: Int?
  public init(_ type: MoveKind, player: Int, seq: Int,
              tile: Int? = nil, amount: Int? = nil, to: Int? = nil,
-             offer: TradeTransfer? = nil, request: TradeTransfer? = nil, deck: DeckKind? = nil) {
+             offer: TradeTransfer? = nil, request: TradeTransfer? = nil, deck: DeckKind? = nil,
+             financeProduct: FinancialFeature? = nil, financePeriods: Int? = nil, financeID: Int? = nil) {
+  self.financeProduct = financeProduct; self.financePeriods = financePeriods; self.financeID = financeID
   self.type = type; self.player = player; self.seq = seq
   self.tile = tile; self.amount = amount; self.to = to; self.offer = offer; self.request = request; self.deck = deck
  }
@@ -161,6 +167,7 @@ public enum EffectKind: String, Codable {
  case diceRolled, playerMoved, passedGo, rentPaid, cashChanged, cardDrawn, jailed, released
  case bought, auctionStarted, bid, bidFold, auctionWon, built, soldBuilding, mortgaged, redeemed
  case tradeProposed, traded, tradeRejected, liquidation, bankrupt, turnEnded, extraRoll, gameWon
+ case bankDeposited, bankWithdrawn, bankBorrowed, bankRepaid, bankInvestmentOpened, bankInvestmentSettled, bankMatured
 }
 public struct Effect: Codable, Equatable {
  public var kind: EffectKind
@@ -197,13 +204,15 @@ public struct GameState: Codable, Equatable {
  public var moveLog: [Move]
  public var nextSeq: Int
  public var winner: Int?
+ /// Optional for backward compatibility: old snapshots decode with nil and no bank history.
+ public var banking: IntegratedBankLedger?
  public init(seed: UInt64, board: [Tile], players: [Player], cards: [CardDefinition]) {
   self.seed = seed; self.rngCounter = 0; self.board = board; self.players = players
   self.bank = Bank(); self.chanceDeck = DeckState(order: cards.filter { $0.deck == .chance }.map(\.id))
   self.chestDeck = DeckState(order: cards.filter { $0.deck == .chest }.map(\.id))
   self.cards = cards; self.turn = TurnState()
   self.auction = nil; self.trade = nil; self.pendingCard = nil; self.pendingDebt = nil
-  self.moveLog = []; self.nextSeq = 0; self.winner = nil
+  self.moveLog = []; self.nextSeq = 0; self.winner = nil; self.banking = nil
  }
 }
 public struct GameContext: Equatable {
@@ -223,6 +232,7 @@ public enum GameError: String, Error, Codable, Equatable {
  case invalidPayload = "InvalidPayload", invalidBid = "InvalidBid", invalidSequence = "InvalidSequence"
  case inJail = "InJail", noJailCard = "NoJailCard", noDebt = "NoDebt", alreadyBankrupt = "AlreadyBankrupt"
  case gameFinished = "GameFinished", invalidContext = "InvalidContext", invalidState = "InvalidState"
+ case financeTermsPending = "FinanceTermsPending", financePositionLocked = "FinancePositionLocked"
 }
 
 public enum StateDigest {

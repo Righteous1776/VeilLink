@@ -49,6 +49,8 @@ public enum VeilopolyAI {
    }
    return m(.bid, amount: 0)
   case .manage:
+   // Pure adjudication of due liabilities and mature savings/investments.
+   if let bankMove = FinancialRuleJudge.recommendation(g, player: me) { return bankMove }
    // Build only on an even-development minimum, and never in a mortgaged group.
    let owned = g.board.filter { $0.kind == .street && $0.owner == me && !$0.mortgaged }
    for tile in owned {

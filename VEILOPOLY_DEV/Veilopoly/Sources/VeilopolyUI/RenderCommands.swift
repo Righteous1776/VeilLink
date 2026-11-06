@@ -31,6 +31,9 @@ public enum CommandTranslator {
     else { path = [to] }
     return .tokenMove(player: player, path: path)
    case .cardDrawn: return .cardShow(deck: e.deck ?? .chance, text: e.text ?? "")
+   case .bankDeposited, .bankWithdrawn, .bankBorrowed, .bankRepaid,
+        .bankInvestmentOpened, .bankInvestmentSettled:
+    return .cashFloat(player: e.player ?? 0, delta: e.amount ?? 0)
    case .cashChanged, .passedGo:
     return .cashFloat(player: e.player ?? 0, delta: e.amount ?? 0)
    case .bought, .auctionWon: return .tileFx(tile: e.tile ?? 0, kind: .purchase)

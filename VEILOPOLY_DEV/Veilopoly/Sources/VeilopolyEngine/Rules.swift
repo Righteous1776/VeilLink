@@ -10,7 +10,8 @@ public enum VeilopolyEngine {
   case .moveAnim: choices = [.applyMovement]
   case .tileResolve: choices = g.turn.pendingPurchase == nil ? [.resolveTile] : [.buyProperty, .startAuction]
   case .auction: choices = [.bid]
-  case .manage: choices = [.buildHouse, .sellHouse, .mortgage, .redeem, .proposeTrade, .endTurn]
+  case .manage: choices = [.buildHouse, .sellHouse, .mortgage, .redeem, .proposeTrade, .endTurn,
+                           .bankDeposit, .bankWithdraw, .bankBorrow, .bankRepay, .bankInvest, .bankSettle]
   case .trade: choices = [.counterTrade, .acceptTrade, .rejectTrade]
   case .debt: choices = [.declareBankruptcy]
   case .finished: choices = []
@@ -37,6 +38,7 @@ public enum VeilopolyEngine {
           (e.perHouse == nil || (0...1_000_000).contains(e.perHouse!)) &&
           (e.perHotel == nil || (0...1_000_000).contains(e.perHotel!))
          }) }) else { throw GameError.invalidState }
+   guard (g.banking.map { IntegratedBanking.validate($0) } ?? true) else { throw GameError.invalidState }
    guard ctx == context(g) else { throw GameError.invalidContext }
    guard g.winner == nil else { throw GameError.gameFinished }
    guard move.seq == g.nextSeq else { throw GameError.invalidSequence }
@@ -232,6 +234,8 @@ public enum VeilopolyEngine {
    guard let debt = g.pendingDebt, debt.player == p else { throw GameError.noDebt }
    bankrupt(&g, debtor: p, creditor: debt.creditor, &fx)
    g.pendingDebt = nil
+  case .bankDeposit, .bankWithdraw, .bankBorrow, .bankRepay, .bankInvest, .bankSettle:
+   try IntegratedBanking.apply(&g, move: m, effects: &fx)
   case .endTurn:
    g.pendingCard = nil
    let previous = g.turn.player
@@ -244,6 +248,7 @@ public enum VeilopolyEngine {
     guard let next = active else { throw GameError.invalidState }
     g.turn = TurnState(); g.turn.player = next
     fx.append(Effect(.turnEnded, player: previous, to: next))
+    IntegratedBanking.advanceTurn(&g, effects: &fx)
    }
   }
  }
@@ -432,6 +437,7 @@ public enum VeilopolyEngine {
   }
  }
  private static func bankrupt(_ g: inout GameState, debtor p: Int, creditor: Int?, _ fx: inout [Effect]) {
+  IntegratedBanking.closeBankruptAccount(&g, player: p, effects: &fx)
   let receiver = creditor.flatMap { id in (0..<g.players.count).contains(id) && id != p && !g.players[id].bankrupt ? id : nil }
   if let receiver = receiver {
    g.players[receiver].cash += g.players[p].cash

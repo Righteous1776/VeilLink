@@ -31,10 +31,12 @@ public final class GameSessionModel: ObservableObject {
 
  public func perform(_ kind: MoveKind, tile: Int? = nil, amount: Int? = nil,
                      to: Int? = nil, offer: TradeTransfer? = nil, request: TradeTransfer? = nil,
-                     deck: DeckKind? = nil) {
+                     deck: DeckKind? = nil, financeProduct: FinancialFeature? = nil,
+                     financePeriods: Int? = nil, financeID: Int? = nil) {
   guard !animating else { return }
   let move = Move(kind, player: actor, seq: game.nextSeq, tile: tile, amount: amount,
-                  to: to, offer: offer, request: request, deck: deck)
+                  to: to, offer: offer, request: request, deck: deck,
+                  financeProduct: financeProduct, financePeriods: financePeriods, financeID: financeID)
   applyMove(move)
   drive()
  }
@@ -107,6 +109,8 @@ public struct VeilopolyGameView: View {
  @State private var offerCash = "0"
  @State private var requestCash = "0"
  @State private var bidderCash = "10"
+ @State private var bankAmount = "200"
+ @State private var bankPeriods = "3"
  @State private var tradeTarget = 1
  @State private var chosenOffer: Set<Int> = []
  @State private var chosenRequest: Set<Int> = []
@@ -422,7 +426,54 @@ public struct VeilopolyGameView: View {
      offer: TradeTransfer(cash:max(0,Int(offerCash) ?? 0),tiles:chosenOffer.sorted()),
      request: TradeTransfer(cash:max(0,Int(requestCash) ?? 0),tiles:chosenRequest.sorted()))
    }
+   bankPanel
    action("结束回合",symbol:"checkmark.circle") { model.perform(.endTurn) }
+  }
+ }
+ // Pure Swift bank moves are routed through the same authoritative GameState reducer.
+ // Kimi owns the final animated skin; this is the functional accessibility fallback.
+ private var bankPanel: some View {
+  VStack(alignment: .leading, spacing: 8) {
+   Divider()
+   Text("银行与金融").font(.subheadline.weight(.semibold))
+   HStack(spacing: 8) {
+    TextField("金额", text: $bankAmount)
+     .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+     .accessibilityLabel("银行操作金额")
+    TextField("期数", text: $bankPeriods)
+     .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+     .accessibilityLabel("贷款期数")
+   }
+   HStack(spacing: 8) {
+    action("存入活期", symbol: "building.columns") {
+     model.perform(.bankDeposit, amount: Int(bankAmount), financeProduct: .demandDeposit)
+    }
+    action("申请贷款", symbol: "creditcard") {
+     model.perform(.bankBorrow, amount: Int(bankAmount), financePeriods: Int(bankPeriods))
+    }
+   }
+   if let ledger = model.game.banking, ledger.accounts.indices.contains(model.actor) {
+    let account = ledger.accounts[model.actor]
+    ForEach(account.savings, id: \.id) { deposit in
+     action("取回存款 ¥\(deposit.principal)", symbol: "arrow.down.left") {
+      model.perform(.bankWithdraw, financeID: deposit.id)
+     }
+    }
+    ForEach(account.loans, id: \.id) { loan in
+     action("偿还贷款 ¥\(loan.totalDue)", symbol: "arrow.up.right") {
+      model.perform(.bankRepay, financeID: loan.id)
+     }
+    }
+    ForEach(account.positions, id: \.id) { item in
+     action("结算投资 #\(item.id)", symbol: "chart.line.uptrend.xyaxis") {
+      model.perform(.bankSettle, financeID: item.id)
+     }
+    }
+    Text("金融期数：\(ledger.completedTurns)")
+     .font(.caption2).foregroundStyle(.secondary)
+   }
+   Text("定期收益、股票和风险投资的正式回报表待规格裁决；仅使用游戏内虚拟货币。")
+    .font(.caption2).foregroundStyle(.secondary)
   }
  }
  private var tradeResponsePanel: some View {
