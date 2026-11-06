@@ -161,6 +161,7 @@ public struct VeilopolyGameView: View {
  @State private var showExitConfirmation = false
  @State private var showGameInfo = false
  @State private var controlsExpanded = false
+ @State private var dayFelt = false
  @Environment(\.dismiss) private var dismiss
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
  private let onExit: (() -> Void)?
@@ -197,6 +198,10 @@ public struct VeilopolyGameView: View {
    }
   }
   .confirmationDialog("更多", isPresented: $showMore) {
+   Button(dayFelt ? "切换夜间棋盘" : "切换日间棋盘") {
+    dayFelt.toggle()
+    model.scene.setDayFelt(dayFelt)
+   }
    Button("重新开局") { showRestart = true }
    Button("本局信息") { showGameInfo = true }
    Button("取消", role: .cancel) {}
