@@ -18,6 +18,13 @@
 - SHA / Git blob crosscheck: all six new source/test/doc files on branch matched local tested file bytes.
 - No iOS 16 Apple SDK, in-game visual integration, or GameTransport end-to-end verification has been done.
 
+### Coverage — separate local instrumented run
+
+- `swift test --enable-code-coverage --jobs 2 --skip 'AutoplayTests|LongSimTests'`: 53/53 PASS.
+- LLVM line coverage for all six `Sources/VeilopolyEngine` files: **941 of 995 lines = 94.57%**, above the initial 90% engine goal.
+- File breakdown: `Board.swift` 71/71, `FinanceExpansion.swift` 204/206, `Models.swift` 78/80, `PrintedTabletopReference.swift` 44/44, `Rules.swift` 495/545, `SampleCards.swift` 49/49.
+- This is a **local Linux instrumented** result, not GitHub CI and not Apple iOS SDK; long AI pressure cases were included only in the separate 55-case ordinary test run.
+
 ## Deliberate gates
 
 1. Classic game still uses original salary, housing, GameState and stateHash; enabling printed profile needs explicit owner approval and a versioned migration.
