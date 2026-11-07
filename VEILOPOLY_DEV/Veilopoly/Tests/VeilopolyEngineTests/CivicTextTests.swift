@@ -15,6 +15,8 @@ final class CivicTextTests: XCTestCase {
   XCTAssertTrue(document.fields.contains(.init("当前所有者","玩家 1")))
   XCTAssertTrue(document.fields.contains(.init("建筑状况","房屋 ×2")))
   XCTAssertTrue(document.fields.contains(.init("抵押状态","已抵押")))
+  XCTAssertEqual(document.fields.first(where: { $0.label == "城市札记" })?.value,
+    VeilopolyWorldEditorial.page(for:state.board[1])?.story)
  }
  func testAuctionUsesLiveBidderAndNeverReportsPrematureSale() throws {
   var state = GameFactory.make(seed: 14)

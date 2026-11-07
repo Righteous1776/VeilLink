@@ -57,8 +57,32 @@ public struct VeilopolyStockMarketPanel: View {
    tickerStrip
    if let quote = StockMarketEngine.quote(market, symbol: selectedSymbol) ?? market.quotes.first {
     quoteHero(quote)
+    if let issuer = VeilopolyMarketEditorial.issuer(for: quote) {
+     HStack(alignment: .top, spacing: 6) {
+      Image(systemName: "building.2.crop.circle")
+       .foregroundStyle(StockTerminalPalette.gold)
+       .accessibilityHidden(true)
+      Text("\(issuer.subtitle) · \(issuer.summary)")
+       .foregroundStyle(Color(red: 0.94, green: 0.90, blue: 0.81))
+       .fixedSize(horizontal: false, vertical: true)
+     }
+     .font(.system(size: 10, weight: .regular, design: .serif))
+     .padding(.horizontal, 8).padding(.vertical, 6)
+     .frame(maxWidth: .infinity, alignment: .leading)
+     .background(StockTerminalPalette.gold.opacity(0.11),
+                 in: RoundedRectangle(cornerRadius: 8))
+     .accessibilityElement(children: .combine)
+    }
     VeilopolyStockLineChart(quote: quote).frame(height: 152)
     quoteMetrics(quote)
+    Text(VeilopolyMarketEditorial.regimeNotice(market))
+     .font(.system(size: 10, weight: .medium, design: .serif))
+     .foregroundStyle(StockTerminalPalette.gold)
+     .fixedSize(horizontal: false, vertical: true)
+    Text(VeilopolyMarketEditorial.quoteNotice(quote))
+     .font(.system(size: 9))
+     .foregroundStyle(.white.opacity(0.75))
+     .fixedSize(horizontal: false, vertical: true)
     orderTicket(quote)
     portfolioSection
     executionHistory

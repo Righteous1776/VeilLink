@@ -727,6 +727,14 @@ public struct VeilopolyGameView: View {
      Text(tile.mortgaged ? "已抵押" : ownerName)
     }
     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+    if let lore = VeilopolyWorldEditorial.page(for: tile) {
+     Text("\(lore.title) · \(lore.teaser)")
+      .font(.system(size: 10, weight: .regular, design: .serif))
+      .foregroundColor(Color(red: 0.79, green: 0.70, blue: 0.49))
+      .lineLimit(2)
+      .fixedSize(horizontal: false, vertical: true)
+      .accessibilityLabel("城市札记：\(lore.title)，\(lore.teaser)")
+    }
    }
    .frame(maxWidth: .infinity, alignment: .leading)
    Button { model.selectedTile = (model.selectedTile + 1) % 40 } label: {

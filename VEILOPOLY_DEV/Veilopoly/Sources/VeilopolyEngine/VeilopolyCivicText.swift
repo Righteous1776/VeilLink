@@ -62,6 +62,9 @@ public enum VeilopolyCivicText {
    }
   }
   fields.append(VeilopolyCivicField("抵押状态", tile.mortgaged ? "已抵押" : "未抵押"))
+  if let lore = VeilopolyWorldEditorial.page(for: tile) {
+   fields.append(VeilopolyCivicField("城市札记", lore.story))
+  }
   return VeilopolyCivicDocument(id: "VL-CIVIC-DEED-\(tile.i)",
    title: "地契登记簿", subtitle: "城市不动产登记 · 本局即时副本",
    fields: fields, note: "租金及可执行操作以本局引擎裁定为准；此文书不构成购买指令。")
