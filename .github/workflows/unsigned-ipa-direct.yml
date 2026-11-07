@@ -1,137 +1,145 @@
-name: Build unsigned IPA (direct release)
+name: V29 verified artifact promotion
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  actions: read
+
+concurrency:
+  group: v29-verified-publication
+  cancel-in-progress: false
 
 jobs:
-  direct-release:
+  promote:
     runs-on: macos-15
-    timeout-minutes: 45
-
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERIFIED_RUN: '42401398082'
+      VERIFIED_HEAD: '4b91c66abe687cc2b114368a32f1fefd9fa7a2bf'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
-      - name: Prepare evidence
+      - name: Require complete CI and exact normally merged product tree
         run: |
-          mkdir -p ci-artifacts
-          {
-            echo "HEAD=$(git rev-parse HEAD)"
-            xcodebuild -version
-            sw_vers
-            echo "RUNNER_ARCH=${RUNNER_ARCH:-unknown}"
-            df -h .
-            du -sh VeilLink/Resources
-          } 2>&1 | tee ci-artifacts/environment.log
+          set -euo pipefail
+          mkdir -p promotion-evidence
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', 'repos/Righteous1776/VeilLink/' + path]))
+          run = api('actions/runs/' + os.environ['VERIFIED_RUN'])
+          assert run['conclusion'] == 'success' and run['status'] == 'completed'
+          assert run['name'] == 'iOS CI' and run['event'] == 'pull_request'
+          assert run['head_sha'] == os.environ['VERIFIED_HEAD']
+          pr = api('pulls/181')
+          assert pr['merged'] and pr['base']['ref'] == 'main'
+          assert pr['head']['sha'] == os.environ['VERIFIED_HEAD']
+          main = api('git/ref/heads/main')['object']['sha']
+          checked = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          assert checked == main == pr['merge_commit_sha'], 'main advanced; re-review required'
+          tree = api('git/commits/' + main)['tree']['sha']
+          assert tree == api('git/commits/' + run['head_sha'])['tree']['sha'], 'untested tree'
+          candidates = api('actions/runs/' + os.environ['VERIFIED_RUN'] + '/artifacts')['artifacts']
+          candidates = [a for a in candidates if a['name'] == 'VeilLink-PR-unsigned-181-' + os.environ['VERIFIED_RUN']]
+          assert len(candidates) == 1 and not candidates[0]['expired']
+          artifact = candidates[0]
+          assert artifact['digest'].startswith('sha256:')
+          record = {'main_sha': main, 'product_tree': tree, 'verified_run': run['id'],
+                    'verified_head': run['head_sha'], 'artifact': artifact,
+                    'physical_device_tests': 'NOT_RUN', 'unsigned': True}
+          Path('promotion-evidence/INPUTS.json').write_text(json.dumps(record, indent=2) + '\n')
+          Path('promotion-evidence/ci-run.json').write_text(json.dumps(run, indent=2) + '\n')
+          print('FULL_CI_AND_MERGED_TREE=PASS')
+          PY
 
-      - name: Static standard preflight
+      - name: Download immutable full-CI artifact and validate original provenance
         run: |
-          set -o pipefail
-          python3 scripts/ci-standard-preflight.py 2>&1 | tee ci-artifacts/static-preflight.log
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess, zipfile
+          from pathlib import Path
+          record = json.loads(Path('promotion-evidence/INPUTS.json').read_text())
+          artifact = record['artifact']
+          archive = Path(os.environ['RUNNER_TEMP']) / 'v29-verified-artifact.zip'
+          with archive.open('wb') as output:
+              subprocess.run(['gh', 'api', 'repos/Righteous1776/VeilLink/actions/artifacts/' + str(artifact['id']) + '/zip'], stdout=output, check=True)
+          assert 'sha256:' + hashlib.sha256(archive.read_bytes()).hexdigest() == artifact['digest']
+          Path('verified-artifact').mkdir()
+          required = {'VeilLink-unsigned.ipa', 'CORE_RELEASE_MANIFEST.json',
+                      'CORE_RELEASE_PROVENANCE.json', 'CORE_RELEASE_SHA256SUMS.txt'}
+          with zipfile.ZipFile(archive) as z:
+              assert z.testzip() is None
+              files = [n for n in z.namelist() if not n.endswith('/')]
+              assert len(files) == 4 and {Path(n).name for n in files} == required
+              for name in files:
+                  (Path('verified-artifact') / Path(name).name).write_bytes(z.read(name))
+          subprocess.run(['shasum', '-a', '256', '-c', 'CORE_RELEASE_SHA256SUMS.txt'], cwd='verified-artifact', check=True)
+          manifest = json.loads(Path('verified-artifact/CORE_RELEASE_MANIFEST.json').read_text())
+          provenance = json.loads(Path('verified-artifact/CORE_RELEASE_PROVENANCE.json').read_text())
+          assert manifest['result'] == 'PASS' and manifest['release_eligible'] is True
+          assert manifest['unsigned'] is True and manifest['edition'] == 'Core+ExperimentalVertex'
+          assert (manifest['app']['version'], manifest['app']['build']) == ('29.0', '66')
+          assert str(provenance['github_run_id']) == os.environ['VERIFIED_RUN']
+          assert provenance['ipa_sha256'] == manifest['ipa']['sha256']
+          assert provenance['manifest_sha256'] == hashlib.sha256(Path('verified-artifact/CORE_RELEASE_MANIFEST.json').read_bytes()).hexdigest()
+          tree = json.loads(subprocess.check_output(['gh', 'api', 'repos/Righteous1776/VeilLink/git/commits/' + provenance['git_head']]))['tree']['sha']
+          assert tree == record['product_tree'], 'artifact built from different tree'
+          print('ARTIFACT_DIGEST_SUMS_AND_SOURCE_PROVENANCE=PASS')
+          PY
 
-      - name: Install XcodeGen
+      - name: Independently repeat Apple IPA contents and protected-resource gates
         run: |
-          set -o pipefail
-          brew install xcodegen 2>&1 | tee ci-artifacts/install-xcodegen.log
+          set -euo pipefail
+          ditto -x -k verified-artifact/VeilLink-unsigned.ipa "$RUNNER_TEMP/v29-reverified"
+          python3 scripts/verify-core-release.py --experimental-vertex \
+            --app "$RUNNER_TEMP/v29-reverified/Payload/VeilLink.app" \
+            --ipa verified-artifact/VeilLink-unsigned.ipa \
+            --manifest promotion-evidence/REVERIFIED_MANIFEST.json \
+            --provenance promotion-evidence/REVERIFIED_PROVENANCE.json \
+            --sums promotion-evidence/REVERIFIED_SHA256SUMS.txt \
+            2>&1 | tee promotion-evidence/reverification.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          original = json.loads(Path('verified-artifact/CORE_RELEASE_MANIFEST.json').read_text())
+          repeated = json.loads(Path('promotion-evidence/REVERIFIED_MANIFEST.json').read_text())
+          assert original == repeated, 'independent gate disagrees with original'
+          print('INDEPENDENT_APP_IPA_MANIFEST_PARITY=PASS')
+          PY
 
-      - name: Generate Core Xcode project
+      - name: Publish verified IPA without rebuilding or replacing assets
         run: |
-          set -o pipefail
-          xcodegen generate --spec project.yml 2>&1 | tee ci-artifacts/xcodegen-core.log
-          cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.core.pbxproj
+          set -euo pipefail
+          MAIN_SHA=$(python3 -c 'import json; print(json.load(open("promotion-evidence/INPUTS.json"))["main_sha"])')
+          test "$(gh api repos/Righteous1776/VeilLink/git/ref/heads/main --jq .object.sha)" = "$MAIN_SHA"
+          if gh release view v29.0-b66 >/dev/null 2>&1; then
+            echo 'Immutable release already exists; refusing overwrite.' >&2
+            exit 1
+          fi
+          gh release create v29.0-b66 \
+            --target "$MAIN_SHA" \
+            --title 'VeilLink 29.0 (Build 66) — unsigned Core + Experimental Vertex' \
+            --notes-file docs/RELEASE_29_0_BUILD_66.md \
+            'verified-artifact/VeilLink-unsigned.ipa#VeilLink-29.0-b66-unsigned.ipa' \
+            verified-artifact/CORE_RELEASE_MANIFEST.json \
+            verified-artifact/CORE_RELEASE_PROVENANCE.json \
+            verified-artifact/CORE_RELEASE_SHA256SUMS.txt \
+            promotion-evidence/INPUTS.json \
+            promotion-evidence/REVERIFIED_MANIFEST.json \
+            promotion-evidence/REVERIFIED_PROVENANCE.json
 
-      - name: Build for iOS Simulator
-        run: |
-          set -o pipefail
-          rm -rf ci-artifacts/Direct-SimulatorBuild.xcresult
-          xcodebuild \
-            -project VeilLink.xcodeproj \
-            -scheme VeilLink \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -resultBundlePath ci-artifacts/Direct-SimulatorBuild.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee ci-artifacts/direct-simulator-build.log
-
-      - name: Build unsigned Core iPhoneOS app
-        run: |
-          set -o pipefail
-          rm -rf DerivedData ci-artifacts/Direct-Core-DeviceBuild.xcresult
-          xcodebuild \
-            -project VeilLink.xcodeproj \
-            -scheme VeilLink \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath DerivedData \
-            -resultBundlePath ci-artifacts/Direct-Core-DeviceBuild.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee ci-artifacts/direct-core-device-build.log
-
-      - name: Read built release identity
-        id: release_identity
-        run: |
-          INFO="DerivedData/Build/Products/Release-iphoneos/VeilLink.app/Info.plist"
-          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO")
-          BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
-          echo "VeilLink $VERSION · Build $BUILD" | tee ci-artifacts/release-identity.log
-
-      - name: Package unsigned Core IPA
-        run: |
-          set -o pipefail
-          bash scripts/package-unsigned-ipa.sh 2>&1 | tee ci-artifacts/package-core-ipa.log
-
-      - name: Verify Core carrier and size budget
-        run: |
-          set -o pipefail
-          python3 scripts/verify-core-release.py \
-            --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
-            --ipa "build/VeilLink-unsigned.ipa" \
-            --manifest CORE_RELEASE_MANIFEST.json \
-            --provenance CORE_RELEASE_PROVENANCE.json \
-            --sums CORE_RELEASE_SHA256SUMS.txt 2>&1 \
-            | tee ci-artifacts/core-release-gate.log
-          cp \
-            CORE_RELEASE_MANIFEST.json \
-            CORE_RELEASE_PROVENANCE.json \
-            CORE_RELEASE_SHA256SUMS.txt \
-            ci-artifacts/
-
-      - name: Collect evidence
-        if: always()
-        env:
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          python3 scripts/ci-collect-evidence.py \
-            --workflow "Core unsigned direct release" \
-            --phase "direct-release" \
-            --status "$JOB_STATUS" \
-            --artifact-dir ci-artifacts \
-            --output ci-artifacts/CI_EVIDENCE.json
-
-      - name: Upload evidence
+      - name: Preserve promotion evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VeilLink-Direct-Release-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ci-artifacts
+          name: V29-Verified-Promotion-${{ github.run_id }}
+          path: promotion-evidence
           if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload unsigned IPA
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: VeilLink-Core-unsigned-v${{ steps.release_identity.outputs.version }}-b${{ steps.release_identity.outputs.build }}-direct
-          path: |
-            build/VeilLink-unsigned.ipa
-            CORE_RELEASE_MANIFEST.json
-            CORE_RELEASE_PROVENANCE.json
-            CORE_RELEASE_SHA256SUMS.txt
-          if-no-files-found: error
-          compression-level: 0
           retention-days: 30
