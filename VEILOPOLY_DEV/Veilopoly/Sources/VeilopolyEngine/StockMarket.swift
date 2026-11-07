@@ -75,10 +75,41 @@ public struct StockMarketState: Codable, Equatable {
  public var regime: Int
  public var quotes: [StockQuote]
  public var portfolios: [StockPortfolio]
- public init(seed: UInt64, quotes: [StockQuote], playerCount: Int = 4) {
+ /// 1 = original predictable 24-tick regime, 2 = variable-event seeded regime.
+ /// Missing in historical JSON means 1. NEVER silently upgrade a saved match.
+ public var algorithmVersion: Int
+ public init(seed: UInt64, quotes: [StockQuote], playerCount: Int = 4,
+             algorithmVersion: Int = 1) {
   self.seed = seed; self.rngCounter = 0; self.tick = 0; self.regime = 0
   self.quotes = quotes
   self.portfolios = Array(repeating: StockPortfolio(), count: playerCount)
+  self.algorithmVersion = algorithmVersion
+ }
+ private enum CodingKeys: String, CodingKey {
+  case seed, rngCounter, tick, regime, quotes, portfolios, algorithmVersion
+ }
+ public init(from decoder: Decoder) throws {
+  let c = try decoder.container(keyedBy: CodingKeys.self)
+  seed = try c.decode(UInt64.self, forKey: .seed)
+  rngCounter = try c.decode(UInt64.self, forKey: .rngCounter)
+  tick = try c.decode(Int.self, forKey: .tick)
+  regime = try c.decode(Int.self, forKey: .regime)
+  quotes = try c.decode([StockQuote].self, forKey: .quotes)
+  portfolios = try c.decode([StockPortfolio].self, forKey: .portfolios)
+  algorithmVersion = try c.decodeIfPresent(Int.self, forKey: .algorithmVersion) ?? 1
+ }
+ public func encode(to encoder: Encoder) throws {
+  var c = encoder.container(keyedBy: CodingKeys.self)
+  try c.encode(seed, forKey: .seed)
+  try c.encode(rngCounter, forKey: .rngCounter)
+  try c.encode(tick, forKey: .tick)
+  try c.encode(regime, forKey: .regime)
+  try c.encode(quotes, forKey: .quotes)
+  try c.encode(portfolios, forKey: .portfolios)
+  // Omitting the key for v1 keeps legacy sealed-save JSON and hash bit-for-bit.
+  if algorithmVersion != 1 {
+   try c.encode(algorithmVersion, forKey: .algorithmVersion)
+  }
  }
 }
 
@@ -128,11 +159,13 @@ public enum StockMarketEngine {
    StockQuote(symbol: "ORB", name: "轨道系统", sector: "科技", basePriceCents: 5_200,
               volatilityBasisPoints: 210, driftBasisPoints: 4)
   ]
-  return StockMarketState(seed: seed ^ 0x5354_4F43_4B5F_4D4B, quotes: instruments)
+  return StockMarketState(seed: seed ^ 0x5354_4F43_4B5F_4D4B,
+                          quotes: instruments, algorithmVersion: 2)
  }
 
  public static func validate(_ market: StockMarketState) -> Bool {
-  guard (0...1_000_000).contains(market.tick), (-2...2).contains(market.regime),
+  guard (1...2).contains(market.algorithmVersion),
+        (0...1_000_000).contains(market.tick), (-2...2).contains(market.regime),
         market.portfolios.count == 4, (0...100_000_000).contains(market.rngCounter),
         market.quotes.count == 5,
         Set(market.quotes.map(\.symbol)).count == market.quotes.count else { return false }
@@ -238,8 +271,31 @@ public enum StockMarketEngine {
   guard validate(market), market.tick < 1_000_000 else { throw GameError.invalidState }
   market.tick += 1
   var halted: [String] = []
-  if market.tick % 24 == 0 { market.regime = random(in: -2...2, market: &market) }
+  let isVariableMarket = market.algorithmVersion == 2
+  if isVariableMarket {
+   // Seeded irregular transitions: no fixed tick teaches the next reversal.
+   // The same stored seed/counter yields an identical replay and recovery.
+   if random(in: 0...17, market: &market) == 0 {
+    let step = random(in: -2...2, market: &market)
+    market.regime = max(-2, min(2, market.regime + step))
+   }
+  } else if market.tick % 24 == 0 {
+   // v1 legacy behavior and RNG consumption are intentionally untouched.
+   market.regime = random(in: -2...2, market: &market)
+  }
   let commonFactor = random(in: -45...45, market: &market)
+  var sectorWinds = Array(repeating: 0, count: market.quotes.count)
+  var headlineShock = 0
+  if isVariableMarket {
+   // One simulated macro news impulse plus distinct sector surprises, all
+   // drawn from the MARKET RNG rather than the game's dice stream.
+   for index in sectorWinds.indices {
+    sectorWinds[index] = random(in: -38...38, market: &market)
+   }
+   if random(in: 0...61, market: &market) == 0 {
+    headlineShock = random(in: -110...110, market: &market)
+   }
+  }
   for index in market.quotes.indices {
    if market.tick % sessionTicks == 1 && market.tick > 1 {
     let close = market.quotes[index].currentPriceCents
@@ -263,7 +319,8 @@ public enum StockMarketEngine {
     eventShock = random(in: 0...1, market: &market) == 0 ? -magnitude : magnitude
    }
    let basisPoints = max(-900, min(900, quote.driftBasisPoints + market.regime * 14 +
-                                   commonFactor + idiosyncratic + meanReversion + eventShock))
+                                   commonFactor + idiosyncratic + meanReversion + eventShock +
+                                   sectorWinds[index] + headlineShock))
    var delta = quote.currentPriceCents * basisPoints / 10_000
    if delta == 0 && basisPoints != 0 { delta = basisPoints > 0 ? 1 : -1 }
    let lowerLimit = max(50, quote.sessionOpenCents * 90 / 100)

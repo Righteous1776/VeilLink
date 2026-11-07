@@ -175,4 +175,54 @@ final class StockMarketTests: XCTestCase {
   XCTAssertEqual(game.banking?.market?.tick, 1)
   XCTAssertEqual(game.banking?.completedTurns, 9)
  }
+ func testNewMarketsUseIrregularButReplayableRNGVersion() throws {
+  let baseline = StockMarketEngine.initial(seed: 21_260)
+  XCTAssertEqual(baseline.algorithmVersion, 2)
+  var a = baseline, b = baseline
+  var changeTicks: [Int] = []
+  for _ in 0..<450 {
+   let oldRegime = a.regime
+   XCTAssertEqual(try StockMarketEngine.advance(&a), try StockMarketEngine.advance(&b))
+   XCTAssertEqual(a, b)
+   XCTAssertTrue(StockMarketEngine.validate(a))
+   if oldRegime != a.regime { changeTicks.append(a.tick) }
+  }
+  XCTAssertGreaterThan(changeTicks.count, 2)
+  XCTAssertFalse(changeTicks.allSatisfy { $0 % 24 == 0 })
+ }
+ func testLegacyMarketDecodesWithoutVersionKeyAndKeepsExactRNG() throws {
+  var old = StockMarketEngine.initial(seed: 6)
+  old.algorithmVersion = 1
+  let jsonEncoder = JSONEncoder()
+  jsonEncoder.outputFormatting = [.sortedKeys]
+  let before = try jsonEncoder.encode(old)
+  let encoded = try XCTUnwrap(String(data: before, encoding: .utf8))
+  XCTAssertFalse(encoded.contains("algorithmVersion"))
+  let recovered = try JSONDecoder().decode(StockMarketState.self, from: before)
+  XCTAssertEqual(recovered.algorithmVersion, 1)
+  XCTAssertEqual(try jsonEncoder.encode(recovered), before)
+  var expected = old, actual = recovered
+  for _ in 0..<250 {
+   XCTAssertEqual(try StockMarketEngine.advance(&expected), try StockMarketEngine.advance(&actual))
+   XCTAssertEqual(expected, actual)
+  }
+ }
+ func testDifferentNewGamesProduceDiverseButBoundedMarkets() throws {
+  var closingTapes = Set<String>()
+  for seed in 1...16 {
+   var m = StockMarketEngine.initial(seed: UInt64(seed))
+   for _ in 0..<80 { _ = try StockMarketEngine.advance(&m) }
+   XCTAssertTrue(StockMarketEngine.validate(m))
+   closingTapes.insert(m.quotes.map { String($0.currentPriceCents) }.joined(separator: ","))
+  }
+  XCTAssertEqual(closingTapes.count, 16)
+ }
+ func testVersionedMarketRNGDoesNotAdvanceDiceCounter() throws {
+  var game = Fixture.game(.manage)
+  let oldCounter = game.rngCounter
+  _ = try step(&game, .stockTick)
+  XCTAssertEqual(game.rngCounter, oldCounter)
+  XCTAssertEqual(game.banking?.market?.algorithmVersion, 2)
+ }
+
 }
