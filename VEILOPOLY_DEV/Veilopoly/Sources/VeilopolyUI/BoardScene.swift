@@ -170,6 +170,7 @@ final class GameBoardScene: SKScene {
    tileCaptions[i] = caption
 
    if let art = kimiSkin?.tiles[i] {
+    if kimiSkin?.usesFineTiles != true {
     // K2's preview tiles have sample labels/prices baked into their atlas.
     // Cover ONLY the exact text regions declared in SPRITE_MAP.json;
     // keep frame, color-band, ownership and special icons visible.
@@ -191,6 +192,7 @@ final class GameBoardScene: SKScene {
     pricePlate.strokeColor = .clear
     pricePlate.zPosition = 2.2
     art.addChild(pricePlate)
+    }
     let price = SKLabelNode(text: "")
     price.name = "LiveTilePrice"
     price.fontName = "AvenirNext-DemiBold"
@@ -201,6 +203,16 @@ final class GameBoardScene: SKScene {
     price.zPosition = 2.5
     art.addChild(price)
     tilePriceLabels[i] = price
+    if kimiSkin?.usesFineTiles == true, let spec = KimiK2TileMap.visual(for: i) {
+     let layout = AstraTileArtwork.layout(spec)
+     let p = layout.local(0, layout.priceY)
+     price.position = CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
+     price.zRotation = -art.zRotation
+     caption.zRotation = -art.zRotation
+     caption.preferredMaxLayoutWidth = CGFloat(layout.labelWidth)
+     caption.numberOfLines = 2
+     caption.fontSize = 10
+    }
    }
 
    let buildings = SKLabelNode(text: "")
@@ -316,8 +328,17 @@ final class GameBoardScene: SKScene {
    mortgageMarks[tile.i]?.isHidden = !tile.mortgaged
    improvements[tile.i]?.text = kimiSkin?.usesBuildingSprites == true ? "" :
      (tile.hotel ? "▣" : (tile.houses > 0 ? "⌂×\(tile.houses)" : ""))
+   let fine = kimiSkin?.usesFineTiles == true
    let labelLimit = kimiSkin == nil ? 5 : 4
-   let caption = tile.name.count > labelLimit ? String(tile.name.prefix(labelLimit)) + "…" : tile.name
+   let caption = fine ? tile.name : (tile.name.count > labelLimit ? String(tile.name.prefix(labelLimit)) + "…" : tile.name)
+   if fine, let spec = KimiK2TileMap.visual(for: tile.i) {
+    let layout = AstraTileArtwork.layout(spec)
+    let special = tile.kind != .street
+    let p = layout.local(0, layout.nameY(special: special))
+    tileCaptions[tile.i]?.position = CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
+    tileCaptions[tile.i]?.numberOfLines = special ? 1 : 2
+    tileCaptions[tile.i]?.fontSize = special ? 9 : 10
+   }
    if tileCaptions[tile.i]?.text != caption { tileCaptions[tile.i]?.text = caption }
    tilePriceLabels[tile.i]?.text = tile.purchasable ? "¥\(tile.price)" : ""
   }

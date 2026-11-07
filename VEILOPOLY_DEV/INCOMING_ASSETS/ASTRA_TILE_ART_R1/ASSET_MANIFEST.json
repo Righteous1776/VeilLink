@@ -1,0 +1,162 @@
+{
+  "schema": "veilopoly.generated-art.v1",
+  "task_id": "VEILOPOLY-TILE-ART-007",
+  "date": "2026-11-07",
+  "provenance": "Two original images generated with the OpenAI image tool in this Owner-authorized session; no third-party image input.",
+  "rights_note": "AI-generated commissioned project artwork; no third-party license or exclusivity claim.",
+  "sources": [
+    {
+      "path": "icons.source.png",
+      "size_px": [
+        1983,
+        793
+      ],
+      "bytes": 1812026,
+      "sha256": "beed67ed67b9680e40fd1a1033fee40af35b7d6f0c0a1ce27369023a1805462b",
+      "tool_output": "/workspace/generated_images/exec-9e726c28-688b-4b1b-908e-ef827e1810f7.png",
+      "grid": [
+        5,
+        2
+      ],
+      "order": [
+        "Go",
+        "Jail",
+        "Park",
+        "GoToJail",
+        "Rail",
+        "Electric",
+        "Water",
+        "Chest",
+        "Chance",
+        "Tax"
+      ]
+    },
+    {
+      "path": "face.source.png",
+      "size_px": [
+        1024,
+        1536
+      ],
+      "bytes": 1872560,
+      "sha256": "be54fa91c4344a09b6672212b1e7093e7b522b9806bae7561c9c13a67bad9027",
+      "tool_output": "/workspace/generated_images/exec-f8c1f0b4-5848-4393-9966-26619782ce6f.png",
+      "crop_xywh": [
+        90,
+        120,
+        840,
+        1300
+      ]
+    }
+  ],
+  "normalization": "tools/normalize_tile_art.sh: integer grid crop, alpha trim, 112px fit on 128px transparent icon canvas; blank face crop and 256x384 normalization.",
+  "runtime_directory": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources",
+  "total_runtime_bytes": 270553,
+  "estimated_decoded_rgba_bytes": 1048576,
+  "anchor": [
+    0.5,
+    0.5
+  ],
+  "states": "Neutral blank face and generated symbol textures; live name, price, color band, ownership, building and mortgage overlays remain data-driven.",
+  "fallback": "Use the complete generated set of 11 textures or retain original Kimi atlas and legacy masks as a complete set.",
+  "assets": [
+    {
+      "alias": "astraTileChance",
+      "size_px": [
+        128,
+        128
+      ],
+      "bytes": 15880,
+      "sha256": "d392f4a41eb936d8600b0cc152aec31c213cf9055a40af9ad90d4cdf8d661558"
+    },
+    {
+      "alias": "astraTileChest",
+      "size_px": [
+        128,
+        128
+      ],
+      "bytes": 19389,
+      "sha256": "5efac22048b98de8ff5430977f70a737e558890e509a775c2bb393a94c093327"
+    },
+    {
+      "alias": "astraTileElectric",
+      "size_px": [
+        128,
+        128
+      ],
+      "bytes": 19341,
+      "sha256": "d90d264fafbab2e20020b94477307527aa418e37cfe4b779d37e46a9605aef2f"
+    },
+    {
+      "alias": "astraTileFace",
+      "size_px": [
+        256,
+        384
+      ],
+      "bytes": 94653,
+      "sha256": "e48707c912216bdcc6f289c3253d00f1fdfdda71ccc1e02cb2e31d6d344c2986"
+    },
+    {
+      "alias": "astraTileGo",
+      "size_px": [
+        128,
+        128
+      ],
+      "bytes": 8632,
+      "sha256": "8d421f2f8edc3c90f5d7847891604df8b8e0cce30b050ef6e0f1e50d1e842595"
+    },
+    {
+      "alias": "astraTileGoToJail",
+      "size_px": [
+        128,
+        128
+      ],
+      "bytes": 13736,
+      "sha256": "6cc51a2ac6c1defe28e828263dee7439cfc8c358c55987a277b31881adb9c065"
+    },
+    {
+      "alias": "astraTileJail",
+      "size_px": [
+        128,
+        128
+      ],
+      "bytes": 20127,
+      "sha256": "8f5e53c0d9a7f8102fd2f54db1054aca8ed176aebf8e222f9cfb7abcc097fa9a"
+    },
+    {
+      "alias": "astraTilePark",
+      "size_px": [
+        128,
+        128
+      ],
+      "bytes": 25011,
+      "sha256": "f79d57b86b2eda7d65ca8243aa7ad43f9d81f0730c76ac3904ef705df0a72d78"
+    },
+    {
+      "alias": "astraTileRail",
+      "size_px": [
+        128,
+        128
+      ],
+      "bytes": 22202,
+      "sha256": "dffd5e696141d66b1188f6eb025f407fafa6408661fe5aa04171bf52033e077d"
+    },
+    {
+      "alias": "astraTileTax",
+      "size_px": [
+        128,
+        128
+      ],
+      "bytes": 15364,
+      "sha256": "9d3ffb86fc78bb4aeef9c26903ef200c49f70782b395290d6fba21c25b612b16"
+    },
+    {
+      "alias": "astraTileWater",
+      "size_px": [
+        128,
+        128
+      ],
+      "bytes": 16218,
+      "sha256": "130904cab588ba367aaddaac4c4009f1955bcd2e3c165ae7204b66ca489f1914"
+    }
+  ]
+}

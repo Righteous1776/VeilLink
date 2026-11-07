@@ -122,7 +122,7 @@ final class KimiK2SpriteKitIntegrationTests: XCTestCase {
   XCTAssertNil(scene.children.first(where: { $0.name == "KimiK2/victoryBadge" }))
  }
 
- func testFortyKimiTilesMaskPreviewTextAndUseEngineLabels() {
+ func testFortyTilesUseGeneratedFacesAndUprightEngineLabels() {
   let model = GameSessionModel(seed: 8877, humanCount: 1)
   let scene = model.scene
   for index in 0..<40 {
@@ -132,17 +132,30 @@ final class KimiK2SpriteKitIntegrationTests: XCTestCase {
    }
    let nameMasks = tile.children.filter { $0.name == "LiveNameMask" }
    let priceMasks = tile.children.filter { $0.name == "LivePriceMask" }
-   XCTAssertEqual(nameMasks.count, 1)
-   XCTAssertEqual(priceMasks.count, 1)
+   XCTAssertEqual(nameMasks.count, 0)
+   XCTAssertEqual(priceMasks.count, 0)
    let liveName = tile.children.first { $0.name == "LiveTileName" } as? SKLabelNode
    let livePrice = tile.children.first { $0.name == "LiveTilePrice" } as? SKLabelNode
    let fromEngine = model.game.board[index]
-   let expectedName = fromEngine.name.count > 4
-      ? String(fromEngine.name.prefix(4)) + "…" : fromEngine.name
+   let expectedName = fromEngine.name
    XCTAssertEqual(liveName?.text, expectedName)
+   XCTAssertEqual(tile.zRotation + (liveName?.zRotation ?? 0), 0, accuracy: 0.001)
    XCTAssertEqual(livePrice?.text,
                   fromEngine.purchasable ? "¥\(fromEngine.price)" : "")
   }
+ }
+
+ func testIncompleteTileArtFallsBackAsCompleteSet() throws {
+  let folder = try XCTUnwrap(AstraTileArtwork.resourceURL(AstraTileArtwork.face)).deletingLastPathComponent()
+  let scene = SKScene(size: CGSize(width: 1024, height: 940))
+  let skin = KimiK2BoardSkin.install(in: scene) { name in
+   guard name != "astraTileJail",
+         let image = UIImage(contentsOfFile: folder.appendingPathComponent(name + ".png").path) else { return nil }
+   return SKTexture(image: image)
+  }
+  XCTAssertNotNil(skin)
+  XCTAssertEqual(skin?.usesFineTiles, false)
+  XCTAssertEqual(skin?.tiles.count, 40)
  }
 
 }

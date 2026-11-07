@@ -1,5 +1,13 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## Generated tile art and legibility pass — 2026-11-07
+
+- Task `VEILOPOLY-TILE-ART-007`, baseline `56f3790fc3fcf107da6925f25843a42ce14d3f94`. Owner requested further generated local images to improve rough jail/utility/property areas. The later classic-board reference was withdrawn; no complete reference-board effect image is installed.
+- Generated ten independent special-space symbols plus a blank ivory/brass tile face. Eleven runtime RGBA PNGs total 270,553 bytes / ~1 MiB decoded; two originals and per-file hashes/crops/provenance retained in `INCOMING_ASSETS/ASTRA_TILE_ART_R1`. All-or-nothing activation preserves original Kimi atlas/masks if any new file fails loading.
+- Actual GameState determines symbols and property colors. New faces have no preview labels to mask. Full live names orient toward the screen, streets allow two lines, price and owner zones are separated; building sprites use one reserved row, bands occupy the inner edge. Two static central card stacks reuse generated face/icon assets without changing deck rules or adding draw actions.
+- Local Linux Swift 6.2.1: build PASS, new art/layout tests 3/3 PASS, full suite 159/159 PASS (0 failures), manifest SHA-256 11/11 PASS, ARM64 iOS16 grammar/shell/diff checks PASS. New Apple-only live-label/fallback checks are source-only and unexecuted. Layout samples were inspected as image composites, not iOS screenshots; Apple text layout/touch/visual scale remains PENDING.
+- Review and repeatable preview: `Veilopoly/docs/TILE_ART_AND_LEGIBILITY_20261107.md`, `tools/preview_refined_tiles.sh`. No Engine/Net/Persistence/main/P5/workflow/version/release changes.
+
 ## Generated detail sprites — 2026-11-07
 
 - Task `VEILOPOLY-DETAIL-ART-006`, baseline `d06afc81351725c198b2625ba76b63306e80d982`. Owner directed using generated small images for refined visual composition. Generated one transparent 3×2 sprite sheet with blue pawn, red car, green ship, gold airplane, green-roof house and red-roof hotel; source/provenance/hash/crops retained under `INCOMING_ASSETS/ASTRA_DETAIL_SPRITES_R1`.

@@ -9,6 +9,7 @@ import VeilopolyEngine
 final class KimiK2BoardSkin {
  let tiles: [Int: SKSpriteNode]
  let usesBuildingSprites: Bool
+ let usesFineTiles: Bool
  private(set) var isLight = false
  private let backgrounds: [String: SKSpriteNode]
  private let darkBackgroundTextures: [String: SKTexture]
@@ -22,6 +23,9 @@ final class KimiK2BoardSkin {
  private let houseTexture: SKTexture?
  private let hotelTexture: SKTexture?
  private let detailedBuildings: Bool
+ private let fineTextures: [String: SKTexture]
+ private var fineIcons: [Int: SKSpriteNode] = [:]
+ private var groupBands: [Int: SKSpriteNode] = [:]
  private var ownerStrips: [Int: SKSpriteNode] = [:]
  private var mortgageOverlays: [Int: SKSpriteNode] = [:]
  private var improvementShadows: [Int: SKSpriteNode] = [:]
@@ -34,7 +38,7 @@ final class KimiK2BoardSkin {
               darkTileFrames: [SKTexture], lightTileFrames: [SKTexture],
               ownerTextures: [SKTexture], mortgageTexture: SKTexture,
               shadowTexture: SKTexture, houseTexture: SKTexture?, hotelTexture: SKTexture?,
-              detailedBuildings: Bool) {
+              detailedBuildings: Bool, fineTextures: [String: SKTexture]) {
   self.tiles=tiles
   self.backgrounds=backgrounds
   self.darkBackgroundTextures=darkBackgroundTextures
@@ -47,6 +51,8 @@ final class KimiK2BoardSkin {
   self.houseTexture=houseTexture
   self.hotelTexture=hotelTexture
   self.detailedBuildings=detailedBuildings
+  self.fineTextures=fineTextures
+  usesFineTiles = fineTextures.count == AstraTileArtwork.aliases.count
   usesBuildingSprites = houseTexture != nil && hotelTexture != nil
  }
 
@@ -88,6 +94,11 @@ final class KimiK2BoardSkin {
   }
   guard let darkFrames = frames(for: atlas),
         let lightFrames = frames(for: lightAtlas) else { return nil }
+  var fineTextures: [String: SKTexture] = [:]
+  for alias in AstraTileArtwork.aliases {
+   if let texture = load(alias) { fineTextures[alias] = texture }
+  }
+  if fineTextures.count != AstraTileArtwork.aliases.count { fineTextures = [:] }
 
   // K2 projected layers share a single fixed canvas. Never apply a second
   // perspective transform when swapping day/night art at runtime.
@@ -122,13 +133,45 @@ final class KimiK2BoardSkin {
    scene.addChild(emblem)
   }
 
+  // Two independent shallow card stacks echo a physical perimeter board.
+  // They are decorative deck markers, not extra draw actions or baked UI.
+  if let face = fineTextures[AstraTileArtwork.face] {
+   for (index, x) in [212.0, 812.0].enumerated() {
+    let stack = SKNode()
+    stack.name = index == 0 ? "Astra/chance-deck" : "Astra/chest-deck"
+    stack.position = CGPoint(x: CGFloat(x), y: 470)
+    stack.zPosition = 3.6
+    for depth in 0..<3 {
+     let card = SKSpriteNode(texture: face)
+     card.size = CGSize(width: 76, height: 106)
+     card.position = CGPoint(x: CGFloat(depth) * 2, y: CGFloat(depth) * 2)
+     card.zPosition = CGFloat(depth) * 0.1
+     stack.addChild(card)
+    }
+    let alias = index == 0 ? "astraTileChance" : "astraTileChest"
+    if let texture = fineTextures[alias] {
+     let icon = SKSpriteNode(texture: texture)
+     icon.size = CGSize(width: 42, height: 42)
+     icon.position = CGPoint(x: 4, y: 12)
+     icon.zPosition = 0.4
+     stack.addChild(icon)
+    }
+    let label = SKLabelNode(text: index == 0 ? "机会" : "命运")
+    label.fontName = "AvenirNext-DemiBold"; label.fontSize = 12
+    label.fontColor = SKColor(red: 0.1, green: 0.22, blue: 0.23, alpha: 1)
+    label.position = CGPoint(x: 4, y: -30); label.zPosition = 0.4
+    stack.addChild(label)
+    scene.addChild(stack)
+   }
+  }
+
   let ownerTextures: [SKTexture] = (0..<4).map { index in
    SKTexture(rect: CGRect(x: CGFloat(index)/4.0, y: 0, width: 0.25, height: 1),
              in: owners)
   }
   var tileSprites: [Int: SKSpriteNode] = [:]
   for (index, tile) in KimiK2TileMap.tiles.enumerated() {
-   let sprite = SKSpriteNode(texture: darkFrames[index])
+   let sprite = SKSpriteNode(texture: fineTextures[AstraTileArtwork.face] ?? darkFrames[index])
    sprite.position = CGPoint(x: CGFloat(tile.centerX), y: CGFloat(tile.centerY))
    sprite.size = CGSize(width: CGFloat(tile.displayWidth), height: CGFloat(tile.displayHeight))
    sprite.zRotation = CGFloat(tile.rotationRadians)
@@ -148,7 +191,7 @@ final class KimiK2BoardSkin {
                          mortgageTexture: mortgage, shadowTexture: shadow,
                          houseTexture: hasDetails ? detailHouse : load("house"),
                          hotelTexture: hasDetails ? detailHotel : load("hotel"),
-                         detailedBuildings: hasDetails)
+                         detailedBuildings: hasDetails, fineTextures: fineTextures)
  }
 
  /// Swap preloaded visual textures without recreating Engine, tile nodes,
@@ -160,7 +203,7 @@ final class KimiK2BoardSkin {
    node.texture = light ? lightBackgroundTextures[key] : darkBackgroundTextures[key]
   }
   let selected = light ? lightTileFrames : darkTileFrames
-  for (index, node) in tiles where selected.indices.contains(index) {
+  for (index, node) in tiles where selected.indices.contains(index) && !usesFineTiles {
    node.texture = selected[index]
   }
  }
@@ -168,6 +211,32 @@ final class KimiK2BoardSkin {
  func apply(_ state: GameState) {
   for tile in state.board {
    guard let art = tiles[tile.i] else { continue }
+   let layout = KimiK2TileMap.visual(for: tile.i).map(AstraTileArtwork.layout)
+   func point(_ x: Double, _ y: Double) -> CGPoint {
+    let p = layout?.local(x, y) ?? (x: x, y: y)
+    return CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
+   }
+   if usesFineTiles, let layout {
+    if tile.kind == .street, let color = tile.color {
+     let band = groupBands[tile.i] ?? SKSpriteNode()
+     if band.parent == nil { art.addChild(band); groupBands[tile.i] = band }
+     band.name = "LivePropertyBand"
+     band.color = Self.groupColor(color)
+     // Tile-local +Y points toward the center on every edge of the board.
+     band.size = CGSize(width: art.size.width - 12, height: 8)
+     band.position = CGPoint(x: 0, y: art.size.height / 2 - 8)
+     band.zRotation = 0; band.zPosition = 0.8
+    } else { groupBands.removeValue(forKey: tile.i)?.removeFromParent() }
+    if let alias = AstraTileArtwork.icon(for: tile), let texture = fineTextures[alias] {
+     let icon = fineIcons[tile.i] ?? SKSpriteNode()
+     if icon.parent == nil { art.addChild(icon); fineIcons[tile.i] = icon }
+     icon.name = "LiveSpecialIcon"
+     icon.texture = texture
+     icon.size = CGSize(width: CGFloat(layout.iconSize), height: CGFloat(layout.iconSize))
+     icon.position = point(0, layout.iconY)
+     icon.zRotation = -art.zRotation; icon.zPosition = 1.1
+    } else { fineIcons.removeValue(forKey: tile.i)?.removeFromParent() }
+   }
    if let owner = tile.owner, ownerTextures.indices.contains(owner) {
     let stripe: SKSpriteNode
     if let existing = ownerStrips[tile.i] { stripe = existing }
@@ -180,6 +249,11 @@ final class KimiK2BoardSkin {
      ownerStrips[tile.i] = stripe
     }
     stripe.texture = ownerTextures[owner]
+    if usesFineTiles, let layout {
+     stripe.size = CGSize(width: CGFloat(layout.width - 12), height: 3)
+     stripe.position = point(0, -layout.height / 2 + 3)
+     stripe.zRotation = -art.zRotation
+    }
    } else {
     ownerStrips.removeValue(forKey: tile.i)?.removeFromParent()
    }
@@ -204,6 +278,11 @@ final class KimiK2BoardSkin {
      shadow.position = CGPoint(x: 0, y: art.size.height/2 - 23)
      shadow.size = CGSize(width: 28, height: 13)
      shadow.zPosition = 1.8
+     if usesFineTiles, let layout {
+      shadow.position = point(0, layout.buildingY - 6)
+      shadow.zRotation = -art.zRotation
+      shadow.size = CGSize(width: 54, height: 10)
+     }
      art.addChild(shadow)
      improvementShadows[tile.i] = shadow
     }
@@ -223,6 +302,7 @@ final class KimiK2BoardSkin {
      hotel.zRotation = detailedBuildings ? -art.zRotation : 0
      hotel.size = CGSize(width: 21, height: 21)
      hotel.position = CGPoint(x: 0, y: art.size.height/2 - 23)
+     if usesFineTiles, let layout { hotel.position = point(0, layout.buildingY) }
      hotel.zPosition = 2
      art.addChild(hotel)
      visuals.append(hotel)
@@ -239,6 +319,9 @@ final class KimiK2BoardSkin {
       house.zRotation = detailedBuildings ? -art.zRotation : 0
       house.size = CGSize(width: 14, height: 14)
       house.position = positions[i]
+      if usesFineTiles, let layout {
+       house.position = point([-22.0, -7.0, 7.0, 22.0][i], layout.buildingY)
+      }
       house.zPosition = 2
       art.addChild(house)
       visuals.append(house)
@@ -246,6 +329,19 @@ final class KimiK2BoardSkin {
     }
     buildingSprites[tile.i] = visuals
    }
+  }
+ }
+
+ private static func groupColor(_ color: ColorGroup) -> SKColor {
+  switch color {
+  case .brown: return .brown
+  case .lightBlue: return SKColor(red: 0.49, green: 0.78, blue: 0.93, alpha: 1)
+  case .pink: return SKColor(red: 0.92, green: 0.38, blue: 0.64, alpha: 1)
+  case .orange: return .orange
+  case .red: return .red
+  case .yellow: return .yellow
+  case .green: return .green
+  case .darkBlue: return SKColor(red: 0.13, green: 0.24, blue: 0.76, alpha: 1)
   }
  }
 }
