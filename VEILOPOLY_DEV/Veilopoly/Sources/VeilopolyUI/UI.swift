@@ -6,6 +6,7 @@ import UIKit
 import VeilopolyEngine
 import VeilopolyAI
 import VeilopolyPersistence
+import VeilopolyNet
 
 @MainActor
 public final class GameSessionModel: ObservableObject {
@@ -33,32 +34,69 @@ public final class GameSessionModel: ObservableObject {
  private let configuredHumanCount: Int
  private let saveStore: VeilopolySaveStore?
  private let saveSessionID: String
+ private let saveMode: VeilopolySaveMode
+ private var liveRoom: VeilopolyLiveRoom?
+ private let networkSender: (@MainActor (VeilopolyRoomPacket) -> Void)?
+ private var deferredRemoteProposal: (VeilopolyRoomPacket, String)?
+ private var pendingLocalMove: Move?
+ private var guestPresentations: [(GameState, [Effect], Move)] = []
+ private var drainingGuestPresentation = false
+ private var networkForeground = true
+ @Published public private(set) var networkReady = true
+ @Published public private(set) var awaitingHost = false
+ @Published public private(set) var networkStatus = ""
  private var recoveryBlocked = false
  private var lastCheckpointAt = Date.distantPast
 
- public init(seed: UInt64? = nil, humanCount: Int = 1) {
+ public convenience init(seed: UInt64? = nil, humanCount: Int = 1) {
+  self.init(seed: seed, humanCount: humanCount, room: nil, networkSender: nil,
+            requiresExistingSave: false, saveDirectory: nil)
+ }
+ public convenience init(multiplayer configuration: VeilopolyRoomConfiguration, localIdentityID: String,
+                         requiresExistingSave: Bool = false,
+                         saveDirectory: URL? = nil,
+                         onSend: @escaping @MainActor (VeilopolyRoomPacket) -> Void) throws {
+  let room = try VeilopolyLiveRoom(configuration: configuration, localIdentityID: localIdentityID)
+  self.init(seed: configuration.seed, humanCount: 2, room: room, networkSender: onSend,
+            requiresExistingSave: requiresExistingSave, saveDirectory: saveDirectory)
+ }
+ private init(seed: UInt64?, humanCount: Int, room: VeilopolyLiveRoom?,
+              networkSender: (@MainActor (VeilopolyRoomPacket) -> Void)?, requiresExistingSave: Bool, saveDirectory: URL?) {
   configuredHumanCount = humanCount
-  let sessionID = "solo-\(humanCount)"
+  let sessionID = room?.configuration.roomID ?? "solo-\(humanCount)"
+  let mode: VeilopolySaveMode = room.map { $0.isHost ? .multiplayerHost : .multiplayerGuest } ?? .solo
+  saveMode = mode
   saveSessionID = sessionID
-  let store = try? VeilopolySaveStore()
+  liveRoom = room
+  self.networkSender = networkSender
+  let store = try? VeilopolySaveStore(directory: saveDirectory)
   saveStore = store
-  let recovered: VeilopolySavedGame?
-  let unreadable: Bool
+  var recovered: VeilopolySavedGame?
+  var unreadable: Bool
   do {
-   recovered = try store?.load(gameID: sessionID, mode: .solo)
+   recovered = try store?.load(gameID: sessionID, mode: mode)
    unreadable = false
   } catch {
    // Preserve unreadable files; never silently overwrite a user's game.
    recovered = nil
    unreadable = true
   }
+  if requiresExistingSave && recovered == nil { unreadable = true }
+  if let room, let restored = recovered {
+   do {
+    liveRoom = try VeilopolyLiveRoom(configuration: room.configuration,
+     localIdentityID: room.localIdentityID, restoredGame: restored.game)
+   } catch { recovered = nil; unreadable = true }
+  }
   recoveryBlocked = unreadable
   // Fresh OS entropy is sampled only at a NEW MATCH boundary; saved games
   // always resume their original seed and deterministic replay.
-  let initial = recovered?.game ?? GameFactory.make(
+  let initial = recovered?.game ?? room?.game ?? GameFactory.make(
    seed: seed ?? VeilopolyNewGameSeed.fresh(), humanCount: humanCount)
   game = initial
   scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
+  networkReady = room == nil
+  networkStatus = room == nil ? "" : "等待对方确认同一房间与进度"
   stockExecutions = (recovered?.stockReceipts ?? []).map(StockExecution.init(record:))
   scene.display(initial)
   scene.highlightTile(selectedTile)
@@ -80,14 +118,21 @@ public final class GameSessionModel: ObservableObject {
   }
   // A killed app can resume in .moveAnim/.tileResolve. Finish the pending
   // deterministic reducer step without replaying an already committed roll.
-  if humanCount == 0 || recovered != nil {
+  if room == nil && (humanCount == 0 || recovered != nil) {
    Task { @MainActor [weak self] in self?.drive() }
   }
  }
  public var actor: Int { game.auction?.turn ?? game.trade?.to ?? game.pendingDebt?.player ?? game.turn.player }
- public var waitingForHuman: Bool { !game.players[actor].bankrupt && game.players[actor].kind == .human }
+ public var waitingForHuman: Bool {
+  game.players.indices.contains(actor) && !game.players[actor].bankrupt &&
+  game.players[actor].kind == .human && (liveRoom == nil || liveRoom?.localSeat == actor)
+ }
+ public var isMultiplayer: Bool { liveRoom != nil }
+ public var isHost: Bool { liveRoom?.isHost ?? false }
+ public var roomConfiguration: VeilopolyRoomConfiguration? { liveRoom?.configuration }
+ public var canSkipAnimation: Bool { animating && !cardGate.isPresented }
  public var currentContext: GameContext { VeilopolyEngine.context(game) }
- public var pending: Bool { animating }
+ public var pending: Bool { animating || awaitingHost || (isMultiplayer && !networkReady) }
  /// Read-only editorial copy for the EXACT engine card currently in the queue.
  /// Persisted CardDefinition and gameplay effects remain authoritative.
  public var shownEditorial: VeilopolyCardEditorialEntry? {
@@ -105,7 +150,7 @@ public final class GameSessionModel: ObservableObject {
    return
   }
   do {
-   _ = try saveStore.save(game, gameID: saveSessionID, mode: .solo,
+   _ = try saveStore.save(liveRoom?.game ?? game, gameID: saveSessionID, mode: saveMode,
                           stockReceipts: stockExecutions.map(\.persisted))
    lastCheckpointAt = Date()
    saveWarning = nil
@@ -124,22 +169,35 @@ public final class GameSessionModel: ObservableObject {
                      deck: DeckKind? = nil, financeProduct: FinancialFeature? = nil,
                      financePeriods: Int? = nil, financeID: Int? = nil,
                      stockSymbol: String? = nil, stockShares: Int? = nil) {
-  guard !animating && !cardGate.isPresented else { return }
+  guard !pending && !cardGate.isPresented, !isMultiplayer || waitingForHuman else { return }
   let move = Move(kind, player: actor, seq: game.nextSeq, tile: tile, amount: amount,
                   to: to, offer: offer, request: request, deck: deck,
                   financeProduct: financeProduct, financePeriods: financePeriods, financeID: financeID,
                   stockSymbol: stockSymbol, stockShares: stockShares)
+  if let room = liveRoom, !room.isHost {
+   awaitingHost = true
+   pendingLocalMove = move
+   networkSender?(.init(roomID: room.configuration.roomID, kind: .proposal, proposal: move))
+   return
+  }
   applyMove(move)
   drive()
  }
  public func advanceStockMarket() {
-  guard !animating && !cardGate.isPresented && waitingForHuman && game.turn.phase == .manage else { return }
+  let humanTurn = isMultiplayer ? game.players[actor].kind == .human : waitingForHuman
+  guard !pending && !cardGate.isPresented && humanTurn && game.turn.phase == .manage,
+        liveRoom == nil || liveRoom?.isHost == true else { return }
   applyMove(Move(.stockTick, player: actor, seq: game.nextSeq))
  }
- private func applyMove(_ move: Move) {
-  let result = VeilopolyEngine.apply(game, currentContext, move)
+ private func applyMove(_ move: Move, reportErrors: Bool = true) {
+  let result: VeilopolyEngine.Transition
+  if var room = liveRoom {
+   result = room.commitOnHost(move)
+   liveRoom = room
+  } else { result = VeilopolyEngine.apply(game, currentContext, move) }
   switch result {
   case .failure(let err):
+   guard reportErrors else { return }
    errorMessage = VeilopolyGamePresentation.message(err)
    errorAdvice = VeilopolyGamePresentation.advice(err)
    if move.type == .stockBuy || move.type == .stockSell {
@@ -151,6 +209,14 @@ public final class GameSessionModel: ObservableObject {
     UINotificationFeedbackGenerator().notificationOccurred(.error)
    }
   case .success((let newState, let effects)):
+   if let room = liveRoom {
+    networkSender?(.init(roomID: room.configuration.roomID, kind: .commit,
+     committed: .init(seq: move.seq, move: move, stateHash: StateDigest.hash(newState))))
+   }
+   presentCommittedState(newState, effects: effects, move: move)
+  }
+ }
+ private func presentCommittedState(_ newState: GameState, effects: [Effect], move: Move) {
    if newsEnabled {
     if let notice = VeilopolyBulletinCopy.event(effects, state: newState, sequence: move.seq) {
      bulletinFeed.enqueue(notice)
@@ -172,7 +238,8 @@ public final class GameSessionModel: ObservableObject {
    if move.type == .stockBuy || move.type == .stockSell {
     stockOrderError = nil
     for effect in effects {
-     if let execution = StockExecution(sequence: move.seq, effect: effect) {
+     if let execution = StockExecution(sequence: move.seq, effect: effect),
+        !stockExecutions.contains(where: { $0.id == execution.id }) {
       stockExecutions.insert(execution, at: 0)
      }
     }
@@ -190,11 +257,11 @@ public final class GameSessionModel: ObservableObject {
     UIImpactFeedbackGenerator(style: .soft).impactOccurred()
    }
    if !animating { presentNext() }
-  }
  }
  private func presentNext() {
   guard !queue.isEmpty else {
    animating = false
+   if isMultiplayer && !isHost { drainGuestPresentations() }
    drive()
    return
   }
@@ -203,7 +270,8 @@ public final class GameSessionModel: ObservableObject {
   if case .cardShow(let deck,let id,let message) = command {
    // Only a human player's card requires a tap to proceed. AI-only games
    // must continue after the visual/audio timeline without blocking on UI.
-   if game.players[game.turn.player].kind == .human {
+   if game.players[game.turn.player].kind == .human &&
+       (!isMultiplayer || liveRoom?.localSeat == game.turn.player) {
     cardGate.present()
     shownCardDeck = deck
     shownCardID = id
@@ -236,11 +304,11 @@ public final class GameSessionModel: ObservableObject {
   }
  }
  public func reset(seed: UInt64) {
-  guard !animating else { return }
+  guard !animating, !isMultiplayer else { return } // New linked games require a fresh mutual invitation.
   if recoveryBlocked {
    guard let saveStore else { return }
    do {
-    _ = try saveStore.quarantineUnreadable(gameID: saveSessionID, mode: .solo)
+    _ = try saveStore.quarantineUnreadable(gameID: saveSessionID, mode: saveMode)
     recoveryBlocked = false
    } catch {
     saveWarning = "无法隔离损坏存档，未清除原数据"
@@ -259,12 +327,18 @@ public final class GameSessionModel: ObservableObject {
   if configuredHumanCount == 0 { drive() }
  }
  private func drive() {
-  guard !animating && !driving else { return }
+  guard !animating && !driving,
+        !isMultiplayer || (isHost && networkReady && !recoveryBlocked) else { return }
+  if let deferred = deferredRemoteProposal {
+   deferredRemoteProposal = nil
+   receiveNetworkPacket(deferred.0, from: deferred.1)
+   return
+  }
   driving = true
   defer { driving = false }
   // All internal and AI moves use the same public pure reducer as human input.
   for _ in 0..<200 {
-   if animating || game.winner != nil { return }
+   if animating || game.winner != nil || (isMultiplayer && !networkReady) { return }
    let context = currentContext
    let automatic: Move?
    switch context.phase {
@@ -272,7 +346,7 @@ public final class GameSessionModel: ObservableObject {
    case .tileResolve where game.turn.pendingPurchase == nil:
     automatic = Move(.resolveTile, player: actor, seq: game.nextSeq)
    default:
-    if !waitingForHuman {
+    if game.players[actor].kind == .ai {
      automatic = VeilopolyAI.decide(game, context, me: actor, level: game.players[actor].aiLevel)
     } else { automatic = nil }
    }
@@ -282,6 +356,135 @@ public final class GameSessionModel: ObservableObject {
    if game.nextSeq == oldSeq { return }
   }
   errorMessage = "自动回合超过安全步数上限"
+ }
+
+ public func setNetworkAvailability(_ available: Bool, message: String) {
+  guard isMultiplayer else { return }
+  networkReady = available && !recoveryBlocked && networkForeground
+  networkStatus = recoveryBlocked ? "联机存档异常，原文件已保留；请返回大厅明确新建房间"
+   : (networkForeground ? message : "应用后台暂停，回到前台后重新同步")
+  if networkReady { drive() }
+ }
+ public func setNetworkForeground(_ active: Bool) {
+  guard isMultiplayer, networkForeground != active else { return }
+  networkForeground = active
+  if !active {
+   flushSave()
+   setNetworkAvailability(false, message: "应用后台暂停")
+  } else { requestNetworkSync() }
+ }
+ public func sendNetworkStatus() {
+  guard let room = liveRoom, !recoveryBlocked, networkForeground else { return }
+  networkSender?(.init(roomID: room.configuration.roomID, kind: .status,
+   nextSeq: room.game.nextSeq, stateHash: StateDigest.hash(room.game)))
+ }
+ public func requestNetworkSync() {
+  guard let room = liveRoom, !recoveryBlocked, networkForeground else { return }
+  if room.isHost { sendNetworkSnapshot() }
+  else {
+   networkSender?(.init(roomID: room.configuration.roomID, kind: .resync, nextSeq: room.game.nextSeq))
+  }
+ }
+ private func sendNetworkSnapshot() {
+  guard let room = liveRoom, room.isHost, !recoveryBlocked, networkForeground else { return }
+  networkSender?(.init(roomID: room.configuration.roomID, kind: .snapshot, snapshot: GameSnapshot(room.game)))
+ }
+ public func receiveNetworkPacket(_ packet: VeilopolyRoomPacket, from sender: String) {
+  guard var room = liveRoom, !recoveryBlocked, networkForeground else { return }
+  do { try room.validate(packet, from: sender) } catch { return }
+  do {
+   switch packet.kind {
+   case .proposal:
+    guard let move = packet.proposal else { return }
+    try room.validateProposal(move, from: sender)
+    if animating || cardGate.isPresented {
+     if deferredRemoteProposal == nil { deferredRemoteProposal = (packet, sender) }
+     return
+    }
+    guard networkReady else { sendNetworkSnapshot(); return }
+    let before = game.nextSeq
+    applyMove(move, reportErrors: false)
+    if game.nextSeq == before { sendNetworkSnapshot() }
+    drive()
+   case .commit:
+    guard let committed = packet.committed else { return }
+    if committed.seq < room.game.nextSeq { return } // Retransmitted committed action, never execute twice.
+    let (next, effects) = try room.acceptCommit(committed, from: sender)
+    liveRoom = room
+    if pendingLocalMove == committed.move { awaitingHost = false; pendingLocalMove = nil }
+    networkReady = !recoveryBlocked; networkStatus = "联机同步 · 进度 #\(next.nextSeq)"
+    if committed.move.type == .stockBuy || committed.move.type == .stockSell {
+     for effect in effects {
+      if let execution = StockExecution(sequence: committed.seq, effect: effect),
+         !stockExecutions.contains(where: { $0.id == execution.id }) {
+       stockExecutions.insert(execution, at: 0)
+      }
+     }
+     stockExecutions = Array(stockExecutions.prefix(40))
+    }
+    checkpoint(force: committed.move.type != .stockTick)
+    if committed.move.type == .stockTick, guestPresentations.last?.2.type == .stockTick {
+     guestPresentations[guestPresentations.count - 1] = (next, effects, committed.move)
+    } else { guestPresentations.append((next, effects, committed.move)) }
+    if guestPresentations.count > 64 { installNetworkSnapshot(next) }
+    else { drainGuestPresentations() }
+   case .snapshot:
+    guard let snapshot = packet.snapshot else { return }
+    try room.acceptSnapshot(snapshot, from: sender)
+    liveRoom = room
+    installNetworkSnapshot(room.game)
+    sendNetworkStatus()
+   case .resync:
+    guard room.isHost, let sequence = packet.nextSeq else { return }
+    guard sequence <= room.game.nextSeq else {
+     setNetworkAvailability(false, message: "房主存档落后于客端，已暂停；不会自动回退对方进度")
+     return
+    }
+    sendNetworkSnapshot()
+   case .status:
+    guard let sequence = packet.nextSeq, let hash = packet.stateHash else { return }
+    if sequence == room.game.nextSeq && hash == StateDigest.hash(room.game) {
+     let wasReady = networkReady
+     setNetworkAvailability(true, message: "\(room.isHost ? "房主" : "客端") · 两端进度一致 #\(sequence)")
+     if !wasReady && networkReady { sendNetworkStatus() }
+    } else if room.isHost && sequence > room.game.nextSeq {
+     setNetworkAvailability(false, message: "房主存档落后，已暂停等待核对")
+    } else { requestNetworkSync() }
+   case .leave: setNetworkAvailability(false, message: "对方已离开房间；本地进度已保留")
+   case .invite, .accept, .decline: break // Invitation lifecycle belongs to the authenticated host bridge.
+   }
+  } catch {
+   if room.isHost { sendNetworkSnapshot() }
+   else {
+    setNetworkAvailability(false, message: "同步校验未通过，正在请求房主进度")
+    if packet.kind != .snapshot { requestNetworkSync() }
+   }
+  }
+ }
+ private func drainGuestPresentations() {
+  guard !drainingGuestPresentation else { return }
+  drainingGuestPresentation = true
+  defer { drainingGuestPresentation = false }
+  while !animating && !cardGate.isPresented && !guestPresentations.isEmpty {
+   let next = guestPresentations.removeFirst()
+   presentCommittedState(next.0, effects: next.1, move: next.2)
+  }
+ }
+ private func installNetworkSnapshot(_ snapshot: GameState) {
+  // Gate driving before old SpriteKit ACKs; never replay a committed roll/payment.
+  networkReady = false
+  guestPresentations = []; queue = []; shownCard = nil; shownCardID = nil; cardGate.reset()
+  scene.fastForward(); animating = false
+  game = snapshot; awaitingHost = false; pendingLocalMove = nil
+  stockExecutions = stockExecutions.filter { execution in
+   let r = execution.persisted
+   guard snapshot.moveLog.indices.contains(r.id) else { return false }
+   let move = snapshot.moveLog[r.id]
+   return move.player == r.player && move.stockSymbol == r.symbol && move.stockShares == r.shares &&
+    move.type == (r.bought ? .stockBuy : .stockSell)
+  }
+  scene.display(snapshot); checkpoint(force: true)
+  networkReady = !recoveryBlocked; networkStatus = "已同步房主进度 #\(snapshot.nextSeq)"
  }
 }
 
@@ -316,6 +519,10 @@ public struct VeilopolyGameView: View {
   _model = StateObject(wrappedValue: GameSessionModel(seed: seed, humanCount: humanCount))
   self.onExit = onExit
  }
+ public init(session: GameSessionModel, onExit: (() -> Void)? = nil) {
+  _model = StateObject(wrappedValue: session)
+  self.onExit = onExit
+ }
  public var body: some View {
   GeometryReader { geometry in
    ZStack {
@@ -337,11 +544,13 @@ public struct VeilopolyGameView: View {
   .statusBarHidden()
   .onAppear {
    model.scene.reduceMotion = reduceMotion
+   model.setNetworkForeground(scenePhase == .active)
    dayFelt = model.scene.isDayFelt
   }
   .onDisappear { model.flushSave() }
   .onChange(of: scenePhase) { phase in
    if phase != .active { model.flushSave() }
+   model.setNetworkForeground(phase == .active)
   }
   .onChange(of: reduceMotion) { model.scene.reduceMotion = $0 }
   .onChange(of: model.pending) { pending in
@@ -385,6 +594,10 @@ public struct VeilopolyGameView: View {
    }
    .disabled(!model.scene.supportsDayFelt)
    Button("重新开局") { showRestart = true }
+    .disabled(model.isMultiplayer)
+   if model.isMultiplayer {
+    Button("重新同步联机进度") { model.requestNetworkSync() }
+   }
    Button("本局信息") { showGameInfo = true }
    Button("玩法辞典 · 23 篇") { showGuide = true }
    Button("取消", role: .cancel) {}
@@ -600,6 +813,11 @@ public struct VeilopolyGameView: View {
      .lineLimit(1)
    }
    .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
+   if model.isMultiplayer {
+    Text(model.networkStatus).font(.caption2)
+     .fixedSize(horizontal: false, vertical: true)
+     .accessibilityLabel("联机状态：" + model.networkStatus)
+   }
    // Independent browsing stays available during purchase, auction and
    // animation. It cannot submit orders or replace the pending decision.
    Button { showAssetBrowser = true } label: {
@@ -768,7 +986,7 @@ public struct VeilopolyGameView: View {
       .allowsHitTesting(false)
     }
     .overlay(alignment: .bottom) {
-     if model.pending && model.shownCard == nil {
+     if model.canSkipAnimation {
       Button { model.fastForward() } label: {
        Label("跳过当前动画", systemImage: "forward.end.fill")
         .font(.caption2.weight(.semibold)).padding(.horizontal, 11)
@@ -935,6 +1153,13 @@ public struct VeilopolyGameView: View {
  }
  @ViewBuilder private var actionPanel: some View {
   if model.game.winner != nil { settlementPanel }
+  else if model.isMultiplayer && !model.networkReady {
+   VStack(alignment: .leading, spacing: 8) {
+    Text(model.networkStatus)
+    action("请求同步", symbol: "arrow.triangle.2.circlepath") { model.requestNetworkSync() }
+   }
+  }
+  else if model.awaitingHost { ProgressView("等待房主确认操作") }
   else if model.game.turn.phase == .manage && model.waitingForHuman {
    managePanel.disabled(model.pending)
     .overlay(alignment: .topTrailing) {
@@ -942,7 +1167,10 @@ public struct VeilopolyGameView: View {
     }
   }
   else if model.pending { ProgressView("动画播放中") }
-  else if !model.waitingForHuman { Text("AI 正在行动……").foregroundStyle(.secondary) }
+  else if !model.waitingForHuman {
+   Text(model.isMultiplayer && model.game.players[model.actor].kind == .human
+        ? "等待对方行动……" : "AI 正在行动……").foregroundStyle(.secondary)
+  }
   else {
    switch model.game.turn.phase {
    case .roll:
