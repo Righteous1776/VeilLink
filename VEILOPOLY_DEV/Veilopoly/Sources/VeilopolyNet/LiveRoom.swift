@@ -129,6 +129,9 @@ public struct VeilopolyLiveRoom {
   guard !isHost else { throw VeilopolyRoomError.wrongRole }
   guard sender == configuration.hostIdentityID else { throw VeilopolyRoomError.wrongPeer }
   guard snapshot.game.nextSeq >= game.nextSeq else { throw VeilopolyRoomError.staleSnapshot }
+  guard snapshot.game.moveLog.prefix(game.nextSeq).elementsEqual(game.moveLog) else {
+   throw VeilopolyRoomError.invalidSnapshot // A higher sequence must not replace a different committed history.
+  }
   guard Self.validSnapshotState(snapshot.game, configuration: configuration),
         snapshot.lastAppliedSeq == snapshot.game.nextSeq - 1,
         StateDigest.hash(snapshot.game) == snapshot.stateHash else { throw VeilopolyRoomError.invalidSnapshot }

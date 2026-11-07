@@ -156,4 +156,18 @@ final class LiveRoomTests: XCTestCase {
   }
   XCTAssertThrowsError(try assembler.ingest(VeilopolyControlCodec.fragments(packet)[0], from: "host", now: 1))
  }
+ func testHigherSequenceSnapshotCannotReplaceDifferentCommittedHistory() throws {
+  var initial = GameFactory.make(seed: config.seed, humanCount: 2)
+  initial.turn.phase = .manage
+  var host = try VeilopolyLiveRoom(configuration: config, localIdentityID: "host", restoredGame: initial)
+  var guest = try VeilopolyLiveRoom(configuration: config, localIdentityID: "guest", restoredGame: initial)
+  let deposit = Move(.bankDeposit, player: 0, seq: 0, amount: 100, financeProduct: .demandDeposit)
+  let accepted = try host.commitOnHost(deposit).get().0
+  _ = try guest.acceptCommit(.init(seq: 0, move: deposit, stateHash: StateDigest.hash(accepted)), from: "host")
+  var fork = try VeilopolyLiveRoom(configuration: config, localIdentityID: "host", restoredGame: initial)
+  _ = try fork.commitOnHost(Move(.stockBuy, player: 0, seq: 0, stockSymbol: "VTL", stockShares: 1)).get()
+  _ = try fork.commitOnHost(Move(.endTurn, player: 0, seq: 1)).get()
+  XCTAssertThrowsError(try guest.acceptSnapshot(GameSnapshot(fork.game), from: "host"))
+  XCTAssertEqual(guest.game, accepted)
+ }
 }
