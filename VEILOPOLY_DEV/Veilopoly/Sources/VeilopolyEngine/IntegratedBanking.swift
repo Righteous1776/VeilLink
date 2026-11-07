@@ -290,7 +290,8 @@ public enum IntegratedBanking {
    effects.append(Effect(.bankInvestmentSettled, player: p, amount: payout, dice: [rolled], text: position.feature.rawValue))
   case .stockTick:
    guard var market = ledger.market else { throw GameError.invalidState }
-   let halted = try StockMarketEngine.advance(&market)
+   let pressure = VeilopolyCityLongEconomy.marketPressure(g)
+   let halted = try StockMarketEngine.advance(&market, economicPressure: pressure)
    ledger.market = market
    effects.append(Effect(.stockTicked, amount: market.tick,
                          text: "regime:\(market.regime)"))
@@ -345,7 +346,9 @@ public enum IntegratedBanking {
     }
    }
   }
-  if var market = ledger.market, let halted = try? StockMarketEngine.advance(&market) {
+  let pressure = VeilopolyCityLongEconomy.marketPressure(g)
+  if var market = ledger.market,
+     let halted = try? StockMarketEngine.advance(&market, economicPressure: pressure) {
    ledger.market = market
    effects.append(Effect(.stockTicked, amount: market.tick, text: "turnClose"))
    for symbol in halted { effects.append(Effect(.stockHalted, text: symbol, stockSymbol: symbol)) }

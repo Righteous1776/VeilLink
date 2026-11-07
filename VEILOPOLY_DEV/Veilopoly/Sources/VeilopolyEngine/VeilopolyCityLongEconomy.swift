@@ -35,6 +35,22 @@ public enum VeilopolyCityLongEconomy {
   let adjusted = tileKind == .railroad || tileKind == .utility ? base * 3 : base
   return min(adjusted, rentCeiling(game))
  }
+ /// Signal derived ONLY from committed current GameState, no clock/network/RNG:
+ /// purchases, building and bank repayments withdraw player liquidity, loans
+ /// release it, and development raises the productive-city component.
+ /// Direct transfers also alter concentration. Clamped to ±1.4%/tick.
+ public static func marketPressure(_ game: GameState) -> Int {
+  guard game.banking?.financeRuleVersion == version else { return 0 }
+  let totalPlayerCash = game.players.reduce(0) { $0 + $1.cash }
+  let cashImpulse = (totalPlayerCash - 4 * startingCash) / 300
+  let buildings = game.board.reduce(0) { $0 + $1.houses + ($1.hotel ? 5 : 0) }
+  let infrastructure = min(80, buildings * 7)
+  let richest = game.players.map(\.cash).max() ?? 0
+  let poorest = game.players.filter { !$0.bankrupt }.map(\.cash).min() ?? 0
+  let concentration = min(50, max(0, richest - poorest) / 600)
+  let signal = cashImpulse + infrastructure - concentration
+  return max(-140, min(140, signal))
+ }
  public static func terms() -> FinanceSandboxPolicy {
   var p = FinanceSandboxPolicy()
   // The percentage is charged ONCE per contract, not again for every period.

@@ -277,14 +277,16 @@ public enum StockMarketEngine {
 
  /// A failed tick never commits a half-advanced market (including RNG, quotes,
  /// volume, chart history and circuit breaker state).
- public static func advance(_ market: inout StockMarketState) throws -> [String] {
+ public static func advance(_ market: inout StockMarketState,
+                            economicPressure: Int = 0) throws -> [String] {
   var next = market
-  let halted = try advanceChecked(&next)
+  let halted = try advanceChecked(&next, economicPressure: economicPressure)
   market = next
   return halted
  }
 
- private static func advanceChecked(_ market: inout StockMarketState) throws -> [String] {
+ private static func advanceChecked(_ market: inout StockMarketState,
+                                    economicPressure: Int) throws -> [String] {
   guard validate(market), market.tick < 1_000_000 else { throw GameError.invalidState }
   market.tick += 1
   var halted: [String] = []
@@ -338,7 +340,11 @@ public enum StockMarketEngine {
    let baseMove = quote.driftBasisPoints + market.regime * 14 +
      commonFactor + idiosyncratic + meanReversion + eventShock +
      sectorWinds[index] + headlineShock
-   let adjusted = market.algorithmVersion == 3 ? baseMove * 3 / 2 : baseMove
+   // The V4 bank-ledger supplies this deterministic city-wide pressure.
+   // Historical V1/V2/V3 calls keep the default zero, unchanged.
+   let cityImpulse = market.algorithmVersion == 3
+     ? max(-140, min(140, economicPressure)) : 0
+   let adjusted = market.algorithmVersion == 3 ? baseMove * 3 / 2 + cityImpulse : baseMove
    let basisPoints = max(-900, min(900, adjusted))
    var delta = quote.currentPriceCents * basisPoints / 10_000
    if delta == 0 && basisPoints != 0 { delta = basisPoints > 0 ? 1 : -1 }
