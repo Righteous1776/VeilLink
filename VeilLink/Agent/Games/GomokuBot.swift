@@ -123,8 +123,11 @@ enum GomokuBot {
             .map {
                 let learned = learning.bonus(position: rootPosition, action: String($0))
                 let sequence = learning.rootAdjustment(action: String($0))
+                let tacticalTraining = trainedR4TacticalBonuses(
+                    index: $0, state: state, player: player
+                )
                 return ($0, tacticalPriority(index: $0, state: state, player: player)
-                    + trainedR3ForkBonus(index: $0, state: state, player: player) + learned + sequence
+                    + tacticalTraining.attack + tacticalTraining.defense + learned + sequence
                     + formationPreference.bonus(index: $0, state: state, player: player, urgentDefense: urgentDefense))
             }
             .sorted { lhs, rhs in
@@ -303,7 +306,22 @@ enum GomokuBot {
     /// Root hint is strictly bounded. The mandatory win/block scans above run
     /// before this policy and native search still owns the final decision.
     static func trainedR3ForkBonus(index: Int, state: GomokuState, player: MiniGamePlayer) -> Int {
-        guard state.value(at: index) == 0 else { return 0 }
+        trainedR4TacticalBonuses(index: index, state: state, player: player).attack
+    }
+
+    /// Learned opponent-fork prevention policy: small, fixed coefficients.
+    /// Bounded to 48k root ordering points; hard win/block and rule checks run first.
+    /// This metric is NOT a native engine Elo claim.
+    static func trainedR4CounterForkBonus(index: Int, state: GomokuState, player: MiniGamePlayer) -> Int {
+        trainedR4TacticalBonuses(index: index, state: state, player: player).defense
+    }
+
+    /// Compute the R3 offensive and R4 defensive signals in one shared pass.
+    /// A15/iPhone7 friendly: no network, ML runtime or second board scan.
+    private static func trainedR4TacticalBonuses(
+        index: Int, state: GomokuState, player: MiniGamePlayer
+    ) -> (attack: Int, defense: Int) {
+        guard state.value(at: index) == 0 else { return (0, 0) }
         let row = index / size
         let col = index % size
         let own: Int8 = player == .host ? 1 : 2
@@ -362,7 +380,22 @@ enum GomokuBot {
         ]
         var logit = -12.706419814435504
         for j in 0..<trained.count { logit += trained[j] * features[j] }
-        return max(0, min(2_400, Int(max(0, logit) * 350)))
+        let attack = max(0, min(2_400, Int(max(0, logit) * 350)))
+
+        // Ridge weights trained against EXACT opponent fork counts after legal
+        // hypothetical moves from 2,484 replayed real VeilLink game states.
+        // Collapsed symmetric 14-feature teacher to these seven features:
+        // keeps inference fixed-size and removes the second feature pass.
+        let defensivePrediction = -0.17198881639659588
+            - 0.01325435799882135 * features[0]
+            + 0.8104074675638822 * features[1]
+            + 0.0010736105612463528 * features[2]
+            - 0.01033982399203205 * features[3]
+            - 0.006746374984911827 * features[4]
+            - 0.02001955212897536 * features[5]
+            + 0.007056044570294954 * features[6]
+        let defense = max(-48_000, min(48_000, Int(defensivePrediction * 150_000)))
+        return (attack, defense)
     }
 
     private static func tacticalPriority(index: Int, state: GomokuState, player: MiniGamePlayer) -> Int {
