@@ -16,6 +16,22 @@ final class UnifiedCityEconomyTests: XCTestCase {
   g.players.reduce(0) { $0 + $1.cash } + (g.banking?.reserveCash ?? 0)
  }
 
+ func testBankClaimCannotBeInjectedIntoHistoricalV3Encoding() throws {
+  var old = VeilopolyCityLongEconomy.make(seed: 98125)
+  old.banking?.financeRuleVersion = 3
+  old.banking?.reserveCash = nil
+  old.banking?.queuedClaims = nil
+  old.cards = VeilopolyCityLongCards.all
+  let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+  let bytes = try encoder.encode(old)
+  let text = String(decoding: bytes, as: UTF8.self)
+  XCTAssertFalse(text.contains("queuedClaims"))
+  XCTAssertFalse(text.contains("reserveCash"))
+  let restored = try JSONDecoder().decode(GameState.self, from: bytes)
+  XCTAssertEqual(old, restored)
+  XCTAssertTrue(IntegratedBanking.validate(try XCTUnwrap(restored.banking)))
+ }
+
  func testV4OpeningCurrencyAndLegacyLedgerSeparation() throws {
   let city = VeilopolyCityLongEconomy.make(seed: 98101)
   XCTAssertEqual(city.banking?.reserveCash, 160_000)
@@ -29,6 +45,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
   var v3 = city
   v3.banking?.financeRuleVersion = 3
   v3.banking?.reserveCash = nil
+  v3.banking?.queuedClaims = nil
   v3.cards = VeilopolyCityLongCards.all
   let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
   let text = String(decoding: try encoder.encode(v3), as: UTF8.self)
