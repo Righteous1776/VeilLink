@@ -35,11 +35,17 @@ public enum VeilopolyBankAutomation {
   }
   for loan in a.loans {
    let remaining=max(0,loan.duePeriod-now)
+   let overdue=max(0,now-loan.duePeriod)
    if remaining<=2 {
-    notes.append(.init("loan-\(loan.id)",
-      remaining==0 ? "贷款 #\(loan.id) 已到期 · 待偿 ¥\(loan.totalDue)"
-                   : "贷款 #\(loan.id) 距到期还有 \(remaining) 期 · 待偿 ¥\(loan.totalDue)",
-      urgent:remaining==0))
+    let description: String
+    if overdue>0 {
+     description="贷款 #\(loan.id) 已逾期 \(overdue) 期 · 尚欠 ¥\(loan.totalDue)"
+    } else if remaining==0 {
+     description="贷款 #\(loan.id) 已到期 · 待偿 ¥\(loan.totalDue)"
+    } else {
+     description="贷款 #\(loan.id) 距到期还有 \(remaining) 期 · 待偿 ¥\(loan.totalDue)"
+    }
+    notes.append(.init("loan-\(loan.id)",description,urgent:remaining==0))
    }
   }
   for item in a.positions {
@@ -60,7 +66,9 @@ public enum VeilopolyBankAutomation {
   let memos = [
    "柜台札记 · 金融期数随普通回合推进；额外掷骰不提前到期。",
    "柜台札记 · 银行本金、可用现金与虚构证券持仓分开记录。",
-   "柜台札记 · 到期事项已经自动核对；真实划款仍需合法操作。",
+   ledger.financeRuleVersion == 2
+    ? "柜台札记 · V2 贷款现金充足时按期自动偿还；其他结算仍需合法操作。"
+    : "柜台札记 · 旧对局保留原有手动还款规则；其他结算仍需合法操作。",
    "柜台札记 · 固定收益必须来自已批准条款，不能随机承诺。"
   ]
   var counter: UInt64=0

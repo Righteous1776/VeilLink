@@ -73,7 +73,7 @@ public enum VeilopolyGamePresentation {
   case .tradeMismatch: return "交易条件已变化，请重新选择"
   case .financeTermsPending: return "该金融条件尚未开放"
   case .financePositionLocked: return "尚未到可取回或结算的期数"
-  case .financeOverdue: return "存在逾期未偿贷款，暂不能新增投资或借款"
+  case .financeOverdue: return "贷款已逾期，请先还款再存款、借款、买股或投资"
   case .stockTradingHalted: return "股票暂停交易，请等待恢复"
   case .insufficientShares: return "持股数量不足"
   case .stockNotFound: return "股票不存在"

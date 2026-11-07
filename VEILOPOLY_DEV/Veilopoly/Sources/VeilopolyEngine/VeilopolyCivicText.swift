@@ -125,7 +125,10 @@ public enum VeilopolyCivicText {
     .init("存款本金", money(savings)),
     .init("贷款待偿总额", money(loans)),
     .init("投资本金", money(investments)),
-    .init("账本期次", "\(ledger.completedTurns)")
+    .init("账本期次", "\(ledger.completedTurns)"),
+    .init("贷款处理", ledger.financeRuleVersion == 2
+      ? "V2 · 到期且现金充足时自动偿还"
+      : "V1 · 旧对局手动偿还")
    ])
   } else {
    fields.append(.init("账本状态", "尚未启用银行账本"))

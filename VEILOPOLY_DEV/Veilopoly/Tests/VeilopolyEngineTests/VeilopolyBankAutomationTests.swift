@@ -47,3 +47,20 @@ final class VeilopolyBankAutomationTests: XCTestCase {
   XCTAssertGreaterThan(strings.count,1)
  }
 }
+
+extension VeilopolyBankAutomationTests {
+ func testOverdueDateAndContractVersionAreDisplayedPrecisely() throws {
+  var game=GameFactory.make(seed:902)
+  var bank=IntegratedBankLedger(completedTurns:9)
+  bank.accounts[0].loans=[
+   SandboxLoan(id:5,principal:100,interestBasisPoints:2000,
+               duePeriod:6,periods:1,totalDue:120)]
+  game.banking=bank
+  let digest=try XCTUnwrap(VeilopolyBankAutomation.digest(game,player:0))
+  XCTAssertTrue(digest.notices[0].text.contains("逾期 3 期"))
+  bank.financeRuleVersion=1; game.banking=bank
+  let legacy=try XCTUnwrap(VeilopolyBankAutomation.digest(game,player:0))
+  XCTAssertEqual(digest.notices[0],legacy.notices[0])
+  XCTAssertFalse(legacy.memorandum.isEmpty)
+ }
+}

@@ -91,7 +91,7 @@ public enum VeilopolyGuideLibrary {
   .init(id: "loan", chapter: .economy, title: "贷款与还款",
         subtitle: "偿债期限属于游戏回合",
         detail: "贷款具有本金、利率、到期期数和待偿总额。真实生效的条件会记录在本局账本中，而不是由界面的文字另行决定。",
-        footnote: "银行期数在普通玩家回合结束后推进；额外掷骰本身不构成另一个金融结算期。"),
+        footnote: "新版 V2 在到期且现金充足时自动偿还；不足则保留欠款并限制新增买股、存款、借款及投资。旧对局沿用 V1。银行期数在普通回合结束后推进。"),
   .init(id: "investment", chapter: .economy, title: "投资与到期",
         subtitle: "未批准的收益不得显示为保证利润",
         detail: "投资产品可能有锁定期与结算规则，但当前资料中仍有收益表未完成裁决的条目。界面必须按实际允许的产品和条款显示可用状态。",
