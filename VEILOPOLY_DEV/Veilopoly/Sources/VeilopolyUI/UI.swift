@@ -52,8 +52,8 @@ public final class GameSessionModel: ObservableObject {
   recoveryBlocked = unreadable
   let initial = recovered?.game ?? GameFactory.make(seed: seed, humanCount: humanCount)
   game = initial
-  stockExecutions = (recovered?.stockReceipts ?? []).map(StockExecution.init(record:))
   scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
+  stockExecutions = (recovered?.stockReceipts ?? []).map(StockExecution.init(record:))
   scene.display(initial)
   scene.highlightTile(selectedTile)
   scene.onBoardTap = { [weak self] tile in

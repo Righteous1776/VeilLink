@@ -161,7 +161,7 @@ public final class VeilopolySaveStore {
          move.type == (r.bought ? .stockBuy : .stockSell),
          move.stockSymbol == r.symbol, move.stockShares == r.shares else { return false }
   }
-  return zip(receipts, receipts.dropFirst()).allSatisfy { $0.id > $1.id }
+  return zip(receipts, receipts.dropFirst()).allSatisfy { $0.0.id > $0.1.id }
  }
 
  private func verified(_ data: Data, gameID: String, mode: VeilopolySaveMode) -> VeilopolySavedGame? {
