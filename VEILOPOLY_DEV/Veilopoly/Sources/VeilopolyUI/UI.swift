@@ -494,8 +494,8 @@ public struct VeilopolyGameView: View {
  @State private var offerCash = "0"
  @State private var requestCash = "0"
  @State private var bidderCash = "10"
- @State private var bankAmount = "200"
- @State private var bankPeriods = "3"
+ @State private var bankAmount = "600"
+ @State private var bankPeriods = "6"
  @State private var stockSymbol = "VTL"
  @State private var stockShares = "1"
  @State private var tradeTarget = 1
@@ -1469,6 +1469,10 @@ public struct VeilopolyGameView: View {
   return VStack(alignment: .leading, spacing: 8) {
    Divider()
    Text("银行与金融").font(.subheadline.weight(.semibold))
+   if VeilopolyCityLongEconomy.isActive(model.game) {
+    Text("城市长局 · 现金与地产规模已扩大；贷款采用整份合同固定利息；活期需经过一个账期才有收益。")
+     .font(.caption2).foregroundStyle(.secondary)
+   }
    astraBankHero
    if let receipt = VeilopolyCivicText.banking(model.game, player: model.actor) {
     VeilopolyCivicDocumentPanel(document: receipt)
@@ -1515,6 +1519,43 @@ public struct VeilopolyGameView: View {
      model.perform(.bankBorrow, amount: Int(bankAmount), financePeriods: Int(bankPeriods))
     }
     .disabled(borrowReason != nil)
+   }
+   if VeilopolyCityLongEconomy.isActive(model.game) {
+    let terms = model.game.banking?.terms ?? VeilopolyCityLongEconomy.terms()
+    let fixed = Move(.bankDeposit, player: model.actor, seq: model.game.nextSeq,
+                     amount: Int(bankAmount), financeProduct: .fixedDeposit)
+    VStack(alignment: .leading, spacing: 6) {
+     Text("收益与借贷 · 活期 1 期 +1.5%，定期 4 期 +8.5%；贷款按合同本金一次计息 8%～17%。")
+      .font(.caption2).foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+     if let amount = Int(bankAmount), amount > 0, (1...12).contains(Int(bankPeriods) ?? 0),
+        let bank = model.game.banking, bank.accounts.indices.contains(model.actor) {
+      let ordinal = bank.accounts[model.actor].borrowCount
+      if ordinal < terms.loanInterestBasisPoints.count {
+       let rate = terms.loanInterestBasisPoints[ordinal]
+       let interest = (amount * rate + 9_999) / 10_000
+       Text("本次借款 ¥\(amount) · 合同到期预计偿还 ¥\(amount + interest) · 当前期数 \(bankPeriods)")
+        .font(.caption.monospacedDigit())
+        .fixedSize(horizontal: false, vertical: true)
+      }
+     }
+     action("存入定期 · 四期", symbol: "lock.shield") {
+      model.perform(.bankDeposit, amount: Int(bankAmount), financeProduct: .fixedDeposit)
+     }
+     .disabled(VeilopolyGamePresentation.rejection(model.game, move: fixed) != nil)
+     Text("模拟投资（可能亏损）· 稳健基金 / 创业项目 / 三期指数")
+      .font(.caption2).foregroundStyle(.secondary)
+     ForEach([FinancialFeature.managedFund, .ventureSimulation, .stockSimulation], id: \.rawValue) { feature in
+      let move = Move(.bankInvest, player: model.actor, seq: model.game.nextSeq,
+                      amount: Int(bankAmount), financeProduct: feature)
+      action(feature == .managedFund ? "稳健基金 · 五期" :
+             feature == .ventureSimulation ? "创业项目 · 四期" : "模拟指数 · 三期",
+             symbol: "chart.bar.xaxis") {
+       model.perform(.bankInvest, amount: Int(bankAmount), financeProduct: feature)
+      }
+      .disabled(VeilopolyGamePresentation.rejection(model.game, move: move) != nil)
+     }
+    }
    }
    if let depositReason { Text("存款：" + depositReason).font(.caption2).foregroundStyle(.secondary) }
    if let borrowReason { Text("贷款：" + borrowReason).font(.caption2).foregroundStyle(.secondary) }
