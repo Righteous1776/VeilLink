@@ -34,6 +34,7 @@ public struct VeilopolyStockMarketPanel: View {
  public let buyRestriction: String?
  @Binding public var selectedSymbol: String
  @Binding public var shareText: String
+ public let onEditShareCount: (() -> Void)?
  public let onBuy: (String, Int) -> Void
  public let onSell: (String, Int) -> Void
 
@@ -46,12 +47,14 @@ public struct VeilopolyStockMarketPanel: View {
              selectedSymbol: Binding<String>, shareText: Binding<String>,
              executions: [StockExecution] = [], orderError: String? = nil,
              buyRestriction: String? = nil,
+             onEditShareCount: (() -> Void)? = nil,
              onBuy: @escaping (String, Int) -> Void,
              onSell: @escaping (String, Int) -> Void) {
   self.market = market; self.player = player; self.cash = cash
   self.executions = executions; self.orderError = orderError
   self.buyRestriction = buyRestriction
   _selectedSymbol = selectedSymbol; _shareText = shareText
+  self.onEditShareCount = onEditShareCount
   self.onBuy = onBuy; self.onSell = onSell
  }
 
@@ -284,14 +287,30 @@ public struct VeilopolyStockMarketPanel: View {
    .accessibilityLabel("交易方向")
 
    HStack(spacing: 7) {
-    TextField("股数", text: $shareText)
-     .keyboardType(.numberPad).textFieldStyle(.plain)
-     .focused($quantityFocused)
-     .font(.system(size: 15, weight: .bold, design: .monospaced))
-     .padding(.horizontal, 10).frame(height: 44)
-     .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
-     .overlay { RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(0.10)) }
-     .accessibilityLabel("交易股数")
+    if let onEditShareCount {
+     Button(action: onEditShareCount) {
+      HStack(spacing: 6) {
+       Text("股数").foregroundStyle(.white.opacity(0.65))
+       Spacer(minLength: 4)
+       Text(shareText.isEmpty ? "输入" : shareText).monospacedDigit()
+       Image(systemName: "number").accessibilityHidden(true)
+      }
+      .font(.system(size: 15, weight: .bold, design: .monospaced))
+      .padding(.horizontal, 10).frame(maxWidth: .infinity, minHeight: 44)
+      .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
+     }
+     .buttonStyle(.plain)
+     .accessibilityLabel("交易股数，当前 \(shareText)，点击编辑")
+    } else {
+     TextField("股数", text: $shareText)
+      .keyboardType(.numberPad).textFieldStyle(.plain)
+      .focused($quantityFocused)
+      .font(.system(size: 15, weight: .bold, design: .monospaced))
+      .padding(.horizontal, 10).frame(height: 44)
+      .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
+      .overlay { RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(0.10)) }
+      .accessibilityLabel("交易股数")
+    }
     Stepper("", value: Binding(
      get: { max(1, min(10_000, Int(shareText) ?? 1)) },
      set: { shareText = String($0) }), in: 1...10_000)
