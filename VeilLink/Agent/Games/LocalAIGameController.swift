@@ -477,7 +477,8 @@ final class LocalAIGameController: ObservableObject {
                 self.nativeTrainingTask = nil
             }
             var failed = 0
-            for gameIndex in 0..<(target * 2) {
+            var rejected = 0
+            for gameIndex in 0..<(target * 6) {
                 if Task.isCancelled || self.nativeTrainingCompleted >= target { break }
                 let snapshot = store.snapshot()
                 let seed = startingSeed + gameIndex
@@ -497,6 +498,11 @@ final class LocalAIGameController: ObservableObject {
                     if stored == 1 {
                         self.nativeTrainingCompleted += 1
                         self.trainedNativeGames = store.summary.completedGames
+                        failed = 0
+                    } else if store.lastSaveSucceeded {
+                        // Duplicate or invalid match: do NOT count it as trained.
+                        // Continue with a new seed / native search-budget variant.
+                        rejected += 1
                     } else {
                         self.nativeTrainingMessage = "训练数据保存失败，已停止。"
                         break
@@ -515,6 +521,8 @@ final class LocalAIGameController: ObservableObject {
                 self.nativeTrainingMessage = "本轮已保存 \(self.nativeTrainingCompleted) 局原生自对弈。"
             } else if Task.isCancelled {
                 self.nativeTrainingMessage = "已停止，本轮已保存 \(self.nativeTrainingCompleted) 局。"
+            } else {
+                self.nativeTrainingMessage = "本轮真实保存 \(self.nativeTrainingCompleted) 局；去重/拒收 \(rejected) 局，未完成 \(failed) 次。"
             }
         }
     }
