@@ -780,8 +780,8 @@ public struct VeilopolyGameView: View {
    // chart selection, disclosures or the current scroll position. A hidden
    // panel cannot consume touches or VoiceOver focus. Never pause game logic.
    controlsDrawer(in: layout)
-    .frame(width: panel.width, height: panel.height)
-    .position(x: panel.midX, y: panel.midY)
+    .frame(width: CGFloat(panel.width), height: CGFloat(panel.height))
+    .position(x: CGFloat(panel.midX), y: CGFloat(panel.midY))
     .opacity(panelWorkspace.isExpanded ? 1 : 0)
     .allowsHitTesting(panelWorkspace.isExpanded)
     .accessibilityHidden(!panelWorkspace.isExpanded)
@@ -796,8 +796,8 @@ public struct VeilopolyGameView: View {
     .zIndex(2)
    if !panelWorkspace.isExpanded {
     suspendedPanelChip(in: layout)
-     .frame(width: chip.width, height: chip.height)
-     .position(x: chip.midX, y: chip.midY)
+     .frame(width: CGFloat(chip.width), height: CGFloat(chip.height))
+     .position(x: CGFloat(chip.midX), y: CGFloat(chip.midY))
      .transition(.opacity)
      .zIndex(2)
    }

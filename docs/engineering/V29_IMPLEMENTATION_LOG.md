@@ -36,3 +36,12 @@ Promotion only after green required checks, normal merge and immutable release.
 
 Nine guarded live-session/ACK/lifecycle tests are attached to the actual iOS
 test host in project.yml; macOS/Linux package success alone does not run them.
+
+First Apple run42400461288 failed macOS package compilation: Foundation-only
+CGRect lacked Darwin overlay initializers/accessors in PanelWorkspace. Replaced
+it with a pure Swift value frame and explicit CGFloat conversion at UI boundary;
+no geometry/rule change. Move package test before costly native preparation.
+Separate validation/v29-device-candidate lane restores exact-digest device llama
+from successful native source run42397878336, rebuilds current V29 app and
+verifies its bytes. That fast artifact remains PENDING primary complete gates,
+not a published release. Original CI and source branches are not overwritten.

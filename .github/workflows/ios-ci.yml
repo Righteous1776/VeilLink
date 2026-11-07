@@ -41,6 +41,12 @@ jobs:
           set -o pipefail
           python3 scripts/ci-standard-preflight.py 2>&1 | tee ci-artifacts/static-preflight.log
 
+      - name: Test offline Veilopoly package before expensive native preparation
+        run: |
+          set -o pipefail
+          python3 scripts/test-verify-veilopoly-release.py 2>&1 | tee ci-artifacts/veilopoly-resource-gate-tests.log
+          swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2 2>&1 | tee ci-artifacts/veilopoly-package-tests.log
+
       - name: Install XcodeGen
         run: brew install xcodegen cmake 2>&1 | tee ci-artifacts/install-xcodegen.log
 
@@ -49,12 +55,6 @@ jobs:
           set -o pipefail
           python3 scripts/test-verify-vertex-release.py 2>&1 | tee ci-artifacts/vertex-verifier-tests.log
           bash scripts/prepare-vertex35m-ios.sh 2>&1 | tee ci-artifacts/vertex-native-prepare.log
-
-      - name: Test offline Veilopoly package
-        run: |
-          set -o pipefail
-          python3 scripts/test-verify-veilopoly-release.py 2>&1 | tee ci-artifacts/veilopoly-resource-gate-tests.log
-          swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2 2>&1 | tee ci-artifacts/veilopoly-package-tests.log
 
       - name: Record XcodeGen version
         run: xcodegen --version | tee ci-artifacts/xcodegen-version.log
