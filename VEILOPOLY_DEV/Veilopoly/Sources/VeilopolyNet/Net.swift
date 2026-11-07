@@ -117,12 +117,36 @@ public struct ReplicaClient {
  }
 }
 
-/// Intentionally nonfunctional P5 hand-off placeholder; cannot accidentally send unencrypted messages.
+/// Adapter is injected by the real VeilLink application using the authenticated
+/// encrypted chat transport. The package never opens untrusted BLE sockets.
+/// A zero-argument construction still fails CLOSED instead of fabricating a link.
 public struct VeilLinkTransportAdapter: GameTransport {
- public init() {}
- public func send(_ payload: GameEnvelope) async throws { throw P5IntegrationRequired.notIntegrated }
- public func receive() -> AsyncThrowingStream<GameEnvelope, Error> {
-  AsyncThrowingStream { continuation in continuation.finish(throwing: P5IntegrationRequired.notIntegrated) }
+ public typealias Sender = (GameEnvelope) async throws -> Void
+ public typealias Receiver = () -> AsyncThrowingStream<GameEnvelope, Error>
+ private let outbound: Sender
+ private let inbound: Receiver
+
+ public init(send: @escaping Sender, receive: @escaping Receiver) {
+  outbound = send
+  inbound = receive
  }
+
+ public init() {
+  outbound = { _ in throw P5IntegrationRequired.notIntegrated }
+  inbound = {
+   AsyncThrowingStream { continuation in
+    continuation.finish(throwing: P5IntegrationRequired.notIntegrated)
+   }
+  }
+ }
+
+ public func send(_ payload: GameEnvelope) async throws {
+  guard VeilopolyRoomWire.isValid(payload) else {
+   throw VeilopolyRoomWire.CodecError.invalidShape
+  }
+  try await outbound(payload)
+ }
+
+ public func receive() -> AsyncThrowingStream<GameEnvelope, Error> { inbound() }
 }
 public enum P5IntegrationRequired: Error { case notIntegrated }
