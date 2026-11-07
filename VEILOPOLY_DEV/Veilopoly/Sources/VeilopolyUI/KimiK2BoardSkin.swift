@@ -10,7 +10,9 @@ final class KimiK2BoardSkin {
  let tiles: [Int: SKSpriteNode]
  let usesBuildingSprites: Bool
  let usesFineTiles: Bool
- private(set) var isLight = false
+ private(set) var isLight = true
+ private let unifiedRoot: SKNode
+ private let turnBanner: SKSpriteNode?
  private let backgrounds: [String: SKSpriteNode]
  private let darkBackgroundTextures: [String: SKTexture]
  private let lightBackgroundTextures: [String: SKTexture]
@@ -32,7 +34,8 @@ final class KimiK2BoardSkin {
  private var buildingSprites: [Int: [SKSpriteNode]] = [:]
  private var lastBuildingState: [Int: Int] = [:]
 
- private init(tiles: [Int: SKSpriteNode], backgrounds: [String: SKSpriteNode],
+ private init(tiles: [Int: SKSpriteNode], unifiedRoot: SKNode,
+              turnBanner: SKSpriteNode?, backgrounds: [String: SKSpriteNode],
               darkBackgroundTextures: [String: SKTexture],
               lightBackgroundTextures: [String: SKTexture],
               darkTileFrames: [SKTexture], lightTileFrames: [SKTexture],
@@ -40,6 +43,8 @@ final class KimiK2BoardSkin {
               shadowTexture: SKTexture, houseTexture: SKTexture?, hotelTexture: SKTexture?,
               detailedBuildings: Bool, fineTextures: [String: SKTexture]) {
   self.tiles=tiles
+  self.unifiedRoot=unifiedRoot
+  self.turnBanner=turnBanner
   self.backgrounds=backgrounds
   self.darkBackgroundTextures=darkBackgroundTextures
   self.lightBackgroundTextures=lightBackgroundTextures
@@ -100,6 +105,11 @@ final class KimiK2BoardSkin {
   }
   if fineTextures.count != AstraTileArtwork.aliases.count { fineTextures = [:] }
 
+  // Keep every board-facing decorative layer under ONE board root, at the
+  // same design-space origin: no detached cards, center logo or 40 tiles.
+  let unifiedRoot = SKNode()
+  unifiedRoot.name = IvoryUnifiedVisualSystem.boardRootName
+
   // K2 projected layers share a single fixed canvas. Never apply a second
   // perspective transform when swapping day/night art at runtime.
   let backgroundKeys: [(key: String, z: CGFloat)] = [
@@ -113,56 +123,85 @@ final class KimiK2BoardSkin {
          let light = textures["kimiK2" + item.key + "Light"] else { return nil }
    darkBackgrounds[item.key] = dark
    lightBackgrounds[item.key] = light
-   let background = SKSpriteNode(texture: dark)
+   let background = SKSpriteNode(texture: light)
    background.position = CGPoint(x: 512, y: 470)
    background.size = CGSize(width: 1024, height: 940)
    background.zPosition = item.z
    background.name = "KimiK2/" + item.key
    backgrounds[item.key] = background
-   scene.addChild(background)
+   unifiedRoot.addChild(background)
   }
-  let centerCity = load(AstraCenterCityArtwork.alias)
-  if let texture = centerCity ?? textures["kimiK2BoardCenterEmblem"] {
-   let emblem = SKSpriteNode(texture: texture)
-   emblem.position = CGPoint(x: CGFloat(AstraCenterCityArtwork.centerX),
-                             y: CGFloat(AstraCenterCityArtwork.centerY))
-   let size: CGFloat = centerCity == nil ? 256 : CGFloat(AstraCenterCityArtwork.displaySize)
-   emblem.size = CGSize(width: size, height: size)
-   emblem.zPosition = 3.5
-   emblem.name = centerCity == nil ? "KimiK2/emblem" : "Astra/centerCity"
-   scene.addChild(emblem)
+  // Owner-selected master image: ivory-white classical Art Deco inlay.
+  // Codex's city art is preserved as fallback; no double-drawing of logos.
+  let mainInlay = load(IvoryUnifiedVisualSystem.masterImageAlias)
+  let fallbackCenter = load(AstraCenterCityArtwork.alias)
+  if let texture = mainInlay ?? fallbackCenter ?? textures["kimiK2BoardCenterEmblem"] {
+   let plaque = SKSpriteNode(texture: texture)
+   plaque.position = CGPoint(x: CGFloat(IvoryUnifiedVisualSystem.centerX),
+                             y: CGFloat(IvoryUnifiedVisualSystem.centerY))
+   let size: CGFloat = mainInlay != nil
+     ? CGFloat(IvoryUnifiedVisualSystem.centerSize)
+     : (fallbackCenter != nil ? CGFloat(AstraCenterCityArtwork.displaySize) : 256)
+   plaque.size = CGSize(width: size, height: size)
+   plaque.zPosition = 3.5
+   plaque.name = mainInlay == nil ? "Veilopoly/CenterFallback" : "Veilopoly/IvoryMasterInlay"
+   unifiedRoot.addChild(plaque)
   }
 
-  // Two independent shallow card stacks echo a physical perimeter board.
-  // They are decorative deck markers, not extra draw actions or baked UI.
-  if let face = fineTextures[AstraTileArtwork.face] {
-   for (index, x) in [212.0, 812.0].enumerated() {
-    let stack = SKNode()
-    stack.name = index == 0 ? "Astra/chance-deck" : "Astra/chest-deck"
-    stack.position = CGPoint(x: CGFloat(x), y: 470)
-    stack.zPosition = 3.6
+  // Chance and Chest are anchored against the MASTER center plaque.
+  // Each is a single tactile deck stack, sharing one physical board plane;
+  // Codex's tile icons stay on the tiles, not duplicated on the card fronts.
+  if let fallbackCard = fineTextures[AstraTileArtwork.face] {
+   let decks: [(alias: String, label: String, x: Double)] = [
+    (IvoryR1Artwork.chanceCard, "机会", IvoryUnifiedVisualSystem.chanceDeckX),
+    (IvoryR1Artwork.chestCard, "宝箱", IvoryUnifiedVisualSystem.chestDeckX)
+   ]
+   for (index, spec) in decks.enumerated() {
+    let deck = SKNode()
+    deck.name = index == 0 ? "Veilopoly/IvoryChanceDeck" : "Veilopoly/IvoryChestDeck"
+    deck.position = CGPoint(x: CGFloat(spec.x), y: CGFloat(IvoryUnifiedVisualSystem.centerY))
+    deck.zPosition = 3.7
+    let illustration = load(spec.alias)
     for depth in 0..<3 {
-     let card = SKSpriteNode(texture: face)
-     card.size = CGSize(width: 76, height: 106)
-     card.position = CGPoint(x: CGFloat(depth) * 2, y: CGFloat(depth) * 2)
-     card.zPosition = CGFloat(depth) * 0.1
-     stack.addChild(card)
+     let front = depth == 2 && illustration != nil
+     let sheet = SKSpriteNode(texture: front ? illustration! : fallbackCard)
+     sheet.size = CGSize(width: 76, height: 108)
+     sheet.position = CGPoint(x: CGFloat(depth) * 1.5, y: CGFloat(depth) * 1.5)
+     sheet.zPosition = CGFloat(depth) * 0.1
+     sheet.name = front ? spec.alias : "Veilopoly/DeckLayer"
+     deck.addChild(sheet)
     }
-    let alias = index == 0 ? "astraTileChance" : "astraTileChest"
-    if let texture = fineTextures[alias] {
-     let icon = SKSpriteNode(texture: texture)
-     icon.size = CGSize(width: 42, height: 42)
-     icon.position = CGPoint(x: 4, y: 12)
-     icon.zPosition = 0.4
-     stack.addChild(icon)
+    if illustration == nil {
+     let symbol = index == 0 ? "astraTileChance" : "astraTileChest"
+     if let icon = fineTextures[symbol] {
+      let overlay = SKSpriteNode(texture: icon)
+      overlay.size = CGSize(width: 40, height: 40)
+      overlay.position = CGPoint(x: 3, y: 8)
+      overlay.zPosition = 0.5
+      deck.addChild(overlay)
+     }
     }
-    let label = SKLabelNode(text: index == 0 ? "机会" : "命运")
-    label.fontName = "AvenirNext-DemiBold"; label.fontSize = 12
-    label.fontColor = SKColor(red: 0.1, green: 0.22, blue: 0.23, alpha: 1)
-    label.position = CGPoint(x: 4, y: -30); label.zPosition = 0.4
-    stack.addChild(label)
-    scene.addChild(stack)
+    let label = SKLabelNode(text: spec.label)
+    label.fontName = "AvenirNext-DemiBold"
+    label.fontSize = 12
+    label.fontColor = SKColor(red: 0.11, green: 0.25, blue: 0.24, alpha: 1)
+    label.position = CGPoint(x: 3, y: -69)
+    label.zPosition = 0.6
+    deck.addChild(label)
+    unifiedRoot.addChild(deck)
    }
+  }
+
+  var turnBanner: SKSpriteNode?
+  if let texture = load(IvoryUnifiedVisualSystem.turnBannerAlias) {
+   let banner = SKSpriteNode(texture: texture)
+   banner.size = CGSize(width: 238, height: 54)
+   banner.position = CGPoint(x: CGFloat(IvoryUnifiedVisualSystem.centerX), y: 214)
+   banner.zPosition = 3.8
+   banner.name = "Veilopoly/IvoryTurnBanner"
+   banner.isHidden = true // Only shown for the local human's active roll.
+   unifiedRoot.addChild(banner)
+   turnBanner = banner
   }
 
   let ownerTextures: [SKTexture] = (0..<4).map { index in
@@ -171,19 +210,23 @@ final class KimiK2BoardSkin {
   }
   var tileSprites: [Int: SKSpriteNode] = [:]
   for (index, tile) in KimiK2TileMap.tiles.enumerated() {
-   let sprite = SKSpriteNode(texture: fineTextures[AstraTileArtwork.face] ?? darkFrames[index])
+   let sprite = SKSpriteNode(texture: fineTextures[AstraTileArtwork.face] ?? lightFrames[index])
    sprite.position = CGPoint(x: CGFloat(tile.centerX), y: CGFloat(tile.centerY))
    sprite.size = CGSize(width: CGFloat(tile.displayWidth), height: CGFloat(tile.displayHeight))
    sprite.zRotation = CGFloat(tile.rotationRadians)
    sprite.zPosition = 4
    sprite.name = tile.id
-   scene.addChild(sprite)
+   unifiedRoot.addChild(sprite)
    tileSprites[index] = sprite
   }
   let detailHouse = load(AstraDetailArtwork.house)
   let detailHotel = load(AstraDetailArtwork.hotel)
   let hasDetails = detailHouse != nil && detailHotel != nil
-  return KimiK2BoardSkin(tiles: tileSprites, backgrounds: backgrounds,
+  // Attach only after all texture, node and geometry preparation succeeds.
+  // A failed preflight leaves the old procedural board wholly intact.
+  scene.addChild(unifiedRoot)
+  return KimiK2BoardSkin(tiles: tileSprites, unifiedRoot: unifiedRoot,
+                         turnBanner: turnBanner, backgrounds: backgrounds,
                          darkBackgroundTextures: darkBackgrounds,
                          lightBackgroundTextures: lightBackgrounds,
                          darkTileFrames: darkFrames, lightTileFrames: lightFrames,
@@ -209,6 +252,12 @@ final class KimiK2BoardSkin {
  }
 
  func apply(_ state: GameState) {
+  if state.players.indices.contains(state.turn.player) {
+   turnBanner?.isHidden = state.winner != nil || state.turn.phase != .roll ||
+     state.players[state.turn.player].kind != .human
+  } else {
+   turnBanner?.isHidden = true
+  }
   for tile in state.board {
    guard let art = tiles[tile.i] else { continue }
    let layout = KimiK2TileMap.visual(for: tile.i).map(AstraTileArtwork.layout)
