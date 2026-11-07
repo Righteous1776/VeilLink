@@ -98,4 +98,23 @@ final class XiangqiBotTests: XCTestCase {
         ), 2)
     }
 
+
+    func testUserMayEnableFullXiangqiDepthOnLegacyDeviceWithoutForcedDowngrade() {
+        let declaredDevice = "LEGACY-COMPACT"
+        let enabled = LocalAIGameController.boardSearchProfile(
+            deviceLabel: declaredDevice, unrestricted: true
+        )
+        let optedOut = LocalAIGameController.boardSearchProfile(
+            deviceLabel: declaredDevice, unrestricted: false
+        )
+        XCTAssertEqual(enabled, "HIGH-PERFORMANCE")
+        XCTAssertEqual(optedOut, declaredDevice)
+        let unrestricted = XiangqiBotBudget.forDifficulty(.master, profileLabel: enabled)
+        let compact = XiangqiBotBudget.forDifficulty(.master, profileLabel: optedOut)
+        XCTAssertGreaterThan(unrestricted.maxDepth, compact.maxDepth)
+        XCTAssertGreaterThan(unrestricted.quiescenceDepth, compact.quiescenceDepth)
+        XCTAssertGreaterThan(unrestricted.timeLimitMilliseconds, compact.timeLimitMilliseconds)
+    }
+
+
 }
