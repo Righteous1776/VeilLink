@@ -1,0 +1,15 @@
+# Original dynamic rival avatar R1
+- agent_id: chatgpt
+- task_id: 20261107-original-animated-ai-rival-r1
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- mode: INBOX_ONLY
+- status: DROPPED
+- submission_root: AGENT_INBOX/submissions/chatgpt/20261107-original-animated-ai-rival-r1/
+- proposed_sources:
+  - VeilLink/UI/OwnerConsoleView.swift
+  - VeilLink/UI/GameLobbyView.swift
+  - VeilLink/UI/LatticeClashLabView.swift
+  - VeilLink/UI/TacticalV2/TacticalV2SoloView.swift
+  - VeilLink/UI/VeilOpponentAvatarView.swift
+  - VeilLinkTests/VeilOpponentAvatarPolicyTests.swift
+- third_party_files_copied: zero
