@@ -6,6 +6,14 @@ on:
       - integration/lingcore-vertex35m-model-20261108
     paths:
       - '.github/workflows/lingcore-vertex35m-validation.yml'
+      - 'VeilLink/Agent/Language/LlamaInferenceEngine.swift'
+      - 'VeilLink/Agent/Language/Vertex35MChatRuntime.swift'
+      - 'VeilLink/Agent/Language/LingCoreChatOnlyBoundary.swift'
+      - 'VeilLink/UI/LingCoreTinyChatView.swift'
+      - 'VeilLink/UI/AgentHomeView.swift'
+      - 'VeilLinkTests/LingCoreChatOnlyBoundaryTests.swift'
+      - 'VeilLinkTests/Vertex35MOnDeviceSmokeTests.swift'
+      - 'VeilLinkTests/Vertex35MModelIntegrityGateTests.swift'
 
 permissions:
   contents: read

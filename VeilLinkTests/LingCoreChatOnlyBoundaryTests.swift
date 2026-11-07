@@ -106,4 +106,23 @@ final class LingCoreChatOnlyBoundaryTests: XCTestCase {
             XCTAssertEqual(boundary.messageCount, 0)
         }
     }
+    func testChineseInputIsForwardedVerbatimWithoutPrivilegedContext() async throws {
+        let spy = RuntimeSpy()
+        let boundary = LingCoreChatOnlyBoundary(runtime: spy)
+        let query = "你好！请用中文介绍一下自己。"
+        _ = try await boundary.reply(to: query) { _ in }
+        XCTAssertEqual(spy.lastRequest?.userText, query)
+        XCTAssertNil(spy.lastRequest?.visualContext)
+        XCTAssertNil(spy.lastRequest?.localContext)
+    }
+
+    func testMixedChineseEmojiInputNeverExecutesSlashCommand() async throws {
+        let spy = RuntimeSpy()
+        let boundary = LingCoreChatOnlyBoundary(runtime: spy)
+        let query = "你好 👋 /ble refresh 只是文字"
+        _ = try await boundary.reply(to: query) { _ in }
+        XCTAssertEqual(spy.lastRequest?.userText, query)
+        XCTAssertEqual(spy.generateCount, 1)
+    }
+
 }

@@ -173,6 +173,7 @@ actor LlamaInferenceEngine {
         var emittedChunks = 0
         var generatedTokens = 0
         var firstVisibleMilliseconds: Int?
+        let generationStarted = DispatchTime.now().uptimeNanoseconds
 
         for offset in 0..<safeMaxNew {
             await Task.yield()
@@ -193,7 +194,7 @@ actor LlamaInferenceEngine {
             }
             generatedTokens += 1
             if let onProgress, generatedTokens % 4 == 0 {
-                let elapsed = max(1, milliseconds(since: started))
+                let elapsed = max(1, milliseconds(since: generationStarted))
                 await onProgress(LlamaTokenProgress(
                     promptTokens: tokens.count,
                     generatedTokens: generatedTokens,
@@ -227,8 +228,8 @@ actor LlamaInferenceEngine {
 
         batch = workingBatch
         let totalMilliseconds = max(1, milliseconds(since: started))
-        let seconds = Double(totalMilliseconds) / 1_000.0
-        let rate = Double(generatedTokens) / max(0.001, seconds)
+        let generationSeconds = max(0.001, Double(max(1, milliseconds(since: generationStarted))) / 1_000.0)
+        let rate = Double(generatedTokens) / generationSeconds
         if let onProgress {
             await onProgress(LlamaTokenProgress(
                 promptTokens: tokens.count,
