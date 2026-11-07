@@ -115,4 +115,70 @@ final class SystemicRiskV5Tests: XCTestCase {
   XCTAssertEqual(old.banking?.reserveCash, reserve - 1_000)
   XCTAssertEqual(total(old), 188_800)
  }
+ func testNoNewLoansWhenContingentLiabilitiesExceedBankCash() throws {
+  var g = VeilopolyCityLongEconomy.make(seed: 91807)
+  // Two nominal deposit claims are legal individually but together put the
+  // bank below 100% immediate cash coverage.
+  g.banking?.accounts[0].savings.append(.init(
+   id: 101, feature: .demandDeposit, principal: 1_000_000,
+   unlockPeriod: 1, payoutBasisPoints: 150))
+  g.banking?.accounts[1].savings.append(.init(
+   id: 102, feature: .demandDeposit, principal: 1_000_000,
+   unlockPeriod: 1, payoutBasisPoints: 150))
+  g.turn.phase = .manage
+  let report = try XCTUnwrap(VeilopolyFinancialStability.inspect(g))
+  XCTAssertGreaterThan(report.futureObligations, report.treasuryCash)
+  XCTAssertEqual(report.safeNewCredit, 0)
+  guard case .failure(.bankLiquidity) = VeilopolyEngine.apply(
+   g, VeilopolyEngine.context(g),
+   Move(.bankBorrow, player: 0, seq: 0, amount: 2_000, financePeriods: 2)
+  ) else { return XCTFail("Uncovered deposit liabilities must freeze new loans") }
+ }
+
+ func testUnderfundedAutomaticDepositLiquidationKeepsDebtStateReachable() throws {
+  var g = VeilopolyCityLongEconomy.make(seed: 91808)
+  g.turn.phase = .manage
+  try execute(&g, Move(.bankDeposit, player: 0, seq: 0,
+                       amount: 10_000, financeProduct: .demandDeposit))
+  let bankCash = try XCTUnwrap(g.banking?.reserveCash)
+  g.players[2].cash += bankCash
+  g.banking?.reserveCash = 0
+  let moveToSeat2 = g.players[0].cash - 500
+  g.players[0].cash -= moveToSeat2
+  g.players[2].cash += moveToSeat2
+  g.banking?.completedTurns = 1
+  g.players[0].position = 4
+  g.turn.phase = .tileResolve
+  XCTAssertEqual(total(g), 2_100_000)
+  try execute(&g, Move(.resolveTile, player: 0, seq: g.nextSeq))
+  XCTAssertEqual(g.turn.phase, .debt)
+  XCTAssertEqual(g.pendingDebt?.amount, 2_200)
+  XCTAssertEqual(g.players[0].cash, 500)
+  XCTAssertEqual(g.banking?.reserveCash, 0)
+  XCTAssertEqual(g.banking?.accounts[0].savings.count, 1)
+  XCTAssertEqual(total(g), 2_100_000)
+ }
+
+ func testUnderfundedAutomaticStockLiquidationDoesNotSellUnbackedShares() throws {
+  var g = VeilopolyCityLongEconomy.make(seed: 91809)
+  g.turn.phase = .manage
+  try execute(&g, Move(.stockBuy, player: 0, seq: 0,
+                       stockSymbol: "VTL", stockShares: 10))
+  let bankCash = try XCTUnwrap(g.banking?.reserveCash)
+  g.players[2].cash += bankCash
+  g.banking?.reserveCash = 0
+  let shift = g.players[0].cash - 500
+  g.players[0].cash -= shift
+  g.players[2].cash += shift
+  g.players[0].position = 4
+  g.turn.phase = .tileResolve
+  XCTAssertEqual(total(g), 2_100_000)
+  try execute(&g, Move(.resolveTile, player: 0, seq: g.nextSeq))
+  XCTAssertEqual(g.turn.phase, .debt)
+  XCTAssertEqual(g.pendingDebt?.amount, 2_200)
+  XCTAssertEqual(g.banking?.market?.portfolios[0].positions.first?.shares, 10)
+  XCTAssertEqual(g.banking?.reserveCash, 0)
+  XCTAssertEqual(total(g), 2_100_000)
+ }
+
 }

@@ -17,3 +17,5 @@ NOT YET SAFE TO SHIP:
 - Full exact-head SwiftPM/XCTest, old saved-game fixtures, Apple SDK, simulator and physical phones NOT_RUN. Previous Codex test counts are historical evidence only.
 
 Next task: run full exact-head SwiftPM; fix any compiler failures; stress 100+ seeds with empty treasury, high outstanding deposits, simultaneous loan maturities, forced bankruptcy and stock liquidation. Report natural completions vs capped games and pending-claim settlement times. Governor review required; no main merge, IPA or release.
+
+Additional RISK-005/006: forced debt coverage must not liquidate inaccessible savings or stock exits when treasury is exhausted; it now skips that conversion and keeps the item intact, allowing the engine to enter the debt phase rather than conjuring cash that the central bank cannot reconcile. Bankrupt-estate disposition of assets remains a deliberate unresolved owner priority choice. Credit is also frozen when measured contingent liabilities exceed treasury, even if no queue is yet pending. Three additional regression source tests cover these cases; complete execution NOT_RUN.

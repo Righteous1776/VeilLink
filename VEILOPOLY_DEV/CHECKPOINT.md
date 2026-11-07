@@ -5,7 +5,7 @@
 - Isolated risk review branch dev/veilopoly-risk-review-v5-20261108, independent of concurrent Veilopoly writers. Owner and Governor scoped VEILOPOLY_DEV only.
 - Finance risk diagnostic, conditional lending buffer, credit book limit, stock-stress response, partial V5 settlement of matured deposit/investment/stock positions, FIFO outstanding bank claims, player claim UI.
 - V5 money supply remains fixed at 2,100,000, no bailout minting. V4 frozen terms/saves not migrated. New regression test sources and audit in reviews/ECON_V5_SYSTEMIC_RISK_AUDIT_20261108.md.
-- P0 unfinished: closeBankruptAccount and releaseAvailableSavingsForDebt can still be blocked in deep treasury shortage. Do not label crisis handling complete.
+- RISK-005/006: automatic debt coverage now skips unavailable savings/stock cash and can reach the debt phase without breaking monetary conservation; credit stops when contingent claims exceed treasury. Bankruptcy-estate redistribution and comprehensive lender priorities STILL OPEN/P0; do not label crisis handling complete.
 - Exact-head full SwiftPM / Apple SDK / phones NOT_RUN. Next task: tests, then forced-liquidation rescue and 100-seed stress. No merge, workflow, packaging or IPA.
 
 ## ECON-V5-LIQUIDITY-001 — 新单机资金扩容（独立分支，未集成）— 2026-11-07
