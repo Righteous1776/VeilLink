@@ -1407,12 +1407,15 @@ public struct VeilopolyGameView: View {
     if let i = model.game.turn.pendingPurchase {
      VStack(alignment: .leading,spacing:10) {
       astraBuyHero(model.game.board[i])
-      Text("不会自动购房。按本局经典规则，放弃购买将进入公开拍卖；竞价阶段可以直接弃权。")
+      Text("购房完全自愿：可购买、按经典规则进入拍卖，或使用休闲规则直接路过，不扣款也不转让产权。")
        .font(.caption).fixedSize(horizontal: false, vertical: true)
       HStack {
        action("购买 ¥\(model.game.board[i].price)",symbol:"house") { model.perform(.buyProperty,tile:i) }
         .disabled(model.game.players[model.actor].cash < model.game.board[i].price)
        action("不购买（拍卖）",symbol:"gavel",secondary:true) { model.perform(.startAuction,tile:i) }
+       action("直接路过（休闲规则）", symbol:"figure.walk", secondary:true) {
+        model.perform(.skipPurchase, tile: i)
+       }
       }
      }
     }
