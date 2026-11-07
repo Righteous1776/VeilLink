@@ -4,6 +4,9 @@ import VeilopolyEngine
 /// Application payload types only: NO changes to VeilLink transport, protocol, or database.
 public enum GameMessageType: String, Codable {
  case invite = "vl-game-invite"
+ case accept = "vl-game-accept"
+ case decline = "vl-game-decline"
+ case intent = "vl-game-intent"
  case move = "vl-game-move"
  case snapshot = "vl-game-snapshot"
  case resync = "vl-game-resync"
@@ -39,13 +42,15 @@ public struct GameEnvelope: Codable, Equatable {
  public var gameId: String
  public var kind: GameMessageType
  public var invite: GameInvite?
+ public var intent: Move?
  public var move: AuthoritativeMove?
  public var snapshot: GameSnapshot?
  public var resync: ResyncRequest?
  public init(gameId: String, kind: GameMessageType, invite: GameInvite? = nil,
-             move: AuthoritativeMove? = nil, snapshot: GameSnapshot? = nil,
-             resync: ResyncRequest? = nil) {
+             intent: Move? = nil, move: AuthoritativeMove? = nil,
+             snapshot: GameSnapshot? = nil, resync: ResyncRequest? = nil) {
   self.gameId = gameId; self.kind = kind; self.invite = invite
+  self.intent = intent
   self.move = move; self.snapshot = snapshot; self.resync = resync
  }
 }
