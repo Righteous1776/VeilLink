@@ -284,6 +284,21 @@ public final class GameSessionModel: ObservableObject {
  }
 }
 
+private enum VeilopolyAmountTarget: String, Identifiable {
+ case bid, bankAmount, bankPeriods, offerCash, requestCash, stockShares
+ var id: String { rawValue }
+ var title: String {
+  switch self {
+  case .bid: return "拍卖竞价金额"
+  case .bankAmount: return "银行操作金额"
+  case .bankPeriods: return "贷款期数"
+  case .offerCash: return "我方出资"
+  case .requestCash: return "对方出资"
+  case .stockShares: return "交易股数"
+  }
+ }
+}
+
 @MainActor
 public struct VeilopolyGameView: View {
  @StateObject private var model: GameSessionModel
@@ -305,6 +320,7 @@ public struct VeilopolyGameView: View {
  @State private var controlsExpanded = false
  @AppStorage("veilopoly.dayFelt.v1") private var dayFelt = false
  @State private var showTileInformation = false
+ @State private var amountTarget: VeilopolyAmountTarget?
  @State private var managementSection: VeilopolyManagementSection = .property
  @Environment(\.dismiss) private var dismiss
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -407,7 +423,10 @@ public struct VeilopolyGameView: View {
    Text("随机种子：\(model.game.seed)\n本局席位：\(model.game.players.count) 名玩家\n\(VeilopolyGuideLibrary.status(model.game))\n地产、银行与模拟股市共用本局现金。\n存档：\(model.saveSummary)")
   }
   .overlay {
-   if let card = model.shownCard {
+    if let target = amountTarget { numberPadOverlay(for: target) }
+   }
+   .overlay {
+    if let card = model.shownCard {
     let editorial = model.shownEditorial
     ZStack {
      // Same ivory / antique-gold / teal scheme as the single main board.
@@ -845,6 +864,93 @@ public struct VeilopolyGameView: View {
   .preferredColorScheme(.dark)
  }
 
+ 
+ private func numericEntry(_ title: String, value: String,
+                           target: VeilopolyAmountTarget) -> some View {
+  Button { amountTarget = target } label: {
+   HStack(spacing: 5) {
+    Text(title).font(.caption2).lineLimit(1)
+    Spacer(minLength: 4)
+    Text(value.isEmpty ? "输入" : value)
+     .font(.system(size: 15, weight: .bold, design: .monospaced))
+     .lineLimit(1)
+    Image(systemName: "number").font(.caption2).accessibilityHidden(true)
+   }
+   .padding(.horizontal, 10)
+   .frame(maxWidth: .infinity, minHeight: 44)
+   .background(Color.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 9))
+   .contentShape(Rectangle())
+  }
+  .buttonStyle(.plain)
+  .accessibilityLabel("\(title)，当前 \(value)，点击修改")
+ }
+
+ private func numericBinding(_ target: VeilopolyAmountTarget) -> Binding<String> {
+  switch target {
+  case .bid: return $bidderCash
+  case .bankAmount: return $bankAmount
+  case .bankPeriods: return $bankPeriods
+  case .offerCash: return $offerCash
+  case .requestCash: return $requestCash
+  case .stockShares: return $stockShares
+  }
+ }
+
+ /// A landscape-friendly in-app number pad prevents the native keyboard
+ /// from covering the bank, auction, trade and stock-order controls.
+ private func numberPadOverlay(for target: VeilopolyAmountTarget) -> some View {
+  let input = numericBinding(target)
+  return ZStack {
+   Color.black.opacity(0.78).ignoresSafeArea()
+    .onTapGesture { amountTarget = nil }
+   VStack(spacing: 7) {
+    Text(target.title).font(.headline)
+    Text(input.wrappedValue.isEmpty ? "0" : input.wrappedValue)
+     .font(.system(size: 27, weight: .bold, design: .monospaced))
+     .frame(maxWidth: .infinity, minHeight: 37)
+     .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
+     .accessibilityLabel("\(target.title)，\(input.wrappedValue)")
+    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 3),
+              spacing: 7) {
+     ForEach(["1","2","3","4","5","6","7","8","9","清空","0","删除"], id: \.self) { digit in
+      Button {
+       switch digit {
+       case "清空": input.wrappedValue = ""
+       case "删除":
+        if !input.wrappedValue.isEmpty { input.wrappedValue.removeLast() }
+       default:
+        if input.wrappedValue.count < 9 {
+         input.wrappedValue = input.wrappedValue == "0" ? digit : input.wrappedValue + digit
+        }
+       }
+      } label: {
+       Text(digit).font(.system(size: digit.count > 1 ? 14 : 21, weight: .semibold))
+        .frame(maxWidth: .infinity, minHeight: 43)
+        .background(Color.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(digit)
+     }
+    }
+    Button("完成") { amountTarget = nil }
+     .font(.headline).frame(maxWidth: .infinity, minHeight: 44)
+     .background(Color(red: 0.63, green: 0.48, blue: 0.28),
+                 in: RoundedRectangle(cornerRadius: 9))
+     .buttonStyle(.plain)
+   }
+   .foregroundColor(.white)
+   .padding(13)
+   .frame(maxWidth: 350)
+   .background(Color(red: 0.08, green: 0.16, blue: 0.19),
+               in: RoundedRectangle(cornerRadius: 18))
+   .overlay {
+    RoundedRectangle(cornerRadius: 18)
+     .stroke(Color(red: 0.72, green: 0.58, blue: 0.38), lineWidth: 1)
+   }
+  }
+  .frame(maxWidth: .infinity, maxHeight: .infinity)
+ }
+
  private var portraitFallback: some View {
   VStack(spacing: 16) {
    Image(systemName: "iphone.gen3.radiowaves.left.and.right")
@@ -1099,13 +1205,8 @@ public struct VeilopolyGameView: View {
               y: CGFloat(AstraB01AuctionHitZones.minus.centerY))
     .accessibilityLabel("降低竞价金额")
     .disabled(model.game.players[model.actor].cash <= auction.currentBid)
-    TextField("竞价金额", text: $bidderCash)
-     .keyboardType(.numberPad)
-     .textFieldStyle(.plain)
-     .font(.system(size: 15, weight: .semibold, design: .monospaced))
-     .foregroundColor(Color(red: 0.19, green: 0.30, blue: 0.34))
-     .multilineTextAlignment(.center)
-     .frame(width: 132, height: 44)
+    numericEntry("竞价金额", value: bidderCash, target: .bid)
+      .frame(width: 132, height: 44)
      .position(x: CGFloat(AstraB01AuctionHitZones.input.centerX),
                y: CGFloat(AstraB01AuctionHitZones.input.centerY))
      .accessibilityLabel("竞价金额")
@@ -1222,8 +1323,8 @@ public struct VeilopolyGameView: View {
     }
    }.pickerStyle(.menu)
    HStack {
-    TextField("我方现金",text:$offerCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-    TextField("对方现金",text:$requestCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+    numericEntry("我方现金", value: offerCash, target: .offerCash)
+    numericEntry("对方现金", value: requestCash, target: .requestCash)
    }
    HStack(alignment:.top) {
     VStack(alignment: .leading) {
@@ -1295,12 +1396,8 @@ public struct VeilopolyGameView: View {
     }
    }
    HStack(spacing: 8) {
-    TextField("金额", text: $bankAmount)
-     .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-     .accessibilityLabel("银行操作金额")
-    TextField("期数", text: $bankPeriods)
-     .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-     .accessibilityLabel("贷款期数")
+    numericEntry("金额", value: bankAmount, target: .bankAmount)
+    numericEntry("期数", value: bankPeriods, target: .bankPeriods)
    }
    HStack(spacing: 8) {
     action("存入活期", symbol: "building.columns") {
@@ -1355,7 +1452,8 @@ public struct VeilopolyGameView: View {
    orderError: model.stockOrderError,
    buyRestriction: IntegratedBanking.hasOverdueLoan(ledger, player: model.actor)
      ? VeilopolyGamePresentation.message(.financeOverdue) : nil,
-   onBuy: { symbol, shares in
+   onEditShareCount: { amountTarget = .stockShares },
+    onBuy: { symbol, shares in
     model.perform(.stockBuy, stockSymbol: symbol, stockShares: shares)
    },
    onSell: { symbol, shares in
@@ -1381,8 +1479,8 @@ public struct VeilopolyGameView: View {
      offeredCash: Int(offerCash) ?? -1, requestedCash: Int(requestCash) ?? -1,
      sequence: model.game.nextSeq)
     HStack {
-     TextField("我方出资", text: $offerCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-     TextField("对方出资", text: $requestCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+     numericEntry("我方出资", value: offerCash, target: .offerCash)
+     numericEntry("对方出资", value: requestCash, target: .requestCash)
     }
     Text("还价将保留当前地产与出狱卡条件，仅修改现金。")
      .font(.caption2).foregroundStyle(.secondary)
