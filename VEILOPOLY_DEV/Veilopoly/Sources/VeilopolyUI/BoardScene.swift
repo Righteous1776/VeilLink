@@ -497,7 +497,7 @@ final class GameBoardScene: SKScene {
    let shadow = tokenShadows[id]
    if let shadow {
     let shadowMoves = path.map { tile in
-     SKAction.move(to: shadowPoint(tile, player: id), duration: 0.15)
+     SKAction.move(to: shadowPoint(tile, player: id), duration: reduceMotion ? 0.08 : 0.27)
     }
     shadow.run(.sequence(shadowMoves), withKey: "command")
     if tokenShadowFrames.count == 4 {
@@ -506,7 +506,7 @@ final class GameBoardScene: SKScene {
     }
    }
    let moves = path.map { tile -> SKAction in
-    let time: TimeInterval = 0.15
+    let time: TimeInterval = reduceMotion ? 0.08 : 0.27
     let position = tokenPoint(tile, player: id)
     return SKAction.group([SKAction.move(to: position, duration: time),
                            SKAction.sequence([SKAction.moveBy(x: 0,y: 14,duration: time/2),
@@ -525,7 +525,7 @@ final class GameBoardScene: SKScene {
    sound("step")
    // Repeat the audible step cue for each intermediate board square.
    let withCues = moves.map { SKAction.sequence([SKAction.run { [weak self] in self?.sound("step") }, $0]) }
-   focus.run(SKAction.scale(to: 0.83, duration: 0.2), withKey: "focus")
+    // Keep the camera fixed while tokens traverse all intermediate tiles.
    activeCommandNode = token
    token.run(SKAction.sequence(withCues + [SKAction.run { [weak self] in
     shadow?.removeAction(forKey: "command")
@@ -534,7 +534,7 @@ final class GameBoardScene: SKScene {
     if let last = path.last, let self {
      shadow?.position = self.shadowPoint(last, player: id)
     }
-    self?.focus.run(SKAction.scale(to: 1, duration: 0.3))
+     // No camera zoom reset: board remains fully visible.
     ack()
    }]), withKey: "command")
   case .tileFx(let i, let kind):
