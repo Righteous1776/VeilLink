@@ -428,9 +428,12 @@ public struct VeilopolyGameView: View {
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
  @Environment(\.scenePhase) private var scenePhase
  private let onExit: (() -> Void)?
- public init(seed: UInt64? = nil, humanCount: Int = 1, onExit: (() -> Void)? = nil) {
+ private let onInviteFriends: (() -> Void)?
+ public init(seed: UInt64? = nil, humanCount: Int = 1,
+             onExit: (() -> Void)? = nil, onInviteFriends: (() -> Void)? = nil) {
   _model = StateObject(wrappedValue: GameSessionModel(seed: seed, humanCount: humanCount))
   self.onExit = onExit
+  self.onInviteFriends = onInviteFriends
  }
 
  /// Multiplayer and solo views share the same board, with the host app owning
@@ -438,6 +441,7 @@ public struct VeilopolyGameView: View {
  public init(multiplayerModel: GameSessionModel, onExit: (() -> Void)? = nil) {
   _model = StateObject(wrappedValue: multiplayerModel)
   self.onExit = onExit
+  self.onInviteFriends = nil
  }
  public var body: some View {
   GeometryReader { geometry in
@@ -524,6 +528,12 @@ public struct VeilopolyGameView: View {
     savedMarketHUDY = 0
    }
    Button("完整资产浏览（任何回合）") { showAssetExplorer = true }
+   if !model.isMultiplayer, let onInviteFriends {
+    Button("邀请好友联机 · 新建双人房间") {
+     model.flushSave()
+     onInviteFriends()
+    }
+   }
    Button("概率小游戏 · 无下注") { showProbabilityLab = true }
    Button(slowSteps ? "移动节奏：舒缓（切标准）" : "移动节奏：标准（切舒缓）") {
     slowSteps.toggle()
