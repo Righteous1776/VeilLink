@@ -118,6 +118,23 @@ public final class VeilopolySaveStore {
   return nil
  }
 
+ /// Only after an explicit user's destructive restart choice. Retains unreadable
+ /// files in a quarantine folder so diagnostics remain possible.
+ @discardableResult
+ public func quarantineUnreadable(gameID: String, mode: VeilopolySaveMode) throws -> Bool {
+  do { _ = try load(gameID: gameID, mode: mode); return false }
+  catch VeilopolySaveError.corruptCheckpoint {
+   let paths = try slots(gameID: gameID, mode: mode)
+   let quarantine = directory.appendingPathComponent("Quarantine", isDirectory: true)
+   try files.createDirectory(at: quarantine, withIntermediateDirectories: true)
+   for path in paths where files.fileExists(atPath: path.path) {
+    let destination = quarantine.appendingPathComponent(path.lastPathComponent + "." + UUID().uuidString + ".corrupt")
+    try files.moveItem(at: path, to: destination)
+   }
+   return true
+  }
+ }
+
  @discardableResult
  public func save(_ game: GameState, gameID: String, mode: VeilopolySaveMode) throws -> VeilopolySavedGame {
   guard Self.plausible(game) else { throw VeilopolySaveError.invalidGameState }

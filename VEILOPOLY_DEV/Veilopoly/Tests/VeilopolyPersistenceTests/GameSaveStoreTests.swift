@@ -88,4 +88,21 @@ final class VeilopolySaveStoreTests: XCTestCase {
   _ = try store.save(second, gameID: "solo-1", mode: .solo)
   XCTAssertEqual(try store.load(gameID: "solo-1", mode: .solo)?.game.seed, 8)
  }
+ func testCorruptSlotQuarantineRequiresExplicitCall() throws {
+  let (store, dir) = try sandbox(); defer { try? FileManager.default.removeItem(at: dir) }
+  let original = GameFactory.make(seed: 515)
+  _ = try store.save(original, gameID: "solo", mode: .solo)
+  _ = try store.save(original, gameID: "solo", mode: .solo)
+  for path in try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
+   try Data("unreadable".utf8).write(to: path, options: .atomic)
+  }
+  XCTAssertThrowsError(try store.load(gameID: "solo", mode: .solo))
+  XCTAssertTrue(try store.quarantineUnreadable(gameID: "solo", mode: .solo))
+  XCTAssertNil(try store.load(gameID: "solo", mode: .solo))
+  let dirOfCorrupt = dir.appendingPathComponent("Quarantine")
+  XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dirOfCorrupt.path).count, 2)
+  _ = try store.save(GameFactory.make(seed: 516), gameID: "solo", mode: .solo)
+  XCTAssertEqual(try store.load(gameID: "solo", mode: .solo)?.game.seed, 516)
+ }
+
 }
