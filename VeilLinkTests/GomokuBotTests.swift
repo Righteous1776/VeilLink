@@ -509,4 +509,24 @@ final class GomokuBotTests: XCTestCase {
     }
 
 
+
+    func testUserCanKeepDeepGomokuSearchOnLegacyHardwareByChoice() {
+        // Hardware labels are NOT passed to the active chess budget chooser.
+        // Full depth is the default until the user explicitly opts into economy.
+        XCTAssertEqual(BoardSearchMode.restore(nil), .full)
+        XCTAssertEqual(BoardSearchMode.restore("invalid-old-value"), .full)
+        XCTAssertEqual(BoardSearchMode.restore("economy"), .economy)
+        let full = GomokuBotBudget.forDifficulty(
+            .master, profileLabel: BoardSearchMode.full.budgetProfileLabel
+        )
+        let saving = GomokuBotBudget.forDifficulty(
+            .master, profileLabel: BoardSearchMode.economy.budgetProfileLabel
+        )
+        XCTAssertEqual(full.timeLimitMilliseconds, 950)
+        XCTAssertEqual(saving.timeLimitMilliseconds, 420)
+        XCTAssertGreaterThan(full.rootCandidateLimit, saving.rootCandidateLimit)
+        XCTAssertGreaterThan(full.continuationCandidateLimit, saving.continuationCandidateLimit)
+    }
+
+
 }
