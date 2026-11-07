@@ -9,10 +9,12 @@ This directory stores **exactly one** pinned model file. Unlike the normal repos
 - GGUF format version: 3
 - Model: 35M Qwen3-family, Q4_K_M
 - Upstream license: Apache-2.0
-- Verification input: exact user-provided Drive copy, independently read and locally hashed; upstream SHA cross-check remains pending
+- Verification input: exact user-provided Drive copy, independently read and locally hashed; a separate Hugging Face download matched the owner-supplied file's SHA-256; verification against a publisher-advertised digest remains pending
 - Import: isolated GitHub Actions job downloaded upstream and verified this digest before committing binary
 - Source-of-truth restriction: **not** in Agent Inbox, no other GGUF model included
 - Standard project.yml: model excluded; no default app size or behavior changes
 - Optional native project: generate via scripts/prepare-vertex35m-ios.sh (requires macOS/Xcode)
 - Capability: text generation only; no tools, app context, BLE, database, game mutations, A9/A10/A13 controls or authority
 - Validation: static source and hash checks precede native simulator tests. Never treat a green hash check as proof of generation quality.
+
+- A copy of the full Apache License, Version 2.0 text is stored alongside the model as LICENSE-APACHE-2.0.txt.
