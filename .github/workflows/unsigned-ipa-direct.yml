@@ -123,6 +123,10 @@ jobs:
             echo 'Immutable release already exists; refusing overwrite.' >&2
             exit 1
           fi
+          if gh api repos/Righteous1776/VeilLink/git/ref/tags/v29.0-b66 >/dev/null 2>&1; then
+            echo 'Release tag already exists; refusing to reuse an unverified tag.' >&2
+            exit 1
+          fi
           gh release create v29.0-b66 \
             --target "$MAIN_SHA" \
             --title 'VeilLink 29.0 (Build 66) — unsigned Core + Experimental Vertex' \
