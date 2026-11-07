@@ -1,5 +1,26 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## CODEX long-line W0 + W1-001 — 2026-11-07
+
+- Authority: current Owner + #168 `VEILOPOLY-CODEX-LONG-001`; only
+  `dev/veilopoly:VEILOPOLY_DEV/**`. Old hall/release permissions below are
+  historical, not permission for this task. No main/P5/IPA/workflow changes.
+- Live baseline main/development: `2c5b5161027edff097b27fe3323d30f6ca3e430e`.
+  W0 review-only commit `f3a7b12`; see `reviews/CODEX_BASELINE_AUDIT.md`.
+- W1-001: remove token-movement camera zoom and delayed restore; preserve token
+  timing, assets, reducer, RNG, save encoding and one-shot ACK. Guarded iOS scene
+  regression source added; details in `reviews/W1_001_STABLE_CAMERA.md`.
+- Linux Swift 6.2.1 full `swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2`
+  → 237 tests, 0 failures, 32.033s → PASS. New guarded iOS cases are excluded on
+  Linux, NOT_RUN; iOS15 frontend grammar parse exit 0 → PASS (syntax only).
+- Baseline AI: 0/500 complete at 500 moves (500 capped); 9/20 complete at 6000
+  moves (11 capped), 79,661 moves, zero illegal actions. No policy change or
+  strength claim. Device/Apple SDK/visual/performance/real multiplayer NOT_RUN.
+- #164 remains closed/unmerged. #167 is a different branch/task; do not modify.
+  No local cross-Agent conflict found; no art replacement or rule expansion.
+- NEXT_ONE_TASK: VLP-CODEX-W1-002, independent read-only asset browser in all
+  phases; mutation controls stay bound to existing legal reducer phases.
+
 ## Actual game-hall integration + quiet live news — 2026-11-07
 
 - Task `VEILOPOLY-HALL-NEWS-008`, baseline `ac1805a3f8dcf4c1a657ecfff0f64650f037b736`; main/merge base `ccafebab147e069fbabfff579dbf323b0d54f191`. Owner now explicitly requests actual hall integration and notifications, but **no new version output**. Earlier notes that P5 hall integration is unauthorized are historical for this narrow local-hosting task; product multiplayer transport is still excluded.

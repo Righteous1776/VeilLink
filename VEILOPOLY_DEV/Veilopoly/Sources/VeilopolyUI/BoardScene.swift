@@ -525,7 +525,8 @@ final class GameBoardScene: SKScene {
    sound("step")
    // Repeat the audible step cue for each intermediate board square.
    let withCues = moves.map { SKAction.sequence([SKAction.run { [weak self] in self?.sound("step") }, $0]) }
-   focus.run(SKAction.scale(to: 0.83, duration: 0.2), withKey: "focus")
+   // Movement animates pieces only. Keep the full board's framing and tile
+   // hit coordinates stable, including when the command is fast-forwarded.
    activeCommandNode = token
    token.run(SKAction.sequence(withCues + [SKAction.run { [weak self] in
     shadow?.removeAction(forKey: "command")
@@ -534,7 +535,6 @@ final class GameBoardScene: SKScene {
     if let last = path.last, let self {
      shadow?.position = self.shadowPoint(last, player: id)
     }
-    self?.focus.run(SKAction.scale(to: 1, duration: 0.3))
     ack()
    }]), withKey: "command")
   case .tileFx(let i, let kind):
@@ -682,7 +682,6 @@ final class GameBoardScene: SKScene {
   dice.forEach { $0.removeAllActions() }
   tiles.values.forEach { $0.removeAction(forKey: "command") }
   finishImmediately?(); finishImmediately = nil
-  focus.removeAction(forKey: "focus"); focus.setScale(1)
   currentCompletion = nil; activeCommandNode = nil; completion()
  }
 }

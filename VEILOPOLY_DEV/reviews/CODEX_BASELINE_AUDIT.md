@@ -49,8 +49,9 @@ audit does not convert it into new-head iOS or physical-device acceptance.
 → Linux Swift 6.2.1, 237 XCTest cases, 0 failures, 36.443s test time → PASS.
 Build completed in 0.91s (incremental). AI 500 seeds × 500-move cap:
 0/500 naturally complete, 500 capped, zero illegal moves; test time 16.656s.
-LongSim output and full-game evidence must be reported separately; neither
-bounded result is a claim of 500 complete games. No AI algorithm changed in W0.
+20 seeds × 6000-move cap: 9 complete, 11 capped, 79,661 total moves,
+zero illegal moves, 14.072s. Neither bounded result is a claim of 500 complete
+games. No AI algorithm changed in W0; therefore no new-vs-old policy claim.
 
 `gh api .../pulls/164` → closed, merged=false, exact head above → PASS (read-only).
 `gh api .../actions/runs/42355471423` → success at #164 head → PASS (historical only).
