@@ -114,6 +114,36 @@ public struct IntegratedBankLedger: Codable, Equatable {
 }
 
 public enum IntegratedBanking {
+ /// Matured V5 obligations are bank liabilities, not permission to print cash.
+ /// Older outstanding claims take priority over new optional redemptions.
+ private static func disburseMatured(_ ledger: inout IntegratedBankLedger,
+                                     game: inout GameState, seat: Int,
+                                     amount: Int, source: String) throws -> Int {
+  guard amount >= 0, amount <= 1_000_000_000,
+        game.players.indices.contains(seat) else { throw GameError.invalidState }
+  if ledger.financeRuleVersion != VeilopolyCityLongEconomy.version {
+   guard game.players[seat].cash <= 1_000_000_000 - amount else {
+    throw GameError.invalidState
+   }
+   game.players[seat].cash += amount
+   return amount
+  }
+  guard let treasury = ledger.reserveCash, var queue = ledger.queuedClaims,
+        (1...32).contains(source.utf8.count) else {
+   throw GameError.invalidState
+  }
+  let paid = queue.isEmpty ? min(treasury, amount) : 0
+  let owing = amount - paid
+  guard game.players[seat].cash <= 1_000_000_000 - paid,
+        owing == 0 || queue.count < 4_096 else { throw GameError.invalidState }
+  if owing > 0 {
+   queue.append(VeilopolyBankClaim(player: seat, amount: owing, source: source))
+  }
+  game.players[seat].cash += paid
+  ledger.reserveCash = treasury - paid
+  ledger.queuedClaims = queue
+  return paid
+ }
  public static func ledger(_ g: GameState) -> IntegratedBankLedger {
   var result = g.banking ?? IntegratedBankLedger(completedTurns: g.moveLog.filter { $0.type == .endTurn }.count)
   if result.market == nil {
@@ -223,10 +253,11 @@ public enum IntegratedBanking {
    let item = ledger.accounts[p].savings[ix]
    guard period >= item.unlockPeriod else { throw GameError.financePositionLocked }
    let payout = item.principal + item.principal * item.payoutBasisPoints / 10_000
-   guard g.players[p].cash <= 1_000_000_000 - payout else { throw GameError.invalidState }
-   g.players[p].cash += payout
+   let paid = try disburseMatured(&ledger, game: &g, seat: p, amount: payout,
+                                 source: "savingMature")
    ledger.accounts[p].savings.remove(at: ix)
-   effects.append(Effect(.bankWithdrawn, player: p, amount: payout, text: item.feature.rawValue))
+   effects.append(Effect(.bankWithdrawn, player: p, amount: paid,
+                         text: "(item.feature.rawValue);deferred:(payout - paid)"))
   case .bankBorrow:
    guard let principal = m.amount, let periods = m.financePeriods else { throw GameError.invalidPayload }
    let ordinal = ledger.accounts[p].borrowCount
@@ -312,10 +343,11 @@ public enum IntegratedBanking {
     rolled = Int(seededRNG(seed: g.seed, counter: &g.rngCounter) % 6) + 1
    }
    let payout = position.principal * schedule[rolled - 1] / 10_000
-   guard g.players[p].cash <= 1_000_000_000 - payout else { throw GameError.invalidState }
-   g.players[p].cash += payout
+   let paid = try disburseMatured(&ledger, game: &g, seat: p, amount: payout,
+                                 source: "investmentMature")
    ledger.accounts[p].positions.remove(at: ix)
-   effects.append(Effect(.bankInvestmentSettled, player: p, amount: payout, dice: [rolled], text: position.feature.rawValue))
+   effects.append(Effect(.bankInvestmentSettled, player: p, amount: paid,
+                         dice: [rolled], text: "(position.feature.rawValue);deferred:(payout - paid)"))
   case .stockTick:
    guard var market = ledger.market else { throw GameError.invalidState }
    let pressure = VeilopolyCityLongEconomy.marketPressure(g)
@@ -340,9 +372,19 @@ public enum IntegratedBanking {
          let shares = m.stockShares else { throw GameError.invalidPayload }
    let receipt = try StockMarketEngine.sell(&market, player: p, symbol: symbol,
                                             shares: shares, cash: &g.players[p].cash)
+   let paid: Int
+   if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version {
+    // Execution cancels the position; settlement is a distinct bank liability.
+    // The quoted proceeds are not magically minted when reserves are depleted.
+    g.players[p].cash -= receipt.cashDelta
+    paid = try disburseMatured(&ledger, game: &g, seat: p,
+                               amount: receipt.cashDelta, source: "stockExit")
+   } else {
+    paid = receipt.cashDelta
+   }
    ledger.market = market
-   effects.append(Effect(.stockSold, player: p, amount: receipt.cashDelta,
-                         text: "fee:\(receipt.fee);pnlCents:\(receipt.realizedPnLCents)",
+   effects.append(Effect(.stockSold, player: p, amount: paid,
+                         text: "fee:\(receipt.fee);pnlCents:\(receipt.realizedPnLCents);deferred:\(receipt.cashDelta - paid)",
                          stockSymbol: receipt.symbol, stockShares: receipt.shares,
                          stockPriceCents: receipt.priceCents))
   default: throw GameError.invalidPayload
