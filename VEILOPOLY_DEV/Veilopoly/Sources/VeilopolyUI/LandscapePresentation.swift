@@ -25,7 +25,6 @@ public struct VeilopolyFullscreenModifier: ViewModifier {
    VeilopolyGameView(seed: seed, humanCount: humanCount, onExit: { isPresented = false })
     .background(LandscapeSceneRequest())
     .statusBarHidden(true)
-    .persistentSystemOverlays(.hidden)
   }
  }
 }
@@ -40,9 +39,11 @@ public extension View {
  }
 }
 
-/// Requests landscape through the iOS 16 UIWindowScene API. It never mutates
-/// UIApplication private selectors, UIDevice orientation or global app delegates.
-/// If the host denies landscape, the game shows a rotate-device explanation.
+/// iOS 15 supports controller-declared orientations and the public
+/// attemptRotationToDeviceOrientation() fallback. iOS 16+ additionally
+/// supports an explicit UIWindowScene geometry preference request.
+/// Both paths require landscape in the *host* UISupportedInterfaceOrientations;
+/// a child package cannot override the host's Info.plist.
 private struct LandscapeSceneRequest: UIViewControllerRepresentable {
  func makeUIViewController(context: Context) -> OrientationProbe { OrientationProbe() }
  func updateUIViewController(_ uiViewController: OrientationProbe, context: Context) {}
@@ -66,11 +67,14 @@ private final class OrientationProbe: UIViewController {
   case .landscapeRight: restoreOrientation = .landscapeRight
   default: restoreOrientation = .portrait
   }
-  setNeedsUpdateOfSupportedInterfaceOrientations()
-  windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { error in
-   // This can be denied when the host Info.plist does not support landscape,
-   // or in certain multitasking configurations. Surface is portraitFallback.
-   NSLog("Veilopoly landscape request was not accepted: %@", String(describing: error))
+  if #available(iOS 16.0, *) {
+   setNeedsUpdateOfSupportedInterfaceOrientations()
+   windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { error in
+    NSLog("Veilopoly landscape request denied by host: %@", String(describing: error))
+   }
+  } else {
+   // Public iOS 15 API: system may rotate if the host explicitly allows it.
+   UIViewController.attemptRotationToDeviceOrientation()
   }
  }
 
@@ -79,8 +83,12 @@ private final class OrientationProbe: UIViewController {
   guard requested, let windowScene = lastWindowScene else { return }
   requested = false
   lastWindowScene = nil
-  windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: restoreOrientation)) { error in
-   NSLog("Veilopoly portrait restoration was not accepted: %@", String(describing: error))
+  if #available(iOS 16.0, *) {
+   windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: restoreOrientation)) { error in
+    NSLog("Veilopoly orientation restoration denied by host: %@", String(describing: error))
+   }
+  } else {
+   UIViewController.attemptRotationToDeviceOrientation()
   }
  }
 }

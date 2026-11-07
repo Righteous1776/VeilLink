@@ -529,7 +529,7 @@ public struct VeilopolyGameView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
    }
    .id("\(model.game.turn.phase.rawValue)-\(model.actor)-\(managementSection.rawValue)")
-   .scrollIndicators(.hidden)
+   // iOS 15: keep system scroll indicators; .scrollIndicators(_:) is a later API.
    if model.game.turn.phase == .manage && model.waitingForHuman {
     action(model.game.turn.rolledDouble ? "继续额外回合" : "结束回合", symbol: "checkmark.circle") {
      model.perform(.endTurn)
