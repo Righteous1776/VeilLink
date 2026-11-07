@@ -123,6 +123,13 @@ public final class VeilopolySaveStore {
   return String(repeating: "0", count: max(0, 16 - result.count)) + result
  }
  private static func plausible(_ g: GameState) -> Bool {
+  // V4 snapshots must conserve the exact opening currency supply; V1–V3
+  // have no treasury and are not retroactively subjected to this check.
+  if g.banking?.financeRuleVersion == VeilopolyCityLongEconomy.version {
+   guard let reserve = g.banking?.reserveCash,
+         reserve + g.players.reduce(0, { $0 + $1.cash }) ==
+           VeilopolyCityLongEconomy.totalMoneySupply else { return false }
+  }
   guard g.board.count == 40, g.players.count == 4,
         g.board.enumerated().allSatisfy({ i, t in
          t.i == i && (0...1_000_000).contains(t.price) &&
@@ -135,6 +142,34 @@ public final class VeilopolySaveStore {
         g.nextSeq >= 0, g.moveLog.count == g.nextSeq,
         g.moveLog.enumerated().allSatisfy({ i, move in move.seq == i }),
         (0..<4).contains(g.turn.player),
+        (g.turn.pendingPurchase.map { g.board.indices.contains($0) } ?? true),
+        (g.auction.map { g.board.indices.contains($0.tile) } ?? true),
+        (g.auction.map { a in
+         !a.active.isEmpty && a.active.count <= 4 &&
+         Set(a.active).count == a.active.count &&
+         a.active.allSatisfy { (0..<4).contains($0) } &&
+         a.active.contains(a.turn) &&
+         (a.bidder.map { (0..<4).contains($0) } ?? true) &&
+         (0...1_000_000_000).contains(a.currentBid)
+        } ?? true),
+        (g.trade.map { t in
+         (0..<4).contains(t.from) && (0..<4).contains(t.to) && t.from != t.to &&
+         [t.offer, t.request].allSatisfy { x in
+          (0...1_000_000_000).contains(x.cash) &&
+          x.tiles.allSatisfy { g.board.indices.contains($0) } &&
+          (0...16).contains(x.chanceCards) && (0...16).contains(x.chestCards)
+         }
+        } ?? true),
+        (g.pendingDebt.map { d in
+         (0..<4).contains(d.player) &&
+         (d.creditor.map { (0..<4).contains($0) } ?? true) &&
+         (0...1_000_000_000).contains(d.amount)
+        } ?? true),
+        (0..<Int.max - 16).contains(g.turn.rollCount),
+        (0..<Int.max - 16).contains(g.turn.doubleCount),
+        (0...12).contains(g.turn.pendingSteps),
+        (0..<Int.max - 16).contains(g.chanceDeck.cursor),
+        (0..<Int.max - 16).contains(g.chestDeck.cursor),
         (0...32).contains(g.bank.houses), (0...12).contains(g.bank.hotels),
         (g.banking.map { IntegratedBanking.validate($0) } ?? true) else { return false }
   if let winner = g.winner {

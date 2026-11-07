@@ -65,6 +65,7 @@ public enum VeilopolyCardEditorial {
  /// provisional fixture. This protects historic saves, customized cards and
  /// future rule revisions against misleading UI descriptions.
  public static func presentation(for card: CardDefinition) -> VeilopolyCardEditorialEntry? {
+  if let longEdition = VeilopolyCityLongCards.presentation(for: card) { return longEdition }
   guard let known = SampleCards.all.first(where: { $0.id == card.id && $0.deck == card.deck }),
         known.text == card.text, known.effects == card.effects
   else { return nil }

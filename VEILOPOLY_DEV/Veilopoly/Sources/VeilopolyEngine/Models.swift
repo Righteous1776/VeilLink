@@ -104,7 +104,7 @@ public struct PendingDebt: Codable, Equatable {
  public init(player: Int, amount: Int, creditor: Int?) { self.player = player; self.amount = amount; self.creditor = creditor }
 }
 
-public enum CardEffectKind: String, Codable { case cash, moveTo, moveNearest, moveRelative, goToJail, jailCard, repair }
+public enum CardEffectKind: String, Codable { case cash, moveTo, moveNearest, moveRelative, goToJail, jailCard, repair, grantHouse }
 public enum CashTarget: String, Codable { case bank, allOthers, selfPlayer }
 public enum NearestSet: String, Codable { case railroad, utility }
 public struct CardEffect: Codable, Equatable {
@@ -137,7 +137,7 @@ public struct PendingCard: Codable, Equatable { public var id: Int; public var d
 public enum MoveKind: String, Codable, CaseIterable {
  case rollDice, applyMovement, resolveTile, buyProperty, startAuction, bid
  case buildHouse, sellHouse, mortgage, redeem
- case proposeTrade, counterTrade, acceptTrade, rejectTrade
+ case proposeTrade, counterTrade, acceptTrade, rejectTrade, transferCash
  case payBail, useJailCard, declareBankruptcy, endTurn
  case bankDeposit, bankWithdraw, bankBorrow, bankRepay, bankInvest, bankSettle
  case stockBuy, stockSell, stockTick
@@ -247,6 +247,7 @@ public enum GameError: String, Error, Codable, Equatable {
  case financeOverdue = "FinanceOverdue"
  case stockNotFound = "StockNotFound", insufficientShares = "InsufficientShares"
  case stockTradingHalted = "StockTradingHalted"
+ case bankLiquidity = "BankLiquidity"
 }
 
 public enum StateDigest {

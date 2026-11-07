@@ -39,7 +39,6 @@ public struct VeilopolyStockMarketPanel: View {
 
  @State private var ticketSide: StockTicketSide = .buy
  @State private var positionsExpanded = true
- @FocusState private var quantityFocused: Bool
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
  public init(market: StockMarketState, player: Int, cash: Int,
@@ -94,9 +93,11 @@ public struct VeilopolyStockMarketPanel: View {
     Label("行情暂不可用", systemImage: "exclamationmark.triangle")
      .font(.caption).foregroundStyle(.secondary)
    }
-   Text(market.algorithmVersion == 2
-    ? "虚构行情 · 每局随机走势 V2 · 可存档重放"
-    : "虚构行情 · 历史对局兼容算法 V1")
+   Text(market.algorithmVersion == 3
+    ? "城市长局行情 V3 · 更大报价与波动 · 单笔低手续费 · 可存档重放"
+    : market.algorithmVersion == 2
+     ? "虚构行情 · 每局随机走势 V2 · 可存档重放"
+     : "虚构行情 · 历史对局兼容算法 V1")
     .font(.system(size: 9, weight: .medium))
     .foregroundStyle(.white.opacity(0.42))
     .frame(maxWidth: .infinity, alignment: .center)
@@ -124,12 +125,9 @@ public struct VeilopolyStockMarketPanel: View {
   }
   .shadow(color: .black.opacity(0.25), radius: 10, y: 6)
   .accessibilityElement(children: .contain)
-  .toolbar {
-   ToolbarItemGroup(placement: .keyboard) {
-    Spacer()
-    Button("完成") { quantityFocused = false }
-   }
-  }
+  // The terminal's existing art/price chart remains a dark instrument island;
+  // its numeric sheet separately follows the selected table theme.
+  .environment(\.colorScheme, .dark)
  }
 
  private var terminalHeader: some View {
@@ -284,9 +282,7 @@ public struct VeilopolyStockMarketPanel: View {
    .accessibilityLabel("交易方向")
 
    HStack(spacing: 7) {
-    TextField("股数", text: $shareText)
-     .keyboardType(.numberPad).textFieldStyle(.plain)
-     .focused($quantityFocused)
+    VeilopolyNumericInput(title: "股数", text: $shareText, bounds: 1...10_000, showsTitle: false)
      .font(.system(size: 15, weight: .bold, design: .monospaced))
      .padding(.horizontal, 10).frame(height: 44)
      .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
@@ -297,7 +293,9 @@ public struct VeilopolyStockMarketPanel: View {
      set: { shareText = String($0) }), in: 1...10_000)
      .labelsHidden().fixedSize()
    }
-   HStack(spacing: 5) {
+   // Narrow landscape drawers cannot fit five 44pt buttons in one row.
+   // Wrap instead of silently shrinking quantity hit regions below 44pt.
+   LazyVGrid(columns: [GridItem(.adaptive(minimum: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide)), spacing: 5)], spacing: 5) {
     ForEach([1, 5, 10, 100], id: \.self) { preset in
      quantityButton("\(preset)") { shareText = String(preset) }
     }
@@ -329,7 +327,6 @@ public struct VeilopolyStockMarketPanel: View {
    }
 
    Button {
-    quantityFocused = false
     if ticketSide == .buy { onBuy(quote.symbol, quantity) }
     else { onSell(quote.symbol, quantity) }
    } label: {
@@ -359,7 +356,10 @@ public struct VeilopolyStockMarketPanel: View {
  private func quantityButton(_ title: String, action: @escaping () -> Void) -> some View {
   Button(action: action) {
    Text(title).font(.system(size: 9, weight: .semibold))
-    .frame(maxWidth: .infinity, minHeight: 44)
+    .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide),
+           maxWidth: .infinity,
+           minHeight: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide))
+    .contentShape(Rectangle())
     .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
   }
   .buttonStyle(.plain)
@@ -379,8 +379,12 @@ public struct VeilopolyStockMarketPanel: View {
      Spacer()
      Image(systemName: positionsExpanded ? "chevron.up" : "chevron.down").font(.caption2)
     }
+    .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide),
+           minHeight: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide))
+    .contentShape(Rectangle())
    }
    .buttonStyle(.plain)
+   .accessibilityValue(positionsExpanded ? "已展开" : "已收起")
    HStack(spacing: 6) {
     portfolioMetric("市值", money(value), .white)
     portfolioMetric("浮动", signedMoney(unrealized), pnlColor(unrealized))
@@ -431,6 +435,9 @@ public struct VeilopolyStockMarketPanel: View {
      .foregroundStyle(pnlColor(pnl))
    }
    .padding(.vertical, 6).padding(.horizontal, 7)
+   .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide),
+          minHeight: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide))
+   .contentShape(Rectangle())
    .background(position.symbol == selectedSymbol ? StockTerminalPalette.gold.opacity(0.09) : .clear,
                in: RoundedRectangle(cornerRadius: 7))
   }

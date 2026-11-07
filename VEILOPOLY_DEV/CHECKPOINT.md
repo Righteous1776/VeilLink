@@ -1,5 +1,272 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## CODEX W1-008 — decision hierarchy / adaptive buttons — 2026-11-07
+
+- Owner asked for continued UI design; before `8f4898d`, main still `2c5b516`.
+  W1-007 Apple acceptance remains open; this is additional scoped source work.
+- Buy/auction/trade primary decisions pinned outside scrolling documents.
+  Native summaries come first; existing Astra hero/civic documents remain in
+  expandable details. Trade explicitly says what YOU give/receive (cash,
+  named properties, both jail-card types); cash counteroffer is separate.
+- Same reducer previews control disabled states; minimum auction bid only
+  fills the draft, never sends. Zero/empty input cannot silently fold through
+  the bid button. Classic/city bail label now uses existing canonical fee.
+- Adaptive at-most-two action columns, single accessibility column, wrapped
+  dynamic labels/metrics and >=44pt style bodies. Native icons use reserved
+  gutters; disabled art's existing lock is not doubled. Gold primary uses
+  dark ink; secondary glass gets a dark scrim. Actual contrast remains unmeasured.
+- Retained dragging/suspension, board size/camera, theme, all resource bytes,
+  numeric keypad, save/network/ACK and game rule semantics. Only UI/tests/docs.
+  Independent V5/risk/manual lanes untouched, no cross-lane conflict found.
+- Linux Swift6.2.1: new reviews11/11 PASS; final UI121/121 PASS (1.068s).
+  Full **340 cases / 1 failure / 68.532s — FAIL**, same pre-existing malformed
+  trade assertion from W1-006 clean-baseline reproduction; no Engine/test edit.
+  iOS15 syntax parse and scoped whitespace review PASS only; Apple SDK,
+  rendered gestures/accessibility/Dynamic Type/contrast/performance NOT_RUN.
+- Receipt `reviews/W1_008_DECISION_PANEL_HIERARCHY.md`; NEXT_ONE_TASK W1-007
+  exact-head Apple build + rendered acceptance of both UI waves, without IPA.
+  State SOURCE_IMPLEMENTED / PORTABLE_UI_VALIDATED, full/Apple gates OPEN.
+  No main/host/protocol/identity/DB/rules/assets/version/workflow/IPA changes.
+
+## CODEX W1-006 — movable/suspendable panel UI — 2026-11-07
+
+- Owner reprioritized existing panel refinement. Source baseline fast-forwarded
+  to `fb245c3d41b42fe1e8b031cd342f7316aefb4fc7`; main unchanged `2c5b516`.
+  Independent V5/risk-review branches untouched, no cross-lane merge.
+- Added UI-only normalized panel/chip placement with safe-area clamps below
+  the reserved news/Exit strip. Header-only drag, accessible docking/reset,
+  labelled 44pt tools; suspension stays LEFT, not beside the Exit capsule.
+- Keep drawer mounted but noninteractive/accessibility-hidden while suspended:
+  same-phase drafts/scroll/section retained. Live movable chip restores it.
+  A new decision opens once; repeating the same decision respects suspension.
+  No game pause, automatic move, render ACK, save or network semantics changed.
+- Compact toolbar and folded secondary detail free scroll space; existing tabs,
+  read-only asset browser, pinned end-turn, art and themes preserved. Board size
+  never changes on panel movement. iPad/manual overlap is intentional: move or
+  suspend to reveal tiles, NOT a claim that all overlays never cover the board.
+- Linux Swift6.2.1: UI before99/99, after110/110 PASS; new panel tests11/11 PASS.
+  Final full suite **329 cases / 1 failure / 84.480s — FAIL**. Same existing
+  `MalformedTurnReferenceTests.testMalformedTradePartiesAndTiles:21` reproduced
+  in a CLEAN `git archive fb245c3` checkout (4 cases/1 failure), no patch applied.
+  Engine/test unchanged; no baseline failure hidden or asserted away.
+- iOS15 frontend parse/diff scope PASS only. Apple typecheck/XCTest/rendered
+  touch/VoiceOver/large text/performance/iPhone/iPad acceptance **NOT_RUN**.
+  Supplemental skill machine learning gates absent/PARTIAL; no fabricated PASS.
+- Receipt: `reviews/W1_006_MOVABLE_PANEL_WORKSPACE.md`. Next UI task W1-007:
+  exact-head Apple compile + drag/suspend/restore/occlusion acceptance, no IPA.
+  Separate W2 follow-up needed for the reproduced baseline trade assertion.
+  State: UI SOURCE_IMPLEMENTED / PORTABLE_UI_VALIDATED; full gate FAIL/open.
+  No main, host/transport/identity/DB/Wire, rules, assets, release/workflow edits.
+
+## ECON-014～017 — 有限银行的非增发应付款机制（仅 V4 新单机）— 2026-11-07
+
+- 当银行不足以发放经过起点工资或机会/命运现金事件时，先支付实际存量、剩余形成银行应付款；不凭空增发货币，玩家无需停在强制步骤。银行卡面显示总欠款和个人应收。后续购地、税费等回款以 FIFO 顺序优先兑付，可部分兑付。
+- V4 可用银行现金、玩家现金合计固定188800；银行应付款并非现金；完整 GameState/stateHash 和双槽存档加入 optional 队列，V1–V3 的缺省字段完全不编码。中间 V4 研发快照可解析为无待兑付记录。
+- 未解决：银行对合同存款/股票卖出资金不足的处理仍会拒绝自主操作；破产玩家的未兑付银行应收目前在结算队首时作废，清算优先级待 Owner 审核；正式上线前须做长期现金池耗尽模拟。
+- 新增 Engine XCTest 源码：银行现金100时经过起点支付100与欠款1000、后来税收回流600自动清偿600、无银行现金时免费房屋备选奖励变成应付款、旧V3 JSON 不含新增字段。
+- **当前分支完整 SwiftPM/XCTest/iOS SDK/真机：NOT_RUN**。下个唯一任务：在可用的 Swift6.2.1 runner 精确HEAD编译和跑全测试，修好所有失败，再对至少12组同seed进行稳定性和经济平衡校准。严禁打包、合并、IPA。
+
+
+## ECON-007～013 — 统一银行流动性 / 玩家直转 / 免费房屋 / 联动市场 V4 — 2026-11-07
+
+- Owner明确新需求：机会/命运大事件送一栋免费房屋；交易可直接指定收款玩家；银行资金总量固定、贷款/地产/股票/卡牌共用商业环境。
+- 新单机V4：玩家现金4×7200，初始银行160000，总货币供应固定188800；每笔授权状态变更前后用玩家现金总变化原子清算银行资金，存档写入与加载校验守恒。银行流动不足返回 bankLiquidity 并保持状态未提交；旧V3/经典存档没有reserveCash字段，原样兼容。
+- V4 机会13、命运27两张牌是真实免付费建房且消耗银行实体房屋，保持建造均衡/地产归属/抵押校验；无合法位置固定领取800/600；旧卡池不变。
+- V4 支持单机直接转账给指定非破产玩家，不需对方接受；完整地产/现金交换依旧走需响应的交易合同；P5真实双机目前仍沿用经典协议。
+- 股票 Tick 根据全市可流动现金、建筑投资与财富分布产生可复现宏观反馈；银行/股票/资产资料显示总货币量和信号；旧市场版本不受新压力参数影响。
+- 新增现金守恒、转账、房屋赠与、银行不足回滚、股市资金流、存档污染验证测试代码；**完整SwiftPM、Apple SDK、iOS设备和长局测试 NOT_RUN**。
+- **阻塞项**：极长期低银行余额下强制发薪/卡牌支付可能不可结算而卡住回合；需制定不增发货币的可执行破产/兑付机制后再宣称成熟。下一唯一任务是精准HEAD编译全测→修复后做有限银行长局压力测试；禁止合并/打包/IPA。
+
+
+## BAL-001–004 — 机遇／机会／命运与全局经济平衡（测试待跑）— 2026-11-07
+
+- 新版仅在**新开单机 V3**：32 张原创机会/命运卡（各16）；「机遇」为机会卡主题分类而非第三 DeckKind，避免改保存/Wire。所有卡牌文案与实际金额一致，纠正了 V3 对原样本金额暗乘3却显示老数额的问题。
+- 机会直付银行事件单轮净流入+1000；命运+2210（不包括起点、玩家间转移、租金、修缮）。单次现金罚款≤500；出狱卡各类仅限持一张、重复折现250；完整卡池抽毕隔离骰子 RNG 确定性重洗牌。
+- 长局前期租金上限900，每完成一个普通玩家回合递增80，最高6500；铁路/公共事业基础租金按新地价×3适配；资产资料显示本期上限。AI V3 安全现金底线1200～2400，避免早期无现金而又不阻断后期购买。旧对局规则全部不动。
+- 实际 Engine/AI 测试源码新增：卡牌目录金额、两种牌堆现金和、玩家间转移守恒、重复出狱卡、确定性重洗、早/晚真实租金裁决、AI现金保护、旧存档。
+- Github 卡定义静态检查 32 ID/16+16/正负分布 PASS；**当前HEAD SwiftPM 全量/Apple SDK/真机/双机 NOT_RUN**，不宣称已经达到目标时长。下一唯一任务：SwiftPM全量测试＋同种子A/B完局率/破产时序评估，收集真实手机对局时长，闭环调优。
+- 评审：`VEILOPOLY_DEV/reviews/BAL_V3_EVENTS_20261107.md`。未合并、不打包、不发布 IPA。
+
+
+## ECON-001–006 — 城市长局经济重构（研发中）— 2026-11-07
+
+- Owner实测反馈：约20分钟结束、频繁破产、收入与支出规模偏小、银行和模拟股票缺乏策略深度。只能作为一次体验反馈，尚无群体统计。
+- v3 仅供**新开单机局**，旧单机存档自动加载并保留经典参数；P5 双机大厅仍为经典配置，后续需版本化房间协商后才可让双机用 v3。主 Gameplay/save schema 未增字段，v3 以 bank.financeRuleVersion=3 / stock.algorithmVersion=3 显式持久化。
+- 初始现金7200，经过起点1100，买地/建造3倍，租金2倍，税费/卡牌现金/修理费用约3倍，入狱保释150；AI预留现金增加，减少早期资金紧缩。
+- 贷款8%–17%按合同一次计息（旧的20%–45%逐期公式仅留给经典局）；扩大额度并允许4+地产；活期锁1个结算期后1.5%，定存4期8.5%，启用3种有盈亏区间的离线投资产品；股市v3报价基准8倍、振幅增加、单笔费率0.25%（最低1游戏币）。
+- bank UI 新增贷款报价、定存、管理/创投/虚拟指数；stock UI 标注v3，旧行情/存档兼容逻辑保留。数据不会变现。
+- 对照入口 LocalGameRunner.compareEconomy 在两种配置下跑同种子，报告完整完局数、首次破产序号、真实完成回合、现金与地产分布，不把 cap 当作完局，也不把 move 数当作真实分钟。
+- 新增 CityLongEconomyTests / CityLongAutoplayTests 源码。**没有**在当前 HEAD 运行完整 SwiftPM XCTest、Apple SDK、模拟器、真机或双机测试。Codex旧版271项通过不能用于本版验收。
+- 源码变更仅 dev/veilopoly:VEILOPOLY_DEV/**；main、VeilLink底层通信、身份、数据库、workflows、version、签名、IPA未变动。
+- 下一唯一任务：在可用完整仓库的Swift6.2.1 runner完成精准HEAD测试与12组seed对照；修不通过的逻辑；校准破产率、节奏和收益分布。Apple设备/P5房间协商必须另行验收，不打包不合并。
+
+
+## GPT CONTINUATION-004 — checkpointed W2 save validation — 2026-11-07
+
+- Current preceding source commits: P5 foreground propagation 09ac83b; W5 journal 2a0975e; W2 reducer preflight 6d51426; W2 persistence preflight 109fb10.
+- W2-003: two-slot save now rejects out-of-range auction, trade and debt participant references, transferred tile references and malformed counters/deck cursors before replacing a verified slot. Test source covers 7 bad states and retention of the last good slot.
+- W5: 16 read-only achievements were added through a separate native journal, derived from Move log/current holdings; no rules or currency rewards. Local structural Swift smoke PASS; no full-package or iOS proof.
+- Device/platform: Apple SDK/XCTest, simulator, two-phone BLE/LAN and actual iOS full-screen lifecycle are NOT_RUN. Existing 271/271 Linux baseline is prior-head evidence ONLY, not current HEAD.
+- Scopes: all product changes confined to dev/veilopoly with the prior Owner-approved hall/host exception; main, signing, workflows, version, packaging and IPA unchanged.
+- Next task: exact-head full SwiftPM regression (without release), then Apple SDK typecheck/XCTest and two-phone lifecycle/large snapshot validation. Continue additional gameplay content only without destabilizing these gates.
+
+
+## GPT CONTINUATION-003 — Pure Engine malformed state guards — 2026-11-07
+
+- Base 2a0975e. Guard invalid trade/auction/debt participant references, negative deck cursors and overflow counters before indexing or mutation. Four regression tests added; full SwiftPM and Apple SDK NOT_RUN; no rules or persistence format change.
+- Evidence: reviews/GPT_CONTINUATION_003_PHASE_GUARDS.md. NEXT_ONE_TASK: actual full package regression and snapshot stress. No build dispatch, main merge or IPA.
+
+
+## GPT CONTINUATION-002 — Read-only achievements — 2026-11-07
+
+- Prior live head `09ac83b`. Added 16 original no-stakes achievement milestones and phase-independent journal in asset browser. Historical counters derive only from recorded committed moves; portfolio objectives deliberately reflect current holdings. No added persistent schema, rewards, gameplay move, market effect, RNG or wire format.
+- New four-case Engine unit suite plus iOS journal UI; isolated Swift 6.2.1 smoke PASS against minimal matching interfaces; full SwiftPM package, Apple SDK, iOS XCTest, simulator and devices NOT_RUN.
+- Review: `reviews/GPT_CONTINUATION_002_ACHIEVEMENTS.md`. No main merge, packaging, workflow, version, release or IPA.
+- NEXT_ONE_TASK: bounded snapshot/phase reference hardening and validation; verify platform gates when possible.
+
+
+## CODEX P5-001 — Owner-authorized live integration — 2026-11-07
+
+- Owner explicitly expanded scope to Veilopoly + hall/host bridge/tests on dev,
+  overriding prior P5 exclusion ONLY. Receipt `reviews/P5_OWNER_SCOPE_20261107.md`,
+  #6 issuecomment-6707080274. No transport/Wire/security/identity/DB/main/release
+  edits. main still `2c5b5161027edff097b27fe3323d30f6ca3e430e`, before dev `bcf683f`.
+- Foundation `5c2ecda`, budget/recovery `d34cb74`, history guard `61245ef`,
+  iOS model `f8a6722`; host hookup follows
+  in this checkpoint's commit. Real route: hall -> live model -> authenticated
+  control-event bridge -> existing SessionCoordinator API, no plain-chat payloads.
+- First topology explicitly TWO phones / two humans + two existing AI, not
+  four-phone support. Explicit invitation, host-only reducer/AI/price clock,
+  guest proposals, sequence/hash/history-prefix checks, heartbeat/resync,
+  role/identity-separated saved room recovery and bounded fragment transport.
+- Full Linux suite 271/271 PASS, 58.527s. Live suites 16 cases PASS. Actual
+  unchanged control-event codec probe: 31 fragments all <=2048 bytes. Initial
+  512-byte worst-case probe failed; corrected to 384 raw bytes, not a cap change.
+- Host hookup `eb88167`; follow-up stops game timeout from reseeding shared
+  secure sessions. Only explicit user recovery of a MISSING secure session
+  calls the existing recovery API; automatic game monitoring only pauses/resyncs.
+- iOS15 grammar parse PASS ONLY. Apple SDK/type-check, 8 guarded iOS model
+  cases, 2 host XCTest cases, simulator, two phones, actual link/lifecycle/FPS/
+  battery are NOT_RUN. Historical strict Codable warnings still unresolved.
+- Read `reviews/P5_LIVE_INTEGRATION_20261107.md` for actual route, limits,
+  failure handling and non-IPA acceptance steps. This is SOURCE_INTEGRATED,
+  PORTABLE_VALIDATED, not physical LINK_VERIFIED or main MERGED/RELEASED.
+- NEXT_ONE_TASK: VLP-CODEX-P5-002, Apple SDK + two-phone acceptance WITHOUT IPA.
+  No hidden background Codex worker; resume from current Git HEAD/#6/#168.
+
+## CODEX W2-001 — purchase/auction reference crash — 2026-11-07
+
+- Before `72521c9` (touch fix); theme slice `06a659a`. Same #168 dev-only
+  authority; main remains `2c5b5161027edff097b27fe3323d30f6ca3e430e`.
+- Reproduced baseline malformed purchase crash: exit 1, array index failure,
+  signal 4. Separate baseline auction/save tests: 3 cases, 18 assertion failures.
+- Added bounds checks before buy/startAuction/existing auction settlement;
+  storage rejects invalid pending/auction deed refs and falls back to older
+  valid slots. No rule/price/RNG/serialization/schema/resource/host changes.
+- Targeted Engine + save + existing buy/auction/bid suite 20/20 PASS. Full
+  Linux Swift 6.2.1 suite 255/255 PASS, 30.365s, including old sealed saves.
+  Apple SDK / iOS XCTest / simulator / real device / hard power loss NOT_RUN.
+- Same fixed AI corpora before (W1-005) vs after: 500×500 cap 0/500 complete,
+  500 capped, zero illegal actions in both; 20×6000 cap 9 complete/11 capped,
+  79,661 moves in both. Smoke runtime 21.837s → 13.428s; long runtime
+  13.661s → 12.451s. Uncontrolled Linux timings, NOT a speed/strength claim;
+  per-seed old/new final-hash differential benchmark NOT_RUN. AI policy unchanged.
+- See `reviews/W2_001_DEED_REFERENCE_SAFETY.md`; semantic validation is not a
+  complete malformed-state or security audit. FNV remains non-authenticating.
+  Historical strict Codable warnings unresolved; strict build not rerun here.
+- NEXT_ONE_TASK: VLP-CODEX-W2-002, remaining auction/trade/debt participant and
+  phase-payload bounds. W1 Apple acceptance and safe HUD dragging remain open.
+- State: scoped portable-verified fix, ready for Governor review; no main merge,
+  P5, release, IPA or workflow dispatch. Refresh HEAD/#6/#168 before continuation.
+
+## CODEX W1-005 — touch-region minima — 2026-11-07
+
+- Before `06a659a` (theme fix), same #168 dev-only grant; main unchanged.
+- Animation skip, stock portfolio toggle/rows now explicitly contain minimum
+  44pt targets; narrow quantity shortcuts wrap with adaptive columns. No
+  overlapping invisible targets, new gestures, assets or rule changes.
+- Targeted layout/ACK/stock tests 21/21 PASS; full Linux suite 249/249 PASS,
+  42.572s. iOS15 grammar parse PASS only; Apple SDK/rendered touch/VO NOT_RUN.
+- See `reviews/W1_005_CONTROL_HIT_AREAS.md`. Full safe-area dragging remains
+  unfinished; source declarations are not physical hit-test acceptance.
+- NEXT_ONE_TASK: VLP-CODEX-W2-001, reproduce and reject out-of-range
+  pendingPurchase references before purchase/auction or checkpoint persistence.
+  Potential crash takes priority over additional theme/drag polishing.
+
+## CODEX W1-004 — interface theme consistency — 2026-11-07
+
+- Before `8865668`; main still `2c5b5161027edff097b27fe3323d30f6ca3e430e`.
+  Same Owner/#168 dev-only lane. See `reviews/W1_004_INTERFACE_THEME.md`.
+- Existing day/night preference now drives canvas, native dialogs, numeric
+  sheets, reference book and news. Explicit dark Astra/stock islands preserve
+  text contrast over signed artwork. No resource/rule/save/host changes.
+- Theme tests 4/4 PASS; full Linux suite 248/248 PASS, 38.559s; iOS15 grammar
+  parse PASS only. Apple SDK/device/modal propagation/screenshots NOT_RUN.
+- Strict warnings gate remains a known historical FAIL, not waived. Newer
+  governance skill machinery absent; supplemental gate PARTIAL, no fabricated PASS.
+- NEXT_ONE_TASK: VLP-CODEX-W1-005, animation-skip and stock portfolio touch areas.
+
+## CODEX W1-003 — keyboard-safe numeric drafts — 2026-11-07
+
+- Task authority: #168 + current Owner; `dev/veilopoly:VEILOPOLY_DEV/**` only.
+  Main baseline still `2c5b5161027edff097b27fe3323d30f6ca3e430e` (live recheck).
+  Prior checkpoints: W0 `f3a7b12`, W1-001 `de8893f`, W1-002 `4f1b255`.
+- Replaced eight bank/auction/trade/stock numeric TextFields with a shared
+  bounded draft keypad sheet. Cancel does not write, Confirm only fills input;
+  existing reducer still authorizes and executes actual actions. No rule,
+  financial term, save format, resource, host or protocol change.
+- `swift build --package-path VEILOPOLY_DEV/Veilopoly --jobs 2` → success in
+  14.52s → PASS, with six pre-existing immutable Codable property warnings.
+- `swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2` → 244 tests,
+  0 failures, 32.310s → PASS. Numeric draft cases 4/4 PASS; asset projection
+  cases 3/3 PASS. New guarded camera cases are NOT_RUN on Linux, not counted.
+- iOS15 frontend grammar parse → exit 0 → PASS (syntax only). Apple SDK/iOS
+  XCTest/simulator/physical keyboard/touch/layout/VoiceOver/ACK → NOT_RUN.
+- Supplemental warnings-as-errors build → FAIL on unchanged historical
+  FinanceExpansion.swift:11–16. Recorded separately; no suppression, mutable
+  reference rules or fake strict PASS. See `reviews/W1_003_NUMERIC_INPUT.md`.
+- Cross-Agent conflicts: none in local worktree; #167 branch and closed #164
+  untouched. No main merge, workflow dispatch, signing, release or IPA.
+- NEXT_ONE_TASK: VLP-CODEX-W1-004 — theme consistency audit and scoped palette
+  fix; preserve Astra/Kimi art contracts and avoid black text on dark skins.
+- State: W0 complete; three W1 source slices implemented with portable tests;
+  W1 Apple/device acceptance remains open. Resume by fetching current HEAD,
+  reading latest #6/#168 and this topmost checkpoint. No background worker claim.
+
+## CODEX W1-002 — independent asset browser — 2026-11-07
+
+- Baseline `de8893f`, same #168 dev-only authority. Added read-only native asset
+  sheet reachable through More and drawer in every phase, including pending
+  decisions. Property/bank/stock/trade data use existing canonical state; no
+  order callbacks, rule changes, finance initialization or art replacement.
+- `AssetBrowserSnapshotTests` → 3/3 PASS; full Linux Swift 6.2.1 suite →
+  240/240 PASS, 39.571s. iOS15 grammar parse PASS only. Apple SDK, iOS UI tests,
+  device keyboard/touch/chart/scroll/ACK acceptance NOT_RUN.
+- See `reviews/W1_002_ASSET_BROWSER.md`; W1-001 is `de8893f`, W0 `f3a7b12`.
+- NEXT_ONE_TASK: VLP-CODEX-W1-003, keyboard-safe bounded numeric input;
+  existing reducer remains authoritative for legal amounts and trading phases.
+
+## CODEX long-line W0 + W1-001 — 2026-11-07
+
+- Authority: current Owner + #168 `VEILOPOLY-CODEX-LONG-001`; only
+  `dev/veilopoly:VEILOPOLY_DEV/**`. Old hall/release permissions below are
+  historical, not permission for this task. No main/P5/IPA/workflow changes.
+- Live baseline main/development: `2c5b5161027edff097b27fe3323d30f6ca3e430e`.
+  W0 review-only commit `f3a7b12`; see `reviews/CODEX_BASELINE_AUDIT.md`.
+- W1-001: remove token-movement camera zoom and delayed restore; preserve token
+  timing, assets, reducer, RNG, save encoding and one-shot ACK. Guarded iOS scene
+  regression source added; details in `reviews/W1_001_STABLE_CAMERA.md`.
+- Linux Swift 6.2.1 full `swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2`
+  → 237 tests, 0 failures, 32.033s → PASS. New guarded iOS cases are excluded on
+  Linux, NOT_RUN; iOS15 frontend grammar parse exit 0 → PASS (syntax only).
+- Baseline AI: 0/500 complete at 500 moves (500 capped); 9/20 complete at 6000
+  moves (11 capped), 79,661 moves, zero illegal actions. No policy change or
+  strength claim. Device/Apple SDK/visual/performance/real multiplayer NOT_RUN.
+- #164 remains closed/unmerged. #167 is a different branch/task; do not modify.
+  No local cross-Agent conflict found; no art replacement or rule expansion.
+- NEXT_ONE_TASK: VLP-CODEX-W1-002, independent read-only asset browser in all
+  phases; mutation controls stay bound to existing legal reducer phases.
+
 ## Actual game-hall integration + quiet live news — 2026-11-07
 
 - Task `VEILOPOLY-HALL-NEWS-008`, baseline `ac1805a3f8dcf4c1a657ecfff0f64650f037b736`; main/merge base `ccafebab147e069fbabfff579dbf323b0d54f191`. Owner now explicitly requests actual hall integration and notifications, but **no new version output**. Earlier notes that P5 hall integration is unauthorized are historical for this narrow local-hosting task; product multiplayer transport is still excluded.
