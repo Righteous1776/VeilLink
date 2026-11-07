@@ -5,6 +5,7 @@ import SpriteKit
 import UIKit
 import VeilopolyEngine
 import VeilopolyAI
+import VeilopolyPersistence
 
 @MainActor
 public final class GameSessionModel: ObservableObject {
@@ -16,6 +17,7 @@ public final class GameSessionModel: ObservableObject {
  @Published public private(set) var stockExecutions: [StockExecution] = []
  @Published public private(set) var stockOrderError: String?
  @Published public private(set) var lastFeedback: String = "准备开始 · 轮到第一位玩家"
+ @Published public private(set) var saveWarning: String?
  private var cardGate = CardRevealGate()
  @Published public var selectedTile: Int = 1 {
   didSet { scene.highlightTile(selectedTile) }
@@ -25,10 +27,29 @@ public final class GameSessionModel: ObservableObject {
  @Published private var animating = false
  private var driving = false
  private let configuredHumanCount: Int
+ private let saveStore: VeilopolySaveStore?
+ private let saveSessionID: String
+ private var recoveryBlocked = false
+ private var lastCheckpointAt = Date.distantPast
 
  public init(seed: UInt64 = 1729123, humanCount: Int = 1) {
   configuredHumanCount = humanCount
-  let initial = GameFactory.make(seed: seed, humanCount: humanCount)
+  let sessionID = "solo-\(humanCount)"
+  saveSessionID = sessionID
+  let store = try? VeilopolySaveStore()
+  saveStore = store
+  let recovered: VeilopolySavedGame?
+  let unreadable: Bool
+  do {
+   recovered = try store?.load(gameID: sessionID, mode: .solo)
+   unreadable = false
+  } catch {
+   // Preserve unreadable files; never silently overwrite a user's game.
+   recovered = nil
+   unreadable = true
+  }
+  recoveryBlocked = unreadable
+  let initial = recovered?.game ?? GameFactory.make(seed: seed, humanCount: humanCount)
   game = initial
   scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
   scene.display(initial)
@@ -41,12 +62,43 @@ public final class GameSessionModel: ObservableObject {
     self.boardSelectionRevision += 1
    }
   }
-  if humanCount == 0 { Task { @MainActor [weak self] in self?.drive() } }
+  if unreadable {
+   saveWarning = "本地存档无法读取，已保留原文件。可从「重新开局」明确重置。"
+   lastFeedback = "上次存档异常 · 未覆盖旧数据"
+  } else if let recovered {
+   lastFeedback = "已恢复上次对局 · 进度 #\(recovered.game.nextSeq)"
+  } else {
+   checkpoint(force: true)
+  }
+  // A killed app can resume in .moveAnim/.tileResolve. Finish the pending
+  // deterministic reducer step without replaying an already committed roll.
+  if humanCount == 0 || recovered != nil {
+   Task { @MainActor [weak self] in self?.drive() }
+  }
  }
  public var actor: Int { game.auction?.turn ?? game.trade?.to ?? game.pendingDebt?.player ?? game.turn.player }
  public var waitingForHuman: Bool { !game.players[actor].bankrupt && game.players[actor].kind == .human }
  public var currentContext: GameContext { VeilopolyEngine.context(game) }
  public var pending: Bool { animating }
+ public var saveSummary: String {
+  saveWarning ?? "自动保存已启用 · 异常退出后可继续本局"
+ }
+ private func checkpoint(force: Bool) {
+  if !force && Date().timeIntervalSince(lastCheckpointAt) < 30 { return }
+  guard !recoveryBlocked else { return }
+  guard let saveStore else {
+   saveWarning = "自动保存不可用：无法访问本机存储目录"
+   return
+  }
+  do {
+   _ = try saveStore.save(game, gameID: saveSessionID, mode: .solo)
+   lastCheckpointAt = Date()
+   saveWarning = nil
+  } catch {
+   saveWarning = "自动存档失败：请保留应用数据并反馈"
+  }
+ }
+ public func flushSave() { checkpoint(force: true) }
 
  public func perform(_ kind: MoveKind, tile: Int? = nil, amount: Int? = nil,
                      to: Int? = nil, offer: TradeTransfer? = nil, request: TradeTransfer? = nil,
@@ -80,8 +132,10 @@ public final class GameSessionModel: ObservableObject {
    }
   case .success((let newState, let effects)):
    if move.type == .stockTick {
-    // Price-only ticks need neither a board redraw nor clearing order feedback.
+    // Market ticks occur every 2 seconds. Save a bounded checkpoint
+    // periodically, and always flush on lifecycle departure or player action.
     game = newState
+    checkpoint(force: false)
     return
    }
    errorMessage = nil
@@ -97,6 +151,9 @@ public final class GameSessionModel: ObservableObject {
    if let feedback = VeilopolyEventFeedback.summary(effects) { lastFeedback = feedback }
    let commands = CommandTranslator.translate(effects)
    game = newState
+   // Persist the COMMITTED reducer state before starting presentation
+   // animations, which are intentionally never replayed after a crash.
+   checkpoint(force: true)
    scene.display(newState, snapTokens: !effects.contains(where: { $0.kind == .playerMoved }))
    queue.append(contentsOf: commands)
    if effects.contains(where: { $0.kind == .stockBought || $0.kind == .stockSold }) {
@@ -144,10 +201,21 @@ public final class GameSessionModel: ObservableObject {
  }
  public func reset(seed: UInt64) {
   guard !animating else { return }
+  if recoveryBlocked {
+   guard let saveStore else { return }
+   do {
+    _ = try saveStore.quarantineUnreadable(gameID: saveSessionID, mode: .solo)
+    recoveryBlocked = false
+   } catch {
+    saveWarning = "无法隔离损坏存档，未清除原数据"
+    return
+   }
+  }
   let newState = GameFactory.make(seed: seed, humanCount: configuredHumanCount)
   game = newState; shownCard = nil; cardGate.reset(); queue = []; errorMessage = nil
   stockExecutions = []; stockOrderError = nil
   lastFeedback = "新的一局已经准备好"
+  checkpoint(force: true)
   scene.display(newState)
   selectedTile = 1
   if configuredHumanCount == 0 { drive() }
@@ -226,6 +294,10 @@ public struct VeilopolyGameView: View {
   .preferredColorScheme(.dark)
   .statusBarHidden()
   .onAppear { model.scene.reduceMotion = reduceMotion }
+  .onDisappear { model.flushSave() }
+  .onChange(of: scenePhase) { phase in
+   if phase != .active { model.flushSave() }
+  }
   .onChange(of: reduceMotion) { model.scene.reduceMotion = $0 }
   .onChange(of: model.pending) { pending in
    if !pending { revealDecisionIfNeeded() }
@@ -276,12 +348,12 @@ public struct VeilopolyGameView: View {
    Button("退出游戏", role: .destructive) { exitGame() }
    Button("继续游戏", role: .cancel) {}
   } message: {
-   Text("退出后返回上一级界面；当前单机对局暂不自动保存。")
+   Text("退出后返回上一级界面。当前本地对局会自动保存，下次打开继续。")
   }
   .alert("本局信息", isPresented: $showGameInfo) {
    Button("知道了", role: .cancel) {}
   } message: {
-   Text("随机种子：\(model.game.seed)\n本地对局 · 4 名玩家\n同色地产均衡建造，银行与股票共用本局现金。")
+   Text("随机种子：\(model.game.seed)\n本地对局 · 4 名玩家\n同色地产均衡建造，银行与股票共用本局现金。\n存档：\(model.saveSummary)")
   }
   .overlay {
    if let card = model.shownCard {
@@ -630,6 +702,7 @@ public struct VeilopolyGameView: View {
  }
 
  private func exitGame() {
+  model.flushSave()
   if let onExit { onExit() }
   else { dismiss() }
  }
