@@ -1,9 +1,9 @@
-# Tests and safety gates
-- [x] Existing-file source hunks validated against exact main ccafebab147e069fbabfff579dbf323b0d54f191; no third-party code or assets copied.
-- [ ] xcodebuild and XCTest on iOS15 deployment and current iOS26 target, not run.
-- [ ] Owner OFF default / authorized visualEffects toggle only / persist across relaunch; no privilege bypass.
-- [ ] All 9 computer-opponent interfaces show motion when ON and no view/timeline when OFF.
-- [ ] Touch all game board cells, slider/gesture, navigation buttons: mascot must NEVER intercept touches or cover board.
-- [ ] Reduce Motion + inactive app pause, low power 15fps, 30fps nominal; long-run iPhone7 thermal/battery/memory test.
-- [ ] Thinking/win/loss/draw status matches engine; offline, no network and no copyrighted assets.
-- [ ] Rebase/merge reconciliation with #159, #128, #141, #129; no save regression.
+# Grok bot R2 gates
+- [x] Full upstream README and behavioral-engine module review: pose/eyes/tricks/math/character architecture examined, but zero source/artwork transferred.
+- [x] Single PR #160 patch updated: original Canvas blob renderer with 32 dynamically computed points, eye state machine and spring-like transition; tests cover off gate/frame pacing/background/Reduce Motion/response.
+- [ ] SwiftUI Canvas iOS15+ Xcode compile / full XCTest, NOT_RUN.
+- [ ] Owner authorization, persistent switch OFF default, nine human-vs-computer game screens, no board hit interception.
+- [ ] Video record normal/AI-thinking/win/loss/draw transitions, compare visual timing and eye readability on both iPhone7 and iPhone13.
+- [ ] Battery/thermal/profiler: 30fps normal 15fps Low Power, inactive/ReduceMotion paused, accessibility and dark/light themes.
+- [ ] Governor apply and reconcile with PR #159 current-match persistence and #128 player-side controls.
+- [ ] Release/licensing checks: upstream code/assets not included; label reviewed before external distribution.
