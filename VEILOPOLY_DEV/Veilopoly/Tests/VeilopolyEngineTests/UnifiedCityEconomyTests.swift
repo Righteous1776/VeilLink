@@ -29,6 +29,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
   var v3 = city
   v3.banking?.financeRuleVersion = 3
   v3.banking?.reserveCash = nil
+  v3.banking?.queuedClaims = nil
   v3.cards = VeilopolyCityLongCards.all
   let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
   let text = String(decoding: try encoder.encode(v3), as: UTF8.self)
