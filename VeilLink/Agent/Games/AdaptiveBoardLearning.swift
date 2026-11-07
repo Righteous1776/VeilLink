@@ -310,6 +310,10 @@ final class AdaptiveBoardLearningStore {
         }
     }
 
+    var hasSavedGameDetails: Bool {
+        database.recentGames.contains { $0.result != .unfinished && !$0.actions.isEmpty }
+    }
+
     var summary: AdaptiveBoardLearningSummary {
         // Metadata read only: the history is intentionally uncapped, so loading
         // its entire JSON just to display its byte count is a memory hazard.

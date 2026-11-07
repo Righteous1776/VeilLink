@@ -92,6 +92,7 @@ final class LocalAIGameController: ObservableObject {
     private var boardMatchMoves: [LocalBoardMatchMove] = []
     private var boardMatchRecoveryBlocked = false
     private var inSeparateTeachingSession = false
+    private var suspendedTeachingMatch: (board: GomokuState, outcome: Outcome, sessionID: String)?
     private let learningStore: AdaptiveBoardLearningStore
     private let formationLibrary: DeveloperFormationLibrary?
     private let formationDiscovery = GomokuFormationDiscoveryStore()
@@ -218,6 +219,7 @@ final class LocalAIGameController: ObservableObject {
                 boardMatchSaveWarning = nil
                 didRestoreBoardMatch = false
                 inSeparateTeachingSession = false
+                suspendedTeachingMatch = nil
             } catch {
                 boardMatchSaveWarning = "旧存档未能安全清除；已保留原棋局，重开取消。"
                 return
@@ -268,15 +270,30 @@ final class LocalAIGameController: ObservableObject {
         developerTeachingMode = enabled
         if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false }
         if !enabled && inSeparateTeachingSession {
-            inSeparateTeachingSession = false
+            restoreAfterTeaching()
+        }
+    }
+
+    private func restoreAfterTeaching() {
+        inSeparateTeachingSession = false
+        if let saved = suspendedTeachingMatch {
+            gomoku = saved.board
+            outcome = saved.outcome
+            sessionID = saved.sessionID
+            suspendedTeachingMatch = nil
+        } else {
             restoreSavedBoardMatch()
         }
+        scheduleAIIfNeeded()
     }
 
     func beginDeveloperFormationRecording() {
         guard game == .gomoku else { return }
         // Work on a separate unsaved teaching board. The ordinary match file
         // must never be replaced or finalized merely for opening this tool.
+        if !inSeparateTeachingSession {
+            suspendedTeachingMatch = (gomoku, outcome, sessionID)
+        }
         inSeparateTeachingSession = true
         aiTask?.cancel(); aiTask = nil
         gomoku = GomokuState()
@@ -308,8 +325,7 @@ final class LocalAIGameController: ObservableObject {
         developerFormationPlies.removeAll(keepingCapacity: true)
         developerTeachingMode = false
         if inSeparateTeachingSession {
-            inSeparateTeachingSession = false
-            restoreSavedBoardMatch()
+            restoreAfterTeaching()
         }
         coachTip = "阵法已保存；原单机对局不会被覆盖。"
     }
@@ -574,7 +590,7 @@ final class LocalAIGameController: ObservableObject {
               archive.lastSaveSucceeded else {
             throw NativeSelfPlayExportError.archiveUnavailable
         }
-        guard archive.summary.completedGames > 0 else {
+        guard archive.summary.completedGames > 0, archive.hasSavedGameDetails else {
             throw NativeSelfPlayExportError.noSavedGames
         }
         return try archive.exportPackage(filenameLabel: "GomokuNativeSelfPlay")
@@ -631,6 +647,7 @@ final class LocalAIGameController: ObservableObject {
             if let winner = magneticHockey.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
             else if magneticHockey.isDraw { outcome = .draw }
         }
+        guard !developerTeachingMode else { return }
         switch outcome {
         case .humanWon: finalizeLearning(as: .humanWon)
         case .aiWon: finalizeLearning(as: .aiWon)
@@ -640,7 +657,7 @@ final class LocalAIGameController: ObservableObject {
     }
 
     private func scheduleAIIfNeeded() {
-        guard outcome == .playing else { return }
+        guard outcome == .playing, !developerTeachingMode else { return }
         let current: MiniGamePlayer?
         switch game {
         case .gomoku: current = gomoku.currentPlayer

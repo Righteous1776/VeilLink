@@ -108,4 +108,19 @@ final class LocalBoardMatchStoreTests: XCTestCase {
         XCTAssertTrue(game.isAIThinking)
         game.cancelAI()
     }
+
+    func testTeachingWithoutAnExistingDiskMatchRestoresOriginalEmptyGame() throws {
+        let (disk, folder) = try store(.gomoku)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let game = LocalAIGameController(game: .gomoku, matchStore: disk)
+        let id = game.sessionID
+        game.beginDeveloperFormationRecording()
+        game.developerGomokuMove(112)
+        game.developerGomokuMove(113)
+        game.setDeveloperTeachingMode(false)
+        XCTAssertEqual(game.sessionID, id)
+        XCTAssertEqual(game.gomoku.moveCount, 0)
+        XCTAssertNil(try disk.load())
+        XCTAssertTrue(game.canHumanAct)
+    }
 }
