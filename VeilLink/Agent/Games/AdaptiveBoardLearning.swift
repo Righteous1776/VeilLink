@@ -340,7 +340,11 @@ final class AdaptiveBoardLearningStore {
                     // that beat the bot receive a little more attention.
                     raw = actionStat.count * 42 + max(0, -actionStat.aiReward) * 20
                 }
-                actions[action] = max(actions[action] ?? 0, min(900, max(-180, raw)))
+                // R4 integration of R2 governor-approved loss-feedback fix:
+                // a failed AI action must be penalized, not clamped to zero
+                // by max(0, raw). Human move priors remain outcome-aware.
+                let learned = min(900, max(-180, raw))
+                actions[action] = min(900, max(-180, (actions[action] ?? 0) + learned))
             }
             result[position] = actions
         }

@@ -119,12 +119,22 @@ enum GomokuBot {
         let urgentDefense = formationPreference.enabled
             && GomokuFormationPreference.opponentHasImmediateWin(in: state, player: player)
         let rootPosition = AdaptiveBoardPosition.gomoku(state)
-        let rankedRoots = candidates
+        // R4: rule-verified opponent fork suppression runs strictly AFTER
+        // the mandatory own-win/opponent-immediate-win gates. Ordinary
+        // positions pay for one bounded 225-cell scan, not a deep rollout.
+        let defensive = GomokuCounterForkR4.safeCandidates(
+            in: state, player: player, candidates: candidates
+        )
+        let rankedRoots = defensive.moves
             .map {
                 let learned = learning.bonus(position: rootPosition, action: String($0))
                 let sequence = learning.rootAdjustment(action: String($0))
+                let trainedDefense = defensive.underThreat
+                    ? GomokuCounterForkR4.trainedDefensiveBonus(in: state, player: player, index: $0)
+                    : 0
                 return ($0, tacticalPriority(index: $0, state: state, player: player)
-                    + trainedR3ForkBonus(index: $0, state: state, player: player) + learned + sequence
+                    + trainedR3ForkBonus(index: $0, state: state, player: player)
+                    + trainedDefense + learned + sequence
                     + formationPreference.bonus(index: $0, state: state, player: player, urgentDefense: urgentDefense))
             }
             .sorted { lhs, rhs in

@@ -77,4 +77,115 @@ final class GomokuBotTests: XCTestCase {
         XCTAssertEqual(GomokuBot.trainedR3ForkBonus(index: 112, state: GomokuState(), player: .host), 0)
     }
 
+
+    func testR4DefenderDetectsARealForkAndKeepsOnlySafeEscapes() {
+        // Opponent has intersecting horizontal/vertical three-in-five
+        // threats. The future fork at the intersection must be blocked.
+        var board = GomokuState()
+        let host = [109, 110, 111, 67, 82, 97]
+        let guest = [0, 2, 4, 6, 8]
+        for i in 0..<guest.count {
+            XCTAssertTrue(board.apply(index: host[i], actor: .host))
+            XCTAssertTrue(board.apply(index: guest[i], actor: .guest))
+        }
+        XCTAssertTrue(board.apply(index: host[5], actor: .host))
+        XCTAssertNil(board.winner)
+        XCTAssertEqual(board.currentPlayer, .guest)
+
+        let before = GomokuCounterForkR4.forkCellCount(in: board, opponent: .host)
+        XCTAssertGreaterThan(before, 0)
+        XCTAssertEqual(GomokuCounterForkR4.forkCellCount(
+            in: board, opponent: .host, virtualBlock: 112
+        ), 0)
+        let guarded = GomokuCounterForkR4.safeCandidates(
+            in: board, player: .guest, candidates: [112, 140, 141]
+        )
+        XCTAssertTrue(guarded.underThreat)
+        XCTAssertEqual(guarded.moves, [112])
+        XCTAssertNotEqual(
+            GomokuCounterForkR4.trainedDefensiveBonus(in: board, player: .guest, index: 112), 0
+        )
+    }
+
+    func testR4DefenderLeavesNonThreatenedOpeningUnchanged() {
+        var board = GomokuState()
+        XCTAssertTrue(board.apply(index: 112, actor: .host))
+        let oldCandidates = [111, 113, 96, 98]
+        let guarded = GomokuCounterForkR4.safeCandidates(
+            in: board, player: .guest, candidates: oldCandidates
+        )
+        XCTAssertFalse(guarded.underThreat)
+        XCTAssertEqual(guarded.moves, oldCandidates)
+        XCTAssertEqual(GomokuCounterForkR4.forkCellCount(in: board, opponent: .host), 0)
+    }
+
+    func testR4DefensiveModelIsDeterministicBoundedAndNoModelFileNeeded() {
+        var board = GomokuState()
+        XCTAssertTrue(board.apply(index: 112, actor: .host))
+        XCTAssertTrue(board.apply(index: 111, actor: .guest))
+        let scores = [97, 98, 113, 127].map {
+            GomokuCounterForkR4.trainedDefensiveBonus(in: board, player: .host, index: $0)
+        }
+        XCTAssertEqual(scores, [97, 98, 113, 127].map {
+            GomokuCounterForkR4.trainedDefensiveBonus(in: board, player: .host, index: $0)
+        })
+        XCTAssertTrue(scores.allSatisfy { (-48_000...48_000).contains($0) })
+        XCTAssertEqual(GomokuCounterForkR4.trainedDefensiveBonus(
+            in: board, player: .host, index: 112
+        ), 0)
+    }
+
+
+    func testR4ActualNativeBotUsesForcedForkEscapeUnderLegacyBudget() {
+        var state = GomokuState()
+        let attacker = [109, 110, 111, 67, 82, 97]
+        let defender = [0, 2, 4, 6, 8]
+        for i in 0..<defender.count {
+            XCTAssertTrue(state.apply(index: attacker[i], actor: .host))
+            XCTAssertTrue(state.apply(index: defender[i], actor: .guest))
+        }
+        XCTAssertTrue(state.apply(index: attacker[5], actor: .host))
+        let decision = GomokuBot.chooseMove(
+            in: state, for: .guest,
+            budget: GomokuBotBudget.standard(profileLabel: "LEGACY-COMPACT")
+        )
+        XCTAssertEqual(decision?.index, 112,
+                       "Search must not discard the only fork-neutralizing root move")
+        if let decision {
+            XCTAssertTrue(state.apply(index: decision.index, actor: .guest))
+            XCTAssertEqual(GomokuCounterForkR4.forkCellCount(in: state, opponent: .host), 0)
+        }
+    }
+
+
+
+    func testR4DoesNotThrowAwayUnstoppableCounterattack() {
+        var state = GomokuState()
+        // Host threatens to fork at 112 while Guest can create a separate
+        // unanswerable double five at 161. A purely defensive gate would
+        // accidentally remove the winning counterattack.
+        let host = [109, 110, 111, 67, 82, 97, 0]
+        let guest = [158, 159, 160, 116, 131, 146]
+        for i in 0..<guest.count {
+            XCTAssertTrue(state.apply(index: host[i], actor: .host))
+            XCTAssertTrue(state.apply(index: guest[i], actor: .guest))
+        }
+        XCTAssertTrue(state.apply(index: host[6], actor: .host))
+        XCTAssertNil(state.winner)
+        XCTAssertTrue(GomokuCounterForkR4.createsForcedDoubleWin(
+            in: state, player: .guest, virtualPlacement: 161
+        ))
+        XCTAssertGreaterThan(GomokuCounterForkR4.forkCellCount(
+            in: state, opponent: .host, virtualBlock: 161
+        ), 0)
+        let candidates = GomokuCounterForkR4.safeCandidates(
+            in: state, player: .guest, candidates: [112, 161, 200]
+        )
+        XCTAssertTrue(candidates.underThreat)
+        XCTAssertTrue(candidates.moves.contains(112))
+        XCTAssertTrue(candidates.moves.contains(161))
+        XCTAssertFalse(candidates.moves.contains(200))
+    }
+
+
 }
