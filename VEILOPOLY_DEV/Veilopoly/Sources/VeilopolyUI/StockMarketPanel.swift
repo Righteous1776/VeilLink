@@ -73,7 +73,7 @@ public struct VeilopolyStockMarketPanel: View {
        .foregroundStyle(Color(red: 0.94, green: 0.90, blue: 0.81))
        .fixedSize(horizontal: false, vertical: true)
      }
-     .font(.system(size: 10, weight: .regular, design: .serif))
+     .font(.system(size: 13, weight: .regular, design: .serif))
      .padding(.horizontal, 8).padding(.vertical, 6)
      .frame(maxWidth: .infinity, alignment: .leading)
      .background(StockTerminalPalette.gold.opacity(0.11),
@@ -83,11 +83,11 @@ public struct VeilopolyStockMarketPanel: View {
     VeilopolyStockLineChart(quote: quote).frame(height: 152)
     quoteMetrics(quote)
     Text(VeilopolyMarketEditorial.regimeNotice(market))
-     .font(.system(size: 10, weight: .medium, design: .serif))
+     .font(.system(size: 13, weight: .medium, design: .serif))
      .foregroundStyle(StockTerminalPalette.gold)
      .fixedSize(horizontal: false, vertical: true)
     Text(VeilopolyMarketEditorial.quoteNotice(quote))
-     .font(.system(size: 9))
+     .font(.system(size: 12))
      .foregroundStyle(.white.opacity(0.75))
      .fixedSize(horizontal: false, vertical: true)
     orderTicket(quote)
@@ -100,7 +100,7 @@ public struct VeilopolyStockMarketPanel: View {
    Text(market.algorithmVersion == 2
     ? "虚构行情 · 每局随机走势 V2 · 可存档重放"
     : "虚构行情 · 历史对局兼容算法 V1")
-    .font(.system(size: 9, weight: .medium))
+    .font(.system(size: 12, weight: .medium))
     .foregroundStyle(.white.opacity(0.42))
     .frame(maxWidth: .infinity, alignment: .center)
   }
@@ -146,7 +146,7 @@ public struct VeilopolyStockMarketPanel: View {
     VStack(alignment: .leading, spacing: 0) {
      Text("VEIL EXCHANGE").font(.system(size: 12, weight: .bold, design: .rounded))
       .tracking(1.1)
-     Text("城市证券交易所 · 离线行情").font(.system(size: 9, weight: .medium))
+     Text("城市证券交易所 · 离线行情").font(.system(size: 12, weight: .medium))
       .foregroundStyle(.white.opacity(0.52))
     }
     Spacer(minLength: 4)
@@ -154,17 +154,17 @@ public struct VeilopolyStockMarketPanel: View {
      Circle().fill(market.quotes.contains(where: { $0.isHalted }) ? Color.orange : StockTerminalPalette.down)
       .frame(width: 6, height: 6)
      Text(market.quotes.contains(where: { $0.isHalted }) ? "部分暂停" : "运行中")
-      .font(.system(size: 9, weight: .semibold))
+      .font(.system(size: 12, weight: .semibold))
     }
     .padding(.horizontal, 7).padding(.vertical, 5)
     .background(.white.opacity(0.06), in: Capsule())
    }
    HStack(spacing: 7) {
-    Text("T+\(market.tick)").font(.system(size: 9, weight: .bold, design: .monospaced))
+    Text("T+\(market.tick)").font(.system(size: 12, weight: .bold, design: .monospaced))
     ProgressView(value: Double(market.tick % StockMarketEngine.sessionTicks),
                  total: Double(StockMarketEngine.sessionTicks))
      .tint(StockTerminalPalette.gold)
-    Text(regimeName(market.regime)).font(.system(size: 9, weight: .semibold))
+    Text(regimeName(market.regime)).font(.system(size: 12, weight: .semibold))
      .foregroundStyle(StockTerminalPalette.gold)
    }
   }
@@ -178,19 +178,19 @@ public struct VeilopolyStockMarketPanel: View {
      Button { selectedSymbol = quote.symbol } label: {
       VStack(alignment: .leading, spacing: 3) {
        HStack(spacing: 5) {
-        Text(quote.symbol).font(.system(size: 10, weight: .bold, design: .monospaced))
+        Text(quote.symbol).font(.system(size: 13, weight: .bold, design: .monospaced))
         if quote.isHalted {
-         Image(systemName: "pause.fill").font(.system(size: 7)).foregroundStyle(.orange)
+         Image(systemName: "pause.fill").font(.system(size: 12)).foregroundStyle(.orange)
         }
        }
-       Text(price(quote.currentPriceCents)).font(.system(size: 11, weight: .bold, design: .monospaced))
+       Text(price(quote.currentPriceCents)).font(.system(size: 14, weight: .bold, design: .monospaced))
        HStack(spacing: 4) {
         StockMiniChart(quote: quote).frame(width: 38, height: 12)
-        Text(percent(quote.changeBasisPoints)).font(.system(size: 8, weight: .semibold, design: .monospaced))
+        Text(percent(quote.changeBasisPoints)).font(.system(size: 12, weight: .semibold, design: .monospaced))
        }
        .foregroundStyle(StockTerminalPalette.direction(quote.changeBasisPoints))
       }
-      .frame(width: 78, alignment: .leading)
+      .frame(width: 108, alignment: .leading)
       .padding(.horizontal, 8).padding(.vertical, 7)
       .background(selected ? StockTerminalPalette.gold.opacity(0.13) : .white.opacity(0.045),
                   in: RoundedRectangle(cornerRadius: 9))
@@ -216,14 +216,14 @@ public struct VeilopolyStockMarketPanel: View {
       .foregroundStyle(.white.opacity(0.72))
     }
     Text("\(quote.sector) · 成交量 \(compactNumber(quote.sessionVolume))")
-     .font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.46))
+     .font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.46))
    }
    Spacer(minLength: 4)
    VStack(alignment: .trailing, spacing: 1) {
     Text(price(quote.currentPriceCents))
      .font(.system(size: 24, weight: .heavy, design: .monospaced))
     Text(percent(quote.changeBasisPoints))
-     .font(.system(size: 11, weight: .bold, design: .monospaced))
+     .font(.system(size: 14, weight: .bold, design: .monospaced))
      .foregroundStyle(StockTerminalPalette.direction(quote.changeBasisPoints))
    }
   }
@@ -242,8 +242,8 @@ public struct VeilopolyStockMarketPanel: View {
 
  private func metric(_ title: String, _ cents: Int) -> some View {
   VStack(alignment: .leading, spacing: 2) {
-   Text(title).font(.system(size: 8, weight: .medium)).foregroundStyle(.white.opacity(0.42))
-   Text(price(cents)).font(.system(size: 9, weight: .semibold, design: .monospaced))
+   Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.42))
+   Text(price(cents)).font(.system(size: 12, weight: .semibold, design: .monospaced))
   }
   .frame(maxWidth: .infinity, alignment: .leading)
   .padding(6)
@@ -272,14 +272,14 @@ public struct VeilopolyStockMarketPanel: View {
   let enabled = rejection == nil
   return VStack(alignment: .leading, spacing: 9) {
    HStack {
-    Text("订单").font(.system(size: 11, weight: .bold))
+    Text("订单").font(.system(size: 14, weight: .bold))
     Spacer()
     Text(ticketSide == .buy ? "可买 \(maxBuy) 股" : "持有 \(owned) 股")
-     .font(.system(size: 9, weight: .semibold, design: .monospaced))
+     .font(.system(size: 12, weight: .semibold, design: .monospaced))
      .foregroundStyle(.white.opacity(0.54))
    }
    Text("可用现金 ¥\(cash) · 市价即时成交")
-    .font(.caption2).foregroundStyle(.secondary)
+    .font(.footnote).foregroundStyle(.secondary)
    Picker("交易方向", selection: $ticketSide) {
     ForEach(StockTicketSide.allCases) { side in Text(side.rawValue).tag(side) }
    }
@@ -333,18 +333,18 @@ public struct VeilopolyStockMarketPanel: View {
        .fontWeight(.semibold).foregroundStyle(.white.opacity(0.88))
      }
      Spacer(minLength: 2)
-     Text("@ \(price(estimate.priceCents))").font(.system(size: 9, design: .monospaced))
+     Text("@ \(price(estimate.priceCents))").font(.system(size: 12, design: .monospaced))
     }
-    .font(.system(size: 9)).foregroundStyle(.white.opacity(0.50))
+    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.50))
    }
    if let rejection {
     Text(rejection)
-     .font(.system(size: 9, weight: .semibold))
+     .font(.system(size: 12, weight: .semibold))
      .foregroundStyle(quote.isHalted ? Color.orange : StockTerminalPalette.up)
    }
    if let orderError {
     Label("上一笔订单：" + orderError, systemImage: "exclamationmark.circle")
-     .font(.caption2).foregroundStyle(.orange)
+     .font(.footnote).foregroundStyle(.orange)
    }
 
    Button {
@@ -377,7 +377,7 @@ public struct VeilopolyStockMarketPanel: View {
 
  private func quantityButton(_ title: String, action: @escaping () -> Void) -> some View {
   Button(action: action) {
-   Text(title).font(.system(size: 9, weight: .semibold))
+   Text(title).font(.system(size: 12, weight: .semibold))
     .frame(maxWidth: .infinity, minHeight: 44)
     .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
   }
@@ -391,12 +391,12 @@ public struct VeilopolyStockMarketPanel: View {
   return VStack(alignment: .leading, spacing: 8) {
    Button { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { positionsExpanded.toggle() } } label: {
     HStack {
-     Text("我的持仓").font(.system(size: 11, weight: .bold))
-     Text("\(portfolio.positions.count)").font(.system(size: 9, weight: .bold))
+     Text("我的持仓").font(.system(size: 14, weight: .bold))
+     Text("\(portfolio.positions.count)").font(.system(size: 12, weight: .bold))
       .padding(.horizontal, 6).padding(.vertical, 2)
       .background(StockTerminalPalette.gold.opacity(0.15), in: Capsule())
      Spacer()
-     Image(systemName: positionsExpanded ? "chevron.up" : "chevron.down").font(.caption2)
+     Image(systemName: positionsExpanded ? "chevron.up" : "chevron.down").font(.footnote)
     }
    }
    .buttonStyle(.plain)
@@ -411,7 +411,7 @@ public struct VeilopolyStockMarketPanel: View {
       Image(systemName: "tray").foregroundStyle(.white.opacity(0.35))
       Text("暂无持仓，先选择上方标的建立仓位。")
      }
-     .font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.48))
+     .font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.48))
      .padding(.vertical, 5)
     } else {
      ForEach(portfolio.positions) { position in positionRow(position) }
@@ -424,8 +424,8 @@ public struct VeilopolyStockMarketPanel: View {
 
  private func portfolioMetric(_ title: String, _ value: String, _ color: Color) -> some View {
   VStack(alignment: .leading, spacing: 2) {
-   Text(title).font(.system(size: 8)).foregroundStyle(.white.opacity(0.40))
-   Text(value).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(color)
+   Text(title).font(.system(size: 12)).foregroundStyle(.white.opacity(0.40))
+   Text(value).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundStyle(color)
   }
   .frame(maxWidth: .infinity, alignment: .leading)
  }
@@ -437,16 +437,16 @@ public struct VeilopolyStockMarketPanel: View {
   return Button { selectedSymbol = position.symbol } label: {
    HStack(spacing: 7) {
     VStack(alignment: .leading, spacing: 1) {
-     Text(position.symbol).font(.system(size: 10, weight: .bold, design: .monospaced))
-     Text("\(position.shares) 股").font(.system(size: 8)).foregroundStyle(.white.opacity(0.42))
+     Text(position.symbol).font(.system(size: 13, weight: .bold, design: .monospaced))
+     Text("\(position.shares) 股").font(.system(size: 12)).foregroundStyle(.white.opacity(0.42))
     }
     VStack(alignment: .leading, spacing: 1) {
      Text("成本 \(price(position.averageCostCents))")
      Text("现价 \(price(current))")
     }
-    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.48))
+    .font(.system(size: 12, design: .monospaced)).foregroundStyle(.white.opacity(0.48))
     Spacer()
-    Text(signedMoney(pnl)).font(.system(size: 10, weight: .bold, design: .monospaced))
+    Text(signedMoney(pnl)).font(.system(size: 13, weight: .bold, design: .monospaced))
      .foregroundStyle(pnlColor(pnl))
    }
    .padding(.vertical, 6).padding(.horizontal, 7)
@@ -461,7 +461,7 @@ public struct VeilopolyStockMarketPanel: View {
    Text("本局成交回执").font(.subheadline.weight(.semibold))
    if executions.isEmpty {
     Text("暂无成交。订单成功后将在此显示回执。")
-     .font(.caption2).foregroundStyle(.secondary)
+     .font(.footnote).foregroundStyle(.secondary)
    }
    ForEach(Array(executions.prefix(8))) { execution in
     VStack(alignment: .leading, spacing: 3) {
@@ -474,7 +474,7 @@ public struct VeilopolyStockMarketPanel: View {
      Text("成交价 \(price(execution.priceCents)) · 现金 \(execution.cashDelta >= 0 ? "+" : "−")¥\(abs(execution.cashDelta))")
       .foregroundStyle(.secondary)
     }
-    .font(.caption2).monospacedDigit()
+    .font(.footnote).monospacedDigit()
     .accessibilityElement(children: .combine)
    }
   }
