@@ -261,6 +261,7 @@ private final class VeilopolyFriendRoomController: ObservableObject {
  }
 }
 
+@MainActor
 struct VeilopolyFriendRoomView: View {
  @ObservedObject var model: AppModel
  @ObservedObject private var sessions: SessionCoordinator
