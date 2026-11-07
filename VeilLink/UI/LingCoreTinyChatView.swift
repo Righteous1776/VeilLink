@@ -13,6 +13,7 @@ private final class VertexTinyChatState: ObservableObject {
     @Published var loadMilliseconds: Int?
     @Published var computeBudgetLabel = "等待 A9/A10 计算预算"
     @Published var protectionMessage: String?
+    @Published var chineseQualityNotice: String?
 
     private var runtime: Vertex35MChatRuntime?
     private var currentPlan: VeilA9ComputePlan?
@@ -50,6 +51,7 @@ private final class VertexTinyChatState: ObservableObject {
         isGenerating = true
         partial = ""
         errorText = nil
+        chineseQualityNotice = nil
         tokenProgress = nil
         loadMilliseconds = nil
 
@@ -63,6 +65,9 @@ private final class VertexTinyChatState: ObservableObject {
                 }
                 guard self.activeID == id else { return }
                 self.loadMilliseconds = self.runtime?.lastModelLoadMilliseconds
+                if Vertex35MChineseQualityGate.needsLanguageWarning(userText: text, modelOutput: answer) {
+                    self.chineseQualityNotice = "此 35M 模型没有按中文要求回答。保留原始回复，不提供不可靠的自动翻译。"
+                }
                 self.messages.append(AgentMessage(role: .assistant, text: answer))
             } catch is CancellationError {
                 // Cancellation produces no synthetic assistant reply.
@@ -92,6 +97,7 @@ private final class VertexTinyChatState: ObservableObject {
         boundary?.clear()
         messages.removeAll()
         errorText = nil
+        chineseQualityNotice = nil
     }
 
     private func endpoint() throws -> LingCoreChatOnlyBoundary {
@@ -182,6 +188,13 @@ struct LingCoreTinyChatView: View {
                 Text(protectionMessage)
                     .font(.caption)
                     .foregroundColor(VeilTheme.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if let message = chat.chineseQualityNotice {
+                Label(message, systemImage: "character.bubble")
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.gold)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 

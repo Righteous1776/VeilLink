@@ -8,6 +8,8 @@ on:
       - '.github/workflows/lingcore-vertex35m-validation.yml'
       - 'VeilLink/Agent/Language/LlamaInferenceEngine.swift'
       - 'VeilLink/Agent/Language/Vertex35MChatRuntime.swift'
+      - 'VeilLink/Agent/Language/Vertex35MChineseQualityGate.swift'
+      - 'VeilLinkTests/Vertex35MChineseQualityGateTests.swift'
       - 'VeilLink/Agent/Language/LingCoreChatOnlyBoundary.swift'
       - 'VeilLink/UI/LingCoreTinyChatView.swift'
       - 'VeilLink/UI/AgentHomeView.swift'
@@ -38,6 +40,7 @@ jobs:
             VeilLink/Agent/Language/LingCoreChatOnlyBoundary.swift \
             VeilLink/Agent/Language/Vertex35MModelIntegrityGate.swift \
             VeilLink/Agent/Language/Vertex35MChatRuntime.swift \
+            VeilLink/Agent/Language/Vertex35MChineseQualityGate.swift \
             VeilLink/UI/LingCoreTinyChatView.swift \
             VeilLinkTests/Vertex35MOnDeviceSmokeTests.swift; do
             xcrun swiftc -frontend -parse "$f"
@@ -90,4 +93,29 @@ jobs:
             -only-testing:VeilLinkTests/LingCoreChatOnlyBoundaryTests \
             -only-testing:VeilLinkTests/Vertex35MModelIntegrityGateTests \
             -only-testing:VeilLinkTests/Vertex35MOnDeviceSmokeTests \
+            -only-testing:VeilLinkTests/Vertex35MChineseQualityGateTests \
             CODE_SIGNING_ALLOWED=NO test
+      - name: Build experimental unsigned iOS15 device app
+        run: |
+          set -o pipefail
+          xcodebuild -project VeilLink.xcodeproj -scheme VeilLink \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Package and verify owner-signable Vertex35M IPA
+        run: |
+          set -euo pipefail
+          bash scripts/package-unsigned-ipa.sh
+          MODEL="$(find DerivedData/Build/Products/Release-iphoneos/VeilLink.app -name 'Vertex-0.6-35M-Instruct-Q4_K_M.gguf' -type f -print -quit)"
+          test -n "$MODEL"
+          python3 scripts/verify-vertex35m-model.py "$MODEL"
+          test -s build/VeilLink-unsigned.ipa
+          echo "VERTEX35M_UNSIGNED_IPA_VERIFIED"
+      - name: Upload unsigned experimental test IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-Vertex35M-iOS15-Unsigned
+          path: build/VeilLink-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14

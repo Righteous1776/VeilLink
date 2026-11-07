@@ -131,6 +131,12 @@ final class Vertex35MChatRuntime: LocalTextModelRuntime {
                 content: "Offline text-only chat. No tools or controls. Be brief and truthful. Reply in the user's language. 中文问题用简体中文回答；不知道就明确说不知道。"
             )
         ]
+        // One short example for Chinese format imitation; quality is measured
+        // independently because the upstream tiny model is English-focused.
+        if Vertex35MChineseQualityGate.containsHan(request.userText) {
+            chat.append(QwenChatMessage(role: "user", content: "你好，请用简体中文回答。"))
+            chat.append(QwenChatMessage(role: "assistant", content: "你好！我是一个本地离线聊天助手。"))
+        }
         for message in request.messages.suffix(isLegacyMemory ? 2 : 4) {
             chat.append(QwenChatMessage(
                 role: message.role == .user ? "user" : "assistant",
