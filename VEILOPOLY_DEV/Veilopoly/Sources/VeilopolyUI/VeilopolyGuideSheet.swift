@@ -26,7 +26,7 @@ struct VeilopolyGuideSheet: View {
  var body: some View {
   NavigationView {
    ScrollView {
-    VStack(alignment: .leading, spacing: 14) {
+    LazyVStack(alignment: .leading, spacing: 14) {
      VStack(alignment: .leading, spacing: 6) {
       Label("城市玩家手册", systemImage: "book.closed")
        .font(.system(size: 22, weight: .semibold, design: .serif))
