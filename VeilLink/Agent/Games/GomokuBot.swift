@@ -123,7 +123,10 @@ enum GomokuBot {
             .map {
                 let learned = learning.bonus(position: rootPosition, action: String($0))
                 let sequence = learning.rootAdjustment(action: String($0))
-                return ($0, tacticalPriority(index: $0, state: state, player: player) + learned + sequence
+                let trained = BoardLearnedMoveOrderR2.gomokuBonus(
+                    in: state, player: player, index: $0
+                )
+                return ($0, tacticalPriority(index: $0, state: state, player: player) + learned + sequence + trained
                     + formationPreference.bonus(index: $0, state: state, player: player, urgentDefense: urgentDefense))
             }
             .sorted { lhs, rhs in
