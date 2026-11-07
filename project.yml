@@ -73,6 +73,10 @@ targets:
     dependencies:
       - package: Veilopoly
         product: VeilopolyUI
+      - package: Veilopoly
+        product: VeilopolyNet
+      - package: Veilopoly
+        product: VeilopolyEngine
       - sdk: libsqlite3.tbd
       - package: CodeScanner
       - package: SwiftSoup
