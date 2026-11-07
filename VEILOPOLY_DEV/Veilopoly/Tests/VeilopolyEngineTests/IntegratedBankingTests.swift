@@ -169,3 +169,91 @@ extension IntegratedBankingTests {
   XCTAssertTrue(effects.isEmpty)
  }
 }
+
+extension IntegratedBankingTests {
+ func testMaturityAutomaticallyCollectsOnlyActualContractAmount() {
+  var g=Fixture.game(.manage)
+  var bank=IntegratedBankLedger(completedTurns:0)
+  XCTAssertEqual(bank.financeRuleVersion,2)
+  bank.accounts[0].loans=[
+   SandboxLoan(id:71,principal:200,interestBasisPoints:2000,
+               duePeriod:1,periods:1,totalDue:240)]
+  g.banking=bank
+  let cashBefore=g.players[0].cash
+  var events:[Effect]=[]
+  IntegratedBanking.advanceTurn(&g,effects:&events)
+  XCTAssertEqual(g.players[0].cash,cashBefore-240)
+  XCTAssertEqual(g.banking?.accounts[0].loans.count,0)
+  XCTAssertTrue(events.contains {
+   $0.kind == .bankRepaid && $0.amount == -240 && $0.text == "automaticMaturity"
+  })
+  XCTAssertEqual(g.banking?.financeRuleVersion,2)
+ }
+ func testOverdueLoanPreventsBuyingButAllowsRepayment() throws {
+  var g=Fixture.game(.manage)
+  var bank=IntegratedBankLedger(completedTurns:7)
+  bank.accounts[0].loans=[
+   SandboxLoan(id:72,principal:500,interestBasisPoints:2000,
+               duePeriod:6,periods:1,totalDue:600)]
+  g.banking=bank
+  fails(g, Move(.stockBuy,player:0,seq:g.nextSeq,
+                stockSymbol:"VTL",stockShares:1),.financeOverdue)
+  fails(g, Move(.bankDeposit,player:0,seq:g.nextSeq,
+                amount:30,financeProduct:.demandDeposit),.financeOverdue)
+  _=try apply(&g,.bankRepay,id:72)
+  XCTAssertTrue(g.banking?.accounts[0].loans.isEmpty == true)
+  let test=Move(.stockBuy,player:0,seq:g.nextSeq,
+                stockSymbol:"VTL",stockShares:1)
+  let (next,_) = try VeilopolyEngine.apply(g,VeilopolyEngine.context(g),test).get()
+  XCTAssertEqual(next.banking?.market?.portfolios[0].position(symbol:"VTL")?.shares,1)
+ }
+ func testInsufficientCashDoesNotDestroyMaturedDebt() {
+  var g=Fixture.game(.manage)
+  g.players[0].cash=10
+  var bank=IntegratedBankLedger(completedTurns:0)
+  bank.accounts[0].loans=[
+   SandboxLoan(id:73,principal:100,interestBasisPoints:2000,
+               duePeriod:1,periods:1,totalDue:120)]
+  g.banking=bank
+  var events:[Effect]=[]
+  IntegratedBanking.advanceTurn(&g,effects:&events)
+  XCTAssertEqual(g.players[0].cash,10)
+  XCTAssertEqual(g.banking?.accounts[0].loans.first?.totalDue,120)
+  XCTAssertFalse(events.contains { $0.kind == .bankRepaid })
+  XCTAssertTrue(events.contains { $0.kind == .bankMatured })
+ }
+ func testLegacyLedgerKeepsBytesAndDoesNotAutoRepay() throws {
+  var ledger=IntegratedBankLedger(completedTurns:0,financeRuleVersion:1)
+  ledger.accounts[0].loans=[
+   SandboxLoan(id:74,principal:100,interestBasisPoints:2000,
+               duePeriod:1,periods:1,totalDue:120)]
+  let encoder=JSONEncoder(); encoder.outputFormatting=[.sortedKeys]
+  let json=try encoder.encode(ledger)
+  XCTAssertFalse(try XCTUnwrap(String(data:json,encoding:.utf8)).contains("financeRuleVersion"))
+  let restored=try JSONDecoder().decode(IntegratedBankLedger.self,from:json)
+  XCTAssertEqual(restored.financeRuleVersion,1)
+  XCTAssertEqual(try encoder.encode(restored),json)
+  var g=Fixture.game(.manage); g.banking=restored
+  let initialCash=g.players[0].cash
+  var effects:[Effect]=[]
+  IntegratedBanking.advanceTurn(&g,effects:&effects)
+  XCTAssertEqual(g.players[0].cash,initialCash)
+  XCTAssertEqual(g.banking?.accounts[0].loans.count,1)
+ }
+ func testMaturityPrioritizesOldestContractBeforeYoungerDebt() {
+  var g=Fixture.game(.manage)
+  g.players[0].cash=250
+  var ledger=IntegratedBankLedger(completedTurns:2)
+  ledger.accounts[0].loans=[
+   SandboxLoan(id:91,principal:90,interestBasisPoints:2000,
+               duePeriod:2,periods:1,totalDue:100),
+   SandboxLoan(id:90,principal:190,interestBasisPoints:2000,
+               duePeriod:1,periods:1,totalDue:200)]
+  g.banking=ledger
+  var effects:[Effect]=[]
+  IntegratedBanking.advanceTurn(&g,effects:&effects)
+  XCTAssertEqual(g.players[0].cash,50)
+  XCTAssertEqual(g.banking?.accounts[0].loans.map(\.id),[91])
+  XCTAssertEqual(effects.filter { $0.kind == .bankRepaid }.map(\.amount),[-200])
+ }
+}
