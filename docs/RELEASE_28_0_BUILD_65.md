@@ -38,3 +38,10 @@ or signing certificate is implied. Simulator/package checks do not certify physi
 headset interoperability, battery use, thermal behavior or on-device visual acceptance.
 
 Full intake decisions and evidence: `docs/engineering/V28_INTEGRATION_PLAN_20261107.md`.
+
+## Final V28 launch gate — 2026-11-07
+
+- PR #161 integrated the Owner-authorized Veilopoly/Inbox feature batch and passed complete Apple iOS CI #341 on exact candidate head `19ffb2704e0b960be1726306c331f6febb414276`.
+- The earlier main iOS CI #342 failed one diagnostic concurrent-logging test because a fixed scheduler poll did not await the utility queue. That failure and the cancelled initial Core release are retained in the record, not relabeled as successful.
+- PR #163 replaced only the test helper with the existing export-bundle serial-queue synchronization barrier. Its exact head `800ae6463f93071fcacf0704369e28acd3c7bab3` passed complete Apple CI #343 including offline Veilopoly SwiftPM tests, simulator build, unit/UI smoke tests, unsigned iPhoneOS Release compile, candidate IPA packaging and verification. PR #163 then merged into main as `29c05bae3cd93d49b9a4396f0fc3a71dd9697d2d`.
+- This release-note commit is the Owner-authorized, documentation-only trigger for the existing `core-release.yml` pipeline. No version, build setting, production source, signing policy, protocol, workflow, or prior release was changed by this note. The formal v28.0-b65 GitHub Release is **not considered published** until the Core workflow finishes green and the published unsigned IPA, SHA-256 sums, manifest and provenance attachments are verified separately.
