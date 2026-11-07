@@ -21,6 +21,7 @@ final class KimiK2BoardSkin {
  private let buildingShadowTexture: SKTexture
  private let houseTexture: SKTexture?
  private let hotelTexture: SKTexture?
+ private let detailedBuildings: Bool
  private var ownerStrips: [Int: SKSpriteNode] = [:]
  private var mortgageOverlays: [Int: SKSpriteNode] = [:]
  private var improvementShadows: [Int: SKSpriteNode] = [:]
@@ -32,7 +33,8 @@ final class KimiK2BoardSkin {
               lightBackgroundTextures: [String: SKTexture],
               darkTileFrames: [SKTexture], lightTileFrames: [SKTexture],
               ownerTextures: [SKTexture], mortgageTexture: SKTexture,
-              shadowTexture: SKTexture, houseTexture: SKTexture?, hotelTexture: SKTexture?) {
+              shadowTexture: SKTexture, houseTexture: SKTexture?, hotelTexture: SKTexture?,
+              detailedBuildings: Bool) {
   self.tiles=tiles
   self.backgrounds=backgrounds
   self.darkBackgroundTextures=darkBackgroundTextures
@@ -44,6 +46,7 @@ final class KimiK2BoardSkin {
   self.buildingShadowTexture=shadowTexture
   self.houseTexture=houseTexture
   self.hotelTexture=hotelTexture
+  self.detailedBuildings=detailedBuildings
   usesBuildingSprites = houseTexture != nil && hotelTexture != nil
  }
 
@@ -134,13 +137,18 @@ final class KimiK2BoardSkin {
    scene.addChild(sprite)
    tileSprites[index] = sprite
   }
+  let detailHouse = load(AstraDetailArtwork.house)
+  let detailHotel = load(AstraDetailArtwork.hotel)
+  let hasDetails = detailHouse != nil && detailHotel != nil
   return KimiK2BoardSkin(tiles: tileSprites, backgrounds: backgrounds,
                          darkBackgroundTextures: darkBackgrounds,
                          lightBackgroundTextures: lightBackgrounds,
                          darkTileFrames: darkFrames, lightTileFrames: lightFrames,
                          ownerTextures: ownerTextures,
                          mortgageTexture: mortgage, shadowTexture: shadow,
-                         houseTexture: load("house"), hotelTexture: load("hotel"))
+                         houseTexture: hasDetails ? detailHouse : load("house"),
+                         hotelTexture: hasDetails ? detailHotel : load("hotel"),
+                         detailedBuildings: hasDetails)
  }
 
  /// Swap preloaded visual textures without recreating Engine, tile nodes,
@@ -203,14 +211,16 @@ final class KimiK2BoardSkin {
     improvementShadows.removeValue(forKey: tile.i)?.removeFromParent()
    }
 
-   // Rebuild only on the actual house/hotel state transition. Assets are
-   // inherited Kenney K1; no static Kimi preview content changes gameplay.
+   // Rebuild only on the actual house/hotel state transition. The detailed
+   // sprites keep one world-space light direction despite rotated edge tiles.
    if usesBuildingSprites && lastBuildingState[tile.i] != targetCount {
     lastBuildingState[tile.i] = targetCount
     buildingSprites.removeValue(forKey: tile.i)?.forEach { $0.removeFromParent() }
     var visuals: [SKSpriteNode] = []
     if targetCount == 5, let hotelTexture {
      let hotel = SKSpriteNode(texture: hotelTexture)
+     hotel.name = "Veilopoly/hotel-\(tile.i)"
+     hotel.zRotation = detailedBuildings ? -art.zRotation : 0
      hotel.size = CGSize(width: 21, height: 21)
      hotel.position = CGPoint(x: 0, y: art.size.height/2 - 23)
      hotel.zPosition = 2
@@ -225,6 +235,8 @@ final class KimiK2BoardSkin {
      ]
      for i in 0..<min(4, targetCount) {
       let house = SKSpriteNode(texture: houseTexture)
+      house.name = "Veilopoly/house-\(tile.i)-\(i)"
+      house.zRotation = detailedBuildings ? -art.zRotation : 0
       house.size = CGSize(width: 14, height: 14)
       house.position = positions[i]
       house.zPosition = 2

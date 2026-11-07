@@ -6,6 +6,23 @@ import UIKit
 
 @MainActor
 final class KimiK2SpriteKitIntegrationTests: XCTestCase {
+ func testDetailedBuildingsKeepWorldLightDirectionOnRotatedTiles() throws {
+  let model = GameSessionModel(seed: 2469, humanCount: 1)
+  var state = model.game
+  state.board[11].owner = 0; state.board[11].houses = 1
+  state.board[21].owner = 0; state.board[21].hotel = true
+  model.scene.display(state)
+  for index in [11, 21] {
+   let tile = try XCTUnwrap(model.scene.childNode(withName: KimiK2TileMap.tiles[index].id))
+   let building = try XCTUnwrap(tile.children.first { $0.name?.hasPrefix("Veilopoly/house-") == true || $0.name?.hasPrefix("Veilopoly/hotel-") == true })
+   XCTAssertEqual(tile.zRotation + building.zRotation, 0, accuracy: 0.001)
+  }
+  for player in 0..<4 {
+   let token = try XCTUnwrap(model.scene.children.first { $0.name == "Veilopoly/player-token-\(player)" } as? SKSpriteNode)
+   XCTAssertEqual(token.texture?.size(), CGSize(width: 128, height: 128))
+  }
+ }
+
  func testCityInlayUsesSafeLayerAndPreservesOriginalEmblemFallback() throws {
   let live = GameBoardScene(size: CGSize(width: 1024, height: 940))
   let city = try XCTUnwrap(live.children.first { $0.name == "Astra/centerCity" } as? SKSpriteNode)

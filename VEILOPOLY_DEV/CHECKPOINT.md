@@ -1,5 +1,12 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## Generated detail sprites — 2026-11-07
+
+- Task `VEILOPOLY-DETAIL-ART-006`, baseline `d06afc81351725c198b2625ba76b63306e80d982`. Owner directed using generated small images for refined visual composition. Generated one transparent 3×2 sprite sheet with blue pawn, red car, green ship, gold airplane, green-roof house and red-roof hotel; source/provenance/hash/crops retained under `INCOMING_ASSETS/ASTRA_DETAIL_SPRITES_R1`.
+- Six runtime sprites at 128×128, total 119,511 bytes; ~384 KiB decoded estimate. Actual generated artwork is mechanically cropped/trimmed/resized, with transparent padding. Board and HUD share the same generated→Kimi→Kenney token fallback order; the building pair falls back atomically. Original art files remain unchanged.
+- Detailed buildings counter-rotate their parent tile to preserve one camera/light direction on all four board edges; sizes, state-driven counts, player formation and animation ACK remain unchanged. Alpha-aware light-background sheet and true-size 34/14/21px samples inspected as image composites, not device screenshots.
+- Local Swift 6.2.1/Linux: full XCTest 156/156 PASS, art/resource/formation selection 8/8 PASS; manifest SHA-256 6/6 PASS; iOS16 ARM64 frontend parse and shell/diff checks PASS. Apple SDK type-check and actual touch/render/GPU acceptance PENDING. See `Veilopoly/docs/DETAIL_SPRITE_COMPOSITION_20261107.md`.
+
 ## Generated center city inlay — 2026-11-07
 
 - Task `VEILOPOLY-ART-INLAY-005`, baseline `0978834e5120973440c9313a3c94c5b354753aa7`. Owner authorized actual image generation and local texture composition. Direct source-layer inspection identified sparse center art and flat token/building materials; transparent original emblem/frame were correctly inspected with alpha composition, not mistaken for solid images.

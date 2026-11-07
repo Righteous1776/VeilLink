@@ -747,9 +747,8 @@ public struct VeilopolyGameView: View {
   }
  }
  private func playerToken(_ player: Int) -> some View {
-  let candidate = KimiVisualAssetNames.tokenCandidate(for: player)
-  let legacy = ["pawnBlue", "carRed", "shipGreen", "planeYellow"][max(0, min(3, player))]
-  let name = candidate.flatMap { Bundle.module.url(forResource: $0, withExtension: "png") != nil ? $0 : nil } ?? legacy
+  let name = AstraDetailArtwork.tokenCandidates(for: player)
+   .first { AstraDetailArtwork.resourceURL($0) != nil } ?? "pawnBlue"
   return Image(name, bundle: .module).resizable().scaledToFit().accessibilityHidden(true)
  }
  private func phaseLabel(_ phase: Phase) -> String {

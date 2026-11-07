@@ -258,7 +258,6 @@ final class GameBoardScene: SKScene {
     return texture
    }
   }
-  let icons = ["pawnBlue","carRed","shipGreen","planeYellow"]
   for i in 0..<4 {
    if let resting = tokenShadowFrames.first {
     let shadow = SKSpriteNode(texture: resting)
@@ -270,9 +269,11 @@ final class GameBoardScene: SKScene {
     addChild(shadow)
     tokenShadows[i] = shadow
    }
-   // Kimi K2 normalized token skins are optional; keep the verified Kenney fallback.
-   let preferred = KimiVisualAssetNames.tokenCandidate(for: i).flatMap { image($0) }
-   let token = SKSpriteNode(texture: preferred ?? image(icons[i]))
+   // Fine material sprites, then original Kimi, then Kenney. All retain the
+   // existing formation, movement path, shadow and ACK behavior.
+   let preferred = AstraDetailArtwork.tokenCandidates(for: i).lazy.compactMap { self.image($0) }.first
+   let token = SKSpriteNode(texture: preferred)
+   token.name = "Veilopoly/player-token-\(i)"
    token.size = CGSize(width: VeilopolyTokenFormation.tokenSize,
                        height: VeilopolyTokenFormation.tokenSize)
    token.position = tokenPoint(0, player: i); token.zPosition = 30
