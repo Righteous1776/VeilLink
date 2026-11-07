@@ -33,6 +33,8 @@ struct VeilTransportHealthRollup: Equatable {
 
 @MainActor
 final class AppModel: ObservableObject {
+    lazy var veilopolyMultiplayer = VeilopolyMultiplayerBridge(sessions: sessions,
+        localIdentity: { [weak self] in self?.identity.activeIdentity?.id })
     private static let startupSignposter = OSSignposter(
         subsystem: "studio.zeo.veillink",
         category: "startup"
@@ -284,6 +286,11 @@ final class AppModel: ObservableObject {
         }
         sessions.onMessagesChanged = { [weak self] refreshConversations in
             self?.scheduleMessageRefresh(refreshConversations: refreshConversations)
+        }
+        let previousControlEventHandler = sessions.onControlEventReceived
+        sessions.onControlEventReceived = { [weak self] event, authenticatedPeer in
+            previousControlEventHandler?(event, authenticatedPeer)
+            self?.veilopolyMultiplayer.receive(event, from: authenticatedPeer)
         }
         sessions.onInboundMessageReceived = { [weak self] in
             self?.haptics.receive()

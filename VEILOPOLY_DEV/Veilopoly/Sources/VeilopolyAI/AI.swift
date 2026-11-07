@@ -18,7 +18,12 @@ public struct AIProfile: Equatable {
 public enum VeilopolyAI {
  public static func decide(_ g: GameState, _ ctx: GameContext, me: Int, level: AILevel) -> Move {
   let profile = AIProfile.forLevel(level)
-  let reserve = FinancePolicyAdvisor.analyze(g, player: me, baseReserve: profile.reserveCash).reserve
+  let cityLong = VeilopolyCityLongEconomy.isActive(g)
+  // Preserve enough liquidity for a realistic single rent event while still
+  // allowing AI to purchase/build. Do not let rising caps freeze investment.
+  let riskBuffer = cityLong ? min(2400, max(1200, VeilopolyCityLongEconomy.rentCeiling(g) / 2)) : 0
+  let cashFloor = cityLong ? max(profile.reserveCash * 3, riskBuffer) : profile.reserveCash
+  let reserve = FinancePolicyAdvisor.analyze(g, player: me, baseReserve: cashFloor).reserve
   let p = g.players[me]
   let seq = g.nextSeq
   func m(_ kind: MoveKind, tile: Int? = nil, amount: Int? = nil) -> Move {
@@ -113,6 +118,52 @@ public enum LocalGameRunner {
   }
   return AutoGameStats(totalMoves: g.nextSeq, completed: g.winner != nil,
                        winner: g.winner, finalHash: StateDigest.hash(g))
+ }
+ /// A/B comparison harness; counts complete games separately from capped runs.
+ /// It uses the SAME reducer/AI, no wall-clock wait or scripted outcomes.
+ public static func compareEconomy(seed: UInt64, maxMoves: Int = 4_000,
+                                   cityLong: Bool) throws -> EconomyAutoplayEvidence {
+  var g = cityLong ? VeilopolyCityLongEconomy.make(seed: seed, humanCount: 0)
+                   : GameFactory.make(seed: seed, humanCount: 0)
+  var firstBankruptcyAt: Int?
+  var peakBankClaims = 0
+  var stressedMoves = 0
+  var crisisMoves = 0
+  while g.winner == nil && g.nextSeq < maxMoves {
+   let ctx = VeilopolyEngine.context(g)
+   let actor = g.auction?.turn ?? g.trade?.to ?? g.pendingDebt?.player ?? g.turn.player
+   let move = decideForRunner(g, ctx, actor)
+   switch VeilopolyEngine.apply(g, ctx, move) {
+   case .success((let next, _)):
+    g = next
+    if firstBankruptcyAt == nil && g.players.contains(where: { $0.bankrupt }) {
+     firstBankruptcyAt = g.nextSeq
+    }
+    if let financial = VeilopolyFinancialStability.inspect(g) {
+     peakBankClaims = max(peakBankClaims, financial.queuedClaims)
+     if financial.level == .stressed { stressedMoves += 1 }
+     if financial.level == .crisis { crisisMoves += 1 }
+    }
+   case .failure(let error): throw LocalLoopError.engine(error)
+   }
+  }
+  return EconomyAutoplayEvidence(
+   seed: seed, cityLong: cityLong, moves: g.nextSeq,
+   completedTurns: g.moveLog.filter { $0.type == .endTurn }.count,
+   finished: g.winner != nil, winner: g.winner,
+   bankruptSeats: g.players.filter(\.bankrupt).count,
+   firstBankruptcyAtMove: firstBankruptcyAt,
+   liquidCash: g.players.map(\.cash),
+   propertyCounts: g.players.map { p in g.board.filter { $0.owner == p.id }.count },
+   finalHash: StateDigest.hash(g),
+   bankReserve: g.banking?.reserveCash,
+   unresolvedBankClaims: (g.banking?.queuedClaims ?? []).reduce(0) { $0 + $1.amount },
+   peakBankClaims: peakBankClaims,
+   creditPrincipalOutstanding: (g.banking?.accounts ?? []).reduce(0) {
+    $0 + $1.loans.reduce(0) { $0 + $1.principal }
+   },
+   stressedMoves: stressedMoves,
+   crisisMoves: crisisMoves)
  }
  private static func decideForRunner(_ g: GameState, _ ctx: GameContext, _ actor: Int) -> Move {
   VeilopolyAI.decide(g, ctx, me: actor, level: g.players[actor].aiLevel)

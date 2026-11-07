@@ -92,4 +92,14 @@ final class LandscapeLayoutTests: XCTestCase {
    VeilopolyLandscapeLayout.topExitToBottomActionVerticalDistance(viewportHeight: -1), 0)
  }
 
+ func testGeneralControlTouchMinimumIsNotOnlyACapsuleContract() {
+  XCTAssertGreaterThanOrEqual(VeilopolyLandscapeLayout.minimumControlTouchSide, 44)
+  XCTAssertGreaterThanOrEqual(VeilopolyLandscapeLayout.capsuleTouchHeight,
+                             VeilopolyLandscapeLayout.minimumControlTouchSide)
+  // In the existing 292pt drawer the nested paddings leave 212pt for stock
+  // shortcuts. Five controls need >=240pt, hence the actual view must wrap.
+  let narrowContent = VeilopolyLandscapeLayout.overlayDrawerWidth(for: 568) - 80
+  XCTAssertLessThan(narrowContent, 5 * VeilopolyLandscapeLayout.minimumControlTouchSide + 4 * 5)
+ }
+
 }

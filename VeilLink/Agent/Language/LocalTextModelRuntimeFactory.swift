@@ -7,7 +7,9 @@ import Foundation
 @MainActor
 enum LocalTextModelRuntimeFactory {
     static func make(profile: AgentCapabilityProfile) -> LocalTextModelRuntime {
-        #if canImport(llama)
+        #if VERTEX_CHAT_ONLY
+        return VeilTalkLiteRuntime()
+        #elseif canImport(llama)
         return LlamaLocalTextModelRuntime(profile: profile)
         #else
         return VeilTalkLiteRuntime()
@@ -15,7 +17,9 @@ enum LocalTextModelRuntimeFactory {
     }
 
     nonisolated static var backendName: String {
-        #if canImport(llama)
+        #if VERTEX_CHAT_ONLY
+        return "VeilTalk Lite"
+        #elseif canImport(llama)
         return "llama.cpp"
         #else
         return "VeilTalk Lite"
@@ -23,7 +27,9 @@ enum LocalTextModelRuntimeFactory {
     }
 
     nonisolated static var isRealLocalInferenceCompiled: Bool {
-        #if canImport(llama)
+        #if VERTEX_CHAT_ONLY
+        return false
+        #elseif canImport(llama)
         return true
         #else
         return false

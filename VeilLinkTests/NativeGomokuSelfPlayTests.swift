@@ -83,6 +83,50 @@ final class NativeGomokuSelfPlayTests: XCTestCase {
         XCTAssertGreaterThan(restored.summary.rememberedPositions, 0)
     }
 
+    func testR3NativeOpeningCurriculumAndBudgetModes() {
+        XCTAssertEqual(NativeGomokuSelfPlay.openingIndices.count, 49)
+        XCTAssertEqual(Set(NativeGomokuSelfPlay.openingIndices).count, 49)
+        XCTAssertTrue(NativeGomokuSelfPlay.openingIndices.contains(112))
+        let budgets = (0..<4).map {
+            NativeGomokuSelfPlay.curriculumBudget(seed: $0 * 49)
+        }
+        XCTAssertEqual(Set(budgets.map(\.rootCandidateLimit)).count, 4)
+        XCTAssertTrue(budgets.allSatisfy { $0.timeLimitMilliseconds <= 100 })
+    }
+
+    func testR3ForgedTerminalAndReplayedDuplicateAreNeverCounted() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("native-r3-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let archive = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
+        let before = GomokuState()
+        let fake = AdaptiveBoardPly(
+            position: AdaptiveBoardPosition.gomoku(before), action: "112", actor: .host
+        )
+        XCTAssertEqual(
+            archive.recordCompletedNativeBatch([(plies: [fake], result: .humanWon)]), 0
+        )
+        XCTAssertEqual(archive.summary.completedGames, 0)
+
+        let budget = GomokuBotBudget(
+            candidateRadius: 2, rootCandidateLimit: 8, replyCandidateLimit: 4,
+            continuationCandidateLimit: 0, timeLimitMilliseconds: 35
+        )
+        let completed = await Task.detached {
+            NativeGomokuSelfPlay.play(seed: 0, formationMode: .automatic, budget: budget)
+        }.value
+        let game = try XCTUnwrap(completed)
+        XCTAssertTrue(game.completed)
+        XCTAssertEqual(archive.recordCompletedNativeBatch([
+            (plies: game.plies, result: game.result)
+        ]), 1)
+        XCTAssertEqual(archive.recordCompletedNativeBatch([
+            (plies: game.plies, result: game.result)
+        ]), 0)
+        XCTAssertEqual(archive.summary.completedGames, 1)
+        XCTAssertTrue(archive.lastSaveSucceeded)
+    }
+
     func testNoFalseMatchesWhenGameDidNotComplete() async {
         let game = await Task.detached {
             NativeGomokuSelfPlay.play(

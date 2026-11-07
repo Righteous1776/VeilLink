@@ -41,14 +41,20 @@ jobs:
           set -o pipefail
           python3 scripts/ci-standard-preflight.py 2>&1 | tee ci-artifacts/static-preflight.log
 
-      - name: Install XcodeGen
-        run: brew install xcodegen 2>&1 | tee ci-artifacts/install-xcodegen.log
-
-      - name: Test offline Veilopoly package
+      - name: Test offline Veilopoly package before expensive native preparation
         run: |
           set -o pipefail
           python3 scripts/test-verify-veilopoly-release.py 2>&1 | tee ci-artifacts/veilopoly-resource-gate-tests.log
           swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2 2>&1 | tee ci-artifacts/veilopoly-package-tests.log
+
+      - name: Install XcodeGen
+        run: brew install xcodegen cmake 2>&1 | tee ci-artifacts/install-xcodegen.log
+
+      - name: Prepare pinned experimental Vertex runtime (Owner V29 scope)
+        run: |
+          set -o pipefail
+          python3 scripts/test-verify-vertex-release.py 2>&1 | tee ci-artifacts/vertex-verifier-tests.log
+          bash scripts/prepare-vertex35m-ios.sh 2>&1 | tee ci-artifacts/vertex-native-prepare.log
 
       - name: Record XcodeGen version
         run: xcodegen --version | tee ci-artifacts/xcodegen-version.log
@@ -56,7 +62,7 @@ jobs:
       - name: Generate Xcode project
         run: |
           set -o pipefail
-          xcodegen generate 2>&1 | tee ci-artifacts/xcodegen.log
+          xcodegen generate --spec project.vertex35m.yml 2>&1 | tee ci-artifacts/xcodegen.log
           cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.pbxproj
 
       - name: Build for iOS Simulator
@@ -110,6 +116,7 @@ jobs:
           set -o pipefail
           bash scripts/package-unsigned-ipa.sh 2>&1 | tee ci-artifacts/unsigned-pr-package.log
           python3 scripts/verify-core-release.py \
+            --experimental-vertex \
             --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
             --ipa "build/VeilLink-unsigned.ipa" \
             --manifest CORE_RELEASE_MANIFEST.json \
