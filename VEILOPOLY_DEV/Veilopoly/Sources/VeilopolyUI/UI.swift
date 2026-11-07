@@ -846,53 +846,57 @@ public struct VeilopolyGameView: View {
     .position(x: box.size.width / 2, y: box.size.height / 2)
   }
   .accessibilityLabel("大富翁棋盘，40 格")
+   .accessibilityHint("点击任意地块，打开完整地块信息")
  }
+
 
  private var tileInspector: some View {
   let tile = model.game.board[model.selectedTile]
   let ownerName = tile.owner.map { model.game.players[$0].name } ?? "尚未购买"
-  return HStack(spacing: 8) {
+  return HStack(spacing: 6) {
    Button {
-     model.selectedTile = (model.selectedTile + 39) % 40
-     showTileInformation = true
-    } label: {
-    Image(systemName: "chevron.left").frame(width: 44, height: 44)
+    model.selectedTile = (model.selectedTile + 39) % 40
+    showTileInformation = true
+   } label: {
+    Image(systemName: "chevron.left")
+     .font(.system(size: 17, weight: .bold))
+     .frame(width: 44, height: 52)
+     .contentShape(Rectangle())
    }
    .buttonStyle(.plain)
-   .accessibilityLabel("查看上一格")
-   VStack(alignment: .leading, spacing: 2) {
-    Text("#\(tile.i) · \(tile.name)")
-     .font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
-    HStack(spacing: 6) {
-     Text(tile.purchasable ? "¥\(tile.price)" : "特殊地块")
-     Text(tile.mortgaged ? "已抵押" : ownerName)
+   .accessibilityLabel("上一格地块")
+   Button { showTileInformation = true } label: {
+    VStack(alignment: .leading, spacing: 3) {
+     Text("#\(tile.i) · \(tile.name)")
+      .font(.system(size: 14, weight: .semibold))
+      .lineLimit(1)
+     Text("\(tile.purchasable ? "¥\(tile.price)" : "特殊地块") · \(ownerName)")
+      .font(.system(size: 12))
+      .foregroundColor(.secondary)
+      .lineLimit(1)
     }
-    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-    if let lore = VeilopolyWorldEditorial.page(for: tile) {
-     Text("\(lore.title) · \(lore.teaser)")
-      .font(.system(size: 10, weight: .regular, design: .serif))
-      .foregroundColor(Color(red: 0.79, green: 0.70, blue: 0.49))
-      .lineLimit(2)
-      .fixedSize(horizontal: false, vertical: true)
-      .accessibilityLabel("城市札记：\(lore.title)，\(lore.teaser)")
-    }
-   }
-   .frame(maxWidth: .infinity, alignment: .leading)
-   Button {
-     model.selectedTile = (model.selectedTile + 1) % 40
-     showTileInformation = true
-    } label: {
-    Image(systemName: "chevron.right").frame(width: 44, height: 44)
+    .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+    .contentShape(Rectangle())
    }
    .buttonStyle(.plain)
-   .accessibilityLabel("查看下一格")
+   .accessibilityHint("打开地块完整说明")
+   Button {
+    model.selectedTile = (model.selectedTile + 1) % 40
+    showTileInformation = true
+   } label: {
+    Image(systemName: "chevron.right")
+     .font(.system(size: 17, weight: .bold))
+     .frame(width: 44, height: 52)
+     .contentShape(Rectangle())
+   }
+   .buttonStyle(.plain)
+   .accessibilityLabel("下一格地块")
   }
-  .padding(.horizontal, 5)
+  .padding(.horizontal, 6)
   .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
   .accessibilityElement(children: .contain)
  }
 
- 
  // Read-only inspection does not commit a move or advance the turn.
  private var selectedTileDetailSheet: some View {
   let tile = model.game.board[model.selectedTile]
@@ -1420,7 +1424,7 @@ public struct VeilopolyGameView: View {
    }
   }
   .navigationViewStyle(.stack)
-  .preferredColorScheme(.dark)
+  .preferredColorScheme(dayFelt ? .light : .dark)
  }
 
  private func rollProbabilityDie(guessEven: Bool) {
@@ -1479,46 +1483,52 @@ public struct VeilopolyGameView: View {
   if let onExit { onExit() }
   else { dismiss() }
  }
+
  private var playerStrip: some View {
-  // Two columns preserve readable names and money values on a narrow
-  // landscape phone sidebar; each player keeps a genuine state skin.
-  LazyVGrid(columns: [GridItem(.flexible(minimum: 0), spacing: 6),
-                      GridItem(.flexible(minimum: 0), spacing: 6)], spacing: 6) {
+  LazyVGrid(columns: [GridItem(.flexible(minimum: 0), spacing: 7),
+                      GridItem(.flexible(minimum: 0), spacing: 7)], spacing: 7) {
    ForEach(model.game.players, id: \.id) { p in
-    VStack(alignment: .leading, spacing: 2) {
-     Text(p.name)
-      .font(.system(size: 10, weight: .semibold))
-      .lineLimit(1).minimumScaleFactor(0.75)
-     Text("¥\(p.cash)")
-      .font(.system(size: 12, weight: .bold, design: .monospaced))
-      .lineLimit(1).minimumScaleFactor(0.70)
-     Text(p.bankrupt ? "已破产" : (p.jailTurns > 0 ? "监狱" : "#\(p.position)"))
-      .font(.system(size: 9))
-      .lineLimit(1)
+    Button {
+     managementSection = .trade
+     showAssetExplorer = true
+    } label: {
+     VStack(alignment: .leading, spacing: 4) {
+      Text(p.name)
+       .font(.system(size: 13, weight: .semibold))
+       .lineLimit(1)
+      Text("¥\(p.cash)")
+       .font(.system(size: 15, weight: .bold, design: .monospaced))
+       .lineLimit(1)
+       .minimumScaleFactor(0.88)
+      Text(p.bankrupt ? "已破产" : p.jailTurns > 0 ? "监狱" : "位于第 \(p.position) 格")
+       .font(.system(size: 11, weight: .medium))
+       .lineLimit(1)
+     }
+     .foregroundColor(.white)
+     .padding(.leading, 49).padding(.trailing, 6)
+     .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+     .background {
+      AstraB01PlayerSkin(AstraB01AssetNames.playerSkin(
+       bankrupt: p.bankrupt, jailed: p.jailTurns > 0, current: p.id == model.actor))
+     }
+     .overlay(alignment: .leading) {
+      playerToken(p.id)
+       .frame(width: 40, height: 44)
+       .padding(2)
+       .background(Color(red: 0.08, green: 0.14, blue: 0.18),
+                   in: RoundedRectangle(cornerRadius: 9))
+       .padding(.leading, 4)
+       .allowsHitTesting(false)
+     }
+     .contentShape(Rectangle())
     }
-    .foregroundColor(.white)
-    .padding(.leading, 43).padding(.trailing, 3)
-    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-    .background {
-     AstraB01PlayerSkin(AstraB01AssetNames.playerSkin(
-      bankrupt: p.bankrupt, jailed: p.jailTurns > 0,
-      current: p.id == model.actor))
-    }
-    .overlay(alignment: .leading) {
-     playerToken(p.id)
-      .frame(width: 34, height: 38)
-      .padding(2)
-      .background(Color(red: 0.08, green: 0.14, blue: 0.18), in: RoundedRectangle(cornerRadius: 9))
-      .padding(.leading, 5)
-      .allowsHitTesting(false)
-    }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(p.name)，现金 ¥\(p.cash)，" +
-      (p.bankrupt ? "已破产" : p.jailTurns > 0 ? "在监狱" : "位于第 \(p.position) 格") +
-      (p.id == model.actor ? "，当前行动玩家" : ""))
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(p.name)，现金 ¥\(p.cash)，查看玩家与产权")
+    .accessibilityHint("打开只读玩家资产详情")
    }
   }
  }
+
  private func playerToken(_ player: Int) -> some View {
   let name = AstraDetailArtwork.tokenCandidates(for: player)
    .first { AstraDetailArtwork.resourceURL($0) != nil } ?? "pawnBlue"
