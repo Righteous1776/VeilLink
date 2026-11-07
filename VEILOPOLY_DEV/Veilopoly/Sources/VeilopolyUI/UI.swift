@@ -508,7 +508,10 @@ public struct VeilopolyGameView: View {
  @State private var showGameInfo = false
  @State private var showGuide = false
  @State private var showAssetBrowser = false
- @State private var controlsExpanded = false
+ @State private var panelWorkspace = VeilopolyPanelWorkspace()
+ @GestureState private var panelTranslation = CGSize.zero
+ @GestureState private var chipTranslation = CGSize.zero
+ @State private var showPanelDetails = false
  @State private var dayFelt = true
  @State private var managementSection: VeilopolyManagementSection = .property
  @Environment(\.dismiss) private var dismiss
@@ -547,6 +550,7 @@ public struct VeilopolyGameView: View {
    model.scene.reduceMotion = reduceMotion
    model.setNetworkForeground(scenePhase == .active)
    dayFelt = model.scene.isDayFelt
+   revealDecisionIfNeeded()
   }
   .onDisappear { model.flushSave() }
   .onChange(of: scenePhase) { phase in
@@ -558,6 +562,8 @@ public struct VeilopolyGameView: View {
    if !pending { revealDecisionIfNeeded() }
   }
   .onChange(of: model.game.turn.phase) { _ in revealDecisionIfNeeded() }
+  .onChange(of: model.game.turn.pendingPurchase) { _ in revealDecisionIfNeeded() }
+  .onChange(of: model.game.auction?.tile) { _ in revealDecisionIfNeeded() }
   .onChange(of: model.actor) { _ in
    resetTradeDraft()
    if model.game.trade != nil { loadCounterCash() }
@@ -567,12 +573,14 @@ public struct VeilopolyGameView: View {
   .onChange(of: tradeTarget) { _ in chosenRequest = [] }
   .onChange(of: model.boardSelectionRevision) { _ in
    managementSection = .property
-   withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { controlsExpanded = true }
+   showPanelDetails = true
+   withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { panelWorkspace.open() }
   }
   .onChange(of: model.game.seed) { _ in
    resetTradeDraft()
    managementSection = .property
-   controlsExpanded = false
+   panelWorkspace.resetSession()
+   showPanelDetails = false
   }
   .task(id: scenePhase) {
    // Wall time only schedules explicit reducer moves. Price generation itself
@@ -588,6 +596,7 @@ public struct VeilopolyGameView: View {
   }
   .confirmationDialog("更多", isPresented: $showMore) {
    Button("资产资料 · 只读") { showAssetBrowser = true }
+   Button("复位面板位置") { panelWorkspace.resetPlacement() }
    Button(model.newsEnabled ? "暂停城市快讯" : "开启城市快讯") { model.newsEnabled.toggle() }
    Button(dayFelt ? "切换夜间主题" : "切换日间主题") {
     dayFelt.toggle()
@@ -714,9 +723,18 @@ public struct VeilopolyGameView: View {
  }
 
  private func revealDecisionIfNeeded() {
-  guard !model.pending, model.waitingForHuman || model.game.winner != nil,
-        VeilopolyGamePresentation.requiresDecision(model.game.turn.phase) else { return }
-  withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { controlsExpanded = true }
+  // An in-flight animation is not a new decision. In particular, do not forget
+  // a suspended purchase just because another ACK or price update arrives.
+  guard !model.pending else { return }
+  let needsDecision = (model.waitingForHuman || model.game.winner != nil)
+   && VeilopolyGamePresentation.requiresDecision(model.game.turn.phase)
+  let subject = model.game.turn.pendingPurchase ?? model.game.auction?.tile
+  let decision = needsDecision ? VeilopolyPanelDecision(
+   seed: model.game.seed, actor: model.actor,
+   phase: model.game.turn.phase.rawValue, subject: subject) : nil
+  withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+   panelWorkspace.observe(decision)
+  }
  }
 
  private func resetTradeDraft() {
@@ -733,11 +751,14 @@ public struct VeilopolyGameView: View {
    availableHeight: Double(availableHeight))
   let boardWidth = CGFloat(measured.width)
   let boardHeight = CGFloat(measured.height)
-  let drawerWidth = CGFloat(VeilopolyLandscapeLayout.overlayDrawerWidth(for: Double(availableWidth)))
-  let drawerHeight = CGFloat(VeilopolyLandscapeLayout.overlayDrawerHeight(for: Double(availableHeight)))
+  let layout = VeilopolyPanelLayout(width: Double(availableWidth), height: Double(availableHeight))
+  let panel = layout.frame(for: .panel, anchor: panelWorkspace.panelAnchor,
+                          dx: Double(panelTranslation.width), dy: Double(panelTranslation.height))
+  let chip = layout.frame(for: .chip, anchor: panelWorkspace.chipAnchor,
+                         dx: Double(chipTranslation.width), dy: Double(chipTranslation.height))
   let bulletinWidth = CGFloat(VeilopolyLandscapeLayout.bulletinWidth(
    availableWidth: Double(availableWidth), boardWidth: Double(boardWidth)))
-  return ZStack(alignment: .topTrailing) {
+  return ZStack(alignment: .topLeading) {
    boardViewport
     .frame(width: boardWidth, height: boardHeight)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -745,29 +766,31 @@ public struct VeilopolyGameView: View {
     .padding(.vertical, CGFloat(VeilopolyLandscapeLayout.boardVerticalInset))
     .zIndex(0)
 
-   if controlsExpanded {
-    controlsDrawer
-     .frame(width: drawerWidth, height: drawerHeight)
-     .padding(.top, CGFloat(VeilopolyLandscapeLayout.drawerTopInset))
-     .padding(.trailing, 6)
-     .transition(.move(edge: .trailing).combined(with: .opacity))
-     .zIndex(1)
-   }
+   // Keep the drawer mounted: suspension must not discard stock ticket input,
+   // chart selection, disclosures or the current scroll position. A hidden
+   // panel cannot consume touches or VoiceOver focus. Never pause game logic.
+   controlsDrawer(in: layout)
+    .frame(width: panel.width, height: panel.height)
+    .position(x: panel.midX, y: panel.midY)
+    .opacity(panelWorkspace.isExpanded ? 1 : 0)
+    .allowsHitTesting(panelWorkspace.isExpanded)
+    .accessibilityHidden(!panelWorkspace.isExpanded)
+    .zIndex(1)
 
    // The top-right capsule is RESERVED for More / Exit only.
    // Do not put gameplay toggles next to Exit: an accidental tap is costly.
-   VStack(alignment: .trailing, spacing: 8) {
-    capsuleControls
-    Spacer(minLength: 0)
-    if !controlsExpanded {
-     // Daily gameplay operations have their own bottom-right entry.
-     collapsedStatusButton
-      .transition(.opacity)
-    }
+   capsuleControls
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+    .padding(.trailing, 6)
+    .padding(.top, 5)
+    .zIndex(2)
+   if !panelWorkspace.isExpanded {
+    suspendedPanelChip(in: layout)
+     .frame(width: chip.width, height: chip.height)
+     .position(x: chip.midX, y: chip.midY)
+     .transition(.opacity)
+     .zIndex(2)
    }
-   .padding(.trailing, 6)
-   .padding(.vertical, 5)
-   .zIndex(2)
   }
   .overlay(alignment: .topLeading) {
    if model.newsEnabled, let notice = model.bulletinFeed.current, bulletinWidth >= 90 {
@@ -779,62 +802,26 @@ public struct VeilopolyGameView: View {
    }
   }
   .frame(width: availableWidth, height: availableHeight)
+  .coordinateSpace(name: "VeilopolyWorkspace")
  }
 
  /// Keep Astra's real actions and HUD. Only the panel's placement changes:
  /// on iPhone it floats over otherwise unused right-side space; on iPad it
  /// may temporarily cover the board edge until collapsed.
- private var controlsDrawer: some View {
+ private func controlsDrawer(in layout: VeilopolyPanelLayout) -> some View {
   VStack(alignment: .leading, spacing: 8) {
-   HStack(spacing: 8) {
-    // Far-left inside the floating drawer; not near the top-right Exit.
-    Button {
-     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
-      controlsExpanded = false
-     }
-    } label: {
-     Label("收起", systemImage: "chevron.right")
-      .font(.caption.weight(.semibold))
-      .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.drawerCloseMinWidth),
-             minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .background(.white.opacity(0.12), in: Capsule())
-    .accessibilityLabel("收起操作面板")
-    .accessibilityHint("返回最大化棋盘；与退出按钮分离")
-    Text("操作面板")
-     .font(.system(size: 15, weight: .bold, design: .rounded))
-     .lineLimit(1)
-     .minimumScaleFactor(0.8)
-    Spacer(minLength: 0)
-    Text(phaseLabel(model.game.turn.phase))
-     .font(.caption2.weight(.semibold))
-     .foregroundStyle(.mint)
-     .lineLimit(1)
-   }
-   .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
-   if model.isMultiplayer {
-    Text(model.networkStatus).font(.caption2)
-     .fixedSize(horizontal: false, vertical: true)
-     .accessibilityLabel("联机状态：" + model.networkStatus)
-   }
-   // Independent browsing stays available during purchase, auction and
-   // animation. It cannot submit orders or replace the pending decision.
-   Button { showAssetBrowser = true } label: {
-    Label("查看资产资料 · 只读", systemImage: "doc.text.magnifyingglass")
-     .font(.caption.weight(.semibold))
-     .frame(maxWidth: .infinity, minHeight: 44)
-     .contentShape(Rectangle())
-   }
-   .buttonStyle(.bordered)
-   .accessibilityHint("查看地产、银行、股市与交易，不改变当前操作阶段")
+   panelToolbar(in: layout)
    if model.game.turn.phase == .manage && model.waitingForHuman {
     managementNavigation
      .disabled(model.pending)
    }
    ScrollView(.vertical) {
     VStack(alignment: .leading, spacing: 10) {
+     if model.isMultiplayer {
+      Text(model.networkStatus).font(.caption2)
+       .fixedSize(horizontal: false, vertical: true)
+       .accessibilityLabel("联机状态：" + model.networkStatus)
+     }
      HStack {
       Text(model.game.players[model.actor].name).font(.subheadline.weight(.semibold))
       Spacer()
@@ -850,8 +837,6 @@ public struct VeilopolyGameView: View {
       .padding(8)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(AstraB01PanelSkin(.action))
-     tileInspector
-     playerStrip
      HStack(alignment: .top, spacing: 7) {
       Image(systemName: "sparkles").foregroundStyle(.mint)
       Text(model.lastFeedback)
@@ -884,6 +869,17 @@ public struct VeilopolyGameView: View {
       .background(AstraB01FeedbackSkin(error: true))
       .accessibilityElement(children: .combine)
      }
+     DisclosureGroup(isExpanded: $showPanelDetails) {
+      VStack(spacing: 10) {
+       tileInspector
+       playerStrip
+      }.padding(.top, 8)
+     } label: {
+      Label("地块与四人状态", systemImage: "square.grid.2x2")
+       .font(.caption.weight(.semibold))
+       .frame(minHeight: 44)
+     }
+     .tint(.mint)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
    }
@@ -932,43 +928,125 @@ public struct VeilopolyGameView: View {
   }
  }
 
- /// Bottom-right gameplay entry is separated from the top-right More/Exit
- /// capsule. This live status button replaces the permanent wide sidebar.
- private var collapsedStatusButton: some View {
-  Button {
-   withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
-    controlsExpanded = true
+ /// Separate drag handles keep content scrolling, chart scrubbing and numeric
+ /// input independent from window movement. VoiceOver has non-drag docking.
+ private func panelToolbar(in layout: VeilopolyPanelLayout) -> some View {
+  HStack(spacing: 4) {
+   // Preserve the earlier Owner separation rule: the frequent suspension
+   // action belongs at the LEFT of the panel, not just underneath Exit.
+   Button {
+    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { panelWorkspace.suspend() }
+   } label: {
+    panelToolLabel("挂起", symbol: "minus.rectangle")
    }
-  } label: {
-   HStack(spacing: 10) {
-    playerToken(model.actor).frame(width: 32, height: 36)
+   .accessibilityLabel("挂起操作面板")
+   .accessibilityHint("保留输入和滚动位置；不退出、不取消决策、不暂停对局")
+   HStack(spacing: 6) {
+    Image(systemName: "line.3.horizontal").font(.caption)
     VStack(alignment: .leading, spacing: 2) {
-     Text("\(model.game.players[model.actor].name) · \(phaseLabel(model.game.turn.phase))")
-      .font(.caption.weight(.semibold))
-      .lineLimit(1)
-     Text("¥\(model.game.players[model.actor].cash) · " +
-          (model.pending ? "动画中" : (model.waitingForHuman ? "点击进行操作" : "AI 行动中")))
-      .font(.caption2)
-      .lineLimit(1)
+     Text("操作面板").font(.subheadline.weight(.semibold))
+     Text(phaseLabel(model.game.turn.phase)).font(.caption2).foregroundStyle(.mint)
     }
-    Image(systemName: "chevron.left")
-     .font(.caption.weight(.bold))
+    .lineLimit(1)
    }
-   .foregroundStyle(.white)
-   .padding(.horizontal, 14)
-   .padding(.vertical, 10)
-   .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
-   .background(AstraB01PanelSkin(.glass))
-   .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-   .overlay {
-    RoundedRectangle(cornerRadius: 13)
-     .stroke(Color(red: 0.73, green: 0.59, blue: 0.34), lineWidth: 1)
-     .allowsHitTesting(false)
+   .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+   .contentShape(Rectangle())
+   .gesture(panelDrag(in: layout))
+   .accessibilityElement(children: .ignore)
+   .accessibilityLabel("移动操作面板")
+   .accessibilityHint("也可用停靠菜单选择左侧、右侧或复位")
+   Button { showAssetBrowser = true } label: {
+    panelToolLabel("资料", symbol: "doc.text.magnifyingglass")
    }
+   .accessibilityLabel("查看资产资料，只读")
+   .accessibilityHint("独立查看地产、银行、股市、交易，不改变当前决策")
+   Menu {
+    Button("停靠左侧") { panelWorkspace.panelAnchor.x = 0 }
+    Button("停靠右侧") { panelWorkspace.panelAnchor.x = 1 }
+    Button("复位所有面板位置") { panelWorkspace.resetPlacement() }
+   } label: {
+    panelToolLabel("停靠", symbol: "arrow.up.left.and.arrow.down.right")
+   }
+   .accessibilityLabel("操作面板停靠与复位")
   }
   .buttonStyle(.plain)
-  .accessibilityLabel("展开操作面板，当前\(model.game.players[model.actor].name)，\(phaseLabel(model.game.turn.phase))")
-  .accessibilityHint("可使用掷骰、购买、拍卖、交易、银行和管理功能")
+  .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+ }
+
+ private func panelToolLabel(_ title: String, symbol: String) -> some View {
+  VStack(spacing: 2) {
+   Image(systemName: symbol).font(.system(size: 14, weight: .medium))
+   Text(title).font(.system(size: 10, weight: .semibold))
+  }
+  .frame(width: 44, height: 44)
+  .contentShape(Rectangle())
+ }
+
+ private func panelDrag(in layout: VeilopolyPanelLayout) -> some Gesture {
+  DragGesture(minimumDistance: 8, coordinateSpace: .named("VeilopolyWorkspace"))
+   .updating($panelTranslation) { value, translation, _ in translation = value.translation }
+   .onEnded { value in
+    panelWorkspace.panelAnchor = layout.moved(panelWorkspace.panelAnchor, surface: .panel,
+     dx: Double(value.translation.width), dy: Double(value.translation.height))
+   }
+ }
+
+ private func suspendedPanelChip(in layout: VeilopolyPanelLayout) -> some View {
+  HStack(spacing: 0) {
+   Button {
+    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { panelWorkspace.open() }
+   } label: {
+    HStack(spacing: 8) {
+     playerToken(model.actor).frame(width: 26, height: 34)
+     VStack(alignment: .leading, spacing: 2) {
+      Text("\(model.game.players[model.actor].name) · \(phaseLabel(model.game.turn.phase))")
+       .font(.caption.weight(.semibold)).lineLimit(1)
+      Text("现金 ¥\(model.game.players[model.actor].cash)")
+       .font(.caption2.monospacedDigit()).lineLimit(1)
+      Text(panelWorkspace.decision != nil ? "待你决策 · 点击恢复" : "操作面板 · 点击展开")
+       .font(.caption2.weight(.semibold)).lineLimit(1)
+       .foregroundColor(panelWorkspace.decision != nil ? .yellow : .mint)
+     }
+     .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(.leading, 10)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    .contentShape(Rectangle())
+   }
+   .buttonStyle(.plain)
+   .accessibilityLabel("恢复操作面板，\(model.game.players[model.actor].name)，\(phaseLabel(model.game.turn.phase))，现金\(model.game.players[model.actor].cash)")
+   .accessibilityHint(panelWorkspace.decision != nil ? "有待处理决策；挂起不会自动购买或弃拍" : "返回原来的分区、输入和滚动位置")
+   Image(systemName: "line.3.horizontal")
+    .font(.caption)
+    .frame(width: 44, height: 60)
+    .contentShape(Rectangle())
+    .gesture(DragGesture(minimumDistance: 8, coordinateSpace: .named("VeilopolyWorkspace"))
+     .updating($chipTranslation) { value, translation, _ in translation = value.translation }
+     .onEnded { value in
+      panelWorkspace.chipAnchor = layout.moved(panelWorkspace.chipAnchor, surface: .chip,
+       dx: Double(value.translation.width), dy: Double(value.translation.height))
+     })
+    .accessibilityLabel("移动挂起入口")
+    .accessibilityHint("向上调整停靠右下角，向下调整停靠左下角；也可使用自定操作")
+    .accessibilityAdjustableAction { direction in
+     switch direction {
+     case .increment: panelWorkspace.chipAnchor = .bottomRight
+     case .decrement: panelWorkspace.chipAnchor = .init(x: 0, y: 1)
+     @unknown default: break
+     }
+    }
+    .accessibilityAction(named: Text("停靠左下角")) { panelWorkspace.chipAnchor = .init(x: 0, y: 1) }
+    .accessibilityAction(named: Text("停靠右下角")) { panelWorkspace.chipAnchor = .bottomRight }
+  }
+  .foregroundColor(.white)
+  .background(AstraB01PanelSkin(.glass))
+  .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+  .overlay {
+   RoundedRectangle(cornerRadius: 13)
+    .stroke(panelWorkspace.decision != nil ? Color.yellow : Color(red: 0.73, green: 0.59, blue: 0.34), lineWidth: 1)
+    .allowsHitTesting(false)
+  }
+  .environment(\.colorScheme, .dark)
  }
 
  private var boardViewport: some View {

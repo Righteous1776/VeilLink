@@ -1,5 +1,35 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## CODEX W1-006 — movable/suspendable panel UI — 2026-11-07
+
+- Owner reprioritized existing panel refinement. Source baseline fast-forwarded
+  to `fb245c3d41b42fe1e8b031cd342f7316aefb4fc7`; main unchanged `2c5b516`.
+  Independent V5/risk-review branches untouched, no cross-lane merge.
+- Added UI-only normalized panel/chip placement with safe-area clamps below
+  the reserved news/Exit strip. Header-only drag, accessible docking/reset,
+  labelled 44pt tools; suspension stays LEFT, not beside the Exit capsule.
+- Keep drawer mounted but noninteractive/accessibility-hidden while suspended:
+  same-phase drafts/scroll/section retained. Live movable chip restores it.
+  A new decision opens once; repeating the same decision respects suspension.
+  No game pause, automatic move, render ACK, save or network semantics changed.
+- Compact toolbar and folded secondary detail free scroll space; existing tabs,
+  read-only asset browser, pinned end-turn, art and themes preserved. Board size
+  never changes on panel movement. iPad/manual overlap is intentional: move or
+  suspend to reveal tiles, NOT a claim that all overlays never cover the board.
+- Linux Swift6.2.1: UI before99/99, after110/110 PASS; new panel tests11/11 PASS.
+  Final full suite **329 cases / 1 failure / 84.480s — FAIL**. Same existing
+  `MalformedTurnReferenceTests.testMalformedTradePartiesAndTiles:21` reproduced
+  in a CLEAN `git archive fb245c3` checkout (4 cases/1 failure), no patch applied.
+  Engine/test unchanged; no baseline failure hidden or asserted away.
+- iOS15 frontend parse/diff scope PASS only. Apple typecheck/XCTest/rendered
+  touch/VoiceOver/large text/performance/iPhone/iPad acceptance **NOT_RUN**.
+  Supplemental skill machine learning gates absent/PARTIAL; no fabricated PASS.
+- Receipt: `reviews/W1_006_MOVABLE_PANEL_WORKSPACE.md`. Next UI task W1-007:
+  exact-head Apple compile + drag/suspend/restore/occlusion acceptance, no IPA.
+  Separate W2 follow-up needed for the reproduced baseline trade assertion.
+  State: UI SOURCE_IMPLEMENTED / PORTABLE_UI_VALIDATED; full gate FAIL/open.
+  No main, host/transport/identity/DB/Wire, rules, assets, release/workflow edits.
+
 ## ECON-014～017 — 有限银行的非增发应付款机制（仅 V4 新单机）— 2026-11-07
 
 - 当银行不足以发放经过起点工资或机会/命运现金事件时，先支付实际存量、剩余形成银行应付款；不凭空增发货币，玩家无需停在强制步骤。银行卡面显示总欠款和个人应收。后续购地、税费等回款以 FIFO 顺序优先兑付，可部分兑付。
