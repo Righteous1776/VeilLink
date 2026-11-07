@@ -27,10 +27,10 @@ All features remain reachable. Training reset still requires confirmation; train
 
 ## Search autonomy is not device-class discrimination
 - New UserDefaults key `VeilLink.Board.UnrestrictedSearch.v1` stores **explicit user choice**. Missing key => `true` (**deep search enabled by default** on ALL supported devices).
-- `LocalAIGameController.boardSearchProfile(deviceLabel:unrestricted:)`: if enabled returns `HIGH-PERFORMANCE`, bypassing `IPHONE7`, `SE1`, and `LEGACY` budget branches **only for the Gomoku/Xiangqi game engines**; if user disables it returns the actual device label and original budget.
+- `LocalAIGameController.boardSearchProfile(deviceLabel:unrestricted:)`: if enabled returns `HIGH-PERFORMANCE` on **all devices** (including `IPHONE7`, `SE1`, `LEGACY`). If the user disables it, returns `LEGACY-COMPACT` on **all devices**. Physical device labels never forcibly select either chess search mode. This also makes the OFF switch meaningful on modern devices.
 - Both `GomokuBotBudget.forDifficulty` and `XiangqiBotBudget.forDifficulty` use that profile. Difficulty selection remains independent (`轻松` through `宗师`). Max search still respects explicit node/time-budget and Task cancellation: user enabling deep search is permission to search, not infinite work.
 - Opt-in external PVS/VCF engine remains a separate existing choice, with its previous fallback and formation compatibility unchanged; no silent engine rewrite. At highest tier the enabled external engine can ask for depth 8 rather than 7. Native full budget is independent of device label.
-- Unit tests simulate `LEGACY-COMPACT` explicitly; enabled budget must be strictly deeper, wider, and longer than the user's opt-out budget, for **both** games.
+- Unit tests simulate `LEGACY-COMPACT` explicitly; enabled budget must be strictly deeper, wider, and longer than the user's opt-out compact budget, for **both** games.
 - This change does not pretend deep search was actually benchmarked on old hardware. On older phones latency, temperature and battery use may increase; user retains the accessible disable control.
 
 ## Strength evidence, not marketing
