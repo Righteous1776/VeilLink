@@ -16,11 +16,16 @@ public enum VeilopolyCityLongEconomy {
  public static func tax(_ game: GameState, tile: Int) -> Int {
   isActive(game) ? (tile == 4 ? incomeTax : luxuryTax) : (tile == 4 ? 200 : 100)
  }
- public static func cardCash(_ game: GameState, amount: Int) -> Int {
-  isActive(game) ? amount * 3 : amount
- }
- public static func repairCost(_ game: GameState, amount: Int) -> Int {
-  isActive(game) ? amount * 3 : amount
+ /// CardDefinition amounts are exact in V3; do not secretly triple visible text.
+ public static func cardCash(_ game: GameState, amount: Int) -> Int { amount }
+ public static func repairCost(_ game: GameState, amount: Int) -> Int { amount }
+ /// Early rent protection grows with ordinary completed game turns. Late-game
+ /// developments remain potent, but an early hotel cannot end a 7200-cash run.
+ public static func chargedRent(_ game: GameState, base: Int, tileKind: TileKind) -> Int {
+  guard isActive(game) else { return base }
+  let adjusted = tileKind == .railroad || tileKind == .utility ? base * 3 : base
+  let clock = min(70, max(0, game.banking?.completedTurns ?? 0))
+  return min(adjusted, min(6500, 900 + 80 * clock))
  }
  public static func terms() -> FinanceSandboxPolicy {
   var p = FinanceSandboxPolicy()
@@ -39,7 +44,7 @@ public enum VeilopolyCityLongEconomy {
  /// No change to GameState schema. New games carry V3 terms in the existing ledger.
  public static func make(seed: UInt64, humanCount: Int = 1,
                          levels: [AILevel] = [.balanced,.balanced,.balanced,.balanced],
-                         cards: [CardDefinition] = SampleCards.all) -> GameState {
+                         cards: [CardDefinition] = VeilopolyCityLongCards.all) -> GameState {
   var g = GameFactory.make(seed: seed, humanCount: humanCount,
                            levels: levels, cards: cards)
   for i in g.players.indices { g.players[i].cash = startingCash }
