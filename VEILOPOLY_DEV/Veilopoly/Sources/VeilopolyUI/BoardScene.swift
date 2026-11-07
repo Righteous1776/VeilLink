@@ -40,6 +40,13 @@ final class GameBoardScene: SKScene {
   scaleMode = .aspectFit
   backgroundColor = SKColor(red: 0.065, green: 0.09, blue: 0.13, alpha: 1)
   buildBoard()
+  if kimiSkin != nil {
+   // The single ivory board is the default, including cold-start and resume.
+   dayFelt = IvoryUnifiedVisualSystem.defaultLightTheme
+   backgroundColor = SKColor(red: 0.96, green: 0.93, blue: 0.86, alpha: 1)
+  } else {
+   dayFelt = false
+  }
   camera = focus; focus.position = CGPoint(x: 512, y: 470); addChild(focus)
  }
  required init?(coder: NSCoder) { fatalError("Use init(size:)") }

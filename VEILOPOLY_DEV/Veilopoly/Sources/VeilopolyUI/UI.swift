@@ -265,7 +265,7 @@ public struct VeilopolyGameView: View {
  @State private var showExitConfirmation = false
  @State private var showGameInfo = false
  @State private var controlsExpanded = false
- @State private var dayFelt = false
+ @State private var dayFelt = true
  @State private var managementSection: VeilopolyManagementSection = .property
  @Environment(\.dismiss) private var dismiss
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -278,8 +278,10 @@ public struct VeilopolyGameView: View {
  public var body: some View {
   GeometryReader { geometry in
    ZStack {
-    LinearGradient(colors: [Color(red: 0.05,green: 0.08,blue: 0.13),
-                            Color(red: 0.09,green: 0.14,blue: 0.20)],
+    // Ivory paper is the scene canvas; dark teal Astra controls sit as one
+    // gold-rimmed functional overlay, not a separate blue-black application.
+    LinearGradient(colors: [Color(red: 0.97,green: 0.95,blue: 0.90),
+                            Color(red: 0.87,green: 0.82,blue: 0.71)],
                    startPoint: .topLeading, endPoint: .bottomTrailing)
      .ignoresSafeArea()
     if VeilopolyLandscapeLayout.isLandscape(width: Double(geometry.size.width), height: Double(geometry.size.height)) {
@@ -293,7 +295,10 @@ public struct VeilopolyGameView: View {
   }
   .preferredColorScheme(.dark)
   .statusBarHidden()
-  .onAppear { model.scene.reduceMotion = reduceMotion }
+  .onAppear {
+   model.scene.reduceMotion = reduceMotion
+   dayFelt = model.scene.isDayFelt
+  }
   .onDisappear { model.flushSave() }
   .onChange(of: scenePhase) { phase in
    if phase != .active { model.flushSave() }
@@ -362,7 +367,7 @@ public struct VeilopolyGameView: View {
      Color.black.opacity(0.70).ignoresSafeArea()
      VStack(spacing: 12) {
       Image(IvoryR1Artwork.preferredCardAlias(isChance: model.shownCardDeck == .chance), bundle: .module)
-       .resizable().scaledToFit().frame(width: 66, height: 72)
+       .resizable().scaledToFit().frame(width: 76, height: 96)
        .accessibilityHidden(true)
       Label(model.shownCardDeck == .chance ? "机会卡" : "宝箱卡", systemImage: "rectangle.on.rectangle.angled")
        .font(.headline).foregroundColor(Color(red: 0.19, green: 0.30, blue: 0.34))
@@ -372,17 +377,22 @@ public struct VeilopolyGameView: View {
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
       }
-      .frame(maxHeight: 116)
+      .frame(maxHeight: 88)
       Button("确认并继续") { model.dismissCard() }
        .buttonStyle(AstraB01ButtonStyle())
        .frame(minWidth: 160, minHeight: 44)
        .accessibilityHint("阅读完毕后继续播放游戏事件")
      }
-     .frame(maxWidth: 300).padding(22)
+     .frame(maxWidth: 300).padding(18)
      .background {
-      AstraB01Artwork.image(AstraB01AssetNames.cardFace)
-       .resizable(capInsets: EdgeInsets(top: 88, leading: 26, bottom: 26, trailing: 26),
-                  resizingMode: .stretch)
+      RoundedRectangle(cornerRadius: 19, style: .continuous)
+       .fill(Color(red: 0.97, green: 0.94, blue: 0.87))
+       .overlay {
+        RoundedRectangle(cornerRadius: 19, style: .continuous)
+         .strokeBorder(Color(red: 0.69, green: 0.53, blue: 0.30), lineWidth: 2)
+       }
+       .shadow(color: Color(red: 0.13, green: 0.23, blue: 0.23).opacity(0.27),
+               radius: 14, y: 7)
        .allowsHitTesting(false)
      }
      .padding(.horizontal, 16)
@@ -540,7 +550,11 @@ public struct VeilopolyGameView: View {
   .padding(10)
   .background(AstraB01PanelSkin(.action))
   .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-  .overlay { RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.14)) }
+  .overlay {
+   RoundedRectangle(cornerRadius: 18)
+    .stroke(Color(red: 0.73, green: 0.59, blue: 0.34).opacity(0.78), lineWidth: 1.3)
+    .allowsHitTesting(false)
+  }
   .shadow(color: .black.opacity(0.42), radius: 14, x: -5, y: 7)
   .accessibilityElement(children: .contain)
  }
@@ -593,6 +607,11 @@ public struct VeilopolyGameView: View {
    .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
    .background(AstraB01PanelSkin(.glass))
    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+   .overlay {
+    RoundedRectangle(cornerRadius: 13)
+     .stroke(Color(red: 0.73, green: 0.59, blue: 0.34), lineWidth: 1)
+     .allowsHitTesting(false)
+   }
   }
   .buttonStyle(.plain)
   .accessibilityLabel("展开操作面板，当前\(model.game.players[model.actor].name)，\(phaseLabel(model.game.turn.phase))")
@@ -607,7 +626,13 @@ public struct VeilopolyGameView: View {
    let height = CGFloat(measured.height)
    SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
     .frame(width: width, height: height)
-    .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 12))
+    .background(Color(red: 0.94, green: 0.91, blue: 0.83),
+                in: RoundedRectangle(cornerRadius: 12))
+    .overlay {
+     RoundedRectangle(cornerRadius: 12)
+      .strokeBorder(Color(red: 0.69, green: 0.53, blue: 0.29).opacity(0.9), lineWidth: 1.5)
+      .allowsHitTesting(false)
+    }
     .overlay(alignment: .bottom) {
      if model.pending && model.shownCard == nil {
       Button { model.fastForward() } label: {
