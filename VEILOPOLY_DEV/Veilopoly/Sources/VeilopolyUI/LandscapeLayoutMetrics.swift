@@ -12,6 +12,10 @@ public enum VeilopolyLandscapeLayout {
  public static let drawerTopInset = 54.0
  public static let drawerBottomInset = 10.0
  public static let drawerCloseMinWidth = 78.0
+ /// The ticker occupies only the free space between board and More/Exit.
+ public static func bulletinWidth(availableWidth: Double, boardWidth: Double) -> Double {
+  max(0, availableWidth - boardWidth - 128)
+ }
 
  /// Conservative center-to-center distances in design points, used for
  /// regression checks. Top-right Exit center is 22pt from top; the

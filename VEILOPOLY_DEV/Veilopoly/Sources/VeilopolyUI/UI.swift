@@ -20,6 +20,8 @@ public final class GameSessionModel: ObservableObject {
  @Published public private(set) var stockOrderError: String?
  @Published public private(set) var lastFeedback: String = "准备开始 · 轮到第一位玩家"
  @Published public private(set) var saveWarning: String?
+ @Published public private(set) var bulletinFeed = VeilopolyBulletinFeed()
+ @Published public var newsEnabled = true
  private var cardGate = CardRevealGate()
  @Published public var selectedTile: Int = 1 {
   didSet { scene.highlightTile(selectedTile) }
@@ -112,6 +114,10 @@ public final class GameSessionModel: ObservableObject {
   }
  }
  public func flushSave() { checkpoint(force: true) }
+ public func advanceBulletin() {
+  guard newsEnabled else { bulletinFeed = VeilopolyBulletinFeed(); return }
+  bulletinFeed.advance(by: 2, seed: game.seed)
+ }
 
  public func perform(_ kind: MoveKind, tile: Int? = nil, amount: Int? = nil,
                      to: Int? = nil, offer: TradeTransfer? = nil, request: TradeTransfer? = nil,
@@ -145,6 +151,15 @@ public final class GameSessionModel: ObservableObject {
     UINotificationFeedbackGenerator().notificationOccurred(.error)
    }
   case .success((let newState, let effects)):
+   if newsEnabled {
+    if let notice = VeilopolyBulletinCopy.event(effects, state: newState, sequence: move.seq) {
+     bulletinFeed.enqueue(notice)
+    }
+    if let notice = VeilopolyBulletinCopy.market(before: game.banking?.market,
+       after: newState.banking?.market, sequence: move.seq) {
+     bulletinFeed.enqueue(notice)
+    }
+   }
    if move.type == .stockTick {
     // Market ticks occur every 2 seconds. Save a bounded checkpoint
     // periodically, and always flush on lifecycle departure or player action.
@@ -236,6 +251,7 @@ public final class GameSessionModel: ObservableObject {
   game = newState; shownCard = nil; shownCardID = nil; cardGate.reset(); queue = []
   errorMessage = nil; errorAdvice = nil
   stockExecutions = []; stockOrderError = nil
+  bulletinFeed = VeilopolyBulletinFeed()
   lastFeedback = "新的一局已经准备好"
   checkpoint(force: true)
   scene.display(newState)
@@ -356,9 +372,11 @@ public struct VeilopolyGameView: View {
     catch { return }
     guard !Task.isCancelled && scenePhase == .active else { return }
     model.advanceStockMarket()
+    model.advanceBulletin()
    }
   }
   .confirmationDialog("更多", isPresented: $showMore) {
+   Button(model.newsEnabled ? "暂停城市快讯" : "开启城市快讯") { model.newsEnabled.toggle() }
    Button(dayFelt ? "切换夜间棋盘" : "切换日间棋盘") {
     dayFelt.toggle()
     model.scene.setDayFelt(dayFelt)
@@ -496,6 +514,8 @@ public struct VeilopolyGameView: View {
   let boardHeight = CGFloat(measured.height)
   let drawerWidth = CGFloat(VeilopolyLandscapeLayout.overlayDrawerWidth(for: Double(availableWidth)))
   let drawerHeight = CGFloat(VeilopolyLandscapeLayout.overlayDrawerHeight(for: Double(availableHeight)))
+  let bulletinWidth = CGFloat(VeilopolyLandscapeLayout.bulletinWidth(
+   availableWidth: Double(availableWidth), boardWidth: Double(boardWidth)))
   return ZStack(alignment: .topTrailing) {
    boardViewport
     .frame(width: boardWidth, height: boardHeight)
@@ -527,6 +547,15 @@ public struct VeilopolyGameView: View {
    .padding(.trailing, 6)
    .padding(.vertical, 5)
    .zIndex(2)
+  }
+  .overlay(alignment: .topLeading) {
+   if model.newsEnabled, let notice = model.bulletinFeed.current, bulletinWidth >= 90 {
+    VeilopolyNewsTicker(notice: notice)
+     .id(notice.id)
+     .frame(width: bulletinWidth)
+     .padding(.leading, boardWidth + 16)
+     .padding(.top, 10)
+   }
   }
   .frame(width: availableWidth, height: availableHeight)
  }

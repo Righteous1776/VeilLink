@@ -11,10 +11,10 @@ import UIKit
 @MainActor
 public struct VeilopolyFullscreenModifier: ViewModifier {
  @Binding private var isPresented: Bool
- private let seed: UInt64
+ private let seed: UInt64?
  private let humanCount: Int
 
- public init(isPresented: Binding<Bool>, seed: UInt64, humanCount: Int) {
+ public init(isPresented: Binding<Bool>, seed: UInt64?, humanCount: Int) {
   _isPresented = isPresented
   self.seed = seed
   self.humanCount = humanCount
@@ -31,9 +31,9 @@ public struct VeilopolyFullscreenModifier: ViewModifier {
 
 @MainActor
 public extension View {
- /// Call on an existing parent view with a state binding. P5 is responsible for
- /// invoking this from the actual VeilLink game hall after separate approval.
- func veilopolyFullscreen(isPresented: Binding<Bool>, seed: UInt64 = 1729123,
+ /// Local game-hall entry. Nil uses fresh-match entropy; existing saves resume
+ /// their persisted seed. Explicit seeds remain available for deterministic tests.
+ func veilopolyFullscreen(isPresented: Binding<Bool>, seed: UInt64? = nil,
                           humanCount: Int = 1) -> some View {
   modifier(VeilopolyFullscreenModifier(isPresented: isPresented, seed: seed, humanCount: humanCount))
  }

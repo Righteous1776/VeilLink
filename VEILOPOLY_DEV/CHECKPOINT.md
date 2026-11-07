@@ -1,5 +1,15 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## Actual game-hall integration + quiet live news — 2026-11-07
+
+- Task `VEILOPOLY-HALL-NEWS-008`, baseline `ac1805a3f8dcf4c1a657ecfff0f64650f037b736`; main/merge base `ccafebab147e069fbabfff579dbf323b0d54f191`. Owner now explicitly requests actual hall integration and notifications, but **no new version output**. Earlier notes that P5 hall integration is unauthorized are historical for this narrow local-hosting task; product multiplayer transport is still excluded.
+- `project.yml` links local `VeilopolyUI`; `GameLobbyView` opens the actual offline game fullscreen. Existing save/resume, unified finance, stock, AI, ivory/Astra/Kimi art and editorial remain intact. Nil presentation seed now allows new-match entropy while retaining saved/explicit seeds.
+- Live ticker: 86 local copy entries; committed real financial/event/market notices plus nonfinancial city vignettes, bounded priority queue 6, 60-second topic cooldown, 14-second display / 8-second gap, ambient eligibility 45 seconds. Board/More/Exit separation, pause menu, Reduce Motion, background pause and full-sentence accessibility are implemented. Gameplay state/RNG are not changed by news.
+- Offline bundle test resolves **99 PNG + 13 WAV + 1 XML**; compiled content tests cover **32 cards / 40 streets / 5 issuers / 23 guide topics / 86 news entries**. This is real local module-bundle evidence, not phone installation.
+- Final Linux Swift 6.2.1 `swift test --jobs 2` → **237/237 PASS, 0 failures**, including 8 bulletin and 2 bundle tests. ARM64 iOS15 frontend syntax parse, YAML host/package/version checks, existing landscape Info.plist declarations and diff checks PASS. Apple SDK type-check/link, orientation, graphics/touch/audio and actual device installation remain **PENDING**.
+- Version 27.2/build64, workflows, release/signing, keys, database, transport and other games unchanged. No PR/main merge: existing PR CI packages an IPA, and main `project.yml` changes trigger automatic release. No new package/version/workflow dispatch. Source delivery stays on `dev/veilopoly`.
+- Detailed acceptance and continuation: `Veilopoly/docs/HALL_NEWS_INTEGRATION_20261107.md`. Next: authorized Apple host compile/test without packaging, then visual/lifecycle/save/exit acceptance; IPA-producing paths wait for Owner's renewed version-output request.
+
 ## Generated tile art and legibility pass — 2026-11-07
 
 - Task `VEILOPOLY-TILE-ART-007`, baseline `56f3790fc3fcf107da6925f25843a42ce14d3f94`. Owner requested further generated local images to improve rough jail/utility/property areas. The later classic-board reference was withdrawn; no complete reference-board effect image is installed.

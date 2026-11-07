@@ -1,9 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import VeilopolyUI
 
 struct GameLobbyView: View {
     @ObservedObject var model: AppModel
     @State private var nearbyConversation: ConversationSummary?
+    @State private var showsVeilopoly = false
 
     init(model: AppModel) {
         self.model = model
@@ -29,6 +31,7 @@ struct GameLobbyView: View {
         .sheet(item: $nearbyConversation) { conversation in
             MiniGameHubView(model: model, conversation: conversation)
         }
+        .veilopolyFullscreen(isPresented: $showsVeilopoly, humanCount: 1)
     }
 
     private var hero: some View {
@@ -70,6 +73,16 @@ struct GameLobbyView: View {
     private var singlePlayerSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("单机 · 本地电脑", subtitle: "棋盘策略 + 2D 物理与赛道玩法，全部离线运行")
+            Button {
+                model.haptics.selection()
+                showsVeilopoly = true
+            } label: {
+                realtimeGameRow(title: "大富翁 · Veilopoly",
+                    detail: "地产经营 · 银行与股市 · 城市快讯 · 自动续局",
+                    motif: .circuit, badge: "离线")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("game-lobby.veilopoly")
             NavigationLink(destination: LocalAIGameView(model: model, game: .artillery)) {
                 gameRow(.artillery, detail: "可视化弹道 · 确定性风力 · 本地参数搜索 Bot", enabled: true)
             }
