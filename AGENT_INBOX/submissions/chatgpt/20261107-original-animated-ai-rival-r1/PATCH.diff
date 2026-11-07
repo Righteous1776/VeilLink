@@ -188,7 +188,7 @@ diff --git a/VeilLink/UI/VeilOpponentAvatarView.swift b/VeilLink/UI/VeilOpponent
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/VeilOpponentAvatarView.swift
-@@ -0,0 +1,375 @@
+@@ -0,0 +1,402 @@
 +import Foundation
 +import SwiftUI
 +import ImageIO
@@ -221,6 +221,12 @@ new file mode 100644
 +
 +    static func frameInterval(lowPower: Bool) -> TimeInterval {
 +        lowPower ? 1.0 / 15.0 : 1.0 / 30.0
++    }
++
++    /// Adaptive continuous corners for the square Owner-supplied MP4.
++    /// 76pt avatar = 22.8pt corner; iPhone 7 smaller cards scale down.
++    static func videoCornerRadius(for side: CGFloat) -> CGFloat {
++        min(26, max(0, side * 0.30))
 +    }
 +
 +    static func shouldAnimate(reduceMotion: Bool, sceneIsActive: Bool) -> Bool {
@@ -303,7 +309,23 @@ new file mode 100644
 +        )
 +        Group {
 +            if Bundle.main.url(forResource: "GrokBotFull", withExtension: "mp4") != nil {
-+                VeilGrokBotFullVideoPlayer(running: animated)
++                VeilGrokBotFullVideoPlayer(
++                    running: animated,
++                    cornerRadius: VeilOpponentAvatarPolicy.videoCornerRadius(for: size)
++                )
++                .frame(width: size, height: size)
++                .clipShape(RoundedRectangle(
++                    cornerRadius: VeilOpponentAvatarPolicy.videoCornerRadius(for: size),
++                    style: .continuous
++                ))
++                .overlay(
++                    RoundedRectangle(
++                        cornerRadius: VeilOpponentAvatarPolicy.videoCornerRadius(for: size),
++                        style: .continuous
++                    )
++                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8)
++                )
++                .accessibilityIdentifier("game.grok_bot.rounded_video")
 +            } else if Bundle.main.url(forResource: "GrokBotLoop", withExtension: "gif") != nil {
 +                VeilGrokBotGIFPlayer(running: animated)
 +            } else {
@@ -517,6 +539,7 @@ new file mode 100644
 +
 +private struct VeilGrokBotFullVideoPlayer: UIViewRepresentable {
 +    let running: Bool
++    let cornerRadius: CGFloat
 +
 +    final class Coordinator {
 +        let player: AVQueuePlayer
@@ -543,6 +566,8 @@ new file mode 100644
 +        let view = VeilGrokBotVideoSurface(frame: .zero)
 +        view.isUserInteractionEnabled = false
 +        view.backgroundColor = .clear
++        view.layer.cornerRadius = cornerRadius
++        view.layer.masksToBounds = true
 +        view.videoLayer.videoGravity = .resizeAspect
 +        view.videoLayer.player = context.coordinator.player
 +        if running { context.coordinator.player.play() }
@@ -550,6 +575,8 @@ new file mode 100644
 +    }
 +
 +    func updateUIView(_ view: VeilGrokBotVideoSurface, context: Context) {
++        view.layer.cornerRadius = cornerRadius
++        view.layer.masksToBounds = true
 +        if running {
 +            context.coordinator.player.play()
 +        } else {
@@ -568,7 +595,7 @@ diff --git a/VeilLinkTests/VeilOpponentAvatarPolicyTests.swift b/VeilLinkTests/V
 new file mode 100644
 --- /dev/null
 +++ b/VeilLinkTests/VeilOpponentAvatarPolicyTests.swift
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,47 @@
 +import XCTest
 +@testable import VeilLink
 +
@@ -608,4 +635,11 @@ new file mode 100644
 +        XCTAssertLessThanOrEqual(abs(VeilOpponentAvatarPolicy.rebound(elapsed: 0.5)), 1)
 +        XCTAssertTrue(VeilOpponentAvatarPolicy.rebound(elapsed: 1000).isFinite)
 +    }
++    func testRoundedVideoCardScalesWithAvatar() {
++        XCTAssertEqual(VeilOpponentAvatarPolicy.videoCornerRadius(for: 42), 12.6, accuracy: 0.001)
++        XCTAssertEqual(VeilOpponentAvatarPolicy.videoCornerRadius(for: 76), 22.8, accuracy: 0.001)
++        XCTAssertEqual(VeilOpponentAvatarPolicy.videoCornerRadius(for: 112), 26, accuracy: 0.001)
++        XCTAssertEqual(VeilOpponentAvatarPolicy.videoCornerRadius(for: 0), 0)
++    }
++
 +}
