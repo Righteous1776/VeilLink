@@ -33,3 +33,6 @@ Existing80MiB IPA/120MiB app caps remain, not raised to hide payload regressions
 Apple exact-head CI and actual combined artifact validation PENDING. No merge,
 release, physical-device verification or installed-phone result claimed here.
 Promotion only after green required checks, normal merge and immutable release.
+
+Nine guarded live-session/ACK/lifecycle tests are attached to the actual iOS
+test host in project.yml; macOS/Linux package success alone does not run them.

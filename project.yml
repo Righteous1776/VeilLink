@@ -123,6 +123,9 @@ targets:
           - RealLocalInferenceSmokeTests.swift
           - Fixtures/MaleCNSFixture.vfly
           - Fixtures/MaleCNSFixture.vfly.manifest.json
+      # These session/animation/lifecycle tests are conditionally excluded by
+      # macOS/Linux swift test; execute them in the real iOS test host instead.
+      - path: VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyUITests/LiveGameSessionTests.swift
     dependencies:
       - target: VeilLink
     settings:
