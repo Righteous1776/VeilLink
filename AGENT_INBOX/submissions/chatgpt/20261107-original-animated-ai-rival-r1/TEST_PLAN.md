@@ -11,3 +11,11 @@
 - [x] Generated binary magic GIF89a; original 24 frames, 110ms, loop=0; optimized 112x112 GIF 89204 bytes.
 - [x] Code patch proposes GIF media playback via bundled ImageIO/UIImageView with original Canvas fallback. No unauthorized binary GitHub upload.
 - [ ] Actual bundled GIF bytes, XcodeGen resource copying, iOS15 compile, UIKit pause/resume and memory profiler: NOT_RUN until Governor asset authorization.
+
+
+## R4 acceptance
+- [x] Local ffprobe verified both user MP4 and silent app-ready MP4: 921 frames at 30fps, 30.700s, 514x512.
+- [x] SHA-256 verified: original 411ae1ee2a979cae4edf9b56b0676420174c88e87461fcd8264409d17111e7fe; video-only 462dea06791e79e7410ec25a69ded8abae6244ed751f2099be8d72778290e788.
+- [x] PR patch includes MP4 first, GIF second, original Canvas third; preserves all nine entrypoints and independent Owner toggle.
+- [ ] Apple SDK Swift compile/XCTest, resource bundle test, 2+ full loop cycles, background/resume/mute/iOS15.8.3 stress: NOT_RUN.
+- [ ] Verify original 30.7s first/last seam on device; looping is functional but the visual join depends on the source footage.
