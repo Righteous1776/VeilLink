@@ -5,6 +5,7 @@ import VeilopolyUI
 struct GameLobbyView: View {
     @ObservedObject var model: AppModel
     @State private var nearbyConversation: ConversationSummary?
+    @State private var veilopolyConversation: ConversationSummary?
     @State private var showsVeilopoly = false
 
     init(model: AppModel) {
@@ -30,6 +31,9 @@ struct GameLobbyView: View {
         }
         .sheet(item: $nearbyConversation) { conversation in
             MiniGameHubView(model: model, conversation: conversation)
+        }
+        .sheet(item: $veilopolyConversation) { conversation in
+            VeilopolyFriendRoomView(model: model, conversation: conversation)
         }
         .veilopolyFullscreen(isPresented: $showsVeilopoly, humanCount: 1)
     }
@@ -123,7 +127,7 @@ struct GameLobbyView: View {
 
     private var nearbySection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("附近对战", subtitle: "沿用现有 BLE + E2EE 游戏消息链")
+            sectionTitle("附近对战", subtitle: "好友邀请 · Veilopoly 双人房间 · 原有小游戏")
             if model.conversations.isEmpty {
                 HStack(spacing: 10) {
                     Image(systemName: "person.2.slash")
@@ -136,32 +140,47 @@ struct GameLobbyView: View {
                 .veilCard()
             } else {
                 ForEach(Array(model.conversations.prefix(6))) { conversation in
-                    Button {
-                        nearbyConversation = conversation
-                        model.haptics.selection()
-                    } label: {
-                        HStack(spacing: 12) {
-                            VeilIdentityGlyph(seed: conversation.peerIdentityID, size: 40, active: false)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(conversation.title)
-                                    .font(.headline)
-                                    .foregroundColor(VeilTheme.text)
-                                Text("炮战 · 光轨 · 磁轨冰球 · 棋类 · 兵棋")
-                                    .font(.caption)
-                                    .foregroundColor(VeilTheme.secondaryText)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button {
+                            veilopolyConversation = conversation
+                            model.haptics.selection()
+                        } label: {
+                            HStack(spacing: 12) {
+                                VeilIdentityGlyph(seed: conversation.peerIdentityID, size: 40, active: false)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(conversation.title)
+                                        .font(.headline)
+                                        .foregroundColor(VeilTheme.text)
+                                    Text("Veilopoly · 2 位好友真人 + 2 位电脑")
+                                        .font(.caption)
+                                        .foregroundColor(VeilTheme.secondaryText)
+                                }
+                                Spacer()
+                                Label("邀请", systemImage: "dice.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(VeilTheme.goldBright)
                             }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption.bold())
-                                .foregroundColor(VeilTheme.tertiaryText)
+                            .padding(VeilSpacing.sm)
+                            .frame(minHeight: 54)
+                            .background(VeilTheme.elevated.opacity(0.82))
+                            .clipShape(VeilPanelShape(cut: 12, radius: 7))
+                            .contentShape(Rectangle())
                         }
-                        .padding(VeilSpacing.sm)
-                        .background(VeilTheme.elevated.opacity(0.82))
-                        .clipShape(VeilPanelShape(cut: 12, radius: 7))
-                        .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("game-lobby.veilopoly.friend.\(conversation.peerIdentityID)")
+                        Button {
+                            nearbyConversation = conversation
+                            model.haptics.selection()
+                        } label: {
+                            Label("其他加密双人小游戏", systemImage: "gamecontroller.fill")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(VeilTheme.secondaryText)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .padding(.horizontal, VeilSpacing.sm)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(VeilPressStyle())
-                    .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
                 }
             }
         }
