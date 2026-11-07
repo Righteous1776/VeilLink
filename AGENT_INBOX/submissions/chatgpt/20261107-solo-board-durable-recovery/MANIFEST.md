@@ -1,0 +1,12 @@
+# [AGENT-DROP] Solo board game resume
+- agent_id: chatgpt
+- task_id: 20261107-solo-board-durable-recovery
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- mode: INBOX_ONLY
+- status: DROPPED
+- submission_path: AGENT_INBOX/submissions/chatgpt/20261107-solo-board-durable-recovery/
+- proposed_files:
+  - VeilLink/Agent/Games/LocalAIGameController.swift
+  - VeilLink/UI/GameLobbyView.swift
+  - VeilLink/Agent/Games/LocalBoardMatchStore.swift
+  - VeilLinkTests/LocalBoardMatchStoreTests.swift
