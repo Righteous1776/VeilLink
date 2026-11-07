@@ -25,6 +25,7 @@ public enum VeilopolyEngine {
  public static func apply(_ state: GameState, _ ctx: GameContext, _ move: Move) -> Transition {
   var g = state
   var effects: [Effect] = []
+  let openingCash = state.players.reduce(0) { $0 + $1.cash }
   do {
    guard g.board.count == 40, g.players.count == 4,
          g.players.enumerated().allSatisfy({ $0.offset == $0.element.id }),
@@ -82,6 +83,22 @@ public enum VeilopolyEngine {
    guard move.player == expected else { throw GameError.notYourTurn }
    guard ctx.allowedMoves.contains(move.type) else { throw GameError.wrongPhase }
    try transition(&g, move, &effects)
+   // V4 central bank: every net change of aggregate player cash must be
+   // backed by the same finite treasury. Player-to-player gifts/rent/trades
+   // cancel automatically. GameError rolls back every partial mutation.
+   if let treasuryBefore = state.banking?.reserveCash {
+    guard var ledger = g.banking,
+          ledger.financeRuleVersion == VeilopolyCityLongEconomy.version else {
+     throw GameError.invalidState
+    }
+    let closingCash = g.players.reduce(0) { $0 + $1.cash }
+    let newTreasury = treasuryBefore - (closingCash - openingCash)
+    guard (0...VeilopolyCityLongEconomy.totalMoneySupply).contains(newTreasury) else {
+     throw GameError.bankLiquidity
+    }
+    ledger.reserveCash = newTreasury
+    g.banking = ledger
+   }
    // Validate the output as well as the input. A large legal receipt must not
    // produce an out-of-range persisted state that crashes the next turn.
    guard g.players.allSatisfy({ (0...1_000_000_000).contains($0.cash) }),

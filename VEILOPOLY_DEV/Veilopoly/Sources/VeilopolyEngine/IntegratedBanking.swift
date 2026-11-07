@@ -20,19 +20,23 @@ public struct IntegratedBankLedger: Codable, Equatable {
  /// Missing in historical JSON means V1 voluntary repayment. Only new ledgers
  /// use V2 automatic maturity settlement; never rewrite a saved game's terms.
  public var financeRuleVersion: Int
+ /// Liquid treasury backing the finite-currency V4 city. Nil in V1/V2/V3 saves.
+ public var reserveCash: Int?
  public init(completedTurns: Int = 0, terms: FinanceSandboxPolicy = FinanceSandboxPolicy(),
-             market: StockMarketState? = nil, financeRuleVersion: Int = 2) {
+             market: StockMarketState? = nil, financeRuleVersion: Int = 2,
+             reserveCash: Int? = nil) {
   self.completedTurns = completedTurns
   self.terms = terms
   self.accounts = Array(repeating: IntegratedBankAccount(), count: 4)
   self.market = market
   self.financeRuleVersion = financeRuleVersion
+  self.reserveCash = reserveCash
  }
 
  // FinanceSandboxPolicy has enum-keyed dictionaries. Swift encodes these as
  // unkeyed key/value arrays, whose iteration order is unstable between runs.
  // Explicit string-keyed DTOs make the entire GameState hash reproducible.
- private enum CodingKeys: String, CodingKey { case completedTurns, terms, accounts, market, financeRuleVersion }
+ private enum CodingKeys: String, CodingKey { case completedTurns, terms, accounts, market, financeRuleVersion, reserveCash }
  private struct CanonicalTerms: Codable {
   var loanInterestBasisPoints: [Int]
   var loanCapsByProperties: [Int]
@@ -76,6 +80,8 @@ public struct IntegratedBankLedger: Codable, Equatable {
   try c.encode(CanonicalTerms(terms), forKey: .terms)
   try c.encode(accounts, forKey: .accounts)
   try c.encodeIfPresent(market, forKey: .market)
+  // Nil is omitted, preserving exact old checkpoint hash/JSON.
+  try c.encodeIfPresent(reserveCash, forKey: .reserveCash)
   // Omitting the v1 key preserves its historical sealed checkpoint checksum.
   if financeRuleVersion != 1 {
    try c.encode(financeRuleVersion, forKey: .financeRuleVersion)
@@ -87,6 +93,7 @@ public struct IntegratedBankLedger: Codable, Equatable {
   terms = try c.decode(CanonicalTerms.self, forKey: .terms).policy()
   accounts = try c.decode([IntegratedBankAccount].self, forKey: .accounts)
   market = try c.decodeIfPresent(StockMarketState.self, forKey: .market)
+  reserveCash = try c.decodeIfPresent(Int.self, forKey: .reserveCash)
   financeRuleVersion = try c.decodeIfPresent(Int.self, forKey: .financeRuleVersion) ?? 1
  }
 }
@@ -96,7 +103,7 @@ public enum IntegratedBanking {
   var result = g.banking ?? IntegratedBankLedger(completedTurns: g.moveLog.filter { $0.type == .endTurn }.count)
   if result.market == nil {
    result.market = StockMarketEngine.initial(seed: g.seed,
-    enhanced: result.financeRuleVersion == VeilopolyCityLongEconomy.version)
+    enhanced: result.financeRuleVersion >= VeilopolyCityLongEconomy.legacyVersion)
   }
   return result
  }
@@ -112,7 +119,10 @@ public enum IntegratedBanking {
  }
 
  public static func validate(_ ledger: IntegratedBankLedger) -> Bool {
-  (1...3).contains(ledger.financeRuleVersion) &&
+  (1...4).contains(ledger.financeRuleVersion) &&
+  (ledger.financeRuleVersion == VeilopolyCityLongEconomy.version
+   ? (ledger.reserveCash.map { (0...VeilopolyCityLongEconomy.totalMoneySupply).contains($0) } ?? false)
+   : ledger.reserveCash == nil) &&
   (0...1_000_000).contains(ledger.completedTurns) && ledger.accounts.count == 4 &&
   ledger.terms.isWellFormed() && (ledger.market.map(StockMarketEngine.validate) ?? true) &&
   ledger.accounts.allSatisfy { acc in
@@ -170,7 +180,7 @@ public enum IntegratedBanking {
    if feature == .demandDeposit {
     // The Owner's demand-yield bracket is crossed out. Preserve principal, not invented yield.
     rate = policy.demandYieldBasisPoints ?? 0
-    duration = ledger.financeRuleVersion == VeilopolyCityLongEconomy.version ? 1 : 0
+    duration = ledger.financeRuleVersion >= VeilopolyCityLongEconomy.legacyVersion ? 1 : 0
    } else {
     guard let fixedRate = policy.fixedYieldBasisPoints, let fixedDuration = policy.fixedLockPeriods else {
      throw GameError.financeTermsPending
@@ -201,7 +211,7 @@ public enum IntegratedBanking {
    guard ordinal < 4 else { throw GameError.financeTermsPending }
    let lots = g.board.filter { $0.owner == p && !$0.mortgaged && $0.purchasable }.count
    let total: Int
-   if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version {
+   if ledger.financeRuleVersion >= VeilopolyCityLongEconomy.legacyVersion {
     guard (1...12).contains(periods), principal > 0,
           principal <= policy.loanCapsByProperties[min(lots, 3)] else {
      throw GameError.invalidPayload

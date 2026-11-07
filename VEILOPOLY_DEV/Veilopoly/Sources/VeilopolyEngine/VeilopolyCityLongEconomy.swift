@@ -2,14 +2,18 @@ import Foundation
 
 /// Explicit new-match-only economic profile. Older games retain original terms.
 public enum VeilopolyCityLongEconomy {
- public static let version = 3
+ public static let legacyVersion = 3
+ public static let version = 4
+ /// 4 x ¥7,200 player cash + 160,000 city-bank cash = fixed 188,800 units.
+ public static let initialTreasuryCash = 160_000
+ public static let totalMoneySupply = initialTreasuryCash + 4 * 7_200
  public static let startingCash = 7_200
  public static let passingStartSalary = 1_100
  public static let jailBail = 150
  public static let incomeTax = 600
  public static let luxuryTax = 300
  public static func isActive(_ game: GameState) -> Bool {
-  game.banking?.financeRuleVersion == version
+  (game.banking?.financeRuleVersion ?? 0) >= legacyVersion
  }
  public static func salary(_ game: GameState) -> Int { isActive(game) ? passingStartSalary : 200 }
  public static func bail(_ game: GameState) -> Int { isActive(game) ? jailBail : 50 }
@@ -59,7 +63,8 @@ public enum VeilopolyCityLongEconomy {
   }
   g.banking = IntegratedBankLedger(terms: terms(),
                                    market: StockMarketEngine.initial(seed: seed, enhanced: true),
-                                   financeRuleVersion: version)
+                                   financeRuleVersion: version,
+                                   reserveCash: initialTreasuryCash)
   return g
  }
 }

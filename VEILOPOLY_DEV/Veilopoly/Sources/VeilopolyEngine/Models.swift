@@ -247,6 +247,7 @@ public enum GameError: String, Error, Codable, Equatable {
  case financeOverdue = "FinanceOverdue"
  case stockNotFound = "StockNotFound", insufficientShares = "InsufficientShares"
  case stockTradingHalted = "StockTradingHalted"
+ case bankLiquidity = "BankLiquidity"
 }
 
 public enum StateDigest {
