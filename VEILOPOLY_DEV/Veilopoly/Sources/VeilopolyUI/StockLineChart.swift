@@ -1,4 +1,5 @@
 #if os(iOS) && canImport(SwiftUI)
+import Foundation
 import SwiftUI
 import VeilopolyEngine
 
@@ -6,6 +7,7 @@ import VeilopolyEngine
 /// It uses the authoritative quote history and never synthesizes display-only prices.
 public struct VeilopolyStockLineChart: View {
  public let quote: StockQuote
+ @State private var inspectionFraction: Double?
  public init(quote: StockQuote) { self.quote = quote }
 
  public var body: some View {
@@ -82,8 +84,61 @@ public struct VeilopolyStockLineChart: View {
   }
   .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
   .overlay { RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.09)) }
+  .overlay {
+   GeometryReader { geometry in
+    ZStack(alignment: .topLeading) {
+     Color.clear.contentShape(Rectangle())
+     if let fraction = inspectionFraction,
+        let index = StockTerminalState.chartIndex(fraction: fraction, count: points.count) {
+      let point = points[index]
+      let x = geometry.size.width * CGFloat(index) / CGFloat(max(1, points.count - 1))
+      Path { path in
+       path.move(to: CGPoint(x: x, y: 0))
+       path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+      }
+      .stroke(Color.white.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+      Text("T+\(point.tick)  ¥\(point.priceCents / 100).\(String(format: "%02d", point.priceCents % 100))\n成交量 \(point.volume)")
+       .font(.system(size: 10, weight: .semibold, design: .monospaced))
+       .padding(7).background(Color.black.opacity(0.88), in: RoundedRectangle(cornerRadius: 7))
+       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: x > geometry.size.width / 2 ? .topLeading : .topTrailing)
+       .padding(5)
+       .allowsHitTesting(false)
+     }
+    }
+    .gesture(
+     LongPressGesture(minimumDuration: 0.25)
+      .sequenced(before: DragGesture(minimumDistance: 0))
+      .onChanged { value in
+       if case .second(true, let drag?) = value, geometry.size.width > 0 {
+        inspectionFraction = Double(drag.location.x / geometry.size.width)
+       }
+      }
+      .onEnded { _ in inspectionFraction = nil }
+    )
+   }
+  }
+  .onChange(of: quote.symbol) { _ in inspectionFraction = nil }
   .accessibilityElement(children: .ignore)
   .accessibilityLabel("\(quote.name)价格走势，当前每股\(quote.currentPriceCents / 100)元\(quote.currentPriceCents % 100)分")
+  .accessibilityHint("长按并拖动可查看历史价格与成交量")
+  .accessibilityValue(inspectionDescription(points))
+  .accessibilityAdjustableAction { direction in
+   let step = 1.0 / Double(max(1, points.count - 1))
+   switch direction {
+   case .increment: inspectionFraction = min(1, (inspectionFraction ?? 0) + step)
+   case .decrement: inspectionFraction = max(0, (inspectionFraction ?? 1) - step)
+   @unknown default: break
+   }
+  }
+ }
+
+ private func inspectionDescription(_ points: [StockPricePoint]) -> String {
+  guard let fraction = inspectionFraction,
+        let index = StockTerminalState.chartIndex(fraction: fraction, count: points.count) else {
+   return "历史走势"
+  }
+  let point = points[index]
+  return "第\(point.tick)时点，\(point.priceCents / 100)元\(point.priceCents % 100)分，成交量\(point.volume)"
  }
 }
 #endif

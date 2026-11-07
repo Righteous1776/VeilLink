@@ -27,6 +27,8 @@ public struct VeilopolyStockMarketPanel: View {
  public let market: StockMarketState
  public let player: Int
  public let cash: Int
+ public let executions: [StockExecution]
+ public let orderError: String?
  @Binding public var selectedSymbol: String
  @Binding public var shareText: String
  public let onBuy: (String, Int) -> Void
@@ -35,12 +37,15 @@ public struct VeilopolyStockMarketPanel: View {
  @State private var ticketSide: StockTicketSide = .buy
  @State private var positionsExpanded = true
  @FocusState private var quantityFocused: Bool
+ @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
  public init(market: StockMarketState, player: Int, cash: Int,
              selectedSymbol: Binding<String>, shareText: Binding<String>,
+             executions: [StockExecution] = [], orderError: String? = nil,
              onBuy: @escaping (String, Int) -> Void,
              onSell: @escaping (String, Int) -> Void) {
   self.market = market; self.player = player; self.cash = cash
+  self.executions = executions; self.orderError = orderError
   _selectedSymbol = selectedSymbol; _shareText = shareText
   self.onBuy = onBuy; self.onSell = onSell
  }
@@ -55,6 +60,7 @@ public struct VeilopolyStockMarketPanel: View {
     quoteMetrics(quote)
     orderTicket(quote)
     portfolioSection
+    executionHistory
    } else {
     Label("行情暂不可用", systemImage: "exclamationmark.triangle")
      .font(.caption).foregroundStyle(.secondary)
@@ -177,7 +183,7 @@ public struct VeilopolyStockMarketPanel: View {
      .foregroundStyle(StockTerminalPalette.direction(quote.changeBasisPoints))
    }
   }
-  .animation(.easeOut(duration: 0.22), value: quote.currentPriceCents)
+  .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: quote.currentPriceCents)
   .accessibilityElement(children: .combine)
  }
 
@@ -214,8 +220,9 @@ public struct VeilopolyStockMarketPanel: View {
    return try? StockMarketEngine.estimateSell(market, player: player,
                                                symbol: quote.symbol, shares: quantity)
   }()
-  let affordable = estimate.map { ticketSide == .sell || -$0.cashDelta <= cash } ?? false
-  let enabled = affordable && !quote.isHalted
+  let rejection = StockTerminalState.rejection(market: market, player: player,
+   cash: cash, symbol: quote.symbol, shares: quantity, buying: ticketSide == .buy)
+  let enabled = rejection == nil
   return VStack(alignment: .leading, spacing: 9) {
    HStack {
     Text("订单").font(.system(size: 11, weight: .bold))
@@ -224,6 +231,8 @@ public struct VeilopolyStockMarketPanel: View {
      .font(.system(size: 9, weight: .semibold, design: .monospaced))
      .foregroundStyle(.white.opacity(0.54))
    }
+   Text("可用现金 ¥\(cash) · 市价即时成交")
+    .font(.caption2).foregroundStyle(.secondary)
    Picker("交易方向", selection: $ticketSide) {
     ForEach(StockTicketSide.allCases) { side in Text(side.rawValue).tag(side) }
    }
@@ -249,7 +258,7 @@ public struct VeilopolyStockMarketPanel: View {
      quantityButton("\(preset)") { shareText = String(preset) }
     }
     quantityButton("最大") {
-     shareText = String(max(1, ticketSide == .buy ? maxBuy : min(10_000, owned)))
+     shareText = String(ticketSide == .buy ? maxBuy : min(10_000, owned))
     }
    }
 
@@ -264,13 +273,19 @@ public struct VeilopolyStockMarketPanel: View {
      Text("@ \(price(estimate.priceCents))").font(.system(size: 9, design: .monospaced))
     }
     .font(.system(size: 9)).foregroundStyle(.white.opacity(0.50))
-   } else {
-    Text(orderHint(quote: quote, quantity: quantity, owned: owned, maxBuy: maxBuy))
+   }
+   if let rejection {
+    Text(rejection)
      .font(.system(size: 9, weight: .semibold))
      .foregroundStyle(quote.isHalted ? Color.orange : StockTerminalPalette.up)
    }
+   if let orderError {
+    Label("上一笔订单：" + orderError, systemImage: "exclamationmark.circle")
+     .font(.caption2).foregroundStyle(.orange)
+   }
 
    Button {
+    quantityFocused = false
     if ticketSide == .buy { onBuy(quote.symbol, quantity) }
     else { onSell(quote.symbol, quantity) }
    } label: {
@@ -311,7 +326,7 @@ public struct VeilopolyStockMarketPanel: View {
   let value = StockMarketEngine.portfolioMarketValueCents(market, player: player)
   let unrealized = StockMarketEngine.unrealizedPnLCents(market, player: player)
   return VStack(alignment: .leading, spacing: 8) {
-   Button { withAnimation(.easeInOut(duration: 0.18)) { positionsExpanded.toggle() } } label: {
+   Button { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { positionsExpanded.toggle() } } label: {
     HStack {
      Text("我的持仓").font(.system(size: 11, weight: .bold))
      Text("\(portfolio.positions.count)").font(.system(size: 9, weight: .bold))
@@ -378,12 +393,31 @@ public struct VeilopolyStockMarketPanel: View {
   .buttonStyle(.plain)
  }
 
- private func orderHint(quote: StockQuote, quantity: Int, owned: Int, maxBuy: Int) -> String {
-  if quote.isHalted { return "该标的暂停交易，剩余 \(quote.haltedTicks) tick" }
-  if quantity < 1 || quantity > 10_000 { return "单笔股数需在 1…10,000 之间" }
-  if ticketSide == .buy && quantity > maxBuy { return "余额或持仓上限不足" }
-  if ticketSide == .sell && quantity > owned { return "可卖数量不足" }
-  return "订单参数无效"
+ private var executionHistory: some View {
+  VStack(alignment: .leading, spacing: 8) {
+   Text("本局成交回执").font(.subheadline.weight(.semibold))
+   if executions.isEmpty {
+    Text("暂无成交。订单成功后将在此显示回执。")
+     .font(.caption2).foregroundStyle(.secondary)
+   }
+   ForEach(Array(executions.prefix(8))) { execution in
+    VStack(alignment: .leading, spacing: 3) {
+     HStack {
+      Text("\(execution.bought ? "买入" : "卖出") \(execution.symbol) · \(execution.shares) 股")
+       .foregroundStyle(execution.bought ? StockTerminalPalette.up : StockTerminalPalette.down)
+      Spacer()
+      Text("#\(execution.id)").foregroundStyle(.secondary)
+     }
+     Text("成交价 \(price(execution.priceCents)) · 现金 \(execution.cashDelta >= 0 ? "+" : "−")¥\(abs(execution.cashDelta))")
+      .foregroundStyle(.secondary)
+    }
+    .font(.caption2).monospacedDigit()
+    .accessibilityElement(children: .combine)
+   }
+  }
+  .padding(10)
+  .frame(maxWidth: .infinity, alignment: .leading)
+  .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
  }
 
  private func price(_ cents: Int) -> String {

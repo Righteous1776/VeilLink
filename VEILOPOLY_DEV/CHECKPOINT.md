@@ -1,5 +1,13 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## Stock terminal V3 continuation — 2026-11-07
+
+- Task `VEILOPOLY-STOCK-MARKET-UI-003`; baseline `f5f9747` on `dev/veilopoly`, scope `VEILOPOLY_DEV/**`. Stock terminal changes coexist with the latest Kimi tile-mask/day-theme work; no overlap in BoardScene or art resources.
+- Added long-press chart inspection and VoiceOver point adjustment, recent manual execution receipts separated by player, persistent last-order errors, exact disable reasons including sale cash cap, and zero-quantity maximum behavior. Session receipts retain 40 entries / display latest eight for the current player and reset with the session.
+- Lifecycle correction: foreground-only cancellable ticker; price-only ticks skip SpriteKit display and preserve order errors. Reduce Motion applies to price and holdings animations.
+- `swift test --jobs 2 --filter 'StockTerminalStateTests|StockMarketTests'` → 15 passed → PASS. `swift test --jobs 2` → 134 passed → PASS, local Linux Swift 6.2.1. `swiftc -frontend -parse -target arm64-apple-ios16.0` for changed SwiftUI files → success → PASS for grammar only.
+- Apple SDK type-check, chart gesture vs drawer scroll, VoiceOver, lifecycle on device, haptics and visual density remain PENDING. No main/P5/workflow/release/protocol/schema changes. See `Veilopoly/docs/OFFLINE_LIVE_STOCK_MARKET_20261107.md` for behavior and verification boundaries.
+
 **Branch:** `dev/veilopoly` (from `main@ccafebab147e069fbabfff579dbf323b0d54f191`). This is a parallel **development lane**, not the product main branch.
 
 ## GitHub source import — COMPLETE for standalone P1–P4

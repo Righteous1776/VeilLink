@@ -49,6 +49,15 @@
 
 ## 验证边界
 
+### V3 交互与刷新修正（2026-11-07）
+
+- 长按走势图 0.25 秒后拖动，显示十字参考线、对应 tick 的价格和成交量；VoiceOver 可用调整动作逐点读取。选择点仅控制查价，不影响成交价格。
+- 本局手动订单成功后，从 reducer 的结构化 Effect 生成成交回执，保存最近 40 条，终端按当前玩家显示最近 8 条；重开清空。回执是会话内 UI 数据，不伪装为持久化账单，不包括自动偿债卖股。
+- 订单禁用原因同时覆盖含手续费余额不足、超卖、暂停交易、单笔股数与现金上限；零可买/可卖时“最大”显示 0。上一笔订单错误保持显示，下一笔成功后清除。
+- 价格 tick 仅更新 GameState，不重新调用 SpriteKit 的棋盘 display，也不清空订单反馈。前台 scenePhase 才调度 2 秒行情任务；进入后台、离开页面或任务取消立即退出，恢复后重新等待 2 秒，不补跑后台行情。
+- 价格及持仓折叠动画尊重 Reduce Motion。真机触摸、后台生命周期和 Apple SDK 类型检查仍待验收。
+- Swift 6.2.1/Linux：股票与终端状态专项 **15/15 PASS**；全量 **134/134 PASS**；ARM64 iOS 16 frontend parse PASS（仅语法）。新增测试验证含手续费余额、卖出现金上限、真实成交回执过滤和查价坐标边界。
+
 新增 Engine 测试覆盖：2,000 tick 确定性与价格边界、独立 RNG、费用/平均成本/盈亏、reducer 结构化事件、失败原子性、停牌、债务自动卖股、旧账本兼容。
 
 本地使用 Swift 6.2.1（Linux）完成真实编译和测试：
@@ -57,7 +66,8 @@
 cd VEILOPOLY_DEV/Veilopoly
 swift build --jobs 2                              # PASS
 swift test --jobs 2 --filter StockMarketTests     # 12/12 PASS
-swift test --jobs 2                               # 130/130 PASS
+swift test --jobs 2 --filter StockTerminalStateTests # 3/3 PASS
+swift test --jobs 2                               # 134/134 PASS
 swiftc -frontend -parse -target arm64-apple-ios17.0 \
   Sources/VeilopolyUI/UI.swift \
   Sources/VeilopolyUI/StockMarketPanel.swift \

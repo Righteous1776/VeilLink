@@ -11,6 +11,8 @@ public final class GameSessionModel: ObservableObject {
  @Published public private(set) var game: GameState
  @Published public private(set) var errorMessage: String?
  @Published public private(set) var shownCard: String?
+ @Published public private(set) var stockExecutions: [StockExecution] = []
+ @Published public private(set) var stockOrderError: String?
  @Published public private(set) var lastFeedback: String = "准备开始 · 轮到第一位玩家"
  private var cardGate = CardRevealGate()
  @Published public var selectedTile: Int = 1 {
@@ -64,10 +66,29 @@ public final class GameSessionModel: ObservableObject {
   case .failure(let err):
    errorMessage = err.rawValue
    if move.type == .stockBuy || move.type == .stockSell {
+    stockOrderError = StockTerminalState.rejection(
+     market: IntegratedBanking.ledger(game).market ?? StockMarketEngine.initial(seed: game.seed),
+     player: move.player, cash: game.players[move.player].cash,
+     symbol: move.stockSymbol ?? "", shares: move.stockShares ?? 0,
+     buying: move.type == .stockBuy) ?? "订单未成交，请重试"
     UINotificationFeedbackGenerator().notificationOccurred(.error)
    }
   case .success((let newState, let effects)):
+   if move.type == .stockTick {
+    // Price-only ticks need neither a board redraw nor clearing order feedback.
+    game = newState
+    return
+   }
    errorMessage = nil
+   if move.type == .stockBuy || move.type == .stockSell {
+    stockOrderError = nil
+    for effect in effects {
+     if let execution = StockExecution(sequence: move.seq, effect: effect) {
+      stockExecutions.insert(execution, at: 0)
+     }
+    }
+    stockExecutions = Array(stockExecutions.prefix(40))
+   }
    if let feedback = VeilopolyEventFeedback.summary(effects) { lastFeedback = feedback }
    let commands = CommandTranslator.translate(effects)
    game = newState
@@ -119,6 +140,7 @@ public final class GameSessionModel: ObservableObject {
   guard !animating else { return }
   let newState = GameFactory.make(seed: seed, humanCount: configuredHumanCount)
   game = newState; shownCard = nil; cardGate.reset(); queue = []; errorMessage = nil
+  stockExecutions = []; stockOrderError = nil
   lastFeedback = "新的一局已经准备好"
   scene.display(newState)
   selectedTile = 1
@@ -172,6 +194,7 @@ public struct VeilopolyGameView: View {
  @State private var dayFelt = false
  @Environment(\.dismiss) private var dismiss
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+ @Environment(\.scenePhase) private var scenePhase
  private let onExit: (() -> Void)?
  public init(seed: UInt64 = 1729123, humanCount: Int = 1, onExit: (() -> Void)? = nil) {
   _model = StateObject(wrappedValue: GameSessionModel(seed: seed, humanCount: humanCount))
@@ -197,11 +220,14 @@ public struct VeilopolyGameView: View {
   .statusBarHidden()
   .onAppear { model.scene.reduceMotion = reduceMotion }
   .onChange(of: reduceMotion) { model.scene.reduceMotion = $0 }
-  .task {
+  .task(id: scenePhase) {
    // Wall time only schedules explicit reducer moves. Price generation itself
    // remains seeded and replayable; leaving the view cancels this local ticker.
+   guard scenePhase == .active else { return }
    while !Task.isCancelled {
-    try? await Task.sleep(nanoseconds: 2_000_000_000)
+    do { try await Task.sleep(nanoseconds: 2_000_000_000) }
+    catch { return }
+    guard !Task.isCancelled && scenePhase == .active else { return }
     model.advanceStockMarket()
    }
   }
@@ -873,6 +899,8 @@ public struct VeilopolyGameView: View {
    market: market, player: model.actor,
    cash: model.game.players[model.actor].cash,
    selectedSymbol: $stockSymbol, shareText: $stockShares,
+   executions: model.stockExecutions.filter { $0.player == model.actor },
+   orderError: model.stockOrderError,
    onBuy: { symbol, shares in
     model.perform(.stockBuy, stockSymbol: symbol, stockShares: shares)
    },
