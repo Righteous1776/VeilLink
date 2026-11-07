@@ -549,7 +549,7 @@ final class LocalAIGameController: ObservableObject {
 
     /// A device class is not permission to revoke strategic search.
     /// Only the explicit user-off path opts into a compact device budget.
-    static func boardSearchProfile(deviceLabel: String, unrestricted: Bool) -> String {
+    nonisolated static func boardSearchProfile(deviceLabel: String, unrestricted: Bool) -> String {
         unrestricted ? "HIGH-PERFORMANCE" : deviceLabel
     }
 
