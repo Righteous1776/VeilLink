@@ -16,10 +16,10 @@ struct GameLobbyView: View {
         VeilStableScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero.veilStaggeredEntrance(index: 0)
-                singlePlayerSection.veilStaggeredEntrance(index: 1)
-                realtimeArcadeSection.veilStaggeredEntrance(index: 2)
-                interactiveStorySection.veilStaggeredEntrance(index: 3)
-                nearbySection.veilStaggeredEntrance(index: 4)
+                nearbySection.veilStaggeredEntrance(index: 1)
+                singlePlayerSection.veilStaggeredEntrance(index: 2)
+                realtimeArcadeSection.veilStaggeredEntrance(index: 3)
+                interactiveStorySection.veilStaggeredEntrance(index: 4)
             }
         }
         .background(VeilAmbientBackground())
@@ -127,7 +127,7 @@ struct GameLobbyView: View {
 
     private var nearbySection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("附近对战", subtitle: "好友邀请 · Veilopoly 双人房间 · 原有小游戏")
+            sectionTitle("好友联机 · Veilopoly", subtitle: "先配对再发邀请，朋友接受后立即开始加密双人对局")
             if model.conversations.isEmpty {
                 HStack(spacing: 10) {
                     Image(systemName: "person.2.slash")
@@ -139,7 +139,7 @@ struct GameLobbyView: View {
                 }
                 .veilCard()
             } else {
-                ForEach(Array(model.conversations.prefix(6))) { conversation in
+                ForEach(model.conversations) { conversation in
                     VStack(alignment: .leading, spacing: 8) {
                         Button {
                             veilopolyConversation = conversation
