@@ -146,7 +146,7 @@ public enum StockMarketEngine {
  public static let maximumHistoryPoints = 96
  public static let feeBasisPoints = 50 // 0.50%, minimum one game-credit unit.
 
- public static func initial(seed: UInt64) -> StockMarketState {
+ public static func initial(seed: UInt64, enhanced: Bool = false) -> StockMarketState {
   let instruments = [
    StockQuote(symbol: "VTL", name: "维尔交通", sector: "交通", basePriceCents: 1_850,
               volatilityBasisPoints: 115, driftBasisPoints: 2),
@@ -159,12 +159,18 @@ public enum StockMarketEngine {
    StockQuote(symbol: "ORB", name: "轨道系统", sector: "科技", basePriceCents: 5_200,
               volatilityBasisPoints: 210, driftBasisPoints: 4)
   ]
+  let quotes = enhanced ? instruments.map { quote in
+   StockQuote(symbol: quote.symbol, name: quote.name, sector: quote.sector,
+              basePriceCents: quote.basePriceCents * 8,
+              volatilityBasisPoints: min(500, quote.volatilityBasisPoints * 3 / 2),
+              driftBasisPoints: quote.driftBasisPoints)
+  } : instruments
   return StockMarketState(seed: seed ^ 0x5354_4F43_4B5F_4D4B,
-                          quotes: instruments, algorithmVersion: 2)
+                          quotes: quotes, algorithmVersion: enhanced ? 3 : 2)
  }
 
  public static func validate(_ market: StockMarketState) -> Bool {
-  guard (1...2).contains(market.algorithmVersion),
+  guard (1...3).contains(market.algorithmVersion),
         (0...1_000_000).contains(market.tick), (-2...2).contains(market.regime),
         market.portfolios.count == 4, (0...100_000_000).contains(market.rngCounter),
         market.quotes.count == 5,
@@ -223,7 +229,8 @@ public enum StockMarketEngine {
   guard owned <= 100_000 - shares else { throw GameError.invalidPayload }
   let grossCents = quote.currentPriceCents * shares
   let grossCash = (grossCents + 99) / 100
-  let fee = max(1, grossCash * feeBasisPoints / 10_000)
+  let rate = market.algorithmVersion == 3 ? 25 : feeBasisPoints
+  let fee = max(1, grossCash * rate / 10_000)
   guard grossCash <= 1_000_000_000 - fee else { throw GameError.invalidPayload }
   return StockTradeEstimate(symbol: symbol, shares: shares,
                             priceCents: quote.currentPriceCents,
@@ -240,7 +247,8 @@ public enum StockMarketEngine {
   let owned = market.portfolios[player].position(symbol: symbol)?.shares ?? 0
   guard owned >= shares else { throw GameError.insufficientShares }
   let grossCash = quote.currentPriceCents * shares / 100
-  let fee = max(1, grossCash * feeBasisPoints / 10_000)
+  let rate = market.algorithmVersion == 3 ? 25 : feeBasisPoints
+  let fee = max(1, grossCash * rate / 10_000)
   guard grossCash > fee else { throw GameError.invalidPayload }
   return StockTradeEstimate(symbol: symbol, shares: shares,
                             priceCents: quote.currentPriceCents,
@@ -280,7 +288,7 @@ public enum StockMarketEngine {
   guard validate(market), market.tick < 1_000_000 else { throw GameError.invalidState }
   market.tick += 1
   var halted: [String] = []
-  let isVariableMarket = market.algorithmVersion == 2
+  let isVariableMarket = market.algorithmVersion >= 2
   if isVariableMarket {
    // Seeded irregular transitions: no fixed tick teaches the next reversal.
    // The same stored seed/counter yields an identical replay and recovery.
@@ -327,9 +335,11 @@ public enum StockMarketEngine {
     let magnitude = random(in: 300...720, market: &market)
     eventShock = random(in: 0...1, market: &market) == 0 ? -magnitude : magnitude
    }
-   let basisPoints = max(-900, min(900, quote.driftBasisPoints + market.regime * 14 +
-                                   commonFactor + idiosyncratic + meanReversion + eventShock +
-                                   sectorWinds[index] + headlineShock))
+   let baseMove = quote.driftBasisPoints + market.regime * 14 +
+     commonFactor + idiosyncratic + meanReversion + eventShock +
+     sectorWinds[index] + headlineShock
+   let adjusted = market.algorithmVersion == 3 ? baseMove * 3 / 2 : baseMove
+   let basisPoints = max(-900, min(900, adjusted))
    var delta = quote.currentPriceCents * basisPoints / 10_000
    if delta == 0 && basisPoints != 0 { delta = basisPoints > 0 ? 1 : -1 }
    let lowerLimit = max(50, quote.sessionOpenCents * 90 / 100)

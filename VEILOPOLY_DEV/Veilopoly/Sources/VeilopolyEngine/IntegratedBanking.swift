@@ -94,7 +94,10 @@ public struct IntegratedBankLedger: Codable, Equatable {
 public enum IntegratedBanking {
  public static func ledger(_ g: GameState) -> IntegratedBankLedger {
   var result = g.banking ?? IntegratedBankLedger(completedTurns: g.moveLog.filter { $0.type == .endTurn }.count)
-  if result.market == nil { result.market = StockMarketEngine.initial(seed: g.seed) }
+  if result.market == nil {
+   result.market = StockMarketEngine.initial(seed: g.seed,
+    enhanced: result.financeRuleVersion == VeilopolyCityLongEconomy.version)
+  }
   return result
  }
 
@@ -109,7 +112,7 @@ public enum IntegratedBanking {
  }
 
  public static func validate(_ ledger: IntegratedBankLedger) -> Bool {
-  (1...2).contains(ledger.financeRuleVersion) &&
+  (1...3).contains(ledger.financeRuleVersion) &&
   (0...1_000_000).contains(ledger.completedTurns) && ledger.accounts.count == 4 &&
   ledger.terms.isWellFormed() && (ledger.market.map(StockMarketEngine.validate) ?? true) &&
   ledger.accounts.allSatisfy { acc in
@@ -139,7 +142,7 @@ public enum IntegratedBanking {
  /// Shared UI / Engine eligibility. Do not keep a second independent
  /// interpretation of loan-due trading restrictions in SwiftUI.
  public static func hasOverdueLoan(_ ledger: IntegratedBankLedger, player p: Int) -> Bool {
-  guard ledger.financeRuleVersion == 2,
+  guard ledger.financeRuleVersion >= 2,
         ledger.accounts.indices.contains(p) else { return false }
   return ledger.accounts[p].loans.contains { $0.duePeriod <= ledger.completedTurns }
  }
@@ -167,7 +170,7 @@ public enum IntegratedBanking {
    if feature == .demandDeposit {
     // The Owner's demand-yield bracket is crossed out. Preserve principal, not invented yield.
     rate = policy.demandYieldBasisPoints ?? 0
-    duration = 0
+    duration = ledger.financeRuleVersion == VeilopolyCityLongEconomy.version ? 1 : 0
    } else {
     guard let fixedRate = policy.fixedYieldBasisPoints, let fixedDuration = policy.fixedLockPeriods else {
      throw GameError.financeTermsPending
@@ -197,14 +200,23 @@ public enum IntegratedBanking {
    let ordinal = ledger.accounts[p].borrowCount
    guard ordinal < 4 else { throw GameError.financeTermsPending }
    let lots = g.board.filter { $0.owner == p && !$0.mortgaged && $0.purchasable }.count
-   let quote = FinanceSandbox.loanQuote(principal: principal, periods: periods, ownedLots: lots,
-                                        ordinal: ordinal, policy: policy)
    let total: Int
-   switch quote {
-   case .success(let value): total = value
-   case .failure(.termsAwaitOwnerRuling): throw GameError.financeTermsPending
-   case .failure(.collateralCapExceeded): throw GameError.invalidPayload
-   default: throw GameError.invalidPayload
+   if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version {
+    guard (1...12).contains(periods), principal > 0,
+          principal <= policy.loanCapsByProperties[min(lots, 3)] else {
+     throw GameError.invalidPayload
+    }
+    let interest = (principal * policy.loanInterestBasisPoints[ordinal] + 9_999) / 10_000
+    total = principal + interest
+   } else {
+    let quote = FinanceSandbox.loanQuote(principal: principal, periods: periods, ownedLots: lots,
+                                         ordinal: ordinal, policy: policy)
+    switch quote {
+    case .success(let value): total = value
+    case .failure(.termsAwaitOwnerRuling): throw GameError.financeTermsPending
+    case .failure(.collateralCapExceeded): throw GameError.invalidPayload
+    default: throw GameError.invalidPayload
+    }
    }
    guard period <= 1_000_000 - periods && g.players[p].cash <= 1_000_000_000 - principal else {
     throw GameError.invalidState
@@ -249,7 +261,7 @@ public enum IntegratedBanking {
     throw GameError.financeTermsPending
    }
    let rolled: Int
-   if ledger.financeRuleVersion == 2 {
+   if ledger.financeRuleVersion >= 2 {
     // Independent, contract-scoped offline draw. Repeated settlement attempts,
     // delaying the claim or consuming dice elsewhere cannot reroll the outcome.
     // Domain separation preserves the main dice and market RNG streams.
@@ -305,7 +317,7 @@ public enum IntegratedBanking {
   guard var ledger = g.banking, ledger.completedTurns < 1_000_000 else { return }
   ledger.completedTurns += 1
   let now = ledger.completedTurns
-  if ledger.financeRuleVersion == 2 {
+  if ledger.financeRuleVersion >= 2 {
    // Prioritize the oldest matured loans, with stable contract-ID tie break.
    // Never overdraw, add a new penalty, or force-sell collateral here.
    for p in ledger.accounts.indices where !g.players[p].bankrupt {
