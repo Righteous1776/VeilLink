@@ -445,6 +445,16 @@ public enum IntegratedBanking {
    if ledger.completedTurns < item.unlockPeriod { i += 1; continue }
    let payout = item.principal + item.principal * item.payoutBasisPoints / 10_000
    guard payout <= 1_000_000_000 - g.players[p].cash else { break }
+   if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version {
+    // Forced withdrawals cannot outrank existing creditors or mint money.
+    // Keep the saving intact if the bank cannot pay this liquidation in full.
+    guard (ledger.queuedClaims ?? []).isEmpty,
+          let cash = ledger.reserveCash, cash >= payout else {
+     i += 1
+     continue
+    }
+    ledger.reserveCash = cash - payout
+   }
    g.players[p].cash += payout
    ledger.accounts[p].savings.remove(at: i)
    effects.append(Effect(.bankWithdrawn, player: p, amount: payout,
@@ -462,6 +472,16 @@ public enum IntegratedBanking {
      let shortfall = amount - g.players[p].cash
      let needed = max(1, min(position.shares, min(10_000,
        (shortfall * 100 + quote.currentPriceCents - 1) / quote.currentPriceCents + 1)))
+     if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version {
+      // Never force-sell a portfolio for a debt when its quoted proceeds
+      // cannot settle immediately. A claim is not spendable emergency cash.
+      guard (ledger.queuedClaims ?? []).isEmpty,
+            let cash = ledger.reserveCash,
+            let estimate = try? StockMarketEngine.estimateSell(
+             market, player: p, symbol: symbol, shares: needed),
+            estimate.cashDelta <= cash else { break }
+      ledger.reserveCash = cash - estimate.cashDelta
+     }
      guard let receipt = try? StockMarketEngine.sell(&market, player: p, symbol: symbol,
                                                      shares: needed, cash: &g.players[p].cash) else { break }
      effects.append(Effect(.stockSold, player: p, amount: receipt.cashDelta,
