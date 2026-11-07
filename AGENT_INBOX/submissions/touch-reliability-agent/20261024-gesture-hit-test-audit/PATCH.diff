@@ -1,0 +1,405 @@
+diff --git a/VeilLink/UI/VeilReleaseActivationView.swift b/VeilLink/UI/VeilReleaseActivationView.swift
+--- a/VeilLink/UI/VeilReleaseActivationView.swift
++++ b/VeilLink/UI/VeilReleaseActivationView.swift
+@@ -121,7 +121,7 @@
+         if VeilReleaseActivationInteractionPolicy.allowsOnboardingSwipe(on: page) {
+             pageSurface(proxy: proxy)
+                 .contentShape(Rectangle())
+-                .gesture(swipeGesture)
++                .simultaneousGesture(swipeGesture)
+         } else {
+             pageSurface(proxy: proxy)
+         }
+@@ -132,6 +132,7 @@
+             pageContent(proxy: proxy)
+                 .id(page)
+                 .opacity(contentVisible ? 1 : 0)
++                .allowsHitTesting(contentVisible)
+                 .scaleEffect(contentVisible || motionReduced ? 1 : 0.975)
+                 .offset(x: motionReduced ? 0 : dragX * 0.12, y: contentVisible || motionReduced ? 0 : 12)
+         }
+@@ -359,10 +360,18 @@
+     }
+ 
+     private var swipeGesture: some Gesture {
+-        DragGesture(minimumDistance: 12)
+-            .updating($dragX) { value, state, _ in state = value.translation.width }
++        DragGesture(minimumDistance: 20)
++            .updating($dragX) { value, state, _ in
++                let x = abs(value.translation.width)
++                let y = abs(value.translation.height)
++                // Only animate horizontal paging. Vertical pans belong to the ScrollView.
++                state = x > y * 1.35 ? value.translation.width : 0
++            }
+             .onEnded { value in
+-                guard abs(value.predictedEndTranslation.width) > 72 else { return }
++                let x = abs(value.translation.width)
++                let y = abs(value.translation.height)
++                guard x > y * 1.35,
++                      abs(value.predictedEndTranslation.width) > 72 else { return }
+                 if value.predictedEndTranslation.width < 0, page < 3 {
+                     move(to: page + 1)
+                 } else if value.predictedEndTranslation.width > 0, page > 0 {
+diff --git a/VeilLink/UI/ToolCenterView.swift b/VeilLink/UI/ToolCenterView.swift
+--- a/VeilLink/UI/ToolCenterView.swift
++++ b/VeilLink/UI/ToolCenterView.swift
+@@ -1084,10 +1084,22 @@
+         .navigationTitle("对讲机")
+         .navigationBarTitleDisplayMode(.inline)
+         .onDisappear {
++            // A cancelled zero-distance gesture may never deliver onEnded.
++            pressed = false
+             if radio.state == .transmitting || radio.state == .preparing {
+                 radio.endTransmit()
+             }
+         }
++        .onChange(of: recipients.isEmpty) { unavailable in
++            guard unavailable, pressed else { return }
++            pressed = false
++            radio.endTransmit()
++        }
++        .onChange(of: isReceiving) { receiving in
++            guard receiving, pressed else { return }
++            pressed = false
++            radio.endTransmit()
++        }
+     }
+ 
+     private var radioFace: some View {
+diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
+--- a/VeilLink/UI/MiniGameViews.swift
++++ b/VeilLink/UI/MiniGameViews.swift
+@@ -1,6 +1,7 @@
+ import SwiftUI
+ import Combine
+ import Foundation
++import UIKit
+ 
+ struct MiniGameHubView: View {
+     @ObservedObject var model: AppModel
+@@ -1418,6 +1419,56 @@
+     }
+ }
+ 
++/// A tap-only UIKit bridge for board coordinates. The old zero-distance
++/// DragGesture hijacked scrolling and could submit moves on drag release.
++/// This view never recognizes a drag and does not cancel ancestor scroll touches.
++private struct VeilBoardTapSurface: UIViewRepresentable {
++    let enabled: Bool
++    let onTap: (CGPoint) -> Void
++
++    func makeCoordinator() -> Coordinator {
++        Coordinator(onTap: onTap)
++    }
++
++    func makeUIView(context: Context) -> UIView {
++        let view = UIView(frame: .zero)
++        view.backgroundColor = .clear
++        let tap = UITapGestureRecognizer(
++            target: context.coordinator,
++            action: #selector(Coordinator.handleTap(_:))
++        )
++        tap.cancelsTouchesInView = false
++        tap.delegate = context.coordinator
++        view.addGestureRecognizer(tap)
++        return view
++    }
++
++    func updateUIView(_ view: UIView, context: Context) {
++        context.coordinator.onTap = onTap
++        view.isUserInteractionEnabled = enabled
++    }
++
++    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
++        var onTap: (CGPoint) -> Void
++
++        init(onTap: @escaping (CGPoint) -> Void) {
++            self.onTap = onTap
++        }
++
++        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
++            guard recognizer.state == .ended, let view = recognizer.view else { return }
++            onTap(recognizer.location(in: view))
++        }
++
++        func gestureRecognizer(
++            _ gestureRecognizer: UIGestureRecognizer,
++            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
++        ) -> Bool {
++            true
++        }
++    }
++}
++
+ struct GomokuBoardView: View {
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+     let state: GomokuState
+@@ -1473,24 +1524,18 @@
+                         }
+                     }
+ 
+-                    if enabled {
+-                        Color.clear
+-                            .contentShape(Rectangle())
+-                            .gesture(
+-                                DragGesture(minimumDistance: 0)
+-                                    .onEnded { gesture in
+-                                        let col = Int(round((gesture.location.x - margin) / step))
+-                                        let row = Int(round((gesture.location.y - margin) / step))
+-                                        guard (0..<GomokuState.size).contains(row), (0..<GomokuState.size).contains(col) else { return }
+-                                        let point = CGPoint(x: margin + CGFloat(col) * step, y: margin + CGFloat(row) * step)
+-                                        let dx = gesture.location.x - point.x
+-                                        let dy = gesture.location.y - point.y
+-                                        guard sqrt(dx * dx + dy * dy) <= step * 0.52 else { return }
+-                                        let index = row * GomokuState.size + col
+-                                        guard state.value(at: index) == 0 else { return }
+-                                        onMove(index)
+-                                    }
+-                            )
++                    VeilBoardTapSurface(enabled: enabled) { location in
++                        guard enabled, step > 0 else { return }
++                        let col = Int(round((location.x - margin) / step))
++                        let row = Int(round((location.y - margin) / step))
++                        guard (0..<GomokuState.size).contains(row), (0..<GomokuState.size).contains(col) else { return }
++                        let point = CGPoint(x: margin + CGFloat(col) * step, y: margin + CGFloat(row) * step)
++                        let dx = location.x - point.x
++                        let dy = location.y - point.y
++                        guard hypot(dx, dy) <= step * 0.52 else { return }
++                        let index = row * GomokuState.size + col
++                        guard state.value(at: index) == 0 else { return }
++                        onMove(index)
+                     }
+                 }
+                 .frame(width: side, height: side)
+@@ -1614,16 +1659,11 @@
+                         }
+                     }
+ 
+-                    Color.clear
+-                        .contentShape(Rectangle())
+-                        .gesture(
+-                            DragGesture(minimumDistance: 0)
+-                                .onEnded { gesture in
+-                                    guard enabled else { return }
+-                                    guard let index = xiangqiIndex(at: gesture.location, width: width, height: height, margin: margin, stepX: stepX, stepY: stepY) else { return }
+-                                    handleTap(index)
+-                                }
+-                        )
++                    VeilBoardTapSurface(enabled: enabled) { location in
++                        guard enabled else { return }
++                        guard let index = xiangqiIndex(at: location, width: width, height: height, margin: margin, stepX: stepX, stepY: stepY) else { return }
++                        handleTap(index)
++                    }
+                 }
+             }
+             .aspectRatio(0.86, contentMode: .fit)
+diff --git a/VeilLink/ArcadeRealtime/PlatformerView.swift b/VeilLink/ArcadeRealtime/PlatformerView.swift
+--- a/VeilLink/ArcadeRealtime/PlatformerView.swift
++++ b/VeilLink/ArcadeRealtime/PlatformerView.swift
+@@ -8,6 +8,7 @@
+ struct VeilPulseRunnerView: View {
+     @StateObject private var session = PlatformerGameSession()
+     @State private var pausedByLifecycle = false
++    @State private var jumpHeld = false
+     @Environment(\.scenePhase) private var scenePhase
+ 
+     var body: some View {
+@@ -63,12 +64,24 @@
+                     pausedByLifecycle = false
+                     session.resume()
+                 }
+-            } else if session.phase == .playing {
+-                pausedByLifecycle = true
+-                session.pause()
++            } else {
++                jumpHeld = false
++                session.releaseJump()
++                if session.phase == .playing {
++                    pausedByLifecycle = true
++                    session.pause()
++                }
+             }
+         }
++        .onChange(of: session.phase) { phase in
++            if phase != .playing {
++                jumpHeld = false
++                session.releaseJump()
++            }
++        }
+         .onDisappear {
++            jumpHeld = false
++            session.releaseJump()
+             if session.phase == .playing { pausedByLifecycle = true }
+             session.pause()
+         }
+@@ -163,8 +176,15 @@
+             .contentShape(Circle())
+             .gesture(
+                 DragGesture(minimumDistance: 0)
+-                    .onChanged { _ in session.jump() }
+-                    .onEnded { _ in session.releaseJump() }
++                    .onChanged { _ in
++                        guard !jumpHeld else { return }
++                        jumpHeld = true
++                        session.jump()
++                    }
++                    .onEnded { _ in
++                        jumpHeld = false
++                        session.releaseJump()
++                    }
+             )
+             .accessibilityAddTraits(.isButton)
+             .accessibilityLabel("跳跃")
+diff --git a/VeilLink/UI/TacticalV2/TacticalLandscapeShellV2.swift b/VeilLink/UI/TacticalV2/TacticalLandscapeShellV2.swift
+--- a/VeilLink/UI/TacticalV2/TacticalLandscapeShellV2.swift
++++ b/VeilLink/UI/TacticalV2/TacticalLandscapeShellV2.swift
+@@ -122,6 +122,7 @@
+                     .background(.black.opacity(0.34))
+                     .clipShape(RoundedRectangle(cornerRadius: 6))
+                     .padding(10)
++                    .allowsHitTesting(false)
+             }
+         }
+         .clipped()
+@@ -235,7 +236,8 @@
+     }
+ 
+     private func mapGesture(size: CGSize) -> some Gesture {
+-        DragGesture(minimumDistance: 1)
++        // Coordinate selection must respond to a stationary tap on iOS 15.
++        DragGesture(minimumDistance: 0)
+             .onChanged { value in
+                 let normalized = normalizedPoint(value.location, size: size)
+                 guard let target = TacticalV2.MapGeometryV2.nearestCell(
+diff --git a/VeilLink/UI/SignalDiveLabView.swift b/VeilLink/UI/SignalDiveLabView.swift
+--- a/VeilLink/UI/SignalDiveLabView.swift
++++ b/VeilLink/UI/SignalDiveLabView.swift
+@@ -140,6 +140,7 @@
+ 
+     @Environment(\.accessibilityReduceMotion)
+     private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
+ 
+     @State private var controlOrigin:
+         CGPoint?
+@@ -203,6 +204,10 @@
+                 $0
+             )
+         }
++        .onDisappear { stopTouchInput() }
++        .onChange(of: scenePhase) { phase in
++            if phase != .active { stopTouchInput() }
++        }
+         .navigationTitle(
+             "深潜信号"
+         )
+@@ -509,6 +514,12 @@
+         )
+     }
+ 
++    private func stopTouchInput() {
++        controlOrigin = nil
++        controlVector = .zero
++        model.stopThrust()
++    }
++
+     private func thrustGesture(
+         in size: CGSize
+     ) -> some Gesture {
+diff --git a/VeilLink/UI/BlackoutDistrictLabView.swift b/VeilLink/UI/BlackoutDistrictLabView.swift
+--- a/VeilLink/UI/BlackoutDistrictLabView.swift
++++ b/VeilLink/UI/BlackoutDistrictLabView.swift
+@@ -117,6 +117,7 @@
+ 
+     @Environment(\.accessibilityReduceMotion)
+     private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
+ 
+     @State private var controlOrigin:
+         CGPoint?
+@@ -171,6 +172,10 @@
+                 $0
+             )
+         }
++        .onDisappear { stopTouchInput() }
++        .onChange(of: scenePhase) { phase in
++            if phase != .active { stopTouchInput() }
++        }
+         .navigationTitle(
+             "熄灯街区"
+         )
+@@ -179,6 +184,12 @@
+         )
+     }
+ 
++    private func stopTouchInput() {
++        controlOrigin = nil
++        model.stopDriving()
++        model.setRepairing(false)
++    }
++
+     private var hud: some View {
+         VStack(spacing: 8) {
+             HStack(spacing: 8) {
+diff --git a/VeilLink/UI/AfterglowConvoyLabView.swift b/VeilLink/UI/AfterglowConvoyLabView.swift
+--- a/VeilLink/UI/AfterglowConvoyLabView.swift
++++ b/VeilLink/UI/AfterglowConvoyLabView.swift
+@@ -110,9 +110,25 @@
+             model.configure(reduceMotion: reduceMotion)
+             model.setPaused(false)
+         }
+-        .onDisappear { model.setPaused(true) }
+-        .onChange(of: scenePhase) { model.setPaused($0 != .active) }
+-        .onChange(of: showsGuide) { model.setPaused($0) }
++        .onDisappear {
++            model.steer(0)
++            model.setShielding(false)
++            model.setPaused(true)
++        }
++        .onChange(of: scenePhase) { phase in
++            if phase != .active {
++                model.steer(0)
++                model.setShielding(false)
++            }
++            model.setPaused(phase != .active)
++        }
++        .onChange(of: showsGuide) { showing in
++            if showing {
++                model.steer(0)
++                model.setShielding(false)
++            }
++            model.setPaused(showing)
++        }
+         .onChange(of: reduceMotion) { model.configure(reduceMotion: $0) }
+     }
+ 
+diff --git a/VeilLink/UI/AshHarborLabView.swift b/VeilLink/UI/AshHarborLabView.swift
+--- a/VeilLink/UI/AshHarborLabView.swift
++++ b/VeilLink/UI/AshHarborLabView.swift
+@@ -95,6 +95,7 @@
+     @State private var throttle = 0.58
+     @State private var searchlight = true
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
+ 
+     var body: some View {
+         GeometryReader { proxy in
+@@ -130,8 +131,18 @@
+         .onChange(of: reduceMotion) {
+             model.setReduceMotion($0)
+         }
++        .onDisappear { releaseTouchInput() }
++        .onChange(of: scenePhase) { phase in
++            if phase != .active { releaseTouchInput() }
++        }
+     }
+ 
++    private func releaseTouchInput() {
++        model.setRudder(0)
++        model.setRescuing(false)
++        model.setThrottle(0)
++    }
++
+     private var hud: some View {
+         HStack(spacing: 8) {
+             meter("HULL", model.snapshot.hull, .cyan)
