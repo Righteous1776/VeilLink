@@ -1,0 +1,80 @@
+name: Vertex 35M isolated native iOS validation
+
+on:
+  push:
+    branches:
+      - integration/lingcore-vertex35m-model-20261108
+    paths:
+      - '.github/workflows/lingcore-vertex35m-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  native-chat:
+    if: github.repository == 'Righteous1776/VeilLink' && github.ref == 'refs/heads/integration/lingcore-vertex35m-model-20261108'
+    runs-on: macos-15
+    timeout-minutes: 70
+    steps:
+      - name: Check out exact integration commit
+        uses: actions/checkout@v4
+      - name: Verify pinned GGUF and check Swift syntax
+        run: |
+          python3 scripts/verify-vertex35m-model.py
+          for f in \
+            VeilLink/Agent/Language/LingCoreChatOnlyBoundary.swift \
+            VeilLink/Agent/Language/Vertex35MModelIntegrityGate.swift \
+            VeilLink/Agent/Language/Vertex35MChatRuntime.swift \
+            VeilLink/UI/LingCoreTinyChatView.swift \
+            VeilLinkTests/Vertex35MOnDeviceSmokeTests.swift; do
+            xcrun swiftc -frontend -parse "$f"
+          done
+          python3 -m py_compile scripts/verify-vertex35m-model.py scripts/make-vertex35m-project.py
+          bash -n scripts/prepare-vertex35m-ios.sh
+      - name: Install XcodeGen and CMake
+        run: brew install xcodegen cmake
+      - name: Build pinned llama.cpp for iOS 15 and generate native project
+        run: bash scripts/prepare-vertex35m-ios.sh
+      - name: Validate generated build plan
+        run: |
+          xcodegen generate --spec project.vertex35m.yml
+          grep -q 'VERTEX_CHAT_ONLY' VeilLink.xcodeproj/project.pbxproj
+          grep -q 'llama.xcframework' VeilLink.xcodeproj/project.pbxproj
+          grep -q 'Vertex-0.6-35M-Instruct-Q4_K_M.gguf' VeilLink.xcodeproj/project.pbxproj
+      - name: Compile simulator app with native GGUF runtime
+        run: |
+          set -o pipefail
+          xcodebuild -project VeilLink.xcodeproj -scheme VeilLink \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Verify packaged model bytes
+        run: |
+          MODEL="$(find DerivedData/Build/Products/Debug-iphonesimulator/VeilLink.app -name 'Vertex-0.6-35M-Instruct-Q4_K_M.gguf' -type f -print -quit)"
+          test -n "$MODEL"
+          python3 scripts/verify-vertex35m-model.py "$MODEL"
+      - name: Run isolation, integrity and real inference XCTest
+        run: |
+          xcrun simctl list devices available -j > /tmp/vertex35m-devices.json
+          SIM_ID="$(python3 - <<'PY'
+          import json, re
+          data=json.load(open('/tmp/vertex35m-devices.json'))
+          devs=[]
+          for runtime,entries in data.get('devices',{}).items():
+              if 'iOS' not in runtime: continue
+              for item in entries:
+                  if item.get('isAvailable') and item.get('name','').startswith('iPhone'):
+                      devs.append((tuple(map(int,re.findall(r'\d+',runtime))),item['udid']))
+          if not devs: raise SystemExit('No available iOS simulator')
+          print(sorted(devs)[-1][1])
+          PY
+          )"
+          xcodebuild -project VeilLink.xcodeproj -scheme VeilLink \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SIM_ID" \
+            -derivedDataPath DerivedData \
+            -only-testing:VeilLinkTests/LingCoreChatOnlyBoundaryTests \
+            -only-testing:VeilLinkTests/Vertex35MModelIntegrityGateTests \
+            -only-testing:VeilLinkTests/Vertex35MOnDeviceSmokeTests \
+            CODE_SIGNING_ALLOWED=NO test
