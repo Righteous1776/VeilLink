@@ -241,7 +241,19 @@ public enum IntegratedBanking {
    guard let schedule = policy.payouts[position.feature], schedule.count == 6 else {
     throw GameError.financeTermsPending
    }
-   let rolled = Int(seededRNG(seed: g.seed, counter: &g.rngCounter) % 6) + 1
+   let rolled: Int
+   if ledger.financeRuleVersion == 2 {
+    // Independent, contract-scoped offline draw. Repeated settlement attempts,
+    // delaying the claim or consuming dice elsewhere cannot reroll the outcome.
+    // Domain separation preserves the main dice and market RNG streams.
+    var counter: UInt64 = 0
+    let outcomeSeed = g.seed ^ 0x5645_494C_494E_5653 ^
+      (UInt64(position.id) &* 0x9E3779B97F4A7C15)
+    rolled = Int(seededRNG(seed: outcomeSeed, counter: &counter) % 6) + 1
+   } else {
+    // Historical V1 replay remains bit-for-bit, including RNG consumption.
+    rolled = Int(seededRNG(seed: g.seed, counter: &g.rngCounter) % 6) + 1
+   }
    let payout = position.principal * schedule[rolled - 1] / 10_000
    guard g.players[p].cash <= 1_000_000_000 - payout else { throw GameError.invalidState }
    g.players[p].cash += payout

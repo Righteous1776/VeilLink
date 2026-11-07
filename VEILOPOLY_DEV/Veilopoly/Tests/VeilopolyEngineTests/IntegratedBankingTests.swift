@@ -323,3 +323,41 @@ extension IntegratedBankingTests {
   XCTAssertTrue(IntegratedBanking.validate(ledger))
  }
 }
+
+extension IntegratedBankingTests {
+ func testNewInvestmentSettlementCannotBeRerolledByDelayingClaim() throws {
+  var initial=Fixture.game(.manage)
+  var policy=FinanceSandboxPolicy()
+  policy.payouts[.stockSimulation]=[0,2500,5000,10000,15000,20000]
+  initial=try XCTUnwrap(IntegratedBanking.configured(initial,terms:policy))
+  _=try apply(&initial,.bankInvest,amount:100,product:.stockSimulation)
+  let id=try XCTUnwrap(initial.banking?.accounts[0].positions.first?.id)
+  var immediate=initial
+  immediate.banking?.completedTurns=3
+  let diceBefore=immediate.rngCounter
+  let fxNow=try apply(&immediate,.bankSettle,id:id)
+  XCTAssertEqual(immediate.rngCounter,diceBefore)
+  var late=initial
+  late.rngCounter = initial.rngCounter &+ 123
+  late.banking?.completedTurns=8
+  let laterCounter=late.rngCounter
+  let fxLater=try apply(&late,.bankSettle,id:id)
+  XCTAssertEqual(late.rngCounter,laterCounter)
+  XCTAssertEqual(fxNow.first?.dice,fxLater.first?.dice)
+  XCTAssertEqual(fxNow.first?.amount,fxLater.first?.amount)
+  XCTAssertEqual(immediate.players[0].cash,late.players[0].cash)
+ }
+ func testLegacyInvestmentSettlementStillConsumesOriginalDiceRNG() throws {
+  var g=Fixture.game(.manage)
+  var policy=FinanceSandboxPolicy()
+  policy.payouts[.stockSimulation]=[0,2500,5000,10000,15000,20000]
+  g=try XCTUnwrap(IntegratedBanking.configured(g,terms:policy))
+  g.banking?.financeRuleVersion=1
+  _=try apply(&g,.bankInvest,amount:100,product:.stockSimulation)
+  let id=try XCTUnwrap(g.banking?.accounts[0].positions.first?.id)
+  g.banking?.completedTurns=3
+  let before=g.rngCounter
+  _=try apply(&g,.bankSettle,id:id)
+  XCTAssertEqual(g.rngCounter,before+1)
+ }
+}
