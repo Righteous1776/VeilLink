@@ -1022,59 +1022,11 @@ public struct VeilopolyGameView: View {
  /// A landscape-friendly in-app number pad prevents the native keyboard
  /// from covering the bank, auction, trade and stock-order controls.
  private func numberPadOverlay(for target: VeilopolyAmountTarget) -> some View {
-  let input = numericBinding(target)
-  return ZStack {
-   Color.black.opacity(0.78).ignoresSafeArea()
-    .onTapGesture { amountTarget = nil }
-   VStack(spacing: 7) {
-    Text(target.title).font(.headline)
-    Text(input.wrappedValue.isEmpty ? "0" : input.wrappedValue)
-     .font(.system(size: 27, weight: .bold, design: .monospaced))
-     .frame(maxWidth: .infinity, minHeight: 37)
-     .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
-     .accessibilityLabel("\(target.title)，\(input.wrappedValue)")
-    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 3),
-              spacing: 7) {
-     ForEach(["1","2","3","4","5","6","7","8","9","清空","0","删除"], id: \.self) { digit in
-      Button {
-       switch digit {
-       case "清空": input.wrappedValue = ""
-       case "删除":
-        if !input.wrappedValue.isEmpty { input.wrappedValue.removeLast() }
-       default:
-        if input.wrappedValue.count < 9 {
-         input.wrappedValue = input.wrappedValue == "0" ? digit : input.wrappedValue + digit
-        }
-       }
-      } label: {
-       Text(digit).font(.system(size: digit.count > 1 ? 14 : 21, weight: .semibold))
-        .frame(maxWidth: .infinity, minHeight: 43)
-        .background(Color.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel(digit)
-     }
-    }
-    Button("完成") { amountTarget = nil }
-     .font(.headline).frame(maxWidth: .infinity, minHeight: 44)
-     .background(Color(red: 0.63, green: 0.48, blue: 0.28),
-                 in: RoundedRectangle(cornerRadius: 9))
-     .buttonStyle(.plain)
-   }
-   .foregroundColor(.white)
-   .padding(13)
-   .frame(maxWidth: 350)
-   .background(Color(red: 0.08, green: 0.16, blue: 0.19),
-               in: RoundedRectangle(cornerRadius: 18))
-   .overlay {
-    RoundedRectangle(cornerRadius: 18)
-     .stroke(Color(red: 0.72, green: 0.58, blue: 0.38), lineWidth: 1)
-   }
+  VeilopolyNumberPad(title: target.title, value: numericBinding(target)) {
+   amountTarget = nil
   }
-  .frame(maxWidth: .infinity, maxHeight: .infinity)
  }
 
- 
  /// Draggable, read-only mini windows are opt-in from More. They live in
  /// the unused landscape space, never in a full-screen gesture layer.
 
