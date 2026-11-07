@@ -15,6 +15,7 @@ final class GameBoardScene: SKScene {
  private let inspectionMarker = SKShapeNode(rectOf: CGSize(width: 80, height: 72), cornerRadius: 8)
  var onBoardTap: ((Int?) -> Void)?
  var reduceMotion = false
+ var stepDuration: TimeInterval = 0.36
  private var pieces: [Int: SKSpriteNode] = [:]
  private var tokenShadows: [Int: SKSpriteNode] = [:]
  private var tokenShadowFrames: [SKTexture] = []
@@ -413,13 +414,21 @@ final class GameBoardScene: SKScene {
  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
   guard let touch = touches.first else { return }
   let local = touch.location(in: self)
-  // contains(_:) expects coordinates local to each tile node, not the scene.
-  let hit = tiles.first(where: { element in
-   element.value.contains(element.value.convert(local, from: self))
-  })?.key
+  // Select the nearest of the forty squares. Dictionary iteration order must
+  // not decide which overlapping tile receives a tap.
+  let candidates = tiles.compactMap { (index, node) -> (Int, CGFloat)? in
+   let dx = local.x - node.position.x
+   let dy = local.y - node.position.y
+   let distance = dx * dx + dy * dy
+   return distance <= CGFloat(60 * 60) ? (index, distance) : nil
+  }
+  let hit = candidates.min { lhs, rhs in
+   if lhs.1 == rhs.1 { return lhs.0 < rhs.0 }
+   return lhs.1 < rhs.1
+  }?.0
   onBoardTap?(hit)
  }
-
+ 
  func play(_ command: ViewCommand, finished: @escaping () -> Void) {
   removeAction(forKey: "command")
   let commandID = acknowledgements.begin()
@@ -497,7 +506,7 @@ final class GameBoardScene: SKScene {
    let shadow = tokenShadows[id]
    if let shadow {
     let shadowMoves = path.map { tile in
-     SKAction.move(to: shadowPoint(tile, player: id), duration: reduceMotion ? 0.08 : 0.27)
+     SKAction.move(to: shadowPoint(tile, player: id), duration: reduceMotion ? 0.08 : stepDuration)
     }
     shadow.run(.sequence(shadowMoves), withKey: "command")
     if tokenShadowFrames.count == 4 {
@@ -506,7 +515,7 @@ final class GameBoardScene: SKScene {
     }
    }
    let moves = path.map { tile -> SKAction in
-    let time: TimeInterval = reduceMotion ? 0.08 : 0.27
+    let time: TimeInterval = reduceMotion ? 0.08 : stepDuration
     let position = tokenPoint(tile, player: id)
     return SKAction.group([SKAction.move(to: position, duration: time),
                            SKAction.sequence([SKAction.moveBy(x: 0,y: 14,duration: time/2),
