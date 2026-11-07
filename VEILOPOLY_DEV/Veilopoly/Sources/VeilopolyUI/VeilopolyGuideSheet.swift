@@ -36,6 +36,28 @@ struct VeilopolyGuideSheet: View {
        .fixedSize(horizontal: false, vertical: true)
      }
      .frame(maxWidth: .infinity, alignment: .leading)
+     NavigationLink(destination: VeilopolyCompleteManualView(game: game)) {
+      VStack(alignment: .leading, spacing: 5) {
+       Label("完整规则说明书", systemImage: "books.vertical.fill")
+        .font(.system(size: 17, weight: .semibold, design: .serif))
+        .foregroundColor(ink)
+       Text("13 章 · 162 条完整说明 · 40 格地块 · 32 张事件卡")
+        .font(.caption)
+        .foregroundColor(secondaryInk)
+       Text("支持中文关键词搜索与章节筛选；只读，不会改变本局资产。")
+        .font(.caption2).foregroundColor(secondaryInk)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(12)
+      .background(ivory, in: RoundedRectangle(cornerRadius: 12))
+      .overlay {
+       RoundedRectangle(cornerRadius: 12)
+        .strokeBorder(gold.opacity(0.65), lineWidth: 1)
+        .allowsHitTesting(false)
+      }
+     }
+     .buttonStyle(.plain)
+     .accessibilityHint("打开完整规则说明书，查看并搜索所有规则条目")
      TextField("搜索：拍卖、股票、存档……", text: $search)
       .textFieldStyle(.roundedBorder)
       .accessibilityLabel("搜索玩法辞典")

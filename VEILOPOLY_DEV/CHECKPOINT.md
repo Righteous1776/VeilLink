@@ -1,5 +1,15 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## MANUAL-CN-V1 — 完整玩家说明书（2026-11-08）
+
+- 说明书独立分支 dev/veilopoly-manual-v5-20261108，基线 0ef5b71；不覆盖其他 Agent 的研发任务。
+- 由统一 editorial 主稿生成：13 章、162 条条目、40 格地块、32 张 V5 卡牌、可搜索 Swift Engine 只读数据及 54 页 A4 中文 PDF。
+- 新增 VeilopolyCompleteManual.swift 与 VeilopolyCompleteManualView.swift；现有 VeilopolyGuideSheet.swift 保留 23 条简明词条，加入「完整规则说明书」NavigationLink。
+- 完整 Markdown 主稿与 JSON 章节数据入库，任何后续逐字修改必须同步更新 Swift 与 PDF；版本为 VEILOPOLY-MANUAL-CN-V1-20261108。
+- 披露：当前 V5 Apple SDK、完整 SwiftPM、iOS 真机、多设备联机以及 100 种子压力测试均未获得本分支有效通过回执。说明书不能当作发布证明。
+- 不改变 Engine 资金规则、GameState、身份、Wire、SQLite、主干或构建工作流。没有打包 IPA 或合并 main。
+
+
 ## MACRO-FINAL · ECON V5 consolidated review — 2026-11-08
 
 - Governance: Owner requests final macro iteration. Isolated branch `dev/veilopoly-risk-review-v5-20261108`; base from `dev/veilopoly-economy-v5-20261107`, not main or live dev. All code under `VEILOPOLY_DEV/**`.
