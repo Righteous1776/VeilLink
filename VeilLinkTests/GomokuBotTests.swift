@@ -188,4 +188,73 @@ final class GomokuBotTests: XCTestCase {
     }
 
 
+
+    /// R5 paired head-to-head evaluation of actual production GomokuBot paths:
+    /// 6 identical central openings × 2 side reversals = 12 full native games.
+    /// The R3 control disables ONLY the added R4 counterfork path; all other
+    /// state rules, engine tactics, search budgets and R3 learned weights
+    /// are identical. This is a screening test, not statistically valid Elo.
+    func testR5PairedNativeR3VersusR4Tournament() {
+        let openings = [112, 111, 113, 97, 127, 98]
+        let budget = GomokuBotBudget(
+            candidateRadius: 2,
+            rootCandidateLimit: 8,
+            replyCandidateLimit: 4,
+            continuationCandidateLimit: 0,
+            timeLimitMilliseconds: 38
+        )
+        var r4Wins = 0
+        var r3Wins = 0
+        var draws = 0
+        var unfinished = 0
+        var attempted = 0
+        var legalPlyCount = 0
+        var totalDecisionSeconds = 0.0
+
+        for opening in openings {
+            for r4IsHost in [true, false] {
+                var board = GomokuState()
+                XCTAssertTrue(board.apply(index: opening, actor: .host))
+                attempted += 1
+                var localPlies = 0
+                while board.winner == nil && !board.isDraw && board.moveCount < 180 {
+                    let actor = board.currentPlayer
+                    let r4Player = (actor == .host) == r4IsHost
+                    let began = Date.timeIntervalSinceReferenceDate
+                    let chosen = GomokuBot.chooseMove(
+                        in: board, for: actor, budget: budget,
+                        diagnosticCounterForkR4: r4Player
+                    )
+                    totalDecisionSeconds += Date.timeIntervalSinceReferenceDate - began
+                    guard let chosen else {
+                        XCTFail("Native bot returned no move in live board, opening \(opening)")
+                        return
+                    }
+                    guard board.apply(index: chosen.index, actor: actor) else {
+                        XCTFail("Illegal native move \(chosen.index), opening \(opening)")
+                        return
+                    }
+                    localPlies += 1
+                    legalPlyCount += 1
+                }
+                if let winner = board.winner {
+                    if (winner == .host) == r4IsHost { r4Wins += 1 }
+                    else { r3Wins += 1 }
+                } else if board.isDraw {
+                    draws += 1
+                } else {
+                    // Explicitly exclude truncated games from W/D/L; never
+                    // invent a winner from a move-limit timeout.
+                    unfinished += 1
+                }
+                XCTAssertLessThanOrEqual(localPlies, 180)
+            }
+        }
+        XCTAssertEqual(attempted, 12)
+        XCTAssertEqual(r4Wins + r3Wins + draws + unfinished, attempted)
+        XCTAssertGreaterThan(legalPlyCount, 0)
+        print("R5_PAIRED_NATIVE_AB matches=\(attempted) R4=\(r4Wins) R3=\(r3Wins) draws=\(draws) unfinished=\(unfinished) legalPlies=\(legalPlyCount) meanDecisionMs=\(totalDecisionSeconds * 1000 / Double(legalPlyCount))")
+    }
+
+
 }

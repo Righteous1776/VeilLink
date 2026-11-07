@@ -74,7 +74,8 @@ enum GomokuBot {
         for player: MiniGamePlayer,
         budget: GomokuBotBudget,
         learning: AdaptiveBoardLearningSnapshot = .empty,
-        formationPreference: GomokuFormationPreference = .disabled
+        formationPreference: GomokuFormationPreference = .disabled,
+        diagnosticCounterForkR4: Bool = true
     ) -> GomokuBotMove? {
         guard state.winner == nil,
               !state.isDraw,
@@ -122,9 +123,14 @@ enum GomokuBot {
         // R4: rule-verified opponent fork suppression runs strictly AFTER
         // the mandatory own-win/opponent-immediate-win gates. Ordinary
         // positions pay for one bounded 225-cell scan, not a deep rollout.
-        let defensive = GomokuCounterForkR4.safeCandidates(
-            in: state, player: player, candidates: candidates
-        )
+        // The default is identical to production R4. The explicit `false`
+        // path is ONLY for matched-opening same-engine R3/R4 diagnostic
+        // tournaments, not a user-facing feature switch.
+        let defensive: (moves: [Int], underThreat: Bool) = diagnosticCounterForkR4
+            ? GomokuCounterForkR4.safeCandidates(
+                in: state, player: player, candidates: candidates
+              )
+            : (candidates, false)
         let rankedRoots = defensive.moves
             .map {
                 let learned = learning.bonus(position: rootPosition, action: String($0))
