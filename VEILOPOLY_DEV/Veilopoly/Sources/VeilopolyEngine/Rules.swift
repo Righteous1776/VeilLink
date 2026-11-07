@@ -8,7 +8,7 @@ public enum VeilopolyEngine {
   switch g.turn.phase {
   case .roll: choices = [.rollDice, .payBail, .useJailCard]
   case .moveAnim: choices = [.applyMovement]
-  case .tileResolve: choices = g.turn.pendingPurchase == nil ? [.resolveTile] : [.buyProperty, .startAuction]
+  case .tileResolve: choices = g.turn.pendingPurchase == nil ? [.resolveTile] : [.buyProperty, .startAuction, .skipPurchase]
   case .auction: choices = [.bid]
   case .manage: choices = [.buildHouse, .sellHouse, .mortgage, .redeem, .proposeTrade, .endTurn,
                            .bankDeposit, .bankWithdraw, .bankBorrow, .bankRepay, .bankInvest, .bankSettle,
@@ -127,6 +127,13 @@ public enum VeilopolyEngine {
    g.auction = AuctionState(tile: tile, active: active)
    g.turn.pendingPurchase = nil; g.turn.phase = .auction
    fx.append(Effect(.auctionStarted, player: p, tile: tile))
+  case .skipPurchase:
+   // An explicit casual-rule pass. No purchase, auction, cash or ownership change.
+   // It remains an ordinary deterministic Move in the saved/replayed move log.
+   guard let tile = g.turn.pendingPurchase, m.tile == tile else { throw GameError.invalidTile }
+   guard g.board[tile].owner == nil else { throw GameError.alreadyOwned }
+   g.turn.pendingPurchase = nil
+   g.turn.phase = .manage
   case .bid:
    guard var auction = g.auction, auction.turn == p else { throw GameError.invalidState }
    let index = auction.active.firstIndex(of: p)
