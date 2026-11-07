@@ -223,7 +223,8 @@ final class GomokuBotTests: XCTestCase {
                     let began = Date.timeIntervalSinceReferenceDate
                     let chosen = GomokuBot.chooseMove(
                         in: board, for: actor, budget: budget,
-                        diagnosticCounterForkR4: r4Player
+                        diagnosticCounterForkR4: r4Player,
+                        diagnosticUseR6Defense: false // R5 compares frozen R4 vs R3
                     )
                     totalDecisionSeconds += Date.timeIntervalSinceReferenceDate - began
                     guard let chosen else {
