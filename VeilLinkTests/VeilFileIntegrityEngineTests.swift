@@ -77,6 +77,20 @@ final class VeilFileIntegrityEngineTests: XCTestCase {
         XCTAssertFalse(report.contains(temporaryDirectory.path))
     }
 
+    func testAlreadyCancelledInspectionDoesNotReturnDigest() async throws {
+        let url = try file(named: "cancelled.bin", data: Data(repeating: 0x7F, count: 1024))
+        let task = Task.detached { () throws -> VeilFileIntegrityResult in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try VeilFileIntegrityEngine.inspect(url: url)
+        }
+        do {
+            _ = try await task.value
+            XCTFail("A cancelled inspection must not return a completed SHA-256.")
+        } catch is CancellationError {
+            // Engine checks cancellation before each chunk.
+        }
+    }
+
     func testDirectoryIsRejected() {
         XCTAssertThrowsError(try VeilFileIntegrityEngine.inspect(url: temporaryDirectory)) {
             XCTAssertEqual($0 as? VeilFileIntegrityError, .notRegularFile)

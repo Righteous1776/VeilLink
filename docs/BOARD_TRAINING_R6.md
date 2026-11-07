@@ -36,11 +36,11 @@ The separate R4 *exact rule gate* may already exclude unsafe moves whenever any 
 - No user private archives in GitHub, no live schema changes, no new network dependency, no background worker, no release, no signing, no workflow dispatch and no `main` merge.
 
 ## Gates before main
-[ ] R6 simulator build + XCTest and recorded `R6_PAIRED_NATIVE_AB` results pass  
-[ ] R5 `R5_PAIRED_NATIVE_AB` baseline logs validated  
-[ ] ≥200 matched, side-swapped, completion-valid actual native games and Elo confidence  
-[ ] Zero legality/forced-win/block regressions  
-[ ] Physical A10 iPhone 7 timing, p95, memory peak and persistence  
+[ ] R6 simulator build + XCTest and recorded `R6_PAIRED_NATIVE_AB` results pass
+[ ] R5 `R5_PAIRED_NATIVE_AB` baseline logs validated
+[ ] ≥200 matched, side-swapped, completion-valid actual native games and Elo confidence
+[ ] Zero legality/forced-win/block regressions
+[ ] Physical A10 iPhone 7 timing, p95, memory peak and persistence
 [ ] Governor arbitration of stacked R3/R4/R5/R6, avoiding duplicated R2 changes
 
 Status: TRAINED, PARITY CHECKED, WIRED INTO NATIVE SOURCE ON STACKED DRAFT, NOT MERGED OR RELEASED.

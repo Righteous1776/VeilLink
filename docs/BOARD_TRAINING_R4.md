@@ -28,10 +28,10 @@
 - V28 `.vltrain` import currently **replaces the destination archive**, not safe-merge. Never overwrite newer user training archives with offline data without backup/merge gate.
 
 ## Acceptance gates
-[ ] iOS simulator build and XCTest pass on stacked branch  
-[ ] at least 200 paired native games with identical openings, randomized A/B assignment and side reversal; record W/D/L, wall-clock and memory  
-[ ] mandatory five-in-row win/block unaffected; zero illegal moves or fake outcomes  
-[ ] iPhone 7 profile: reasonable latency and no crashes/OOM  
+[ ] iOS simulator build and XCTest pass on stacked branch
+[ ] at least 200 paired native games with identical openings, randomized A/B assignment and side reversal; record W/D/L, wall-clock and memory
+[ ] mandatory five-in-row win/block unaffected; zero illegal moves or fake outcomes
+[ ] iPhone 7 profile: reasonable latency and no crashes/OOM
 [ ] explicit Integration Governor decision merging R2/R3/R4 concepts; no blind stacking into main
 
 **Status at authoring:** R2 PR #169 and R3 PR #170 passed GitHub iOS CI but remained draft/unmerged; R4 CI was not yet confirmed.

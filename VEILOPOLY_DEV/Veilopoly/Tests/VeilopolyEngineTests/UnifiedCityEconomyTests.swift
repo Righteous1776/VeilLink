@@ -208,7 +208,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
  }
 
  func testLowBankCashProducesCreditCrunchRatherThanFalseBullSignal() {
-  var g = VeilopolyCityLongEconomy.make(seed: 98126)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 98126)
   XCTAssertEqual(VeilopolyCityLongEconomy.marketPressure(g), 0)
   g.players[0].cash += 160_000
   g.banking?.reserveCash = 0

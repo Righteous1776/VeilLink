@@ -11,7 +11,9 @@ final class CompleteManualTests: XCTestCase {
    !$0.title.isEmpty && !$0.subtitle.isEmpty &&
    $0.paragraphs.count >= 2 && !$0.evidence.isEmpty
   })
-  XCTAssertEqual(all.filter { $0.id.hasPrefix("board-") }.count, 40)
+  let boardEntries = all.filter { $0.chapter == "appendix" && $0.id.hasPrefix("board-") }
+  XCTAssertEqual(boardEntries.count, 40)
+  XCTAssertEqual(Set(boardEntries.map(\.id)), Set((0..<40).map { "board-" + ($0 < 10 ? "0" : "") + String($0) }))
   XCTAssertEqual(all.filter { $0.id.hasPrefix("card-") }.count, 32)
   XCTAssertEqual(Set(all.map(\.chapter)).count, 13)
  }

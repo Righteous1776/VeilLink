@@ -246,7 +246,7 @@ struct LingCoreTinyChatView: View {
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.count > 512)
                 }
             }
-            Text("实验模型可能答错、重复或无法理解中文；其输出永远不会作为设备或游戏命令。")
+            Text("V29 实验功能 · 中文能力尚未通过验证。模型可能答错、重复或无法理解中文；其输出永远不会作为设备或游戏命令。")
                 .font(.caption2)
                 .foregroundColor(VeilTheme.secondaryText)
         }

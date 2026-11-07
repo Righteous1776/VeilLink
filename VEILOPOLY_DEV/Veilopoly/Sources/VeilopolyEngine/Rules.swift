@@ -64,7 +64,7 @@ public enum VeilopolyEngine {
           (0..<4).contains(t.from) && (0..<4).contains(t.to) && t.from != t.to &&
           [t.offer, t.request].allSatisfy { x in
            (0...1_000_000_000).contains(x.cash) &&
-           x.tiles.allSatisfy { g.board.indices.contains($0) } &&
+           x.tiles.allSatisfy { g.board.indices.contains($0) && g.board[$0].purchasable } &&
            (0...16).contains(x.chanceCards) && (0...16).contains(x.chestCards)
           }
          } ?? true),

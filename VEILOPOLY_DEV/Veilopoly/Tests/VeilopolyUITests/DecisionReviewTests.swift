@@ -48,7 +48,7 @@ final class DecisionReviewTests: XCTestCase {
  }
 
  func testVersionedCityPricesAndBailAreNeverHardcodedToClassicAmounts() throws {
-  var game = VeilopolyCityLongEconomy.make(seed: 20074, humanCount: 2)
+  var game = VeilopolyCityLongEconomy.makeV4(seed: 20074, humanCount: 2)
   game.turn.phase = .tileResolve; game.turn.pendingPurchase = 1
   let before = StateDigest.hash(game)
   let review = try XCTUnwrap(VeilopolyPurchaseReview(game: game, player: 0, tile: 1))
@@ -57,6 +57,8 @@ final class DecisionReviewTests: XCTestCase {
   XCTAssertNil(review.rejection)
   XCTAssertEqual(VeilopolyCityLongEconomy.bail(game), 150)
   XCTAssertEqual(VeilopolyCityLongEconomy.bail(purchase()), 50)
+  let expanded = VeilopolyCityLongEconomy.make(seed: 20075, humanCount: 2)
+  XCTAssertEqual(VeilopolyCityLongEconomy.bail(expanded), 600)
   XCTAssertEqual(StateDigest.hash(game), before)
  }
 

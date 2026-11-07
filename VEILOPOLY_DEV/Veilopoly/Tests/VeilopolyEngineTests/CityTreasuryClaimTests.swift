@@ -15,7 +15,7 @@ final class CityTreasuryClaimTests: XCTestCase {
    VeilopolyCityLongEconomy.totalMoneySupply
  }
  func testEmptyBankDoesNotDeadlockPassingStartAndClaimsAreNotMinted() throws {
-  var g = VeilopolyCityLongEconomy.make(seed: 98121)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 98121)
   g.players[0].cash += 159_900
   g.banking?.reserveCash = 100
   g.players[0].position = 38
@@ -31,7 +31,7 @@ final class CityTreasuryClaimTests: XCTestCase {
  }
 
  func testFutureTaxAutomaticallySettlesOldestClaimWithoutMinting() throws {
-  var g = VeilopolyCityLongEconomy.make(seed: 98122)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 98122)
   g.players[0].cash += 159_900; g.banking?.reserveCash = 100
   g.players[0].position = 38; g.turn.phase = .moveAnim; g.turn.pendingSteps = 4
   _ = try apply(&g, .applyMovement)
@@ -46,7 +46,7 @@ final class CityTreasuryClaimTests: XCTestCase {
  }
 
  func testFreeHouseFallbackMakesClaimWhenBankHasNoCash() throws {
-  var g = VeilopolyCityLongEconomy.make(seed: 98123)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 98123)
   g.players[0].cash += 160_000; g.banking?.reserveCash = 0
   g.players[0].position = 7; g.turn.phase = .tileResolve
   g.chanceDeck = DeckState(order: [13])
@@ -58,7 +58,7 @@ final class CityTreasuryClaimTests: XCTestCase {
  }
 
  func testClaimPreservesOrderAndExactCodableChecksum() throws {
-  var g = VeilopolyCityLongEconomy.make(seed: 98124)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 98124)
   g.banking?.queuedClaims = [
    .init(player: 1, amount: 100, source: "startSalary"),
    .init(player: 0, amount: 500, source: "eventCash")
