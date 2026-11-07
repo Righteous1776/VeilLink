@@ -322,6 +322,7 @@ public struct VeilopolyGameView: View {
  @AppStorage("veilopoly.slowSteps.v1") private var slowSteps = true
  @State private var showTileInformation = false
  @State private var showAssetExplorer = false
+ @State private var showManagementWorkspace = false
  @State private var showProbabilityLab = false
  @State private var probabilityLastRoll: Int?
  @State private var probabilityAttempts = 0
@@ -378,7 +379,10 @@ public struct VeilopolyGameView: View {
   .onChange(of: model.pending) { pending in
    if !pending { revealDecisionIfNeeded() }
   }
-  .onChange(of: model.game.turn.phase) { _ in revealDecisionIfNeeded() }
+  .onChange(of: model.game.turn.phase) { phase in
+    if phase != .manage { showManagementWorkspace = false }
+    revealDecisionIfNeeded()
+   }
   .onChange(of: model.actor) { _ in
    resetTradeDraft()
    if model.game.trade != nil { loadCounterCash() }
@@ -444,6 +448,7 @@ public struct VeilopolyGameView: View {
    }
    .fullScreenCover(isPresented: $showTileInformation) { selectedTileDetailSheet }
     .fullScreenCover(isPresented: $showAssetExplorer) { assetExplorerSheet }
+    .fullScreenCover(isPresented: $showManagementWorkspace) { managementWorkspaceSheet }
    .sheet(isPresented: $showProbabilityLab) { probabilityLabSheet }
   .alert("本局信息", isPresented: $showGameInfo) {
    Button("知道了", role: .cancel) {}
@@ -742,7 +747,11 @@ public struct VeilopolyGameView: View {
    ForEach(VeilopolyManagementSection.allCases) { section in
     Button {
      managementSection = section
-     if model.game.turn.phase != .manage { showAssetExplorer = true }
+     if model.game.turn.phase != .manage {
+      showAssetExplorer = true
+     } else if !showAssetExplorer && !showManagementWorkspace {
+      showManagementWorkspace = true
+     }
     } label: {
      VStack(spacing: 3) {
       Image(systemName: section.symbol)
@@ -1169,6 +1178,57 @@ public struct VeilopolyGameView: View {
   .accessibilityHint("打开只读浏览器，不会提交购买或竞价")
  }
 
+
+ /// Full-size editable management surface. Kept entirely outside the thin
+ /// turn-status drawer; the reducer still rejects operations in wrong phases.
+ private var managementWorkspaceSheet: some View {
+  NavigationView {
+   VStack(alignment: .leading, spacing: 10) {
+    HStack(spacing: 12) {
+     Label(model.game.players[model.actor].name, systemImage: "person.crop.circle")
+      .font(.headline)
+     Spacer(minLength: 6)
+     Text("现金 ¥\(model.game.players[model.actor].cash)")
+      .font(.system(size: 16, weight: .bold, design: .monospaced))
+     Text("净资产 ¥\(netWorth(model.game.players[model.actor]))")
+      .font(.system(size: 14, weight: .medium, design: .monospaced))
+    }
+    .lineLimit(1)
+    managementNavigation
+    Divider()
+    ScrollView(.vertical) {
+     managePanel
+      .frame(maxWidth: 760, alignment: .leading)
+      .padding(.vertical, 8)
+      .frame(maxWidth: .infinity)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    HStack(spacing: 12) {
+     Button("返回棋盘（保留回合）") { showManagementWorkspace = false }
+      .frame(maxWidth: .infinity, minHeight: 48)
+      .buttonStyle(.bordered)
+     Button(model.game.turn.rolledDouble ? "额外回合" : "结束本回合") {
+      showManagementWorkspace = false
+      model.perform(.endTurn)
+     }
+     .frame(maxWidth: .infinity, minHeight: 48)
+     .buttonStyle(.borderedProminent)
+     .disabled(model.pending || !model.waitingForHuman || model.game.turn.phase != .manage)
+    }
+   }
+   .padding(16)
+   .navigationTitle("资产工作台")
+   .navigationBarTitleDisplayMode(.inline)
+   .toolbar {
+    ToolbarItem(placement: .confirmationAction) {
+     Button("完成") { showManagementWorkspace = false }
+    }
+   }
+  }
+  .navigationViewStyle(.stack)
+  .preferredColorScheme(.dark)
+ }
+
  private var assetExplorerSheet: some View {
   NavigationView {
    VStack(spacing: 10) {
@@ -1471,10 +1531,17 @@ public struct VeilopolyGameView: View {
  @ViewBuilder private var actionPanel: some View {
   if model.game.winner != nil { settlementPanel }
   else if model.game.turn.phase == .manage && model.waitingForHuman {
-   managePanel.disabled(model.pending)
-    .overlay(alignment: .topTrailing) {
-     if model.pending { ProgressView().accessibilityLabel("正在结算操作") }
+   VStack(alignment: .leading, spacing: 8) {
+    Label("可管理资产", systemImage: "square.grid.2x2")
+     .font(.headline)
+    Text("银行、地产、模拟股市与交易统一在全屏工作台操作。")
+     .font(.system(size: 13))
+     .fixedSize(horizontal: false, vertical: true)
+    action("打开资产工作台", symbol: "rectangle.expand.vertical") {
+     showManagementWorkspace = true
     }
+    .disabled(model.pending)
+   }
   }
   else if model.pending { ProgressView("动画播放中") }
   else if !model.waitingForHuman { Text("AI 正在行动……").foregroundStyle(.secondary) }
