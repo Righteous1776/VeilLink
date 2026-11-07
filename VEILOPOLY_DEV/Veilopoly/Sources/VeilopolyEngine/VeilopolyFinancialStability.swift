@@ -35,7 +35,8 @@ public enum VeilopolyFinancialStability {
   guard game.banking?.financeRuleVersion == VeilopolyCityLongEconomy.version,
         let ledger = game.banking, let cash = ledger.reserveCash,
         let supply = VeilopolyCityLongEconomy.supplyCeiling(game),
-        (0...supply).contains(cash) else { return nil }
+        (0...supply).contains(cash),
+        cash + VeilopolyCityLongEconomy.circulatingCash(game) == supply else { return nil }
 
   let playersCash = VeilopolyCityLongEconomy.circulatingCash(game)
   let pending = (ledger.queuedClaims ?? []).reduce(0) { $0 + $1.amount }
@@ -70,7 +71,11 @@ public enum VeilopolyFinancialStability {
                                           liabilities + supply / 20))
   let available = max(0, cash - reserve)
   let aggregateCreditCap = max(0, supply / 4 - loanPrincipal)
-  let credit = pending == 0 && overdue == 0 ? min(available, aggregateCreditCap) : 0
+  // Even a cash-rich bank must halt expansion if all known exit claims
+  // already exceed its available treasury. Never lend into insolvency.
+  let credit = pending == 0 && overdue == 0 &&
+               cash >= liabilities && cash >= reserve
+    ? min(available, aggregateCreditCap) : 0
   let level: VeilopolyRiskLevel
   if cash < pending || cash < liabilities / 2 || cash < supply / 20 {
    level = .crisis
