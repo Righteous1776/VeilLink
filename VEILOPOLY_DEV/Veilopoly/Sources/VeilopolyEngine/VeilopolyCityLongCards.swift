@@ -81,10 +81,35 @@ public enum VeilopolyCityLongCards {
  }()
 
  public static let all: [CardDefinition] = blueprints.map(\.canonical)
+ /// Future only: the two special building grants use existing card IDs.
+ public static let blueprintsV4: [VeilopolyCityLongCardBlueprint] = blueprints.map { old in
+  if old.id == 13 {
+   return .init(id: 13, deck: .chance, category: "机遇", title: "城市建设特许令",
+    story: "市政厅批准在你的街区免费建设一栋住宅。",
+    ruling: "在合法自有完整街区免费建一栋房屋；无合法位置或银行无房时领取 ¥800。",
+    effects: [CardEffect(kind: .grantHouse, amount: 800)])
+  }
+  if old.id == 27 {
+   return .init(id: 27, deck: .chest, category: "命运", title: "旧城复兴工程",
+    story: "城市建设局决定无偿资助一栋街区住宅。",
+    ruling: "在合法自有完整街区免费建一栋房屋；无合法位置或银行无房时领取 ¥600。",
+    effects: [CardEffect(kind: .grantHouse, amount: 600)])
+  }
+  return old
+ }
+ public static let allV4: [CardDefinition] = blueprintsV4.map(\.canonical)
 
  /// Editorial is only displayed for an exact canonical match. Custom cards,
  /// legacy saves and modified effect arrays cannot masquerade as V3 copy.
  public static func presentation(for card: CardDefinition) -> VeilopolyCardEditorialEntry? {
+  if let blueprint = blueprintsV4.first(where: {
+   $0.id == card.id && $0.deck == card.deck && $0.canonical == card
+  }) {
+   let marker = String(format: "VL-CITY-V4-%@-%03d",
+     blueprint.deck == .chance ? "CH" : "FT", blueprint.id)
+   return VeilopolyCardEditorialEntry(blueprint.id, marker, blueprint.deck,
+      blueprint.category, blueprint.title, blueprint.story, blueprint.ruling)
+  }
   guard let blueprint = blueprints.first(where: { $0.id == card.id && $0.deck == card.deck }),
         blueprint.canonical == card else { return nil }
   return blueprint.editorial

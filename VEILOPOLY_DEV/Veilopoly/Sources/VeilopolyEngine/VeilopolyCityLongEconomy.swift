@@ -52,7 +52,7 @@ public enum VeilopolyCityLongEconomy {
  /// No change to GameState schema. New games carry V3 terms in the existing ledger.
  public static func make(seed: UInt64, humanCount: Int = 1,
                          levels: [AILevel] = [.balanced,.balanced,.balanced,.balanced],
-                         cards: [CardDefinition] = VeilopolyCityLongCards.all) -> GameState {
+                         cards: [CardDefinition] = VeilopolyCityLongCards.allV4) -> GameState {
   var g = GameFactory.make(seed: seed, humanCount: humanCount,
                            levels: levels, cards: cards)
   for i in g.players.indices { g.players[i].cash = startingCash }

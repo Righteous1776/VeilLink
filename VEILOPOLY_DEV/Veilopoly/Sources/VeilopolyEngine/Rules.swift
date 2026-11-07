@@ -482,6 +482,35 @@ public enum VeilopolyEngine {
                       text: "duplicateJailCardExchange"))
     } else if card.deck == .chance { g.players[p].chanceJailCards += 1 }
     else { g.players[p].chestJailCards += 1 }
+   case .grantHouse:
+    guard g.banking?.financeRuleVersion == VeilopolyCityLongEconomy.version else {
+     throw GameError.invalidState
+    }
+    let eligible = g.board.indices.filter { i in
+     let tile = g.board[i]
+     guard tile.kind == .street, tile.owner == p, tile.houses < 4,
+           !tile.mortgaged, !tile.hotel, let group = tile.color else { return false }
+     let mates = groupIndices(g, group)
+     return mates.allSatisfy { g.board[$0].owner == p && !g.board[$0].mortgaged } &&
+       tile.houses == (mates.map { buildingLevel(g.board[$0]) }.min() ?? 0)
+    }
+    let chosen = eligible.sorted {
+     g.board[$0].houseCost == g.board[$1].houseCost
+      ? $0 < $1 : g.board[$0].houseCost > g.board[$1].houseCost
+    }.first
+    if g.bank.houses > 0, let i = chosen {
+     g.bank.houses -= 1
+     g.board[i].houses += 1
+     fx.append(Effect(.built, player: p, tile: i, amount: 0, text: "freeHouse"))
+    } else {
+     let fallback = effect.amount ?? 0
+     guard (0...1_000_000).contains(fallback),
+           g.players[p].cash <= 1_000_000_000 - fallback else {
+      throw GameError.invalidState
+     }
+     g.players[p].cash += fallback
+     fx.append(Effect(.cashChanged, player: p, amount: fallback, text: "freeHouseFallback"))
+    }
    case .repair:
     guard let perHouse = effect.perHouse, let perHotel = effect.perHotel else { throw GameError.invalidState }
     let owned = g.board.filter { $0.owner == p }
