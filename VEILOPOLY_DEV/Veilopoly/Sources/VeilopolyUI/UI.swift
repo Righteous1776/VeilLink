@@ -912,6 +912,22 @@ public struct VeilopolyGameView: View {
       Text("基础租金 ¥\(tile.rent.first ?? 0)").font(.headline.monospacedDigit())
       Text(tile.mortgaged ? "已抵押" : "未抵押").font(.subheadline)
      }
+     if tile.purchasable && !tile.rent.isEmpty {
+      Text("完整租金表").font(.headline)
+      ForEach(tile.rent.indices, id: \.self) { level in
+       HStack(spacing: 12) {
+        Text(level == 0 ? "基础租金" : "升级等级 \(level)")
+        Spacer()
+        Text("¥\(tile.rent[level])")
+         .font(.system(size: 15, weight: .semibold, design: .monospaced))
+       }
+       .frame(minHeight: 30)
+      }
+      if tile.houseCost > 0 {
+       Text("每栋房屋费用 ¥\(tile.houseCost) · 当前 \(tile.houses) 栋 · 酒店\(tile.hotel ? "已建" : "未建")")
+        .font(.subheadline)
+      }
+     }
      if let deed = VeilopolyCivicText.deed(model.game, tileIndex: tile.i) {
       VeilopolyCivicDocumentPanel(document: deed)
      }
@@ -1086,7 +1102,7 @@ public struct VeilopolyGameView: View {
    }
    .buttonStyle(.plain)
    .accessibilityLabel("查看资产详情")
-   Image(systemName: "hand.draw")
+   Image(systemName: "line.3.horizontal")
     .font(.system(size: 16, weight: .semibold))
     .foregroundColor(.white.opacity(0.85))
     .frame(width: 44, height: 64)
@@ -1134,7 +1150,7 @@ public struct VeilopolyGameView: View {
    }
    .buttonStyle(.plain)
    .accessibilityLabel("查看虚构股票行情")
-   Image(systemName: "hand.draw")
+   Image(systemName: "line.3.horizontal")
     .font(.system(size: 16, weight: .semibold))
     .foregroundColor(.white.opacity(0.85))
     .frame(width: 44, height: 64)
@@ -1203,6 +1219,9 @@ public struct VeilopolyGameView: View {
     }
     .lineLimit(1)
     managementNavigation
+     .padding(6)
+     .background(Color(red: 0.08, green: 0.18, blue: 0.21),
+                 in: RoundedRectangle(cornerRadius: 12))
     Divider()
     ScrollView(.vertical) {
      managePanel
@@ -1234,7 +1253,7 @@ public struct VeilopolyGameView: View {
    }
   }
   .navigationViewStyle(.stack)
-  .preferredColorScheme(.dark)
+  .preferredColorScheme(dayFelt ? .light : .dark)
   .overlay {
    if let target = amountTarget { numberPadOverlay(for: target) }
   }
@@ -1249,6 +1268,9 @@ public struct VeilopolyGameView: View {
      .foregroundStyle(.secondary)
      .frame(maxWidth: .infinity, alignment: .leading)
     managementNavigation
+     .padding(6)
+     .background(Color(red: 0.08, green: 0.18, blue: 0.21),
+                 in: RoundedRectangle(cornerRadius: 12))
     ScrollView {
      assetOverviewContents
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -1290,9 +1312,23 @@ public struct VeilopolyGameView: View {
      .font(.subheadline)
     Text(tile.owner.map { "业主：\(model.game.players[$0].name)" } ?? "无主")
      .foregroundStyle(.secondary)
-    if let deed = VeilopolyCivicText.deed(model.game, tileIndex: overviewTile) {
-     VeilopolyCivicDocumentPanel(document: deed)
-    }
+    if tile.purchasable && !tile.rent.isEmpty {
+      Text("租金与建设").font(.headline)
+      ForEach(tile.rent.indices, id: \.self) { level in
+       HStack {
+        Text(level == 0 ? "基础租金" : "升级等级 \(level)")
+        Spacer(minLength: 10)
+        Text("¥\(tile.rent[level])")
+         .font(.system(size: 14, weight: .semibold, design: .monospaced))
+       }
+       .frame(minHeight: 30)
+      }
+      Text("建筑：\(tile.houses) 栋房屋\(tile.hotel ? "、1 座酒店" : "") · 抵押：\(tile.mortgaged ? "是" : "否")")
+       .font(.subheadline)
+     }
+     if let deed = VeilopolyCivicText.deed(model.game, tileIndex: overviewTile) {
+      VeilopolyCivicDocumentPanel(document: deed)
+     }
    }
    ForEach(model.game.board, id: \.i) { tile in
     Button { overviewTile = tile.i } label: {
@@ -1308,7 +1344,8 @@ public struct VeilopolyGameView: View {
      .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+    .background(overviewTile == tile.i ? Color.mint.opacity(0.16) : Color.gray.opacity(0.10),
+                 in: RoundedRectangle(cornerRadius: 8))
    }
   }
  }
@@ -1825,7 +1862,7 @@ public struct VeilopolyGameView: View {
   switch managementSection {
   case .property: propertyPanel
   case .bank: bankPanel
-  case .market: stockMarketPanel
+  case .market: stockMarketPanel.environment(\.colorScheme, .dark)
   case .trade: tradeProposalPanel
   }
  }
