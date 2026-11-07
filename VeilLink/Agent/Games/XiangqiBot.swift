@@ -393,6 +393,7 @@ enum XiangqiBot {
                     ordering += mateScore
                 }
                 ordering += learning.bonus(position: position, action: "\(from):\(to)")
+                ordering += BoardLearnedMoveOrderR2.xiangqiBonus(in: state, from: from, to: to)
                 moves.append(Move(from: from, to: to, orderingScore: ordering))
             }
         }
