@@ -188,9 +188,11 @@ diff --git a/VeilLink/UI/VeilOpponentAvatarView.swift b/VeilLink/UI/VeilOpponent
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/VeilOpponentAvatarView.swift
-@@ -0,0 +1,254 @@
+@@ -0,0 +1,314 @@
 +import Foundation
 +import SwiftUI
++import ImageIO
++import UIKit
 +
 +/// Original VeilLink liquid-form character. Developed independently from
 +/// concepts such as organic contours, eye expressions and spring motion.
@@ -298,19 +300,25 @@ new file mode 100644
 +        let animated = VeilOpponentAvatarPolicy.shouldAnimate(
 +            reduceMotion: reduceMotion, sceneIsActive: scenePhase == .active
 +        )
-+        TimelineView(.animation(
-+            minimumInterval: VeilOpponentAvatarPolicy.frameInterval(
-+                lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled
-+            ),
-+            paused: !animated
-+        )) { timeline in
-+            Canvas(opaque: false, rendersAsynchronously: false) { context, bounds in
-+                render(
-+                    in: context, size: bounds,
-+                    time: timeline.date.timeIntervalSinceReferenceDate,
-+                    reactionAge: max(0, timeline.date.timeIntervalSince(changedAt)),
-+                    animated: animated
-+                )
++        Group {
++            if Bundle.main.url(forResource: "GrokBotLoop", withExtension: "gif") != nil {
++                VeilGrokBotGIFPlayer(running: animated)
++            } else {
++                TimelineView(.animation(
++                    minimumInterval: VeilOpponentAvatarPolicy.frameInterval(
++                        lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled
++                    ),
++                    paused: !animated
++                )) { timeline in
++                    Canvas(opaque: false, rendersAsynchronously: false) { context, bounds in
++                        render(
++                            in: context, size: bounds,
++                            time: timeline.date.timeIntervalSinceReferenceDate,
++                            reactionAge: max(0, timeline.date.timeIntervalSince(changedAt)),
++                            animated: animated
++                        )
++                    }
++                }
 +            }
 +        }
 +        .frame(width: size, height: size)
@@ -440,6 +448,58 @@ new file mode 100644
 +                with: .color(.cyan.opacity(0.6)),
 +                style: StrokeStyle(lineWidth: unit * 0.018, lineCap: .round)
 +            )
++        }
++    }
++}
++
++// The GIF has 24 frames; only the compact 112px asset should be shipped on
++// iPhone 7. One process-wide decoded copy is reused by all views.
++@MainActor
++private enum VeilGrokBotGIFAsset {
++    static let animation: UIImage? = {
++        guard let url = Bundle.main.url(forResource: "GrokBotLoop", withExtension: "gif"),
++              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
++            return nil
++        }
++        let count = CGImageSourceGetCount(source)
++        guard (2...64).contains(count) else { return nil }
++        var images: [UIImage] = []
++        images.reserveCapacity(count)
++        var duration: TimeInterval = 0
++        for index in 0..<count {
++            guard let bitmap = CGImageSourceCreateImageAtIndex(source, index, nil) else {
++                return nil
++            }
++            images.append(UIImage(cgImage: bitmap))
++            let props = CGImageSourceCopyPropertiesAtIndex(source, index, nil)
++                as? [CFString: Any]
++            let gif = props?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
++            let unclamped = gif?[kCGImagePropertyGIFUnclampedDelayTime] as? NSNumber
++            let clamped = gif?[kCGImagePropertyGIFDelayTime] as? NSNumber
++            duration += max(0.06, unclamped?.doubleValue ?? clamped?.doubleValue ?? 0.11)
++        }
++        return UIImage.animatedImage(with: images, duration: duration)
++    }()
++}
++
++/// UIImageView is the native GIF player; it does not capture board gestures.
++private struct VeilGrokBotGIFPlayer: UIViewRepresentable {
++    let running: Bool
++
++    func makeUIView(context: Context) -> UIImageView {
++        let imageView = UIImageView(image: VeilGrokBotGIFAsset.animation)
++        imageView.contentMode = .scaleAspectFit
++        imageView.isUserInteractionEnabled = false
++        imageView.clipsToBounds = true
++        if running { imageView.startAnimating() }
++        return imageView
++    }
++
++    func updateUIView(_ uiView: UIImageView, context: Context) {
++        if running {
++            uiView.startAnimating()
++        } else {
++            uiView.stopAnimating()
 +        }
 +    }
 +}
