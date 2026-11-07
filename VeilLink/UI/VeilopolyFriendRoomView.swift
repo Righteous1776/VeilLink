@@ -35,6 +35,7 @@ private final class VeilopolyFriendRoomController: ObservableObject {
  private var processedSyncHints = Set<String>()
  private var processedRejections = Set<String>()
  private var lastGuestIntentSeq: Int?
+ private var pendingHostHeadSeq: Int?
  private var lastResyncAt = Date.distantPast
 
  init(model: AppModel, conversation: ConversationSummary) {
@@ -96,6 +97,7 @@ private final class VeilopolyFriendRoomController: ObservableObject {
   activeGame?.model.flushSave()
   activeGame = nil
   lastGuestIntentSeq = nil
+  pendingHostHeadSeq = nil
  }
 
  func open(_ room: VeilopolyFriendRoom) {
@@ -109,11 +111,14 @@ private final class VeilopolyFriendRoomController: ObservableObject {
   let session = GameSessionModel(
    seed: room.invite.seed, humanCount: 2, roomID: room.id,
    localSeat: room.hostIsLocal ? 0 : 1, isHost: room.hostIsLocal)
-  session.onAuthoritativeMove = { [weak self] committed in
+  session.onGuestPresentationReady = { [weak self] in
+   self?.continueResyncIfNeeded()
+  }
+  session.onAuthoritativeMove = { [weak self, weak session] committed in
    guard let self else { return }
    let packet = GameEnvelope(gameId: room.id, kind: .move, move: committed)
    if !self.outbound(packet) {
-    session.reportPeerError("本地操作已保存，但尚未发送到好友。恢复连接后请手动同步。")
+    session?.reportPeerError("本地操作已保存，但尚未发送到好友。恢复连接后请手动同步。")
    }
   }
   session.onGuestIntentRejected = { [weak self] proposal, reason in
@@ -122,16 +127,16 @@ private final class VeilopolyFriendRoomController: ObservableObject {
                              rejectedSeq: proposal.seq, rejectionReason: reason)
    _ = self.outbound(packet)
   }
-  session.onGuestIntent = { [weak self] intent in
+  session.onGuestIntent = { [weak self, weak session] intent in
    guard let self else { return }
    guard self.lastGuestIntentSeq != intent.seq else {
-    session.reportPeerError("已发送本回合指令，请等待房主确认")
+    session?.reportPeerError("已发送本回合指令，请等待房主确认")
     return
    }
    if self.outbound(GameEnvelope(gameId: room.id, kind: .intent, intent: intent)) {
     self.lastGuestIntentSeq = intent.seq
    } else {
-    session.reportPeerError("本次操作未发送；请先恢复连接。")
+    session?.reportPeerError("本次操作未发送；请先恢复连接。")
    }
   }
   activeGame = VeilopolyOpenFriendGame(id: room.id,
@@ -139,6 +144,7 @@ private final class VeilopolyFriendRoomController: ObservableObject {
   processedIDs = []
   processedSyncHints = []
   processedRejections = []
+  pendingHostHeadSeq = nil
   refresh()
   if !room.hostIsLocal { requestResync() }
  }
@@ -238,8 +244,8 @@ private final class VeilopolyFriendRoomController: ObservableObject {
     processedSyncHints.insert(message.id)
     if let lastHostSeq = packet.hostHeadSeq,
        active.model.game.nextSeq - 1 < lastHostSeq {
-     lastResyncAt = .distantPast
-     requestResync()
+     pendingHostHeadSeq = max(pendingHostHeadSeq ?? -1, lastHostSeq)
+     continueResyncIfNeeded()
     }
    }
   }
@@ -270,6 +276,20 @@ private final class VeilopolyFriendRoomController: ObservableObject {
     return
    }
   }
+ }
+
+ private func continueResyncIfNeeded() {
+  guard let active = activeGame, !active.isHost,
+        let head = pendingHostHeadSeq else { return }
+  if active.model.game.nextSeq - 1 >= head {
+   pendingHostHeadSeq = nil
+   return
+  }
+  // Do not ask the host to resend messages still buffered in local replay.
+  guard !active.model.hasPendingHostPlayback else { return }
+  pendingHostHeadSeq = nil
+  lastResyncAt = .distantPast
+  requestResync()
  }
 
  func requestResync() {
