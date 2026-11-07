@@ -337,7 +337,7 @@ private struct VeilGrokBotGIFPlayer: UIViewRepresentable {
         }
     }
 }
-    
+
 // Plays the complete Owner-supplied H.264 animation (921 frames, 30.7 seconds).
 // No transcoding or frame extraction is required in the running app.
 private final class VeilGrokBotVideoSurface: UIView {
