@@ -255,7 +255,7 @@ public final class GameSessionModel: ObservableObject {
   if case .cardShow(let deck,let id,let message) = command {
    // Only a human player's card requires a tap to proceed. AI-only games
    // must continue after the visual/audio timeline without blocking on UI.
-   if game.players[game.turn.player].kind == .human {
+   if waitingForHuman {
     cardGate.present()
     shownCardDeck = deck
     shownCardID = id
