@@ -152,6 +152,44 @@ final class UnifiedCityEconomyTests: XCTestCase {
   }
  }
 
+ func testStockOrdersAndDepositsExchangeCashWithCentralBank() throws {
+  var g = VeilopolyCityLongEconomy.make(seed: 98109)
+  g.turn.phase = .manage
+  let supplyStart = supply(g)
+  let reserveStart = try XCTUnwrap(g.banking?.reserveCash)
+  let buy = Move(.stockBuy, player: 0, seq: g.nextSeq, stockSymbol: "VTL", stockShares: 2)
+  let bought = try VeilopolyEngine.apply(g, VeilopolyEngine.context(g), buy).get()
+  g = bought.0
+  XCTAssertTrue(bought.1.contains { $0.kind == .stockBought })
+  XCTAssertEqual(g.banking?.reserveCash, reserveStart + 297)
+  XCTAssertEqual(supply(g), supplyStart)
+  let sell = Move(.stockSell, player: 0, seq: g.nextSeq, stockSymbol: "VTL", stockShares: 1)
+  let sold = try VeilopolyEngine.apply(g, VeilopolyEngine.context(g), sell).get()
+  g = sold.0
+  XCTAssertTrue(sold.1.contains { $0.kind == .stockSold })
+  XCTAssertEqual(g.banking?.reserveCash, reserveStart + 297 - 147)
+  XCTAssertEqual(supply(g), supplyStart)
+  let beforeSaving = try XCTUnwrap(g.banking?.reserveCash)
+  _ = try commit(&g, .bankDeposit, amount: 1000, product: .demandDeposit)
+  XCTAssertEqual(g.banking?.reserveCash, beforeSaving + 1000)
+  XCTAssertEqual(supply(g), supplyStart)
+ }
+
+ func testSameTransferAndPriceTicksReplayToIdenticalAuthoritativeHashes() throws {
+  func trajectory() throws -> GameState {
+   var g = VeilopolyCityLongEconomy.make(seed: 98110)
+   g.turn.phase = .manage
+   _ = try commit(&g, .transferCash, amount: 250, to: 1)
+   _ = try commit(&g, .bankBorrow, amount: 500, periods: 3)
+   _ = try commit(&g, .stockTick)
+   return g
+  }
+  let a = try trajectory(), b = try trajectory()
+  XCTAssertEqual(a, b)
+  XCTAssertEqual(StateDigest.hash(a), StateDigest.hash(b))
+  XCTAssertEqual(supply(a), VeilopolyCityLongEconomy.totalMoneySupply)
+ }
+
  func testMarketPressureMakesIdenticallySeededTapeRespondToCommerce() throws {
   let base = VeilopolyCityLongEconomy.make(seed: 98108)
   XCTAssertEqual(VeilopolyCityLongEconomy.marketPressure(base), 0)
