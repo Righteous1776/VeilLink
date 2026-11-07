@@ -1,0 +1,162 @@
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -467,9 +467,34 @@
+         coachTip = "已清空本地训练档案；下一局将从新的个人棋谱开始。"
+     }
+ 
+-    func exportBoardLearning() throws -> URL {
+-        try learningStore.exportPackage()
+-    }
++    func exportBoardLearning() throws -> URL {
++        try learningStore.exportPackage()
++    }
++
++    /// Native Bot-vs-Bot records have their own durable archive. The ordinary
++    /// player-learning export intentionally does not contain these game records.
++    func exportNativeSelfPlayDetails() throws -> URL {
++        guard game == .gomoku, let archive = nativeTrainingStore,
++              archive.lastSaveSucceeded else {
++            throw NativeSelfPlayExportError.archiveUnavailable
++        }
++        guard archive.summary.completedGames > 0 else {
++            throw NativeSelfPlayExportError.noSavedGames
++        }
++        return try archive.exportPackage(filenameLabel: "GomokuNativeSelfPlay")
++    }
++
++    enum NativeSelfPlayExportError: LocalizedError {
++        case archiveUnavailable
++        case noSavedGames
++
++        var errorDescription: String? {
++            switch self {
++            case .archiveUnavailable: return "自对弈训练档案不可用或需要修复，未导出空白文件。"
++            case .noSavedGames: return "还没有已完成并保存的原生自对弈棋局。"
++            }
++        }
++    }
+ 
+     func importBoardLearning(from url: URL) throws -> AdaptiveBoardLearningImportReport {
+         let report = try learningStore.importPackage(from: url)
+diff --git a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
+--- a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
++++ b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
+@@ -553,8 +553,8 @@
+         }
+     }
+ 
+-    func exportPackage() throws -> URL {
+-        guard !requiresRecovery else { throw AdaptiveBoardLearningPackageError.invalidContent }
++    func exportPackage(filenameLabel: String? = nil) throws -> URL {
++        guard !requiresRecovery else { throw AdaptiveBoardLearningPackageError.invalidContent }
+         let encoder = JSONEncoder()
+         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+         let compactEncoder = JSONEncoder()
+@@ -573,9 +573,12 @@
+         let formatter = DateFormatter()
+         formatter.locale = Locale(identifier: "en_US_POSIX")
+         formatter.dateFormat = "yyyyMMdd-HHmmss"
+-        let gameLabel = scopedGame == .xiangqi ? "Xiangqi" : "Gomoku"
+-        let url = FileManager.default.temporaryDirectory
+-            .appendingPathComponent("VeilLink-\(gameLabel)Learning-\(formatter.string(from: Date())).vltrain.json")
++        let gameLabel = scopedGame == .xiangqi ? "Xiangqi" : "Gomoku"
++        // Distinct names avoid overwriting an export that is still being shared.
++        // Only internal callers supply a custom label; no user-derived path input.
++        let label = filenameLabel ?? "\(gameLabel)Learning"
++        let url = FileManager.default.temporaryDirectory
++            .appendingPathComponent("VeilLink-\(label)-\(formatter.string(from: Date()))-\(UUID().uuidString).vltrain.json")
+         do {
+             try data.write(to: url, options: .atomic)
+             return url
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -389,11 +389,16 @@
+         .sheet(isPresented: $showsTacticalGuide) {
+             TacticalSoloGuideView()
+         }
+-        .sheet(isPresented: $showsLearningShare, onDismiss: { learningExportURL = nil }) {
+-            if let learningExportURL {
+-                ShareSheet(items: [learningExportURL])
+-            }
+-        }
++        .sheet(isPresented: $showsLearningShare, onDismiss: {
++            if let learningExportURL {
++                try? FileManager.default.removeItem(at: learningExportURL)
++            }
++            learningExportURL = nil
++        }) {
++            if let learningExportURL {
++                ShareSheet(items: [learningExportURL])
++            }
++        }
+         .fileImporter(
+             isPresented: $showsLearningImporter,
+             allowedContentTypes: [.item],
+@@ -583,10 +588,23 @@
+                                 .foregroundColor(VeilTheme.goldBright)
+                         }
+                     }
+-                    Text(controller.nativeTrainingMessage)
+-                        .font(.caption2)
+-                        .foregroundColor(VeilTheme.secondaryText)
+-                        .fixedSize(horizontal: false, vertical: true)
++                    Text(controller.nativeTrainingMessage)
++                        .font(.caption2)
++                        .foregroundColor(VeilTheme.secondaryText)
++                        .fixedSize(horizontal: false, vertical: true)
++                    Button {
++                        do {
++                            learningExportURL = try controller.exportNativeSelfPlayDetails()
++                            showsLearningShare = true
++                        } catch {
++                            learningExchangeMessage = error.localizedDescription
++                        }
++                    } label: {
++                        Label("导出自对弈明细（逐手棋谱）", systemImage: "square.and.arrow.up")
++                    }
++                    .buttonStyle(.bordered)
++                    .disabled(controller.trainedNativeGames == 0 || controller.isImportingNativeSeed)
++                    .accessibilityHint("包含每局胜负、保存时间、双方逐手落点与阵法统计")
+                 }
+                 .padding(10)
+                 .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+diff --git a/VeilLinkTests/NativeGomokuSelfPlayTests.swift b/VeilLinkTests/NativeGomokuSelfPlayTests.swift
+--- a/VeilLinkTests/NativeGomokuSelfPlayTests.swift
++++ b/VeilLinkTests/NativeGomokuSelfPlayTests.swift
+@@ -50,10 +50,30 @@
+         XCTAssertEqual(
+             archive.recordCompletedNativeBatch([(plies: game.plies, result: game.result)]), 1
+         )
+-        XCTAssertEqual(archive.summary.completedGames, 1)
+-        XCTAssertTrue(archive.lastSaveSucceeded)
+-
+-        // Restart / cold-load: the match must survive as actual Bot experience.
++        XCTAssertEqual(archive.summary.completedGames, 1)
++        XCTAssertTrue(archive.lastSaveSucceeded)
++
++        // Export the dedicated native archive, not the human-player repertoire.
++        // It must retain every move and the actual terminal result.
++        let packageURL = try archive.exportPackage(filenameLabel: "GomokuNativeSelfPlay")
++        defer { try? FileManager.default.removeItem(at: packageURL) }
++        XCTAssertTrue(packageURL.lastPathComponent.contains("GomokuNativeSelfPlay"))
++        let packageData = try Data(contentsOf: packageURL)
++        let envelope = try XCTUnwrap(
++            JSONSerialization.jsonObject(with: packageData) as? [String: Any]
++        )
++        let payload = try XCTUnwrap(envelope["payload"] as? [String: Any])
++        XCTAssertEqual(payload["completedGames"] as? Int, 1)
++        let games = try XCTUnwrap(payload["recentGames"] as? [[String: Any]])
++        XCTAssertEqual(games.count, 1)
++        XCTAssertEqual(games[0]["result"] as? String, game.result.rawValue)
++        XCTAssertEqual(
++            games[0]["actions"] as? [String],
++            game.plies.map { ($0.actor == .host ? "h" : "a") + $0.action }
++        )
++        XCTAssertNotNil(games[0]["finishedAt"])
++
++        // Restart / cold-load: the match must survive as actual Bot experience.
+         let restored = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
+         XCTAssertEqual(restored.summary.completedGames, 1)
+         XCTAssertGreaterThan(restored.summary.rememberedPositions, 0)
