@@ -1,0 +1,255 @@
+import Foundation
+
+/// Isolated, offline story engine. Never reads chat messages, identities, keys or database records.
+struct VeilStoryCondition: Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable { case hasFlag, lacksFlag, hasItem, lacksItem, minimumScore }
+    let kind: Kind
+    let value: String
+    let minimum: Int?
+
+    func passes(_ run: VeilStoryRun) -> Bool {
+        switch kind {
+        case .hasFlag: return run.flags.contains(value)
+        case .lacksFlag: return !run.flags.contains(value)
+        case .hasItem: return run.items.contains(value)
+        case .lacksItem: return !run.items.contains(value)
+        case .minimumScore: return run.score >= (minimum ?? 0)
+        }
+    }
+}
+
+struct VeilStoryEffect: Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable { case gainItem, loseItem, setFlag, clearFlag, score }
+    let kind: Kind
+    let value: String
+    let amount: Int?
+}
+
+struct VeilStoryChoice: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let label: String
+    let destination: String
+    let requirements: [VeilStoryCondition]
+    let effects: [VeilStoryEffect]
+}
+
+struct VeilStoryScene: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let title: String
+    let narrative: String
+    let choices: [VeilStoryChoice]
+    let ending: String?
+}
+
+struct VeilStoryBook: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let title: String
+    let description: String
+    let startingScene: String
+    let scenes: [VeilStoryScene]
+
+    func validate() throws {
+        guard !id.isEmpty, !title.isEmpty, !description.isEmpty,
+              !scenes.isEmpty, scenes.count <= 128 else { throw VeilStoryError.invalidBook }
+        let ids = scenes.map(\.id)
+        guard Set(ids).count == scenes.count, ids.contains(startingScene) else {
+            throw VeilStoryError.invalidBook
+        }
+        let sceneSet = Set(ids)
+        var reachable = Set<String>()
+        var frontier = [startingScene]
+        while let sceneID = frontier.popLast() {
+            guard reachable.insert(sceneID).inserted else { continue }
+            guard let scene = scenes.first(where: { $0.id == sceneID }) else {
+                throw VeilStoryError.invalidBook
+            }
+            guard !scene.title.isEmpty, !scene.narrative.isEmpty,
+                  scene.narrative.count <= 4_096,
+                  scene.choices.count <= 8,
+                  Set(scene.choices.map(\.id)).count == scene.choices.count,
+                  (scene.ending == nil ? !scene.choices.isEmpty : scene.choices.isEmpty) else {
+                throw VeilStoryError.invalidBook
+            }
+            for choice in scene.choices {
+                guard !choice.id.isEmpty, !choice.label.isEmpty,
+                      choice.label.count <= 200, sceneSet.contains(choice.destination),
+                      choice.requirements.count <= 8, choice.effects.count <= 8 else {
+                    throw VeilStoryError.invalidBook
+                }
+                for requirement in choice.requirements {
+                    guard !requirement.value.isEmpty, requirement.value.count <= 80 else {
+                        throw VeilStoryError.invalidBook
+                    }
+                    if requirement.kind == .minimumScore {
+                        guard let minimum = requirement.minimum, (0...10_000).contains(minimum) else {
+                            throw VeilStoryError.invalidBook
+                        }
+                    }
+                }
+                for effect in choice.effects {
+                    guard !effect.value.isEmpty, effect.value.count <= 80 else {
+                        throw VeilStoryError.invalidBook
+                    }
+                    if effect.kind == .score {
+                        guard let amount = effect.amount, (-100...100).contains(amount) else {
+                            throw VeilStoryError.invalidBook
+                        }
+                    }
+                }
+                frontier.append(choice.destination)
+            }
+        }
+        guard reachable.count == scenes.count else { throw VeilStoryError.unreachableScene }
+    }
+
+    func scene(id: String) -> VeilStoryScene? { scenes.first { $0.id == id } }
+}
+
+enum VeilStoryError: Error, Equatable {
+    case invalidBook, unreachableScene, unknownChoice, unavailableChoice, storyFinished, turnLimitReached
+}
+
+struct VeilStoryDecision: Codable, Equatable, Sendable {
+    let fromScene: String
+    let choiceID: String
+    let toScene: String
+}
+
+struct VeilStoryRun: Codable, Equatable, Sendable {
+    static let maximumTurns = 128
+
+    private(set) var sceneID: String
+    private(set) var flags: Set<String> = []
+    private(set) var items: Set<String> = []
+    private(set) var score = 0
+    private(set) var history: [VeilStoryDecision] = []
+
+    init(book: VeilStoryBook) throws {
+        try book.validate()
+        sceneID = book.startingScene
+    }
+
+    func availableChoices(in book: VeilStoryBook) -> [VeilStoryChoice] {
+        guard let scene = book.scene(id: sceneID) else { return [] }
+        return scene.choices.filter { choice in
+            choice.requirements.allSatisfy { $0.passes(self) }
+        }
+    }
+
+    mutating func choose(_ choiceID: String, in book: VeilStoryBook) throws {
+        guard history.count < Self.maximumTurns else { throw VeilStoryError.turnLimitReached }
+        guard let scene = book.scene(id: sceneID) else { throw VeilStoryError.invalidBook }
+        guard scene.ending == nil else { throw VeilStoryError.storyFinished }
+        guard let choice = scene.choices.first(where: { $0.id == choiceID }) else {
+            throw VeilStoryError.unknownChoice
+        }
+        guard choice.requirements.allSatisfy({ $0.passes(self) }) else {
+            throw VeilStoryError.unavailableChoice
+        }
+        guard book.scene(id: choice.destination) != nil else { throw VeilStoryError.invalidBook }
+        // Change a copy, then commit atomically. Invalid external content must not partially mutate a run.
+        var next = self
+        for effect in choice.effects {
+            switch effect.kind {
+            case .gainItem: next.items.insert(effect.value)
+            case .loseItem: next.items.remove(effect.value)
+            case .setFlag: next.flags.insert(effect.value)
+            case .clearFlag: next.flags.remove(effect.value)
+            case .score: next.score = max(0, min(10_000, next.score + (effect.amount ?? 0)))
+            }
+        }
+        next.history.append(.init(fromScene: sceneID, choiceID: choiceID, toScene: choice.destination))
+        next.sceneID = choice.destination
+        self = next
+    }
+
+    static func replay(book: VeilStoryBook, decisions: [VeilStoryDecision]) throws -> VeilStoryRun {
+        guard decisions.count <= maximumTurns else { throw VeilStoryError.turnLimitReached }
+        var run = try VeilStoryRun(book: book)
+        for decision in decisions {
+            guard run.sceneID == decision.fromScene else { throw VeilStoryError.invalidBook }
+            try run.choose(decision.choiceID, in: book)
+            guard run.sceneID == decision.toScene else { throw VeilStoryError.invalidBook }
+        }
+        return run
+    }
+}
+
+/// Original, locally authored demo stories. No model, network, image or audio asset dependency.
+enum VeilStoryLibrary {
+    static let books: [VeilStoryBook] = [nightTrain, observatory, lighthouse]
+    private static func e(_ k: VeilStoryEffect.Kind, _ v: String, _ n: Int? = nil) -> VeilStoryEffect {
+        .init(kind: k, value: v, amount: n)
+    }
+    private static func req(_ k: VeilStoryCondition.Kind, _ v: String, _ n: Int? = nil) -> VeilStoryCondition {
+        .init(kind: k, value: v, minimum: n)
+    }
+    private static func c(_ id: String, _ text: String, _ dest: String,
+                          requirements: [VeilStoryCondition] = [],
+                          effects: [VeilStoryEffect] = []) -> VeilStoryChoice {
+        .init(id: id, label: text, destination: dest, requirements: requirements, effects: effects)
+    }
+    private static func s(_ id: String, _ title: String, _ text: String,
+                          _ choices: [VeilStoryChoice] = [], ending: String? = nil) -> VeilStoryScene {
+        .init(id: id, title: title, narrative: text, choices: choices, ending: ending)
+    }
+
+    static let nightTrain = VeilStoryBook(
+        id: "night-train", title: "雨夜末班电车", description: "从一张遗落车票开始的东京夜行故事。",
+        startingScene: "platform", scenes: [
+            s("platform", "末班站台", "站台广播已经停止。自动贩卖机旁留着一张去往旧天文台的车票。", [
+                c("ticket", "拾起车票，登上电车", "carriage", effects: [e(.gainItem, "ticket"), e(.score, "curiosity", 10)]),
+                c("wait", "在雨棚下等待", "morning")
+            ]),
+            s("carriage", "空荡车厢", "车窗倒映着陌生的星图。有人在座位下留下一个信封。", [
+                c("envelope", "拆开信封查看", "map", effects: [e(.setFlag, "readLetter"), e(.score, "observation", 15)]),
+                c("window", "记住窗外的地标", "bridge", effects: [e(.gainItem, "landmark")])
+            ]),
+            s("map", "星图留言", "信里写着：最后一班电车会为懂得观察的人停车。", [
+                c("follow", "依据车票去天文台", "observatory", requirements: [req(.hasItem, "ticket")]),
+                c("ignore", "收起信件，在下一站下车", "morning")
+            ]),
+            s("bridge", "跨河铁桥", "桥外亮着旧钟楼的灯。车速开始放缓。", [
+                c("recognize", "根据地标按下停靠铃", "observatory", requirements: [req(.hasItem, "landmark")]),
+                c("continue", "乘车到终点", "morning")
+            ]),
+            s("observatory", "无人天文台", "旧望远镜依然指向夜空。等雨停时，云层裂开了一道星光。", [], ending: "隐藏结局：夜空的坐标"),
+            s("morning", "第一班晨光", "新一天开始了。那张车票仿佛只是雨夜的一场梦。", [], ending: "普通结局：雨后清晨")
+        ])
+    static let observatory = VeilStoryBook(
+        id: "observatory", title: "失联天文台", description: "科幻推理：修复信标，解开星云的秘密。",
+        startingScene: "signal", scenes: [
+            s("signal", "异常信号", "轨道站接收到了几十年前的观测报告。电力正在下降。", [
+                c("repair", "先修复备用电源", "power", effects: [e(.gainItem, "cell"), e(.score, "repair", 20)]),
+                c("decode", "优先破译星图", "map", effects: [e(.setFlag, "decoded")])
+            ]),
+            s("power", "备用电源", "应急照明恢复了。你找到了通往信标的通道。", [
+                c("beacon", "装入电池，启动信标", "safe", requirements: [req(.hasItem, "cell")]),
+                c("explore", "继续检查未知信号", "map")
+            ]),
+            s("map", "远方坐标", "星图显示信号来自无人探测器，而不是未知文明。", [
+                c("recall", "发送召回指令", "discovery", effects: [e(.score, "discovery", 30)]),
+                c("backup", "返回电力舱", "power", effects: [e(.gainItem, "cell")])
+            ]),
+            s("safe", "信标重启", "轨道站恢复通信，远方地平线上升起温柔的蓝色光晕。", [], ending: "结局：回家的频率"),
+            s("discovery", "探测器回声", "一份尘封数据被送回地球，补上了人类失去的星图。", [], ending: "结局：未完成的观测")
+        ])
+    static let lighthouse = VeilStoryBook(
+        id: "lighthouse", title: "海岸灯塔", description: "治愈系探索：用有限的线索照亮一座离岛。",
+        startingScene: "dock", scenes: [
+            s("dock", "离岛码头", "潮水正在退去。灯塔已经整夜没有亮灯。", [
+                c("workshop", "先检查维修棚", "workshop", effects: [e(.gainItem, "lamp")]),
+                c("hill", "径直登上山坡", "hill")
+            ]),
+            s("workshop", "旧维修棚", "你找到一只还能用的灯泡，墙上贴着维护记录。", [
+                c("climb", "带着灯泡去灯塔", "tower", requirements: [req(.hasItem, "lamp")]),
+                c("return", "返回码头休息", "quiet")
+            ]),
+            s("hill", "山顶岔路", "灯塔就在眼前，但门口缺了一件替换零件。", [
+                c("repair", "回维修棚取零件", "workshop"),
+                c("rest", "坐下欣赏海平面", "quiet")
+            ]),
+            s("tower", "重燃灯塔", "灯光划过黑色海面，远处的船只终于看到了方向。", [], ending: "结局：照亮归途"),
+            s("quiet", "海风与清晨", "你听见海鸥的声音。远处仍有船只平安驶过。", [], ending: "结局：等待日出")
+        ])
+}
