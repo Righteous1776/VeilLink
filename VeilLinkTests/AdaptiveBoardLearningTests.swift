@@ -275,4 +275,25 @@ final class AdaptiveBoardLearningTests: XCTestCase {
             XCTAssertEqual(error as? AdaptiveBoardLearningPackageError, .checksumMismatch)
         }
     }
+
+    func testR4LosingBotFeedbackRemainsNegativeAfterReloadForBothGames() {
+        for game in [MiniGameKind.gomoku, .xiangqi] {
+            let path = FileManager.default.temporaryDirectory
+                .appendingPathComponent("r4-losing-\(game.rawValue)-\(UUID().uuidString).json")
+            defer { try? FileManager.default.removeItem(at: path) }
+            let store = AdaptiveBoardLearningStore(game: game, fileURL: path)
+            let key = game == .gomoku ? "g:r4-loss-check" : "x:r4-loss-check"
+            let badAction = game == .gomoku ? "113" : "64:55"
+            store.record(game: game, plies: [
+                AdaptiveBoardPly(position: key, action: badAction, actor: .guest)
+            ], result: .humanWon)
+            XCTAssertTrue(store.lastSaveSucceeded)
+            let after = store.snapshot().bonus(position: key, action: badAction)
+            XCTAssertLessThan(after, 0, "Losing AI action must be disfavoured")
+            let restarted = AdaptiveBoardLearningStore(game: game, fileURL: path)
+            XCTAssertEqual(restarted.snapshot().bonus(position: key, action: badAction), after)
+        }
+    }
+
+
 }
