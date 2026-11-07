@@ -9,6 +9,7 @@ struct VeilopolyNumericInput: View {
  var bounds: ClosedRange<Int> = 0...1_000_000_000
  var showsTitle = true
  @State private var editing = false
+ @Environment(\.veilopolyInterfaceTheme) private var interfaceTheme
 
  init(title: String, text: Binding<String>, bounds: ClosedRange<Int> = 0...1_000_000_000,
       showsTitle: Bool = true) {
@@ -35,6 +36,8 @@ struct VeilopolyNumericInput: View {
   .accessibilityHint("打开数字面板；确认仅填写数值，不提交游戏操作")
   .sheet(isPresented: $editing) {
    VeilopolyNumberPad(title: title, initialText: text, bounds: bounds) { text = $0 }
+    .environment(\.colorScheme, interfaceTheme.colorScheme)
+    .preferredColorScheme(interfaceTheme.colorScheme)
   }
  }
 }

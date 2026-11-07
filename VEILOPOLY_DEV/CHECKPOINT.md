@@ -1,5 +1,18 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## CODEX W1-004 — interface theme consistency — 2026-11-07
+
+- Before `8865668`; main still `2c5b5161027edff097b27fe3323d30f6ca3e430e`.
+  Same Owner/#168 dev-only lane. See `reviews/W1_004_INTERFACE_THEME.md`.
+- Existing day/night preference now drives canvas, native dialogs, numeric
+  sheets, reference book and news. Explicit dark Astra/stock islands preserve
+  text contrast over signed artwork. No resource/rule/save/host changes.
+- Theme tests 4/4 PASS; full Linux suite 248/248 PASS, 38.559s; iOS15 grammar
+  parse PASS only. Apple SDK/device/modal propagation/screenshots NOT_RUN.
+- Strict warnings gate remains a known historical FAIL, not waived. Newer
+  governance skill machinery absent; supplemental gate PARTIAL, no fabricated PASS.
+- NEXT_ONE_TASK: VLP-CODEX-W1-005, animation-skip and stock portfolio touch areas.
+
 ## CODEX W1-003 — keyboard-safe numeric drafts — 2026-11-07
 
 - Task authority: #168 + current Owner; `dev/veilopoly:VEILOPOLY_DEV/**` only.

@@ -9,9 +9,11 @@ struct VeilopolyGuideSheet: View {
  let game: GameState
  let saveSummary: String
  @State private var search: String = ""
- private let ink = Color(red: 0.11, green: 0.27, blue: 0.28)
- private let gold = Color(red: 0.72, green: 0.56, blue: 0.32)
- private let ivory = Color(red: 0.969, green: 0.946, blue: 0.895)
+ @Environment(\.veilopolyInterfaceTheme) private var interfaceTheme
+ private var ink: Color { interfaceTheme.ink.color }
+ private var secondaryInk: Color { interfaceTheme.secondaryInk.color }
+ private var gold: Color { interfaceTheme.goldInk.color }
+ private var ivory: Color { interfaceTheme.paper.color }
 
  private var results: [VeilopolyGuideTopic] {
   VeilopolyGuideLibrary.filtered(search)
@@ -27,10 +29,10 @@ struct VeilopolyGuideSheet: View {
        .foregroundColor(ink)
       Text(VeilopolyGuideLibrary.status(game))
        .font(.caption)
-       .foregroundColor(ink.opacity(0.8))
+       .foregroundColor(secondaryInk)
       Text(saveSummary)
        .font(.caption2)
-       .foregroundColor(ink.opacity(0.72))
+       .foregroundColor(secondaryInk)
        .fixedSize(horizontal: false, vertical: true)
      }
      .frame(maxWidth: .infinity, alignment: .leading)
@@ -65,7 +67,7 @@ struct VeilopolyGuideSheet: View {
            .fixedSize(horizontal: false, vertical: true)
           Text(topic.footnote)
            .font(.system(size: 11))
-           .foregroundColor(ink.opacity(0.72))
+           .foregroundColor(secondaryInk)
            .fixedSize(horizontal: false, vertical: true)
          }
          .frame(maxWidth: .infinity, alignment: .leading)
@@ -83,13 +85,13 @@ struct VeilopolyGuideSheet: View {
      }
      Text("文本版本：" + VeilopolyGuideLibrary.edition + " · 基于当前研发规则")
       .font(.system(size: 10))
-      .foregroundColor(ink.opacity(0.64))
+      .foregroundColor(secondaryInk)
     }
     .padding(16)
     .frame(maxWidth: 740)
     .frame(maxWidth: .infinity)
    }
-   .background(Color(red: 0.92, green: 0.89, blue: 0.82).ignoresSafeArea())
+   .background(interfaceTheme.paperSurround.color.ignoresSafeArea())
    .navigationBarTitle("玩法辞典", displayMode: .inline)
    .toolbar {
     ToolbarItem(placement: .confirmationAction) {
@@ -99,7 +101,7 @@ struct VeilopolyGuideSheet: View {
    }
   }
   .navigationViewStyle(.stack)
-  .preferredColorScheme(.light)
+  .preferredColorScheme(interfaceTheme.colorScheme)
  }
 }
 #endif

@@ -123,6 +123,9 @@ public struct VeilopolyStockMarketPanel: View {
   }
   .shadow(color: .black.opacity(0.25), radius: 10, y: 6)
   .accessibilityElement(children: .contain)
+  // The terminal's existing art/price chart remains a dark instrument island;
+  // its numeric sheet separately follows the selected table theme.
+  .environment(\.colorScheme, .dark)
  }
 
  private var terminalHeader: some View {

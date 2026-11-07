@@ -311,6 +311,7 @@ public struct VeilopolyGameView: View {
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
  @Environment(\.scenePhase) private var scenePhase
  private let onExit: (() -> Void)?
+ private var interfaceTheme: VeilopolyInterfaceTheme { .init(dayFelt: dayFelt) }
  public init(seed: UInt64? = nil, humanCount: Int = 1, onExit: (() -> Void)? = nil) {
   _model = StateObject(wrappedValue: GameSessionModel(seed: seed, humanCount: humanCount))
   self.onExit = onExit
@@ -320,8 +321,7 @@ public struct VeilopolyGameView: View {
    ZStack {
     // Ivory paper is the scene canvas; dark teal Astra controls sit as one
     // gold-rimmed functional overlay, not a separate blue-black application.
-    LinearGradient(colors: [Color(red: 0.97,green: 0.95,blue: 0.90),
-                            Color(red: 0.87,green: 0.82,blue: 0.71)],
+    LinearGradient(colors: [interfaceTheme.canvasStart.color, interfaceTheme.canvasEnd.color],
                    startPoint: .topLeading, endPoint: .bottomTrailing)
      .ignoresSafeArea()
     if VeilopolyLandscapeLayout.isLandscape(width: Double(geometry.size.width), height: Double(geometry.size.height)) {
@@ -333,7 +333,7 @@ public struct VeilopolyGameView: View {
    }
    .frame(width: geometry.size.width, height: geometry.size.height)
   }
-  .preferredColorScheme(.dark)
+  .preferredColorScheme(interfaceTheme.colorScheme)
   .statusBarHidden()
   .onAppear {
    model.scene.reduceMotion = reduceMotion
@@ -379,7 +379,7 @@ public struct VeilopolyGameView: View {
   .confirmationDialog("更多", isPresented: $showMore) {
    Button("资产资料 · 只读") { showAssetBrowser = true }
    Button(model.newsEnabled ? "暂停城市快讯" : "开启城市快讯") { model.newsEnabled.toggle() }
-   Button(dayFelt ? "切换夜间棋盘" : "切换日间棋盘") {
+   Button(dayFelt ? "切换夜间主题" : "切换日间主题") {
     dayFelt.toggle()
     model.scene.setDayFelt(dayFelt)
    }
@@ -405,7 +405,7 @@ public struct VeilopolyGameView: View {
   }
   .sheet(isPresented: $showAssetBrowser) {
    VeilopolyAssetBrowser(game: model.game, initialPlayer: model.actor)
-    .preferredColorScheme(dayFelt ? .light : .dark)
+    .preferredColorScheme(interfaceTheme.colorScheme)
   }
   .alert("本局信息", isPresented: $showGameInfo) {
    Button("知道了", role: .cancel) {}
@@ -496,6 +496,7 @@ public struct VeilopolyGameView: View {
     .zIndex(100)
    }
   }
+  .environment(\.veilopolyInterfaceTheme, interfaceTheme)
  }
 
  private func revealDecisionIfNeeded() {
@@ -686,6 +687,10 @@ public struct VeilopolyGameView: View {
   }
   .shadow(color: .black.opacity(0.42), radius: 14, x: -5, y: 7)
   .accessibilityElement(children: .contain)
+  // Signed Astra art is a dark instrument surface in BOTH table themes.
+  // Scope semantic light text here, not to the whole game or native sheets.
+  .foregroundColor(.white)
+  .environment(\.colorScheme, .dark)
  }
 
  private var managementNavigation: some View {
@@ -755,7 +760,7 @@ public struct VeilopolyGameView: View {
    let height = CGFloat(measured.height)
    SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
     .frame(width: width, height: height)
-    .background(Color(red: 0.94, green: 0.91, blue: 0.83),
+    .background(interfaceTheme.paper.color,
                 in: RoundedRectangle(cornerRadius: 12))
     .overlay {
      RoundedRectangle(cornerRadius: 12)

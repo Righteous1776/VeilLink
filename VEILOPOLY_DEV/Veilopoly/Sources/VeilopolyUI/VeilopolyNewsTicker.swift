@@ -9,13 +9,14 @@ struct VeilopolyNewsTicker: View {
  @Environment(\.scenePhase) private var scenePhase
  @State private var textWidth: CGFloat = 0
  @State private var began = Date()
- private let ink = Color(red: 0.10, green: 0.26, blue: 0.27)
+ @Environment(\.veilopolyInterfaceTheme) private var interfaceTheme
+ private var ink: Color { interfaceTheme.ink.color }
 
  var body: some View {
   HStack(spacing: 7) {
    Image(systemName: notice.category == .market ? "chart.line.uptrend.xyaxis" : "newspaper")
     .font(.system(size: 12, weight: .semibold))
-    .foregroundColor(Color(red: 0.70, green: 0.54, blue: 0.31))
+    .foregroundColor(interfaceTheme.goldInk.color)
    GeometryReader { geometry in
     TimelineView(.animation(minimumInterval: 1.0 / 30,
       paused: reduceMotion || scenePhase != .active || textWidth <= geometry.size.width)) { timeline in
@@ -37,7 +38,7 @@ struct VeilopolyNewsTicker: View {
   }
   .padding(.horizontal, 9)
   .frame(height: 34)
-  .background(Color(red: 0.96, green: 0.93, blue: 0.86).opacity(0.96), in: RoundedRectangle(cornerRadius: 8))
+  .background(interfaceTheme.paper.color, in: RoundedRectangle(cornerRadius: 8))
   .overlay { RoundedRectangle(cornerRadius: 8).stroke(ink.opacity(0.18), lineWidth: 0.7) }
   .onPreferenceChange(BulletinTextWidth.self) { textWidth = $0 }
   .onAppear { began = Date() }
