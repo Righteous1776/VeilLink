@@ -1,5 +1,11 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## GPT CONTINUATION-003 — Pure Engine malformed state guards — 2026-11-07
+
+- Base 2a0975e. Guard invalid trade/auction/debt participant references, negative deck cursors and overflow counters before indexing or mutation. Four regression tests added; full SwiftPM and Apple SDK NOT_RUN; no rules or persistence format change.
+- Evidence: reviews/GPT_CONTINUATION_003_PHASE_GUARDS.md. NEXT_ONE_TASK: actual full package regression and snapshot stress. No build dispatch, main merge or IPA.
+
+
 ## GPT CONTINUATION-002 — Read-only achievements — 2026-11-07
 
 - Prior live head `09ac83b`. Added 16 original no-stakes achievement milestones and phase-independent journal in asset browser. Historical counters derive only from recorded committed moves; portfolio objectives deliberately reflect current holdings. No added persistent schema, rewards, gameplay move, market effect, RNG or wire format.

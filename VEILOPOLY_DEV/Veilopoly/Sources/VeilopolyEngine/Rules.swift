@@ -39,6 +39,35 @@ public enum VeilopolyEngine {
           (e.perHouse == nil || (0...1_000_000).contains(e.perHouse!)) &&
           (e.perHotel == nil || (0...1_000_000).contains(e.perHotel!))
          }) }) else { throw GameError.invalidState }
+   // Stop malformed saved/remote states before participant or deck subscripts.
+   // Keep tile-specific invalidTile failures in their existing move handlers.
+   guard (0..<4).contains(g.turn.player), g.nextSeq >= 0, g.nextSeq < Int.max - 16,
+         (0..<Int.max - 16).contains(g.turn.rollCount),
+         (0..<Int.max - 16).contains(g.turn.doubleCount),
+         (0...12).contains(g.turn.pendingSteps),
+         (0..<Int.max - 16).contains(g.chanceDeck.cursor),
+         (0..<Int.max - 16).contains(g.chestDeck.cursor),
+         (g.auction.map { a in
+          !a.active.isEmpty && a.active.count <= 4 &&
+          Set(a.active).count == a.active.count &&
+          a.active.allSatisfy { (0..<4).contains($0) } &&
+          a.active.contains(a.turn) &&
+          (a.bidder.map { (0..<4).contains($0) } ?? true) &&
+          (0...1_000_000_000).contains(a.currentBid)
+         } ?? true),
+         (g.trade.map { t in
+          (0..<4).contains(t.from) && (0..<4).contains(t.to) && t.from != t.to &&
+          [t.offer, t.request].allSatisfy { x in
+           (0...1_000_000_000).contains(x.cash) &&
+           x.tiles.allSatisfy { g.board.indices.contains($0) } &&
+           (0...16).contains(x.chanceCards) && (0...16).contains(x.chestCards)
+          }
+         } ?? true),
+         (g.pendingDebt.map { d in
+          (0..<4).contains(d.player) &&
+          (d.creditor.map { (0..<4).contains($0) } ?? true) &&
+          (0...1_000_000_000).contains(d.amount)
+         } ?? true) else { throw GameError.invalidState }
    guard (g.banking.map { IntegratedBanking.validate($0) } ?? true) else { throw GameError.invalidState }
    guard ctx == context(g) else { throw GameError.invalidContext }
    guard g.winner == nil else { throw GameError.gameFinished }
