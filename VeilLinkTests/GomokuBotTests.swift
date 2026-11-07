@@ -509,4 +509,23 @@ final class GomokuBotTests: XCTestCase {
     }
 
 
+
+    func testUserMayEnableFullGomokuDepthOnLegacyDeviceWithoutForcedDowngrade() {
+        let declaredDevice = "LEGACY-COMPACT"
+        let enabled = LocalAIGameController.boardSearchProfile(
+            deviceLabel: declaredDevice, unrestricted: true
+        )
+        let optedOut = LocalAIGameController.boardSearchProfile(
+            deviceLabel: declaredDevice, unrestricted: false
+        )
+        XCTAssertEqual(enabled, "HIGH-PERFORMANCE")
+        XCTAssertEqual(optedOut, declaredDevice)
+        let unrestricted = GomokuBotBudget.forDifficulty(.master, profileLabel: enabled)
+        let compact = GomokuBotBudget.forDifficulty(.master, profileLabel: optedOut)
+        XCTAssertGreaterThan(unrestricted.rootCandidateLimit, compact.rootCandidateLimit)
+        XCTAssertGreaterThan(unrestricted.continuationCandidateLimit, compact.continuationCandidateLimit)
+        XCTAssertGreaterThan(unrestricted.timeLimitMilliseconds, compact.timeLimitMilliseconds)
+    }
+
+
 }
