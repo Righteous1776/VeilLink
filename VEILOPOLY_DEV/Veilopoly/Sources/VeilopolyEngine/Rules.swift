@@ -240,7 +240,7 @@ public enum VeilopolyEngine {
    fx.append(Effect(.released, player: p, deck: useDeck))
   case .declareBankruptcy:
    guard let debt = g.pendingDebt, debt.player == p else { throw GameError.noDebt }
-   bankrupt(&g, debtor: p, creditor: debt.creditor, &fx)
+   try bankrupt(&g, debtor: p, creditor: debt.creditor, &fx)
    g.pendingDebt = nil
   case .bankDeposit, .bankWithdraw, .bankBorrow, .bankRepay, .bankInvest, .bankSettle,
        .stockBuy, .stockSell, .stockTick:
@@ -446,8 +446,8 @@ public enum VeilopolyEngine {
    g.turn.phase = .debt
   }
  }
- private static func bankrupt(_ g: inout GameState, debtor p: Int, creditor: Int?, _ fx: inout [Effect]) {
-  IntegratedBanking.closeBankruptAccount(&g, player: p, effects: &fx)
+ private static func bankrupt(_ g: inout GameState, debtor p: Int, creditor: Int?, _ fx: inout [Effect]) throws {
+  try IntegratedBanking.closeBankruptAccount(&g, player: p, effects: &fx)
   let receiver = creditor.flatMap { id in (0..<g.players.count).contains(id) && id != p && !g.players[id].bankrupt ? id : nil }
   if let receiver = receiver {
    g.players[receiver].cash += g.players[p].cash

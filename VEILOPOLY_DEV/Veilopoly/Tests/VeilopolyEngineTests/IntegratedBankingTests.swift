@@ -257,3 +257,43 @@ extension IntegratedBankingTests {
   XCTAssertEqual(effects.filter { $0.kind == .bankRepaid }.map(\.amount),[-200])
  }
 }
+
+extension IntegratedBankingTests {
+ func testBankruptcyCashCapNeverSilentlyDeletesAccountAssets() {
+  var g=Fixture.game(.manage)
+  g.players[0].cash=1_000_000_000
+  var ledger=IntegratedBankLedger()
+  ledger.accounts[0].savings=[
+   SandboxSaving(id:2,feature:.demandDeposit,principal:120,
+                 unlockPeriod:0,payoutBasisPoints:0)]
+  g.banking=ledger
+  let before=g
+  var effects:[Effect]=[]
+  XCTAssertThrowsError(try IntegratedBanking.closeBankruptAccount(
+   &g,player:0,effects:&effects)) {
+   XCTAssertEqual($0 as? GameError,.invalidState)
+  }
+  XCTAssertEqual(g,before)
+  XCTAssertTrue(effects.isEmpty)
+ }
+ func testFailedBankruptcyIsFullyAtomicIncludingTheActualReducer() {
+  var g=Fixture.game(.manage)
+  g.players[0].cash=1_000_000_000
+  var ledger=IntegratedBankLedger()
+  ledger.accounts[0].savings=[
+   SandboxSaving(id:3,feature:.demandDeposit,principal:100,
+                 unlockPeriod:0,payoutBasisPoints:0)]
+  g.banking=ledger
+  g.pendingDebt=PendingDebt(player:0,amount:1_000_000,creditor:1)
+  g.turn.phase = .debt
+  let previous=g
+  let result=VeilopolyEngine.apply(g,VeilopolyEngine.context(g),
+      Move(.declareBankruptcy,player:0,seq:g.nextSeq))
+  switch result {
+  case .failure(let error): XCTAssertEqual(error,.invalidState)
+  case .success: XCTFail("The estate must never discard assets to satisfy the cap")
+  }
+  XCTAssertEqual(g,previous)
+  XCTAssertEqual(g.banking?.accounts[0].savings.count,1)
+ }
+}

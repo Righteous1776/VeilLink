@@ -360,20 +360,31 @@ public enum IntegratedBanking {
  /// Bankruptcy safety: accessible savings and the last quoted stock value enter
  /// the estate before normal creditor distribution. Outstanding loans are archived
  /// pending the Owner's priority decision.
- public static func closeBankruptAccount(_ g: inout GameState, player p: Int, effects: inout [Effect]) {
-  guard var ledger = g.banking, ledger.accounts.indices.contains(p) else { return }
+ public static func closeBankruptAccount(_ g: inout GameState, player p: Int,
+                                         effects: inout [Effect]) throws {
+  guard var ledger = g.banking, ledger.accounts.indices.contains(p),
+        g.players.indices.contains(p) else { return }
   let savings = ledger.accounts[p].savings.reduce(0) { $0 + $1.principal }
-  if savings > 0 && savings <= 1_000_000_000 - g.players[p].cash {
+  let proceeds = ledger.market.flatMap { market in
+   market.portfolios.indices.contains(p)
+    ? StockMarketEngine.portfolioMarketValueCents(market, player:p) / 100
+    : nil
+  } ?? 0
+  // PRE-FLIGHT the entire estate before clearing any savings or shares.
+  // Previously overflowing items were discarded without crediting their value.
+  let headroom = 1_000_000_000 - g.players[p].cash
+  guard savings >= 0, proceeds >= 0, savings <= headroom,
+        proceeds <= headroom - savings else { throw GameError.invalidState }
+  if savings > 0 {
    g.players[p].cash += savings
-   effects.append(Effect(.bankWithdrawn, player: p, amount: savings, text: "estatePrincipal"))
+   effects.append(Effect(.bankWithdrawn, player:p, amount:savings,
+                         text:"estatePrincipal"))
   }
   if var market = ledger.market, market.portfolios.indices.contains(p) {
-   let marketValueCents = StockMarketEngine.portfolioMarketValueCents(market, player: p)
-   let proceeds = marketValueCents / 100
-   if proceeds > 0 && proceeds <= 1_000_000_000 - g.players[p].cash {
+   if proceeds > 0 {
     g.players[p].cash += proceeds
-    effects.append(Effect(.stockSold, player: p, amount: proceeds,
-                          text: "estateLiquidation"))
+    effects.append(Effect(.stockSold, player:p, amount:proceeds,
+                          text:"estateLiquidation"))
    }
    market.portfolios[p] = StockPortfolio()
    ledger.market = market
