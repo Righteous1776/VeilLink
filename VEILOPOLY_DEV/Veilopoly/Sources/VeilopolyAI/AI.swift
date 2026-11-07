@@ -115,6 +115,36 @@ public enum LocalGameRunner {
   return AutoGameStats(totalMoves: g.nextSeq, completed: g.winner != nil,
                        winner: g.winner, finalHash: StateDigest.hash(g))
  }
+ /// A/B comparison harness; counts complete games separately from capped runs.
+ /// It uses the SAME reducer/AI, no wall-clock wait or scripted outcomes.
+ public static func compareEconomy(seed: UInt64, maxMoves: Int = 4_000,
+                                   cityLong: Bool) throws -> EconomyAutoplayEvidence {
+  var g = cityLong ? VeilopolyCityLongEconomy.make(seed: seed, humanCount: 0)
+                   : GameFactory.make(seed: seed, humanCount: 0)
+  var firstBankruptcyAt: Int?
+  while g.winner == nil && g.nextSeq < maxMoves {
+   let ctx = VeilopolyEngine.context(g)
+   let actor = g.auction?.turn ?? g.trade?.to ?? g.pendingDebt?.player ?? g.turn.player
+   let move = decideForRunner(g, ctx, actor)
+   switch VeilopolyEngine.apply(g, ctx, move) {
+   case .success((let next, _)):
+    g = next
+    if firstBankruptcyAt == nil && g.players.contains(where: { $0.bankrupt }) {
+     firstBankruptcyAt = g.nextSeq
+    }
+   case .failure(let error): throw LocalLoopError.engine(error)
+   }
+  }
+  return EconomyAutoplayEvidence(
+   seed: seed, cityLong: cityLong, moves: g.nextSeq,
+   completedTurns: g.moveLog.filter { $0.type == .endTurn }.count,
+   finished: g.winner != nil, winner: g.winner,
+   bankruptSeats: g.players.filter(\.bankrupt).count,
+   firstBankruptcyAtMove: firstBankruptcyAt,
+   liquidCash: g.players.map(\.cash),
+   propertyCounts: g.players.map { p in g.board.filter { $0.owner == p.id }.count },
+   finalHash: StateDigest.hash(g))
+ }
  private static func decideForRunner(_ g: GameState, _ ctx: GameContext, _ actor: Int) -> Move {
   VeilopolyAI.decide(g, ctx, me: actor, level: g.players[actor].aiLevel)
  }
