@@ -1,5 +1,17 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## VLP-MANUAL-V5-R1 · 完整玩家说明书与 PDF — 2026-11-08
+
+- Owner explicitly requested a full, exhaustive Chinese game manual available directly inside the app, plus a standalone PDF.
+- Dedicated branch `dev/veilopoly-manual-v5-20261108`, based on reviewed V5 risk line `0ef5b71`. No main/other branch updates.
+- Canonical UTF-8 source: `Veilopoly/docs/PLAYER_MANUAL_V5.md`. Exact same blob is bundled at `Veilopoly/Sources/VeilopolyUI/Resources/VeilopolyCompleteManual.md`, Git blob SHA-1 `b86fa641273fae48824c7251603cfeed3821ecbb`; source SHA-256 `abae12367bc58bd89e44727ed81a531f9da4cf39cdbc03a949d7c5774c8383f6`.
+- 27 detailed chapters, 40-slot board table, 32-event-card V5 table, every major mode/operation/economic number, precise V4/V5 version gates, banking, loans, stocks, trading, IOUs, crisis, bankruptcy, saves, error mapping, FAQ, test boundaries, glossary. ~20,020 Unicode characters.
+- App-native existing `VeilopolyGuideSheet` now offers `完整说明书 / 玩法辞典` segmented mode and indexed search, preserving prior 23 legacy short topics. SwiftPM resources ship offline. UI view remains read-only; helper does not mutate GameState.
+- Standalone Chinese searchable A4 PDF generated from that exact source (font/layout may differ); **32 pages**, PDF SHA-256 `b0cf30d07178678a85bd31a37ddce7510ada4f0af48d017ba60de7269556b00c`. Binary PDF is delivered separately in ChatGPT, not committed into protected Git history.
+- New UITests source validates embedded edition, 28 parsed display sections including introduction, 40 board cells, 32 card IDs, search, no GameState dependency. **Test source committed, exact-head SwiftPM/XCTest NOT_RUN**, iOS SDK and iPhone device NOT_RUN. Do not claim installed users can already open updated view.
+- Review receipt `VEILOPOLY_DEV/reviews/MANUAL_DELIVERY_V5_20261108.md`. Next gate: compile current SHA and run unit/UI checks, then Governor integration review; no build IPA, merge main or release.
+
+
 ## MANUAL-CN-V1 — 完整玩家说明书（2026-11-08）
 
 - 说明书独立分支 dev/veilopoly-manual-v5-20261108，基线 0ef5b71；不覆盖其他 Agent 的研发任务。
