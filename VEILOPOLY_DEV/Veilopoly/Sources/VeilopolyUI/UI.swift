@@ -773,6 +773,9 @@ public struct VeilopolyGameView: View {
        Label("跳过当前动画", systemImage: "forward.end.fill")
         .font(.caption2.weight(.semibold)).padding(.horizontal, 11)
         .padding(.vertical, 7)
+        .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide),
+               minHeight: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide))
+        .contentShape(Rectangle())
       }
       .buttonStyle(.borderedProminent)
       .tint(.mint)

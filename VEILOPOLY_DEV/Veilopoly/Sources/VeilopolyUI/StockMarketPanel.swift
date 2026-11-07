@@ -291,7 +291,9 @@ public struct VeilopolyStockMarketPanel: View {
      set: { shareText = String($0) }), in: 1...10_000)
      .labelsHidden().fixedSize()
    }
-   HStack(spacing: 5) {
+   // Narrow landscape drawers cannot fit five 44pt buttons in one row.
+   // Wrap instead of silently shrinking quantity hit regions below 44pt.
+   LazyVGrid(columns: [GridItem(.adaptive(minimum: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide)), spacing: 5)], spacing: 5) {
     ForEach([1, 5, 10, 100], id: \.self) { preset in
      quantityButton("\(preset)") { shareText = String(preset) }
     }
@@ -352,7 +354,10 @@ public struct VeilopolyStockMarketPanel: View {
  private func quantityButton(_ title: String, action: @escaping () -> Void) -> some View {
   Button(action: action) {
    Text(title).font(.system(size: 9, weight: .semibold))
-    .frame(maxWidth: .infinity, minHeight: 44)
+    .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide),
+           maxWidth: .infinity,
+           minHeight: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide))
+    .contentShape(Rectangle())
     .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
   }
   .buttonStyle(.plain)
@@ -372,8 +377,12 @@ public struct VeilopolyStockMarketPanel: View {
      Spacer()
      Image(systemName: positionsExpanded ? "chevron.up" : "chevron.down").font(.caption2)
     }
+    .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide),
+           minHeight: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide))
+    .contentShape(Rectangle())
    }
    .buttonStyle(.plain)
+   .accessibilityValue(positionsExpanded ? "已展开" : "已收起")
    HStack(spacing: 6) {
     portfolioMetric("市值", money(value), .white)
     portfolioMetric("浮动", signedMoney(unrealized), pnlColor(unrealized))
@@ -424,6 +433,9 @@ public struct VeilopolyStockMarketPanel: View {
      .foregroundStyle(pnlColor(pnl))
    }
    .padding(.vertical, 6).padding(.horizontal, 7)
+   .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide),
+          minHeight: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide))
+   .contentShape(Rectangle())
    .background(position.symbol == selectedSymbol ? StockTerminalPalette.gold.opacity(0.09) : .clear,
                in: RoundedRectangle(cornerRadius: 7))
   }

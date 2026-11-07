@@ -1,5 +1,19 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## CODEX W1-005 — touch-region minima — 2026-11-07
+
+- Before `06a659a` (theme fix), same #168 dev-only grant; main unchanged.
+- Animation skip, stock portfolio toggle/rows now explicitly contain minimum
+  44pt targets; narrow quantity shortcuts wrap with adaptive columns. No
+  overlapping invisible targets, new gestures, assets or rule changes.
+- Targeted layout/ACK/stock tests 21/21 PASS; full Linux suite 249/249 PASS,
+  42.572s. iOS15 grammar parse PASS only; Apple SDK/rendered touch/VO NOT_RUN.
+- See `reviews/W1_005_CONTROL_HIT_AREAS.md`. Full safe-area dragging remains
+  unfinished; source declarations are not physical hit-test acceptance.
+- NEXT_ONE_TASK: VLP-CODEX-W2-001, reproduce and reject out-of-range
+  pendingPurchase references before purchase/auction or checkpoint persistence.
+  Potential crash takes priority over additional theme/drag polishing.
+
 ## CODEX W1-004 — interface theme consistency — 2026-11-07
 
 - Before `8865668`; main still `2c5b5161027edff097b27fe3323d30f6ca3e430e`.

@@ -4,8 +4,9 @@ import Foundation
 /// SpriteKit dependency, so it can be tested with the portable Swift toolchain.
 public enum VeilopolyLandscapeLayout {
  public static let boardAspect = 1024.0 / 940.0
+ public static let minimumControlTouchSide = 44.0
  public static let capsuleButtonWidth = 46.0
- public static let capsuleTouchHeight = 44.0
+ public static let capsuleTouchHeight = minimumControlTouchSide
  public static let capsuleDividerWidth = 1.0
  public static let boardHorizontalInset = 6.0
  public static let boardVerticalInset = 4.0
