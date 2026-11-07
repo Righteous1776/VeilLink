@@ -8,6 +8,7 @@ final class LingCoreChatOnlyBoundary {
     private let runtime: LocalTextModelRuntime
     private var session = AgentSession()
     private(set) var isGenerating = false
+    private var generationRevision: UInt64 = 0
 
     init(runtime: LocalTextModelRuntime) {
         self.runtime = runtime
@@ -28,6 +29,7 @@ final class LingCoreChatOnlyBoundary {
             throw AgentRuntimeError.invalidRequest
         }
         isGenerating = true
+        let capturedRevision = generationRevision
         defer { isGenerating = false }
 
         let user = AgentMessage(role: .user, text: input)
@@ -46,7 +48,9 @@ final class LingCoreChatOnlyBoundary {
             if runtime.state == .unloaded || runtime.state == .unavailable {
                 try await runtime.prepare()
             }
+            guard capturedRevision == generationRevision else { throw AgentRuntimeError.cancelled }
             let result = try await runtime.generate(request: request, onToken: onToken)
+            guard capturedRevision == generationRevision else { throw AgentRuntimeError.cancelled }
             session.append(
                 AgentMessage(role: .assistant, text: String(result.text.prefix(4_096))),
                 limit: 6
@@ -59,10 +63,12 @@ final class LingCoreChatOnlyBoundary {
     }
 
     func cancel() {
+        generationRevision &+= 1
         runtime.cancel()
     }
 
     func clear() {
+        generationRevision &+= 1
         runtime.cancel()
         session = AgentSession()
     }

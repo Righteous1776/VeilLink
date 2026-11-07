@@ -66,4 +66,44 @@ final class LingCoreChatOnlyBoundaryTests: XCTestCase {
         boundary.clear()
         XCTAssertEqual(boundary.messageCount, 0)
     }
+
+    private final class SuspendedRuntimeSpy: LocalTextModelRuntime {
+        var state: AgentRuntimeState = .ready
+        let manifest: LocalTextModelManifest? = nil
+        var pending: CheckedContinuation<AgentTextResult, Never>?
+        var didStart: (() -> Void)?
+
+        func prepare() async throws { state = .ready }
+        func generate(request: AgentTextRequest,
+                      onToken: @escaping @MainActor @Sendable (String) -> Void) async throws -> AgentTextResult {
+            await withCheckedContinuation { continuation in
+                pending = continuation
+                didStart?()
+            }
+        }
+        func finish() {
+            pending?.resume(returning: AgentTextResult(text: "late response", emittedChunkCount: 1, estimatedTokenCount: 2))
+            pending = nil
+        }
+        func cancel() { }
+        func trimMemory() { }
+        func unload() { state = .unloaded }
+    }
+
+    func testClearCannotRestoreLateGeneratedHistory() async throws {
+        let spy = SuspendedRuntimeSpy()
+        let boundary = LingCoreChatOnlyBoundary(runtime: spy)
+        let started = expectation(description: "inference started")
+        spy.didStart = { started.fulfill() }
+        let inFlight = Task { try await boundary.reply(to: "hello") { _ in } }
+        await fulfillment(of: [started], timeout: 5)
+        boundary.clear()
+        spy.finish()
+        do {
+            _ = try await inFlight.value
+            XCTFail("Cleared session must reject stale inference completion")
+        } catch AgentRuntimeError.cancelled {
+            XCTAssertEqual(boundary.messageCount, 0)
+        }
+    }
 }
