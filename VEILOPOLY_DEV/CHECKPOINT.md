@@ -65,6 +65,55 @@
 - 未解决：银行对合同存款/股票卖出资金不足的处理仍会拒绝自主操作；破产玩家的未兑付银行应收目前在结算队首时作废，清算优先级待 Owner 审核；正式上线前须做长期现金池耗尽模拟。
 - 新增 Engine XCTest 源码：银行现金100时经过起点支付100与欠款1000、后来税收回流600自动清偿600、无银行现金时免费房屋备选奖励变成应付款、旧V3 JSON 不含新增字段。
 - **当前分支完整 SwiftPM/XCTest/iOS SDK/真机：NOT_RUN**。下个唯一任务：在可用的 Swift6.2.1 runner 精确HEAD编译和跑全测试，修好所有失败，再对至少12组同seed进行稳定性和经济平衡校准。严禁打包、合并、IPA。
+## VLP-MANUAL-V5-R1 · 完整玩家说明书与 PDF — 2026-11-08
+
+- Owner explicitly requested a full, exhaustive Chinese game manual available directly inside the app, plus a standalone PDF.
+- Dedicated branch `dev/veilopoly-manual-v5-20261108`, based on reviewed V5 risk line `0ef5b71`. No main/other branch updates.
+- Canonical UTF-8 source: `Veilopoly/docs/PLAYER_MANUAL_V5.md`. Exact same blob is bundled at `Veilopoly/Sources/VeilopolyUI/Resources/VeilopolyCompleteManual.md`, Git blob SHA-1 `b86fa641273fae48824c7251603cfeed3821ecbb`; source SHA-256 `abae12367bc58bd89e44727ed81a531f9da4cf39cdbc03a949d7c5774c8383f6`.
+- 27 detailed chapters, 40-slot board table, 32-event-card V5 table, every major mode/operation/economic number, precise V4/V5 version gates, banking, loans, stocks, trading, IOUs, crisis, bankruptcy, saves, error mapping, FAQ, test boundaries, glossary. ~20,020 Unicode characters.
+- App-native existing `VeilopolyGuideSheet` now offers `完整说明书 / 玩法辞典` segmented mode and indexed search, preserving prior 23 legacy short topics. SwiftPM resources ship offline. UI view remains read-only; helper does not mutate GameState.
+- Standalone Chinese searchable A4 PDF generated from that exact source (font/layout may differ); **32 pages**, PDF SHA-256 `b0cf30d07178678a85bd31a37ddce7510ada4f0af48d017ba60de7269556b00c`. Binary PDF is delivered separately in ChatGPT, not committed into protected Git history.
+- New UITests source validates embedded edition, 28 parsed display sections including introduction, 40 board cells, 32 card IDs, search, no GameState dependency. **Test source committed, exact-head SwiftPM/XCTest NOT_RUN**, iOS SDK and iPhone device NOT_RUN.
+- **MANUAL-004 parallel integration:** another agent also committed a distinct 13-category/162-entry rule encyclopedia. Both manuals remain visible: a 27-chapter PDF-parity Markdown reading mode + a 162-entry searchable reference view + original 23-topic quick dictionary. Renamed UI-local type to `VeilopolyMarkdownManual` to eliminate the engine/UI `VeilopolyCompleteManual` naming collision. **Source review only, no SwiftPM/iOS test executed.** Do not claim installed users can already open updated view.
+- Review receipt `VEILOPOLY_DEV/reviews/MANUAL_DELIVERY_V5_20261108.md`. Next gate: compile current SHA and run unit/UI checks, then Governor integration review; no build IPA, merge main or release.
+
+
+## MANUAL-CN-V1 — 完整玩家说明书（2026-11-08）
+
+- 说明书独立分支 dev/veilopoly-manual-v5-20261108，基线 0ef5b71；不覆盖其他 Agent 的研发任务。
+- 由统一 editorial 主稿生成：13 章、162 条条目、40 格地块、32 张 V5 卡牌、可搜索 Swift Engine 只读数据及 54 页 A4 中文 PDF。
+- 新增 VeilopolyCompleteManual.swift 与 VeilopolyCompleteManualView.swift；现有 VeilopolyGuideSheet.swift 保留 23 条简明词条，加入「完整规则说明书」NavigationLink。
+- 完整 Markdown 主稿与 JSON 章节数据入库，任何后续逐字修改必须同步更新 Swift 与 PDF；版本为 VEILOPOLY-MANUAL-CN-V1-20261108。
+- 披露：当前 V5 Apple SDK、完整 SwiftPM、iOS 真机、多设备联机以及 100 种子压力测试均未获得本分支有效通过回执。说明书不能当作发布证明。
+- 不改变 Engine 资金规则、GameState、身份、Wire、SQLite、主干或构建工作流。没有打包 IPA 或合并 main。
+
+
+## MACRO-FINAL · ECON V5 consolidated review — 2026-11-08
+
+- Governance: Owner requests final macro iteration. Isolated branch `dev/veilopoly-risk-review-v5-20261108`; base from `dev/veilopoly-economy-v5-20261107`, not main or live dev. All code under `VEILOPOLY_DEV/**`.
+- Mapped monetary base, protected bank reserves, liabilities/IOUs, loan underwriting, property/house inventory, event payouts, peer transfers and stock exposure. P0 V5 estate changed to noncash transfer/writeoff; V4 kept unchanged.
+- Revised interest/maturity receipt text, liquidity no-liability display, crisis exposure reporting, FIFO priority and forced liquidation. Estate tests authored, **not executed**.
+- Formal review: `VEILOPOLY_DEV/reviews/MACRO_FINAL_20261108.md`.
+- New current-head 100-seed stress test **source committed, execution NOT_RUN**; reports natural finished vs capped games, bank IOU peaks, first bankruptcy and crisis ticks. **Next one gate**: reproduce current branch with Swift 6.2.1, full `swift test`, execute stress tests and fix failed cases, then Owner/Governor review of branch conflicts. No build IPA, signing, release or merging.
+- Do NOT claim complete crisis robustness, Apple SDK pass, iOS playability or measured game duration.
+
+
+## ECON-V5-CRISIS-001 — Systemic risk controls / banking IOUs — 2026-11-08
+
+- Isolated risk review branch dev/veilopoly-risk-review-v5-20261108, independent of concurrent Veilopoly writers. Owner and Governor scoped VEILOPOLY_DEV only.
+- Finance risk diagnostic, conditional lending buffer, credit book limit, stock-stress response, partial V5 settlement of matured deposit/investment/stock positions, FIFO outstanding bank claims, player claim UI.
+- V5 money supply remains fixed at 2,100,000, no bailout minting. V4 frozen terms/saves not migrated. New regression test sources and audit in reviews/ECON_V5_SYSTEMIC_RISK_AUDIT_20261108.md.
+- RISK-005/006: automatic debt coverage now skips unavailable savings/stock cash and can reach the debt phase without breaking monetary conservation; credit stops when contingent claims exceed treasury. Bankruptcy-estate redistribution and comprehensive lender priorities STILL OPEN/P0; do not label crisis handling complete.
+- Exact-head full SwiftPM / Apple SDK / phones NOT_RUN. Next task: tests, then forced-liquidation rescue and 100-seed stress. No merge, workflow, packaging or IPA.
+
+## ECON-V5-LIQUIDITY-001 — 新单机资金扩容（独立分支，未集成）— 2026-11-07
+
+- 因 dev/veilopoly 被并行写入而建立 `dev/veilopoly-economy-v5-20261107`，基于其 HEAD `542f637`；保证不覆盖其他 Agent 的货币清算/待兑付队列改动。
+- 新局 V5 城市银行储备 ¥2,000,000，玩家4×¥25,000，总发行游戏币 ¥2,100,000，严格执行 V5 独立资金守恒；V4 旧 ¥188,800 上限、原行情/贷款/卡牌/存档不重估。
+- 地产购买/建筑×12，租金×8，起点¥3,200，早期租金保护¥3,200→后期¥24,000，贷款额度¥6k/12k/24k/40k且只按合同计息，股票报价×24，机会/命运现金与修理面额×4并同步文案。玩家可用现金、银行储备和总量分开显示。
+- 旧 V4 无 queuedClaims 键的已封存存档仍可被接受，下一次实际银行兑付时才生成列表；并行 Agent 的待兑付逻辑、原 Cash Move 和 Wire schema 保留。
+- 新增 V5 engine 测试代码并将旧 V4 测试固定到 makeV4。**当前 HEAD SwiftPM/XCTest、Apple SDK、真机、双机全部 NOT_RUN**，仍需整局经济 A/B 数据校准。
+- 完整评审：`VEILOPOLY_DEV/reviews/ECON_V5_MONEY_CIRCULATION_20261107.md`。下一任务：校验 exact HEAD SwiftPM + V4/V5 同 seed 对照；不得打包、合并、IPA。
 
 
 ## ECON-007～013 — 统一银行流动性 / 玩家直转 / 免费房屋 / 联动市场 V4 — 2026-11-07

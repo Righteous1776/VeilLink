@@ -43,7 +43,7 @@ public struct IntegratedBankLedger: Codable, Equatable {
   self.market = market
   self.financeRuleVersion = financeRuleVersion
   self.reserveCash = reserveCash
-  self.queuedClaims = financeRuleVersion == VeilopolyCityLongEconomy.version ? [] : nil
+  self.queuedClaims = financeRuleVersion >= VeilopolyCityLongEconomy.finiteVersion ? [] : nil
  }
 
  // FinanceSandboxPolicy has enum-keyed dictionaries. Swift encodes these as
@@ -118,6 +118,36 @@ public struct IntegratedBankLedger: Codable, Equatable {
 }
 
 public enum IntegratedBanking {
+ /// Matured V5 obligations are bank liabilities, not permission to print cash.
+ /// Older outstanding claims take priority over new optional redemptions.
+ private static func disburseMatured(_ ledger: inout IntegratedBankLedger,
+                                     game: inout GameState, seat: Int,
+                                     amount: Int, source: String) throws -> Int {
+  guard amount >= 0, amount <= 1_000_000_000,
+        game.players.indices.contains(seat) else { throw GameError.invalidState }
+  if ledger.financeRuleVersion != VeilopolyCityLongEconomy.version {
+   guard game.players[seat].cash <= 1_000_000_000 - amount else {
+    throw GameError.invalidState
+   }
+   game.players[seat].cash += amount
+   return amount
+  }
+  guard let treasury = ledger.reserveCash, var queue = ledger.queuedClaims,
+        (1...32).contains(source.utf8.count) else {
+   throw GameError.invalidState
+  }
+  let paid = queue.isEmpty ? min(treasury, amount) : 0
+  let owing = amount - paid
+  guard game.players[seat].cash <= 1_000_000_000 - paid,
+        owing == 0 || queue.count < 4_096 else { throw GameError.invalidState }
+  if owing > 0 {
+   queue.append(VeilopolyBankClaim(player: seat, amount: owing, source: source))
+  }
+  game.players[seat].cash += paid
+  ledger.reserveCash = treasury - paid
+  ledger.queuedClaims = queue
+  return paid
+ }
  public static func ledger(_ g: GameState) -> IntegratedBankLedger {
   var result = g.banking ?? IntegratedBankLedger(completedTurns: g.moveLog.filter { $0.type == .endTurn }.count)
   if result.market == nil {
@@ -138,17 +168,17 @@ public enum IntegratedBanking {
  }
 
  public static func validate(_ ledger: IntegratedBankLedger) -> Bool {
-  (1...4).contains(ledger.financeRuleVersion) &&
-  (ledger.financeRuleVersion == VeilopolyCityLongEconomy.version
-   ? ((ledger.reserveCash.map { (0...VeilopolyCityLongEconomy.totalMoneySupply).contains($0) } ?? false) &&
-      (ledger.queuedClaims.map {
-       $0.count <= 4_096 && $0.allSatisfy { claim in
-        (0..<4).contains(claim.player) &&
-        (1...VeilopolyCityLongEconomy.totalMoneySupply).contains(claim.amount) &&
-        (1...32).contains(claim.source.utf8.count)
-       }
-      } ?? false))
-   : ledger.reserveCash == nil && ledger.queuedClaims == nil) &&
+  (1...5).contains(ledger.financeRuleVersion) &&
+  (VeilopolyCityLongEconomy.supplyCeiling(forVersion: ledger.financeRuleVersion).map { cap in
+   (ledger.reserveCash.map { (0...cap).contains($0) } ?? false) &&
+   (ledger.queuedClaims.map {
+    $0.count <= 4_096 && $0.allSatisfy { claim in
+     (0..<4).contains(claim.player) &&
+     (1...cap).contains(claim.amount) &&
+     (1...32).contains(claim.source.utf8.count)
+    }
+   } ?? (ledger.financeRuleVersion == VeilopolyCityLongEconomy.finiteVersion))
+  } ?? (ledger.reserveCash == nil && ledger.queuedClaims == nil)) &&
   (0...1_000_000).contains(ledger.completedTurns) && ledger.accounts.count == 4 &&
   ledger.terms.isWellFormed() && (ledger.market.map(StockMarketEngine.validate) ?? true) &&
   ledger.accounts.allSatisfy { acc in
@@ -227,10 +257,11 @@ public enum IntegratedBanking {
    let item = ledger.accounts[p].savings[ix]
    guard period >= item.unlockPeriod else { throw GameError.financePositionLocked }
    let payout = item.principal + item.principal * item.payoutBasisPoints / 10_000
-   guard g.players[p].cash <= 1_000_000_000 - payout else { throw GameError.invalidState }
-   g.players[p].cash += payout
+   let paid = try disburseMatured(&ledger, game: &g, seat: p, amount: payout,
+                                 source: "savingMature")
    ledger.accounts[p].savings.remove(at: ix)
-   effects.append(Effect(.bankWithdrawn, player: p, amount: payout, text: item.feature.rawValue))
+   effects.append(Effect(.bankWithdrawn, player: p, amount: paid,
+                         text: "\(item.feature.rawValue);deferred:\(payout - paid)"))
   case .bankBorrow:
    guard let principal = m.amount, let periods = m.financePeriods else { throw GameError.invalidPayload }
    let ordinal = ledger.accounts[p].borrowCount
@@ -256,6 +287,12 @@ public enum IntegratedBanking {
    }
    guard period <= 1_000_000 - periods && g.players[p].cash <= 1_000_000_000 - principal else {
     throw GameError.invalidState
+   }
+   // Protect queued claims, savings, investment payouts and equity exits
+   // before granting optional V5 credit; do not rewrite existing V4 loans.
+   if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version &&
+      !VeilopolyFinancialStability.mayIssueCredit(g, amount: principal) {
+    throw GameError.bankLiquidity
    }
    ledger.accounts[p].borrowCount += 1
    ledger.accounts[p].loans.append(.init(id: id, principal: principal,
@@ -310,10 +347,11 @@ public enum IntegratedBanking {
     rolled = Int(seededRNG(seed: g.seed, counter: &g.rngCounter) % 6) + 1
    }
    let payout = position.principal * schedule[rolled - 1] / 10_000
-   guard g.players[p].cash <= 1_000_000_000 - payout else { throw GameError.invalidState }
-   g.players[p].cash += payout
+   let paid = try disburseMatured(&ledger, game: &g, seat: p, amount: payout,
+                                 source: "investmentMature")
    ledger.accounts[p].positions.remove(at: ix)
-   effects.append(Effect(.bankInvestmentSettled, player: p, amount: payout, dice: [rolled], text: position.feature.rawValue))
+   effects.append(Effect(.bankInvestmentSettled, player: p, amount: paid,
+                         dice: [rolled], text: "\(position.feature.rawValue);deferred:\(payout - paid)"))
   case .stockTick:
    guard var market = ledger.market else { throw GameError.invalidState }
    let pressure = VeilopolyCityLongEconomy.marketPressure(g)
@@ -338,9 +376,19 @@ public enum IntegratedBanking {
          let shares = m.stockShares else { throw GameError.invalidPayload }
    let receipt = try StockMarketEngine.sell(&market, player: p, symbol: symbol,
                                             shares: shares, cash: &g.players[p].cash)
+   let paid: Int
+   if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version {
+    // Execution cancels the position; settlement is a distinct bank liability.
+    // The quoted proceeds are not magically minted when reserves are depleted.
+    g.players[p].cash -= receipt.cashDelta
+    paid = try disburseMatured(&ledger, game: &g, seat: p,
+                               amount: receipt.cashDelta, source: "stockExit")
+   } else {
+    paid = receipt.cashDelta
+   }
    ledger.market = market
-   effects.append(Effect(.stockSold, player: p, amount: receipt.cashDelta,
-                         text: "fee:\(receipt.fee);pnlCents:\(receipt.realizedPnLCents)",
+   effects.append(Effect(.stockSold, player: p, amount: paid,
+                         text: "fee:\(receipt.fee);pnlCents:\(receipt.realizedPnLCents);deferred:\(receipt.cashDelta - paid)",
                          stockSymbol: receipt.symbol, stockShares: receipt.shares,
                          stockPriceCents: receipt.priceCents))
   default: throw GameError.invalidPayload
@@ -401,6 +449,16 @@ public enum IntegratedBanking {
    if ledger.completedTurns < item.unlockPeriod { i += 1; continue }
    let payout = item.principal + item.principal * item.payoutBasisPoints / 10_000
    guard payout <= 1_000_000_000 - g.players[p].cash else { break }
+   if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version {
+    // Forced withdrawals cannot outrank existing creditors or mint money.
+    // Keep the saving intact if the bank cannot pay this liquidation in full.
+    guard (ledger.queuedClaims ?? []).isEmpty,
+          let cash = ledger.reserveCash, cash >= payout else {
+     i += 1
+     continue
+    }
+    ledger.reserveCash = cash - payout
+   }
    g.players[p].cash += payout
    ledger.accounts[p].savings.remove(at: i)
    effects.append(Effect(.bankWithdrawn, player: p, amount: payout,
@@ -418,6 +476,16 @@ public enum IntegratedBanking {
      let shortfall = amount - g.players[p].cash
      let needed = max(1, min(position.shares, min(10_000,
        (shortfall * 100 + quote.currentPriceCents - 1) / quote.currentPriceCents + 1)))
+     if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version {
+      // Never force-sell a portfolio for a debt when its quoted proceeds
+      // cannot settle immediately. A claim is not spendable emergency cash.
+      guard (ledger.queuedClaims ?? []).isEmpty,
+            let cash = ledger.reserveCash,
+            let estimate = try? StockMarketEngine.estimateSell(
+             market, player: p, symbol: symbol, shares: needed),
+            estimate.cashDelta <= cash else { break }
+      ledger.reserveCash = cash - estimate.cashDelta
+     }
      guard let receipt = try? StockMarketEngine.sell(&market, player: p, symbol: symbol,
                                                      shares: needed, cash: &g.players[p].cash) else { break }
      effects.append(Effect(.stockSold, player: p, amount: receipt.cashDelta,
@@ -434,9 +502,94 @@ public enum IntegratedBanking {
  /// the estate before normal creditor distribution. Outstanding loans are archived
  /// pending the Owner's priority decision.
  public static func closeBankruptAccount(_ g: inout GameState, player p: Int,
-                                         effects: inout [Effect]) throws {
+                                         creditor: Int? = nil, effects: inout [Effect]) throws {
   guard var ledger = g.banking, ledger.accounts.indices.contains(p),
         g.players.indices.contains(p) else { return }
+
+  if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version {
+   // Transfer the *ownership* of unsettled assets in bankruptcy, not their
+   // book value as newly printed cash. Bank credits and market claims are
+   // distinct from spendable game credits.
+   let receiver = creditor.flatMap { id -> Int? in
+    g.players.indices.contains(id) && id != p && !g.players[id].bankrupt ? id : nil
+   }
+   var queue = ledger.queuedClaims ?? []
+   if let receiver {
+    // Preserve prior claim queue ordering and original source labels.
+    for i in queue.indices where queue[i].player == p {
+     queue[i].player = receiver
+    }
+    let source = ledger.accounts[p]
+    let target = ledger.accounts[receiver]
+    guard target.savings.count <= 1_000 - source.savings.count,
+          target.positions.count <= 1_000 - source.positions.count else {
+     throw GameError.invalidState
+    }
+    ledger.accounts[receiver].savings.append(contentsOf: source.savings)
+    ledger.accounts[receiver].positions.append(contentsOf: source.positions)
+   } else {
+    // In a bankruptcy to the bank itself, claims/deposit obligations held by
+    // that debtor are extinguished, NOT paid to an inactive seat.
+    queue.removeAll { $0.player == p }
+   }
+   if var market = ledger.market {
+    guard market.portfolios.indices.contains(p) else { throw GameError.invalidState }
+    let estate = market.portfolios[p]
+    if let receiver {
+     guard market.portfolios.indices.contains(receiver) else { throw GameError.invalidState }
+     var inherited = market.portfolios[receiver]
+     for asset in estate.positions {
+      let prior = inherited.positions.firstIndex { $0.symbol == asset.symbol }
+      let oldShares = prior.map { inherited.positions[$0].shares } ?? 0
+      let capacity = max(0, 100_000 - oldShares)
+      let transferShares = min(asset.shares, capacity)
+      if transferShares > 0 {
+       if let idx = prior {
+        let old = inherited.positions[idx]
+        let count = old.shares + transferShares
+        inherited.positions[idx].averageCostCents =
+          (old.averageCostCents * old.shares +
+           asset.averageCostCents * transferShares) / count
+        inherited.positions[idx].shares = count
+       } else {
+        inherited.positions.append(StockPosition(symbol: asset.symbol,
+          shares: transferShares, averageCostCents: asset.averageCostCents))
+       }
+      }
+      let remaining = asset.shares - transferShares
+      if remaining > 0 {
+       // At the game's one-position cap, the excess is assigned as a
+       // NONCASH estate claim at the current synthetic settlement price.
+       guard let quote = market.quotes.first(where: { $0.symbol == asset.symbol }) else {
+        throw GameError.invalidState
+       }
+       var owed = remaining * quote.currentPriceCents / 100
+       let cap = VeilopolyCityLongEconomy.expandedTotalMoneySupply
+       while owed > 0 {
+        guard queue.count < 4_096 else { throw GameError.invalidState }
+        let piece = min(cap, owed)
+        queue.append(VeilopolyBankClaim(player: receiver, amount: piece,
+                                       source: "estateStock"))
+        owed -= piece
+       }
+      }
+     }
+     inherited.positions.sort { $0.symbol < $1.symbol }
+     market.portfolios[receiver] = inherited
+    }
+    market.portfolios[p] = StockPortfolio()
+    guard StockMarketEngine.validate(market) else { throw GameError.invalidState }
+    ledger.market = market
+   }
+   ledger.queuedClaims = queue
+   // The defaulted borrower's outstanding bank loans are written off. The
+   // receiver takes the estate's deposit/investment assets, NOT its debt.
+   ledger.accounts[p] = IntegratedBankAccount()
+   g.banking = ledger
+   effects.append(Effect(.liquidation, player: p, to: receiver,
+                         amount: 0, text: "noncashBankruptcyEstate"))
+   return
+  }
   let savings = ledger.accounts[p].savings.reduce(0) { $0 + $1.principal }
   let proceeds = ledger.market.flatMap { market in
    market.portfolios.indices.contains(p)

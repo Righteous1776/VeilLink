@@ -10,7 +10,7 @@ final class CityLongEconomyTests: XCTestCase {
  }
  func testNewMatchIsVersionedAndOldFactoryUntouched() {
   let old = GameFactory.make(seed: 7821, humanCount: 1)
-  let city = VeilopolyCityLongEconomy.make(seed: 7821, humanCount: 1)
+  let city = VeilopolyCityLongEconomy.makeV4(seed: 7821, humanCount: 1)
   XCTAssertEqual(old.players.map(\.cash), [1500,1500,1500,1500])
   XCTAssertNil(old.banking)
   XCTAssertEqual(old.board[1].price, 60)
@@ -28,7 +28,7 @@ final class CityLongEconomyTests: XCTestCase {
   XCTAssertTrue(IntegratedBanking.validate(city.banking!))
  }
  func testPassingGoSalaryAndTaxChangeOnlyInLongSession() throws {
-  var city = VeilopolyCityLongEconomy.make(seed: 7822)
+  var city = VeilopolyCityLongEconomy.makeV4(seed: 7822)
   city.players[0].position = 38
   city.turn.phase = .moveAnim
   city.turn.pendingSteps = 4
@@ -48,7 +48,7 @@ final class CityLongEconomyTests: XCTestCase {
   XCTAssertEqual(VeilopolyCityLongEconomy.tax(old, tile: 4), 200)
  }
  func testDemandSavingsCannotCompoundInSamePeriod() throws {
-  var g = VeilopolyCityLongEconomy.make(seed: 7823)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 7823)
   g.turn.phase = .manage
   let cash = g.players[0].cash
   _ = try apply(&g, Move(.bankDeposit, player: 0, seq: 0, amount: 1000,
@@ -67,7 +67,7 @@ final class CityLongEconomyTests: XCTestCase {
   XCTAssertEqual(g.players[0].cash, cash + 15)
  }
  func testFlatTermLoanDoesNotMultiplyByMonthsAndLegacyQuoteIsPreserved() throws {
-  var g = VeilopolyCityLongEconomy.make(seed: 7824)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 7824)
   g.turn.phase = .manage
   _ = try apply(&g, Move(.bankBorrow, player: 0, seq: 0, amount: 1000, financePeriods: 6))
   let loan = try XCTUnwrap(g.banking?.accounts[0].loans.first)
@@ -80,7 +80,7 @@ final class CityLongEconomyTests: XCTestCase {
   XCTAssertEqual(legacy.banking?.accounts[0].loans.first?.totalDue, 800)
  }
  func testAtLeastFourEligibleLotsStillPermitLongSessionCredit() throws {
-  var g = VeilopolyCityLongEconomy.make(seed: 7825)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 7825)
   for i in [1,3,5,6,8] { g.board[i].owner = 0 }
   g.turn.phase = .manage
   _ = try apply(&g, Move(.bankBorrow, player: 0, seq: 0, amount: 7000, financePeriods: 8))
@@ -104,7 +104,7 @@ final class CityLongEconomyTests: XCTestCase {
   }
  }
  func testNewModeSurvivesExistingGameStateCodableFields() throws {
-  let initial = VeilopolyCityLongEconomy.make(seed: 7827)
+  let initial = VeilopolyCityLongEconomy.makeV4(seed: 7827)
   let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
   let restored = try JSONDecoder().decode(GameState.self, from: encoder.encode(initial))
   XCTAssertEqual(initial, restored)

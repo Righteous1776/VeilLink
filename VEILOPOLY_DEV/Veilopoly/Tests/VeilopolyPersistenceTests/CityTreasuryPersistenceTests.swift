@@ -9,7 +9,7 @@ final class CityTreasuryPersistenceTests: XCTestCase {
    .appendingPathComponent("veilopoly-city-bank-" + UUID().uuidString)
   defer { try? FileManager.default.removeItem(at: dir) }
   let store = try VeilopolySaveStore(directory: dir)
-  let good = VeilopolyCityLongEconomy.make(seed: 98111)
+  let good = VeilopolyCityLongEconomy.makeV4(seed: 98111)
   _ = try store.save(good, gameID: "treasury", mode: .solo)
   var bad = good
   bad.players[0].cash += 200

@@ -1584,7 +1584,7 @@ public struct VeilopolyGameView: View {
       })?.id ?? tradeTarget
      }
     }
-   if model.game.banking?.financeRuleVersion == VeilopolyCityLongEconomy.version {
+   if (model.game.banking?.financeRuleVersion ?? 0) >= VeilopolyCityLongEconomy.finiteVersion {
     let transfer = Move(.transferCash, player: model.actor, seq: model.game.nextSeq,
                         amount: Int(directTransferAmount), to: tradeTarget)
     let transferError = VeilopolyGamePresentation.rejection(model.game, move: transfer)
@@ -1648,11 +1648,27 @@ public struct VeilopolyGameView: View {
   return VStack(alignment: .leading, spacing: 8) {
    Divider()
    Text("银行与金融").font(.subheadline.weight(.semibold))
+   if let claims = model.game.banking?.queuedClaims {
+    let mine = claims.filter { $0.player == model.actor }.reduce(0) { $0 + $1.amount }
+    if mine > 0 {
+     Text("我的待兑付银行债权 ¥\(mine) · 需等待银行回收资金后按顺序结清")
+      .font(.caption.weight(.semibold))
+      .fixedSize(horizontal: false, vertical: true)
+    }
+   }
    if let available = model.game.banking?.reserveCash {
     VStack(alignment: .leading, spacing: 4) {
+     if let report = VeilopolyFinancialStability.inspect(model.game) {
+      Text("银行风险 \(report.level.rawValue) · 存款及投资等潜在兑付 ¥\(report.futureObligations) · 受保护储备 ¥\(report.protectedReserve)")
+       .font(.caption.monospacedDigit())
+       .fixedSize(horizontal: false, vertical: true)
+      Text("待支付债权 ¥\(report.queuedClaims) · 可新增贷款 ¥\(report.safeNewCredit) · 估算覆盖率 \(report.coverageBasisPoints / 100)%")
+       .font(.caption2).foregroundStyle(.secondary)
+       .fixedSize(horizontal: false, vertical: true)
+     }
      Label("城市中央银行 · 有限游戏币", systemImage: "building.columns.fill")
       .font(.subheadline.weight(.semibold))
-     Text("银行可用 ¥\(available) · 全市货币上限 ¥\(VeilopolyCityLongEconomy.totalMoneySupply)")
+     Text("银行储备 ¥\(available) · 玩家流通现金 ¥\(VeilopolyCityLongEconomy.circulatingCash(model.game)) · 全市货币总量 ¥\(VeilopolyCityLongEconomy.supplyCeiling(model.game) ?? 0)")
       .font(.caption.monospacedDigit())
      Text("购地、建造、税费和股票买入使银行回流资金；发薪、贷款、补助和股票卖出从银行支出。强制支付在银行不足时登记待兑付凭证，后续回款按顺序清偿，不会增发货币。")
       .font(.caption2).foregroundStyle(.secondary)
@@ -1725,7 +1741,9 @@ public struct VeilopolyGameView: View {
     let fixed = Move(.bankDeposit, player: model.actor, seq: model.game.nextSeq,
                      amount: Int(bankAmount), financeProduct: .fixedDeposit)
     VStack(alignment: .leading, spacing: 6) {
-     Text("收益与借贷 · 活期 1 期 +1.5%，定期 4 期 +8.5%；贷款按合同本金一次计息 8%～17%。")
+     Text(VeilopolyCityLongEconomy.isExpanded(model.game)
+      ? "收益与借贷 · 活期 1 期 +1.5%，定期 4 期 +8.5%；贷款按合同本金一次计息 6.5%～14.5%。"
+      : "收益与借贷 · 活期 1 期 +1.5%，定期 4 期 +8.5%；贷款按合同本金一次计息 8%～17%。")
       .font(.caption2).foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
      if let amount = Int(bankAmount), (1...1_000_000).contains(amount),
@@ -1796,7 +1814,7 @@ public struct VeilopolyGameView: View {
   return VStack(alignment: .leading, spacing: 8) {
    if let balance = ledger.reserveCash {
     let impulse = VeilopolyCityLongEconomy.marketPressure(model.game)
-    Text("城市金融环境 · 银行可用 ¥\(balance) / 总量 ¥\(VeilopolyCityLongEconomy.totalMoneySupply) · 下一 Tick 经济信号 \(impulse) bp")
+    Text("城市金融环境 · 银行可用 ¥\(balance) / 总量 ¥\(VeilopolyCityLongEconomy.supplyCeiling(model.game) ?? 0) · 下一 Tick 经济信号 \(impulse) bp")
      .font(.caption2).foregroundStyle(.secondary)
     Text(impulse < -30 ? "当前模拟金融环境：信用偏紧，股票可能受到下行压力。" :
           impulse > 30 ? "当前模拟金融环境：流动性偏活跃，股票可能受到上行推动。" :

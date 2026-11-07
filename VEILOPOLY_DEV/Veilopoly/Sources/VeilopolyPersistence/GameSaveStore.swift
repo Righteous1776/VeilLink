@@ -125,10 +125,9 @@ public final class VeilopolySaveStore {
  private static func plausible(_ g: GameState) -> Bool {
   // V4 snapshots must conserve the exact opening currency supply; V1–V3
   // have no treasury and are not retroactively subjected to this check.
-  if g.banking?.financeRuleVersion == VeilopolyCityLongEconomy.version {
+  if let cap = VeilopolyCityLongEconomy.supplyCeiling(g) {
    guard let reserve = g.banking?.reserveCash,
-         reserve + g.players.reduce(0, { $0 + $1.cash }) ==
-           VeilopolyCityLongEconomy.totalMoneySupply else { return false }
+         reserve + g.players.reduce(0, { $0 + $1.cash }) == cap else { return false }
   }
   guard g.board.count == 40, g.players.count == 4,
         g.board.enumerated().allSatisfy({ i, t in
