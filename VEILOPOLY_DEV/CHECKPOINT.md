@@ -1,5 +1,31 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## CODEX P5-001 — Owner-authorized live integration — 2026-11-07
+
+- Owner explicitly expanded scope to Veilopoly + hall/host bridge/tests on dev,
+  overriding prior P5 exclusion ONLY. Receipt `reviews/P5_OWNER_SCOPE_20261107.md`,
+  #6 issuecomment-6707080274. No transport/Wire/security/identity/DB/main/release
+  edits. main still `2c5b5161027edff097b27fe3323d30f6ca3e430e`, before dev `bcf683f`.
+- Foundation `5c2ecda`, budget/recovery `d34cb74`, history guard `61245ef`,
+  iOS model `f8a6722`; host hookup follows
+  in this checkpoint's commit. Real route: hall -> live model -> authenticated
+  control-event bridge -> existing SessionCoordinator API, no plain-chat payloads.
+- First topology explicitly TWO phones / two humans + two existing AI, not
+  four-phone support. Explicit invitation, host-only reducer/AI/price clock,
+  guest proposals, sequence/hash/history-prefix checks, heartbeat/resync,
+  role/identity-separated saved room recovery and bounded fragment transport.
+- Full Linux suite 270/270 PASS, 34.072s. Live suites 15 cases PASS. Actual
+  unchanged control-event codec probe: 31 fragments all <=2048 bytes. Initial
+  512-byte worst-case probe failed; corrected to 384 raw bytes, not a cap change.
+- iOS15 grammar parse PASS ONLY. Apple SDK/type-check, 8 guarded iOS model
+  cases, 2 host XCTest cases, simulator, two phones, actual link/lifecycle/FPS/
+  battery are NOT_RUN. Historical strict Codable warnings still unresolved.
+- Read `reviews/P5_LIVE_INTEGRATION_20261107.md` for actual route, limits,
+  failure handling and non-IPA acceptance steps. This is SOURCE_INTEGRATED,
+  PORTABLE_VALIDATED, not physical LINK_VERIFIED or main MERGED/RELEASED.
+- NEXT_ONE_TASK: VLP-CODEX-P5-002, Apple SDK + two-phone acceptance WITHOUT IPA.
+  No hidden background Codex worker; resume from current Git HEAD/#6/#168.
+
 ## CODEX W2-001 — purchase/auction reference crash — 2026-11-07
 
 - Before `72521c9` (touch fix); theme slice `06a659a`. Same #168 dev-only
