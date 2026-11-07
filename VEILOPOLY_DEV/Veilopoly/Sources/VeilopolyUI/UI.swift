@@ -410,6 +410,10 @@ public struct VeilopolyGameView: View {
    Button(model.newsEnabled ? "暂停城市快讯" : "开启城市快讯") { model.newsEnabled.toggle() }
    Button(showFinanceHUD ? "隐藏资产悬浮窗" : "显示资产悬浮窗") { showFinanceHUD.toggle() }
    Button(showMarketHUD ? "隐藏股市悬浮窗" : "显示股市悬浮窗") { showMarketHUD.toggle() }
+   Button("悬浮窗归位") {
+    financeHUDOffset = .zero
+    marketHUDOffset = .zero
+   }
    Button("完整资产浏览（任何回合）") { showAssetExplorer = true }
    Button("概率小游戏 · 无下注") { showProbabilityLab = true }
    Button(slowSteps ? "移动节奏：舒缓（切标准）" : "移动节奏：标准（切舒缓）") {
@@ -604,7 +608,8 @@ public struct VeilopolyGameView: View {
   .frame(width: availableWidth, height: availableHeight)
    .overlay(alignment: .topTrailing) {
     if !controlsExpanded {
-     floatingHUDs.padding(.top, 62).padding(.trailing, 8)
+     floatingHUDs(rightSpace: availableWidth - boardWidth, viewportHeight: availableHeight)
+       .padding(.top, 62).padding(.trailing, 8)
     }
    }
   }
@@ -1006,75 +1011,138 @@ public struct VeilopolyGameView: View {
  /// Draggable, read-only mini windows are opt-in from More. They live in
  /// the unused landscape space, never in a full-screen gesture layer.
 
- private var floatingHUDs: some View {
-  HStack(alignment: .top, spacing: 6) {
-   if showFinanceHUD { financeMiniCard }
-   if showMarketHUD { marketMiniCard }
+
+ /// Layout never reaches over the board. On narrow phones the two cards stack.
+ /// Only each card's 44pt grip moves it; tapping the data opens the browser.
+ @ViewBuilder private func floatingHUDs(rightSpace: CGFloat, viewportHeight: CGFloat) -> some View {
+  let maxY = max(0, viewportHeight - 62 - 74 - 95)
+  if rightSpace >= 320 {
+   HStack(alignment: .top, spacing: 8) {
+    if showFinanceHUD {
+     financeMiniCard(
+      minX: showMarketHUD ? -max(0, rightSpace - 312) : -max(0, rightSpace - 156),
+      maxX: showMarketHUD ? 156 : 0, maxY: maxY)
+    }
+    if showMarketHUD {
+     marketMiniCard(minX: -max(0, rightSpace - 156), maxX: 0, maxY: maxY)
+    }
+   }
+   .foregroundColor(.white)
+  } else if rightSpace >= 170 {
+   VStack(alignment: .trailing, spacing: 6) {
+    if showFinanceHUD {
+     financeMiniCard(minX: -max(0, rightSpace - 156), maxX: 0, maxY: maxY)
+    }
+    if showMarketHUD {
+     marketMiniCard(minX: -max(0, rightSpace - 156), maxX: 0,
+                    maxY: max(0, maxY - (showFinanceHUD ? 80 : 0)))
+    }
+   }
+   .foregroundColor(.white)
   }
-  .foregroundColor(.white)
  }
- 
- private var financeMiniCard: some View {
-  Button {
-   showAssetExplorer = true
-   managementSection = .bank
-  } label: {
-   VStack(alignment: .leading, spacing: 3) {
-    Label("现金与资产", systemImage: "building.columns")
-     .font(.caption.weight(.semibold))
-    Text("¥\(model.game.players[model.actor].cash)")
-     .font(.system(size: 15, weight: .bold, design: .monospaced))
+
+ private func clampHUD(_ current: CGSize, delta: CGSize,
+                       minX: CGFloat, maxX: CGFloat, maxY: CGFloat) -> CGSize {
+  CGSize(width: max(minX, min(maxX, current.width + delta.width)),
+         height: max(0, min(maxY, current.height + delta.height)))
+ }
+
+ private func financeMiniCard(minX: CGFloat, maxX: CGFloat, maxY: CGFloat) -> some View {
+  let shift = clampHUD(financeHUDOffset, delta: financeHUDDrag,
+                       minX: minX, maxX: maxX, maxY: maxY)
+  return HStack(spacing: 0) {
+   Button {
+    managementSection = .bank
+    showAssetExplorer = true
+   } label: {
+    VStack(alignment: .leading, spacing: 3) {
+     Label("资产", systemImage: "building.columns")
+      .font(.system(size: 13, weight: .semibold))
+     Text("¥\(model.game.players[model.actor].cash)")
+      .font(.system(size: 14, weight: .bold, design: .monospaced))
+      .lineLimit(1)
+    }
+    .padding(.leading, 9)
+    .frame(width: 104, height: 64, alignment: .leading)
+    .contentShape(Rectangle())
    }
-   .padding(9)
-   .frame(width: 148, alignment: .leading)
-   .background(miniCardColor, in: RoundedRectangle(cornerRadius: 11))
-   .contentShape(Rectangle())
+   .buttonStyle(.plain)
+   .accessibilityLabel("查看资产详情")
+   Image(systemName: "hand.draw")
+    .font(.system(size: 16, weight: .semibold))
+    .foregroundColor(.white.opacity(0.85))
+    .frame(width: 44, height: 64)
+    .background(.white.opacity(0.08))
+    .contentShape(Rectangle())
+    .gesture(DragGesture(minimumDistance: 6)
+     .updating($financeHUDDrag) { gesture, state, _ in
+      state = gesture.translation
+     }
+     .onEnded { gesture in
+      financeHUDOffset = clampHUD(financeHUDOffset, delta: gesture.translation,
+                                  minX: minX, maxX: maxX, maxY: maxY)
+     })
+    .accessibilityLabel("拖动资产悬浮窗")
   }
-  .buttonStyle(.plain)
-  .offset(x: financeHUDOffset.width + financeHUDDrag.width,
-          y: financeHUDOffset.height + financeHUDDrag.height)
-  .simultaneousGesture(DragGesture(minimumDistance: 12)
-   .updating($financeHUDDrag) { change, state, _ in
-    state = change.translation
-   }
-   .onEnded { value in
-    financeHUDOffset.width += value.translation.width
-    financeHUDOffset.height += value.translation.height
-   })
-  .accessibilityLabel("现金与资产，点击查看独立资产浏览器")
- }
- 
- private var marketMiniCard: some View {
-  Button {
-   showAssetExplorer = true
-   managementSection = .market
-  } label: {
-   VStack(alignment: .leading, spacing: 3) {
-    Label("模拟证券", systemImage: "chart.xyaxis.line")
-     .font(.caption.weight(.semibold))
-    Text(firstQuoteSummary)
-     .font(.system(size: 12, weight: .bold, design: .monospaced))
-     .lineLimit(1)
-   }
-   .padding(9)
-   .frame(width: 148, alignment: .leading)
-   .background(miniCardColor, in: RoundedRectangle(cornerRadius: 11))
-   .contentShape(Rectangle())
+  .frame(width: 148, height: 64)
+  .background(miniCardColor, in: RoundedRectangle(cornerRadius: 11))
+  .overlay {
+   RoundedRectangle(cornerRadius: 11)
+    .strokeBorder(Color(red: 0.68, green: 0.55, blue: 0.32), lineWidth: 1)
+    .allowsHitTesting(false)
   }
-  .buttonStyle(.plain)
-  .offset(x: marketHUDOffset.width + marketHUDDrag.width,
-          y: marketHUDOffset.height + marketHUDDrag.height)
-  .simultaneousGesture(DragGesture(minimumDistance: 12)
-   .updating($marketHUDDrag) { change, state, _ in
-    state = change.translation
-   }
-   .onEnded { value in
-    marketHUDOffset.width += value.translation.width
-    marketHUDOffset.height += value.translation.height
-   })
-  .accessibilityLabel("模拟证券行情，点击查看独立资产浏览器")
+  .offset(x: shift.width, y: shift.height)
  }
- 
+
+ private func marketMiniCard(minX: CGFloat, maxX: CGFloat, maxY: CGFloat) -> some View {
+  let shift = clampHUD(marketHUDOffset, delta: marketHUDDrag,
+                       minX: minX, maxX: maxX, maxY: maxY)
+  return HStack(spacing: 0) {
+   Button {
+    managementSection = .market
+    showAssetExplorer = true
+   } label: {
+    VStack(alignment: .leading, spacing: 3) {
+     Label("模拟股市", systemImage: "chart.xyaxis.line")
+      .font(.system(size: 12, weight: .semibold))
+     Text(firstQuoteSummary)
+      .font(.system(size: 12, weight: .bold, design: .monospaced))
+      .lineLimit(1)
+      .minimumScaleFactor(0.85)
+    }
+    .padding(.leading, 9)
+    .frame(width: 104, height: 64, alignment: .leading)
+    .contentShape(Rectangle())
+   }
+   .buttonStyle(.plain)
+   .accessibilityLabel("查看虚构股票行情")
+   Image(systemName: "hand.draw")
+    .font(.system(size: 16, weight: .semibold))
+    .foregroundColor(.white.opacity(0.85))
+    .frame(width: 44, height: 64)
+    .background(.white.opacity(0.08))
+    .contentShape(Rectangle())
+    .gesture(DragGesture(minimumDistance: 6)
+     .updating($marketHUDDrag) { gesture, state, _ in
+      state = gesture.translation
+     }
+     .onEnded { gesture in
+      marketHUDOffset = clampHUD(marketHUDOffset, delta: gesture.translation,
+                                 minX: minX, maxX: maxX, maxY: maxY)
+     })
+    .accessibilityLabel("拖动股市悬浮窗")
+  }
+  .frame(width: 148, height: 64)
+  .background(miniCardColor, in: RoundedRectangle(cornerRadius: 11))
+  .overlay {
+   RoundedRectangle(cornerRadius: 11)
+    .strokeBorder(Color(red: 0.68, green: 0.55, blue: 0.32), lineWidth: 1)
+    .allowsHitTesting(false)
+  }
+  .offset(x: shift.width, y: shift.height)
+ }
+
  private var miniCardColor: Color { Color(red: 0.08, green: 0.19, blue: 0.22) }
  
  private var firstQuoteSummary: String {
