@@ -78,6 +78,79 @@ enum GomokuCounterForkR4 {
         return forks
     }
 
+
+    /// R8 genuine-tactics teacher distilled into an exact, single-pass rule.
+    /// Return a candidate creating TWO DISTINCT next-turn immediate five
+    /// completions. Called by the native Bot ONLY after it has checked
+    /// self immediate wins and blocked opponent immediate wins.
+    ///
+    /// Proof under VeilLink's unrestricted five-in-row rules: after this
+    /// move the opponent can occupy at most one completion point, cannot
+    /// immediately win (root mandatory block gate), and therefore cannot
+    /// prevent our other five on the following move. There is no opening
+    /// book or heuristic-model inference in this proof.
+    ///
+    /// Fixed temporary allocations: 225 Bool flags, 225 Int16 reply IDs.
+    /// One O(225*4*5) geometry scan, no recursive branches or internet.
+    static func immediateTwoTurnWinCandidate(
+        in board: GomokuState,
+        player: MiniGamePlayer,
+        candidates: [Int]
+    ) -> Int? {
+        guard board.moveCount >= 6, !candidates.isEmpty else { return nil }
+        let own: Int8 = player == .host ? 1 : 2
+        var allowed = [Bool](repeating: false, count: size * size)
+        for index in candidates where (0..<(size * size)).contains(index) {
+            if board.value(at: index) == 0 { allowed[index] = true }
+        }
+        var firstReply = [Int16](repeating: -1, count: size * size)
+        var bestIndex = Int.max
+        for row in 0..<size {
+            for column in 0..<size {
+                for (dr, dc) in axes {
+                    let lastRow = row + dr * 4
+                    let lastCol = column + dc * 4
+                    guard (0..<size).contains(lastRow),
+                          (0..<size).contains(lastCol) else { continue }
+                    var ownCount = 0
+                    var first = -1, second = -1
+                    var blocked = false
+                    for offset in 0..<5 {
+                        let index = (row + offset * dr) * size + column + offset * dc
+                        let value = board.value(at: index)
+                        if value == own {
+                            ownCount += 1
+                        } else if value == 0 {
+                            if first < 0 { first = index }
+                            else { second = index }
+                        } else {
+                            blocked = true
+                            break
+                        }
+                    }
+                    guard !blocked, ownCount == 3, first >= 0, second >= 0 else {
+                        continue
+                    }
+                    if allowed[first] {
+                        if firstReply[first] < 0 {
+                            firstReply[first] = Int16(second)
+                        } else if firstReply[first] != Int16(second) {
+                            bestIndex = min(bestIndex, first)
+                        }
+                    }
+                    if allowed[second] {
+                        if firstReply[second] < 0 {
+                            firstReply[second] = Int16(first)
+                        } else if firstReply[second] != Int16(first) {
+                            bestIndex = min(bestIndex, second)
+                        }
+                    }
+                }
+            }
+        }
+        return bestIndex == Int.max ? nil : bestIndex
+    }
+
     /// After our hypothetical move, detect a double immediate five threat:
     /// two DISTINCT legal empty cells complete our five on the following turn.
     /// The opponent cannot both block the two wins and create its own fork.

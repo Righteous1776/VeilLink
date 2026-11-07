@@ -224,7 +224,8 @@ final class GomokuBotTests: XCTestCase {
                     let chosen = GomokuBot.chooseMove(
                         in: board, for: actor, budget: budget,
                         diagnosticCounterForkR4: r4Player,
-                        diagnosticUseR6Defense: false // R5 compares frozen R4 vs R3
+                        diagnosticUseR6Defense: false,
+                        diagnosticR8ForcedWin: false // R5 compares frozen R4 vs R3
                     )
                     totalDecisionSeconds += Date.timeIntervalSinceReferenceDate - began
                     guard let chosen else {
@@ -314,7 +315,8 @@ final class GomokuBotTests: XCTestCase {
                     let started = Date.timeIntervalSinceReferenceDate
                     let move = GomokuBot.chooseMove(
                         in: board, for: player, budget: budget,
-                        diagnosticUseR6Defense: useR6
+                        diagnosticUseR6Defense: useR6,
+                        diagnosticR8ForcedWin: false
                     )
                     decisionSeconds += Date.timeIntervalSinceReferenceDate - started
                     guard let move else {
@@ -326,7 +328,8 @@ final class GomokuBotTests: XCTestCase {
                     if board.moveCount % 13 == 0 {
                         let comparison = GomokuBot.chooseMove(
                             in: board, for: player, budget: budget,
-                            diagnosticUseR6Defense: !useR6
+                            diagnosticUseR6Defense: !useR6,
+                            diagnosticR8ForcedWin: false
                         )
                         measuredSharedPositions += 1
                         if comparison?.index != move.index {
@@ -352,6 +355,116 @@ final class GomokuBotTests: XCTestCase {
         XCTAssertEqual(r6Wins + r4Wins + draws + unfinished, 8)
         XCTAssertGreaterThan(legalPlies, 0)
         print("R6_PAIRED_NATIVE_AB games=8 r6=\(r6Wins) r4=\(r4Wins) draws=\(draws) unfinished=\(unfinished) legalPlies=\(legalPlies) comparablePositions=\(measuredSharedPositions) changedDecisions=\(changedDecisions) meanMoveMs=\(decisionSeconds * 1000 / Double(legalPlies))")
+    }
+
+
+
+    /// Public CI fixtures deliberately use synthetic crossing formations,
+    /// NOT the owner's private game histories. Private real-game replay
+    /// parity is independently verified off GitHub: 394 forced positions,
+    /// plus 826 genuine negative controls, 0 Swift/Python mismatches.
+    func testR8SyntheticCrossingFormationHasForcedWinEvenAtTightBudget() {
+        var board = GomokuState()
+        let host = [109, 110, 111, 67, 82, 97]
+        let guest = [0, 2, 4, 6, 8, 10]
+        for i in 0..<host.count {
+            XCTAssertTrue(board.apply(index: host[i], actor: .host))
+            XCTAssertTrue(board.apply(index: guest[i], actor: .guest))
+        }
+        XCTAssertNil(board.winner)
+        XCTAssertEqual(board.currentPlayer, .host)
+        // Three geometrically distinct forced fork candidates exist: 52,
+        // 108, 112. We select minimum legal root deterministically.
+        XCTAssertEqual(GomokuCounterForkR4.immediateTwoTurnWinCandidate(
+            in: board, player: .host, candidates: [52, 112, 140]
+        ), 52)
+        let played = GomokuBot.chooseMove(
+            in: board, for: .host,
+            budget: GomokuBotBudget(
+                candidateRadius: 2, rootCandidateLimit: 8,
+                replyCandidateLimit: 4, continuationCandidateLimit: 0,
+                timeLimitMilliseconds: 0
+            )
+        )
+        XCTAssertEqual(played?.index, 52)
+        XCTAssertTrue(GomokuCounterForkR4.createsForcedDoubleWin(
+            in: board, player: .host, virtualPlacement: 52
+        ))
+    }
+
+    func testR8SyntheticCounterattackIsARealDoubleWin() {
+        var board = GomokuState()
+        let host = [109, 110, 111, 67, 82, 97, 0]
+        let guest = [158, 159, 160, 116, 131, 146]
+        for i in 0..<guest.count {
+            XCTAssertTrue(board.apply(index: host[i], actor: .host))
+            XCTAssertTrue(board.apply(index: guest[i], actor: .guest))
+        }
+        XCTAssertTrue(board.apply(index: host[6], actor: .host))
+        XCTAssertEqual(board.currentPlayer, .guest)
+        XCTAssertNil(board.winner)
+        // Two-arm winning forks at 101, 157 and 161 are verified by
+        // independent window-rule replay. The minimum is 101.
+        XCTAssertEqual(GomokuCounterForkR4.immediateTwoTurnWinCandidate(
+            in: board, player: .guest, candidates: [101, 112, 161]
+        ), 101)
+        let chosen = GomokuBot.chooseMove(
+            in: board, for: .guest, budget: .deterministicTest
+        )
+        XCTAssertEqual(chosen?.index, 101)
+        XCTAssertTrue(GomokuCounterForkR4.createsForcedDoubleWin(
+            in: board, player: .guest, virtualPlacement: 101
+        ))
+    }
+
+    /// Complete actual native engine / real GomokuState screening. R8 and R6
+    /// play identical openings and opposite seats with all R6 weights, exact
+    /// defense and search budgets identical. Only forced-win-in-two detector
+    /// differs. A 12-game smoke is NOT Elo and a loss must not fail CI.
+    func testR8VersusR6NativeFullGameSmoke() {
+        let openings = [112, 111, 113, 97]
+        let budget = GomokuBotBudget(
+            candidateRadius: 2, rootCandidateLimit: 8,
+            replyCandidateLimit: 4, continuationCandidateLimit: 0,
+            timeLimitMilliseconds: 30
+        )
+        var r8 = 0, r6 = 0, draws = 0, unfinished = 0, legalPlies = 0
+        var elapsed = 0.0
+        for opening in openings {
+            for r8Host in [true, false] {
+                var board = GomokuState()
+                XCTAssertTrue(board.apply(index: opening, actor: .host))
+                while board.winner == nil && !board.isDraw && board.moveCount < 180 {
+                    let actor = board.currentPlayer
+                    let advanced = (actor == .host) == r8Host
+                    let started = Date.timeIntervalSinceReferenceDate
+                    guard let next = GomokuBot.chooseMove(
+                        in: board, for: actor, budget: budget,
+                        diagnosticR8ForcedWin: advanced
+                    ) else {
+                        XCTFail("Native move missing on active game")
+                        return
+                    }
+                    elapsed += Date.timeIntervalSinceReferenceDate - started
+                    guard board.apply(index: next.index, actor: actor) else {
+                        XCTFail("Native move illegal: \(next.index)")
+                        return
+                    }
+                    legalPlies += 1
+                }
+                if let winner = board.winner {
+                    if (winner == .host) == r8Host { r8 += 1 }
+                    else { r6 += 1 }
+                } else if board.isDraw {
+                    draws += 1
+                } else {
+                    unfinished += 1
+                }
+            }
+        }
+        XCTAssertEqual(r8 + r6 + draws + unfinished, 8)
+        XCTAssertGreaterThan(legalPlies, 0)
+        print("R8_PAIRED_NATIVE_AB matches=8 R8=\(r8) R6=\(r6) draws=\(draws) unfinished=\(unfinished) legalPlies=\(legalPlies) meanMs=\(elapsed*1000/Double(legalPlies))")
     }
 
 
