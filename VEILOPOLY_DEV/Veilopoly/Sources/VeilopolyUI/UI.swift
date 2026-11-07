@@ -377,19 +377,32 @@ public struct VeilopolyGameView: View {
      // Keep the modal intercepting touches until CardRevealGate is dismissed.
      Color(red: 0.09, green: 0.18, blue: 0.18).opacity(0.66).ignoresSafeArea()
      VStack(spacing: 8) {
-      Image(IvoryR1Artwork.preferredCardAlias(isChance: model.shownCardDeck == .chance), bundle: .module)
-       .resizable().scaledToFit().frame(width: 74, height: 88)
-       .accessibilityHidden(true)
-      Text(VeilopolyCardEditorial.deckName(model.shownCardDeck))
-       .font(.system(size: 12, weight: .bold, design: .serif))
-       .tracking(3)
-       .foregroundColor(Color(red: 0.43, green: 0.33, blue: 0.18))
+      // Artwork, event title and category form ONE bookplate-like card header.
+      HStack(alignment: .center, spacing: 11) {
+       Image(IvoryR1Artwork.preferredCardAlias(isChance: model.shownCardDeck == .chance), bundle: .module)
+        .resizable().scaledToFit().frame(width: 66, height: 78)
+        .accessibilityHidden(true)
+       VStack(alignment: .leading, spacing: 5) {
+        Text(VeilopolyCardEditorial.deckName(model.shownCardDeck))
+         .font(.system(size: 11, weight: .bold, design: .serif))
+         .tracking(2)
+         .foregroundColor(Color(red: 0.50, green: 0.37, blue: 0.20))
+        Text(editorial?.title ?? "城市来函")
+         .font(.system(size: 18, weight: .semibold, design: .serif))
+         .foregroundColor(Color(red: 0.12, green: 0.27, blue: 0.28))
+         .fixedSize(horizontal: false, vertical: true)
+        if let editorial {
+         Text(editorial.category)
+          .font(.system(size: 10, weight: .medium))
+          .foregroundColor(Color(red: 0.45, green: 0.49, blue: 0.42))
+        }
+       }
+       Spacer(minLength: 0)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
       ScrollView {
        if let editorial {
         VStack(spacing: 7) {
-         Text(editorial.title)
-          .font(.system(size: 18, weight: .semibold, design: .serif))
-          .foregroundColor(Color(red: 0.12, green: 0.27, blue: 0.28))
          Text(editorial.story)
           .font(.system(size: 13, weight: .regular, design: .serif))
           .foregroundColor(Color(red: 0.25, green: 0.33, blue: 0.32))
@@ -416,7 +429,7 @@ public struct VeilopolyGameView: View {
          .frame(maxWidth: .infinity)
        }
       }
-      .frame(maxHeight: 118)
+      .frame(maxHeight: 126)
       Button("确认并继续") { model.dismissCard() }
        .buttonStyle(AstraB01ButtonStyle())
        .frame(minWidth: 160, minHeight: 44)

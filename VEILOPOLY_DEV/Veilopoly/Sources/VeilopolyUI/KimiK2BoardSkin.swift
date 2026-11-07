@@ -154,7 +154,7 @@ final class KimiK2BoardSkin {
   if let fallbackCard = fineTextures[AstraTileArtwork.face] {
    let decks: [(alias: String, label: String, x: Double)] = [
     (IvoryR1Artwork.chanceCard, "机会", IvoryUnifiedVisualSystem.chanceDeckX),
-    (IvoryR1Artwork.chestCard, "宝箱", IvoryUnifiedVisualSystem.chestDeckX)
+    (IvoryR1Artwork.chestCard, "命运", IvoryUnifiedVisualSystem.chestDeckX)
    ]
    for (index, spec) in decks.enumerated() {
     let deck = SKNode()
