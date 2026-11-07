@@ -364,7 +364,8 @@ final class GameBoardScene: SKScene {
 
  private func updateVictoryBadge(_ state: GameState) {
   guard let winnerID = state.winner, state.players.indices.contains(winnerID),
-        kimiSkin != nil, let texture = image("kimiFxVictoryBadge") else {
+        kimiSkin != nil,
+        let texture = image(IvoryR1Artwork.preferredVictoryBadgeAlias()) ?? image("kimiFxVictoryBadge") else {
    victoryBadge?.removeFromParent()
    victoryBadge = nil
    return

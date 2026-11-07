@@ -361,7 +361,7 @@ public struct VeilopolyGameView: View {
      // Modal screen blocks the underlying board and financial action controls.
      Color.black.opacity(0.70).ignoresSafeArea()
      VStack(spacing: 12) {
-      Image(model.shownCardDeck == .chance ? "cardChance" : "cardChest", bundle: .module)
+      Image(IvoryR1Artwork.preferredCardAlias(isChance: model.shownCardDeck == .chance), bundle: .module)
        .resizable().scaledToFit().frame(width: 66, height: 72)
        .accessibilityHidden(true)
       Label(model.shownCardDeck == .chance ? "机会卡" : "宝箱卡", systemImage: "rectangle.on.rectangle.angled")
