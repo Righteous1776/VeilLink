@@ -1,4 +1,17 @@
-import Foundation
+/// Pure Swift geometry, independent of Darwin/CoreGraphics overlay imports.
+/// Convert to CGFloat only at the SwiftUI boundary.
+public struct VeilopolyPanelFrame: Equatable, Sendable {
+ public let x: Double
+ public let y: Double
+ public let width: Double
+ public let height: Double
+ public var minX: Double { x }
+ public var minY: Double { y }
+ public var maxX: Double { x + width }
+ public var maxY: Double { y + height }
+ public var midX: Double { x + width / 2 }
+ public var midY: Double { y + height / 2 }
+}
 
 /// Presentation only. Coordinates are normalized to the available travel, so
 /// safe-area/size changes cannot strand a panel offscreen. Never part of a save,
@@ -30,7 +43,7 @@ public struct VeilopolyPanelLayout: Equatable, Sendable {
  }
 
  public func frame(for surface: Surface, anchor: VeilopolyPanelAnchor,
-                   dx: Double = 0, dy: Double = 0) -> CGRect {
+                   dx: Double = 0, dy: Double = 0) -> VeilopolyPanelFrame {
   let usableWidth = max(0, width - 2 * Self.edge)
   let usableHeight = max(0, height - Self.top - Self.bottom)
   let w = surface == .panel
@@ -46,7 +59,7 @@ public struct VeilopolyPanelLayout: Equatable, Sendable {
   let normalized = VeilopolyPanelAnchor(x: anchor.x, y: anchor.y)
   let x = left + min(travelX, max(0, travelX * normalized.x + (dx.isFinite ? dx : 0)))
   let y = top + min(travelY, max(0, travelY * normalized.y + (dy.isFinite ? dy : 0)))
-  return CGRect(x: x, y: y, width: w, height: h)
+  return VeilopolyPanelFrame(x: x, y: y, width: w, height: h)
  }
 
  /// Do not use the predicted end translation: a fast flick must not launch a
