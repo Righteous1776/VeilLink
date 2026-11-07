@@ -29,6 +29,7 @@ public final class GameSessionModel: ObservableObject {
  }
  let scene: GameBoardScene
  private var queue: [ViewCommand] = []
+ private var pendingGuestIntent: Move?
  @Published private var animating = false
  private var driving = false
  private let configuredHumanCount: Int
@@ -234,6 +235,13 @@ public final class GameSessionModel: ObservableObject {
  private func presentNext() {
   guard !queue.isEmpty else {
    animating = false
+   if let queued = pendingGuestIntent {
+    pendingGuestIntent = nil
+    if queued.seq == game.nextSeq {
+     acceptGuestIntent(queued)
+     return
+    }
+   }
    drive()
    return
   }
@@ -263,7 +271,11 @@ public final class GameSessionModel: ObservableObject {
  /// The host checks the remote player's seat, phase, and current sequence.
  public func acceptGuestIntent(_ move: Move) {
   guard isMultiplayerHost, move.player == 1, actor == 1,
-        game.nextSeq == move.seq, !animating else { return }
+        game.nextSeq == move.seq else { return }
+  if animating {
+   pendingGuestIntent = move
+   return
+  }
   applyMove(move)
   drive()
  }
