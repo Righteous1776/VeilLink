@@ -39,6 +39,10 @@ enum BoardSearchMode: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
     var title: String { self == .full ? "深度搜索" : "节能搜索" }
 
+    static func restore(_ storedValue: String?) -> BoardSearchMode {
+        BoardSearchMode(rawValue: storedValue ?? "") ?? .full
+    }
+
     /// Explicit engine budget presets; not a device detection result.
     var budgetProfileLabel: String {
         self == .full ? "HIGH" : "LEGACY-COMPACT"
@@ -70,9 +74,9 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var lastDecisionMilliseconds: Int?
     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
     @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
-    @Published private(set) var boardSearchMode = BoardSearchMode(
-        rawValue: UserDefaults.standard.string(forKey: "VeilLink.Board.SearchMode.v1") ?? ""
-    ) ?? .full
+    @Published private(set) var boardSearchMode = BoardSearchMode.restore(
+        UserDefaults.standard.string(forKey: "VeilLink.Board.SearchMode.v1")
+    )
     /// Explicit local opt-in; the incumbent search remains the default and fallback.
     @Published private(set) var useExternalGomokuEngine = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.V2.Enabled")
     @Published private(set) var gomokuFormationMode = GomokuFormationMode(
