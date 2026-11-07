@@ -386,9 +386,11 @@ enum XiangqiBot {
                 guard legal else { continue }
 
                 var ordering = capture * 16
-                if next.isInCheck(player: actor.opponent) {
-                    ordering += 600
-                }
+                let givesCheck = next.isInCheck(player: actor.opponent)
+                if givesCheck { ordering += 600 }
+                ordering += trainedR3OrderingBonus(
+                    in: state, from: from, to: to, givesCheck: givesCheck
+                )
                 if next.winner == actor {
                     ordering += mateScore
                 }
@@ -472,6 +474,58 @@ enum XiangqiBot {
         case .cannon: return 500
         case .soldier: return 100
         }
+    }
+
+
+    /// R3 tiny observed-play prior distilled from 371 real Xiangqi positions
+    /// (9,222 train / 3,470 heldout legal candidate examples).
+    /// It is a bounded ordering hint, NOT a proven engine-strength gain.
+    /// Rules, check, mate and full iterative-deepening search remain primary.
+    static func trainedR3OrderingBonus(
+        in state: XiangqiState, from: Int, to: Int, givesCheck: Bool
+    ) -> Int {
+        guard let moving = state.piece(at: from) else { return 0 }
+        func code(_ kind: XiangqiPieceKind) -> Int {
+            switch kind {
+            case .general: return 1
+            case .advisor: return 2
+            case .elephant: return 3
+            case .horse: return 4
+            case .rook: return 5
+            case .cannon: return 6
+            case .soldier: return 7
+            }
+        }
+        let fromRow = from / XiangqiState.columns
+        let toRow = to / XiangqiState.columns
+        let fromCol = from % XiangqiState.columns
+        let toCol = to % XiangqiState.columns
+        let captured = state.piece(at: to)
+        var features = Array(repeating: 0.0, count: 21)
+        features[code(moving.kind) - 1] = 1
+        if let captured {
+            features[7 + code(captured.kind) - 1] = 1
+            features[15] = 1
+        }
+        features[14] = givesCheck ? 1 : 0
+        features[16] = Double(toRow)
+        features[17] = Double(abs(toCol - 4))
+        features[18] = Double(moving.side == .red ? fromRow - toRow : toRow - fromRow)
+        features[19] = Double(abs(toRow - fromRow) + abs(toCol - fromCol))
+        if moving.kind == .soldier {
+            let overRiverAtStart = moving.side == .red ? fromRow >= 5 : fromRow <= 4
+            features[20] = overRiverAtStart ? 1 : 0
+        }
+
+        let trained = [
+            -0.524347, 0.086089, -0.222944, 0.950703, -0.252258,
+            -0.408828, 0.814408, 0.0, -2.629284, 0.864399,
+            2.490678, 4.269382, 1.943194, 1.606586, 1.368941,
+            0.755189, -0.074132, -0.194291, 0.057548, -0.105102, 0.083995
+        ]
+        var logit = 0.5188171143185434
+        for j in 0..<trained.count { logit += features[j] * trained[j] }
+        return max(-72, min(72, Int(logit * 12)))
     }
 
     private static func stableOrder(_ move: Move) -> Int {
