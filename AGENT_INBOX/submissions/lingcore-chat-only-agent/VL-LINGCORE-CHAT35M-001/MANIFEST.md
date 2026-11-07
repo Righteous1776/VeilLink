@@ -1,0 +1,31 @@
+# MANIFEST — VL-LINGCORE-CHAT35M-001
+
+- agent_id: lingcore-chat-only-agent
+- task_id: VL-LINGCORE-CHAT35M-001
+- base_main_sha: 2c5b5161027edff097b27fe3323d30f6ca3e430e
+- operating_mode: INBOX_ONLY
+- submission_state: DROPPED
+- requested_by: repository owner, conversational integration only
+- runtime_candidate: VertexResearch/Vertex-0.6-35M-Instruct-GGUF
+- variant: Q4_K_M (~29.2 MB) or Q5_K_S (~30.1 MB)
+- license: Apache-2.0, upstream model card
+- model_artifact: NOT_INCLUDED; policy forbids model weights in Inbox
+- activation: DENY until native iOS backend, verified pinned hash, and device tests
+- privilege: TEXT_ONLY; tool calls=0, mutation authority=0
+- overlapping_scope: Agent/Language, AgentCoordinator, local llama backend; see RISKS.md
+- proposed_product_files:
+  - VeilLink/Agent/Language/LingCoreChatOnlyBoundary.swift (additive only)
+  - VeilLinkTests/LingCoreChatOnlyBoundaryTests.swift (additive only)
+- delivered:
+  - MANIFEST.md
+  - PROPOSAL.md
+  - PATCH.diff
+  - TEST_PLAN.md
+  - RISKS.md
+  - FILES/.../LingCoreChatOnlyBoundary.swift
+  - FILES/.../LingCoreChatOnlyBoundaryTests.swift
+- validation_performed: source-level architectural review ONLY
+- iOS_build: NOT_RUN
+- XCTest: NOT_RUN
+- IPA: NOT_RUN
+- main_modified: NO
