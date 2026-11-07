@@ -31,7 +31,10 @@ public enum VeilopolyEventFeedback {
    case .passedGo: return "经过起点 · 通行奖金已入账"
    case .extraRoll: return "双骰好运 · 额外回合已获准"
    case .turnEnded: return "轮次更替 · 下一位玩家入场"
-   case .cardDrawn: return "机会／命运来函 · 阅后继续"
+   case .cardDrawn:
+    if event.deck == .chance { return "机会来函 · 阅后继续" }
+    if event.deck == .chest { return "命运来函 · 阅后继续" }
+    return "一封来函 · 阅后继续"
    case .jailed: return "法庭通知 · 请查看出狱方式"
    case .diceRolled:
     return "骰声已定 · 正在结算落点"

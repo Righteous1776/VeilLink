@@ -20,7 +20,10 @@ final class VeilopolyEventFeedbackTests: XCTestCase {
  func testIvoryChanceAndFateEventAnnouncements() {
   XCTAssertEqual(VeilopolyEventFeedback.summary([
    Effect(.cardDrawn,player:0,tile:7,amount:5,deck:.chance)
-  ]), "机会／命运来函 · 阅后继续")
+  ]), "机会来函 · 阅后继续")
+  XCTAssertEqual(VeilopolyEventFeedback.summary([
+   Effect(.cardDrawn,player:0,tile:17,amount:20,deck:.chest)
+  ]), "命运来函 · 阅后继续")
   let market = VeilopolyEventFeedback.summary([
    Effect(.stockBought,player:0,stockSymbol:"AAA",stockShares:3)
   ]) ?? ""

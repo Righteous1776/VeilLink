@@ -186,7 +186,11 @@ public final class GameSessionModel: ObservableObject {
     shownCardID = id
     shownCard = message
    } else {
-    lastFeedback = "AI 卡牌 · " + message
+    let editorial = id.flatMap {
+     VeilopolyCardEditorial.presentation(id: $0, deck: deck, among: game.cards)
+    }
+    lastFeedback = "AI · " + VeilopolyCardEditorial.deckName(deck) + " · " +
+      (editorial?.title ?? message)
    }
   }
   scene.play(command) { [weak self] in
