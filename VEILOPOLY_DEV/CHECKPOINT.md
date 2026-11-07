@@ -14,9 +14,12 @@
   four-phone support. Explicit invitation, host-only reducer/AI/price clock,
   guest proposals, sequence/hash/history-prefix checks, heartbeat/resync,
   role/identity-separated saved room recovery and bounded fragment transport.
-- Full Linux suite 270/270 PASS, 34.072s. Live suites 15 cases PASS. Actual
+- Full Linux suite 271/271 PASS, 58.527s. Live suites 16 cases PASS. Actual
   unchanged control-event codec probe: 31 fragments all <=2048 bytes. Initial
   512-byte worst-case probe failed; corrected to 384 raw bytes, not a cap change.
+- Host hookup `eb88167`; follow-up stops game timeout from reseeding shared
+  secure sessions. Only explicit user recovery of a MISSING secure session
+  calls the existing recovery API; automatic game monitoring only pauses/resyncs.
 - iOS15 grammar parse PASS ONLY. Apple SDK/type-check, 8 guarded iOS model
   cases, 2 host XCTest cases, simulator, two phones, actual link/lifecycle/FPS/
   battery are NOT_RUN. Historical strict Codable warnings still unresolved.

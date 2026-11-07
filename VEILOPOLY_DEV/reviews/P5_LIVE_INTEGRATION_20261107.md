@@ -51,6 +51,9 @@ the real production route above uses the live-room control bridge.
 - Background/identity change gates the live session. Matching status resumes it
   after foreground recovery; idle invitation timers stop. Real iOS lifecycle
   behavior remains NOT_RUN, despite source-level guards.
+- Game timeout NEVER triggers a secure-session reset. It only pauses/resyncs
+  the game. Explicit Invite/Reconnect may call the existing recovery API only
+  if the secure session is missing; a healthy shared chat session is not reseeded.
 
 ## Boundaries / engineering limits
 
@@ -73,13 +76,13 @@ live v1 accepts canonical board/cards/default finance terms only.
 ## Executed evidence
 
 - Initial foundation 8/8 targeted portable cases PASS (5c2ecda).
-- Final live-room suites: 15 cases (13 room/fragment + 2 end-to-end), covering
+- Final live-room suites: 16 cases (14 room/fragment/link-policy + 2 end-to-end), covering
   wrong peer/seat, host-only commands, duplicates, hash/gap/rollback/divergent
   history, invalid snapshot metadata, reordering/interleaving/timeout/bounds,
   identity-scoped resume, 180 scripted moves with dropped commit repair, and
   bank/stock orders without double charging. This is simulation, NOT two phones.
-- `swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2` → 270 tests,
-  0 failures, 34.072s, Linux Swift 6.2.1 → PASS before final doc-only handoff.
+- `swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2` → 271 tests,
+  0 failures, 58.527s, Linux Swift 6.2.1 → PASS after the timeout/recovery guard.
 - Compile/run `validation/ControlBudget/main.swift` WITH the actual unchanged
   VeilLink/Core/VeilControlEvent.swift and built Net/Engine objects → PASS:
   31 synthetic fragments, observed maximum 1716 bytes, ALL <=2048 bytes,
@@ -102,8 +105,11 @@ live v1 accepts canonical board/cards/default finance terms only.
 4. Disconnect during order, drop commit/last proposal, resume same room; both
    background/force-close/relaunch. Host-behind or differing journal must pause,
    not overwrite confirmed progress. Test corrupt/missing saves and low storage.
-5. Verify existing non-Veilopoly control consumers, actual BLE/LAN backpressure,
+5. Verify existing non-Veilopoly control consumers, BLE-headset/voice coexistence,
+   actual BLE/LAN backpressure,
    frame time/battery and 844×390 / 852×393 / 1180×820. ALL currently NOT_RUN.
 
 NEXT_ONE_TASK: VLP-CODEX-P5-002 — Apple SDK/type-check and two-device acceptance
 without IPA; fix failures inside the explicit Owner grant before any integration.
+This application-layer hookup does not claim to fix underlying Bluetooth audio
+disconnects. No iPhone installation or live device connection is claimed.

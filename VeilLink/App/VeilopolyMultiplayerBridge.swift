@@ -211,6 +211,16 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
         } else { lastHeard = Date(); gameModel?.requestNetworkSync() }
     }
 
+    func reconnectAndSync() {
+        guard let config = configuration, let local = localIdentity() else { return }
+        let peer = peer(for: config, local: local)
+        if VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(
+            secureSessionReady: sessions.hasSecureSession(for: peer), userInitiated: true) {
+            _ = sessions.recoverSecureSession(for: peer)
+        }
+        gameModel?.requestNetworkSync()
+    }
+
     private func peer(for config: VeilopolyRoomConfiguration, local: String) -> String {
         local == config.hostIdentityID ? config.guestIdentityID : config.hostIdentityID
     }
@@ -302,9 +312,11 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
         }
         guard let config = configuration, let local = localIdentity(), !peerLeft else { return }
         let peer = peer(for: config, local: local)
-        if !sessions.hasSecureSession(for: peer) || Date().timeIntervalSince(lastHeard) > 15 {
+        if VeilopolyRoomLinkPolicy.shouldPauseGame(secureSessionReady: sessions.hasSecureSession(for: peer),
+            secondsSincePeer: Date().timeIntervalSince(lastHeard)) {
             gameModel?.setNetworkAvailability(false, message: "等待对方重连／同步；不会代替真人操作")
-            _ = sessions.recoverSecureSession(for: peer)
+            // recoverSecureSession removes/reseeds the shared security context.
+            // Do NOT call it from a game timer: chat may still be healthy.
         }
         if waitingForHostAcceptance {
             enqueue(.init(roomID: config.roomID, kind: .accept), to: config.hostIdentityID)

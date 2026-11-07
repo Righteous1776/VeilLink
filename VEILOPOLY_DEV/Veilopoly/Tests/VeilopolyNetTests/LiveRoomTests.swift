@@ -170,4 +170,12 @@ final class LiveRoomTests: XCTestCase {
   XCTAssertThrowsError(try guest.acceptSnapshot(GameSnapshot(fork.game), from: "host"))
   XCTAssertEqual(guest.game, accepted)
  }
+ func testGameTimeoutNeverAutomaticallyReseedsSharedSecureSession() {
+  XCTAssertTrue(VeilopolyRoomLinkPolicy.shouldPauseGame(secureSessionReady: true, secondsSincePeer: 16))
+  XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(secureSessionReady: true, userInitiated: false))
+  XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(secureSessionReady: false, userInitiated: false))
+  XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(secureSessionReady: true, userInitiated: true))
+  XCTAssertTrue(VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(secureSessionReady: false, userInitiated: true))
+  XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldPauseGame(secureSessionReady: true, secondsSincePeer: 5))
+ }
 }

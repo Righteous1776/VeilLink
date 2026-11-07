@@ -18,6 +18,8 @@ struct VeilopolyMultiplayerLobby: View {
                 .font(.headline)
             Text("两台手机 · 两名真人 + 两名 AI · 房主裁决 · 对手须支持同版功能")
                 .font(.caption).foregroundColor(.secondary)
+            Text("双方先打开游戏大厅，再由一方邀请、另一方接受。")
+                .font(.caption2).foregroundColor(.secondary)
             Text(bridge.status).font(.caption).fixedSize(horizontal: false, vertical: true)
             if let error = bridge.lastError {
                 Text(error).font(.caption).foregroundColor(.orange)
@@ -32,7 +34,7 @@ struct VeilopolyMultiplayerLobby: View {
                 lobbyButton("取消邀请", symbol: "xmark.circle") { bridge.leaveRoom() }
             } else if bridge.gameModel != nil {
                 lobbyButton("进入／继续联机对局", symbol: "gamecontroller") { bridge.isGamePresented = true }
-                lobbyButton("重新同步", symbol: "arrow.triangle.2.circlepath") { bridge.gameModel?.requestNetworkSync() }
+                lobbyButton("重连并同步", symbol: "arrow.triangle.2.circlepath") { bridge.reconnectAndSync() }
                 lobbyButton("离开房间（保留本地对局记录）", symbol: "rectangle.portrait.and.arrow.right") { bridge.leaveRoom() }
             } else if model.conversations.isEmpty {
                 Text("先在“附近”完成可信配对，再从这里邀请联系人。")

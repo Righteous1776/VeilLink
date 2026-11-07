@@ -15,8 +15,8 @@ struct GameLobbyView: View {
         VeilStableScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero.veilStaggeredEntrance(index: 0)
-                singlePlayerSection.veilStaggeredEntrance(index: 1)
                 VeilopolyMultiplayerLobby(model: model)
+                singlePlayerSection.veilStaggeredEntrance(index: 1)
                 realtimeArcadeSection.veilStaggeredEntrance(index: 2)
                 interactiveStorySection.veilStaggeredEntrance(index: 3)
                 nearbySection.veilStaggeredEntrance(index: 4)
