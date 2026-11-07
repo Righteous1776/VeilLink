@@ -127,13 +127,13 @@ struct LingCoreTinyChatView: View {
                 // the visual is smaller and remains completely touch-transparent.
                 if ProcessInfo.processInfo.physicalMemory <= 2_800_000_000
                     || AgentCapabilityProfile.current.tier == .legacyA10 {
-                    Image(systemName: "bubble.left.and.text.bubble.right.fill")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundColor(VeilTheme.gold)
-                        .frame(width: 54, height: 54)
-                        .background(VeilTheme.elevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .accessibilityLabel("低内存静态聊天形象")
+                    VeilOpponentAvatarView(
+                        mood: .idle,
+                        size: 54,
+                        staticOnly: true
+                    )
+                    .accessibilityLabel("Vertex 35M 的 Grok bot 静态轻量形象")
+                    .accessibilityIdentifier("vertex35m.chat.grok_avatar_static")
                 } else {
                     VeilOpponentAvatarView(
                         mood: chat.isGenerating ? .thinking : .idle,
@@ -165,7 +165,7 @@ struct LingCoreTinyChatView: View {
             .accessibilityIdentifier("vertex35m.chat.identity_header")
 
             if ProcessInfo.processInfo.physicalMemory <= 2_800_000_000 {
-                Text("低内存保护：已停用动态形象，计算资源优先留给聊天和通信。")
+                Text("低内存保护：使用 Grok bot 静态绘制形象；停用视频解码和持续动画，优先保留聊天与通信资源。")
                     .font(.caption2)
                     .foregroundColor(VeilTheme.tertiaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
