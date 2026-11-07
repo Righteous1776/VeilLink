@@ -376,6 +376,10 @@ public struct VeilopolyGameView: View {
   }
   .onChange(of: reduceMotion) { model.scene.reduceMotion = $0 }
    .onChange(of: slowSteps) { model.scene.stepDuration = $0 ? 0.42 : 0.26 }
+   .onChange(of: model.game.auction?.currentBid) { bid in
+    guard let bid else { return }
+    bidderCash = String(min(model.game.players[model.actor].cash, bid + 1))
+   }
   .onChange(of: model.pending) { pending in
    if !pending { revealDecisionIfNeeded() }
   }
@@ -1227,6 +1231,10 @@ public struct VeilopolyGameView: View {
   }
   .navigationViewStyle(.stack)
   .preferredColorScheme(.dark)
+  .overlay {
+   if let target = amountTarget { numberPadOverlay(for: target) }
+  }
+  .onDisappear { amountTarget = nil }
  }
 
  private var assetExplorerSheet: some View {
@@ -1725,6 +1733,9 @@ public struct VeilopolyGameView: View {
   bidderCash = String(delta > 0 ? min(cash, bounded + 1)
                            : max(minimum, bounded - 1))
  }
+
+ /// Artwork is decorative; bidding controls are real visible Buttons outside
+ /// this bitmap, never invisible touch zones positioned over painted icons.
  @ViewBuilder private var astraAuctionHero: some View {
   if let auction = model.game.auction {
    ZStack(alignment: .topLeading) {
@@ -1736,33 +1747,12 @@ public struct VeilopolyGameView: View {
     astraHeroField("¥\(auction.currentBid)", x: 191, y: 74, width: 90)
     astraHeroField(auction.bidder.map { model.game.players[$0].name } ?? "暂无",
                    x: 191, y: 99, width: 90)
-    // B01 art draws +/- controls. Provide real 44-point touch targets.
-    Button { adjustAuctionBid(by: -1) } label: {
-     Color.clear.frame(width: 44, height: 44).contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .position(x: CGFloat(AstraB01AuctionHitZones.minus.centerX),
-              y: CGFloat(AstraB01AuctionHitZones.minus.centerY))
-    .accessibilityLabel("降低竞价金额")
-    .disabled(model.game.players[model.actor].cash <= auction.currentBid)
-    numericEntry("竞价金额", value: bidderCash, target: .bid)
-      .frame(width: 132, height: 44)
-     .position(x: CGFloat(AstraB01AuctionHitZones.input.centerX),
-               y: CGFloat(AstraB01AuctionHitZones.input.centerY))
-     .accessibilityLabel("竞价金额")
-    Button { adjustAuctionBid(by: 1) } label: {
-     Color.clear.frame(width: 44, height: 44).contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .position(x: CGFloat(AstraB01AuctionHitZones.plus.centerX),
-              y: CGFloat(AstraB01AuctionHitZones.plus.centerY))
-    .accessibilityLabel("提高竞价金额")
-    .disabled(model.game.players[model.actor].cash <= auction.currentBid)
    }
    .frame(width: 256, height: 174)
-   .accessibilityElement(children: .contain)
+   .accessibilityElement(children: .combine)
   }
  }
+
  private func astraTradeHero(_ trade: TradeState) -> some View {
   ZStack(alignment: .topLeading) {
    AstraB01Artwork.image(AstraB01AssetNames.tradeHero)
@@ -1777,22 +1767,46 @@ public struct VeilopolyGameView: View {
   .accessibilityElement(children: .combine)
  }
  private var auctionPanel: some View {
-  VStack(alignment: .leading,spacing: 9) {
+  VStack(alignment: .leading, spacing: 12) {
    if let auction = model.game.auction {
-    Text("拍卖 · \(model.game.board[auction.tile].name)").font(.headline)
-    astraAuctionHero
-    if let notice = VeilopolyCivicText.auction(model.game) {
-     VeilopolyCivicDocumentPanel(document: notice)
+    Text("公开拍卖 · \(model.game.board[auction.tile].name)")
+     .font(.system(size: 18, weight: .bold))
+    Text("当前最高价 ¥\(auction.currentBid) · 你可以出价或直接弃权。")
+     .font(.system(size: 14, weight: .medium))
+    HStack(spacing: 8) {
+     Button { adjustAuctionBid(by: -1) } label: {
+      Image(systemName: "minus.circle.fill")
+       .font(.system(size: 26))
+       .frame(width: 48, height: 48)
+       .contentShape(Rectangle())
+     }
+     .buttonStyle(.plain)
+     .accessibilityLabel("减少出价")
+     .disabled((Int(bidderCash) ?? 0) <= auction.currentBid + 1)
+     numericEntry("拟出价", value: bidderCash, target: .bid)
+     Button { adjustAuctionBid(by: 1) } label: {
+      Image(systemName: "plus.circle.fill")
+       .font(.system(size: 26))
+       .frame(width: 48, height: 48)
+       .contentShape(Rectangle())
+     }
+     .buttonStyle(.plain)
+     .accessibilityLabel("增加出价")
+     .disabled((Int(bidderCash) ?? 0) >= model.game.players[model.actor].cash)
     }
-    HStack {
-     action("出价",symbol:"hand.raised") {
+    HStack(spacing: 8) {
+     action("确认出价", symbol: "checkmark.circle") {
       model.perform(.bid, amount: Int(bidderCash) ?? 0)
      }
      .disabled((Int(bidderCash) ?? 0) <= auction.currentBid ||
                (Int(bidderCash) ?? 0) > model.game.players[model.actor].cash)
-     action("弃权",symbol:"xmark.circle",secondary:true) {
+     action("放弃竞价", symbol: "xmark.circle", secondary: true) {
       model.perform(.bid, amount: 0)
      }
+    }
+    astraAuctionHero
+    if let notice = VeilopolyCivicText.auction(model.game) {
+     VeilopolyCivicDocumentPanel(document: notice)
     }
    }
   }
