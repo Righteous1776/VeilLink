@@ -110,6 +110,10 @@ public struct IntegratedBankLedger: Codable, Equatable {
   reserveCash = try c.decodeIfPresent(Int.self, forKey: .reserveCash)
   queuedClaims = try c.decodeIfPresent([VeilopolyBankClaim].self, forKey: .queuedClaims)
   financeRuleVersion = try c.decodeIfPresent(Int.self, forKey: .financeRuleVersion) ?? 1
+  // Development builds created before queued claims existed remain decodable.
+  if financeRuleVersion == VeilopolyCityLongEconomy.version && queuedClaims == nil {
+   queuedClaims = []
+  }
  }
 }
 

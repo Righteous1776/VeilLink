@@ -110,6 +110,10 @@ struct VeilopolyAssetBrowser: View {
      .font(.caption2).foregroundColor(.secondary)
      .fixedSize(horizontal: false, vertical: true)
    }
+   if let claims = game.banking?.queuedClaims, !claims.isEmpty {
+    Text("银行未兑付义务：共 ¥\(claims.reduce(0) { $0 + $1.amount })（不计入玩家当前现金）")
+     .font(.caption2).foregroundColor(.orange)
+   }
    if VeilopolyCityLongEconomy.isActive(game) {
     Text("城市长局 · 本期单次地块租金上限 ¥\(VeilopolyCityLongEconomy.rentCeiling(game))；随有效结算期逐渐上调。铁路及公用事业基础租金按长局规模调整。")
      .font(.caption2).foregroundColor(.secondary)

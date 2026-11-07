@@ -1507,7 +1507,15 @@ public struct VeilopolyGameView: View {
       .font(.subheadline.weight(.semibold))
      Text("银行可用 ¥\(available) · 全市货币上限 ¥\(VeilopolyCityLongEconomy.totalMoneySupply)")
       .font(.caption.monospacedDigit())
-     Text("购地、建造、税费、股票买入回流银行；发薪、贷款、补助、股票卖出从银行支出。银行流动资金不足时相关付款会拒绝，已提交的玩家间转账不会凭空增发货币。")
+     Text("购地、建造、税费和股票买入使银行回流资金；发薪、贷款、补助和股票卖出从银行支出。强制支付在银行不足时登记待兑付凭证，后续回款按顺序清偿，不会增发货币。")
+      .font(.caption2).foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+     if let claims = model.game.banking?.queuedClaims, !claims.isEmpty {
+      let outstanding = claims.reduce(0) { $0 + $1.amount }
+      Text("银行待兑付：\(claims.count) 笔，共 ¥\(outstanding)；当前玩家应收 ¥\(claims.filter { $0.player == model.actor }.reduce(0) { $0 + $1.amount })")
+       .font(.caption.monospacedDigit()).foregroundStyle(.orange)
+     }
+     Text("贷款和主动股票卖出仍须通过银行流动性检查。")
       .font(.caption2).foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
     }
