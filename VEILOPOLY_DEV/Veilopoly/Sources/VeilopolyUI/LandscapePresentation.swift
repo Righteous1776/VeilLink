@@ -13,16 +13,23 @@ public struct VeilopolyFullscreenModifier: ViewModifier {
  @Binding private var isPresented: Bool
  private let seed: UInt64?
  private let humanCount: Int
+ private let onInviteFriends: (() -> Void)?
+ private let onDismiss: (() -> Void)?
 
- public init(isPresented: Binding<Bool>, seed: UInt64?, humanCount: Int) {
+ public init(isPresented: Binding<Bool>, seed: UInt64?, humanCount: Int,
+             onInviteFriends: (() -> Void)? = nil, onDismiss: (() -> Void)? = nil) {
   _isPresented = isPresented
   self.seed = seed
   self.humanCount = humanCount
+  self.onInviteFriends = onInviteFriends
+  self.onDismiss = onDismiss
  }
 
  public func body(content: Content) -> some View {
-  content.fullScreenCover(isPresented: $isPresented) {
-   VeilopolyGameView(seed: seed, humanCount: humanCount, onExit: { isPresented = false })
+  content.fullScreenCover(isPresented: $isPresented, onDismiss: onDismiss) {
+   VeilopolyGameView(seed: seed, humanCount: humanCount,
+                     onExit: { isPresented = false },
+                     onInviteFriends: onInviteFriends)
     .background(LandscapeSceneRequest())
     .statusBarHidden(true)
   }
@@ -34,8 +41,13 @@ public extension View {
  /// Local game-hall entry. Nil uses fresh-match entropy; existing saves resume
  /// their persisted seed. Explicit seeds remain available for deterministic tests.
  func veilopolyFullscreen(isPresented: Binding<Bool>, seed: UInt64? = nil,
-                          humanCount: Int = 1) -> some View {
-  modifier(VeilopolyFullscreenModifier(isPresented: isPresented, seed: seed, humanCount: humanCount))
+                          humanCount: Int = 1,
+                          onInviteFriends: (() -> Void)? = nil,
+                          onDismiss: (() -> Void)? = nil) -> some View {
+  modifier(VeilopolyFullscreenModifier(isPresented: isPresented, seed: seed,
+                                       humanCount: humanCount,
+                                       onInviteFriends: onInviteFriends,
+                                       onDismiss: onDismiss))
  }
 }
 
