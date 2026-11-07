@@ -58,4 +58,23 @@ final class GomokuBotTests: XCTestCase {
         XCTAssertGreaterThan(trainedRelaxed.rootCandidateLimit, relaxed.rootCandidateLimit)
         XCTAssertGreaterThan(trainedRelaxed.replyCandidateLimit, relaxed.replyCandidateLimit)
     }
+
+    func testR3LearnedForkPolicyIsNonzeroOnIntersectingThreatsAndBounded() {
+        var board = GomokuState()
+        // Host three-horizontal + three-vertical approach the same 7,7 point.
+        // Guest moves are intentionally far apart; neither player has already won.
+        let host = [109, 110, 111, 67, 82, 97]
+        let guest = [0, 2, 4, 6, 8, 10]
+        for j in 0..<host.count {
+            XCTAssertTrue(board.apply(index: host[j], actor: .host))
+            XCTAssertTrue(board.apply(index: guest[j], actor: .guest))
+        }
+        XCTAssertNil(board.winner)
+        let trained = GomokuBot.trainedR3ForkBonus(index: 112, state: board, player: .host)
+        XCTAssertGreaterThan(trained, 0)
+        XCTAssertLessThanOrEqual(trained, 2_400)
+        XCTAssertEqual(GomokuBot.trainedR3ForkBonus(index: 109, state: board, player: .host), 0)
+        XCTAssertEqual(GomokuBot.trainedR3ForkBonus(index: 112, state: GomokuState(), player: .host), 0)
+    }
+
 }
