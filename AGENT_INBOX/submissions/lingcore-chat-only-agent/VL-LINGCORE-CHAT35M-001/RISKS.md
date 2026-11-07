@@ -9,3 +9,6 @@
 7. No model weights or opaque binaries in Inbox by AGENTS.md. No Asset Drop grant for this lane.
 8. Scope overlaps other Language/Agent projects and latent llama integration. Governor must arbitrate, not auto-merge.
 9. Only additive proposed files in patch. No live product mutation, no release, no CI/XCTest performed.
+
+## 2026-11-08 provenance update
+Owner file successfully obtained; exact local SHA and metadata in MODEL_PROVENANCE.md. Original point 6 (no local digest) is superseded, but **publisher-side digest validation and trust in source remain pending**. Adapter/runtime are source-only and may not compile against the pinned llama.cpp version until native Xcode checks run. Artifact is not in git, nor available automatically inside an IPA.

@@ -20,3 +20,9 @@
 
 ## Actual status
 Architecture/source proposal only. No compiled XCTest or device inference executed in this submission.
+
+## New unit tests staged (not run)
+- Reject wrong-sized GGUF before hash or inference.
+- Verify GGUF v3 magic/version; reject unrelated data.
+- Validate model from actual user file before iOS load; publisher digest independent check still pending.
+- Verify missing llama module disables adapter and cannot accidentally enable privileged LingCore routes.

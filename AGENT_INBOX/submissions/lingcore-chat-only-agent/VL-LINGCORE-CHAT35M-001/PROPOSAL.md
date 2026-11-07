@@ -35,3 +35,7 @@ The staged Swift `LingCoreChatOnlyBoundary` has no AppModel/AgentCoordinator/con
 - iOS build/XCTest: NOT_RUN.
 - Performance claims: none; no invented tokens/s or memory benchmark.
 - Release and IPA: DENY.
+
+
+## Verified local GGUF and opt-in native adapter (2026-11-08)
+The owner's Drive file was downloaded in full and inspected; exact byte count 29,203,168 and SHA-256 c55c3c32740d5a283c505fc9f9b7313e4b3f0c98bb11efd21b651651d5cb36b5. GGUF v3/112 tensors/Qwen3/10 blocks/1024 context/ChatML confirmed from metadata. See MODEL_PROVENANCE.md. These bytes have NOT been independently matched against the publisher's hash. Staged an exact-file integrity gate and an optional llama.cpp-native chat adapter. The app is NOT yet linked to llama.cpp and the GGUF is NOT in a product bundle; no native inference or device testing occurred.

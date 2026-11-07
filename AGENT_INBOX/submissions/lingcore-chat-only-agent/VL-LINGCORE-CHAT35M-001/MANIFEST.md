@@ -29,3 +29,9 @@
 - XCTest: NOT_RUN
 - IPA: NOT_RUN
 - main_modified: NO
+
+- source_file_located_in_connected_drive: YES
+- downloaded_raw_file_size_bytes: 29203168
+- computed_local_sha256: c55c3c32740d5a283c505fc9f9b7313e4b3f0c98bb11efd21b651651d5cb36b5
+- independently_verified_upstream_sha256: NO
+- staged_added_files: MODEL_PROVENANCE.md; FILES/VeilLink/Agent/Language/Vertex35MModelIntegrityGate.swift; FILES/VeilLink/Agent/Language/Vertex35MChatRuntime.swift; FILES/VeilLinkTests/Vertex35MModelIntegrityGateTests.swift
