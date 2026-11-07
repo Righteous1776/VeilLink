@@ -98,4 +98,22 @@ final class XiangqiBotTests: XCTestCase {
         ), 2)
     }
 
+
+    func testUserSelectedFullXiangqiSearchIsNotAutoDisabledForLegacyDevices() {
+        // Deliberately test the SAME explicit search mode for every device;
+        // it is never derived from performance classifier or OS version.
+        let full = XiangqiBotBudget.forDifficulty(
+            .master, profileLabel: BoardSearchMode.full.budgetProfileLabel
+        )
+        let saving = XiangqiBotBudget.forDifficulty(
+            .master, profileLabel: BoardSearchMode.economy.budgetProfileLabel
+        )
+        XCTAssertEqual(full.maxDepth, 9)
+        XCTAssertEqual(full.quiescenceDepth, 4)
+        XCTAssertEqual(full.timeLimitMilliseconds, 1_350)
+        XCTAssertEqual(saving.maxDepth, 6)
+        XCTAssertEqual(saving.timeLimitMilliseconds, 650)
+    }
+
+
 }
