@@ -58,7 +58,6 @@ public enum VeilopolyEventFeedback {
    case .released: return "法庭回执 · 已办理出狱"
    case .liquidation: return "资产清算 · 已尝试按规则筹措偿债资金"
    case .bankMatured: return "银行到期提醒 · 有一笔账目进入可处理期"
-   case .soldBuilding: return "撤建回执 · 建筑已售回银行"
    case .diceRolled:
     return "骰声已定 · 正在结算落点"
    default: continue
