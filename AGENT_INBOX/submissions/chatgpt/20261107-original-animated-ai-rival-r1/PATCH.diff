@@ -1,0 +1,327 @@
+diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.swift
+--- a/VeilLink/UI/OwnerConsoleView.swift
++++ b/VeilLink/UI/OwnerConsoleView.swift
+@@ -65,6 +65,7 @@
+     @State private var stressExportURL: URL?
+     @State private var showsClearDiagnosticsConfirmation = false
+     @State private var showsStressConfiguration = false
++    @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
+ 
+     init(model: AppModel) {
+         self.model = model
+@@ -89,6 +90,7 @@
+                     capabilityCard
+                     developerModeCard
+                     performanceOverrideCard
++                    grokBotCard
+                     easterEggCard
+                     Text("权限边界：Owner Mode 不读取消息正文、不导出私钥、不绕过其他用户的应用锁。")
+                         .font(.caption)
+@@ -654,6 +656,45 @@
+         }
+     }
+ 
++    private var grokBotCard: some View {
++        let allowed = ownerMode.isAuthorized(for: .visualEffects)
++        return VStack(alignment: .leading, spacing: 10) {
++            Text("AI RIVAL AVATAR")
++                .font(.system(.subheadline, design: .monospaced))
++                .foregroundColor(VeilTheme.gold)
++            Toggle(isOn: $grokBotEnabled) {
++                VStack(alignment: .leading, spacing: 3) {
++                    Text("Grok bot").font(.subheadline.weight(.semibold))
++                    Text("原创实时动态对战形象 · 非 xAI 官方角色；所有单机人机对战通用")
++                        .font(.caption2)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++            }
++            .tint(VeilTheme.gold)
++            .disabled(!allowed)
++            .accessibilityIdentifier("owner.grok_bot.toggle")
++            .onChange(of: grokBotEnabled) { enabled in
++                RuntimeDiagnosticsBridge.shared.recordSemanticAction(
++                    "owner.grok_bot.toggle",
++                    metadata: ["enabled": String(enabled)]
++                )
++            }
++            if grokBotEnabled {
++                HStack(spacing: 12) {
++                    VeilOpponentAvatarView(mood: .thinking, size: 64)
++                    Text("动态预览 · 不遮挡触控")
++                        .font(.caption2).foregroundColor(VeilTheme.secondaryText)
++                    Spacer(minLength: 0)
++                }
++            }
++            if !allowed {
++                Text("仅上帝模式视觉特效权限可修改此选项。")
++                    .font(.caption2).foregroundColor(VeilTheme.tertiaryText)
++            }
++        }
++        .veilCard(emphasized: grokBotEnabled)
++    }
++
+     private var easterEggCard: some View {
+         VStack(alignment: .leading, spacing: 12) {
+             Text("UNIVERSE DECRYPTION").font(.system(.subheadline, design: .monospaced)).foregroundColor(VeilTheme.gold)
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -324,6 +324,7 @@
+     @State private var showsLearningShare = false
+     @State private var learningExportURL: URL?
+     @State private var learningExchangeMessage: String?
++    @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+ 
+     init(model: AppModel, game: MiniGameKind) {
+@@ -343,6 +344,23 @@
+         ScrollView {
+             VStack(spacing: 14) {
+                 statusCard
++                if VeilOpponentAvatarPolicy.shouldRender(
++                    enabled: grokBotEnabled, hasComputerOpponent: true
++                ) {
++                    HStack(spacing: 12) {
++                        VeilOpponentAvatarView(mood: grokBotMood, size: 76)
++                        VStack(alignment: .leading, spacing: 3) {
++                            Text("Grok bot").font(.caption.weight(.semibold))
++                            Text(grokBotMood.label)
++                                .font(.caption2).foregroundColor(VeilTheme.secondaryText)
++                        }
++                        Spacer(minLength: 0)
++                    }
++                    .frame(maxWidth: .infinity, alignment: .leading)
++                    .padding(.horizontal, 12)
++                    .veilCard()
++                    .accessibilityIdentifier("game.grok_bot.avatar")
++                }
+                 if game == .gomoku || game == .xiangqi { learningCard }
+                 if game == .tactical { tacticalControlCard }
+                 board
+@@ -443,6 +461,16 @@
+         }
+     }
+ 
++    private var grokBotMood: VeilOpponentAvatarMood {
++        if controller.isAIThinking { return .thinking }
++        switch controller.outcome {
++        case .playing: return .idle
++        case .aiWon: return .won
++        case .humanWon: return .lost
++        case .draw: return .draw
++        }
++    }
++
+     private var statusCard: some View {
+         VStack(alignment: .leading, spacing: 9) {
+             HStack {
+diff --git a/VeilLink/UI/LatticeClashLabView.swift b/VeilLink/UI/LatticeClashLabView.swift
+--- a/VeilLink/UI/LatticeClashLabView.swift
++++ b/VeilLink/UI/LatticeClashLabView.swift
+@@ -2,6 +2,7 @@
+ 
+ struct LatticeClashLabView: View {
+     @State private var state = LatticeClashState()
++    @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
+ 
+     private var columns: [GridItem] {
+         Array(
+@@ -25,6 +26,20 @@
+             ScrollView {
+                 VStack(spacing: 16) {
+                     header
++                    if grokBotEnabled {
++                        HStack(spacing: 8) {
++                            VeilOpponentAvatarView(
++                                mood: state.isFinished ? .draw :
++                                    state.currentPlayer == .guest ? .thinking : .idle,
++                                size: 58
++                            )
++                            Text("Grok bot · 本地电脑")
++                                .font(.caption.weight(.semibold))
++                                .foregroundColor(.white.opacity(0.85))
++                            Spacer(minLength: 0)
++                        }
++                        .panel()
++                    }
+                     scoreDeck
+                     board
+                     turnDeck
+diff --git a/VeilLink/UI/TacticalV2/TacticalV2SoloView.swift b/VeilLink/UI/TacticalV2/TacticalV2SoloView.swift
+--- a/VeilLink/UI/TacticalV2/TacticalV2SoloView.swift
++++ b/VeilLink/UI/TacticalV2/TacticalV2SoloView.swift
+@@ -13,6 +13,7 @@
+     @State private var visibilityCache = TacticalV2.VisibilityCacheV2()
+     @State private var sessionID = UUID().uuidString
+     @State private var statusText = "正在装载 48×27 官渡战场…"
++    @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
+     @State private var errorText: String?
+ 
+     var body: some View {
+@@ -52,12 +53,19 @@
+             }
+         }
+         .safeAreaInset(edge: .bottom) {
+-            Text(statusText)
+-                .font(.caption2.monospaced())
+-                .foregroundColor(VeilTheme.secondaryText)
+-                .frame(maxWidth: .infinity)
+-                .padding(.vertical, 5)
+-                .background(VeilTheme.panel.opacity(0.94))
++            HStack(spacing: 8) {
++                if grokBotEnabled {
++                    VeilOpponentAvatarView(mood: truth == nil ? .thinking : .idle, size: 42)
++                }
++                Text(statusText)
++                    .font(.caption2.monospaced())
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .frame(maxWidth: .infinity, alignment: .leading)
++                    .lineLimit(2)
++            }
++            .padding(.horizontal, 8)
++            .padding(.vertical, 5)
++            .background(VeilTheme.panel.opacity(0.94))
+         }
+         .onAppear {
+             model.agent.setComputeFocus(.gameDecision)
+diff --git a/VeilLink/UI/VeilOpponentAvatarView.swift b/VeilLink/UI/VeilOpponentAvatarView.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilOpponentAvatarView.swift
+@@ -0,0 +1,110 @@
++import Foundation
++import SwiftUI
++
++// Original, native VeilLink mascot. No third-party character vectors or code.
++enum VeilOpponentAvatarMood: Equatable {
++    case idle, thinking, won, lost, draw
++
++    var label: String {
++        switch self {
++        case .idle: return "等待落子"
++        case .thinking: return "正在思考"
++        case .won: return "电脑获胜"
++        case .lost: return "电脑落败"
++        case .draw: return "和局"
++        }
++    }
++}
++
++enum VeilOpponentAvatarPolicy {
++    static let preferenceKey = "owner.grokbot.original.enabled.v1"
++
++    static func shouldRender(enabled: Bool, hasComputerOpponent: Bool) -> Bool {
++        enabled && hasComputerOpponent
++    }
++
++    static func frameInterval(lowPower: Bool) -> TimeInterval {
++        lowPower ? 1.0 / 15.0 : 1.0 / 30.0
++    }
++}
++
++/// Decorative animation. Never catches gestures, and suspends when not active.
++struct VeilOpponentAvatarView: View {
++    let mood: VeilOpponentAvatarMood
++    let size: CGFloat
++
++    @Environment(\.scenePhase) private var scenePhase
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @State private var changedAt = Date()
++
++    init(mood: VeilOpponentAvatarMood, size: CGFloat = 76) {
++        self.mood = mood
++        self.size = size
++    }
++
++    var body: some View {
++        TimelineView(.animation(
++            minimumInterval: VeilOpponentAvatarPolicy.frameInterval(
++                lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled
++            ),
++            paused: reduceMotion || scenePhase != .active
++        )) { timeline in
++            let time = timeline.date.timeIntervalSinceReferenceDate
++            let age = max(0, timeline.date.timeIntervalSince(changedAt))
++            graphic(time: time, reactionAge: age)
++        }
++        .frame(width: size, height: size)
++        .onChange(of: mood) { _ in changedAt = Date() }
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .ignore)
++        .accessibilityLabel("电脑对手：\(mood.label)")
++    }
++
++    private func graphic(time: TimeInterval, reactionAge: TimeInterval) -> some View {
++        let wobble = reduceMotion ? 0 : exp(-reactionAge * 3.4) * sin(reactionAge * 19) * 6
++        let bounce = reduceMotion ? 0 : sin(time * 1.8) * 2.0 + wobble * 0.4
++        let blink: CGFloat = reduceMotion ? 1 : (sin(time * 2.4) > 0.995 ? 0.12 : 1)
++        let gaze: CGFloat = mood == .thinking && !reduceMotion ? CGFloat(cos(time * 1.7) * 3) : 0
++        let eye: Color = mood == .lost ? .orange : (mood == .won ? .green : .cyan)
++        return ZStack {
++            Circle()
++                .trim(from: 0.05, to: 0.93)
++                .stroke(
++                    AngularGradient(colors: [.cyan.opacity(0.2), .cyan, .purple, .cyan.opacity(0.2)],
++                                    center: .center),
++                    style: StrokeStyle(lineWidth: 2.2, lineCap: .round)
++                )
++                .frame(width: 72, height: 72)
++                .rotationEffect(.degrees(
++                    reduceMotion ? 0 : time * (mood == .thinking ? 36 : 12)
++                ))
++            ZStack {
++                RoundedRectangle(cornerRadius: 16, style: .continuous)
++                    .fill(LinearGradient(
++                        colors: [Color(red: 0.16, green: 0.30, blue: 0.44),
++                                 Color(red: 0.04, green: 0.07, blue: 0.15)],
++                        startPoint: .topLeading, endPoint: .bottomTrailing
++                    ))
++                    .overlay(RoundedRectangle(cornerRadius: 16)
++                        .stroke(Color.cyan.opacity(0.55), lineWidth: 1.2))
++                HStack(spacing: 13) {
++                    Capsule().fill(eye).frame(width: 7, height: 12 * blink)
++                    Capsule().fill(eye).frame(width: 7, height: 12 * blink)
++                }
++                .offset(x: gaze, y: -2)
++                Capsule()
++                    .fill(eye.opacity(0.55))
++                    .frame(width: mood == .won ? 19 : 12, height: 2)
++                    .offset(y: 13)
++                Circle().fill(.white.opacity(0.4))
++                    .frame(width: 4, height: 4).offset(x: 17, y: -18)
++            }
++            .frame(width: 52, height: 50)
++            .rotationEffect(.degrees(wobble * 0.35))
++            .offset(y: bounce)
++        }
++        .frame(width: 76, height: 76)
++        .scaleEffect(size / 76)
++        .frame(width: size, height: size)
++    }
++}
+diff --git a/VeilLinkTests/VeilOpponentAvatarPolicyTests.swift b/VeilLinkTests/VeilOpponentAvatarPolicyTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilOpponentAvatarPolicyTests.swift
+@@ -0,0 +1,21 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilOpponentAvatarPolicyTests: XCTestCase {
++    func testSwitchIsOffUnlessExplicitlyEnabled() {
++        XCTAssertFalse(VeilOpponentAvatarPolicy.shouldRender(enabled: false, hasComputerOpponent: true))
++        XCTAssertTrue(VeilOpponentAvatarPolicy.shouldRender(enabled: true, hasComputerOpponent: true))
++        XCTAssertFalse(VeilOpponentAvatarPolicy.shouldRender(enabled: true, hasComputerOpponent: false))
++    }
++
++    func testSafeFramePacing() {
++        XCTAssertEqual(VeilOpponentAvatarPolicy.frameInterval(lowPower: false), 1.0 / 30.0)
++        XCTAssertEqual(VeilOpponentAvatarPolicy.frameInterval(lowPower: true), 1.0 / 15.0)
++    }
++
++    func testOwnerKeyAndMood() {
++        XCTAssertEqual(VeilOpponentAvatarPolicy.preferenceKey, "owner.grokbot.original.enabled.v1")
++        XCTAssertEqual(VeilOpponentAvatarMood.thinking.label, "正在思考")
++        XCTAssertEqual(VeilOpponentAvatarMood.won.label, "电脑获胜")
++    }
++}
