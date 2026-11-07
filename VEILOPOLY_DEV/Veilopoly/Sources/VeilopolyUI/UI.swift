@@ -64,8 +64,7 @@ public final class GameSessionModel: ObservableObject {
   scene.highlightTile(selectedTile)
   scene.onBoardTap = { [weak self] tile in
    guard let self else { return }
-   if self.animating { self.fastForward() }
-   else if let tile {
+   if let tile {
     self.selectedTile = tile
     self.boardSelectionRevision += 1
    }
@@ -304,7 +303,8 @@ public struct VeilopolyGameView: View {
  @State private var showGameInfo = false
  @State private var showGuide = false
  @State private var controlsExpanded = false
- @State private var dayFelt = true
+ @AppStorage("veilopoly.dayFelt.v1") private var dayFelt = false
+ @State private var showTileInformation = false
  @State private var managementSection: VeilopolyManagementSection = .property
  @Environment(\.dismiss) private var dismiss
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -319,8 +319,9 @@ public struct VeilopolyGameView: View {
    ZStack {
     // Ivory paper is the scene canvas; dark teal Astra controls sit as one
     // gold-rimmed functional overlay, not a separate blue-black application.
-    LinearGradient(colors: [Color(red: 0.97,green: 0.95,blue: 0.90),
-                            Color(red: 0.87,green: 0.82,blue: 0.71)],
+    LinearGradient(colors: dayFelt
+                    ? [Color(red: 0.97,green: 0.95,blue: 0.90), Color(red: 0.87,green: 0.82,blue: 0.71)]
+                    : [Color(red: 0.03,green: 0.07,blue: 0.09), Color(red: 0.08,green: 0.14,blue: 0.17)],
                    startPoint: .topLeading, endPoint: .bottomTrailing)
      .ignoresSafeArea()
     if VeilopolyLandscapeLayout.isLandscape(width: Double(geometry.size.width), height: Double(geometry.size.height)) {
@@ -336,7 +337,7 @@ public struct VeilopolyGameView: View {
   .statusBarHidden()
   .onAppear {
    model.scene.reduceMotion = reduceMotion
-   dayFelt = model.scene.isDayFelt
+   if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
   }
   .onDisappear { model.flushSave() }
   .onChange(of: scenePhase) { phase in
@@ -355,8 +356,7 @@ public struct VeilopolyGameView: View {
   }
   .onChange(of: tradeTarget) { _ in chosenRequest = [] }
   .onChange(of: model.boardSelectionRevision) { _ in
-   managementSection = .property
-   withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { controlsExpanded = true }
+   showTileInformation = true
   }
   .onChange(of: model.game.seed) { _ in
    resetTradeDraft()
@@ -377,11 +377,10 @@ public struct VeilopolyGameView: View {
   }
   .confirmationDialog("更多", isPresented: $showMore) {
    Button(model.newsEnabled ? "暂停城市快讯" : "开启城市快讯") { model.newsEnabled.toggle() }
-   Button(dayFelt ? "切换夜间棋盘" : "切换日间棋盘") {
+   Button(dayFelt ? "切换全局夜间主题" : "切换全局日间主题") {
     dayFelt.toggle()
-    model.scene.setDayFelt(dayFelt)
+    if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
    }
-   .disabled(!model.scene.supportsDayFelt)
    Button("重新开局") { showRestart = true }
    Button("本局信息") { showGameInfo = true }
    Button("玩法辞典 · 23 篇") { showGuide = true }
@@ -398,9 +397,10 @@ public struct VeilopolyGameView: View {
    Text("退出后返回上一级界面。当前本地对局会自动保存，下次打开继续。")
   }
   .sheet(isPresented: $showGuide) {
-   VeilopolyGuideSheet(isPresented: $showGuide, game: model.game,
-                       saveSummary: model.saveSummary)
-  }
+    VeilopolyGuideSheet(isPresented: $showGuide, game: model.game,
+                        saveSummary: model.saveSummary)
+   }
+   .sheet(isPresented: $showTileInformation) { selectedTileDetailSheet }
   .alert("本局信息", isPresented: $showGameInfo) {
    Button("知道了", role: .cancel) {}
   } message: {
@@ -651,7 +651,7 @@ public struct VeilopolyGameView: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
    }
-   .id("\(model.game.turn.phase.rawValue)-\(model.actor)-\(managementSection.rawValue)")
+   // Preserve scrolling position across phase changes.
    // iOS 15: keep system scroll indicators; .scrollIndicators(_:) is a later API.
    if model.game.turn.phase == .manage && model.waitingForHuman {
     action(model.game.turn.rolledDouble ? "继续额外回合" : "结束回合", symbol: "checkmark.circle") {
@@ -739,7 +739,8 @@ public struct VeilopolyGameView: View {
    let height = CGFloat(measured.height)
    SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
     .frame(width: width, height: height)
-    .background(Color(red: 0.94, green: 0.91, blue: 0.83),
+    .background(dayFelt ? Color(red: 0.94, green: 0.91, blue: 0.83)
+                         : Color(red: 0.07, green: 0.12, blue: 0.14),
                 in: RoundedRectangle(cornerRadius: 12))
     .overlay {
      RoundedRectangle(cornerRadius: 12)
@@ -801,6 +802,47 @@ public struct VeilopolyGameView: View {
   .padding(.horizontal, 5)
   .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
   .accessibilityElement(children: .contain)
+ }
+
+ 
+ // Read-only inspection does not commit a move or advance the turn.
+ private var selectedTileDetailSheet: some View {
+  let tile = model.game.board[model.selectedTile]
+  let owner = tile.owner.map { model.game.players[$0].name } ?? "未出售"
+  return NavigationView {
+   ScrollView {
+    VStack(alignment: .leading, spacing: 14) {
+     Text("#\(tile.i) · \(tile.name)")
+      .font(.system(size: 24, weight: .bold, design: .rounded))
+     Text(tile.purchasable ? "价格 ¥\(tile.price) · \(owner)" : "特殊地块 · \(owner)")
+      .font(.title3).foregroundStyle(.secondary)
+     if tile.purchasable {
+      Text("基础租金 ¥\(tile.rent.first ?? 0)").font(.headline.monospacedDigit())
+      Text(tile.mortgaged ? "已抵押" : "未抵押").font(.subheadline)
+     }
+     if let deed = VeilopolyCivicText.deed(model.game, tileIndex: tile.i) {
+      VeilopolyCivicDocumentPanel(document: deed)
+     }
+     if let lore = VeilopolyWorldEditorial.page(for: tile) {
+      Text(lore.title).font(.headline)
+      Text(lore.teaser).font(.body).fixedSize(horizontal: false, vertical: true)
+     }
+     Text("只读地块档案，不会触发购买、拍卖、抵押或结束回合。")
+      .font(.footnote).foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: 540, alignment: .leading)
+    .padding(20)
+   }
+   .navigationTitle("地块档案")
+   .navigationBarTitleDisplayMode(.inline)
+   .toolbar {
+    ToolbarItem(placement: .confirmationAction) {
+     Button("返回棋盘") { showTileInformation = false }
+    }
+   }
+  }
+  .navigationViewStyle(.stack)
+  .preferredColorScheme(.dark)
  }
 
  private var portraitFallback: some View {
@@ -935,10 +977,12 @@ public struct VeilopolyGameView: View {
     if let i = model.game.turn.pendingPurchase {
      VStack(alignment: .leading,spacing:10) {
       astraBuyHero(model.game.board[i])
+      Text("不会自动购房。按本局经典规则，放弃购买将进入公开拍卖；竞价阶段可以直接弃权。")
+       .font(.caption).fixedSize(horizontal: false, vertical: true)
       HStack {
-       action("购买",symbol:"house") { model.perform(.buyProperty,tile:i) }
+       action("购买 ¥\(model.game.board[i].price)",symbol:"house") { model.perform(.buyProperty,tile:i) }
         .disabled(model.game.players[model.actor].cash < model.game.board[i].price)
-       action("送入拍卖",symbol:"gavel",secondary:true) { model.perform(.startAuction,tile:i) }
+       action("不购买（拍卖）",symbol:"gavel",secondary:true) { model.perform(.startAuction,tile:i) }
       }
      }
     }
