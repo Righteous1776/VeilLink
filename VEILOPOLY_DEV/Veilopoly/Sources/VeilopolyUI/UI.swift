@@ -321,6 +321,10 @@ public struct VeilopolyGameView: View {
  @AppStorage("veilopoly.dayFelt.v1") private var dayFelt = false
  @State private var showTileInformation = false
  @State private var showAssetExplorer = false
+ @State private var showProbabilityLab = false
+ @State private var probabilityLastRoll: Int?
+ @State private var probabilityAttempts = 0
+ @State private var probabilityMatches = 0
  @State private var overviewTile = 1
  @State private var amountTarget: VeilopolyAmountTarget?
  @State private var showFinanceHUD = true
@@ -404,6 +408,7 @@ public struct VeilopolyGameView: View {
    Button(showFinanceHUD ? "隐藏资产悬浮窗" : "显示资产悬浮窗") { showFinanceHUD.toggle() }
    Button(showMarketHUD ? "隐藏股市悬浮窗" : "显示股市悬浮窗") { showMarketHUD.toggle() }
    Button("完整资产浏览（任何回合）") { showAssetExplorer = true }
+   Button("概率小游戏 · 无下注") { showProbabilityLab = true }
    Button(dayFelt ? "切换全局夜间主题" : "切换全局日间主题") {
     dayFelt.toggle()
     if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
@@ -429,6 +434,7 @@ public struct VeilopolyGameView: View {
    }
    .sheet(isPresented: $showTileInformation) { selectedTileDetailSheet }
    .sheet(isPresented: $showAssetExplorer) { assetExplorerSheet }
+   .sheet(isPresented: $showProbabilityLab) { probabilityLabSheet }
   .alert("本局信息", isPresented: $showGameInfo) {
    Button("知道了", role: .cancel) {}
   } message: {
@@ -1216,6 +1222,57 @@ public struct VeilopolyGameView: View {
    Text("交易信息可随时查看，但发起或接受交易仍需合法回合。")
     .font(.footnote).foregroundStyle(.secondary)
   }
+ }
+
+
+ // A standalone educational chance toy — NO wagering, currency movement,
+ // purchases, account integration, cash-outs, or effect on the saved match.
+ private var probabilityLabSheet: some View {
+  NavigationView {
+   VStack(spacing: 18) {
+    Label("骰子概率体验", systemImage: "die.face.5")
+     .font(.title2.weight(.bold))
+    Text("你可以预测一个六面骰子的奇偶，观察理论概率与实际结果。每次预测的命中率理论上都是 1/2。")
+     .font(.body)
+     .fixedSize(horizontal: false, vertical: true)
+    HStack(spacing: 16) {
+     Button("预测奇数") { rollProbabilityDie(guessEven: false) }
+      .buttonStyle(.borderedProminent)
+      .frame(minHeight: 44)
+     Button("预测偶数") { rollProbabilityDie(guessEven: true) }
+      .buttonStyle(.borderedProminent)
+      .frame(minHeight: 44)
+    }
+    if let face = probabilityLastRoll {
+     Text("本轮骰子：\(face)")
+      .font(.system(size: 27, weight: .bold, design: .rounded))
+    }
+    Text("练习次数：\(probabilityAttempts) · 预测正确：\(probabilityMatches)")
+     .font(.headline.monospacedDigit())
+    Text("这是独立的概率体验，没有押注、奖池、游戏币损益、兑换或付费。")
+     .font(.footnote)
+     .foregroundStyle(.secondary)
+    Spacer(minLength: 0)
+   }
+   .padding(22)
+   .frame(maxWidth: 520)
+   .navigationTitle("概率实验室")
+   .navigationBarTitleDisplayMode(.inline)
+   .toolbar {
+    ToolbarItem(placement: .confirmationAction) {
+     Button("返回") { showProbabilityLab = false }
+    }
+   }
+  }
+  .navigationViewStyle(.stack)
+  .preferredColorScheme(.dark)
+ }
+
+ private func rollProbabilityDie(guessEven: Bool) {
+  let face = Int.random(in: 1...6)
+  probabilityLastRoll = face
+  probabilityAttempts += 1
+  if (face % 2 == 0) == guessEven { probabilityMatches += 1 }
  }
 
  private var portraitFallback: some View {
