@@ -57,6 +57,7 @@ targets:
           - Resources/AgentModels/game_policy_ranker_v4.vlpol
           - Resources/AgentModels/game_policy_ranker_v4.manifest.json
           - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
+          - Resources/LocalAI/Vertex-0.6-35M-Instruct-Q4_K_M.gguf
           - Resources/MonogatariHost
           - Resources/VisualNovelBundle
           - Resources/GomokuEngineV2
