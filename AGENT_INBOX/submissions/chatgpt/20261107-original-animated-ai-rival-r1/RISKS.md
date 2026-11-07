@@ -18,3 +18,8 @@
 - AVPlayerLooper and AVPlayerLayer are supported APIs but runtime iOS15 compilation, battery/thermal, loop gap and aspect rendering are not yet tested.
 - The MP4 asset is NOT committed to GitHub. The agent's Inbox-only permission lacks an MP4 binary grant and direct product-resource write permission; no workaround by disguised bytes or extension.
 - PR #159 and other GameLobby edits still need Governor conflict arbitration before applying to main.
+
+## R5 owner choice
+- No background removal. Bright near-white video interior is intentionally preserved; rounded corners reduce the rectangular appearance, not its brightness/contrast in Dark Mode.
+- Dual SwiftUI/UIKit masking is targeted at reliable iOS15 AVPlayerLayer clipping; test with actual build to rule out Core Animation hardware-compositing corner artifacts.
+- Product source and physical MP4 are NOT in main; Inbox only. Original #160 UI-source overlap with #159/#128/#141/#129 remains pending arbitration.
