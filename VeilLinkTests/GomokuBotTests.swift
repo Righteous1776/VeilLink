@@ -77,4 +77,24 @@ final class GomokuBotTests: XCTestCase {
         XCTAssertEqual(GomokuBot.trainedR3ForkBonus(index: 112, state: GomokuState(), player: .host), 0)
     }
 
+    func testR4CounterForkPriorPenalizesOrDefendsAndStaysBounded() {
+        var board = GomokuState()
+        let host = [109, 110, 111, 67, 82, 97]
+        let guest = [0, 2, 4, 6, 8]
+        for i in 0..<guest.count {
+            XCTAssertTrue(board.apply(index: host[i], actor: .host))
+            XCTAssertTrue(board.apply(index: guest[i], actor: .guest))
+        }
+        XCTAssertTrue(board.apply(index: host[5], actor: .host))
+        XCTAssertEqual(board.currentPlayer, .guest)
+        XCTAssertNil(board.winner)
+        let defense = GomokuBot.trainedR4CounterForkBonus(index: 112, state: board, player: .guest)
+        XCTAssertGreaterThan(defense, 0, "Opponent intersecting three-lines should be prioritized")
+        XCTAssertLessThanOrEqual(defense, 48_000)
+        XCTAssertEqual(GomokuBot.trainedR4CounterForkBonus(index: 109, state: board, player: .guest), 0)
+        XCTAssertTrue((-48_000...48_000).contains(
+            GomokuBot.trainedR4CounterForkBonus(index: 200, state: board, player: .guest)
+        ))
+    }
+
 }
