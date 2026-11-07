@@ -19,3 +19,10 @@ NOT YET SAFE TO SHIP:
 Next task: run full exact-head SwiftPM; fix any compiler failures; stress 100+ seeds with empty treasury, high outstanding deposits, simultaneous loan maturities, forced bankruptcy and stock liquidation. Report natural completions vs capped games and pending-claim settlement times. Governor review required; no main merge, IPA or release.
 
 Additional RISK-005/006: forced debt coverage must not liquidate inaccessible savings or stock exits when treasury is exhausted; it now skips that conversion and keeps the item intact, allowing the engine to enter the debt phase rather than conjuring cash that the central bank cannot reconcile. Bankrupt-estate disposition of assets remains a deliberate unresolved owner priority choice. Credit is also frozen when measured contingent liabilities exceed treasury, even if no queue is yet pending. Three additional regression source tests cover these cases; complete execution NOT_RUN.
+
+
+### MACRO-001..003 (2026-11-08) — bankruptcy estate and financial receipts
+- V5 liquidation no longer takes inaccessible deposits/stocks as newly created bankruptcy cash. Valid player creditor inherits unsettled account assets and original FIFO bank claims; stock positions are combined with weighted cost basis up to seat cap, with excess represented by bank IOU, not liquid credits. If bank is creditor, debtor-owned obligations are extinguished and holdings are canceled; no instant bailout.
+- Bank-credit and equity account clearing is inherited by single-authority game reducer. Old V4 payout path is unchanged; version guard requires financeRuleVersion ==5.
+- Added `SystemicRiskV5EstateTests.swift` covering bankrupt estate with player creditor and bank creditor, stock position overflow with noncash claim, and V4 isolation. Fixed misleading V5 delayed-payout receipt interpolation and no-obligation coverage to show 100% rather than 1000%.
+- Full SwiftPM and Apple SDK NOT_RUN; queue max edge case remains. Detailed gate table in `reviews/MACRO_FINAL_20261108.md`.

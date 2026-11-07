@@ -1,5 +1,15 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## MACRO-FINAL · ECON V5 consolidated review — 2026-11-08
+
+- Governance: Owner requests final macro iteration. Isolated branch `dev/veilopoly-risk-review-v5-20261108`; base from `dev/veilopoly-economy-v5-20261107`, not main or live dev. All code under `VEILOPOLY_DEV/**`.
+- Mapped monetary base, protected bank reserves, liabilities/IOUs, loan underwriting, property/house inventory, event payouts, peer transfers and stock exposure. P0 V5 estate changed to noncash transfer/writeoff; V4 kept unchanged.
+- Revised interest/maturity receipt text, liquidity no-liability display, crisis exposure reporting, FIFO priority and forced liquidation. Estate tests authored, **not executed**.
+- Formal review: `VEILOPOLY_DEV/reviews/MACRO_FINAL_20261108.md`.
+- **Next one gate**: reproduce current branch with Swift 6.2.1, full `swift test`, fix failed cases, 100+ seed stress, then Owner/Governor review of branch conflicts. No build IPA, signing, release or merging.
+- Do NOT claim complete crisis robustness, Apple SDK pass, iOS playability or measured game duration.
+
+
 ## ECON-V5-CRISIS-001 — Systemic risk controls / banking IOUs — 2026-11-08
 
 - Isolated risk review branch dev/veilopoly-risk-review-v5-20261108, independent of concurrent Veilopoly writers. Owner and Governor scoped VEILOPOLY_DEV only.
