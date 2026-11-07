@@ -98,7 +98,7 @@ public enum VeilopolyGuideLibrary {
         footnote: "若引擎尚未启用某项产品，文案不会承诺固定收益，也不会伪造到账记录。"),
   .init(id: "market", chapter: .economy, title: "虚构证券交易所",
         subtitle: "五家模拟公司，共用一份市场账本",
-        detail: "VTL、AUR、MNT、NOV、ORB 为本局虚构证券标的。价格由本地随机种子和引擎推进生成，不连接真实证券市场。",
+        detail: "VTL、AUR、MNT、NOV、ORB 为本局虚构证券。每次全新对局会生成独立随机种子；新版股票行情采用不固定时点的市场状态变化，不连接真实证券市场。",
         footnote: "交易按模拟即时报价及股数执行，手续费与现金变化由引擎计算。行情曲线是游戏状态记录，不是现实行情或投资建议。"),
   .init(id: "ticker", chapter: .economy, title: "股票行情与停牌",
         subtitle: "先核对股数、手续费和可用余额",

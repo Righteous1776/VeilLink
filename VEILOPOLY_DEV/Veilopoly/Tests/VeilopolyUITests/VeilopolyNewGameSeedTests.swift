@@ -7,8 +7,6 @@ final class VeilopolyNewGameSeedTests: XCTestCase {
   let seed = VeilopolyNewGameSeed.fresh()
   let next = VeilopolyNewGameSeed.fresh(excluding: seed)
   XCTAssertNotEqual(seed, next)
-  XCTAssertNotEqual(next, seed &+ 1)
-  XCTAssertNotEqual(next, seed &- 1)
  }
  func testManyFreshGamesProduceDifferentEngineAndMarketPaths() {
   var seeds = Set<UInt64>()

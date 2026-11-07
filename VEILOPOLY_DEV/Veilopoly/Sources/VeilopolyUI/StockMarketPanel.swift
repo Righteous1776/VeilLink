@@ -90,7 +90,9 @@ public struct VeilopolyStockMarketPanel: View {
     Label("行情暂不可用", systemImage: "exclamationmark.triangle")
      .font(.caption).foregroundStyle(.secondary)
    }
-   Text("虚构行情 · 本地种子驱动 · 不构成投资建议")
+   Text(market.algorithmVersion == 2
+    ? "虚构行情 · 每局随机走势 V2 · 可存档重放"
+    : "虚构行情 · 历史对局兼容算法 V1")
     .font(.system(size: 9, weight: .medium))
     .foregroundStyle(.white.opacity(0.42))
     .frame(maxWidth: .infinity, alignment: .center)
