@@ -8,7 +8,7 @@ Source of truth: current `dev/veilopoly` Kimi K2 atlas, Codex `astraTile*`, `ast
 
 ## Included original artwork and processing
 
-Six images were generated in this conversation. Crop segmentation removes stray alpha artifacts outside connected artwork; individual image crops are downsampled with Lanczos and re-encoded PNG losslessly at the new pixel size. All 19 **derived sprites** are independently SHA-256 hashed and have known Git Blob SHA-1 identifiers. Six unmodified source images are included in the local recovery ZIP; their SHA-256 hashes are recorded in the JSON but not duplicated as 12-MiB raw sources in product runtime.
+Six images were generated in this conversation. Crop segmentation removes stray alpha artifacts outside connected artwork; individual image crops are downsampled with Lanczos and re-encoded PNG losslessly at the new pixel size. All 19 **derived sprites** are independently SHA-256 hashed and have known Git Blob SHA-1 identifiers. Six unmodified full-resolution source images have also been uploaded to `VEILOPOLY_DEV/INCOMING_ASSETS/IVORY_R1_20261107/SOURCES/` and remain in the local recovery ZIP. Their source SHA-256 and actual Git blob SHA-1 are listed in the lock. These original images are **not** included in SwiftPM runtime Resources; the game loads only the 19 optimized derivatives.
 
 The authoritative `IVORY_R1_ASSET_LOCK.json` maps `VL-IVORY-R1-001` through `019` to the exact `Resources/ivoryR1*.png`, source image, crop dimensions, digest and override policy. No existing SpriteKit texture or Codex-generated binary was rewritten.
 
