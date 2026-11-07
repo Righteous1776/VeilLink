@@ -125,12 +125,23 @@ struct LingCoreTinyChatView: View {
                 // Reuse the latest VeilLink Grok bot R5 renderer, not a second
                 // independently decoded video player. In legacy memory tiers
                 // the visual is smaller and remains completely touch-transparent.
-                VeilOpponentAvatarView(
-                    mood: chat.isGenerating ? .thinking : .idle,
-                    size: AgentCapabilityProfile.current.tier == .legacyA10 ? 54 : 72
-                )
-                .accessibilityLabel("Vertex 35M 的 Grok bot 动态形象")
-                .accessibilityIdentifier("vertex35m.chat.grok_avatar")
+                if ProcessInfo.processInfo.physicalMemory <= 2_800_000_000
+                    || AgentCapabilityProfile.current.tier == .legacyA10 {
+                    Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(VeilTheme.gold)
+                        .frame(width: 54, height: 54)
+                        .background(VeilTheme.elevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .accessibilityLabel("低内存静态聊天形象")
+                } else {
+                    VeilOpponentAvatarView(
+                        mood: chat.isGenerating ? .thinking : .idle,
+                        size: 72
+                    )
+                    .accessibilityLabel("Vertex 35M 的 Grok bot 动态形象")
+                    .accessibilityIdentifier("vertex35m.chat.grok_avatar")
+                }
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Grok bot")
@@ -153,7 +164,12 @@ struct LingCoreTinyChatView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .accessibilityIdentifier("vertex35m.chat.identity_header")
 
-            if Bundle.main.url(forResource: "GrokBotFull", withExtension: "mp4") == nil {
+            if ProcessInfo.processInfo.physicalMemory <= 2_800_000_000 {
+                Text("低内存保护：已停用动态形象，计算资源优先留给聊天和通信。")
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.tertiaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if Bundle.main.url(forResource: "GrokBotFull", withExtension: "mp4") == nil {
                 Text("形象资源：当前使用 Grok bot 原生动态绘制版；完整版视频尚未打包。")
                     .font(.caption2)
                     .foregroundColor(VeilTheme.tertiaryText)
