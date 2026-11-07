@@ -30,6 +30,8 @@ public struct VeilopolyStockMarketPanel: View {
  public let cash: Int
  public let executions: [StockExecution]
  public let orderError: String?
+ /// Authoritative game-wide restriction, separate from quote/fee math.
+ public let buyRestriction: String?
  @Binding public var selectedSymbol: String
  @Binding public var shareText: String
  public let onBuy: (String, Int) -> Void
@@ -43,10 +45,12 @@ public struct VeilopolyStockMarketPanel: View {
  public init(market: StockMarketState, player: Int, cash: Int,
              selectedSymbol: Binding<String>, shareText: Binding<String>,
              executions: [StockExecution] = [], orderError: String? = nil,
+             buyRestriction: String? = nil,
              onBuy: @escaping (String, Int) -> Void,
              onSell: @escaping (String, Int) -> Void) {
   self.market = market; self.player = player; self.cash = cash
   self.executions = executions; self.orderError = orderError
+  self.buyRestriction = buyRestriction
   _selectedSymbol = selectedSymbol; _shareText = shareText
   self.onBuy = onBuy; self.onSell = onSell
  }
@@ -258,7 +262,8 @@ public struct VeilopolyStockMarketPanel: View {
                                                symbol: quote.symbol, shares: quantity)
   }()
   let rejection = StockTerminalState.rejection(market: market, player: player,
-   cash: cash, symbol: quote.symbol, shares: quantity, buying: ticketSide == .buy)
+   cash: cash, symbol: quote.symbol, shares: quantity, buying: ticketSide == .buy,
+   buyRestriction: buyRestriction)
   let enabled = rejection == nil
   return VStack(alignment: .leading, spacing: 9) {
    HStack {

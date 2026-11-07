@@ -136,6 +136,14 @@ public enum IntegratedBanking {
   }
  }
 
+ /// Shared UI / Engine eligibility. Do not keep a second independent
+ /// interpretation of loan-due trading restrictions in SwiftUI.
+ public static func hasOverdueLoan(_ ledger: IntegratedBankLedger, player p: Int) -> Bool {
+  guard ledger.financeRuleVersion == 2,
+        ledger.accounts.indices.contains(p) else { return false }
+  return ledger.accounts[p].loans.contains { $0.duePeriod <= ledger.completedTurns }
+ }
+
  public static func apply(_ g: inout GameState, move m: Move, effects: inout [Effect]) throws {
   let p = m.player
   guard (0..<4).contains(p), (0...1_000_000_000).contains(g.players[p].cash) else { throw GameError.invalidState }
@@ -146,9 +154,8 @@ public enum IntegratedBanking {
   let id = g.nextSeq
   // A matured unpaid contract cannot coexist with new high-risk purchases.
   // Repayment, liquidation sales and withdrawals remain permitted.
-  if ledger.financeRuleVersion == 2 &&
-     [.bankDeposit, .bankBorrow, .bankInvest, .stockBuy].contains(m.type) &&
-     ledger.accounts[p].loans.contains(where: { $0.duePeriod <= period }) {
+  if hasOverdueLoan(ledger, player: p) &&
+     [.bankDeposit, .bankBorrow, .bankInvest, .stockBuy].contains(m.type) {
    throw GameError.financeOverdue
   }
   switch m.type {

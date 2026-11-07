@@ -35,7 +35,9 @@ public enum StockTerminalState {
  /// Human-readable rejection reason for the exact current order, including
  /// cash overflow on sales and fractional-price minimum-fee edge cases.
  public static func rejection(market: StockMarketState, player: Int, cash: Int,
-                              symbol: String, shares: Int, buying: Bool) -> String? {
+                              symbol: String, shares: Int, buying: Bool,
+                              buyRestriction: String? = nil) -> String? {
+  if buying, let buyRestriction { return buyRestriction }
   guard (1...10_000).contains(shares) else { return "单笔股数需在 1…10,000 之间" }
   do {
    let estimate = try buying

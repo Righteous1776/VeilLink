@@ -1280,6 +1280,8 @@ public struct VeilopolyGameView: View {
    selectedSymbol: $stockSymbol, shareText: $stockShares,
    executions: model.stockExecutions.filter { $0.player == model.actor },
    orderError: model.stockOrderError,
+   buyRestriction: IntegratedBanking.hasOverdueLoan(ledger, player: model.actor)
+     ? VeilopolyGamePresentation.message(.financeOverdue) : nil,
    onBuy: { symbol, shares in
     model.perform(.stockBuy, stockSymbol: symbol, stockShares: shares)
    },

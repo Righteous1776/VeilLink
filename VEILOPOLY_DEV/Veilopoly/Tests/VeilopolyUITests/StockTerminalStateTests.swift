@@ -42,3 +42,23 @@ final class StockTerminalStateTests: XCTestCase {
   XCTAssertNil(StockTerminalState.chartIndex(fraction: 0.5, count: 0))
  }
 }
+
+extension StockTerminalStateTests {
+ func testOverdueFinanceRestrictionDisablesOnlyRiskIncreasingStockOrders() throws {
+  var market=StockMarketEngine.initial(seed:11)
+  let reason="贷款逾期，请先还款"
+  XCTAssertEqual(StockTerminalState.rejection(market:market,player:0,cash:1500,
+    symbol:"VTL",shares:1,buying:true,buyRestriction:reason),reason)
+  var cash=1500
+  _=try StockMarketEngine.buy(&market,player:0,symbol:"VTL",shares:2,cash:&cash)
+  XCTAssertNil(StockTerminalState.rejection(market:market,player:0,cash:cash,
+    symbol:"VTL",shares:1,buying:false,buyRestriction:reason))
+  var bank=IntegratedBankLedger(completedTurns:8)
+  bank.accounts[0].loans=[
+   SandboxLoan(id:42,principal:100,interestBasisPoints:2000,
+               duePeriod:7,periods:1,totalDue:120)]
+  XCTAssertTrue(IntegratedBanking.hasOverdueLoan(bank,player:0))
+  bank.financeRuleVersion=1
+  XCTAssertFalse(IntegratedBanking.hasOverdueLoan(bank,player:0))
+ }
+}
