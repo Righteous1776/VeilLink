@@ -134,7 +134,7 @@ enum ImageTranscoder {
                 )
                 if bytes.count <= preferred { return prepared }
                 if MediaTransferPolicy.preferCandidate(
-                    bytes: bytes, over: fallback?.data.count
+                    bytes: bytes.count, over: fallback?.data.count
                 ) { fallback = prepared }
             }
             if let fallback { return fallback }
@@ -172,7 +172,7 @@ enum ImageTranscoder {
                     // 384 KB is the preferred result, NOT a requirement.
                     if bytes.count <= preferred { return candidate }
                     if MediaTransferPolicy.preferCandidate(
-                        bytes: bytes, over: fallback?.data.count
+                        bytes: bytes.count, over: fallback?.data.count
                     ) { fallback = candidate }
                     guard let q = MediaTransferPolicy.nextQuality(
                         after: quality, encodedBytes: bytes.count,
