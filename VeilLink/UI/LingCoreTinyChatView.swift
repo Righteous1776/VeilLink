@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 #if VERTEX_CHAT_ONLY && canImport(llama)
 /// Independent, text-only sandbox. No AppModel, tool router or BLE/DB references.
@@ -8,6 +9,33 @@ private final class VertexTinyChatState: ObservableObject {
     @Published var partial = ""
     @Published var errorText: String?
     @Published var isGenerating = false
+    @Published var tokenProgress: LlamaTokenProgress?
+    @Published var loadMilliseconds: Int?
+    @Published var computeBudgetLabel = "等待 A9/A10 计算预算"
+    @Published var protectionMessage: String?
+
+    private var runtime: Vertex35MChatRuntime?
+    private var currentPlan: VeilA9ComputePlan?
+
+    func updateHostBudget(_ plan: VeilA9ComputePlan) {
+        currentPlan = plan
+        computeBudgetLabel = "\(plan.mode.title) · 生成上限 \(plan.language.maxNewTokens) tokens"
+        runtime?.applyHostBudget(plan)
+        if plan.mode == .emergency {
+            stop()
+            protectionMessage = "当前 A9/A10 紧急预算：已暂停微型模型，优先保留设备与通信资源。"
+        } else if protectionMessage?.contains("紧急预算") == true {
+            protectionMessage = nil
+        }
+    }
+
+    func suspendForDevicePressure(_ reason: String) {
+        stop()
+        runtime?.releaseForMemoryPressure()
+        boundary = nil
+        runtime = nil
+        protectionMessage = reason
+    }
 
     private var boundary: LingCoreChatOnlyBoundary?
     private var task: Task<Void, Never>?
@@ -22,6 +50,8 @@ private final class VertexTinyChatState: ObservableObject {
         isGenerating = true
         partial = ""
         errorText = nil
+        tokenProgress = nil
+        loadMilliseconds = nil
 
         task = Task { [weak self] in
             guard let self else { return }
@@ -32,6 +62,7 @@ private final class VertexTinyChatState: ObservableObject {
                     self.partial += token
                 }
                 guard self.activeID == id else { return }
+                self.loadMilliseconds = self.runtime?.lastModelLoadMilliseconds
                 self.messages.append(AgentMessage(role: .assistant, text: answer))
             } catch is CancellationError {
                 // Cancellation produces no synthetic assistant reply.
@@ -70,13 +101,21 @@ private final class VertexTinyChatState: ObservableObject {
             ?? Bundle.main.url(forResource: filename, withExtension: "gguf") else {
             throw AgentRuntimeError.unavailable("实验模型未包含在当前应用中，请使用 Vertex 原生实验构建。")
         }
-        let item = LingCoreChatOnlyBoundary(runtime: Vertex35MChatRuntime(importedModelURL: url))
+        let engine = Vertex35MChatRuntime(importedModelURL: url)
+        if let currentPlan { engine.applyHostBudget(currentPlan) }
+        engine.onProgress = { [weak self] progress in
+            guard let self, self.activeID != nil else { return }
+            self.tokenProgress = progress
+        }
+        runtime = engine
+        let item = LingCoreChatOnlyBoundary(runtime: engine)
         boundary = item
         return item
     }
 }
 
 struct LingCoreTinyChatView: View {
+    @ObservedObject var computeGovernor: VeilA9ComputeGovernor
     @StateObject private var chat = VertexTinyChatState()
     @State private var draft = ""
 
@@ -94,6 +133,15 @@ struct LingCoreTinyChatView: View {
             .padding(12)
             .background(VeilTheme.panel.opacity(0.8))
             .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            tokenDashboard
+
+            if let protectionMessage = chat.protectionMessage {
+                Text(protectionMessage)
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -156,7 +204,59 @@ struct LingCoreTinyChatView: View {
                 Button("清空") { chat.clear() }.disabled(chat.messages.isEmpty)
             }
         }
-        .onDisappear { chat.stop() }
+        .onAppear { chat.updateHostBudget(computeGovernor.plan) }
+        .onReceive(computeGovernor.$plan) { plan in
+            chat.updateHostBudget(plan)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            chat.suspendForDevicePressure("系统报告内存压力，微型模型已卸载；输入框仍可正常使用。")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            chat.suspendForDevicePressure("进入后台已卸载微型模型；返回前台后可按需重新载入。")
+        }
+        .onDisappear {
+            chat.suspendForDevicePressure("退出微型聊天已释放模型内存。")
+        }
+    }
+
+    private var tokenDashboard: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Label("TOKEN MONITOR", systemImage: "chart.bar.xaxis")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                Spacer()
+                Text(chat.computeBudgetLabel)
+                    .font(.system(size: 10, design: .monospaced))
+            }
+            .foregroundColor(VeilTheme.secondaryText)
+
+            HStack(spacing: 12) {
+                tokenMetric("提示", chat.tokenProgress.map { String($0.promptTokens) } ?? "—")
+                tokenMetric("生成", chat.tokenProgress.map { String($0.generatedTokens) } ?? "—")
+                tokenMetric("合计", chat.tokenProgress.map { String($0.promptTokens + $0.generatedTokens) } ?? "—")
+                tokenMetric("速度", chat.tokenProgress.map { String(format: "%.1f t/s", $0.tokensPerSecond) } ?? "—")
+            }
+            if let ms = chat.loadMilliseconds {
+                Text("上次模型载入：\(ms) ms · 所有 Token 均为本机采样真实值")
+                    .font(.system(size: 10))
+                    .foregroundColor(VeilTheme.secondaryText)
+            }
+        }
+        .padding(10)
+        .background(VeilTheme.panel.opacity(0.68))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func tokenMetric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 9)).foregroundColor(VeilTheme.secondaryText)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundColor(VeilTheme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func send() {
