@@ -53,6 +53,28 @@ case .failure(let error):
 
 Source of truth is the full project `.swift` files, not a code sketch. `Move.seq` is exactly `state.nextSeq`; rejected moves must leave the state unchanged.
 
+## Autosave and recovery (P4 single-player)
+
+The SwiftUI single-player view uses VeilopolyPersistence, a Foundation-only
+two-slot checkpoint store in Application Support/Veilopoly/Sessions.
+Every committed player/AI move saves the full deterministic GameState;
+market-only ticks are batched at approximately 30 seconds, then flushed on
+background and exit. On the next launch with the same solo-human-count mode,
+the view restores the latest verified checkpoint rather than restarting.
+Unexpected termination during animation resumes the COMMITTED game state;
+unfinished visual frames are not replayed.
+
+Two unreadable checkpoints are preserved for diagnostics until the user
+explicitly requests a destructive new game.
+
+Multiplayer host/guest checkpoint modes and MultiplayerResumeHandshake exist
+as P3 contracts, but the actual VeilLink network adapter remains
+P5-unimplemented. Only a trusted, authenticated host may authorize a guest
+resynchronization.
+
+For constraints and recovery validation see:
+docs/PERSISTENCE_AND_MULTIPLAYER_RESUME_20261107.md
+
 ## Tests
 
 Run on any platform with Swift 5.9+ toolchain (the iOS-only code is conditionally compiled):
