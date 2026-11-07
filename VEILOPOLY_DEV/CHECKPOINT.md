@@ -1,5 +1,13 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## Unified gameplay composition — 2026-11-07
+
+- Task `VEILOPOLY-GAME-COMPOSITION-004`, baseline `f98b29a4223c0b3fd3acb961b6a217e273103e8b`. Source/art integration stays inside the existing dedicated branch live lane. Existing Kimi board and Astra controls are preserved and connected through one GameState/reducer/render ACK pipeline.
+- Four management sections replace the long property→trade→bank→stock stack; turn completion remains pinned. Board taps reveal selected property details; required decisions open after ACK. Real Kimi token art appears on Astra player skins and the collapsed operation entry. Chance/chest modal uses the correct deck.
+- Added reducer-derived operation availability, localized rejection text, bank maturity/cash cues, reset of stale trade drafts, genuine editable cash counteroffers retaining assets, shared book-net-assets summary and stock cash FX routing. Historic experimental finance/printed rules remain reference code; no contradictory ruleset activation.
+- Added five portable integration tests plus one guarded iOS command-routing test. Portable suite includes a complete property/bank/stock/trade/end-turn replay with identical state hashes. Details and Apple acceptance checklist: `Veilopoly/docs/UNIFIED_GAMEPLAY_COMPOSITION_20261107.md`.
+- Linux Swift 6.2.1 build PASS; portable composition tests 5/5 PASS; full XCTest 139/139 PASS (0 failures), including bounded 500-seed AI smoke and 20 exploratory long games; iOS16 ARM64 frontend grammar parse PASS. Apple SDK type-check, rendered visual/touch/VoiceOver/frame-time acceptance remain PENDING. No main, P5 host, workflows, schema/protocol, signing or release changes.
+
 ## Stock terminal V3 continuation — 2026-11-07
 
 - Task `VEILOPOLY-STOCK-MARKET-UI-003`; baseline `f5f9747` on `dev/veilopoly`, scope `VEILOPOLY_DEV/**`. Stock terminal changes coexist with the latest Kimi tile-mask/day-theme work; no overlap in BoardScene or art resources.
