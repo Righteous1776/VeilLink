@@ -498,9 +498,94 @@ public enum IntegratedBanking {
  /// the estate before normal creditor distribution. Outstanding loans are archived
  /// pending the Owner's priority decision.
  public static func closeBankruptAccount(_ g: inout GameState, player p: Int,
-                                         effects: inout [Effect]) throws {
+                                         creditor: Int? = nil, effects: inout [Effect]) throws {
   guard var ledger = g.banking, ledger.accounts.indices.contains(p),
         g.players.indices.contains(p) else { return }
+
+  if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version {
+   // Transfer the *ownership* of unsettled assets in bankruptcy, not their
+   // book value as newly printed cash. Bank credits and market claims are
+   // distinct from spendable game credits.
+   let receiver = creditor.flatMap { id -> Int? in
+    g.players.indices.contains(id) && id != p && !g.players[id].bankrupt ? id : nil
+   }
+   var queue = ledger.queuedClaims ?? []
+   if let receiver {
+    // Preserve prior claim queue ordering and original source labels.
+    for i in queue.indices where queue[i].player == p {
+     queue[i].player = receiver
+    }
+    let source = ledger.accounts[p]
+    let target = ledger.accounts[receiver]
+    guard target.savings.count <= 1_000 - source.savings.count,
+          target.positions.count <= 1_000 - source.positions.count else {
+     throw GameError.invalidState
+    }
+    ledger.accounts[receiver].savings.append(contentsOf: source.savings)
+    ledger.accounts[receiver].positions.append(contentsOf: source.positions)
+   } else {
+    // In a bankruptcy to the bank itself, claims/deposit obligations held by
+    // that debtor are extinguished, NOT paid to an inactive seat.
+    queue.removeAll { $0.player == p }
+   }
+   if var market = ledger.market {
+    guard market.portfolios.indices.contains(p) else { throw GameError.invalidState }
+    let estate = market.portfolios[p]
+    if let receiver {
+     guard market.portfolios.indices.contains(receiver) else { throw GameError.invalidState }
+     var inherited = market.portfolios[receiver]
+     for asset in estate.positions {
+      let prior = inherited.positions.firstIndex { $0.symbol == asset.symbol }
+      let oldShares = prior.map { inherited.positions[$0].shares } ?? 0
+      let capacity = max(0, 100_000 - oldShares)
+      let transferShares = min(asset.shares, capacity)
+      if transferShares > 0 {
+       if let idx = prior {
+        let old = inherited.positions[idx]
+        let count = old.shares + transferShares
+        inherited.positions[idx].averageCostCents =
+          (old.averageCostCents * old.shares +
+           asset.averageCostCents * transferShares) / count
+        inherited.positions[idx].shares = count
+       } else {
+        inherited.positions.append(StockPosition(symbol: asset.symbol,
+          shares: transferShares, averageCostCents: asset.averageCostCents))
+       }
+      }
+      let remaining = asset.shares - transferShares
+      if remaining > 0 {
+       // At the game's one-position cap, the excess is assigned as a
+       // NONCASH estate claim at the current synthetic settlement price.
+       guard let quote = market.quotes.first(where: { $0.symbol == asset.symbol }) else {
+        throw GameError.invalidState
+       }
+       var owed = remaining * quote.currentPriceCents / 100
+       let cap = VeilopolyCityLongEconomy.expandedTotalMoneySupply
+       while owed > 0 {
+        guard queue.count < 4_096 else { throw GameError.invalidState }
+        let piece = min(cap, owed)
+        queue.append(VeilopolyBankClaim(player: receiver, amount: piece,
+                                       source: "estateStock"))
+        owed -= piece
+       }
+      }
+     }
+     inherited.positions.sort { $0.symbol < $1.symbol }
+     market.portfolios[receiver] = inherited
+    }
+    market.portfolios[p] = StockPortfolio()
+    guard StockMarketEngine.validate(market) else { throw GameError.invalidState }
+    ledger.market = market
+   }
+   ledger.queuedClaims = queue
+   // The defaulted borrower's outstanding bank loans are written off. The
+   // receiver takes the estate's deposit/investment assets, NOT its debt.
+   ledger.accounts[p] = IntegratedBankAccount()
+   g.banking = ledger
+   effects.append(Effect(.liquidation, player: p, to: receiver,
+                         amount: 0, text: "noncashBankruptcyEstate"))
+   return
+  }
   let savings = ledger.accounts[p].savings.reduce(0) { $0 + $1.principal }
   let proceeds = ledger.market.flatMap { market in
    market.portfolios.indices.contains(p)

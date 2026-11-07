@@ -621,7 +621,7 @@ private static func jail(_ g: inout GameState, _ p: Int, _ fx: inout [Effect]) {
   }
  }
  private static func bankrupt(_ g: inout GameState, debtor p: Int, creditor: Int?, _ fx: inout [Effect]) throws {
-  try IntegratedBanking.closeBankruptAccount(&g, player: p, effects: &fx)
+  try IntegratedBanking.closeBankruptAccount(&g, player: p, creditor: creditor, effects: &fx)
   let receiver = creditor.flatMap { id in (0..<g.players.count).contains(id) && id != p && !g.players[id].bankrupt ? id : nil }
   if let receiver = receiver {
    g.players[receiver].cash += g.players[p].cash
