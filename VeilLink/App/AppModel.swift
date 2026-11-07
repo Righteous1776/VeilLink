@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import OSLog
 
 struct VeilTransportHealthRollup: Equatable {
     let coverage: VeilA9TransportCoverage
@@ -32,6 +33,10 @@ struct VeilTransportHealthRollup: Equatable {
 
 @MainActor
 final class AppModel: ObservableObject {
+    private static let startupSignposter = OSSignposter(
+        subsystem: "studio.zeo.veillink",
+        category: "startup"
+    )
     @Published var conversations: [ConversationSummary] = []
     @Published var selectedConversation: ConversationSummary?
     @Published var selectedSection: SidebarSection = .chats
@@ -56,6 +61,11 @@ final class AppModel: ObservableObject {
     private var a9RefreshTask: Task<Void, Never>?
     private var a9PeriodicTask: Task<Void, Never>?
     private var lastAutomatedIntegrityCheckAt: Date?
+    /// A full SQLite PRAGMA integrity_check must not block AppModel's cold-start
+    /// construction on the SwiftUI main actor. Keep the health state UNCHECKED
+    /// until the first foreground frame has been shown and the utility check ends.
+    private var startupIntegrityCheckPending = true
+    private var startupIntegrityCheckScheduled = false
     private var a9Cancellables = Set<AnyCancellable>()
     private var pendingConversationRefresh = false
     private var hostForegroundActive = true
@@ -129,6 +139,8 @@ final class AppModel: ObservableObject {
     }
 
     init(keychain: KeychainStore = KeychainStore(), legalConsent: VeilLegalConsentController? = nil) throws {
+        let startupState = Self.startupSignposter.beginInterval("app_model.init")
+        defer { Self.startupSignposter.endInterval("app_model.init", startupState) }
         autoSaveReceivedImages = UserDefaults.standard.bool(forKey: Self.autoSaveReceivedImagesKey)
         self.keychain = keychain
         self.legalConsent = legalConsent ?? VeilLegalConsentController(keychain: keychain)
@@ -496,10 +508,50 @@ final class AppModel: ObservableObject {
         let result = database.integrityCheck().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         a9Health.setDatabaseIntegrity(result == "ok" ? .ok : .failed)
         lastAutomatedIntegrityCheckAt = Date()
+        startupIntegrityCheckPending = false
         refreshA9Health()
     }
 
+    /// First-foreground startup check: run full integrity verification only
+    /// after first UI presentation, using DatabaseStore's serialized SQL queue
+    /// from a utility worker instead of blocking SwiftUI startup.
+    private func scheduleStartupIntegrityCheckIfNeeded() {
+        guard startupIntegrityCheckPending, !startupIntegrityCheckScheduled else { return }
+        startupIntegrityCheckScheduled = true
+        let store = database
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 750_000_000)
+            guard !Task.isCancelled, let self else { return }
+            guard self.hostForegroundActive else {
+                self.startupIntegrityCheckScheduled = false
+                return
+            }
+            let startedAt = Date()
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let result = store.integrityCheck()
+                    .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.startupIntegrityCheckPending = false
+                    // A newer manual check wins over a slow startup worker.
+                    if let latest = self.lastAutomatedIntegrityCheckAt, latest > startedAt {
+                        return
+                    }
+                    self.lastAutomatedIntegrityCheckAt = Date()
+                    self.a9Health.setDatabaseIntegrity(result == "ok" ? .ok : .failed)
+                    if result != "ok" {
+                        DiagnosticLogStore.shared.log(
+                            .error, .storage, event: "governance.integrity_check.failed"
+                        )
+                    }
+                    self.refreshA9Health()
+                }
+            }
+        }
+    }
+
     private func runAutomatedIntegrityCheckIfNeeded(now: Date = Date()) {
+        guard !startupIntegrityCheckPending else { return }
         if let lastAutomatedIntegrityCheckAt,
            now.timeIntervalSince(lastAutomatedIntegrityCheckAt) < 6 * 60 * 60 {
             return
@@ -609,6 +661,7 @@ final class AppModel: ObservableObject {
         internetRelay.refreshNow()
         refreshA9Health()
         startA9PeriodicSampling()
+        scheduleStartupIntegrityCheckIfNeeded()
     }
 
     func handleMemoryPressure() {
@@ -932,6 +985,55 @@ final class AppModel: ObservableObject {
             conversationTitle: conversation.title,
             peerIdentityID: conversation.peerIdentityID
         )
+    }
+
+    /// Game commands are never written optimistically while the authenticated
+    /// session is absent. Recovery probes every enabled transport because a
+    /// disconnected secure session no longer has a preferred transport ID.
+    @discardableResult
+    func ensureRealtimeGameLink(for peerIdentityID: String) -> Bool {
+        if sessions.hasSecureSession(for: peerIdentityID) { return true }
+        bluetooth.refreshLinks()
+        lanTurbo.refresh()
+        internetRelay.refreshNow()
+        RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+            "game.link.recovery_requested",
+            metadata: ["transports": "ble,lan,relay"]
+        )
+        return false
+    }
+
+    /// Rebuild from the authenticated, persisted conversation instead of using
+    /// a potentially stale SwiftUI sheet snapshot. This only requests a native
+    /// legal-action recommendation; it never executes or sends a move.
+    @discardableResult
+    func refreshAgentGameRecommendation() -> String {
+        guard let context = gameIntelligence.context,
+              let game = MiniGameKind(rawValue: context.gameID),
+              [.gomoku, .xiangqi, .ludo].contains(game) else {
+            return "本游戏暂不支持可执行的原生规则建议，只能查看局面分析。"
+        }
+        guard let localIdentityID = identity.activeIdentity?.id,
+              let conversationID = database.conversationID(
+                localIdentityID: localIdentityID,
+                for: context.peerIdentityID
+              ),
+              let latestSession = MiniGameSessionBuilder.session(
+                id: context.sessionID,
+                from: database.fetchMessages(conversationID: conversationID)
+              ),
+              latestSession.status == .active else {
+            return "未找到当前有效对局；不能用过期棋谱生成可执行建议。"
+        }
+        gameIntelligence.update(
+            session: latestSession,
+            conversationTitle: context.conversationTitle,
+            peerIdentityID: context.peerIdentityID,
+            requestNativeRecommendation: true
+        )
+        return latestSession.isLocalTurn
+            ? "已重新读取最新棋局，原生规则 Bot 正在生成合法建议。"
+            : "当前轮到对方；可查看局面，但无法执行我方落子。"
     }
 
     @discardableResult

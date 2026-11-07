@@ -320,6 +320,13 @@ private struct ConversationRow: View {
     }
 }
 
+private struct ChatBottomOffsetPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = .greatestFiniteMagnitude
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct ChatView: View {
     @ObservedObject var model: AppModel
     let conversation: ConversationSummary
@@ -329,7 +336,7 @@ struct ChatView: View {
     @State private var composerMode: VeilChatComposerMode = .text
     @StateObject private var voiceRecorder = VeilVoiceMessageRecorder()
     @State private var showsPhotoPicker = false
-    @State private var showsImageFileImporter = false
+    @State private var showsChatFileImporter = false
     @State private var isPreparingImage = false
     @State private var mediaStatus: String?
     @State private var showsContactDetails = false
@@ -351,6 +358,9 @@ struct ChatView: View {
     @State private var hasOlderMessages = false
     @State private var messageReloadGeneration = 0
     @State private var isReloadingMessages = false
+    @State private var didInitialBottomAnchor = false
+    @State private var isNearBottom = true
+    private var chatBottomAnchorID: String { "chat-bottom-\(conversation.id)" }
     @State private var loadedFullHistoryForSearch = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -423,6 +433,7 @@ struct ChatView: View {
             }
 
             ScrollViewReader { proxy in
+                GeometryReader { viewport in
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         if hasOlderMessages && !showsSearchBar {
@@ -511,6 +522,16 @@ struct ChatView: View {
                                 .id(message.id)
                             }
                         }
+                        // Stable target even if the last stored packet is hidden game traffic.
+                        Color.clear
+                            .frame(height: 1)
+                            .background(GeometryReader { marker in
+                                Color.clear.preference(
+                                    key: ChatBottomOffsetPreferenceKey.self,
+                                    value: marker.frame(in: .named("chatScroll")).maxY
+                                )
+                            })
+                            .id(chatBottomAnchorID)
                         if showsSearchBar, !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, visibleMessages.isEmpty {
                             VStack(spacing: 8) {
                                 Image(systemName: "magnifyingglass")
@@ -527,8 +548,27 @@ struct ChatView: View {
                     .padding(.vertical, 14)
                     .animation(usesReducedInteractionMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
                 }
-                .onChange(of: messages.last?.id) { _ in
-                    if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                .coordinateSpace(name: "chatScroll")
+                .onAppear {
+                    // reload() completes asynchronously; anchor now only if data is available.
+                    guard !didInitialBottomAnchor, !visibleMessages.isEmpty else { return }
+                    didInitialBottomAnchor = true
+                    DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
+                }
+                .onChange(of: visibleMessages.last?.id) { _ in
+                    guard !showsSearchBar, !visibleMessages.isEmpty else { return }
+                    if !didInitialBottomAnchor {
+                        didInitialBottomAnchor = true
+                        DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
+                    } else if isNearBottom {
+                        // Do not steal scroll position when the user is reading older messages.
+                        DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
+                    }
+                }
+                .onPreferenceChange(ChatBottomOffsetPreferenceKey.self) { bottomY in
+                    guard didInitialBottomAnchor, bottomY.isFinite else { return }
+                    let nearBottom = bottomY - viewport.size.height <= 200
+                    if isNearBottom != nearBottom { isNearBottom = nearBottom }
                 }
                 .onChange(of: pendingWorkspaceJumpID) { target in
                     guard let target else { return }
@@ -541,6 +581,7 @@ struct ChatView: View {
                     }
                     pendingWorkspaceJumpID = nil
                     model.haptics.selection()
+                }
                 }
             }
 
@@ -611,9 +652,9 @@ struct ChatView: View {
                                 Label("照片图库", systemImage: "photo.on.rectangle")
                             }
                             Button {
-                                showsImageFileImporter = true
+                                showsChatFileImporter = true
                             } label: {
-                                Label("从“文件”导入", systemImage: "doc.badge.plus")
+                                Label("导入图片或文本", systemImage: "doc.badge.plus")
                             }
                             Divider()
                             Menu {
@@ -740,6 +781,8 @@ struct ChatView: View {
         }
         .onDisappear {
             model.setConversationVisible(conversation.id, visible: false)
+            didInitialBottomAnchor = false
+            isNearBottom = true
         }
         .onChange(of: model.messagesRevision) { _ in
             if showsConversationWorkspace { prepareConversationWorkspace(presentWhenReady: false) }
@@ -790,20 +833,37 @@ struct ChatView: View {
             MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
         }
         .fileImporter(
-            isPresented: $showsImageFileImporter,
-            allowedContentTypes: [.image],
+            isPresented: $showsChatFileImporter,
+            // Selection is broad; policy enforcement occurs on the owned staging copy.
+            // Binary file transport is intentionally NOT advertised as supported.
+            allowedContentTypes: [.item],
             allowsMultipleSelection: false
         ) { result in
             switch result {
             case .success(let urls):
-                if let selectedURL = urls.first {
-                    Task {
-                        do {
-                            let url = try await VeilImportedFileAccess.materializeInBackground(selectedURL)
-                            prepareAndSendImage(ImportedImageFile(url: url, shouldDeleteAfterUse: true))
-                        } catch {
-                            model.alertMessage = error.localizedDescription
+                guard let selectedURL = urls.first else { return }
+                Task { @MainActor in
+                    do {
+                        let selectedIsImage = UTType(filenameExtension: selectedURL.pathExtension)?.conforms(to: .image) == true
+                        let stagedURL = try await VeilImportedFileAccess.materializeInBackground(
+                            selectedURL,
+                            maximumBytes: selectedIsImage ? 64 * 1_024 * 1_024 : VeilImportedFileAccess.maximumChatDraftBytes
+                        )
+                        let isImage = UTType(filenameExtension: stagedURL.pathExtension)?.conforms(to: .image) == true
+                        if isImage {
+                            guard !isPreparingImage else {
+                                VeilImportedFileAccess.removeStagedCopy(stagedURL)
+                                throw VeilImportedFileAccessError.inaccessible
+                            }
+                            prepareAndSendImage(ImportedImageFile(url: stagedURL, shouldDeleteAfterUse: true))
+                        } else {
+                            defer { VeilImportedFileAccess.removeStagedCopy(stagedURL) }
+                            draft = try VeilImportedFileAccess.chatDraftText(from: stagedURL)
+                            composerMode = .text
+                            mediaStatus = "已导入文本草稿，请确认内容后点击发送。"
                         }
+                    } catch {
+                        model.alertMessage = error.localizedDescription
                     }
                 }
             case .failure(let error):
@@ -963,6 +1023,12 @@ struct ChatView: View {
             return
         }
 
+        guard model.ensureRealtimeGameLink(for: conversation.peerIdentityID) else {
+            model.alertMessage = "对手安全链路尚未就绪。正在同时恢复蓝牙、局域网与中继，请稍后重试。"
+            model.haptics.warning()
+            return
+        }
+
         let packet = MiniGamePacket(game: game, command: .invite)
         do {
             try model.sessions.sendMiniGamePacket(packet, to: conversation.peerIdentityID)
@@ -982,6 +1048,11 @@ struct ChatView: View {
               !session.hostIsLocal,
               !session.isInvitationExpired,
               command == .accept || command == .decline else { return }
+        guard model.ensureRealtimeGameLink(for: conversation.peerIdentityID) else {
+            model.alertMessage = "对手安全链路尚未就绪。正在恢复连接；本次回应没有写入对局历史。"
+            model.haptics.warning()
+            return
+        }
         let packet = MiniGamePacket(
             sessionID: session.id,
             game: session.game,
@@ -1087,13 +1158,30 @@ struct ChatView: View {
             let accessed = imported.shouldDeleteAfterUse ? false : imported.url.startAccessingSecurityScopedResource()
             defer {
                 if accessed { imported.url.stopAccessingSecurityScopedResource() }
-                if imported.shouldDeleteAfterUse { try? FileManager.default.removeItem(at: imported.url) }
+                if imported.shouldDeleteAfterUse {
+                    VeilImportedFileAccess.removeStagedCopy(imported.url)
+                    try? FileManager.default.removeItem(at: imported.url)
+                }
                 isPreparingImage = false
             }
             do {
-                let prepared = try await ImageTranscoder.prepare(at: imported.url)
-                try model.sessions.sendImage(prepared.data, mimeType: prepared.mimeType, to: conversation.peerIdentityID)
-                let status = prepared.summary
+                // Profile is an encoding hint only. If LAN goes away,
+                // SessionCoordinator may continue the same image via BLE.
+                let profile: ImageTransportProfile =
+                    model.sessions.preferredTransportKind(for: conversation.peerIdentityID) == .lan
+                    ? .fastLAN : .bluetooth
+                let prepared = try await ImageTranscoder.prepare(
+                    at: imported.url, profile: profile
+                )
+                try model.sessions.sendImage(
+                    prepared.data, mimeType: prepared.mimeType,
+                    to: conversation.peerIdentityID
+                )
+                let status = prepared.summary + (
+                    profile == .bluetooth &&
+                    prepared.data.count > MediaTransferPolicy.blePreferredBytes
+                        ? " · 蓝牙分片传输（可能较慢）" : ""
+                )
                 withAnimation(.easeOut(duration: 0.18)) { mediaStatus = status }
                 reload()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4) {

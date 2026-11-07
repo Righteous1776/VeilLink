@@ -25,6 +25,8 @@ struct BLELinkTuning: Equatable {
 }
 
 enum BLELinkReliabilityPolicy {
+    static let reconnectStabilityResetInterval: TimeInterval = 30
+
     static func normalizedRSSI(_ sample: Int) -> Int? {
         guard sample != 127, sample < 0, sample >= -110 else { return nil }
         return min(-20, sample)
@@ -99,5 +101,10 @@ enum BLELinkReliabilityPolicy {
         case 6: return 20
         default: return 30
         }
+    }
+
+    static func shouldResetReconnectAttempt(stableSince: TimeInterval?, now: TimeInterval) -> Bool {
+        guard let stableSince else { return false }
+        return now - stableSince >= reconnectStabilityResetInterval
     }
 }

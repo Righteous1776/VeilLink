@@ -3,6 +3,24 @@ import XCTest
 @testable import VeilLink
 
 final class VoiceAndPTTTests: XCTestCase {
+    func testConcurrentFabricDefinesFiveLogicalResponsibilitiesPlusSQLiteSerialQueue() {
+        XCTAssertEqual(VeilConcurrentFabricLane.allCases.count, 5)
+        XCTAssertEqual(
+            Set(VeilConcurrentFabricLane.allCases.map(\.rawValue)),
+            Set(["control", "bulk", "audioCapture", "audioPlayback", "maintenance"])
+        )
+        XCTAssertEqual(VeilConcurrentFabricPolicy.storageQueueLabel, "studio.zeo.veillink.sqlite")
+    }
+
+
+    func testConcurrentFabricAudioLeaseDoesNotStealAnotherActiveEngine() {
+        let owner = UUID(), competing = UUID()
+        XCTAssertTrue(VeilAudioLeasePolicy.allows(currentOwner: nil, incomingOwner: owner))
+        XCTAssertTrue(VeilAudioLeasePolicy.allows(currentOwner: owner, incomingOwner: owner))
+        XCTAssertFalse(VeilAudioLeasePolicy.allows(currentOwner: owner, incomingOwner: competing))
+    }
+
+
     func testVoiceMetadataRoundTrip() {
         let body = VoiceMessageCodec.encode(durationSeconds: 3.42)
         let decoded = VoiceMessageCodec.decode(body)

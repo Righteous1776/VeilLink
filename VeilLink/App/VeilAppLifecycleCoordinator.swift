@@ -47,6 +47,7 @@ final class VeilAppLifecycleCoordinator: ObservableObject {
                 model.start()
             case .setHostForeground(let active):
                 DeviceStressTestController.shared.handleSceneActive(active)
+                RuntimeDiagnosticsBridge.shared.setApplicationActive(active)
                 model.bluetooth.setForegroundActive(active)
             case .enterForeground:
                 model.handleForegroundTransition()

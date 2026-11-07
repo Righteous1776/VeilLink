@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LatticeClashLabView: View {
     @State private var state = LatticeClashState()
+    @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
 
     private var columns: [GridItem] {
         Array(
@@ -25,6 +26,20 @@ struct LatticeClashLabView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     header
+                    if grokBotEnabled {
+                        HStack(spacing: 8) {
+                            VeilOpponentAvatarView(
+                                mood: state.isFinished ? .draw :
+                                    state.currentPlayer == .guest ? .thinking : .idle,
+                                size: 58
+                            )
+                            Text("Grok bot · 本地电脑")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.white.opacity(0.85))
+                            Spacer(minLength: 0)
+                        }
+                        .panel()
+                    }
                     scoreDeck
                     board
                     turnDeck

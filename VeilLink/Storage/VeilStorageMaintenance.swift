@@ -233,7 +233,16 @@ actor VeilStorageMaintenance {
     private func isStaleTemporaryArtifact(_ url: URL) -> Bool {
         let name = url.lastPathComponent
         let prefixes = ["VeilLink-DeepTelemetry-", "VeilLink-Export-", "VeilLink-Restore-", "VeilVoice-", "VeilLink-Image-"]
-        guard prefixes.contains(where: name.hasPrefix) else { return false }
+        let standardArtifact = prefixes.contains(where: name.hasPrefix)
+        let boardLearningPackage = (
+            name.hasPrefix("VeilLink-GomokuLearning-") ||
+            name.hasPrefix("VeilLink-XiangqiLearning-") ||
+            name.hasPrefix("VeilLink-GomokuNativeSelfPlay-")
+        ) && name.hasSuffix(".vltrain.json")
+        let preConsentExport = name.hasPrefix("VeilLink-PreConsent-") && name.hasSuffix(".json")
+        let importStem = String(name.dropFirst("VeilLink-Import-".count).split(separator: ".", maxSplits: 1).first ?? "")
+        let pickerImport = name.hasPrefix("VeilLink-Import-") && UUID(uuidString: importStem) != nil
+        guard standardArtifact || boardLearningPackage || preConsentExport || pickerImport else { return false }
         let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .isSymbolicLinkKey])
         guard values?.isSymbolicLink != true, let modified = values?.contentModificationDate else { return false }
         return now().timeIntervalSince(modified) >= Self.staleTemporaryAge

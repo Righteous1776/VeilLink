@@ -73,6 +73,40 @@ final class VeilStorageMaintenanceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
     }
 
+    func testStaleBoardLearningAndPreConsentExportsAreRecoverable() async throws {
+        let (root, roots) = try roots(); defer { try? FileManager.default.removeItem(at: root) }
+        let gomoku = roots.temporary.appendingPathComponent("VeilLink-GomokuLearning-20261031-120000.vltrain.json")
+        let xiangqi = roots.temporary.appendingPathComponent("VeilLink-XiangqiLearning-20261031-120000.vltrain.json")
+        let preConsent = roots.temporary.appendingPathComponent("VeilLink-PreConsent-\(UUID().uuidString).json")
+        let imageImport = roots.temporary.appendingPathComponent("VeilLink-Import-\(UUID().uuidString).jpg")
+        let lookalike = roots.temporary.appendingPathComponent("VeilLink-GomokuLearning-not-a-package.txt")
+        let unsafeLookalike = roots.temporary.appendingPathComponent("VeilLink-Import-not-a-uuid.jpg")
+        for url in [gomoku, xiangqi, preConsent, imageImport, lookalike, unsafeLookalike] { try Data([1]).write(to: url) }
+        let clock = Date(timeIntervalSince1970: 2_000_000)
+        for url in [gomoku, xiangqi, preConsent, imageImport, lookalike, unsafeLookalike] {
+            try FileManager.default.setAttributes(
+                [.modificationDate: clock.addingTimeInterval(-VeilStorageMaintenance.staleTemporaryAge - 1)],
+                ofItemAtPath: url.path
+            )
+        }
+
+        let maintenance = VeilStorageMaintenance(roots: roots, now: { clock })
+        let snapshot = await maintenance.scan()
+        XCTAssertEqual(
+            snapshot.categories.first(where: { $0.category == .staleTemporaryExports })?.itemCount,
+            4
+        )
+        let result = await maintenance.clean([.staleTemporaryExports])
+
+        XCTAssertEqual(result.removedItems, 4)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: gomoku.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: xiangqi.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: preConsent.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: imageImport.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: lookalike.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unsafeLookalike.path))
+    }
+
     func testSymlinkTargetOutsideDownloadRootIsNotTraversedOrDeleted() async throws {
         let (root, roots) = try roots(); defer { try? FileManager.default.removeItem(at: root) }
         let outside = root.appendingPathComponent("outside.txt")

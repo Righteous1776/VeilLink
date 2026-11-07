@@ -11,14 +11,18 @@ final class AgentGameContextBroker: ObservableObject {
     private var lastSession: MiniGameSessionSnapshot?
     private var lastConversationTitle: String?
     private var lastPeerIdentityID: String?
+    private let lightweightRuntime: Bool
 
     // R4 Core is source-isolated from MaleCNS and trained-policy implementations.
-    init() {}
+    init(lightweightRuntime: Bool = VeilDevicePerformance.prefersLightweightGameRuntime) {
+        self.lightweightRuntime = lightweightRuntime
+    }
 
     func update(
         session: MiniGameSessionSnapshot,
         conversationTitle: String,
-        peerIdentityID: String
+        peerIdentityID: String,
+        requestNativeRecommendation: Bool = false
     ) {
         recommendationTask?.cancel()
         recommendationTask = nil
@@ -67,7 +71,7 @@ final class AgentGameContextBroker: ObservableObject {
         // A9/A10-era devices keep the UI/game transaction path rule-only. The old path ran
         // full legal-action enumeration + model ranking on MainActor after every local/remote
         // move, which can stall or terminate iPhone 7 under SwiftUI/BLE/database pressure.
-        if VeilDevicePerformance.prefersLightweightGameRuntime {
+        if lightweightRuntime && !requestNativeRecommendation {
             context = AgentGameContext(
                 capturedAt: capturedAt,
                 sessionID: session.id,
@@ -83,7 +87,7 @@ final class AgentGameContextBroker: ObservableObject {
                 policyMode: "compact-safe",
                 stateDescription: Self.stateDescription(for: session),
                 recommendations: [],
-                note: "Compact-device safe mode: move ranking and MaleCNS rerank are deferred outside the live game transaction.",
+                note: "轻量模式：日常落子不做后台排序；打开灵核或点击刷新时，可按需计算原生合法建议。",
                 maleCNS: nil
             )
             return

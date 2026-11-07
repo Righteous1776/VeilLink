@@ -274,7 +274,7 @@ struct MiniGameHubView: View {
 
     private func createGame(_ game: MiniGameKind) {
         guard creatingGame == nil else { return }
-        guard ensureRealtimeLink() else {
+        guard model.ensureRealtimeGameLink(for: conversation.peerIdentityID) else {
             model.alertMessage = "对手安全链路尚未就绪。正在尝试恢复连接，请在链路就绪后再发起对局。"
             model.haptics.warning()
             return
@@ -291,20 +291,6 @@ struct MiniGameHubView: View {
             model.haptics.error()
         }
         creatingGame = nil
-    }
-
-    private func ensureRealtimeLink() -> Bool {
-        if model.sessions.hasSecureSession(for: conversation.peerIdentityID) { return true }
-        if let transportID = model.sessions.transportID(for: conversation.peerIdentityID) {
-            if model.bluetooth.linkSnapshots[transportID]?.isConnected == true {
-                model.sessions.recoverSecureSession(for: conversation.peerIdentityID)
-            } else {
-                model.bluetooth.recover(transportID)
-            }
-        } else {
-            model.bluetooth.refreshLinks()
-        }
-        return false
     }
 
     private func reload() {
@@ -588,8 +574,9 @@ struct MiniGameConversationCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button(action: onOpen) {
-                VStack(alignment: .leading, spacing: 12) {
+            // Keep only the explicit CTA tappable, so a vertical drag over
+            // the rest of the card reaches the ancestor chat ScrollView.
+            VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 11) {
                         ZStack {
                             Circle().fill(VeilTheme.gold.opacity(isIncomingInvitation ? 0.16 : 0.10))
@@ -619,15 +606,17 @@ struct MiniGameConversationCard: View {
                         Text("·")
                         Text("#\(session.id.prefix(4))")
                         Spacer()
-                        Text(session.status == .active ? "进入棋局" : (isIncomingInvitation ? "查看详情" : "查看"))
-                            .fontWeight(.semibold)
-                            .foregroundColor(VeilTheme.gold)
+                        Button(action: onOpen) {
+                            Text(session.status == .active ? "进入棋局" : (isIncomingInvitation ? "查看详情" : "查看"))
+                                .fontWeight(.semibold)
+                                .foregroundColor(VeilTheme.gold)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("打开\(session.game.title)对局")
                     }
                     .font(.caption2.monospacedDigit())
                     .foregroundColor(VeilTheme.tertiaryText)
-                }
             }
-            .buttonStyle(.plain)
 
             if isIncomingInvitation, let onDecline, let onAccept {
                 HStack(spacing: 10) {
@@ -1036,7 +1025,7 @@ struct MiniGameSessionView: View {
 
     private func send(command: MiniGameCommand, turn: Int, move: MiniGameMove?) {
         guard !isSending, let session else { return }
-        guard ensureRealtimeLink() else {
+        guard model.ensureRealtimeGameLink(for: conversation.peerIdentityID) else {
             model.alertMessage = "对手安全链路已断开。正在尝试恢复连接；本次棋步没有假装发送。"
             model.haptics.warning()
             return
@@ -1085,7 +1074,7 @@ struct MiniGameSessionView: View {
 
     private func rematch(_ game: MiniGameKind) {
         guard !isSending else { return }
-        guard ensureRealtimeLink() else {
+        guard model.ensureRealtimeGameLink(for: conversation.peerIdentityID) else {
             model.alertMessage = "对手安全链路尚未就绪。连接恢复后再发起下一局。"
             model.haptics.warning()
             return
@@ -1101,20 +1090,6 @@ struct MiniGameSessionView: View {
             model.haptics.error()
         }
         isSending = false
-    }
-
-    private func ensureRealtimeLink() -> Bool {
-        if model.sessions.hasSecureSession(for: conversation.peerIdentityID) { return true }
-        if let transportID = model.sessions.transportID(for: conversation.peerIdentityID) {
-            if model.bluetooth.linkSnapshots[transportID]?.isConnected == true {
-                model.sessions.recoverSecureSession(for: conversation.peerIdentityID)
-            } else {
-                model.bluetooth.recover(transportID)
-            }
-        } else {
-            model.bluetooth.refreshLinks()
-        }
-        return false
     }
 
     private func reload(notify: Bool) {

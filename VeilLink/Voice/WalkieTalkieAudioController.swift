@@ -35,6 +35,8 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
     var sendAudioFrame: ((VeilPTTAudioFrame, [String]) -> VeilPTTSendReport)?
 
     private let captureEngine = AVAudioEngine()
+    private let audioOwner = UUID()
+    private var captureTapInstalled = false
     private let playbackEngine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private let tuning: VeilRealtimeAudioTuning
@@ -80,7 +82,7 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
 
     func beginTransmit(recipients: [String]) {
         let unique = Array(Set(recipients)).sorted()
-        guard !unique.isEmpty, state != .transmitting else { return }
+        guard !unique.isEmpty, state != .transmitting, state != .preparing else { return }
         if case .receiving = state { return } // half-duplex: current RX owns the channel
         self.recipients = unique
         state = .preparing
@@ -101,7 +103,10 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
 
     func endTransmit() {
         guard state == .transmitting || state == .preparing else { return }
-        captureEngine.inputNode.removeTap(onBus: 0)
+        if captureTapInstalled {
+            captureEngine.inputNode.removeTap(onBus: 0)
+            captureTapInstalled = false
+        }
         captureEngine.stop()
         let pendingCount = pendingMuLaw.count - pendingMuLawOffset
         if state == .transmitting,
@@ -122,6 +127,7 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
         recipients = []
         meter = 0
         state = .idle
+        VeilAudioSessionArbiter.shared.release(owner: audioOwner)
     }
 
     func receiveControl(_ incoming: VeilPTTIncomingControl) {
@@ -135,7 +141,11 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
             publishJitterSnapshot(force: true)
             lastIncomingAt = Date()
             state = .receiving(incoming.peerIdentityID)
-            preparePlaybackIfNeeded()
+            guard preparePlaybackIfNeeded() else {
+                stopAll()
+                state = .error("音频播放通道不可用")
+                return
+            }
             startPlayoutTimer(frameDurationMilliseconds: incoming.packet.frameDurationMilliseconds)
         case .end:
             guard receivingTalkID == incoming.packet.talkID,
@@ -159,17 +169,24 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
         if state == .transmitting || state == .preparing { endTransmit() }
         playoutTimer?.invalidate(); playoutTimer = nil
         playerNode.stop(); playbackEngine.stop()
+        if captureTapInstalled {
+            captureEngine.inputNode.removeTap(onBus: 0)
+            captureTapInstalled = false
+        }
+        captureEngine.stop()
+        VeilAudioSessionArbiter.shared.release(owner: audioOwner)
         receivingTalkID = nil; receivingPeerID = nil; lastIncomingAt = nil
         jitter.reset(); publishJitterSnapshot(force: true)
         meter = 0; state = .idle
     }
 
     private func startCapture() {
+        guard state == .preparing else { return } // permission can arrive after cancellation
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
-            try session.setPreferredIOBufferDuration(tuning.preferredIOBufferDuration)
-            try session.setActive(true)
+            try VeilAudioSessionArbiter.shared.acquire(
+                owner: audioOwner, role: .pttCapture,
+                bufferDuration: tuning.preferredIOBufferDuration
+            )
             let input = captureEngine.inputNode
             let format = input.inputFormat(forBus: 0)
             guard format.channelCount > 0, format.sampleRate > 0 else { throw NSError(domain: "VeilPTT", code: 1) }
@@ -186,12 +203,13 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
                 guard !encoded.isEmpty else { return }
                 Task { @MainActor [weak self] in self?.consumeCaptured(encoded) }
             }
+            captureTapInstalled = true
             captureEngine.prepare()
             try captureEngine.start()
             state = .transmitting
         } catch {
-            state = .error("PTT 启动失败")
             stopAll()
+            state = .error("PTT 启动失败或音频通道被占用")
         }
     }
 
@@ -258,6 +276,9 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
         lastIncomingAt = nil
         meter = 0
         state = .idle
+        playerNode.stop()
+        playbackEngine.stop()
+        VeilAudioSessionArbiter.shared.release(owner: audioOwner)
     }
 
     private func publishJitterSnapshot(force: Bool = false) {
@@ -272,15 +293,23 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
         lastJitterPublishAt = now
     }
 
-    private func preparePlaybackIfNeeded() {
+    @discardableResult
+    private func preparePlaybackIfNeeded() -> Bool {
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
-            try session.setPreferredIOBufferDuration(tuning.preferredIOBufferDuration)
-            try session.setActive(true)
+            try VeilAudioSessionArbiter.shared.acquire(
+                owner: audioOwner, role: .pttPlayback,
+                bufferDuration: tuning.preferredIOBufferDuration
+            )
             if !playbackEngine.isRunning { playbackEngine.prepare(); try playbackEngine.start() }
             if !playerNode.isPlaying { playerNode.play() }
-        } catch { state = .error("扬声器启动失败") }
+            return true
+        } catch {
+            playerNode.stop()
+            playbackEngine.stop()
+            VeilAudioSessionArbiter.shared.release(owner: audioOwner)
+            state = .error("音频播放通道被占用或无法启动")
+            return false
+        }
     }
 
     private func schedulePlayback(_ bytes: Data) {
@@ -292,7 +321,9 @@ final class VeilWalkieTalkieAudioController: ObservableObject {
             let decoded = Float(VeilMuLaw.decode(byte)) / Float(Int16.max)
             channel[i] = max(-1, min(1, decoded * playbackGain))
         }
-        if !playbackEngine.isRunning || !playerNode.isPlaying { preparePlaybackIfNeeded() }
+        if !playbackEngine.isRunning || !playerNode.isPlaying {
+            guard preparePlaybackIfNeeded() else { return }
+        }
         playerNode.scheduleBuffer(buffer)
     }
 

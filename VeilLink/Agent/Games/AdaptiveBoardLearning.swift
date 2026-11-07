@@ -553,7 +553,7 @@ final class AdaptiveBoardLearningStore {
         }
     }
 
-    func exportPackage() throws -> URL {
+    func exportPackage(filenameLabel: String? = nil) throws -> URL {
         guard !requiresRecovery else { throw AdaptiveBoardLearningPackageError.invalidContent }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -570,12 +570,15 @@ final class AdaptiveBoardLearningStore {
             payload: database
         )
         let data = try encoder.encode(envelope)
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
         let gameLabel = scopedGame == .xiangqi ? "Xiangqi" : "Gomoku"
+        let label = filenameLabel ?? "\(gameLabel)Learning"
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("VeilLink-\(gameLabel)Learning-\(formatter.string(from: Date())).vltrain.json")
+            .appendingPathComponent(
+                VeilExportFileName.make(
+                    prefix: "VeilLink-\(label)-",
+                    suffix: ".vltrain.json"
+                )
+            )
         do {
             try data.write(to: url, options: .atomic)
             return url

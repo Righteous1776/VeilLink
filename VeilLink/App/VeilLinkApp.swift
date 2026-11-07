@@ -1,9 +1,15 @@
 import Combine
+import OSLog
 import SwiftUI
 import UIKit
 
 @main
+@MainActor
 struct VeilLinkApp: App {
+    private static let startupSignposter = OSSignposter(
+        subsystem: "studio.zeo.veillink",
+        category: "startup"
+    )
     @UIApplicationDelegateAdaptor(VeilBackgroundAppDelegate.self) private var backgroundDelegate
     @StateObject private var bootstrap = AppBootstrap()
     @StateObject private var lifecycle = VeilAppLifecycleCoordinator()
@@ -11,9 +17,14 @@ struct VeilLinkApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        let state = Self.startupSignposter.beginInterval("app.init")
+        defer { Self.startupSignposter.endInterval("app.init", state) }
         VeilPreConsentBlackBox.shared.record(.appLaunched, stage: .launch)
         TacticalLocalRenderCache.warmUp()
         VeilChrome.configure()
+        Task.detached(priority: .utility) {
+            _ = try? VeilImportStagingLeasePolicy.sweepExpired(activeLeaseIDs: [])
+        }
     }
 
     var body: some Scene {
@@ -226,6 +237,10 @@ enum VeilChrome {
 
 @MainActor
 private final class AppBootstrap: ObservableObject {
+    private static let startupSignposter = OSSignposter(
+        subsystem: "studio.zeo.veillink",
+        category: "startup"
+    )
     @Published private(set) var model: AppModel?
     @Published private(set) var errorMessage = ""
     let legal: VeilLegalConsentController
@@ -265,6 +280,8 @@ private final class AppBootstrap: ObservableObject {
 
     private func initializeModel() {
         guard legal.isSatisfied, onboarding.isCompleted, model == nil else { return }
+        let startupState = Self.startupSignposter.beginInterval("app.model_init")
+        defer { Self.startupSignposter.endInterval("app.model_init", startupState) }
         let diagnostics = RuntimeDiagnosticsBridge.shared
         diagnostics.recordStartupBegin()
         do {

@@ -873,7 +873,7 @@ final class DatabaseStore {
                    m.sent_at, m.is_outgoing, m.delivery_state, m.delivery_error, m.transfer_progress, a.id, a.mime_type, a.byte_count
             FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
             WHERE m.conversation_id = ?
-            ORDER BY m.sent_at DESC, m.id DESC
+            ORDER BY m.sent_at DESC, m.rowid DESC
             LIMIT \(safeLimit + 1);
             """, bindings: [.text(conversationID)]) { decodedMessage($0) }
         let hasOlder = rows.count > safeLimit
@@ -892,7 +892,7 @@ final class DatabaseStore {
 
     func fetchMessageIDs(conversationID: String) -> [String] {
         read(
-            "SELECT id FROM messages WHERE conversation_id = ? ORDER BY sent_at ASC, id ASC;",
+            "SELECT id FROM messages WHERE conversation_id = ? ORDER BY sent_at ASC, rowid ASC;",
             bindings: [.text(conversationID)]
         ) { text($0, 0) }
     }
@@ -902,7 +902,7 @@ final class DatabaseStore {
             SELECT m.id, m.conversation_id, m.sender_identity_id, m.body_ciphertext,
                    m.sent_at, m.is_outgoing, m.delivery_state, m.delivery_error, m.transfer_progress, a.id, a.mime_type, a.byte_count
             FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
-            WHERE m.conversation_id = ? ORDER BY m.sent_at ASC, m.id ASC;
+            WHERE m.conversation_id = ? ORDER BY m.sent_at ASC, m.rowid ASC;
             """, bindings: [.text(conversationID)]) { decodedMessage($0) }
     }
 

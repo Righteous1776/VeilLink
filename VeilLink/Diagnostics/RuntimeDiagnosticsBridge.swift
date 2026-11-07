@@ -10,6 +10,10 @@ final class RuntimeDiagnosticsBridge {
     private var cancellables = Set<AnyCancellable>()
     private weak var attachedModel: AppModel?
     private var previousLinkFingerprints: [UUID: String] = [:]
+    private var applicationActive = true
+    private var lastSnapshotLoggedAt: [String: Date] = [:]
+    private var snapshotSuppressed: [String: Int] = [:]
+    private let snapshotMinInterval: TimeInterval = 30
 
     private init() {}
 
@@ -50,70 +54,56 @@ final class RuntimeDiagnosticsBridge {
         model.$messagesRevision
             .removeDuplicates()
             .sink { revision in
-                Task { @MainActor in
-                    self.store.log(
-                        .debug,
-                        .ui,
-                        event: "ui.messages_revision",
-                        screen: DeepTelemetry.shared.currentScreen,
-                        metadata: ["revision": String(revision)]
-                    )
-                }
+                self.store.log(
+                    .debug,
+                    .ui,
+                    event: "ui.messages_revision",
+                    screen: DeepTelemetry.shared.currentScreen,
+                    metadata: ["revision": String(revision)]
+                )
             }
             .store(in: &cancellables)
 
         model.bluetooth.$isRunning
             .removeDuplicates()
             .sink { running in
-                Task { @MainActor in
-                    self.store.log(.info, .bluetooth, event: "ble.running", screen: DeepTelemetry.shared.currentScreen, metadata: ["running": String(running)])
-                }
+                self.store.log(.info, .bluetooth, event: "ble.running", screen: DeepTelemetry.shared.currentScreen, metadata: ["running": String(running)])
             }
             .store(in: &cancellables)
 
         model.bluetooth.$statusText
             .removeDuplicates()
             .sink { status in
-                Task { @MainActor in
-                    self.store.log(.info, .bluetooth, event: "ble.status", screen: DeepTelemetry.shared.currentScreen, message: status)
-                }
+                self.store.log(.info, .bluetooth, event: "ble.status", screen: DeepTelemetry.shared.currentScreen, message: status)
             }
             .store(in: &cancellables)
 
         model.bluetooth.$connectedPeerCount
             .removeDuplicates()
             .sink { count in
-                Task { @MainActor in
-                    self.store.log(.info, .bluetooth, event: "ble.connected_peer_count", screen: DeepTelemetry.shared.currentScreen, metadata: ["count": String(count)])
-                }
+                self.store.log(.info, .bluetooth, event: "ble.connected_peer_count", screen: DeepTelemetry.shared.currentScreen, metadata: ["count": String(count)])
             }
             .store(in: &cancellables)
 
         model.bluetooth.$linkSnapshots
             .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
             .sink { snapshots in
-                Task { @MainActor in self.recordLinkSnapshots(snapshots) }
+                guard self.applicationActive else { return }
+                self.recordLinkSnapshots(snapshots)
             }
             .store(in: &cancellables)
 
         model.sessions.$nearbyPeers
             .throttle(for: .milliseconds(750), scheduler: RunLoop.main, latest: true)
             .sink { peers in
-                Task { @MainActor in
-                    self.store.log(
-                        .debug,
-                        .session,
-                        event: "session.nearby_peers",
-                        screen: DeepTelemetry.shared.currentScreen,
-                        metadata: [
-                            "count": String(peers.count),
-                            "peers": peers.prefix(32).map {
-                                let secureReady = model.sessions.hasSecureSession(for: $0.id)
-                                return "\($0.transportID.uuidString):\($0.id):\($0.rssi):\(String(describing: $0.trustState)):secure=\(secureReady)"
-                            }.joined(separator: "|")
-                        ]
-                    )
-                }
+                guard self.applicationActive else { return }
+                self.logNearbyPeers(metadata: [
+                    "count": String(peers.count),
+                    "peers": peers.prefix(32).map {
+                        let secureReady = model.sessions.hasSecureSession(for: $0.id)
+                        return "\($0.transportID.uuidString):\($0.id):\($0.rssi):\(String(describing: $0.trustState)):secure=\(secureReady)"
+                    }.joined(separator: "|")
+                ])
             }
             .store(in: &cancellables)
 
@@ -121,111 +111,100 @@ final class RuntimeDiagnosticsBridge {
             .compactMap { $0 }
             .removeDuplicates()
             .sink { error in
-                Task { @MainActor in
-                    self.store.log(.error, .session, event: "session.error", screen: DeepTelemetry.shared.currentScreen, message: error)
-                }
+                self.store.log(.error, .session, event: "session.error", screen: DeepTelemetry.shared.currentScreen, message: error)
             }
             .store(in: &cancellables)
 
         model.sessions.$securityEvents
             .sink { events in
-                Task { @MainActor in
-                    guard let latest = events.first else { return }
-                    self.store.log(
-                        .warning,
-                        .security,
-                        event: "security.event",
-                        screen: DeepTelemetry.shared.currentScreen,
-                        metadata: [
-                            "count": String(events.count),
-                            "length": String(latest.count),
-                            "fingerprint": Self.stableFingerprint(latest)
-                        ]
-                    )
-                }
+                guard let latest = events.first else { return }
+                self.store.log(
+                    .warning,
+                    .security,
+                    event: "security.event",
+                    screen: DeepTelemetry.shared.currentScreen,
+                    metadata: [
+                        "count": String(events.count),
+                        "length": String(latest.count),
+                        "fingerprint": Self.stableFingerprint(latest)
+                    ]
+                )
             }
             .store(in: &cancellables)
 
         model.a9Health.$decision
             .sink { decision in
-                Task { @MainActor in
-                    self.store.log(
-                        decision.light == .red ? .warning : .debug,
-                        .a9,
-                        event: "a9.decision",
-                        screen: DeepTelemetry.shared.currentScreen,
-                        metadata: [
-                            "light": decision.light.title,
-                            "level": decision.level.shortTitle,
-                            "health": String(decision.healthScore),
-                            "risk": String(format: "%.2f", decision.riskPoints),
-                            "persistence_seconds": String(decision.persistenceSeconds),
-                            "transport_coverage": model.a9Health.transportCoverage.rawValue,
-                            "reason": decision.reasonCode,
-                            "cell": String(decision.latticeIndex),
-                            "issues": String(decision.issues.count)
-                        ]
-                    )
-                }
+                self.store.log(
+                    decision.light == .red ? .warning : .debug,
+                    .a9,
+                    event: "a9.decision",
+                    screen: DeepTelemetry.shared.currentScreen,
+                    metadata: [
+                        "light": decision.light.title,
+                        "level": decision.level.shortTitle,
+                        "health": String(decision.healthScore),
+                        "risk": String(format: "%.2f", decision.riskPoints),
+                        "persistence_seconds": String(decision.persistenceSeconds),
+                        "transport_coverage": model.a9Health.transportCoverage.rawValue,
+                        "reason": decision.reasonCode,
+                        "cell": String(decision.latticeIndex),
+                        "issues": String(decision.issues.count)
+                    ]
+                )
             }
             .store(in: &cancellables)
 
         model.latticeKernel.$snapshot
             .removeDuplicates()
             .sink { snapshot in
-                Task { @MainActor in
-                    self.store.log(
-                        snapshot.unexpectedDecisionDiffs > 0 ? .warning : .info,
-                        .a9,
-                        event: "kernel.integration_state",
-                        screen: DeepTelemetry.shared.currentScreen,
-                        metadata: [
-                            "stage": snapshot.stage.rawValue,
-                            "active_profile": snapshot.activeProfileID,
-                            "candidate_profile": snapshot.candidateProfileID ?? "none",
-                            "authority": snapshot.authority.rawValue,
-                            "signal_bus": String(snapshot.signalBusVersion),
-                            "unexpected_diffs": String(snapshot.unexpectedDecisionDiffs),
-                            "compute_mode": snapshot.computeMode ?? "none"
-                        ]
-                    )
-                }
+                self.store.log(
+                    snapshot.unexpectedDecisionDiffs > 0 ? .warning : .info,
+                    .a9,
+                    event: "kernel.integration_state",
+                    screen: DeepTelemetry.shared.currentScreen,
+                    metadata: [
+                        "stage": snapshot.stage.rawValue,
+                        "active_profile": snapshot.activeProfileID,
+                        "candidate_profile": snapshot.candidateProfileID ?? "none",
+                        "authority": snapshot.authority.rawValue,
+                        "signal_bus": String(snapshot.signalBusVersion),
+                        "unexpected_diffs": String(snapshot.unexpectedDecisionDiffs),
+                        "compute_mode": snapshot.computeMode ?? "none"
+                    ]
+                )
             }
             .store(in: &cancellables)
 
         model.kernelRuntime.$mode
             .sink { _ in
-                Task { @MainActor in
-                    let env = model.kernelRuntime.snapshot()
-                    self.store.log(
-                        env.mode.isExperimental ? .warning : .info,
-                        .a9,
-                        event: "kernel.runtime_mode",
-                        screen: DeepTelemetry.shared.currentScreen,
-                        metadata: [
-                            "kernel_mode": env.mode.rawValue,
-                            "mode_epoch": String(env.modeEpoch),
-                            "mode_session_id": env.modeSessionID,
-                            "selection_source": env.selectionSource,
-                            "production_authority": env.productionAuthority,
-                            "fallback_policy": env.fallbackPolicy,
-                            "a9_enabled": String(env.a9EvaluationEnabled),
-                            "ultra_enabled": String(env.ultraEvaluationEnabled),
-                            "mutation_authority": String(env.mutationAuthority),
-                            "production_cutover": env.productionCutover,
-                            "last_fallback_reason": model.kernelRuntime.lastFallbackReason ?? "none"
-                        ]
-                    )
-                }
+                let env = model.kernelRuntime.snapshot()
+                self.store.log(
+                    env.mode.isExperimental ? .warning : .info,
+                    .a9,
+                    event: "kernel.runtime_mode",
+                    screen: DeepTelemetry.shared.currentScreen,
+                    metadata: [
+                        "kernel_mode": env.mode.rawValue,
+                        "mode_epoch": String(env.modeEpoch),
+                        "mode_session_id": env.modeSessionID,
+                        "selection_source": env.selectionSource,
+                        "production_authority": env.productionAuthority,
+                        "fallback_policy": env.fallbackPolicy,
+                        "a9_enabled": String(env.a9EvaluationEnabled),
+                        "ultra_enabled": String(env.ultraEvaluationEnabled),
+                        "mutation_authority": String(env.mutationAuthority),
+                        "production_cutover": env.productionCutover,
+                        "last_fallback_reason": model.kernelRuntime.lastFallbackReason ?? "none"
+                    ]
+                )
             }
             .store(in: &cancellables)
 
         model.a10Ultra.$lastRuntimeSample
             .compactMap { $0 }
             .sink { record in
-                Task { @MainActor in
-                    let env = record.environment
-                    self.store.log(
+                let env = record.environment
+                self.store.log(
                         record.fallbackEvent ? .warning : .debug,
                         .a9,
                         event: "kernel.runtime_sample",
@@ -285,16 +264,14 @@ final class RuntimeDiagnosticsBridge {
                             "vault_status": record.vaultStatus,
                             "runtime_backend": record.runtimeBackend
                         ]
-                    )
-                }
+                )
             }
             .store(in: &cancellables)
 
         model.agent.$threeCoreSnapshot
             .removeDuplicates()
             .sink { snapshot in
-                Task { @MainActor in
-                    self.store.log(
+                self.store.log(
                         snapshot.phase == .fallback ? .warning : .info,
                         .agent,
                         event: "agent.three_core_state",
@@ -312,8 +289,7 @@ final class RuntimeDiagnosticsBridge {
                             "legacy_shadow": snapshot.legacyGovernanceShadow,
                             "fallback_reason": snapshot.fallbackReason ?? "none"
                         ]
-                    )
-                }
+                )
             }
             .store(in: &cancellables)
 
@@ -321,8 +297,7 @@ final class RuntimeDiagnosticsBridge {
             .removeDuplicates()
             .sink { snapshot in
                 guard snapshot.result != "IDLE" else { return }
-                Task { @MainActor in
-                    self.store.log(
+                self.store.log(
                         snapshot.result == "FAILED" ? .warning : .debug,
                         .agent,
                         event: "a10.m5.cognition_shadow",
@@ -338,8 +313,7 @@ final class RuntimeDiagnosticsBridge {
                             "output_text_logged": "false",
                             "failure": snapshot.failure ?? "none"
                         ]
-                    )
-                }
+                )
             }
             .store(in: &cancellables)
 
@@ -347,8 +321,7 @@ final class RuntimeDiagnosticsBridge {
             .removeDuplicates()
             .sink { snapshot in
                 guard snapshot.evaluatedAt != .distantPast else { return }
-                Task { @MainActor in
-                    self.store.log(
+                self.store.log(
                         .debug,
                         .a9,
                         event: "a10.m5.governance_shadow",
@@ -365,8 +338,7 @@ final class RuntimeDiagnosticsBridge {
                             "mutation_authority": "0",
                             "user_plaintext_logged": "false"
                         ]
-                    )
-                }
+                )
             }
             .store(in: &cancellables)
 
@@ -374,9 +346,7 @@ final class RuntimeDiagnosticsBridge {
             .map { String(describing: $0) }
             .removeDuplicates()
             .sink { state in
-                Task { @MainActor in
-                    self.store.log(.info, .agent, event: "agent.runtime", screen: DeepTelemetry.shared.currentScreen, message: state)
-                }
+                self.store.log(.info, .agent, event: "agent.runtime", screen: DeepTelemetry.shared.currentScreen, message: state)
             }
             .store(in: &cancellables)
 
@@ -384,10 +354,8 @@ final class RuntimeDiagnosticsBridge {
             .map { diagnostics in diagnostics.lastFailure ?? "ok" }
             .removeDuplicates()
             .sink { state in
-                Task { @MainActor in
-                    let level: DiagnosticLogLevel = state == "ok" ? .debug : .error
-                    self.store.log(level, .agent, event: "agent.diagnostics", screen: DeepTelemetry.shared.currentScreen, message: state)
-                }
+                let level: DiagnosticLogLevel = state == "ok" ? .debug : .error
+                self.store.log(level, .agent, event: "agent.diagnostics", screen: DeepTelemetry.shared.currentScreen, message: state)
             }
             .store(in: &cancellables)
 
@@ -401,27 +369,22 @@ final class RuntimeDiagnosticsBridge {
         model.appLock.$isLocked
             .removeDuplicates()
             .sink { locked in
-                Task { @MainActor in
-                    self.store.log(.info, .security, event: locked ? "app_lock.locked" : "app_lock.unlocked", screen: DeepTelemetry.shared.currentScreen)
-                }
+                self.store.log(.info, .security, event: locked ? "app_lock.locked" : "app_lock.unlocked", screen: DeepTelemetry.shared.currentScreen)
             }
             .store(in: &cancellables)
 
         model.appLock.$failedAttempts
             .removeDuplicates()
             .sink { attempts in
-                Task { @MainActor in
-                    guard attempts > 0 else { return }
-                    self.store.log(.warning, .security, event: "app_lock.failed_attempt", screen: DeepTelemetry.shared.currentScreen, metadata: ["attempts": String(attempts)])
-                }
+                guard attempts > 0 else { return }
+                self.store.log(.warning, .security, event: "app_lock.failed_attempt", screen: DeepTelemetry.shared.currentScreen, metadata: ["attempts": String(attempts)])
             }
             .store(in: &cancellables)
 
         model.$alertMessage
             .compactMap { $0 }
             .sink { alert in
-                Task { @MainActor in
-                    self.store.log(
+                self.store.log(
                         .warning,
                         .ui,
                         event: "ui.alert.present",
@@ -430,9 +393,8 @@ final class RuntimeDiagnosticsBridge {
                             "length": String(alert.count),
                             "fingerprint": Self.stableFingerprint(alert)
                         ]
-                    )
-                    DeepTelemetry.shared.captureUIHierarchy(reason: "alert", force: true)
-                }
+                )
+                DeepTelemetry.shared.captureUIHierarchy(reason: "alert", force: true)
             }
             .store(in: &cancellables)
     }
@@ -454,6 +416,10 @@ final class RuntimeDiagnosticsBridge {
         store.log(.info, .app, event: "lifecycle.\(state)", screen: DeepTelemetry.shared.currentScreen)
         DeepTelemetry.shared.install()
         DeepTelemetry.shared.captureSystemSnapshot(reason: "lifecycle.\(state)")
+    }
+
+    func setApplicationActive(_ active: Bool) {
+        applicationActive = active
     }
 
     func recordMemoryPressure() {
@@ -527,32 +493,61 @@ final class RuntimeDiagnosticsBridge {
             ].joined(separator: "|")
             guard previousLinkFingerprints[id] != fingerprint else { continue }
             previousLinkFingerprints[id] = fingerprint
-            store.log(
-                snapshot.healthScore < 40 ? .warning : .debug,
-                .bluetooth,
-                event: "ble.link_snapshot",
-                screen: DeepTelemetry.shared.currentScreen,
-                metadata: [
-                    "transport_id": id.uuidString,
-                    "connected": String(snapshot.isConnected),
-                    "recovering": String(snapshot.isRecovering),
-                    "transport_stage": snapshot.transportStage.rawValue,
-                    "status": snapshot.statusTitle,
-                    "quality": String(describing: snapshot.quality),
-                    "health": String(snapshot.healthScore),
-                    "pending_bytes": String(snapshot.pendingBytes),
-                    "control_pending_packets": String(snapshot.controlPendingPackets),
-                    "reconnect_attempt": String(snapshot.reconnectAttempt),
-                    "stalled_ms": String(Int((snapshot.stalledFor ?? 0) * 1_000)),
-                    "queue": snapshot.queueSummary,
-                    "detail": snapshot.compactDetail
-                ]
-            )
+            logLinkSnapshot(transportID: id.uuidString, metadata: [
+                "transport_id": id.uuidString,
+                "connected": String(snapshot.isConnected),
+                "recovering": String(snapshot.isRecovering),
+                "transport_stage": snapshot.transportStage.rawValue,
+                "status": snapshot.statusTitle,
+                "quality": String(describing: snapshot.quality),
+                "health": String(snapshot.healthScore),
+                "pending_bytes": String(snapshot.pendingBytes),
+                "control_pending_packets": String(snapshot.controlPendingPackets),
+                "reconnect_attempt": String(snapshot.reconnectAttempt),
+                "stalled_ms": String(Int((snapshot.stalledFor ?? 0) * 1_000)),
+                "queue": snapshot.queueSummary,
+                "detail": snapshot.compactDetail
+            ])
         }
         for id in previousLinkFingerprints.keys where !liveIDs.contains(id) {
             previousLinkFingerprints.removeValue(forKey: id)
             store.log(.debug, .bluetooth, event: "ble.link_removed", metadata: ["transport_id": id.uuidString])
         }
+    }
+
+    private func logLinkSnapshot(transportID: String, metadata: [String: String]) {
+        let now = Date()
+        if let last = lastSnapshotLoggedAt[transportID], now.timeIntervalSince(last) < snapshotMinInterval {
+            snapshotSuppressed[transportID, default: 0] += 1
+            return
+        }
+        if let suppressed = snapshotSuppressed[transportID], suppressed > 0 {
+            var meta = metadata
+            meta["suppressed_count"] = String(suppressed)
+            meta["oscillation"] = "true"
+            store.log(.info, .bluetooth, event: "ble.link_oscillation", metadata: meta)
+            snapshotSuppressed[transportID] = 0
+        }
+        lastSnapshotLoggedAt[transportID] = now
+        store.log(.debug, .bluetooth, event: "ble.link_snapshot", metadata: metadata)
+    }
+
+    private func logNearbyPeers(metadata: [String: String]) {
+        let key = "session.nearby_peers"
+        let now = Date()
+        if let last = lastSnapshotLoggedAt[key], now.timeIntervalSince(last) < snapshotMinInterval {
+            snapshotSuppressed[key, default: 0] += 1
+            return
+        }
+        if let suppressed = snapshotSuppressed[key], suppressed > 0 {
+            var meta = metadata
+            meta["suppressed_count"] = String(suppressed)
+            meta["oscillation"] = "true"
+            store.log(.info, .session, event: "session.peer_churn", metadata: meta)
+            snapshotSuppressed[key] = 0
+        }
+        lastSnapshotLoggedAt[key] = now
+        store.log(.debug, .session, event: "session.nearby_peers", metadata: metadata)
     }
 
     private func recordModelSnapshot(_ model: AppModel, reason: String) {

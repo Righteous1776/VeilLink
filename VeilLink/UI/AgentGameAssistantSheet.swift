@@ -6,6 +6,7 @@ struct AgentGameAssistantSheet: View {
     let session: MiniGameSessionSnapshot
 
     @ObservedObject private var intelligence: AgentGameContextBroker
+    @ObservedObject private var controls: AgentControlCenterSettings
     @Environment(\.dismiss) private var dismiss
     @State private var actionStatus: String?
 
@@ -14,6 +15,11 @@ struct AgentGameAssistantSheet: View {
         self.conversation = conversation
         self.session = session
         _intelligence = ObservedObject(wrappedValue: model.gameIntelligence)
+        _controls = ObservedObject(wrappedValue: model.agentControls)
+    }
+
+    private var nativeMoveSupported: Bool {
+        [.gomoku, .xiangqi, .ludo].contains(session.game)
     }
 
     var body: some View {
@@ -38,11 +44,15 @@ struct AgentGameAssistantSheet: View {
         .navigationViewStyle(.stack)
         .onAppear {
             model.updateAgentGameContext(session, conversation: conversation)
+            actionStatus = model.refreshAgentGameRecommendation()
             model.agent.setComputeFocus(.gameDecision)
             model.agent.activate()
         }
         .onDisappear {
             model.agent.setComputeFocus(.gameDecision)
+        }
+        .onChange(of: model.messagesRevision) { _ in
+            actionStatus = model.refreshAgentGameRecommendation()
         }
     }
 
@@ -93,6 +103,12 @@ struct AgentGameAssistantSheet: View {
                     }
                 }
 
+                if nativeMoveSupported && !controls.allowSuggestedGameMoveExecution {
+                    Text("执行建议着法默认关闭。可以只查看推荐；若要手动发送，需先在下方明确开启权限。")
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+
                 if let fly = context.maleCNS {
                     Text("MaleCNS 辅助：\(fly.topReadouts.prefix(2).joined(separator: " · "))")
                         .font(.caption2.monospaced())
@@ -119,23 +135,60 @@ struct AgentGameAssistantSheet: View {
     }
 
     private var quickActions: some View {
-        HStack(spacing: 8) {
-            Button {
-                model.agent.send("请分析当前对局。只使用本机提供的局面和合法候选动作，说明你推荐哪一步以及理由；不要发明候选列表之外的着法。")
-            } label: {
-                Label("分析", systemImage: "sparkles")
-                    .frame(maxWidth: .infinity)
+        VStack(alignment: .leading, spacing: 8) {
+            if nativeMoveSupported {
+                Toggle(isOn: Binding(
+                    get: { controls.allowSuggestedGameMoveExecution },
+                    set: { model.setAgentSuggestedGameMoveExecutionEnabled($0) }
+                )) {
+                    Text("允许手动执行规则引擎建议")
+                        .font(.caption.weight(.semibold))
+                }
+                .tint(VeilTheme.gold)
+                .accessibilityIdentifier("agent-game-move-execution-permission")
+                Text("默认关闭。只有点击“执行建议”才会发送着法；发送前仍会读取最新棋谱并重新校验合法性。")
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.secondaryText)
+            } else {
+                Text("当前游戏没有可执行的原生规则建议。灵核仅提供局面解释，不能代替专用游戏 Bot 操作。")
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.secondaryText)
             }
-            .buttonStyle(VeilGameSecondaryButtonStyle())
 
-            Button {
-                actionStatus = model.executeAgentSuggestedGameMove()
-            } label: {
-                Label("执行建议", systemImage: "play.fill")
-                    .frame(maxWidth: .infinity)
+            HStack(spacing: 8) {
+                Button {
+                    model.agent.send("请分析当前对局。仅引用本机局面和已列出的合法候选；如果没有合法候选，请明确说无法推荐可执行动作，不能编造着法。")
+                } label: {
+                    Label("只读分析", systemImage: "sparkles")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(VeilGameSecondaryButtonStyle())
+
+                if nativeMoveSupported {
+                    Button {
+                        actionStatus = model.executeAgentSuggestedGameMove()
+                    } label: {
+                        Label("执行建议", systemImage: "play.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(VeilGamePrimaryButtonStyle())
+                    .disabled(
+                        !controls.allowSuggestedGameMoveExecution
+                            || intelligence.currentSuggestedAction() == nil
+                    )
+                    .accessibilityIdentifier("agent-game-execute-suggestion")
+                }
             }
-            .buttonStyle(VeilGamePrimaryButtonStyle())
-            .disabled(intelligence.currentSuggestedAction() == nil)
+
+            if nativeMoveSupported {
+                Button {
+                    actionStatus = model.refreshAgentGameRecommendation()
+                } label: {
+                    Label("按最新棋谱刷新合法建议", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(VeilGameSecondaryButtonStyle())
+            }
         }
         .font(.caption.weight(.semibold))
     }

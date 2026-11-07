@@ -62,4 +62,11 @@ final class BLELinkReliabilityPolicyTests: XCTestCase {
         XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 7), 30)
         XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 100), 30)
     }
+
+    func testReconnectAttemptResetsOnlyAfterStableWindow() {
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: nil, now: 100))
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 70.001, now: 100))
+        XCTAssertTrue(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 70, now: 100))
+        XCTAssertTrue(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 1, now: 100))
+    }
 }

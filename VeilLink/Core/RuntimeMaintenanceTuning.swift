@@ -1,5 +1,33 @@
 import Foundation
 
+/// This is a logical scheduler topology; iOS chooses the actual worker threads.
+enum VeilConcurrentFabricLane: String, CaseIterable, Sendable {
+    case control, bulk, audioCapture, audioPlayback, maintenance
+}
+
+enum VeilConcurrentFabricPolicy {
+    static let storageQueueLabel = "studio.zeo.veillink.sqlite"
+
+    /// Preserve existing transport queue priorities; bound one active drain burst
+    /// so realtime audio can run between long bulk packet bursts.
+    static func bleDrainBurst(configuredLimit: Int, realtimePending: Bool) -> Int {
+        let base = max(1, configuredLimit)
+        return realtimePending ? min(base, 8) : base
+    }
+
+    static func maintenanceInterval(
+        tuning: VeilRuntimeMaintenanceTuning,
+        foreground: Bool,
+        queued: Bool,
+        connected: Bool
+    ) -> UInt64 {
+        if !foreground { return tuning.bleIdleMaintenanceNanoseconds }
+        if queued { return tuning.bleQueuedMaintenanceNanoseconds }
+        if connected { return tuning.bleConnectedMaintenanceNanoseconds }
+        return tuning.bleIdleMaintenanceNanoseconds
+    }
+}
+
 struct VeilRuntimeMaintenanceTuning: Equatable, Sendable {
     let outboundRetryIntervalNanoseconds: UInt64
     let bleIdleMaintenanceNanoseconds: UInt64

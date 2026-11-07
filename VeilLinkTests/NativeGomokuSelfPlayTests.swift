@@ -53,6 +53,26 @@ final class NativeGomokuSelfPlayTests: XCTestCase {
         XCTAssertEqual(archive.summary.completedGames, 1)
         XCTAssertTrue(archive.lastSaveSucceeded)
 
+        // Export the dedicated native archive, not the human-player repertoire.
+        // It must retain every move and the actual terminal result.
+        let packageURL = try archive.exportPackage(filenameLabel: "GomokuNativeSelfPlay")
+        defer { try? FileManager.default.removeItem(at: packageURL) }
+        XCTAssertTrue(packageURL.lastPathComponent.contains("GomokuNativeSelfPlay"))
+        let packageData = try Data(contentsOf: packageURL)
+        let envelope = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: packageData) as? [String: Any]
+        )
+        let payload = try XCTUnwrap(envelope["payload"] as? [String: Any])
+        XCTAssertEqual(payload["completedGames"] as? Int, 1)
+        let games = try XCTUnwrap(payload["recentGames"] as? [[String: Any]])
+        XCTAssertEqual(games.count, 1)
+        XCTAssertEqual(games[0]["result"] as? String, game.result.rawValue)
+        XCTAssertEqual(
+            games[0]["actions"] as? [String],
+            game.plies.map { ($0.actor == .host ? "h" : "a") + $0.action }
+        )
+        XCTAssertNotNil(games[0]["finishedAt"])
+
         // Restart / cold-load: the match must survive as actual Bot experience.
         let restored = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
         XCTAssertEqual(restored.summary.completedGames, 1)

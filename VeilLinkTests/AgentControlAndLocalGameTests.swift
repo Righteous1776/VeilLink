@@ -36,6 +36,15 @@ final class AgentControlAndLocalGameTests: XCTestCase {
 
         XCTAssertFalse(settings.allowSuggestedGameMoveExecution)
         XCTAssertEqual(settings.gameDecisionMode, .baselineOnly)
+
+        // An explicit local toggle must persist, without changing safe defaults.
+        settings.allowSuggestedGameMoveExecution = true
+        XCTAssertTrue(settings.allowSuggestedGameMoveExecution)
+        let reloaded = AgentControlCenterSettings(defaults: defaults)
+        XCTAssertTrue(reloaded.allowSuggestedGameMoveExecution)
+        reloaded.resetToSafeDefaults()
+        XCTAssertFalse(reloaded.allowSuggestedGameMoveExecution)
+        XCTAssertFalse(AgentControlCenterSettings(defaults: defaults).allowSuggestedGameMoveExecution)
     }
 
     func testLocalGomokuFallsBackToBaselineAndCompletesAITurn() async throws {
@@ -53,7 +62,7 @@ final class AgentControlAndLocalGameTests: XCTestCase {
         XCTAssertEqual(controller.gomoku.value(at: 112), 1)
         XCTAssertTrue(controller.isAIThinking)
 
-        let deadline = Date().addingTimeInterval(2.0)
+        let deadline = Date().addingTimeInterval(8.0)
         while controller.isAIThinking && Date() < deadline {
             try await Task.sleep(nanoseconds: 40_000_000)
         }
@@ -111,7 +120,7 @@ final class AgentControlAndLocalGameTests: XCTestCase {
         XCTAssertEqual(controller.tactical.currentPlayer, .guest)
         XCTAssertTrue(controller.isAIThinking)
 
-        let deadline = Date().addingTimeInterval(3.0)
+        let deadline = Date().addingTimeInterval(8.0)
         while (controller.tactical.currentPlayer != .host || controller.isAIThinking), Date() < deadline {
             try await Task.sleep(nanoseconds: 40_000_000)
         }

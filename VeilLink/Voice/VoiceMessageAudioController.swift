@@ -2,6 +2,52 @@ import AVFoundation
 import Combine
 import Foundation
 
+enum VeilAudioLaneRole: Sendable {
+    case messageCapture, messagePlayback, pttCapture, pttPlayback
+}
+
+/// A serial lease for AVAudioSession, which is shared across the entire process.
+/// This does not allocate any dedicated OS thread or a separate Bluetooth radio.
+enum VeilAudioLeasePolicy {
+    static func allows(currentOwner: UUID?, incomingOwner: UUID) -> Bool {
+        currentOwner == nil || currentOwner == incomingOwner
+    }
+}
+
+@MainActor
+final class VeilAudioSessionArbiter {
+    static let shared = VeilAudioSessionArbiter()
+    private var ownerID: UUID?
+    private init() {}
+
+    func acquire(owner: UUID, role: VeilAudioLaneRole, bufferDuration: TimeInterval? = nil) throws {
+        guard VeilAudioLeasePolicy.allows(currentOwner: ownerID, incomingOwner: owner) else {
+            throw NSError(domain: "VeilAudioSession", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "音频正在由另一个功能使用，请结束当前录音或播放后再试。"
+            ])
+        }
+        let session = AVAudioSession.sharedInstance()
+        switch role {
+        case .messageCapture:
+            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth])
+        case .pttCapture, .pttPlayback:
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+        case .messagePlayback:
+            // Let iOS select its active output route (speaker / A2DP headphones).
+            try session.setCategory(.playback, mode: .spokenAudio, options: [])
+        }
+        if let bufferDuration { try session.setPreferredIOBufferDuration(bufferDuration) }
+        try session.setActive(true)
+        ownerID = owner
+    }
+
+    func release(owner: UUID) {
+        guard ownerID == owner else { return }
+        ownerID = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+}
+
 struct VeilVoiceRecording: Sendable {
     let data: Data
     let durationSeconds: Double
@@ -18,6 +64,7 @@ final class VeilVoiceMessageRecorder: NSObject, ObservableObject, AVAudioRecorde
     var onAutomaticFinish: ((VeilVoiceRecording) -> Void)?
 
     private var recorder: AVAudioRecorder?
+    private let audioOwner = UUID()
     private var meterTimer: Timer?
     private var startedAt: Date?
     private var currentURL: URL?
@@ -49,6 +96,7 @@ final class VeilVoiceMessageRecorder: NSObject, ObservableObject, AVAudioRecorde
 
     func finish(cancelled: Bool = false) -> VeilVoiceRecording? {
         guard isRecording else { return nil }
+        defer { VeilAudioSessionArbiter.shared.release(owner: audioOwner) }
         meterTimer?.invalidate(); meterTimer = nil
         maximumTimer?.invalidate(); maximumTimer = nil
         recorder?.stop()
@@ -73,10 +121,10 @@ final class VeilVoiceMessageRecorder: NSObject, ObservableObject, AVAudioRecorde
 
     private func startRecording() -> Bool {
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth])
-            try session.setPreferredIOBufferDuration(tuning.preferredIOBufferDuration)
-            try session.setActive(true)
+            try VeilAudioSessionArbiter.shared.acquire(
+                owner: audioOwner, role: .messageCapture,
+                bufferDuration: tuning.preferredIOBufferDuration
+            )
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("VeilVoice-\(UUID().uuidString).m4a")
             let settings: [String: Any] = [
@@ -110,6 +158,7 @@ final class VeilVoiceMessageRecorder: NSObject, ObservableObject, AVAudioRecorde
             }
             return true
         } catch {
+            VeilAudioSessionArbiter.shared.release(owner: audioOwner)
             lastError = "录音启动失败：\(error.localizedDescription)"
             isRecording = false
             return false
@@ -145,6 +194,7 @@ final class VeilVoicePlaybackController: NSObject, ObservableObject, AVAudioPlay
     @Published private(set) var isPlaying = false
     @Published private(set) var progress: Double = 0
     private var player: AVAudioPlayer?
+    private let audioOwner = UUID()
     private var timer: Timer?
     private let tuning = VeilRealtimeAudioTuning.resolved(performanceLabel: VeilDevicePerformance.current.label)
 
@@ -152,14 +202,15 @@ final class VeilVoicePlaybackController: NSObject, ObservableObject, AVAudioPlay
         if isPlaying { stop(); return }
         do {
             VeilVoicePlaybackArbiter.shared.claim(self)
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .spokenAudio, options: [.defaultToSpeaker])
-            try session.setActive(true)
+            try VeilAudioSessionArbiter.shared.acquire(
+                owner: audioOwner, role: .messagePlayback
+            )
             let player = try AVAudioPlayer(data: data)
             player.delegate = self
             player.prepareToPlay()
             self.player = player
             isPlaying = player.play()
+            guard isPlaying else { stop(); return }
             timer?.invalidate()
             let timer = Timer(timeInterval: tuning.playbackProgressInterval, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.refresh() }
@@ -177,12 +228,14 @@ final class VeilVoicePlaybackController: NSObject, ObservableObject, AVAudioPlay
         timer?.invalidate(); timer = nil
         isPlaying = false; progress = 0
         VeilVoicePlaybackArbiter.shared.release(self)
+        VeilAudioSessionArbiter.shared.release(owner: audioOwner)
     }
 
     fileprivate func stopFromArbiter() {
         player?.stop(); player = nil
         timer?.invalidate(); timer = nil
         isPlaying = false; progress = 0
+        VeilAudioSessionArbiter.shared.release(owner: audioOwner)
     }
 
     // Match the nonisolated AVAudioPlayerDelegate witness without passing the player across actors.

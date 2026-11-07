@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import CoreBluetooth
 import Foundation
@@ -158,6 +159,7 @@ private struct PeerOutboundQueue {
     var pendingCount: Int { control.pendingCount + realtime.pendingCount + bulk.pendingCount }
     var pendingBytes: Int { control.pendingBytes + realtime.pendingBytes + bulk.pendingBytes }
     var controlPendingCount: Int { control.pendingCount }
+    var realtimePendingCount: Int { realtime.pendingCount }
     var isEmpty: Bool { control.isEmpty && realtime.isEmpty && bulk.isEmpty }
 
     @discardableResult
@@ -183,6 +185,22 @@ private struct PeerOutboundQueue {
     }
 
     var first: Data? { control.first ?? realtime.first ?? bulk.first }
+}
+
+/// Audio routing does not create independent Bluetooth radio channels.
+/// Reduce optional scan/RSSI work during HFP/A2DP/LE headset activity while
+/// preserving CoreBluetooth's authenticated connections and queue watchdog.
+enum BLEAudioCoexistencePolicy {
+    static func allowsDuplicateDiscoveries(foreground: Bool, bluetoothAudioActive: Bool) -> Bool {
+        foreground && !bluetoothAudioActive
+    }
+
+    static func shouldPollRSSI(
+        foreground: Bool, bluetoothAudioActive: Bool,
+        elapsed: TimeInterval, interval: TimeInterval
+    ) -> Bool {
+        foreground && !bluetoothAudioActive && elapsed >= interval
+    }
 }
 
 @MainActor
@@ -211,6 +229,7 @@ final class BLETransport: NSObject, ObservableObject {
     private var centralOutboundQueues: [UUID: PeerOutboundQueue] = [:]
     private var wantedConnections: Set<UUID> = []
     private var reconnectAttempts: [UUID: Int] = [:]
+    private var reconnectStableSinceUptime: [UUID: TimeInterval] = [:]
     private var reconnectWorkItems: [UUID: DispatchWorkItem] = [:]
     private var centralDrainWorkItems: [UUID: DispatchWorkItem] = [:]
     private var peripheralDrainWorkItems: [UUID: DispatchWorkItem] = [:]
@@ -223,6 +242,9 @@ final class BLETransport: NSObject, ObservableObject {
     private var lastRSSIMaintenanceAt: TimeInterval = 0
     private var connectionEvents = ConnectionEventGate()
     private var foregroundActive = true
+    private var bluetoothAudioActive = false
+    private var lastScanAllowsDuplicates: Bool?
+    private var audioRouteSubscription: AnyCancellable?
     private var linkSnapshotRefreshWorkItem: DispatchWorkItem?
     private var lastLinkSnapshotPublishAt: TimeInterval = 0
 
@@ -263,10 +285,30 @@ final class BLETransport: NSObject, ObservableObject {
             queue: nil,
             options: [CBPeripheralManagerOptionRestoreIdentifierKey: "VeilLink.Peripheral.v2"]
         )
+        audioRouteSubscription = NotificationCenter.default.publisher(
+            for: AVAudioSession.routeChangeNotification
+        ).sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshBluetoothAudioRoute() }
+        }
+        refreshBluetoothAudioRoute()
+    }
+
+    private func refreshBluetoothAudioRoute() {
+        let route = AVAudioSession.sharedInstance().currentRoute
+        let active = (route.inputs + route.outputs).contains { port in
+            switch port.portType {
+            case .bluetoothHFP, .bluetoothA2DP, .bluetoothLE: return true
+            default: return false
+            }
+        }
+        guard bluetoothAudioActive != active else { return }
+        bluetoothAudioActive = active
+        if isRunning { beginScanningIfPossible() }
     }
 
     func start() {
         isRunning = true
+        refreshBluetoothAudioRoute()
         startRSSIPolling()
         beginScanningIfPossible()
         beginAdvertisingIfPossible()
@@ -276,8 +318,11 @@ final class BLETransport: NSObject, ObservableObject {
 
     func setForegroundActive(_ active: Bool) {
         foregroundActive = active
-        guard active, isRunning else { return }
-        refreshLinks()
+        guard isRunning else { return }
+        // Keep UUID-filtered background discovery, but allow the OS to coalesce
+        // repeated advertisements rather than consuming audio/radio airtime.
+        beginScanningIfPossible()
+        if active { refreshBluetoothAudioRoute(); refreshLinks() }
     }
 
     func refreshLinks() {
@@ -288,8 +333,10 @@ final class BLETransport: NSObject, ObservableObject {
         beginScanningIfPossible()
         beginAdvertisingIfPossible()
         recoverStalledTransportQueuesIfNeeded()
-        for peripheral in remotePeripherals.values where peripheral.state == .connected {
-            peripheral.readRSSI()
+        if foregroundActive && !bluetoothAudioActive {
+            for peripheral in remotePeripherals.values where peripheral.state == .connected {
+                peripheral.readRSSI()
+            }
         }
         publishLinkSnapshots(force: true)
     }
@@ -297,6 +344,7 @@ final class BLETransport: NSObject, ObservableObject {
     func stop(preserveConnectionIntent: Bool = false) {
         isRunning = false
         centralManager.stopScan()
+        lastScanAllowsDuplicates = nil
         peripheralManager.stopAdvertising()
         for peripheral in remotePeripherals.values where peripheral.state == .connected || peripheral.state == .connecting {
             centralManager.cancelPeripheralConnection(peripheral)
@@ -306,6 +354,7 @@ final class BLETransport: NSObject, ObservableObject {
             connectionIntentStore.clear()
         }
         reconnectAttempts.removeAll()
+        reconnectStableSinceUptime.removeAll()
         reconnectWorkItems.values.forEach { $0.cancel() }
         reconnectWorkItems.removeAll()
         centralDrainWorkItems.values.forEach { $0.cancel() }
@@ -352,6 +401,7 @@ final class BLETransport: NSObject, ObservableObject {
         if wantedConnections.insert(id).inserted {
             connectionIntentStore.save(wantedConnections)
         }
+        resetReconnectAttemptIfStable(id, nowUptime: ProcessInfo.processInfo.systemUptime)
         tearDownTransportState(for: id, keepReconnectAttempt: true)
         if let peripheral = remotePeripherals[id] {
             if peripheral.state == .connected || peripheral.state == .connecting {
@@ -366,6 +416,7 @@ final class BLETransport: NSObject, ObservableObject {
 
     private func tearDownTransportState(for id: UUID, keepReconnectAttempt: Bool = false) {
         if !keepReconnectAttempt { reconnectAttempts.removeValue(forKey: id) }
+        reconnectStableSinceUptime.removeValue(forKey: id)
         reconnectWorkItems.removeValue(forKey: id)?.cancel()
         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
         peripheralDrainWorkItems.removeValue(forKey: id)?.cancel()
@@ -382,6 +433,7 @@ final class BLETransport: NSObject, ObservableObject {
             connectionIntentStore.save(wantedConnections)
         }
         reconnectAttempts[id] = 0
+        reconnectStableSinceUptime.removeValue(forKey: id)
         reconnectWorkItems.removeValue(forKey: id)?.cancel()
         guard isRunning,
               let peripheral = remotePeripherals[id],
@@ -483,8 +535,12 @@ final class BLETransport: NSObject, ObservableObject {
         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
         guard var queue = centralOutboundQueues[id] else { return }
         let tuning = linkTuning(for: id)
+        let burstLimit = VeilConcurrentFabricPolicy.bleDrainBurst(
+            configuredLimit: tuning.packetBurstLimit,
+            realtimePending: queue.realtimePendingCount > 0
+        )
         var sent = 0
-        while sent < tuning.packetBurstLimit, peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
+        while sent < burstLimit, peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
             peripheral.writeValue(packet, for: characteristic, type: .withoutResponse)
             sent += 1
             queueProgress.recordProgress(.central, peerID: id, at: Date().timeIntervalSinceReferenceDate)
@@ -511,8 +567,12 @@ final class BLETransport: NSObject, ObservableObject {
         }
         guard var queue = peripheralOutboundQueues[centralID] else { return }
         let tuning = linkTuning(for: centralID)
+        let burstLimit = VeilConcurrentFabricPolicy.bleDrainBurst(
+            configuredLimit: tuning.packetBurstLimit,
+            realtimePending: queue.realtimePendingCount > 0
+        )
         var sent = 0
-        while sent < tuning.packetBurstLimit, let packet = queue.first {
+        while sent < burstLimit, let packet = queue.first {
             guard peripheralManager.updateValue(packet, for: characteristic, onSubscribedCentrals: [central]) else {
                 peripheralOutboundQueues[centralID] = queue
                 return
@@ -576,6 +636,7 @@ final class BLETransport: NSObject, ObservableObject {
             smoothedRSSI.removeValue(forKey: id)
             lastRSSIPublishAt.removeValue(forKey: id)
             reconnectAttempts.removeValue(forKey: id)
+            reconnectStableSinceUptime.removeValue(forKey: id)
             if remotePeripherals[id]?.state == .disconnected {
                 remotePeripherals.removeValue(forKey: id)
             }
@@ -723,6 +784,8 @@ final class BLETransport: NSObject, ObservableObject {
               peripheral.state == .disconnected else { return }
 
         reconnectWorkItems[id]?.cancel()
+        resetReconnectAttemptIfStable(id, nowUptime: ProcessInfo.processInfo.systemUptime)
+        reconnectStableSinceUptime.removeValue(forKey: id)
         let attempt = (reconnectAttempts[id] ?? 0) + 1
         reconnectAttempts[id] = attempt
         let baseDelay = immediate ? 0 : BLELinkReliabilityPolicy.reconnectDelay(attempt: attempt)
@@ -784,10 +847,16 @@ final class BLETransport: NSObject, ObservableObject {
 
     private func beginScanningIfPossible() {
         guard isRunning, centralManager.state == .poweredOn else { return }
+        let duplicates = BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
+            foreground: foregroundActive, bluetoothAudioActive: bluetoothAudioActive
+        )
+        guard !centralManager.isScanning || lastScanAllowsDuplicates != duplicates else { return }
+        if centralManager.isScanning { centralManager.stopScan() }
         centralManager.scanForPeripherals(
             withServices: [Self.serviceUUID],
-            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: duplicates]
         )
+        lastScanAllowsDuplicates = duplicates
         statusText = "正在发现附近设备"
     }
 
@@ -828,30 +897,42 @@ final class BLETransport: NSObject, ObservableObject {
                 try? await Task.sleep(nanoseconds: interval)
                 guard !Task.isCancelled, self.isRunning else { continue }
                 let now = Date().timeIntervalSinceReferenceDate
-                if now - self.lastRSSIMaintenanceAt >= self.maintenanceTuning.rssiPollInterval {
+                if BLEAudioCoexistencePolicy.shouldPollRSSI(
+                    foreground: self.foregroundActive,
+                    bluetoothAudioActive: self.bluetoothAudioActive,
+                    elapsed: now - self.lastRSSIMaintenanceAt,
+                    interval: self.maintenanceTuning.rssiPollInterval
+                ) {
                     for peripheral in self.remotePeripherals.values where peripheral.state == .connected {
                         peripheral.readRSSI()
                     }
                     self.lastRSSIMaintenanceAt = now
                 }
+                // Never stop connection recovery, queued payload progress, or GATT watchdog.
                 self.recoverStalledTransportQueuesIfNeeded()
             }
         }
     }
 
     private func currentMaintenanceIntervalNanoseconds() -> UInt64 {
-        if !foregroundActive { return maintenanceTuning.bleIdleMaintenanceNanoseconds }
         let hasQueuedPackets = centralOutboundQueues.values.contains { !$0.isEmpty }
             || peripheralOutboundQueues.values.contains { !$0.isEmpty }
-        if hasQueuedPackets { return maintenanceTuning.bleQueuedMaintenanceNanoseconds }
         let hasConnectedPeer = remotePeripherals.values.contains { $0.state == .connected }
             || !subscribedCentrals.isEmpty
-        if hasConnectedPeer { return maintenanceTuning.bleConnectedMaintenanceNanoseconds }
-        return maintenanceTuning.bleIdleMaintenanceNanoseconds
+        return VeilConcurrentFabricPolicy.maintenanceInterval(
+            tuning: maintenanceTuning,
+            foreground: foregroundActive,
+            queued: hasQueuedPackets,
+            connected: hasConnectedPeer
+        )
     }
 
     private func recoverStalledTransportQueuesIfNeeded() {
         recoverStalledGATTHandshakesIfNeeded()
+        let uptime = ProcessInfo.processInfo.systemUptime
+        for id in Array(reconnectStableSinceUptime.keys) {
+            resetReconnectAttemptIfStable(id, nowUptime: uptime)
+        }
         let now = Date().timeIntervalSinceReferenceDate
         for id in Array(centralOutboundQueues.keys) {
             guard let queue = centralOutboundQueues[id], !queue.isEmpty else { continue }
@@ -876,6 +957,28 @@ final class BLETransport: NSObject, ObservableObject {
             statusText = "检测到蓝牙发送停滞，已切换到应用层重传"
         }
         publishLinkSnapshots()
+    }
+
+    private func markDataChannelReady(_ id: UUID) {
+        guard (reconnectAttempts[id] ?? 0) > 0 else {
+            reconnectStableSinceUptime.removeValue(forKey: id)
+            return
+        }
+        reconnectStableSinceUptime[id] = ProcessInfo.processInfo.systemUptime
+    }
+
+    private func markPeerTraffic(_ id: UUID) {
+        reconnectAttempts[id] = 0
+        reconnectStableSinceUptime.removeValue(forKey: id)
+    }
+
+    private func resetReconnectAttemptIfStable(_ id: UUID, nowUptime: TimeInterval) {
+        guard BLELinkReliabilityPolicy.shouldResetReconnectAttempt(
+            stableSince: reconnectStableSinceUptime[id],
+            now: nowUptime
+        ) else { return }
+        reconnectAttempts[id] = 0
+        reconnectStableSinceUptime.removeValue(forKey: id)
     }
 
     /// The PHY can connect while service discovery/notify subscription never completes.
@@ -1077,7 +1180,7 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
             return
         }
         gattHandshakeWatchdog.dataChannelReady(peripheral.identifier)
-        reconnectAttempts[peripheral.identifier] = 0
+        markDataChannelReady(peripheral.identifier)
         persistWantedConnectionIntent()
         reconcileConnectionEvent(peripheral.identifier)
     }
@@ -1089,8 +1192,9 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
     ) {
         guard error == nil,
               characteristic.uuid == Self.dataUUID,
-              let value = characteristic.value,
-              let assembled = assembler.ingest(source: peripheral.identifier, packet: value) else { return }
+              let value = characteristic.value else { return }
+        markPeerTraffic(peripheral.identifier)
+        guard let assembled = assembler.ingest(source: peripheral.identifier, packet: value) else { return }
         onReceive?(peripheral.identifier, assembled)
     }
 }
@@ -1164,6 +1268,7 @@ extension BLETransport: @preconcurrency CBPeripheralManagerDelegate {
             if request.characteristic.properties.contains(.write) {
                 peripheral.respond(to: request, withResult: .success)
             }
+            markPeerTraffic(request.central.identifier)
             if let assembled = assembler.ingest(source: request.central.identifier, packet: value) {
                 onReceive?(request.central.identifier, assembled)
             }
