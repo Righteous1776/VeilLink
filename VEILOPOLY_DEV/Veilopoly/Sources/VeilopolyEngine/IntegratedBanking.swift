@@ -17,18 +17,22 @@ public struct IntegratedBankLedger: Codable, Equatable {
  public var accounts: [IntegratedBankAccount]
  /// Optional keeps snapshots from before the live simulator backward compatible.
  public var market: StockMarketState?
+ /// Missing in historical JSON means V1 voluntary repayment. Only new ledgers
+ /// use V2 automatic maturity settlement; never rewrite a saved game's terms.
+ public var financeRuleVersion: Int
  public init(completedTurns: Int = 0, terms: FinanceSandboxPolicy = FinanceSandboxPolicy(),
-             market: StockMarketState? = nil) {
+             market: StockMarketState? = nil, financeRuleVersion: Int = 2) {
   self.completedTurns = completedTurns
   self.terms = terms
   self.accounts = Array(repeating: IntegratedBankAccount(), count: 4)
   self.market = market
+  self.financeRuleVersion = financeRuleVersion
  }
 
  // FinanceSandboxPolicy has enum-keyed dictionaries. Swift encodes these as
  // unkeyed key/value arrays, whose iteration order is unstable between runs.
  // Explicit string-keyed DTOs make the entire GameState hash reproducible.
- private enum CodingKeys: String, CodingKey { case completedTurns, terms, accounts, market }
+ private enum CodingKeys: String, CodingKey { case completedTurns, terms, accounts, market, financeRuleVersion }
  private struct CanonicalTerms: Codable {
   var loanInterestBasisPoints: [Int]
   var loanCapsByProperties: [Int]
@@ -72,6 +76,10 @@ public struct IntegratedBankLedger: Codable, Equatable {
   try c.encode(CanonicalTerms(terms), forKey: .terms)
   try c.encode(accounts, forKey: .accounts)
   try c.encodeIfPresent(market, forKey: .market)
+  // Omitting the v1 key preserves its historical sealed checkpoint checksum.
+  if financeRuleVersion != 1 {
+   try c.encode(financeRuleVersion, forKey: .financeRuleVersion)
+  }
  }
  public init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -79,6 +87,7 @@ public struct IntegratedBankLedger: Codable, Equatable {
   terms = try c.decode(CanonicalTerms.self, forKey: .terms).policy()
   accounts = try c.decode([IntegratedBankAccount].self, forKey: .accounts)
   market = try c.decodeIfPresent(StockMarketState.self, forKey: .market)
+  financeRuleVersion = try c.decodeIfPresent(Int.self, forKey: .financeRuleVersion) ?? 1
  }
 }
 
@@ -100,6 +109,7 @@ public enum IntegratedBanking {
  }
 
  public static func validate(_ ledger: IntegratedBankLedger) -> Bool {
+  (1...2).contains(ledger.financeRuleVersion) &&
   (0...1_000_000).contains(ledger.completedTurns) && ledger.accounts.count == 4 &&
   ledger.terms.isWellFormed() && (ledger.market.map(StockMarketEngine.validate) ?? true) &&
   ledger.accounts.allSatisfy { acc in
@@ -131,6 +141,13 @@ public enum IntegratedBanking {
   let period = ledger.completedTurns
   let policy = ledger.terms
   let id = g.nextSeq
+  // A matured unpaid contract cannot coexist with new high-risk purchases.
+  // Repayment, liquidation sales and withdrawals remain permitted.
+  if ledger.financeRuleVersion == 2 &&
+     [.bankDeposit, .bankBorrow, .bankInvest, .stockBuy].contains(m.type) &&
+     ledger.accounts[p].loans.contains(where: { $0.duePeriod <= period }) {
+   throw GameError.financeOverdue
+  }
   switch m.type {
   case .bankDeposit:
    guard let feature = m.financeProduct, [.demandDeposit, .fixedDeposit].contains(feature),
@@ -266,6 +283,24 @@ public enum IntegratedBanking {
   guard var ledger = g.banking, ledger.completedTurns < 1_000_000 else { return }
   ledger.completedTurns += 1
   let now = ledger.completedTurns
+  if ledger.financeRuleVersion == 2 {
+   // Prioritize the oldest matured loans, with stable contract-ID tie break.
+   // Never overdraw, add a new penalty, or force-sell collateral here.
+   for p in ledger.accounts.indices where !g.players[p].bankrupt {
+    let matured = ledger.accounts[p].loans
+     .filter { $0.duePeriod <= now }
+     .sorted { a,b in
+      a.duePeriod == b.duePeriod ? a.id < b.id : a.duePeriod < b.duePeriod
+     }
+    for loan in matured {
+     guard g.players[p].cash >= loan.totalDue else { break }
+     g.players[p].cash -= loan.totalDue
+     ledger.accounts[p].loans.removeAll { $0.id == loan.id }
+     effects.append(Effect(.bankRepaid, player: p, amount: -loan.totalDue,
+                           text: "automaticMaturity"))
+    }
+   }
+  }
   if var market = ledger.market, let halted = try? StockMarketEngine.advance(&market) {
    ledger.market = market
    effects.append(Effect(.stockTicked, amount: market.tick, text: "turnClose"))

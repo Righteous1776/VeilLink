@@ -108,12 +108,12 @@ final class GamePresentationTests: XCTestCase {
   let failures: [GameError] = [
    .noCash,.notOwner,.invalidTile,.setNotComplete,.buildUneven,
    .alreadyMortgaged,.alreadyOwned,.insufficientBankSupply,.invalidBid,
-   .tradeMismatch,.financeTermsPending,.financePositionLocked,
+   .tradeMismatch,.financeTermsPending,.financePositionLocked,.financeOverdue,
    .stockTradingHalted,.insufficientShares,.stockNotFound,.wrongPhase,
    .notYourTurn,.gameFinished,.noJailCard,.inJail,.alreadyBankrupt,
    .noDebt,.invalidPayload,.invalidSequence,.invalidContext,.invalidState
   ]
-  XCTAssertEqual(Set(failures.map(\.rawValue)).count,26)
+  XCTAssertEqual(Set(failures.map(\.rawValue)).count,27)
   for error in failures {
    XCTAssertGreaterThan(VeilopolyGamePresentation.advice(error).count,12)
    XCTAssertFalse(VeilopolyGamePresentation.message(error).isEmpty)

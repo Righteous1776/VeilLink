@@ -244,6 +244,7 @@ public enum GameError: String, Error, Codable, Equatable {
  case inJail = "InJail", noJailCard = "NoJailCard", noDebt = "NoDebt", alreadyBankrupt = "AlreadyBankrupt"
  case gameFinished = "GameFinished", invalidContext = "InvalidContext", invalidState = "InvalidState"
  case financeTermsPending = "FinanceTermsPending", financePositionLocked = "FinancePositionLocked"
+ case financeOverdue = "FinanceOverdue"
  case stockNotFound = "StockNotFound", insufficientShares = "InsufficientShares"
  case stockTradingHalted = "StockTradingHalted"
 }

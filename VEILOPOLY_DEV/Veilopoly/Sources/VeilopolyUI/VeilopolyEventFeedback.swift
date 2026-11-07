@@ -142,7 +142,9 @@ public enum VeilopolyEventFeedback {
    }
   case .bankRepaid:
    if let player, let amount = selected.amount, amount < 0 {
-    return "偿款收据 · \(player) 已偿还 ¥\(-amount)"
+    return selected.text == "automaticMaturity"
+     ? "到期自动偿款 · \(player) 已按合同归还 ¥\(-amount)"
+     : "偿款收据 · \(player) 已偿还 ¥\(-amount)"
    }
   case .cashChanged:
    if let player, let amount = selected.amount {
