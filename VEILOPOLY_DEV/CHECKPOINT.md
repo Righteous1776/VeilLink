@@ -1,5 +1,18 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## ECON-001–006 — 城市长局经济重构（研发中）— 2026-11-07
+
+- Owner实测反馈：约20分钟结束、频繁破产、收入与支出规模偏小、银行和模拟股票缺乏策略深度。只能作为一次体验反馈，尚无群体统计。
+- v3 仅供**新开单机局**，旧单机存档自动加载并保留经典参数；P5 双机大厅仍为经典配置，后续需版本化房间协商后才可让双机用 v3。主 Gameplay/save schema 未增字段，v3 以 bank.financeRuleVersion=3 / stock.algorithmVersion=3 显式持久化。
+- 初始现金7200，经过起点1100，买地/建造3倍，租金2倍，税费/卡牌现金/修理费用约3倍，入狱保释150；AI预留现金增加，减少早期资金紧缩。
+- 贷款8%–17%按合同一次计息（旧的20%–45%逐期公式仅留给经典局）；扩大额度并允许4+地产；活期锁1个结算期后1.5%，定存4期8.5%，启用3种有盈亏区间的离线投资产品；股市v3报价基准8倍、振幅增加、单笔费率0.25%（最低1游戏币）。
+- bank UI 新增贷款报价、定存、管理/创投/虚拟指数；stock UI 标注v3，旧行情/存档兼容逻辑保留。数据不会变现。
+- 对照入口 LocalGameRunner.compareEconomy 在两种配置下跑同种子，报告完整完局数、首次破产序号、真实完成回合、现金与地产分布，不把 cap 当作完局，也不把 move 数当作真实分钟。
+- 新增 CityLongEconomyTests / CityLongAutoplayTests 源码。**没有**在当前 HEAD 运行完整 SwiftPM XCTest、Apple SDK、模拟器、真机或双机测试。Codex旧版271项通过不能用于本版验收。
+- 源码变更仅 dev/veilopoly:VEILOPOLY_DEV/**；main、VeilLink底层通信、身份、数据库、workflows、version、签名、IPA未变动。
+- 下一唯一任务：在可用完整仓库的Swift6.2.1 runner完成精准HEAD测试与12组seed对照；修不通过的逻辑；校准破产率、节奏和收益分布。Apple设备/P5房间协商必须另行验收，不打包不合并。
+
+
 ## GPT CONTINUATION-004 — checkpointed W2 save validation — 2026-11-07
 
 - Current preceding source commits: P5 foreground propagation 09ac83b; W5 journal 2a0975e; W2 reducer preflight 6d51426; W2 persistence preflight 109fb10.

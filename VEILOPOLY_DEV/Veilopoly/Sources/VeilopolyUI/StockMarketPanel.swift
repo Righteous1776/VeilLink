@@ -94,7 +94,7 @@ public struct VeilopolyStockMarketPanel: View {
      .font(.caption).foregroundStyle(.secondary)
    }
    Text(market.algorithmVersion == 3
-    ? "城市长局行情 V3 · 更大报价与波动 · 合同级手续费 · 可存档重放"
+    ? "城市长局行情 V3 · 更大报价与波动 · 单笔低手续费 · 可存档重放"
     : market.algorithmVersion == 2
      ? "虚构行情 · 每局随机走势 V2 · 可存档重放"
      : "虚构行情 · 历史对局兼容算法 V1")

@@ -1528,7 +1528,8 @@ public struct VeilopolyGameView: View {
      Text("收益与借贷 · 活期 1 期 +1.5%，定期 4 期 +8.5%；贷款按合同本金一次计息 8%～17%。")
       .font(.caption2).foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
-     if let amount = Int(bankAmount), amount > 0, (1...12).contains(Int(bankPeriods) ?? 0),
+     if let amount = Int(bankAmount), (1...1_000_000).contains(amount),
+        (1...12).contains(Int(bankPeriods) ?? 0),
         let bank = model.game.banking, bank.accounts.indices.contains(model.actor) {
       let ordinal = bank.accounts[model.actor].borrowCount
       if ordinal < terms.loanInterestBasisPoints.count {
