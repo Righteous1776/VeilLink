@@ -207,6 +207,15 @@ final class UnifiedCityEconomyTests: XCTestCase {
   XCTAssertEqual(supply(a), VeilopolyCityLongEconomy.totalMoneySupply)
  }
 
+ func testLowBankCashProducesCreditCrunchRatherThanFalseBullSignal() {
+  var g = VeilopolyCityLongEconomy.make(seed: 98126)
+  XCTAssertEqual(VeilopolyCityLongEconomy.marketPressure(g), 0)
+  g.players[0].cash += 160_000
+  g.banking?.reserveCash = 0
+  XCTAssertLessThan(VeilopolyCityLongEconomy.marketPressure(g), 0,
+                    "A depleted central treasury must stress the fictional stock market")
+  XCTAssertEqual(supply(g), VeilopolyCityLongEconomy.totalMoneySupply)
+ }
  func testMarketPressureMakesIdenticallySeededTapeRespondToCommerce() throws {
   let base = VeilopolyCityLongEconomy.make(seed: 98108)
   XCTAssertEqual(VeilopolyCityLongEconomy.marketPressure(base), 0)

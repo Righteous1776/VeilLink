@@ -1648,7 +1648,16 @@ public struct VeilopolyGameView: View {
   let market = ledger.market ?? StockMarketEngine.initial(seed: model.game.seed)
   return VStack(alignment: .leading, spacing: 8) {
    if let balance = ledger.reserveCash {
-    Text("城市金融环境 · 银行可用 ¥\(balance) / 总量 ¥\(VeilopolyCityLongEconomy.totalMoneySupply) · 下一 Tick 宏观信号 \(VeilopolyCityLongEconomy.marketPressure(model.game)) bp")
+    let impulse = VeilopolyCityLongEconomy.marketPressure(model.game)
+    Text("城市金融环境 · 银行可用 ¥\(balance) / 总量 ¥\(VeilopolyCityLongEconomy.totalMoneySupply) · 下一 Tick 经济信号 \(impulse) bp")
+     .font(.caption2).foregroundStyle(.secondary)
+    Text(impulse < -30 ? "当前模拟金融环境：信用偏紧，股票可能受到下行压力。" :
+          impulse > 30 ? "当前模拟金融环境：流动性偏活跃，股票可能受到上行推动。" :
+          "当前模拟金融环境：资金供需相对平衡。")
+     .font(.caption2).foregroundStyle(.secondary)
+     .fixedSize(horizontal: false, vertical: true)
+    Text("步骤：选股票 → 买入或卖出 → 填股数 → 核对费用 → 确认交易。")
+     .font(.caption2.weight(.semibold))
      .font(.caption2).foregroundStyle(.secondary)
      .fixedSize(horizontal: false, vertical: true)
     Text("地产购置、建造、贷款及直接转账造成的流动性与资金分布变化，会传导到下一次虚构股票报价；交易前请核对手续费与可用现金。")
