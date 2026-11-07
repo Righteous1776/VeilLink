@@ -1,0 +1,345 @@
+diff --git a/VeilLink/Core/VeilPeerCapabilityPolicy.swift b/VeilLink/Core/VeilPeerCapabilityPolicy.swift
+--- a/VeilLink/Core/VeilPeerCapabilityPolicy.swift
++++ b/VeilLink/Core/VeilPeerCapabilityPolicy.swift
+@@ -4,8 +4,8 @@
+ /// This is advisory metadata, not a trust or authorization primitive.
+ enum VeilPeerCapabilityPolicy {
+     static let schemaVersion = 1
+-    static let advertisedFeatureBits = 1 // bit 0: understands optional ACK capabilities
+-    static let recognizedFeatureBits = 1
++    static let advertisedFeatureBits = 3 // bit 0: ACK metadata; bit 1: authenticated control
++    static let recognizedFeatureBits = 3
+     static let cacheLifetime: TimeInterval = 30 * 24 * 60 * 60
+ 
+     static func validatedBits(schemaVersion: Int?, bits: Int?) -> Int? {
+diff --git a/VeilLink/Core/WireCodec.swift b/VeilLink/Core/WireCodec.swift
+--- a/VeilLink/Core/WireCodec.swift
++++ b/VeilLink/Core/WireCodec.swift
+@@ -9,7 +9,8 @@
+     case pttControl = 6
+     case pttAudio = 7
+     case meshOverlay = 8
+-    case relayProvision = 9
++    case relayProvision = 9
++    case controlEvent = 10
+ }
+ 
+ struct WireEnvelope {
+diff --git a/VeilLink/Security/SessionCoordinator.swift b/VeilLink/Security/SessionCoordinator.swift
+--- a/VeilLink/Security/SessionCoordinator.swift
++++ b/VeilLink/Security/SessionCoordinator.swift
+@@ -124,7 +124,8 @@
+     var relayProvisionSecretProvider: ((String) -> Data?)?
+     var onRelayProvisionReceived: ((String, VeilRelayProvisionPacket) -> Void)?
+     var onCollaborativeStressFrame: ((CollaborativeStressFrame, String) -> Void)?
+-    var onCollaborativeStressBulkReceipt: ((CollaborativeStressBulkReceipt, String) -> Void)?
++    var onCollaborativeStressBulkReceipt: ((CollaborativeStressBulkReceipt, String) -> Void)?
++    var onControlEventReceived: ((VeilControlEvent, String) -> Void)?
+ 
+     private let identity: IdentityManager
+     private let database: DatabaseStore
+@@ -288,7 +289,8 @@
+             case .pttControl: try handlePTTControl(transportID: transportID, data: envelope.payload)
+             case .pttAudio: try handlePTTAudio(transportID: transportID, data: envelope.payload)
+             case .meshOverlay: try handleMeshOverlay(transportID: transportID, data: envelope.payload)
+-            case .relayProvision: try handleRelayProvision(transportID: transportID, data: envelope.payload)
++            case .relayProvision: try handleRelayProvision(transportID: transportID, data: envelope.payload)
++            case .controlEvent: try handleControlEvent(transportID: transportID, data: envelope.payload)
+             }
+             packetAbuseLimiter.reset(transportID)
+         } catch {
+@@ -450,7 +452,33 @@
+     /// Re-seeds the signed Hello on an already-known BLE transport without changing trust state.
+     /// This gives the UI a safe recovery action when the physical link survived but the secure
+     /// session was lost during backgrounding or a transient packet-loss window.
+-    func recoverSecureSession(for peerIdentityID: String) {
++    /// Optional and best-effort until control-event acknowledgement/outbox v2 ships.
++    /// Never send new control frames to a peer that has not advertised capability bit 1.
++    @discardableResult
++    func sendControlEvent(_ event: VeilControlEvent, to peerIdentityID: String) -> TransportSendResult {
++        guard let transportID = peerTransport[peerIdentityID],
++              var session = sessions[transportID], let remote = session.remoteHello,
++              let keys = session.keys, remote.identityID == peerIdentityID,
++              database.trustedContact(localIdentityID: session.localHello.identityID, identityID: peerIdentityID)?.publicKey == remote.identityPublicKey,
++              let bits = database.cachedAuthenticatedPeerFeatureBits(
++                  localIdentityID: session.localHello.identityID,
++                  peerIdentityID: peerIdentityID,
++                  publicKey: remote.identityPublicKey
++              ), bits & 2 == 2 else { return .unsupportedLink }
++        do {
++            let clear = try VeilControlEventCodec.encode(event)
++            let encrypted = try CryptoEngine.encrypt(clear, key: keys.sendKey, messageID: event.eventID,
++                sequence: session.nextSendSequence, context: "control-event-v1")
++            let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version),
++                kind: .controlEvent, payload: try WireCodec.encodeEncryptedPayload(encrypted))
++            guard envelope.count <= WireProtocol.maximumEnvelopeBytes else { return .unsupportedLink }
++            session.nextSendSequence += 1
++            sessions[transportID] = session
++            return transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable
++        } catch { return .unsupportedLink }
++    }
++
++    func recoverSecureSession(for peerIdentityID: String) {
+         refreshPreferredTransport(for: peerIdentityID)
+         guard let transportID = peerTransport[peerIdentityID] else {
+             lastError = "未找到可用于恢复安全会话的可用链路。"
+@@ -1398,8 +1426,26 @@
+         onRelayProvisionReceived?(remote.identityID, packet)
+     }
+ 
+-    @discardableResult
+-    func sendMeshPayload(_ clear: Data, to transportID: UUID) -> TransportSendResult {
++    private func handleControlEvent(transportID: UUID, data: Data) throws {
++        guard var session = sessions[transportID], let remote = session.remoteHello,
++              let keys = session.keys,
++              database.trustedContact(localIdentityID: session.localHello.identityID, identityID: remote.identityID)?.publicKey == remote.identityPublicKey else {
++            throw CryptoEngineError.invalidCiphertext
++        }
++        let encrypted = try WireCodec.decodeEncryptedPayload(data)
++        guard session.replayWindow.isPotentiallyFresh(encrypted.sequence) else { throw CryptoEngineError.invalidCiphertext }
++        let clear = try CryptoEngine.decrypt(encrypted, key: keys.receiveKey, context: "control-event-v1")
++        let event = try VeilControlEventCodec.decode(clear)
++        guard event.eventID == encrypted.messageID,
++              session.replayWindow.accept(encrypted.sequence) else { throw CryptoEngineError.invalidCiphertext }
++        let isNew = try database.saveInboundControlEvent(localIdentityID: session.localHello.identityID,
++            peerIdentityID: remote.identityID, publicKey: remote.identityPublicKey, event: event)
++        sessions[transportID] = session
++        if isNew { onControlEventReceived?(event, remote.identityID) }
++    }
++
++    @discardableResult
++    func sendMeshPayload(_ clear: Data, to transportID: UUID) -> TransportSendResult {
+         guard !clear.isEmpty, clear.count <= VeilMeshCodec.maximumEncodedBytes,
+               var context = sessions[transportID],
+               let remote = context.remoteHello, let keys = context.keys,
+diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseStore.swift
+--- a/VeilLink/Storage/DatabaseStore.swift
++++ b/VeilLink/Storage/DatabaseStore.swift
+@@ -1298,7 +1298,54 @@
+         ) { Int(sqlite3_column_int64($0, 0)) }.first
+     }
+ 
+-    private func migrate() throws {
++    /// Encrypted, idempotent inbound control log for future sync, group and agent consumers.
++    @discardableResult
++    func saveInboundControlEvent(localIdentityID: String, peerIdentityID: String, publicKey: Data, event: VeilControlEvent) throws -> Bool {
++        guard publicKey.count == 32,
++              trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID)?.publicKey == publicKey else {
++            throw DatabaseError.statementFailed("未认证的对端不能持久化控制事件。")
++        }
++        let raw = try VeilControlEventCodec.encode(event)
++        let ciphertext = try ChaChaPoly.seal(raw, using: storageKey).combined
++        let inserted = try writeReturningChange(
++            """
++            INSERT OR IGNORE INTO control_event_inbox(local_identity_id, peer_identity_id, event_id, topic, payload_ciphertext, received_at)
++            VALUES(?, ?, ?, ?, ?, ?);
++            """,
++            bindings: [.text(localIdentityID), .text(peerIdentityID), .text(event.eventID), .text(event.topic),
++                       .blob(ciphertext), .double(Date().timeIntervalSince1970)]
++        )
++        if inserted {
++            try write(
++                """
++                DELETE FROM control_event_inbox WHERE local_identity_id = ? AND peer_identity_id = ?
++                AND event_id NOT IN (
++                    SELECT event_id FROM control_event_inbox WHERE local_identity_id = ? AND peer_identity_id = ?
++                    ORDER BY received_at DESC, event_id DESC LIMIT 256
++                );
++                """,
++                bindings: [.text(localIdentityID), .text(peerIdentityID), .text(localIdentityID), .text(peerIdentityID)]
++            )
++        }
++        return inserted
++    }
++
++    func recentInboundControlEvents(localIdentityID: String, peerIdentityID: String, publicKey: Data, limit: Int = 64) -> [VeilControlEvent] {
++        guard publicKey.count == 32,
++              trustedContact(localIdentityID: localIdentityID, identityID: peerIdentityID)?.publicKey == publicKey else { return [] }
++        let count = max(1, min(limit, 256))
++        let encryptedRows = read(
++            "SELECT payload_ciphertext FROM control_event_inbox WHERE local_identity_id = ? AND peer_identity_id = ? ORDER BY received_at DESC, event_id DESC LIMIT \(count);",
++            bindings: [.text(localIdentityID), .text(peerIdentityID)]
++        ) { data($0, 0) }
++        return encryptedRows.compactMap { bytes in
++            guard let box = try? ChaChaPoly.SealedBox(combined: bytes),
++                  let data = try? ChaChaPoly.open(box, using: storageKey) else { return nil }
++            return try? VeilControlEventCodec.decode(data)
++        }
++    }
++
++    private func migrate() throws {
+         try execute("PRAGMA journal_mode=WAL;")
+         try execute("PRAGMA foreign_keys=ON;")
+         try execute("PRAGMA synchronous=NORMAL;")
+@@ -1444,7 +1491,18 @@
+                     REFERENCES contacts(local_identity_id, identity_id) ON DELETE CASCADE
+             );
+             CREATE INDEX IF NOT EXISTS idx_peer_capabilities_fresh_v9 ON peer_capabilities(observed_at);
+-            INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(9, strftime('%s','now'));
++            CREATE TABLE IF NOT EXISTS control_event_inbox(
++                local_identity_id TEXT NOT NULL,
++                peer_identity_id TEXT NOT NULL,
++                event_id TEXT NOT NULL,
++                topic TEXT NOT NULL,
++                payload_ciphertext BLOB NOT NULL,
++                received_at REAL NOT NULL,
++                PRIMARY KEY(local_identity_id, peer_identity_id, event_id),
++                FOREIGN KEY(local_identity_id, peer_identity_id) REFERENCES contacts(local_identity_id, identity_id) ON DELETE CASCADE
++            );
++            CREATE INDEX IF NOT EXISTS idx_control_event_inbox_v9 ON control_event_inbox(local_identity_id, peer_identity_id, received_at DESC);
++            INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(9, strftime('%s','now'));
+             """)
+     }
+ 
+@@ -1605,7 +1663,24 @@
+         }
+     }
+ 
+-    private func write(_ sql: String, bindings: [SQLiteValue] = []) throws {
++    /// Return whether INSERT OR IGNORE committed a new row inside the serialized SQLite queue.
++    private func writeReturningChange(_ sql: String, bindings: [SQLiteValue]) throws -> Bool {
++        try queue.sync {
++            guard let db else { throw DatabaseError.openFailed("数据库尚未打开。") }
++            var statement: OpaquePointer?
++            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
++                throw DatabaseError.statementFailed(String(cString: sqlite3_errmsg(db)))
++            }
++            defer { sqlite3_finalize(statement) }
++            bind(bindings, to: statement)
++            guard sqlite3_step(statement) == SQLITE_DONE else {
++                throw DatabaseError.statementFailed(String(cString: sqlite3_errmsg(db)))
++            }
++            return sqlite3_changes(db) > 0
++        }
++    }
++
++    private func write(_ sql: String, bindings: [SQLiteValue] = []) throws {
+         try queue.sync {
+             guard let db else { throw DatabaseError.openFailed("数据库尚未打开。") }
+             var statement: OpaquePointer?
+diff --git a/VeilLinkTests/DatabaseStoreTests.swift b/VeilLinkTests/DatabaseStoreTests.swift
+--- a/VeilLinkTests/DatabaseStoreTests.swift
++++ b/VeilLinkTests/DatabaseStoreTests.swift
+@@ -3,8 +3,22 @@
+ import XCTest
+ @testable import VeilLink
+ 
+-final class DatabaseStoreTests: XCTestCase {
+-    func testPeerCapabilitiesAreTrustedAndIdentityScoped() throws {
++final class DatabaseStoreTests: XCTestCase {
++    func testControlEventInboxAuthDedupAndReadback() throws {
++        let (store, root) = try makeStore()
++        defer { try? FileManager.default.removeItem(at: root) }
++        let key = Data(repeating: 0x43, count: 32)
++        let event = VeilControlEvent(topic: "sync.cursor", payload: Data("private payload".utf8))
++        XCTAssertThrowsError(try store.saveInboundControlEvent(localIdentityID: "a", peerIdentityID: "b", publicKey: key, event: event))
++        try store.trustPeer(localIdentityID: "a", identityID: "b", displayName: "B", publicKey: key)
++        XCTAssertTrue(try store.saveInboundControlEvent(localIdentityID: "a", peerIdentityID: "b", publicKey: key, event: event))
++        XCTAssertFalse(try store.saveInboundControlEvent(localIdentityID: "a", peerIdentityID: "b", publicKey: key, event: event))
++        XCTAssertEqual(store.recentInboundControlEvents(localIdentityID: "a", peerIdentityID: "b", publicKey: key), [event])
++        XCTAssertTrue(store.recentInboundControlEvents(localIdentityID: "a", peerIdentityID: "b", publicKey: Data(repeating: 1, count: 32)).isEmpty)
++        XCTAssertEqual(store.integrityCheck().lowercased(), "ok")
++    }
++
++    func testPeerCapabilitiesAreTrustedAndIdentityScoped() throws {
+         let (store, root) = try makeStore()
+         defer { try? FileManager.default.removeItem(at: root) }
+         let key = Data(repeating: 0x39, count: 32)
+diff --git a/VeilLink/Core/VeilControlEvent.swift b/VeilLink/Core/VeilControlEvent.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/VeilControlEvent.swift
+@@ -0,0 +1,50 @@
++import Foundation
++
++/// A typed extension transported only inside an authenticated Wire v4 session.
++struct VeilControlEvent: Codable, Equatable {
++    let schemaVersion: Int
++    let eventID: String
++    let topic: String
++    let payload: Data
++    let createdAt: TimeInterval
++
++    init(eventID: String = UUID().uuidString, topic: String, payload: Data, createdAt: TimeInterval = Date().timeIntervalSince1970) {
++        schemaVersion = 1
++        self.eventID = eventID
++        self.topic = topic
++        self.payload = payload
++        self.createdAt = createdAt
++    }
++}
++
++enum VeilControlEventCodec {
++    enum Error: Swift.Error { case invalidEvent }
++    static let maxPayloadBytes = 24_576
++    static let maxEncodedBytes = 49_152
++
++    static func encode(_ event: VeilControlEvent) throws -> Data {
++        try validate(event)
++        let data = try JSONEncoder().encode(event)
++        guard data.count <= maxEncodedBytes else { throw Error.invalidEvent }
++        return data
++    }
++
++    static func decode(_ bytes: Data) throws -> VeilControlEvent {
++        guard !bytes.isEmpty, bytes.count <= maxEncodedBytes else { throw Error.invalidEvent }
++        let value = try JSONDecoder().decode(VeilControlEvent.self, from: bytes)
++        try validate(value)
++        return value
++    }
++
++    private static func validate(_ event: VeilControlEvent) throws {
++        guard event.schemaVersion == 1, let uuid = UUID(uuidString: event.eventID),
++              uuid.uuidString == event.eventID,
++              event.createdAt.isFinite, event.createdAt > 0,
++              event.payload.count <= maxPayloadBytes else { throw Error.invalidEvent }
++        let name = Array(event.topic.utf8)
++        guard !name.isEmpty, name.count <= 64,
++              name.allSatisfy({ ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) || $0 == 46 || $0 == 45 || $0 == 95 }) else {
++            throw Error.invalidEvent
++        }
++    }
++}
+diff --git a/VeilLinkTests/VeilControlEventCodecTests.swift b/VeilLinkTests/VeilControlEventCodecTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilControlEventCodecTests.swift
+@@ -0,0 +1,26 @@
++import Foundation
++import XCTest
++@testable import VeilLink
++
++final class VeilControlEventCodecTests: XCTestCase {
++    func testEnvelopeAndEventRoundTrip() throws {
++        let event = VeilControlEvent(topic: "sync.cursor", payload: Data([1, 2, 3]))
++        let raw = try VeilControlEventCodec.encode(event)
++        let packet = try WireCodec.encodeEnvelope(version: 4, kind: .controlEvent, payload: raw)
++        let decoded = try WireCodec.decodeEnvelope(packet)
++        XCTAssertEqual(decoded.version, 4)
++        XCTAssertEqual(decoded.kind, .controlEvent)
++        XCTAssertEqual(try VeilControlEventCodec.decode(decoded.payload), event)
++    }
++    func testRejectOversizedAndUnknownEvent() throws {
++        let tooLarge = VeilControlEvent(topic: "sync.cursor", payload: Data(repeating: 0x45, count: 24_577))
++        XCTAssertThrowsError(try VeilControlEventCodec.encode(tooLarge))
++        let valid = try VeilControlEventCodec.encode(VeilControlEvent(topic: "game.move", payload: Data()))
++        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: valid) as? [String: Any])
++        json["schemaVersion"] = 2
++        XCTAssertThrowsError(try VeilControlEventCodec.decode(try JSONSerialization.data(withJSONObject: json)))
++        json["schemaVersion"] = 1
++        json["topic"] = "Unsafe/Topic"
++        XCTAssertThrowsError(try VeilControlEventCodec.decode(try JSONSerialization.data(withJSONObject: json)))
++    }
++}
+diff --git a/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift b/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
+--- a/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
++++ b/VeilLinkTests/VeilPeerCapabilityPolicyTests.swift
+@@ -35,6 +35,7 @@
+         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: nil, bits: 1))
+         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 2, bits: 1))
+         XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: -1))
+-        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 2))
++        XCTAssertEqual(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 2), 2)
++        XCTAssertNil(VeilPeerCapabilityPolicy.validatedBits(schemaVersion: 1, bits: 4))
+     }
+ }
