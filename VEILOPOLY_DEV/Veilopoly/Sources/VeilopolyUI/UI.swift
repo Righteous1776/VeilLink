@@ -403,6 +403,7 @@ public struct VeilopolyGameView: View {
    Button(model.newsEnabled ? "暂停城市快讯" : "开启城市快讯") { model.newsEnabled.toggle() }
    Button(showFinanceHUD ? "隐藏资产悬浮窗" : "显示资产悬浮窗") { showFinanceHUD.toggle() }
    Button(showMarketHUD ? "隐藏股市悬浮窗" : "显示股市悬浮窗") { showMarketHUD.toggle() }
+   Button("完整资产浏览（任何回合）") { showAssetExplorer = true }
    Button(dayFelt ? "切换全局夜间主题" : "切换全局日间主题") {
     dayFelt.toggle()
     if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
@@ -427,6 +428,7 @@ public struct VeilopolyGameView: View {
                         saveSummary: model.saveSummary)
    }
    .sheet(isPresented: $showTileInformation) { selectedTileDetailSheet }
+   .sheet(isPresented: $showAssetExplorer) { assetExplorerSheet }
   .alert("本局信息", isPresented: $showGameInfo) {
    Button("知道了", role: .cancel) {}
   } message: {
@@ -616,6 +618,13 @@ public struct VeilopolyGameView: View {
     .background(.white.opacity(0.12), in: Capsule())
     .accessibilityLabel("收起操作面板")
     .accessibilityHint("返回最大化棋盘；与退出按钮分离")
+    Button { showAssetExplorer = true } label: {
+     Label("资产查看", systemImage: "square.grid.2x2")
+      .font(.system(size: 13, weight: .semibold))
+      .frame(minHeight: 44)
+    }
+    .buttonStyle(.plain)
+    .accessibilityHint("不需要购买地产，也可以随时查看全部资产")
     Text("操作面板")
      .font(.system(size: 15, weight: .bold, design: .rounded))
      .lineLimit(1)
@@ -627,10 +636,8 @@ public struct VeilopolyGameView: View {
      .lineLimit(1)
    }
    .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
-   if model.game.turn.phase == .manage && model.waitingForHuman {
-    managementNavigation
-     .disabled(model.pending)
-   }
+   // Browsing is always allowed. Actual transactions remain phase-gated.
+   managementNavigation
    ScrollView(.vertical) {
     VStack(alignment: .leading, spacing: 10) {
      HStack {
@@ -648,6 +655,7 @@ public struct VeilopolyGameView: View {
       .padding(8)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(AstraB01PanelSkin(.action))
+     if model.game.turn.phase != .manage { readOnlyOverviewShortcut }
      tileInspector
      playerStrip
      HStack(alignment: .top, spacing: 7) {
@@ -709,7 +717,10 @@ public struct VeilopolyGameView: View {
  private var managementNavigation: some View {
   HStack(spacing: 5) {
    ForEach(VeilopolyManagementSection.allCases) { section in
-    Button { managementSection = section } label: {
+    Button {
+     managementSection = section
+     if model.game.turn.phase != .manage { showAssetExplorer = true }
+    } label: {
      VStack(spacing: 3) {
       Image(systemName: section.symbol)
       Text(section.rawValue)
@@ -997,7 +1008,7 @@ public struct VeilopolyGameView: View {
   .buttonStyle(.plain)
   .offset(x: financeHUDOffset.width + financeHUDDrag.width,
           y: financeHUDOffset.height + financeHUDDrag.height)
-  .gesture(DragGesture(minimumDistance: 8)
+  .simultaneousGesture(DragGesture(minimumDistance: 12)
    .updating($financeHUDDrag) { change, state, _ in
     state = change.translation
    }
@@ -1028,7 +1039,7 @@ public struct VeilopolyGameView: View {
   .buttonStyle(.plain)
   .offset(x: marketHUDOffset.width + marketHUDDrag.width,
           y: marketHUDOffset.height + marketHUDDrag.height)
-  .gesture(DragGesture(minimumDistance: 8)
+  .simultaneousGesture(DragGesture(minimumDistance: 12)
    .updating($marketHUDDrag) { change, state, _ in
     state = change.translation
    }
@@ -1211,7 +1222,15 @@ public struct VeilopolyGameView: View {
  private func action(_ title: String, symbol: String,
                      secondary: Bool = false, pressed: @escaping () -> Void) -> some View {
   Button(action: pressed) {
-   Text(title).frame(maxWidth: .infinity, minHeight: 44)
+   HStack(spacing: 6) {
+    Image(systemName: symbol)
+     .font(.system(size: 15, weight: .semibold))
+     .frame(width: 19, height: 19)
+     .accessibilityHidden(true)
+    Text(title).lineLimit(2).minimumScaleFactor(0.85)
+   }
+   .frame(maxWidth: .infinity, minHeight: 44)
+   .contentShape(Rectangle())
   }
   .buttonStyle(AstraB01ButtonStyle(secondary: secondary))
   .accessibilityLabel(title)
