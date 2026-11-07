@@ -993,12 +993,15 @@ final class AppModel: ObservableObject {
     @discardableResult
     func ensureRealtimeGameLink(for peerIdentityID: String) -> Bool {
         if sessions.hasSecureSession(for: peerIdentityID) { return true }
+        // Refreshing an already connected PHY does not restart its failed
+        // secure handshake. Use the current-base R2 recovery path first.
+        let handshakeRequested = sessions.recoverSecureSession(for: peerIdentityID)
         bluetooth.refreshLinks()
         lanTurbo.refresh()
         internetRelay.refreshNow()
         RuntimeDiagnosticsBridge.shared.recordSemanticAction(
             "game.link.recovery_requested",
-            metadata: ["transports": "ble,lan,relay"]
+            metadata: ["transports": "ble,lan,relay", "handshake_requested": String(handshakeRequested)]
         )
         return false
     }

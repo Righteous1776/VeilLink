@@ -78,7 +78,14 @@ final class VeilopolySaveStoreTests: XCTestCase {
   XCTAssertThrowsError(try store.save(original, gameID: "", mode: .solo))
   _ = try store.save(original, gameID: "../../safe", mode: .solo)
   let names = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
-  XCTAssertTrue(names.allSatisfy { $0.deletingLastPathComponent() == dir })
+  XCTAssertFalse(names.isEmpty)
+  // Darwin may return a /private/var URL for the same temporary directory,
+  // and URL equality also includes directory metadata. Compare canonical paths
+  // while retaining the assertion that every actual file is directly inside it.
+  let root = dir.resolvingSymlinksInPath().standardizedFileURL.path
+  XCTAssertTrue(names.allSatisfy {
+   $0.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL.path == root
+  })
  }
  func testResetCreatesNewerRevisionWithoutResurrectingOldRun() throws {
   let (store, dir) = try sandbox(); defer { try? FileManager.default.removeItem(at: dir) }
