@@ -267,7 +267,16 @@ public enum StockMarketEngine {
   return low
  }
 
+ /// A failed tick never commits a half-advanced market (including RNG, quotes,
+ /// volume, chart history and circuit breaker state).
  public static func advance(_ market: inout StockMarketState) throws -> [String] {
+  var next = market
+  let halted = try advanceChecked(&next)
+  market = next
+  return halted
+ }
+
+ private static func advanceChecked(_ market: inout StockMarketState) throws -> [String] {
   guard validate(market), market.tick < 1_000_000 else { throw GameError.invalidState }
   market.tick += 1
   var halted: [String] = []

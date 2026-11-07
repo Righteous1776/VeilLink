@@ -225,4 +225,29 @@ final class StockMarketTests: XCTestCase {
   XCTAssertEqual(game.banking?.market?.algorithmVersion, 2)
  }
 
+ func testMarketTickFailureLeavesQuoteAndRNGCompletelyUntouched() throws {
+  var market = StockMarketEngine.initial(seed: 704)
+  market.rngCounter = 100_000_000
+  XCTAssertTrue(StockMarketEngine.validate(market))
+  let before = market
+  XCTAssertThrowsError(try StockMarketEngine.advance(&market)) {
+   XCTAssertEqual($0 as? GameError, .invalidState)
+  }
+  XCTAssertEqual(market, before)
+  // This is also a correct input rejection, not just a posttick rollback.
+  market.tick = 1_000_000
+  let limit = market
+  XCTAssertThrowsError(try StockMarketEngine.advance(&market))
+  XCTAssertEqual(market, limit)
+ }
+ func testValidTicksStillProduceIdenticalMarketOnReplay() throws {
+  var a = StockMarketEngine.initial(seed: 705)
+  var b = a
+  for _ in 0..<350 {
+   let aEvents = try StockMarketEngine.advance(&a)
+   let bEvents = try StockMarketEngine.advance(&b)
+   XCTAssertEqual(aEvents, bEvents)
+   XCTAssertEqual(a, b)
+  }
+ }
 }
