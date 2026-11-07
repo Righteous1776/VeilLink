@@ -257,7 +257,7 @@ public enum IntegratedBanking {
                                  source: "savingMature")
    ledger.accounts[p].savings.remove(at: ix)
    effects.append(Effect(.bankWithdrawn, player: p, amount: paid,
-                         text: "(item.feature.rawValue);deferred:(payout - paid)"))
+                         text: "\(item.feature.rawValue);deferred:\(payout - paid)"))
   case .bankBorrow:
    guard let principal = m.amount, let periods = m.financePeriods else { throw GameError.invalidPayload }
    let ordinal = ledger.accounts[p].borrowCount
@@ -347,7 +347,7 @@ public enum IntegratedBanking {
                                  source: "investmentMature")
    ledger.accounts[p].positions.remove(at: ix)
    effects.append(Effect(.bankInvestmentSettled, player: p, amount: paid,
-                         dice: [rolled], text: "(position.feature.rawValue);deferred:(payout - paid)"))
+                         dice: [rolled], text: "\(position.feature.rawValue);deferred:\(payout - paid)"))
   case .stockTick:
    guard var market = ledger.market else { throw GameError.invalidState }
    let pressure = VeilopolyCityLongEconomy.marketPressure(g)

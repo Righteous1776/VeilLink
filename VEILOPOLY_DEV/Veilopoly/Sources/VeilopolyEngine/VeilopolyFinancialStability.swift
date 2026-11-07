@@ -26,7 +26,7 @@ public struct VeilopolyLiquidityReport: Equatable {
  }
  public var coverageBasisPoints: Int {
   let needs = futureObligations
-  return needs == 0 ? 100_000 : min(100_000, treasuryCash * 10_000 / needs)
+  return needs == 0 ? 10_000 : min(100_000, treasuryCash * 10_000 / needs)
  }
 }
 
