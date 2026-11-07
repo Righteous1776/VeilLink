@@ -157,7 +157,7 @@ public final class GameSessionModel: ObservableObject {
     }
     stockExecutions = Array(stockExecutions.prefix(40))
    }
-   if let feedback = VeilopolyEventFeedback.summary(effects) { lastFeedback = feedback }
+   if let feedback = VeilopolyEventFeedback.contextualSummary(effects, state: newState) { lastFeedback = feedback }
    let commands = CommandTranslator.translate(effects)
    game = newState
    // Persist the COMMITTED reducer state before starting presentation

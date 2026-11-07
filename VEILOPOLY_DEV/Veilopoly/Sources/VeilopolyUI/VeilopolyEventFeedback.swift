@@ -43,4 +43,79 @@ public enum VeilopolyEventFeedback {
   }
   return nil
  }
+
+ /// Contextual notices use committed post-reducer state, not optimistic
+ /// projected transactions. Missing/surprising effects fall back to the
+ /// original universal UI copy. Never affects deterministic GameState.
+ public static func contextualSummary(_ effects: [Effect], state: GameState) -> String? {
+  guard let selected = effects.reversed().first(where: { summary([$0]) != nil ||
+       [.auctionStarted, .bid, .bidFold, .tradeProposed].contains($0.kind) })
+  else { return nil }
+  func actorName(_ id: Int?) -> String? {
+   guard let id, state.players.indices.contains(id) else { return nil }
+   return state.players[id].name
+  }
+  func tileName(_ id: Int?) -> String? {
+   guard let id, state.board.indices.contains(id) else { return nil }
+   return state.board[id].name
+  }
+  let player = actorName(selected.player)
+  let location = tileName(selected.tile)
+  switch selected.kind {
+  case .bought:
+   if let location, let player, let amount = selected.amount, amount >= 0 {
+    return "地契入册 · \(player) 以 ¥\(amount) 登记「\(location)」"
+   }
+  case .auctionStarted:
+   if let location { return "公开竞价 · 「\(location)」已进入拍卖程序" }
+  case .bid:
+   if let player, let amount = selected.amount, amount > 0 {
+    return "竞价举牌 · \(player) 报价 ¥\(amount)"
+   }
+  case .bidFold:
+   if let player { return "竞价撤牌 · \(player) 已退出本轮竞价" }
+  case .auctionWon:
+   if let location, let player, let amount = selected.amount, amount >= 0 {
+    return "拍卖落槌 · \(player) 以 ¥\(amount) 获得「\(location)」"
+   }
+  case .built:
+   if let location, let tileID = selected.tile, state.board.indices.contains(tileID) {
+    let t = state.board[tileID]
+    let structure = t.hotel ? "旅馆" : "第\(t.houses)栋房屋"
+    return "工务回执 · 「\(location)」已登记\(structure)"
+   }
+  case .mortgaged:
+   if let location { return "抵押契据 · 「\(location)」暂停收租" }
+  case .redeemed:
+   if let location { return "赎回契据 · 「\(location)」恢复收租" }
+  case .rentPaid:
+   if let location, let amount = selected.amount, amount >= 0 {
+    if let debt = state.pendingDebt, debt.player == selected.player {
+     return "租约待清偿 · 「\(location)」仍有 ¥\(debt.amount) 待结算"
+    }
+    return "租约收据 · 「\(location)」租金 ¥\(amount) 已结算"
+   }
+  case .tradeProposed:
+   if let from = player, let to = actorName(selected.to) {
+    return "契约草案 · \(from) 已向 \(to) 发出交易提案"
+   }
+  case .stockBought:
+   if let player, let symbol = selected.stockSymbol,
+      let shares = selected.stockShares, let delta = selected.amount, delta < 0 {
+    return "证券成交回执 · \(player) 买入 \(symbol) ×\(shares)，现金支出 ¥\(-delta)"
+   }
+  case .stockSold:
+   if let player, let symbol = selected.stockSymbol,
+      let shares = selected.stockShares, let delta = selected.amount, delta > 0 {
+    return "证券成交回执 · \(player) 卖出 \(symbol) ×\(shares)，现金到账 ¥\(delta)"
+   }
+  case .gameWon:
+   if let winner = actorName(state.winner) {
+    return "终局公报 · \(winner) 成为本局胜者"
+   }
+  default: break
+  }
+  return summary(effects)
+ }
+
 }
