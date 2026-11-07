@@ -126,6 +126,9 @@ public enum LocalGameRunner {
   var g = cityLong ? VeilopolyCityLongEconomy.make(seed: seed, humanCount: 0)
                    : GameFactory.make(seed: seed, humanCount: 0)
   var firstBankruptcyAt: Int?
+  var peakBankClaims = 0
+  var stressedMoves = 0
+  var crisisMoves = 0
   while g.winner == nil && g.nextSeq < maxMoves {
    let ctx = VeilopolyEngine.context(g)
    let actor = g.auction?.turn ?? g.trade?.to ?? g.pendingDebt?.player ?? g.turn.player
@@ -135,6 +138,11 @@ public enum LocalGameRunner {
     g = next
     if firstBankruptcyAt == nil && g.players.contains(where: { $0.bankrupt }) {
      firstBankruptcyAt = g.nextSeq
+    }
+    if let financial = VeilopolyFinancialStability.inspect(g) {
+     peakBankClaims = max(peakBankClaims, financial.queuedClaims)
+     if financial.level == .stressed { stressedMoves += 1 }
+     if financial.level == .crisis { crisisMoves += 1 }
     }
    case .failure(let error): throw LocalLoopError.engine(error)
    }
@@ -147,7 +155,15 @@ public enum LocalGameRunner {
    firstBankruptcyAtMove: firstBankruptcyAt,
    liquidCash: g.players.map(\.cash),
    propertyCounts: g.players.map { p in g.board.filter { $0.owner == p.id }.count },
-   finalHash: StateDigest.hash(g))
+   finalHash: StateDigest.hash(g),
+   bankReserve: g.banking?.reserveCash,
+   unresolvedBankClaims: (g.banking?.queuedClaims ?? []).reduce(0) { $0 + $1.amount },
+   peakBankClaims: peakBankClaims,
+   creditPrincipalOutstanding: (g.banking?.accounts ?? []).reduce(0) {
+    $0 + $1.loans.reduce(0) { $0 + $1.principal }
+   },
+   stressedMoves: stressedMoves,
+   crisisMoves: crisisMoves)
  }
  private static func decideForRunner(_ g: GameState, _ ctx: GameContext, _ actor: Int) -> Move {
   VeilopolyAI.decide(g, ctx, me: actor, level: g.players[actor].aiLevel)
