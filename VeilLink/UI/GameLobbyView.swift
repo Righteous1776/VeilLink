@@ -333,6 +333,7 @@ struct LocalAIGameView: View {
     @State private var selectedXiangqiIndex: Int?
     @State private var showsTacticalGuide = false
     @State private var showsLearningResetConfirmation = false
+    @State private var showsAdvancedChessSettings = false
     @State private var showsLearningImporter = false
     @State private var showsLearningShare = false
     @State private var learningExportURL: URL?
@@ -375,10 +376,35 @@ struct LocalAIGameView: View {
                     .veilCard()
                     .accessibilityIdentifier("game.grok_bot.avatar")
                 }
-                if game == .gomoku || game == .xiangqi { learningCard }
+                if game == .gomoku || game == .xiangqi { compactBoardControls }
                 if game == .tactical { tacticalControlCard }
+                // The board is the primary interaction. Never bury it below
+                // several screens of training options and diagnostic prose.
                 board
                 if controller.outcome != .playing { resultCard }
+                if game == .gomoku || game == .xiangqi {
+                    DisclosureGroup(isExpanded: $showsAdvancedChessSettings) {
+                        learningCard
+                            .padding(.top, 10)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "brain.head.profile")
+                                .foregroundColor(VeilTheme.gold)
+                            Text("棋手训练与高级设置")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(VeilTheme.text)
+                            Spacer(minLength: 2)
+                            Text(controller.learningSummary.compactText)
+                                .font(.caption2.monospacedDigit())
+                                .foregroundColor(VeilTheme.secondaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                    }
+                    .tint(VeilTheme.gold)
+                    .veilCard()
+                    .accessibilityIdentifier("board.advanced-settings")
+                }
             }
             .padding(14)
         }
@@ -538,6 +564,44 @@ struct LocalAIGameView: View {
         .veilCard(emphasized: true)
     }
 
+    private var compactBoardControls: some View {
+        HStack(spacing: 12) {
+            Menu {
+                ForEach(BoardBotDifficulty.allCases) { difficulty in
+                    Button {
+                        controller.setBoardDifficulty(difficulty)
+                        model.haptics.selection()
+                    } label: {
+                        if difficulty == controller.boardDifficulty {
+                            Label(difficulty.title, systemImage: "checkmark")
+                        } else {
+                            Text(difficulty.title)
+                        }
+                    }
+                }
+            } label: {
+                Label("棋力 · " + controller.boardDifficulty.title,
+                      systemImage: "slider.horizontal.3")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+            }
+            .accessibilityIdentifier("board.difficulty")
+            Spacer(minLength: 2)
+            Toggle("深度搜索", isOn: Binding(
+                get: { controller.unrestrictedBoardSearch },
+                set: { controller.setUnrestrictedBoardSearch($0) }
+            ))
+            .font(.caption.weight(.semibold))
+            .tint(VeilTheme.gold)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityIdentifier("board.deep-search")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(VeilTheme.subtleFillStrong,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
     private var learningCard: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top) {
@@ -556,7 +620,7 @@ struct LocalAIGameView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundColor(VeilTheme.secondaryText)
             }
-            Text("五子棋与中国象棋分别建库；每一局和每个合法局面都会保留。重复阵法会按走子序列预测你的下一步，并把输局与中断局反馈到下一局决策。全程离线，不设固定局面或容量上限，仅受设备可用空间约束。")
+            Text("两种棋分别建库、逐局学习；原有训练数据保持不变。深度搜索由你手动决定，旧设备也不会被自动锁定为低搜索模式。")
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -760,7 +824,6 @@ struct LocalAIGameView: View {
                     .foregroundColor(VeilTheme.danger)
             }
         }
-        .veilCard()
     }
 
     @ViewBuilder
