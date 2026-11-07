@@ -9,6 +9,7 @@ struct VeilopolyGuideSheet: View {
  let game: GameState
  let saveSummary: String
  @State private var search: String = ""
+ @State private var fullManual = true
  @Environment(\.veilopolyInterfaceTheme) private var interfaceTheme
  private var ink: Color { interfaceTheme.ink.color }
  private var secondaryInk: Color { interfaceTheme.secondaryInk.color }
@@ -17,6 +18,9 @@ struct VeilopolyGuideSheet: View {
 
  private var results: [VeilopolyGuideTopic] {
   VeilopolyGuideLibrary.filtered(search)
+ }
+ private var completeSections: [VeilopolyManualSection] {
+  VeilopolyCompleteManual.filtered(search)
  }
 
  var body: some View {
@@ -58,9 +62,49 @@ struct VeilopolyGuideSheet: View {
      }
      .buttonStyle(.plain)
      .accessibilityHint("打开完整规则说明书，查看并搜索所有规则条目")
-     TextField("搜索：拍卖、股票、存档……", text: $search)
+     Picker("说明书阅读模式", selection: $fullManual) {
+      Text("完整说明书").tag(true)
+      Text("玩法辞典").tag(false)
+     }
+     .pickerStyle(.segmented)
+     .accessibilityLabel("切换完整说明书与玩法辞典")
+     TextField("搜索：银行、破产、股票、卡牌……", text: $search)
       .textFieldStyle(.roundedBorder)
       .accessibilityLabel("搜索玩法辞典")
+     if fullManual {
+      Text("规则依据 " + VeilopolyCompleteManual.edition + " · 新旧模式金额以当前对局为准")
+       .font(.caption2)
+       .foregroundColor(secondaryInk)
+      if completeSections.isEmpty {
+       Text("完整说明书没有匹配的章节，请改用「货币」「贷款」「租金」「债权」等关键词。")
+        .font(.callout)
+        .foregroundColor(ink)
+        .padding(.vertical, 10)
+      }
+      ForEach(completeSections) { section in
+       VStack(alignment: .leading, spacing: 10) {
+        Text(section.heading)
+         .font(.system(size: 16, weight: .semibold, design: .serif))
+         .foregroundColor(ink)
+         .fixedSize(horizontal: false, vertical: true)
+        Divider().overlay(gold.opacity(0.5))
+        Text((try? AttributedString(markdown: section.body)) ?? AttributedString(section.body))
+         .font(.system(size: 12))
+         .foregroundColor(ink)
+         .textSelection(.enabled)
+         .fixedSize(horizontal: false, vertical: true)
+       }
+       .frame(maxWidth: .infinity, alignment: .leading)
+       .padding(12)
+       .background(ivory, in: RoundedRectangle(cornerRadius: 12))
+       .overlay {
+        RoundedRectangle(cornerRadius: 12)
+         .strokeBorder(gold.opacity(0.65), lineWidth: 1)
+         .allowsHitTesting(false)
+       }
+       .accessibilityElement(children: .contain)
+      }
+     } else {
      if results.isEmpty {
       Text("没有找到相关条目。可尝试「地契」「出狱」「银行」或「续局」。")
        .font(.callout)
@@ -105,7 +149,8 @@ struct VeilopolyGuideSheet: View {
        }
       }
      }
-     Text("文本版本：" + VeilopolyGuideLibrary.edition + " · 基于当前研发规则")
+     }
+     Text("文本版本：" + (fullManual ? VeilopolyCompleteManual.edition : VeilopolyGuideLibrary.edition) + " · 只读，不改动对局数据")
       .font(.system(size: 10))
       .foregroundColor(secondaryInk)
     }
