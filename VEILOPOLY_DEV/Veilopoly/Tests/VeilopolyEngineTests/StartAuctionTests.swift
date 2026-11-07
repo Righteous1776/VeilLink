@@ -24,6 +24,31 @@ final class StartAuctionTests: XCTestCase {
   XCTAssertEqual(g, original)
  }
 
+ func testWalkPastThenEndTurnContinuesNormally() {
+  var g = Fixture.game(.tileResolve)
+  g.turn.pendingPurchase = 1
+  let cashBefore = g.players[0].cash
+  Fixture.step(&g, .skipPurchase, tile: 1)
+  Fixture.step(&g, .endTurn)
+  XCTAssertEqual(g.turn.player, 1)
+  XCTAssertEqual(g.turn.phase, .roll)
+  XCTAssertNil(g.board[1].owner)
+  XCTAssertNil(g.auction)
+  XCTAssertEqual(g.players[0].cash, cashBefore)
+ }
+
+ func testWalkPastCannotSkipOutsidePurchaseDecision() {
+  let g = Fixture.game(.tileResolve)
+  Fixture.fails(g, Move(.skipPurchase, player: 0, seq: g.nextSeq, tile: 1), .wrongPhase)
+ }
+
+ func testWalkPastRejectsOwnedPendingTile() {
+  var g = Fixture.game(.tileResolve)
+  g.turn.pendingPurchase = 1
+  g.board[1].owner = 2
+  Fixture.fails(g, Move(.skipPurchase, player: 0, seq: g.nextSeq, tile: 1), .alreadyOwned)
+ }
+
  func testStartAuction() {
    var g = Fixture.game(.tileResolve)
    g.turn.pendingPurchase = 1
