@@ -420,7 +420,7 @@ final class GameBoardScene: SKScene {
    let dx = local.x - node.position.x
    let dy = local.y - node.position.y
    let distance = dx * dx + dy * dy
-   return distance <= CGFloat(60 * 60) ? (index, distance) : nil
+   return distance <= CGFloat(108 * 108) ? (index, distance) : nil
   }
   let hit = candidates.min { lhs, rhs in
    if lhs.1 == rhs.1 { return lhs.0 < rhs.0 }
