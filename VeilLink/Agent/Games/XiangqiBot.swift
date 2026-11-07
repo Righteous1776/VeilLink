@@ -481,52 +481,56 @@ enum XiangqiBot {
     /// (9,222 train / 3,470 heldout legal candidate examples).
     /// It is a bounded ordering hint, NOT a proven engine-strength gain.
     /// Rules, check, mate and full iterative-deepening search remain primary.
+    /// R4 low-memory equivalent of the R3 trained 21-dimensional ranker.
+    /// Distilled numeric weights are UNCHANGED; eliminate two temporary
+    /// Double arrays per legal candidate and preserve feature arithmetic.
+    /// Evaluated for 12,692 real-state legal actions in the offline parity
+    /// suite. No change to material, check or checkmate precedence.
     static func trainedR3OrderingBonus(
         in state: XiangqiState, from: Int, to: Int, givesCheck: Bool
     ) -> Int {
         guard let moving = state.piece(at: from) else { return 0 }
-        func code(_ kind: XiangqiPieceKind) -> Int {
-            switch kind {
-            case .general: return 1
-            case .advisor: return 2
-            case .elephant: return 3
-            case .horse: return 4
-            case .rook: return 5
-            case .cannon: return 6
-            case .soldier: return 7
-            }
-        }
         let fromRow = from / XiangqiState.columns
-        let toRow = to / XiangqiState.columns
         let fromCol = from % XiangqiState.columns
+        let toRow = to / XiangqiState.columns
         let toCol = to % XiangqiState.columns
         let captured = state.piece(at: to)
-        var features = Array(repeating: 0.0, count: 21)
-        features[code(moving.kind) - 1] = 1
-        if let captured {
-            features[7 + code(captured.kind) - 1] = 1
-            features[15] = 1
-        }
-        features[14] = givesCheck ? 1 : 0
-        features[16] = Double(toRow)
-        features[17] = Double(abs(toCol - 4))
-        features[18] = Double(moving.side == .red ? fromRow - toRow : toRow - fromRow)
-        features[19] = Double(abs(toRow - fromRow) + abs(toCol - fromCol))
-        if moving.kind == .soldier {
-            let overRiverAtStart = moving.side == .red ? fromRow >= 5 : fromRow <= 4
-            features[20] = overRiverAtStart ? 1 : 0
-        }
 
-        let trained = [
-            -0.5242243149195865, 0.08632733831826114, -0.22330277103259155, 0.9505798699878669,
-            -0.2518690379491684, -0.4088108501221785, 0.8139545542069394, 0,
-            -2.628515102576053, 0.8641737171586693, 2.490891957608054, 4.2693067469858725,
-            1.9427324638838135, 1.6071176825899731, 1.3685926691663943, 0.7552100883665197,
-            -0.07420842612230102, -0.19414580607694817, 0.057945827412019354, -0.10535128805314525,
-            0.08398197002247802
-        ]
         var logit = 0.5188171143185434
-        for j in 0..<trained.count { logit += features[j] * trained[j] }
+        switch moving.kind {
+        case .general: logit += -0.5242243149195865
+        case .advisor: logit += 0.08632733831826114
+        case .elephant: logit += -0.22330277103259155
+        case .horse: logit += 0.9505798699878669
+        case .rook: logit += -0.2518690379491684
+        case .cannon: logit += -0.4088108501221785
+        case .soldier: logit += 0.8139545542069394
+        }
+        if let captured {
+            switch captured.kind {
+            case .general: break // zero coefficient
+            case .advisor: logit += -2.628515102576053
+            case .elephant: logit += 0.8641737171586693
+            case .horse: logit += 2.490891957608054
+            case .rook: logit += 4.2693067469858725
+            case .cannon: logit += 1.9427324638838135
+            case .soldier: logit += 1.6071176825899731
+            }
+        }
+        if givesCheck { logit += 1.3685926691663943 }
+        if captured != nil { logit += 0.7552100883665197 }
+        logit += Double(toRow) * -0.07420842612230102
+        logit += Double(abs(toCol - 4)) * -0.19414580607694817
+        logit += Double(moving.side == .red ? fromRow - toRow : toRow - fromRow)
+            * 0.057945827412019354
+        logit += Double(abs(toRow - fromRow) + abs(toCol - fromCol))
+            * -0.10535128805314525
+        // This flag intentionally uses R3's source feature convention for
+        // exact model parity; renaming/retraining river geometry is separate.
+        if moving.kind == .soldier,
+           (moving.side == .red ? fromRow >= 5 : fromRow <= 4) {
+            logit += 0.08398197002247802
+        }
         return max(-72, min(72, Int(logit * 12)))
     }
 
