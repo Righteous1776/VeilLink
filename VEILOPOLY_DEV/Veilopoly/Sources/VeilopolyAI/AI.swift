@@ -18,7 +18,11 @@ public struct AIProfile: Equatable {
 public enum VeilopolyAI {
  public static func decide(_ g: GameState, _ ctx: GameContext, me: Int, level: AILevel) -> Move {
   let profile = AIProfile.forLevel(level)
-  let cashFloor = VeilopolyCityLongEconomy.isActive(g) ? profile.reserveCash * 3 : profile.reserveCash
+  let cityLong = VeilopolyCityLongEconomy.isActive(g)
+  // Preserve enough liquidity for a realistic single rent event while still
+  // allowing AI to purchase/build. Do not let rising caps freeze investment.
+  let riskBuffer = cityLong ? min(2400, max(1200, VeilopolyCityLongEconomy.rentCeiling(g) / 2)) : 0
+  let cashFloor = cityLong ? max(profile.reserveCash * 3, riskBuffer) : profile.reserveCash
   let reserve = FinancePolicyAdvisor.analyze(g, player: me, baseReserve: cashFloor).reserve
   let p = g.players[me]
   let seq = g.nextSeq

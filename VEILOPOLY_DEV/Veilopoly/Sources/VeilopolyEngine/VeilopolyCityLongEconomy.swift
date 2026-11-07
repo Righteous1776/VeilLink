@@ -21,11 +21,15 @@ public enum VeilopolyCityLongEconomy {
  public static func repairCost(_ game: GameState, amount: Int) -> Int { amount }
  /// Early rent protection grows with ordinary completed game turns. Late-game
  /// developments remain potent, but an early hotel cannot end a 7200-cash run.
+ public static func rentCeiling(_ game: GameState) -> Int {
+  guard isActive(game) else { return Int.max }
+  let clock = min(70, max(0, game.banking?.completedTurns ?? 0))
+  return min(6500, 900 + 80 * clock)
+ }
  public static func chargedRent(_ game: GameState, base: Int, tileKind: TileKind) -> Int {
   guard isActive(game) else { return base }
   let adjusted = tileKind == .railroad || tileKind == .utility ? base * 3 : base
-  let clock = min(70, max(0, game.banking?.completedTurns ?? 0))
-  return min(adjusted, min(6500, 900 + 80 * clock))
+  return min(adjusted, rentCeiling(game))
  }
  public static func terms() -> FinanceSandboxPolicy {
   var p = FinanceSandboxPolicy()
