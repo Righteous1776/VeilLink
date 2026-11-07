@@ -14,7 +14,7 @@ public struct VeilopolyManualSection: Identifiable, Equatable {
  }
 }
 
-public enum VeilopolyCompleteManual {
+public enum VeilopolyMarkdownManual {
  public static let edition = "VLP-MANUAL-V5-R1"
  public static let minimumIOSMajorVersion = 15
  public static let resourceName = "VeilopolyCompleteManual"

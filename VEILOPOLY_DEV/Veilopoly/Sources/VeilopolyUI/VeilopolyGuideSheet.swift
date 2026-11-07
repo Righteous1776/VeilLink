@@ -20,7 +20,7 @@ struct VeilopolyGuideSheet: View {
   VeilopolyGuideLibrary.filtered(search)
  }
  private var completeSections: [VeilopolyManualSection] {
-  VeilopolyCompleteManual.filtered(search)
+  VeilopolyMarkdownManual.filtered(search)
  }
 
  var body: some View {
@@ -42,13 +42,13 @@ struct VeilopolyGuideSheet: View {
      .frame(maxWidth: .infinity, alignment: .leading)
      NavigationLink(destination: VeilopolyCompleteManualView(game: game)) {
       VStack(alignment: .leading, spacing: 5) {
-       Label("完整规则说明书", systemImage: "books.vertical.fill")
+       Label("逐条规则百科", systemImage: "books.vertical.fill")
         .font(.system(size: 17, weight: .semibold, design: .serif))
         .foregroundColor(ink)
-       Text("13 章 · 162 条完整说明 · 40 格地块 · 32 张事件卡")
+       Text("13 个分类 · 162 条规则词条 · 40 格地块 · 32 张事件卡")
         .font(.caption)
         .foregroundColor(secondaryInk)
-       Text("支持中文关键词搜索与章节筛选；只读，不会改变本局资产。")
+       Text("分类百科支持独立检索；下方另可阅读 27 章长篇说明书。")
         .font(.caption2).foregroundColor(secondaryInk)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -62,8 +62,8 @@ struct VeilopolyGuideSheet: View {
      }
      .buttonStyle(.plain)
      .accessibilityHint("打开完整规则说明书，查看并搜索所有规则条目")
-     Picker("说明书阅读模式", selection: $fullManual) {
-      Text("完整说明书").tag(true)
+     Picker("长篇阅读或玩法辞典", selection: $fullManual) {
+      Text("长篇说明书").tag(true)
       Text("玩法辞典").tag(false)
      }
      .pickerStyle(.segmented)
@@ -72,7 +72,7 @@ struct VeilopolyGuideSheet: View {
       .textFieldStyle(.roundedBorder)
       .accessibilityLabel("搜索玩法辞典")
      if fullManual {
-      Text("规则依据 " + VeilopolyCompleteManual.edition + " · 新旧模式金额以当前对局为准")
+      Text("规则依据 " + VeilopolyMarkdownManual.edition + " · 新旧模式金额以当前对局为准")
        .font(.caption2)
        .foregroundColor(secondaryInk)
       if completeSections.isEmpty {
@@ -150,7 +150,7 @@ struct VeilopolyGuideSheet: View {
       }
      }
      }
-     Text("文本版本：" + (fullManual ? VeilopolyCompleteManual.edition : VeilopolyGuideLibrary.edition) + " · 只读，不改动对局数据")
+     Text("文本版本：" + (fullManual ? VeilopolyMarkdownManual.edition : VeilopolyGuideLibrary.edition) + " · 只读，不改动对局数据")
       .font(.system(size: 10))
       .foregroundColor(secondaryInk)
     }

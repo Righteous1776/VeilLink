@@ -4,20 +4,20 @@ import XCTest
 
 final class VeilopolyCompleteManualResourceTests: XCTestCase {
  func testExhaustiveManualResourceIsEmbeddedAndSearchable() {
-  let markdown = VeilopolyCompleteManual.markdown
+  let markdown = VeilopolyMarkdownManual.markdown
   XCTAssertTrue(markdown.contains("VLP-MANUAL-V5-R1"))
   XCTAssertTrue(markdown.contains("¥2,100,000"))
   XCTAssertTrue(markdown.contains("32 张"))
   XCTAssertTrue(markdown.contains("未验收"))
-  XCTAssertEqual(VeilopolyCompleteManual.minimumIOSMajorVersion, 15)
-  XCTAssertEqual(VeilopolyCompleteManual.sections.count, 28)
-  XCTAssertFalse(VeilopolyCompleteManual.filtered("破产").isEmpty)
-  XCTAssertFalse(VeilopolyCompleteManual.filtered("股票").isEmpty)
-  XCTAssertTrue(VeilopolyCompleteManual.filtered("完全不存在的检索字符串9493921").isEmpty)
+  XCTAssertEqual(VeilopolyMarkdownManual.minimumIOSMajorVersion, 15)
+  XCTAssertEqual(VeilopolyMarkdownManual.sections.count, 28)
+  XCTAssertFalse(VeilopolyMarkdownManual.filtered("破产").isEmpty)
+  XCTAssertFalse(VeilopolyMarkdownManual.filtered("股票").isEmpty)
+  XCTAssertTrue(VeilopolyMarkdownManual.filtered("完全不存在的检索字符串9493921").isEmpty)
  }
 
  func testEveryBoardCellAndCardIndexHasAnEntry() {
-  let text = VeilopolyCompleteManual.markdown
+  let text = VeilopolyMarkdownManual.markdown
   for index in 0..<40 {
    XCTAssertTrue(text.contains("| \(index) |"), "board slot \(index)")
   }
@@ -27,10 +27,10 @@ final class VeilopolyCompleteManualResourceTests: XCTestCase {
   }
  }
  func testManualParsingDoesNotDependOnGameStateOrNetworking() {
-  let first = VeilopolyCompleteManual.sections
-  let second = VeilopolyCompleteManual.sections
+  let first = VeilopolyMarkdownManual.sections
+  let second = VeilopolyMarkdownManual.sections
   XCTAssertEqual(first, second)
   XCTAssertTrue(first.contains { $0.heading.contains("货币") })
-  XCTAssertEqual(VeilopolyCompleteManual.filtered("   ").count, first.count)
+  XCTAssertEqual(VeilopolyMarkdownManual.filtered("   ").count, first.count)
  }
 }
