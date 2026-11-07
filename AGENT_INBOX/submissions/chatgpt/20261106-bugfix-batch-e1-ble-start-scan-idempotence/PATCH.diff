@@ -1,0 +1,36 @@
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -265,9 +265,13 @@
+         )
+     }
+ 
+-    func start() {
+-        isRunning = true
+-        startRSSIPolling()
++    func start() {
++        // start() may be called again after legal acceptance, view reentry or
++        // transport recovery. Keep the existing scan/advertisement and the
++        // RSSI maintenance task instead of cancelling/recreating them.
++        guard !isRunning else { return }
++        isRunning = true
++        startRSSIPolling()
+         beginScanningIfPossible()
+         beginAdvertisingIfPossible()
+         restoreWantedPeripheralsIfPossible()
+@@ -782,9 +786,12 @@
+         publishLinkSnapshots()
+     }
+ 
+-    private func beginScanningIfPossible() {
+-        guard isRunning, centralManager.state == .poweredOn else { return }
+-        centralManager.scanForPeripherals(
++    private func beginScanningIfPossible() {
++        guard isRunning, centralManager.state == .poweredOn else { return }
++        // CoreBluetooth already owns the active service-filtered scan; repeated
++        // refreshes should not reconfigure the radio until it has stopped.
++        guard !centralManager.isScanning else { return }
++        centralManager.scanForPeripherals(
+             withServices: [Self.serviceUUID],
+             options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+         )
