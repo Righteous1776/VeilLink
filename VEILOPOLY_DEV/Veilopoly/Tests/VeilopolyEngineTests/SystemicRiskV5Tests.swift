@@ -56,7 +56,8 @@ final class SystemicRiskV5Tests: XCTestCase {
   g.banking?.reserveCash = 1_000
   g.banking?.completedTurns = 1
   XCTAssertEqual(total(g), 2_100_000)
-  try execute(&g, Move(.bankWithdraw, player: 0, seq: g.nextSeq,
+  let withdrawSeq = g.nextSeq
+  try execute(&g, Move(.bankWithdraw, player: 0, seq: withdrawSeq,
                        financeID: savingID))
   XCTAssertEqual(g.banking?.reserveCash, 0)
   XCTAssertEqual(g.banking?.queuedClaims?.first?.amount, 9_150)
@@ -64,7 +65,8 @@ final class SystemicRiskV5Tests: XCTestCase {
   XCTAssertEqual(total(g), 2_100_000)
   let priorCash = g.players[0].cash
   g.turn.player = 1; g.turn.phase = .manage
-  try execute(&g, Move(.bankDeposit, player: 1, seq: g.nextSeq,
+  let redepositSeq = g.nextSeq
+  try execute(&g, Move(.bankDeposit, player: 1, seq: redepositSeq,
                        amount: 2_000, financeProduct: .demandDeposit))
   XCTAssertEqual(g.players[0].cash, priorCash + 2_000)
   XCTAssertEqual(g.banking?.queuedClaims?.first?.amount, 7_150)
@@ -81,7 +83,8 @@ final class SystemicRiskV5Tests: XCTestCase {
   g.players[0].cash += reserve - 1_000
   g.banking?.reserveCash = 1_000
   XCTAssertEqual(total(g), 2_100_000)
-  try execute(&g, Move(.stockSell, player: 0, seq: g.nextSeq,
+  let sellSeq = g.nextSeq
+  try execute(&g, Move(.stockSell, player: 0, seq: sellSeq,
                        stockSymbol: "VTL", stockShares: 10))
   XCTAssertEqual(g.banking?.reserveCash, 0)
   XCTAssertEqual(g.banking?.queuedClaims?.first?.source, "stockExit")
@@ -150,7 +153,8 @@ final class SystemicRiskV5Tests: XCTestCase {
   g.players[0].position = 4
   g.turn.phase = .tileResolve
   XCTAssertEqual(total(g), 2_100_000)
-  try execute(&g, Move(.resolveTile, player: 0, seq: g.nextSeq))
+  let taxSeq = g.nextSeq
+  try execute(&g, Move(.resolveTile, player: 0, seq: taxSeq))
   XCTAssertEqual(g.turn.phase, .debt)
   XCTAssertEqual(g.pendingDebt?.amount, 2_200)
   XCTAssertEqual(g.players[0].cash, 500)
@@ -173,7 +177,8 @@ final class SystemicRiskV5Tests: XCTestCase {
   g.players[0].position = 4
   g.turn.phase = .tileResolve
   XCTAssertEqual(total(g), 2_100_000)
-  try execute(&g, Move(.resolveTile, player: 0, seq: g.nextSeq))
+  let taxSeq = g.nextSeq
+  try execute(&g, Move(.resolveTile, player: 0, seq: taxSeq))
   XCTAssertEqual(g.turn.phase, .debt)
   XCTAssertEqual(g.pendingDebt?.amount, 2_200)
   XCTAssertEqual(g.banking?.market?.portfolios[0].positions.first?.shares, 10)
