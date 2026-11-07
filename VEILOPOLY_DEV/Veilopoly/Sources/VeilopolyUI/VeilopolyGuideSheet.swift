@@ -9,9 +9,23 @@ struct VeilopolyGuideSheet: View {
  let game: GameState
  let saveSummary: String
  @State private var search: String = ""
- private let ink = Color(red: 0.11, green: 0.27, blue: 0.28)
- private let gold = Color(red: 0.72, green: 0.56, blue: 0.32)
- private let ivory = Color(red: 0.969, green: 0.946, blue: 0.895)
+ @AppStorage("veilopoly.dayFelt.v1") private var dayFelt = false
+ private var ink: Color {
+  dayFelt ? Color(red: 0.11, green: 0.27, blue: 0.28)
+          : Color(red: 0.91, green: 0.95, blue: 0.92)
+ }
+ private var gold: Color {
+  dayFelt ? Color(red: 0.72, green: 0.56, blue: 0.32)
+          : Color(red: 0.86, green: 0.69, blue: 0.45)
+ }
+ private var ivory: Color {
+  dayFelt ? Color(red: 0.969, green: 0.946, blue: 0.895)
+          : Color(red: 0.08, green: 0.17, blue: 0.19)
+ }
+ private var canvas: Color {
+  dayFelt ? Color(red: 0.92, green: 0.89, blue: 0.82)
+          : Color(red: 0.025, green: 0.06, blue: 0.08)
+ }
 
  private var results: [VeilopolyGuideTopic] {
   VeilopolyGuideLibrary.filtered(search)
@@ -29,7 +43,7 @@ struct VeilopolyGuideSheet: View {
        .font(.caption)
        .foregroundColor(ink.opacity(0.8))
       Text(saveSummary)
-       .font(.caption2)
+       .font(.footnote)
        .foregroundColor(ink.opacity(0.72))
        .fixedSize(horizontal: false, vertical: true)
      }
@@ -57,14 +71,14 @@ struct VeilopolyGuideSheet: View {
            .font(.system(size: 15, weight: .semibold, design: .serif))
            .foregroundColor(ink)
           Text(topic.subtitle)
-           .font(.system(size: 12, weight: .medium))
+           .font(.system(size: 15, weight: .medium))
            .foregroundColor(gold)
           Text(topic.detail)
-           .font(.system(size: 13))
+           .font(.system(size: 15))
            .foregroundColor(ink)
            .fixedSize(horizontal: false, vertical: true)
           Text(topic.footnote)
-           .font(.system(size: 11))
+           .font(.system(size: 13))
            .foregroundColor(ink.opacity(0.72))
            .fixedSize(horizontal: false, vertical: true)
          }
@@ -82,14 +96,14 @@ struct VeilopolyGuideSheet: View {
       }
      }
      Text("文本版本：" + VeilopolyGuideLibrary.edition + " · 基于当前研发规则")
-      .font(.system(size: 10))
+      .font(.system(size: 13))
       .foregroundColor(ink.opacity(0.64))
     }
     .padding(16)
     .frame(maxWidth: 740)
     .frame(maxWidth: .infinity)
    }
-   .background(Color(red: 0.92, green: 0.89, blue: 0.82).ignoresSafeArea())
+   .background(canvas.ignoresSafeArea())
    .navigationBarTitle("玩法辞典", displayMode: .inline)
    .toolbar {
     ToolbarItem(placement: .confirmationAction) {
@@ -99,7 +113,7 @@ struct VeilopolyGuideSheet: View {
    }
   }
   .navigationViewStyle(.stack)
-  .preferredColorScheme(.light)
+  .preferredColorScheme(dayFelt ? .light : .dark)
  }
 }
 #endif
