@@ -60,4 +60,23 @@ final class XiangqiBotTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(trainedRelaxed.maxDepth, relaxed.maxDepth)
         XCTAssertGreaterThan(trainedRelaxed.timeLimitMilliseconds, relaxed.timeLimitMilliseconds)
     }
+
+    func testR3XiangqiOrderingPolicyAffectsLegalOpeningMovesWithinBounds() {
+        let board = XiangqiState()
+        XCTAssertTrue(board.legalDestinations(from: 64, actor: .host).contains(55))
+        XCTAssertTrue(board.legalDestinations(from: 82, actor: .host).contains(65))
+        let cannon = XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 64, to: 55, givesCheck: false
+        )
+        let horse = XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 82, to: 65, givesCheck: false
+        )
+        XCTAssertNotEqual(cannon, horse)
+        XCTAssertTrue((-72...72).contains(cannon))
+        XCTAssertTrue((-72...72).contains(horse))
+        XCTAssertEqual(XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 90, to: 0, givesCheck: false
+        ), 0)
+    }
+
 }

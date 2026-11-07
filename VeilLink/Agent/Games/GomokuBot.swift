@@ -123,7 +123,8 @@ enum GomokuBot {
             .map {
                 let learned = learning.bonus(position: rootPosition, action: String($0))
                 let sequence = learning.rootAdjustment(action: String($0))
-                return ($0, tacticalPriority(index: $0, state: state, player: player) + learned + sequence
+                return ($0, tacticalPriority(index: $0, state: state, player: player)
+                    + trainedR3ForkBonus(index: $0, state: state, player: player) + learned + sequence
                     + formationPreference.bonus(index: $0, state: state, player: player, urgentDefense: urgentDefense))
             }
             .sorted { lhs, rhs in
@@ -292,6 +293,76 @@ enum GomokuBot {
             if connected >= 5 { return true }
         }
         return false
+    }
+
+
+    /// R3 policy distillation from replayed VeilLink v28 real positions.
+    /// Trained on 53,125 nonforced candidate examples; 18,585 position-disjoint
+    /// holdout examples. Predicts *two simultaneous next-turn five threats*,
+    /// not an Elo, solved win, or optimal human move.
+    /// Root hint is strictly bounded. The mandatory win/block scans above run
+    /// before this policy and native search still owns the final decision.
+    static func trainedR3ForkBonus(index: Int, state: GomokuState, player: MiniGamePlayer) -> Int {
+        guard state.value(at: index) == 0 else { return 0 }
+        let row = index / size
+        let col = index % size
+        let own: Int8 = player == .host ? 1 : 2
+        let enemy: Int8 = own == 1 ? 2 : 1
+        var ownThree = 0, enemyThree = 0, ownTwo = 0, enemyTwo = 0
+
+        // Match the OFFLINE train-time five-cell-window feature extractor.
+        for (dr, dc) in [(0, 1), (1, 0), (1, 1), (1, -1)] {
+            for shift in 0..<5 {
+                let firstRow = row - dr * shift
+                let firstCol = col - dc * shift
+                let lastRow = firstRow + dr * 4
+                let lastCol = firstCol + dc * 4
+                guard (0..<size).contains(firstRow), (0..<size).contains(firstCol),
+                      (0..<size).contains(lastRow), (0..<size).contains(lastCol) else { continue }
+                var ownCount = 0, enemyCount = 0
+                for offset in 0..<5 {
+                    let r = firstRow + dr * offset
+                    let c = firstCol + dc * offset
+                    if r == row && c == col { continue }
+                    let stone = state.value(at: r * size + c)
+                    if stone == own { ownCount += 1 }
+                    if stone == enemy { enemyCount += 1 }
+                }
+                if enemyCount == 0 {
+                    if ownCount == 3 { ownThree += 1 }
+                    if ownCount == 2 { ownTwo += 1 }
+                }
+                if ownCount == 0 {
+                    if enemyCount == 3 { enemyThree += 1 }
+                    if enemyCount == 2 { enemyTwo += 1 }
+                }
+            }
+        }
+
+        var friendlyAdjacent = 0, enemyAdjacent = 0
+        for dr in -1...1 {
+            for dc in -1...1 {
+                if dr == 0 && dc == 0 { continue }
+                let r = row + dr, c = col + dc
+                guard (0..<size).contains(r), (0..<size).contains(c) else { continue }
+                let stone = state.value(at: r * size + c)
+                if stone == own { friendlyAdjacent += 1 }
+                if stone == enemy { enemyAdjacent += 1 }
+            }
+        }
+        let centrality = Double(14 - abs(row - 7) - abs(col - 7)) / 14
+        let features = [
+            Double(ownThree), Double(enemyThree), Double(ownTwo), Double(enemyTwo),
+            Double(friendlyAdjacent), Double(enemyAdjacent), centrality
+        ]
+        let trained = [
+            8.908273703236532, 0.5963231127800033, 0.031010864699874865,
+            0.38785730930075774, 0.07346957532346292, 0.14558021087394568,
+            0.4029194642259561
+        ]
+        var logit = -12.706419814435504
+        for j in 0..<trained.count { logit += trained[j] * features[j] }
+        return max(0, min(2_400, Int(max(0, logit) * 350)))
     }
 
     private static func tacticalPriority(index: Int, state: GomokuState, player: MiniGamePlayer) -> Int {
