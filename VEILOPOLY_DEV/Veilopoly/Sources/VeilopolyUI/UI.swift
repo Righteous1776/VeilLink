@@ -1271,10 +1271,14 @@ public struct VeilopolyGameView: View {
      .padding(6)
      .background(Color(red: 0.08, green: 0.18, blue: 0.21),
                  in: RoundedRectangle(cornerRadius: 12))
-    ScrollView {
-     assetOverviewContents
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.vertical, 8)
+    if managementSection == .property {
+     assetPropertySplit
+    } else {
+     ScrollView {
+      assetOverviewContents
+       .frame(maxWidth: .infinity, alignment: .leading)
+       .padding(.vertical, 8)
+     }
     }
    }
    .padding(16)
@@ -1299,57 +1303,97 @@ public struct VeilopolyGameView: View {
   }
  }
 
+
+ /// Side-by-side on iPhone landscape: a scrollable 40-tile list and an
+ /// independently scrollable selected-title deed. No jump back to the top.
+ private var assetPropertySplit: some View {
+  GeometryReader { geometry in
+   let indexWidth = max(180, min(290, geometry.size.width * 0.34))
+   HStack(alignment: .top, spacing: 12) {
+    ScrollView(.vertical) {
+     LazyVStack(spacing: 6) {
+      ForEach(model.game.board, id: \.i) { tile in
+       Button { overviewTile = tile.i } label: {
+        HStack(spacing: 8) {
+         Text("#\(tile.i) · \(tile.name)")
+          .font(.system(size: 14, weight: .semibold))
+          .lineLimit(2)
+         Spacer(minLength: 2)
+         if tile.owner != nil {
+          Image(systemName: "house.fill").font(.caption)
+           .foregroundColor(.secondary)
+         }
+        }
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .padding(.horizontal, 9)
+        .background(overviewTile == tile.i
+                     ? Color.mint.opacity(0.18)
+                     : Color.gray.opacity(0.11),
+                    in: RoundedRectangle(cornerRadius: 9))
+        .contentShape(Rectangle())
+       }
+       .buttonStyle(.plain)
+       .accessibilityLabel("查看第 \(tile.i) 格，\(tile.name)")
+      }
+     }
+    }
+    .frame(width: indexWidth)
+    ScrollView(.vertical) {
+     assetPropertyContents
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.vertical, 4)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+   }
+   .frame(width: geometry.size.width, height: geometry.size.height)
+  }
+  .frame(maxWidth: .infinity, maxHeight: .infinity)
+ }
+
  private var assetPropertyContents: some View {
   VStack(alignment: .leading, spacing: 10) {
-   Text("40 格地产与建筑").font(.headline)
    if model.game.board.indices.contains(overviewTile) {
     let tile = model.game.board[overviewTile]
-    Text("当前查看：#\(tile.i) · \(tile.name)")
-     .font(.title3.weight(.semibold))
+    Text("#\(tile.i) · \(tile.name)")
+     .font(.system(size: 21, weight: .bold, design: .rounded))
     Text(tile.purchasable
-         ? "价格 ¥\(tile.price) · 基础租金 ¥\(tile.rent.first ?? 0)"
+         ? "售价 ¥\(tile.price) · 基础租金 ¥\(tile.rent.first ?? 0)"
          : "特殊地块")
+     .font(.system(size: 16, weight: .semibold))
+    Text(tile.owner.map { "所有者：\(model.game.players[$0].name)" } ?? "当前无主")
      .font(.subheadline)
-    Text(tile.owner.map { "业主：\(model.game.players[$0].name)" } ?? "无主")
      .foregroundStyle(.secondary)
     if tile.purchasable && !tile.rent.isEmpty {
-      Text("租金与建设").font(.headline)
-      ForEach(tile.rent.indices, id: \.self) { level in
-       HStack {
-        Text(level == 0 ? "基础租金" : "升级等级 \(level)")
-        Spacer(minLength: 10)
-        Text("¥\(tile.rent[level])")
-         .font(.system(size: 14, weight: .semibold, design: .monospaced))
-       }
-       .frame(minHeight: 30)
+     Text("完整租金表").font(.headline)
+     ForEach(tile.rent.indices, id: \.self) { level in
+      HStack {
+       Text(level == 0 ? "基础租金" : "升级等级 \(level)")
+       Spacer(minLength: 12)
+       Text("¥\(tile.rent[level])")
+        .font(.system(size: 15, weight: .semibold, design: .monospaced))
       }
-      Text("建筑：\(tile.houses) 栋房屋\(tile.hotel ? "、1 座酒店" : "") · 抵押：\(tile.mortgaged ? "是" : "否")")
+      .frame(minHeight: 34)
+     }
+     if tile.houseCost > 0 {
+      Text("建造费用 ¥\(tile.houseCost) · \(tile.houses) 栋房屋 · \(tile.hotel ? "已建酒店" : "无酒店")")
        .font(.subheadline)
      }
-     if let deed = VeilopolyCivicText.deed(model.game, tileIndex: overviewTile) {
-      VeilopolyCivicDocumentPanel(document: deed)
+     if tile.mortgaged {
+      Label("当前已抵押", systemImage: "lock.fill").foregroundColor(.orange)
      }
-   }
-   ForEach(model.game.board, id: \.i) { tile in
-    Button { overviewTile = tile.i } label: {
-     HStack {
-      Text("#\(tile.i) · \(tile.name)")
-       .lineLimit(1)
-      Spacer(minLength: 10)
-      Text(tile.owner.map { model.game.players[$0].name } ?? "无主")
-       .foregroundColor(.secondary)
-     }
-     .padding(.horizontal, 8)
-     .frame(minHeight: 44)
-     .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
-    .background(overviewTile == tile.i ? Color.mint.opacity(0.16) : Color.gray.opacity(0.10),
-                 in: RoundedRectangle(cornerRadius: 8))
+    if let deed = VeilopolyCivicText.deed(model.game, tileIndex: overviewTile) {
+     VeilopolyCivicDocumentPanel(document: deed)
+    }
+    if let lore = VeilopolyWorldEditorial.page(for: tile) {
+     Text(lore.title).font(.headline)
+     Text(lore.teaser).font(.body).fixedSize(horizontal: false, vertical: true)
+    }
+    Text("浏览不会改变回合、产权或资金。")
+     .font(.footnote).foregroundStyle(.secondary)
    }
   }
  }
-
  private var assetBankContents: some View {
   VStack(alignment: .leading, spacing: 12) {
    Text("银行账户与债务").font(.headline)
