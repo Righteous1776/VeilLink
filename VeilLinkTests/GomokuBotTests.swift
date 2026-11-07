@@ -223,7 +223,8 @@ final class GomokuBotTests: XCTestCase {
                     let began = Date.timeIntervalSinceReferenceDate
                     let chosen = GomokuBot.chooseMove(
                         in: board, for: actor, budget: budget,
-                        diagnosticCounterForkR4: r4Player
+                        diagnosticCounterForkR4: r4Player,
+                        diagnosticUseR6Defense: false // R5 compares frozen R4 vs R3
                     )
                     totalDecisionSeconds += Date.timeIntervalSinceReferenceDate - began
                     guard let chosen else {
@@ -254,6 +255,103 @@ final class GomokuBotTests: XCTestCase {
         XCTAssertEqual(r4Wins + r3Wins + draws + unfinished, attempted)
         XCTAssertGreaterThan(legalPlyCount, 0)
         print("R5_PAIRED_NATIVE_AB matches=\(attempted) R4=\(r4Wins) R3=\(r3Wins) draws=\(draws) unfinished=\(unfinished) legalPlies=\(legalPlyCount) meanDecisionMs=\(totalDecisionSeconds * 1000 / Double(legalPlyCount))")
+    }
+
+
+
+    /// R6 held-out coefficients are tested against exact Swift bounds; this
+    /// proves the model is executable, not that it wins against humans.
+    func testR6TrainedPolicyIsDeterministicBoundedAndDistinctFromR4() {
+        var board = GomokuState()
+        XCTAssertTrue(board.apply(index: 112, actor: .host))
+        XCTAssertTrue(board.apply(index: 111, actor: .guest))
+        let indices = [97, 98, 113, 127, 140]
+        let values = indices.map {
+            GomokuCounterForkR4.trainedR6DefensiveBonus(
+                in: board, player: .host, index: $0
+            )
+        }
+        XCTAssertEqual(values, indices.map {
+            GomokuCounterForkR4.trainedR6DefensiveBonus(
+                in: board, player: .host, index: $0
+            )
+        })
+        XCTAssertTrue(values.allSatisfy { (-48_000...48_000).contains($0) })
+        XCTAssertEqual(GomokuCounterForkR4.trainedR6DefensiveBonus(
+            in: board, player: .host, index: 112
+        ), 0)
+        XCTAssertTrue(indices.contains {
+            GomokuCounterForkR4.trainedR6DefensiveBonus(
+                in: board, player: .host, index: $0
+            ) != GomokuCounterForkR4.trainedDefensiveBonus(
+                in: board, player: .host, index: $0
+            )
+        })
+    }
+
+    /// 4 matched central openings × seat reversal: genuine native GomokuBot
+    /// decision loop in BOTH branches. Both use the exact same R4 safety gate;
+    /// only the seven R6-vs-R4 trained coefficients differ.
+    /// Never count a truncated match as a win or draw.
+    func testR6VersusR4NativePairedPolicyDiagnostic() {
+        let openings = [112, 111, 97, 98]
+        let budget = GomokuBotBudget(
+            candidateRadius: 2, rootCandidateLimit: 8,
+            replyCandidateLimit: 4, continuationCandidateLimit: 0,
+            timeLimitMilliseconds: 30
+        )
+        var r6Wins = 0, r4Wins = 0, draws = 0, unfinished = 0
+        var legalPlies = 0, changedDecisions = 0, measuredSharedPositions = 0
+        var decisionSeconds = 0.0
+
+        for opening in openings {
+            for r6Host in [true, false] {
+                var board = GomokuState()
+                XCTAssertTrue(board.apply(index: opening, actor: .host))
+                while board.winner == nil && !board.isDraw && board.moveCount < 180 {
+                    let player = board.currentPlayer
+                    let useR6 = (player == .host) == r6Host
+                    let started = Date.timeIntervalSinceReferenceDate
+                    let move = GomokuBot.chooseMove(
+                        in: board, for: player, budget: budget,
+                        diagnosticUseR6Defense: useR6
+                    )
+                    decisionSeconds += Date.timeIntervalSinceReferenceDate - started
+                    guard let move else {
+                        XCTFail("Native bot returned nil in playable game, opening \(opening)")
+                        return
+                    }
+                    // A limited same-position counterfactual sample measures
+                    // whether two fitted models really change native choices.
+                    if board.moveCount % 13 == 0 {
+                        let comparison = GomokuBot.chooseMove(
+                            in: board, for: player, budget: budget,
+                            diagnosticUseR6Defense: !useR6
+                        )
+                        measuredSharedPositions += 1
+                        if comparison?.index != move.index {
+                            changedDecisions += 1
+                        }
+                    }
+                    guard board.apply(index: move.index, actor: player) else {
+                        XCTFail("Native illegal action \(move.index), opening \(opening)")
+                        return
+                    }
+                    legalPlies += 1
+                }
+                if let winner = board.winner {
+                    if (winner == .host) == r6Host { r6Wins += 1 }
+                    else { r4Wins += 1 }
+                } else if board.isDraw {
+                    draws += 1
+                } else {
+                    unfinished += 1
+                }
+            }
+        }
+        XCTAssertEqual(r6Wins + r4Wins + draws + unfinished, 8)
+        XCTAssertGreaterThan(legalPlies, 0)
+        print("R6_PAIRED_NATIVE_AB games=8 r6=\(r6Wins) r4=\(r4Wins) draws=\(draws) unfinished=\(unfinished) legalPlies=\(legalPlies) comparablePositions=\(measuredSharedPositions) changedDecisions=\(changedDecisions) meanMoveMs=\(decisionSeconds * 1000 / Double(legalPlies))")
     }
 
 

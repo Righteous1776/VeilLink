@@ -75,7 +75,8 @@ enum GomokuBot {
         budget: GomokuBotBudget,
         learning: AdaptiveBoardLearningSnapshot = .empty,
         formationPreference: GomokuFormationPreference = .disabled,
-        diagnosticCounterForkR4: Bool = true
+        diagnosticCounterForkR4: Bool = true,
+        diagnosticUseR6Defense: Bool = true
     ) -> GomokuBotMove? {
         guard state.winner == nil,
               !state.isDraw,
@@ -135,9 +136,18 @@ enum GomokuBot {
             .map {
                 let learned = learning.bonus(position: rootPosition, action: String($0))
                 let sequence = learning.rootAdjustment(action: String($0))
-                let trainedDefense = defensive.underThreat
-                    ? GomokuCounterForkR4.trainedDefensiveBonus(in: state, player: player, index: $0)
-                    : 0
+                let trainedDefense: Int
+                if defensive.underThreat {
+                    trainedDefense = diagnosticUseR6Defense
+                        ? GomokuCounterForkR4.trainedR6DefensiveBonus(
+                            in: state, player: player, index: $0
+                          )
+                        : GomokuCounterForkR4.trainedDefensiveBonus(
+                            in: state, player: player, index: $0
+                          )
+                } else {
+                    trainedDefense = 0
+                }
                 return ($0, tacticalPriority(index: $0, state: state, player: player)
                     + trainedR3ForkBonus(index: $0, state: state, player: player)
                     + trainedDefense + learned + sequence
