@@ -110,19 +110,26 @@ public enum VeilopolyCivicText {
   let account: IntegratedBankAccount? = ledger.flatMap {
    $0.accounts.indices.contains(player) ? $0.accounts[player] : nil
   }
-  let savings = account?.savings.reduce(0) { $0 + $1.principal } ?? 0
-  let loans = account?.loans.reduce(0) { $0 + $1.totalDue } ?? 0
-  let investments = account?.positions.reduce(0) { $0 + $1.principal } ?? 0
-  return VeilopolyCivicDocument(id: "VL-CIVIC-BANK-\(player)",
-   title: "银号往来存根", subtitle: "本局账本 · 当前账户快照",
-   fields: [
-    .init("户名", state.players[player].name),
-    .init("手持现金", money(state.players[player].cash)),
+  var fields: [VeilopolyCivicField] = [
+   .init("户名", state.players[player].name),
+   .init("手持现金", money(state.players[player].cash))
+  ]
+  if let ledger {
+   let savings = account?.savings.reduce(0) { $0 + $1.principal } ?? 0
+   let loans = account?.loans.reduce(0) { $0 + $1.totalDue } ?? 0
+   let investments = account?.positions.reduce(0) { $0 + $1.principal } ?? 0
+   fields.append(contentsOf: [
     .init("存款本金", money(savings)),
     .init("贷款待偿总额", money(loans)),
     .init("投资本金", money(investments)),
-    .init("账本期次", "\(ledger?.completedTurns ?? 0)")
-   ], note: "本金、应偿金额与投资本金分列记录，不能直接相加为现金；以真实银行规则结算。")
+    .init("账本期次", "\(ledger.completedTurns)")
+   ])
+  } else {
+   fields.append(.init("账本状态", "尚未启用银行账本"))
+  }
+  return VeilopolyCivicDocument(id: "VL-CIVIC-BANK-\(player)",
+   title: "银号往来存根", subtitle: "本局账本 · 当前账户快照",
+   fields: fields, note: "本金、待偿金额与投资本金分列记录，不能直接相加为现金；以真实银行规则结算。")
  }
 
  public static func debt(_ state: GameState) -> VeilopolyCivicDocument? {

@@ -886,12 +886,8 @@ public struct VeilopolyGameView: View {
      if let notice = VeilopolyCivicText.debt(model.game) {
       VeilopolyCivicDocumentPanel(document: notice)
      }
-     if let debt = model.game.pendingDebt {
-      Text("待支付 ¥\(debt.amount) · 当前现金 ¥\(model.game.players[debt.player].cash)")
-       .font(.caption)
-      Text("可用资产已按本局规则自动处置，请确认剩余债务清算。")
-       .font(.caption2).foregroundStyle(.secondary)
-     }
+     Text("可用资产已按本局规则尝试处置，请确认剩余债务清算。")
+      .font(.caption2).foregroundStyle(.secondary)
      action("确认破产", symbol: "exclamationmark.triangle") { model.perform(.declareBankruptcy) }
     }
    default: EmptyView()
@@ -1236,10 +1232,7 @@ public struct VeilopolyGameView: View {
     if let contract = VeilopolyCivicText.trade(model.game) {
      VeilopolyCivicDocumentPanel(document: contract)
     }
-    Text("\(model.game.players[trade.from].name) 提议交易 · 现金 ¥\(trade.offer.cash) / ¥\(trade.request.cash)")
-     .font(.caption)
-    Text("地产：\(trade.offer.tiles.map(String.init).joined(separator:",")) ⇄ \(trade.request.tiles.map(String.init).joined(separator:","))")
-     .font(.caption)
+
    }
    HStack {
     action("接受",symbol:"checkmark") { model.perform(.acceptTrade) }
