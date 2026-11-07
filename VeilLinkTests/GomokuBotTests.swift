@@ -145,9 +145,13 @@ final class GomokuBotTests: XCTestCase {
             XCTAssertTrue(state.apply(index: defender[i], actor: .guest))
         }
         XCTAssertTrue(state.apply(index: attacker[5], actor: .host))
+        // This is explicitly the R4-only defensive regression fixture.
+        // R8 correctly finds a stronger forcing attack on 3; do not let
+        // that new feature invalidate the isolated legacy behavior test.
         let decision = GomokuBot.chooseMove(
             in: state, for: .guest,
-            budget: GomokuBotBudget.standard(profileLabel: "LEGACY-COMPACT")
+            budget: GomokuBotBudget.standard(profileLabel: "LEGACY-COMPACT"),
+            diagnosticR8ForcedWin: false
         )
         XCTAssertEqual(decision?.index, 112,
                        "Search must not discard the only fork-neutralizing root move")
@@ -158,6 +162,43 @@ final class GomokuBotTests: XCTestCase {
     }
 
 
+
+    func testR8ForcingAttackIsStrongerThanTheOldR4DefensiveFixture() {
+        var state = GomokuState()
+        let host = [109, 110, 111, 67, 82, 97]
+        let guest = [0, 2, 4, 6, 8]
+        for i in 0..<guest.count {
+            XCTAssertTrue(state.apply(index: host[i], actor: .host))
+            XCTAssertTrue(state.apply(index: guest[i], actor: .guest))
+        }
+        XCTAssertTrue(state.apply(index: host[5], actor: .host))
+        XCTAssertNil(state.winner)
+        XCTAssertEqual(state.currentPlayer, .guest)
+        let budget = GomokuBotBudget.standard(profileLabel: "LEGACY-COMPACT")
+        // R4-only behavior still chooses 112 to neutralize Host's fork.
+        let defensive = GomokuBot.chooseMove(
+            in: state, for: .guest, budget: budget,
+            diagnosticR8ForcedWin: false
+        )
+        XCTAssertEqual(defensive?.index, 112)
+
+        // R8 instead identifies a rule-proven double immediate victory.
+        let offensive = GomokuBot.chooseMove(in: state, for: .guest, budget: budget)
+        XCTAssertEqual(offensive?.index, 3)
+        XCTAssertTrue(GomokuCounterForkR4.createsForcedDoubleWin(
+            in: state, player: .guest, virtualPlacement: 3
+        ))
+        XCTAssertTrue(state.apply(index: 3, actor: .guest))
+
+        // Each possible single endpoint block leaves the other winning
+        // endpoint. Check both continuations with the ACTUAL rule engine.
+        for (hostBlock, guestWin) in [(1, 5), (5, 1)] {
+            var continuation = state
+            XCTAssertTrue(continuation.apply(index: hostBlock, actor: .host))
+            XCTAssertTrue(continuation.apply(index: guestWin, actor: .guest))
+            XCTAssertEqual(continuation.winner, .guest)
+        }
+    }
 
     func testR4DoesNotThrowAwayUnstoppableCounterattack() {
         var state = GomokuState()
