@@ -154,14 +154,13 @@ private final class VeilopolyFriendRoomController: ObservableObject {
    }
   }
   for (message, packet) in records {
-   guard var room = map[packet.gameId] else { continue }
-   // Only the invited peer may accept or decline. An outbound echo or a
-   // fabricated self-accept from the host cannot start a session.
-   let isGuestDecision = message.isOutgoing != room.hostIsLocal
-   if isGuestDecision {
-    if packet.kind == .accept { room.accepted = true }
-    if packet.kind == .decline { room.declined = true }
-   }
+   guard var room = map[packet.gameId],
+         VeilopolyRoomAuthorization.allows(packet.kind,
+           hostIsLocal: room.hostIsLocal,
+           messageIsOutgoing: message.isOutgoing) else { continue }
+   // The invited authenticated peer alone can accept or decline.
+   if packet.kind == .accept { room.accepted = true }
+   if packet.kind == .decline { room.declined = true }
    map[packet.gameId] = room
   }
   rooms = map.values.sorted { $0.createdAt > $1.createdAt }
@@ -175,7 +174,10 @@ private final class VeilopolyFriendRoomController: ObservableObject {
   if active.isHost {
    for (message, packet) in records where packet.gameId == active.id &&
                                       !message.isOutgoing {
-    guard !processedIDs.contains(message.id) else { continue }
+    guard !processedIDs.contains(message.id),
+          VeilopolyRoomAuthorization.allows(packet.kind,
+            hostIsLocal: true, messageIsOutgoing: message.isOutgoing)
+    else { continue }
     switch packet.kind {
     case .intent:
      guard let move = packet.intent else { continue }
@@ -190,7 +192,9 @@ private final class VeilopolyFriendRoomController: ObservableObject {
    }
   } else {
    let commits = records.compactMap { message, packet -> AuthoritativeMove? in
-    guard packet.gameId == active.id, !message.isOutgoing,
+    guard packet.gameId == active.id,
+          VeilopolyRoomAuthorization.allows(packet.kind,
+            hostIsLocal: false, messageIsOutgoing: message.isOutgoing),
           packet.kind == .move else { return nil }
     return packet.move
    }.sorted { $0.seq < $1.seq }
