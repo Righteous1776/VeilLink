@@ -7,3 +7,7 @@
 - [ ] Battery/thermal/profiler: 30fps normal 15fps Low Power, inactive/ReduceMotion paused, accessibility and dark/light themes.
 - [ ] Governor apply and reconcile with PR #159 current-match persistence and #128 player-side controls.
 - [ ] Release/licensing checks: upstream code/assets not included; label reviewed before external distribution.
+
+- [x] Generated binary magic GIF89a; original 24 frames, 110ms, loop=0; optimized 112x112 GIF 89204 bytes.
+- [x] Code patch proposes GIF media playback via bundled ImageIO/UIImageView with original Canvas fallback. No unauthorized binary GitHub upload.
+- [ ] Actual bundled GIF bytes, XcodeGen resource copying, iOS15 compile, UIKit pause/resume and memory profiler: NOT_RUN until Governor asset authorization.
