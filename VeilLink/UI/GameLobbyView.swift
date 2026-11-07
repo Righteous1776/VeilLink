@@ -333,6 +333,7 @@ struct LocalAIGameView: View {
     @State private var selectedXiangqiIndex: Int?
     @State private var showsTacticalGuide = false
     @State private var showsLearningResetConfirmation = false
+    @State private var showsBoardAdvanced = false
     @State private var showsLearningImporter = false
     @State private var showsLearningShare = false
     @State private var learningExportURL: URL?
@@ -375,10 +376,11 @@ struct LocalAIGameView: View {
                     .veilCard()
                     .accessibilityIdentifier("game.grok_bot.avatar")
                 }
-                if game == .gomoku || game == .xiangqi { learningCard }
+                if game == .gomoku || game == .xiangqi { boardQuickControls }
                 if game == .tactical { tacticalControlCard }
                 board
                 if controller.outcome != .playing { resultCard }
+                if game == .gomoku || game == .xiangqi { boardAdvancedPanel }
             }
             .padding(14)
         }
@@ -538,6 +540,84 @@ struct LocalAIGameView: View {
         .veilCard(emphasized: true)
     }
 
+    // Keep the board visible above the fold: one compact difficulty menu and
+    // one user-controlled search switch. No device model may disable this.
+    private var boardQuickControls: some View {
+        HStack(spacing: 12) {
+            Menu {
+                ForEach(BoardBotDifficulty.allCases) { difficulty in
+                    Button {
+                        controller.setBoardDifficulty(difficulty)
+                        model.haptics.selection()
+                    } label: {
+                        if difficulty == controller.boardDifficulty {
+                            Label(difficulty.title, systemImage: "checkmark")
+                        } else {
+                            Text(difficulty.title)
+                        }
+                    }
+                }
+            } label: {
+                Label(controller.boardDifficulty.title, systemImage: "slider.horizontal.3")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+            }
+            .accessibilityIdentifier("board.difficulty.menu")
+
+            Spacer(minLength: 4)
+
+            Toggle(isOn: Binding(
+                get: { controller.boardSearchMode == .full },
+                set: { controller.setBoardSearchMode($0 ? .full : .economy) }
+            )) {
+                Text("深度搜索")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.text)
+            }
+            .tint(VeilTheme.gold)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityIdentifier("board.deepSearch.toggle")
+            .accessibilityHint("默认开启；任何设备都可使用。关闭后采用节能搜索预算。")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(VeilTheme.elevated.opacity(0.82), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var boardAdvancedPanel: some View {
+        VStack(spacing: 9) {
+            Button {
+                showsBoardAdvanced.toggle()
+                model.haptics.selection()
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "slider.horizontal.3")
+                        .foregroundColor(VeilTheme.gold)
+                    Text("训练与高级设置")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(VeilTheme.text)
+                    Spacer(minLength: 6)
+                    Text(controller.learningSummary.compactText)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(1)
+                    Image(systemName: showsBoardAdvanced ? "chevron.up" : "chevron.down")
+                        .font(.caption.bold())
+                        .foregroundColor(VeilTheme.goldBright)
+                }
+                .padding(12)
+                .background(VeilTheme.elevated.opacity(0.82), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("board.advanced.toggle")
+            .accessibilityValue(showsBoardAdvanced ? "已展开" : "已收起")
+
+            if showsBoardAdvanced {
+                learningCard
+            }
+        }
+    }
+
     private var learningCard: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top) {
@@ -556,7 +636,7 @@ struct LocalAIGameView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundColor(VeilTheme.secondaryText)
             }
-            Text("五子棋与中国象棋分别建库；每一局和每个合法局面都会保留。重复阵法会按走子序列预测你的下一步，并把输局与中断局反馈到下一局决策。全程离线，不设固定局面或容量上限，仅受设备可用空间约束。")
+            Text("五子棋与象棋分别保存本地棋谱；训练经验只影响对应的原生棋手。")
                 .font(.caption)
                 .foregroundColor(VeilTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -568,7 +648,7 @@ struct LocalAIGameView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("离线强力引擎 · PVS/VCF")
                             .font(.caption.weight(.semibold))
-                        Text("实验功能：默认关闭，遇到异常自动回退原生 AI；独立引擎不修改你的棋谱")
+                        Text("独立离线引擎；异常自动回退，不改写棋谱。")
                             .font(.caption2)
                             .foregroundColor(VeilTheme.secondaryText)
                     }
@@ -602,7 +682,7 @@ struct LocalAIGameView: View {
                     .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .accessibilityLabel("五子棋阵法学习模式")
-                Text("系统可自主选择八卦、进攻、防守偏好，或由玩家指定。已发现候选：\(controller.discoveredGomokuFormations) 类。阵法不能覆盖必胜/必防；启用阵法偏好时使用原生搜索，PVS/VCF 在关闭阵法后恢复。云盘棋形模型仍处于离线验证阶段。")
+                Text("已发现 \(controller.discoveredGomokuFormations) 类阵法；阵法偏好时由原生引擎落子。")
                     .font(.caption2)
                     .foregroundColor(VeilTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -617,7 +697,7 @@ struct LocalAIGameView: View {
                             .font(.caption.monospacedDigit())
                             .foregroundColor(VeilTheme.goldBright)
                     }
-                    Text("直接运行本 App 原生棋手；完整胜负局才会写入独立档案，棋形识别不计局数。启用训练经验会从 PVS/VCF 切换为原生搜索；关闭后可恢复原引擎。")
+                    Text("原生 Bot 离线自对弈，仅完整胜负局计数；使用训练经验时会切到原生搜索。")
                         .font(.caption2)
                         .foregroundColor(VeilTheme.secondaryText)
                     Toggle("允许原生 Bot 使用已保存的自对弈经验", isOn: Binding(
@@ -672,35 +752,6 @@ struct LocalAIGameView: View {
                 .padding(10)
                 .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
-            HStack(spacing: 8) {
-                Label(controller.boardDifficulty.title, systemImage: "slider.horizontal.3")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(VeilTheme.goldBright)
-                Text(controller.boardDifficulty.detail)
-                    .font(.caption2)
-                    .foregroundColor(VeilTheme.secondaryText)
-                Spacer(minLength: 0)
-                Menu {
-                    ForEach(BoardBotDifficulty.allCases) { difficulty in
-                        Button {
-                            controller.setBoardDifficulty(difficulty)
-                            model.haptics.selection()
-                        } label: {
-                            if difficulty == controller.boardDifficulty {
-                                Label(difficulty.title, systemImage: "checkmark")
-                            } else {
-                                Text(difficulty.title)
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption.weight(.bold))
-                        .foregroundColor(VeilTheme.goldBright)
-                }
-            }
-            .padding(9)
-            .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 Text(controller.coachProfile.levelText + " · " + controller.coachProfile.preferredOpening)
                     .font(.caption.weight(.semibold))
