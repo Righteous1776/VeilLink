@@ -519,7 +519,16 @@ final class GomokuBotTests: XCTestCase {
             deviceLabel: declaredDevice, unrestricted: false
         )
         XCTAssertEqual(enabled, "HIGH-PERFORMANCE")
-        XCTAssertEqual(optedOut, declaredDevice)
+        XCTAssertEqual(optedOut, "LEGACY-COMPACT")
+        // Switching off must have an observable budget effect even on
+        // a modern high-performance phone. The OS/device label never
+        // silently controls the user's selected chess search strength.
+        XCTAssertEqual(LocalAIGameController.boardSearchProfile(
+            deviceLabel: "13PRO-HIGH", unrestricted: false
+        ), "LEGACY-COMPACT")
+        XCTAssertEqual(LocalAIGameController.boardSearchProfile(
+            deviceLabel: "13PRO-HIGH", unrestricted: true
+        ), "HIGH-PERFORMANCE")
         let unrestricted = GomokuBotBudget.forDifficulty(.master, profileLabel: enabled)
         let compact = GomokuBotBudget.forDifficulty(.master, profileLabel: optedOut)
         XCTAssertGreaterThan(unrestricted.rootCandidateLimit, compact.rootCandidateLimit)
