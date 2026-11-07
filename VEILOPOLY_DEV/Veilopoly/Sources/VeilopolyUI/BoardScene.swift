@@ -449,7 +449,8 @@ final class GameBoardScene: SKScene {
                           y: Double(node.position.y))
   }
   let hit = VeilopolyTileHitTesting.nearest(
-   x: Double(local.x), y: Double(local.y), centers: centers)
+   x: Double(local.x), y: Double(local.y), centers: centers,
+   radius: 108)
   onBoardTap?(hit)
  }
  
