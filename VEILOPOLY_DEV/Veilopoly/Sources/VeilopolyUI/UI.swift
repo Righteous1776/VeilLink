@@ -303,6 +303,7 @@ public struct VeilopolyGameView: View {
  @State private var showExitConfirmation = false
  @State private var showGameInfo = false
  @State private var showGuide = false
+ @State private var showAssetBrowser = false
  @State private var controlsExpanded = false
  @State private var dayFelt = true
  @State private var managementSection: VeilopolyManagementSection = .property
@@ -376,6 +377,7 @@ public struct VeilopolyGameView: View {
    }
   }
   .confirmationDialog("更多", isPresented: $showMore) {
+   Button("资产资料 · 只读") { showAssetBrowser = true }
    Button(model.newsEnabled ? "暂停城市快讯" : "开启城市快讯") { model.newsEnabled.toggle() }
    Button(dayFelt ? "切换夜间棋盘" : "切换日间棋盘") {
     dayFelt.toggle()
@@ -400,6 +402,10 @@ public struct VeilopolyGameView: View {
   .sheet(isPresented: $showGuide) {
    VeilopolyGuideSheet(isPresented: $showGuide, game: model.game,
                        saveSummary: model.saveSummary)
+  }
+  .sheet(isPresented: $showAssetBrowser) {
+   VeilopolyAssetBrowser(game: model.game, initialPlayer: model.actor)
+    .preferredColorScheme(dayFelt ? .light : .dark)
   }
   .alert("本局信息", isPresented: $showGameInfo) {
    Button("知道了", role: .cancel) {}
@@ -593,6 +599,16 @@ public struct VeilopolyGameView: View {
      .lineLimit(1)
    }
    .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
+   // Independent browsing stays available during purchase, auction and
+   // animation. It cannot submit orders or replace the pending decision.
+   Button { showAssetBrowser = true } label: {
+    Label("查看资产资料 · 只读", systemImage: "doc.text.magnifyingglass")
+     .font(.caption.weight(.semibold))
+     .frame(maxWidth: .infinity, minHeight: 44)
+     .contentShape(Rectangle())
+   }
+   .buttonStyle(.bordered)
+   .accessibilityHint("查看地产、银行、股市与交易，不改变当前操作阶段")
    if model.game.turn.phase == .manage && model.waitingForHuman {
     managementNavigation
      .disabled(model.pending)

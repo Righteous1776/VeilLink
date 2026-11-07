@@ -1,5 +1,18 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## CODEX W1-002 — independent asset browser — 2026-11-07
+
+- Baseline `de8893f`, same #168 dev-only authority. Added read-only native asset
+  sheet reachable through More and drawer in every phase, including pending
+  decisions. Property/bank/stock/trade data use existing canonical state; no
+  order callbacks, rule changes, finance initialization or art replacement.
+- `AssetBrowserSnapshotTests` → 3/3 PASS; full Linux Swift 6.2.1 suite →
+  240/240 PASS, 39.571s. iOS15 grammar parse PASS only. Apple SDK, iOS UI tests,
+  device keyboard/touch/chart/scroll/ACK acceptance NOT_RUN.
+- See `reviews/W1_002_ASSET_BROWSER.md`; W1-001 is `de8893f`, W0 `f3a7b12`.
+- NEXT_ONE_TASK: VLP-CODEX-W1-003, keyboard-safe bounded numeric input;
+  existing reducer remains authoritative for legal amounts and trading phases.
+
 ## CODEX long-line W0 + W1-001 — 2026-11-07
 
 - Authority: current Owner + #168 `VEILOPOLY-CODEX-LONG-001`; only
