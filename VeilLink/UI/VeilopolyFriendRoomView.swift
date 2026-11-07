@@ -243,6 +243,7 @@ private final class VeilopolyFriendRoomController: ObservableObject {
 
 struct VeilopolyFriendRoomView: View {
  @ObservedObject var model: AppModel
+ @ObservedObject private var sessions: SessionCoordinator
  let conversation: ConversationSummary
  @StateObject private var room: VeilopolyFriendRoomController
  @Environment(\.dismiss) private var dismiss
@@ -250,6 +251,7 @@ struct VeilopolyFriendRoomView: View {
  init(model: AppModel, conversation: ConversationSummary) {
   self.model = model
   self.conversation = conversation
+  _sessions = ObservedObject(wrappedValue: model.sessions)
   _room = StateObject(wrappedValue: VeilopolyFriendRoomController(
    model: model, conversation: conversation))
  }
@@ -358,6 +360,9 @@ struct VeilopolyFriendRoomView: View {
   .navigationViewStyle(.stack)
   .onAppear { room.refresh() }
   .onChange(of: model.messagesRevision) { _ in room.refresh() }
+  .onChange(of: sessions.hasSecureSession(for: conversation.peerIdentityID)) { _ in
+   room.refresh()
+  }
   .fullScreenCover(item: $room.activeGame) { live in
    VeilopolyGameView(multiplayerModel: live.model) {
     room.closeGame()
