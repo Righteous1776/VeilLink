@@ -139,18 +139,24 @@ final class GomokuBotTests: XCTestCase {
     func testR4ActualNativeBotUsesForcedForkEscapeUnderLegacyBudget() {
         var state = GomokuState()
         let attacker = [109, 110, 111, 67, 82, 97]
-        let defender = [0, 2, 4, 6, 8]
+        // No forced counterattack exists here, so 112 really IS the only
+        // safe root. The old [0,2,4,6,8] fixture also permits winning attacks
+        // at 3/5; a wall-clock-limited R4 search may legitimately prefer one.
+        let defender = [0, 2, 4, 30, 32]
         for i in 0..<defender.count {
             XCTAssertTrue(state.apply(index: attacker[i], actor: .host))
             XCTAssertTrue(state.apply(index: defender[i], actor: .guest))
         }
         XCTAssertTrue(state.apply(index: attacker[5], actor: .host))
-        // This is explicitly the R4-only defensive regression fixture.
-        // R8 correctly finds a stronger forcing attack on 3; do not let
-        // that new feature invalidate the isolated legacy behavior test.
+        XCTAssertEqual(GomokuCounterForkR4.safeCandidates(
+            in: state, player: .guest,
+            candidates: (0..<(GomokuState.size * GomokuState.size)).filter { state.value(at: $0) == 0 }
+        ).moves, [112], "Fixture must have exactly one rule-safe escape")
+        // Freeze both newer ordering and newer forced-win proof for R4.
         let decision = GomokuBot.chooseMove(
             in: state, for: .guest,
             budget: GomokuBotBudget.standard(profileLabel: "LEGACY-COMPACT"),
+            diagnosticUseR6Defense: false,
             diagnosticR8ForcedWin: false
         )
         XCTAssertEqual(decision?.index, 112,
@@ -163,7 +169,7 @@ final class GomokuBotTests: XCTestCase {
 
 
 
-    func testR8ForcingAttackIsStrongerThanTheOldR4DefensiveFixture() {
+    func testR8FindsProvenForcingAttackRegardlessOfR4SearchTiming() {
         var state = GomokuState()
         let host = [109, 110, 111, 67, 82, 97]
         let guest = [0, 2, 4, 6, 8]
@@ -175,12 +181,25 @@ final class GomokuBotTests: XCTestCase {
         XCTAssertNil(state.winner)
         XCTAssertEqual(state.currentPlayer, .guest)
         let budget = GomokuBotBudget.standard(profileLabel: "LEGACY-COMPACT")
-        // R4-only behavior still chooses 112 to neutralize Host's fork.
+        // The legacy heuristic search is wall-clock-limited: it may block
+        // at 112 OR discover a valid winning counterattack. Do not mistake
+        // a stronger legal reply for a regression under a different CI load.
         let defensive = GomokuBot.chooseMove(
             in: state, for: .guest, budget: budget,
             diagnosticR8ForcedWin: false
         )
-        XCTAssertEqual(defensive?.index, 112)
+        XCTAssertNotNil(defensive)
+        if let defensive {
+            XCTAssertTrue(
+                GomokuCounterForkR4.forkCellCount(in: state, opponent: .host,
+                    virtualBlock: defensive.index) == 0
+                || GomokuCounterForkR4.createsForcedDoubleWin(in: state,
+                    player: .guest, virtualPlacement: defensive.index),
+                "Legacy search must block ALL opponent forks or prove a winning counterattack"
+            )
+            var legacyContinuation = state
+            XCTAssertTrue(legacyContinuation.apply(index: defensive.index, actor: .guest))
+        }
 
         // R8 instead identifies a rule-proven double immediate victory.
         let offensive = GomokuBot.chooseMove(in: state, for: .guest, budget: budget)
