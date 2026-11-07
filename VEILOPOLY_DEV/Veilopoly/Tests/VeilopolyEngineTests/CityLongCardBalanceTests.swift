@@ -65,7 +65,7 @@ final class CityLongCardBalanceTests: XCTestCase {
  }
 
  func testChanceCardUsesPrintedCashExactlyWithoutHiddenThreeTimesMultiplier() throws {
-  var game = VeilopolyCityLongEconomy.make(seed: 91201)
+  var game = VeilopolyCityLongEconomy.makeV4(seed: 91201)
   let cash = game.players[0].cash
   let effects = try draw(&game, on: 7, deckOrder: [5])
   XCTAssertEqual(game.players[0].cash, cash + 650)
@@ -77,7 +77,7 @@ final class CityLongCardBalanceTests: XCTestCase {
  }
 
  func testFatePlayerTransfersConserveTotalCash() throws {
-  var game = VeilopolyCityLongEconomy.make(seed: 91202)
+  var game = VeilopolyCityLongEconomy.makeV4(seed: 91202)
   let cashBefore = game.players.reduce(0) { $0 + $1.cash }
   _ = try draw(&game, on: 2, deckOrder: [20])
   XCTAssertEqual(game.players[0].cash, 7500)
@@ -86,7 +86,7 @@ final class CityLongCardBalanceTests: XCTestCase {
  }
 
  func testDuplicateJailCardBecomesOneTimeCashButCannotAccumulateCards() throws {
-  var game = VeilopolyCityLongEconomy.make(seed: 91203)
+  var game = VeilopolyCityLongEconomy.makeV4(seed: 91203)
   _ = try draw(&game, on: 7, deckOrder: [6])
   XCTAssertEqual(game.players[0].chanceJailCards, 1)
   let cash = game.players[0].cash
@@ -97,7 +97,7 @@ final class CityLongCardBalanceTests: XCTestCase {
  }
 
  func testChanceAndFateCycleShuffleDoNotTouchDiceRNGAndReplayDeterministically() {
-  let game = VeilopolyCityLongEconomy.make(seed: 91204)
+  let game = VeilopolyCityLongEconomy.makeV4(seed: 91204)
   var deck = DeckState(order: Array(0..<16), cursor: 16)
   var replay = deck
   let originalDiceCounter = game.rngCounter
@@ -114,7 +114,7 @@ final class CityLongCardBalanceTests: XCTestCase {
  }
 
  func testGraduatedRentCapProtectsEarlyGameButKeepsLateConsequences() {
-  var game = VeilopolyCityLongEconomy.make(seed: 91205)
+  var game = VeilopolyCityLongEconomy.makeV4(seed: 91205)
   XCTAssertEqual(VeilopolyCityLongEconomy.rentCeiling(game), 900)
   XCTAssertEqual(VeilopolyCityLongEconomy.chargedRent(game, base: 8000, tileKind: .street), 900)
   XCTAssertEqual(VeilopolyCityLongEconomy.chargedRent(game, base: 180, tileKind: .railroad), 540)
@@ -129,7 +129,7 @@ final class CityLongCardBalanceTests: XCTestCase {
 
  func testOldSavesAndCardIdentityRemainIndependent() throws {
   let old = GameFactory.make(seed: 91206)
-  let city = VeilopolyCityLongEconomy.make(seed: 91206)
+  let city = VeilopolyCityLongEconomy.makeV4(seed: 91206)
   XCTAssertEqual(old.cards, SampleCards.all)
   XCTAssertNotEqual(old.cards, city.cards)
   XCTAssertEqual(city.cards, VeilopolyCityLongCards.allV4)

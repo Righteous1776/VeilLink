@@ -127,7 +127,7 @@ public enum VeilopolyCityLongEconomy {
  /// New solo only; no retroactive V4 revaluation.
  public static func make(seed: UInt64, humanCount: Int = 1,
                          levels: [AILevel] = [.balanced,.balanced,.balanced,.balanced],
-                         cards: [CardDefinition] = VeilopolyCityLongCards.allV4) -> GameState {
+                         cards: [CardDefinition] = VeilopolyCityLongCards.allV5) -> GameState {
   var g = GameFactory.make(seed: seed, humanCount: humanCount,
                            levels: levels, cards: cards)
   for i in g.players.indices { g.players[i].cash = expandedStartingCash }

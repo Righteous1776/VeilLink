@@ -3,7 +3,7 @@ import XCTest
 
 final class CityLongRentalPhaseTests: XCTestCase {
  func testLateDevelopedPropertyChargesEarlyCapNotInstantBankruptcy() throws {
-  var g = VeilopolyCityLongEconomy.make(seed: 91301)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 91301)
   g.board[39].owner = 1
   g.board[39].hotel = true
   g.players[0].position = 39
@@ -20,7 +20,7 @@ final class CityLongRentalPhaseTests: XCTestCase {
   XCTAssertTrue(fx.contains { $0.kind == .rentPaid && $0.amount == 900 })
  }
  func testLateRentBecomesMeaningfulWithoutRetroactivePriceMutation() throws {
-  var g = VeilopolyCityLongEconomy.make(seed: 91302)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 91302)
   g.board[39].owner = 1; g.board[39].hotel = true
   g.players[0].position = 39
   g.turn.phase = .tileResolve

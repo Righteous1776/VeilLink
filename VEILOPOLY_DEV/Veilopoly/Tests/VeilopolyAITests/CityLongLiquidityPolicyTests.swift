@@ -4,7 +4,7 @@ import VeilopolyEngine
 
 final class CityLongLiquidityPolicyTests: XCTestCase {
  func testCityAIWillNotBuyLastExpensiveLotWithAlmostNoReserve() {
-  var g = VeilopolyCityLongEconomy.make(seed: 91311, humanCount: 0)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 91311, humanCount: 0)
   g.turn.phase = .tileResolve
   g.turn.pendingPurchase = 39
   g.players[0].cash = 1400
@@ -13,7 +13,7 @@ final class CityLongLiquidityPolicyTests: XCTestCase {
   XCTAssertEqual(move.tile, 39)
  }
  func testLiquidityFloorDoesNotGrowForeverAndBlockAllPurchases() {
-  var g = VeilopolyCityLongEconomy.make(seed: 91312, humanCount: 0)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 91312, humanCount: 0)
   g.banking?.completedTurns = 70
   g.turn.phase = .tileResolve
   g.turn.pendingPurchase = 39

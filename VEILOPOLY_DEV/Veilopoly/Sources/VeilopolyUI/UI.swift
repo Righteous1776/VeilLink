@@ -1505,7 +1505,7 @@ public struct VeilopolyGameView: View {
     VStack(alignment: .leading, spacing: 4) {
      Label("城市中央银行 · 有限游戏币", systemImage: "building.columns.fill")
       .font(.subheadline.weight(.semibold))
-     Text("银行可用 ¥\(available) · 全市货币上限 ¥\(VeilopolyCityLongEconomy.supplyCeiling(model.game) ?? 0)")
+     Text("银行储备 ¥\(available) · 玩家流通现金 ¥\(VeilopolyCityLongEconomy.circulatingCash(model.game)) · 全市货币总量 ¥\(VeilopolyCityLongEconomy.supplyCeiling(model.game) ?? 0)")
       .font(.caption.monospacedDigit())
      Text("购地、建造、税费、股票买入回流银行；发薪、贷款、补助、股票卖出从银行支出。银行流动资金不足时相关付款会拒绝，已提交的玩家间转账不会凭空增发货币。")
       .font(.caption2).foregroundStyle(.secondary)
@@ -1570,7 +1570,9 @@ public struct VeilopolyGameView: View {
     let fixed = Move(.bankDeposit, player: model.actor, seq: model.game.nextSeq,
                      amount: Int(bankAmount), financeProduct: .fixedDeposit)
     VStack(alignment: .leading, spacing: 6) {
-     Text("收益与借贷 · 活期 1 期 +1.5%，定期 4 期 +8.5%；贷款按合同本金一次计息 8%～17%。")
+     Text(VeilopolyCityLongEconomy.isExpanded(model.game)
+      ? "收益与借贷 · 活期 1 期 +1.5%，定期 4 期 +8.5%；贷款按合同本金一次计息 6.5%～14.5%。"
+      : "收益与借贷 · 活期 1 期 +1.5%，定期 4 期 +8.5%；贷款按合同本金一次计息 8%～17%。")
       .font(.caption2).foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
      if let amount = Int(bankAmount), (1...1_000_000).contains(amount),

@@ -99,9 +99,55 @@ public enum VeilopolyCityLongCards {
  }
  public static let allV4: [CardDefinition] = blueprintsV4.map(\.canonical)
 
+ /// New V5 card denominations track the larger circulation scale, with EXACT
+ /// printed amounts. Old V3/V4 card arrays remain untouched for saved replay.
+ public static let blueprintsV5: [VeilopolyCityLongCardBlueprint] = blueprintsV4.map { original in
+  var effects = original.effects
+  var ruling = original.ruling
+  for i in effects.indices {
+   var effect = effects[i]
+   if (effect.kind == .cash || effect.kind == .grantHouse),
+      let amount = effect.amount {
+    let adjusted = amount * 4
+    ruling = ruling.replacingOccurrences(of: "¥\(abs(amount))",
+                                         with: "¥\(abs(adjusted))")
+    effect.amount = adjusted
+   }
+   if effect.kind == .repair {
+    if let price = effect.perHouse {
+     ruling = ruling.replacingOccurrences(of: "¥\(price)",
+                                          with: "¥\(price * 4)")
+     effect.perHouse = price * 4
+    }
+    if let price = effect.perHotel {
+     ruling = ruling.replacingOccurrences(of: "¥\(price)",
+                                          with: "¥\(price * 4)")
+     effect.perHotel = price * 4
+    }
+   }
+   effects[i] = effect
+  }
+  if effects.contains(where: { $0.kind == .jailCard }) {
+   ruling = ruling.replacingOccurrences(of: "¥250", with: "¥1,000")
+  }
+  return .init(id: original.id, deck: original.deck, category: original.category,
+               title: original.title, story: original.story,
+               ruling: ruling, effects: effects)
+ }
+ public static let allV5: [CardDefinition] = blueprintsV5.map(\.canonical)
+
  /// Editorial is only displayed for an exact canonical match. Custom cards,
  /// legacy saves and modified effect arrays cannot masquerade as V3 copy.
  public static func presentation(for card: CardDefinition) -> VeilopolyCardEditorialEntry? {
+  if let blueprint = blueprintsV5.first(where: {
+   $0.id == card.id && $0.deck == card.deck &&
+   $0.canonical == card && $0.canonical != allV4[$0.id]
+  }) {
+   let marker = String(format: "VL-CITY-V5-%@-%03d",
+    blueprint.deck == .chance ? "CH" : "FT", blueprint.id)
+   return VeilopolyCardEditorialEntry(blueprint.id, marker, blueprint.deck,
+    blueprint.category, blueprint.title, blueprint.story, blueprint.ruling)
+  }
   if (card.id == 13 || card.id == 27),
      let blueprint = blueprintsV4.first(where: {
    $0.id == card.id && $0.deck == card.deck && $0.canonical == card

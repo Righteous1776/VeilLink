@@ -106,7 +106,7 @@ struct VeilopolyAssetBrowser: View {
    Text("账面净资产不是可用现金；查看资料不会购买、拍卖、借款或成交。")
     .font(.caption).foregroundColor(.secondary)
    if let bankCash = game.banking?.reserveCash {
-    Text("城市银行 ¥\(bankCash) / 总货币量 ¥\(VeilopolyCityLongEconomy.supplyCeiling(game) ?? 0) · 宏观股市信号 \(VeilopolyCityLongEconomy.marketPressure(game)) bp")
+    Text("城市银行储备 ¥\(bankCash) · 玩家流通现金 ¥\(VeilopolyCityLongEconomy.circulatingCash(game)) · 固定总量 ¥\(VeilopolyCityLongEconomy.supplyCeiling(game) ?? 0) · 市场信号 \(VeilopolyCityLongEconomy.marketPressure(game)) bp")
      .font(.caption2).foregroundColor(.secondary)
      .fixedSize(horizontal: false, vertical: true)
    }

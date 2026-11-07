@@ -536,7 +536,8 @@ private static func jail(_ g: inout GameState, _ p: Int, _ fx: inout [Effect]) {
     let alreadyHasSameCard = card.deck == .chance
       ? g.players[p].chanceJailCards > 0 : g.players[p].chestJailCards > 0
     if VeilopolyCityLongEconomy.isActive(g) && alreadyHasSameCard {
-     let paid = try payBank(&g, to: p, requested: 250,
+     let requested = VeilopolyCityLongEconomy.isExpanded(g) ? 1_000 : 250
+     let paid = try payBank(&g, to: p, requested: requested,
                             source: "duplicateJailCard", &fx)
      fx.append(Effect(.cashChanged, player: p, amount: paid,
                       text: "duplicateJailCardExchange"))

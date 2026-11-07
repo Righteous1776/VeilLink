@@ -17,7 +17,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
  }
 
  func testV4OpeningCurrencyAndLegacyLedgerSeparation() throws {
-  let city = VeilopolyCityLongEconomy.make(seed: 98101)
+  let city = VeilopolyCityLongEconomy.makeV4(seed: 98101)
   XCTAssertEqual(city.banking?.reserveCash, 160_000)
   XCTAssertEqual(supply(city), 188_800)
   XCTAssertEqual(city.banking?.financeRuleVersion, 4)
@@ -37,7 +37,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
  }
 
  func testPurchasesTaxesGoAndLoansUseOneFinitePool() throws {
-  var city = VeilopolyCityLongEconomy.make(seed: 98102)
+  var city = VeilopolyCityLongEconomy.makeV4(seed: 98102)
   let supplyStart = supply(city)
   city.players[0].position = 1
   city.turn.phase = .tileResolve
@@ -70,7 +70,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
  }
 
  func testImmediateGiftsConserveSupplyAndRejectBadRecipients() throws {
-  var game = VeilopolyCityLongEconomy.make(seed: 98103)
+  var game = VeilopolyCityLongEconomy.makeV4(seed: 98103)
   game.turn.phase = .manage
   let cash = game.players.map(\.cash), pool = game.banking!.reserveCash!
   let fx = try commit(&game, .transferCash, amount: 650, to: 2)
@@ -96,7 +96,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
  }
 
  func testFreeHouseCardConsumesRealHouseSupplyNotTreasury() throws {
-  var game = VeilopolyCityLongEconomy.make(seed: 98104)
+  var game = VeilopolyCityLongEconomy.makeV4(seed: 98104)
   game.board[1].owner = 0; game.board[3].owner = 0
   game.players[0].position = 7; game.turn.phase = .tileResolve
   game.chanceDeck = DeckState(order: [13])
@@ -113,7 +113,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
  }
 
  func testNoEligibleHousePaysPrintedFallbackFromCentralBank() throws {
-  var city = VeilopolyCityLongEconomy.make(seed: 98105)
+  var city = VeilopolyCityLongEconomy.makeV4(seed: 98105)
   city.players[0].position = 7; city.turn.phase = .tileResolve
   city.chanceDeck = DeckState(order: [13])
   let bankBefore = city.banking!.reserveCash!
@@ -125,7 +125,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
  }
 
  func testTreasuryFailureIsAtomicForDiscretionaryLoanAndSaveHash() throws {
-  var city = VeilopolyCityLongEconomy.make(seed: 98106)
+  var city = VeilopolyCityLongEconomy.makeV4(seed: 98106)
   // Give the existing currency to players; the shared supply remains intact.
   city.players[0].cash += 159_500
   city.banking?.reserveCash = 500
@@ -140,7 +140,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
  }
 
  func testTamperedMoneySupplyRejectedBeforeActionAndRoundTrip() throws {
-  var city = VeilopolyCityLongEconomy.make(seed: 98107)
+  var city = VeilopolyCityLongEconomy.makeV4(seed: 98107)
   let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
   let restored = try JSONDecoder().decode(GameState.self, from: encoder.encode(city))
   XCTAssertEqual(restored, city)
@@ -153,7 +153,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
  }
 
  func testStockOrdersAndDepositsExchangeCashWithCentralBank() throws {
-  var g = VeilopolyCityLongEconomy.make(seed: 98109)
+  var g = VeilopolyCityLongEconomy.makeV4(seed: 98109)
   g.turn.phase = .manage
   let supplyStart = supply(g)
   let reserveStart = try XCTUnwrap(g.banking?.reserveCash)
@@ -177,7 +177,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
 
  func testSameTransferAndPriceTicksReplayToIdenticalAuthoritativeHashes() throws {
   func trajectory() throws -> GameState {
-   var g = VeilopolyCityLongEconomy.make(seed: 98110)
+   var g = VeilopolyCityLongEconomy.makeV4(seed: 98110)
    g.turn.phase = .manage
    _ = try commit(&g, .transferCash, amount: 250, to: 1)
    _ = try commit(&g, .bankBorrow, amount: 500, periods: 3)
@@ -191,7 +191,7 @@ final class UnifiedCityEconomyTests: XCTestCase {
  }
 
  func testMarketPressureMakesIdenticallySeededTapeRespondToCommerce() throws {
-  let base = VeilopolyCityLongEconomy.make(seed: 98108)
+  let base = VeilopolyCityLongEconomy.makeV4(seed: 98108)
   XCTAssertEqual(VeilopolyCityLongEconomy.marketPressure(base), 0)
   var tick0 = try XCTUnwrap(base.banking?.market)
   var tickA = tick0
