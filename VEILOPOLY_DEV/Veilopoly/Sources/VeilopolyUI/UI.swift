@@ -603,6 +603,11 @@ public struct VeilopolyGameView: View {
         Text(advice)
          .font(.caption2)
          .fixedSize(horizontal: false, vertical: true)
+        Button("查看玩法辞典") { showGuide = true }
+         .font(.caption.weight(.semibold))
+         .foregroundColor(Color(red: 0.98, green: 0.87, blue: 0.67))
+         .frame(minHeight: 44, alignment: .leading)
+         .accessibilityHint("打开规则说明，无需放弃当前对局")
        }
       }
       .foregroundColor(.white)

@@ -37,6 +37,20 @@ struct ContentView: View {
 
 `humanCount` may be 0, 1, 2, 3 or 4 (in pure state); missing seats are AI. AI levels are configured in `GameFactory.make(seed:humanCount:levels:cards:)`. The default UI constructor assumes 1 local human. **Changing host transport or VeilLink chat UI is not part of this package.**
 
+## 可直接使用的文字内容与玩法辞典
+
+- 32 张机会／命运卡（16+16）专属标题、事件叙述、执行结果；
+- 40 格地块札记、5 家虚构股票公司档案、5 类市场气氛与动态行情提示；
+- 6 类地产／拍卖／银行／交易／债务／结算文书，均从实时 `GameState` 生成；
+- 23 篇玩法说明可在游戏「更多 → 玩法辞典」中搜索和阅读；26 种引擎错误附可执行的恢复建议；
+- 游戏完成动作后使用真实玩家、地块、现金和事件类型输出对应凭证。不复刻 Codex 已经完成的交互与渲染。
+
+文字内容位于 `VeilopolyCardEditorial.swift`、`VeilopolyWorldEditorial.swift`、
+`VeilopolyCivicText.swift`、`VeilopolyGuideLibrary.swift` 和
+`VeilopolyEventFeedback.swift`，使用同一象牙白古典风格。未核准的经济参数
+不会因为文案上线而自动成为正式规则。测试与已知限制见
+`docs/TEXT_CONTENT_ACCEPTANCE_R3_20261107.md`。
+
 ## Engine API
 
 ```swift
