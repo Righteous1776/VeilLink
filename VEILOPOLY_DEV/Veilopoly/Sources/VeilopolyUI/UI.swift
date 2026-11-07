@@ -321,6 +321,12 @@ public struct VeilopolyGameView: View {
  @AppStorage("veilopoly.dayFelt.v1") private var dayFelt = false
  @State private var showTileInformation = false
  @State private var amountTarget: VeilopolyAmountTarget?
+ @State private var showFinanceHUD = true
+ @State private var showMarketHUD = true
+ @State private var financeHUDOffset = CGSize.zero
+ @State private var marketHUDOffset = CGSize.zero
+ @GestureState private var financeHUDDrag = CGSize.zero
+ @GestureState private var marketHUDDrag = CGSize.zero
  @State private var managementSection: VeilopolyManagementSection = .property
  @Environment(\.dismiss) private var dismiss
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -393,6 +399,8 @@ public struct VeilopolyGameView: View {
   }
   .confirmationDialog("更多", isPresented: $showMore) {
    Button(model.newsEnabled ? "暂停城市快讯" : "开启城市快讯") { model.newsEnabled.toggle() }
+   Button(showFinanceHUD ? "隐藏资产悬浮窗" : "显示资产悬浮窗") { showFinanceHUD.toggle() }
+   Button(showMarketHUD ? "隐藏股市悬浮窗" : "显示股市悬浮窗") { showMarketHUD.toggle() }
    Button(dayFelt ? "切换全局夜间主题" : "切换全局日间主题") {
     dayFelt.toggle()
     if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
@@ -577,9 +585,14 @@ public struct VeilopolyGameView: View {
    }
   }
   .frame(width: availableWidth, height: availableHeight)
- }
+   .overlay(alignment: .topTrailing) {
+    if !controlsExpanded {
+     floatingHUDs.padding(.top, 62).padding(.trailing, 8)
+    }
+   }
+  }
 
- /// Keep Astra's real actions and HUD. Only the panel's placement changes:
+  /// Keep Astra's real actions and HUD. Only the panel's placement changes:
  /// on iPhone it floats over otherwise unused right-side space; on iPad it
  /// may temporarily cover the board edge until collapsed.
  private var controlsDrawer: some View {
@@ -949,6 +962,71 @@ public struct VeilopolyGameView: View {
    }
   }
   .frame(maxWidth: .infinity, maxHeight: .infinity)
+ }
+
+ 
+ /// Draggable, read-only mini windows are opt-in from More. They live in
+ /// the unused landscape space, never in a full-screen gesture layer.
+ private var floatingHUDs: some View {
+  HStack(alignment: .top, spacing: 6) {
+   if showFinanceHUD {
+    Button {
+     managementSection = .bank
+     controlsExpanded = true
+    } label: {
+     VStack(alignment: .leading, spacing: 3) {
+      Label("现金与资产", systemImage: "building.columns")
+       .font(.caption.weight(.semibold))
+      Text("¥\(model.game.players[model.actor].cash)")
+       .font(.system(size: 15, weight: .bold, design: .monospaced))
+     }
+     .padding(9).frame(width: 148, alignment: .leading)
+     .background(Color(red: 0.08, green: 0.19, blue: 0.22),
+                 in: RoundedRectangle(cornerRadius: 11))
+    }
+    .buttonStyle(.plain)
+    .offset(x: financeHUDOffset.width + financeHUDDrag.width,
+            y: financeHUDOffset.height + financeHUDDrag.height)
+    .gesture(DragGesture(minimumDistance: 8)
+     .updating($financeHUDDrag) { change, state, _ in state = change.translation }
+     .onEnded {
+      financeHUDOffset.width += $0.translation.width
+      financeHUDOffset.height += $0.translation.height
+     })
+    .accessibilityHint("点击展开银行，拖动可移动此窗口")
+   }
+   if showMarketHUD {
+    let market = IntegratedBanking.ledger(model.game).market
+    Button {
+     managementSection = .market
+     controlsExpanded = true
+    } label: {
+     VStack(alignment: .leading, spacing: 3) {
+      Label("模拟证券", systemImage: "chart.xyaxis.line")
+       .font(.caption.weight(.semibold))
+      Text(market?.quotes.first.map {
+       "\($0.symbol) ¥\($0.priceCents / 100).\(String(format: "%02d", $0.priceCents % 100))"
+      } ?? "行情未开放")
+       .font(.system(size: 12, weight: .bold, design: .monospaced))
+       .lineLimit(1)
+     }
+     .padding(9).frame(width: 148, alignment: .leading)
+     .background(Color(red: 0.08, green: 0.19, blue: 0.22),
+                 in: RoundedRectangle(cornerRadius: 11))
+    }
+    .buttonStyle(.plain)
+    .offset(x: marketHUDOffset.width + marketHUDDrag.width,
+            y: marketHUDOffset.height + marketHUDDrag.height)
+    .gesture(DragGesture(minimumDistance: 8)
+     .updating($marketHUDDrag) { change, state, _ in state = change.translation }
+     .onEnded {
+      marketHUDOffset.width += $0.translation.width
+      marketHUDOffset.height += $0.translation.height
+     })
+    .accessibilityHint("点击展开股市，拖动可移动此窗口")
+   }
+  }
+  .foregroundColor(.white)
  }
 
  private var portraitFallback: some View {
