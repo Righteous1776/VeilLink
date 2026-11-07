@@ -79,4 +79,20 @@ final class XiangqiBotTests: XCTestCase {
         ), 0)
     }
 
+    func testR4ScalarOrderingMatchesFixedR3OpeningScores() {
+        let board = XiangqiState()
+        XCTAssertEqual(XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 64, to: 55, givesCheck: false
+        ), -11)
+        XCTAssertEqual(XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 82, to: 65, givesCheck: false
+        ), 4)
+        XCTAssertEqual(XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 81, to: 72, givesCheck: false
+        ), -13)
+        XCTAssertEqual(XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 54, to: 45, givesCheck: false
+        ), 2)
+    }
+
 }
