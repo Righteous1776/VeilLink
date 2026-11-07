@@ -38,3 +38,16 @@
 - 代码已在授权研发分支提交，Swift 关键接口回读/匹配与修改目录检验；
 - 新增 XCTest **源码**覆盖原子 Tick、旧档序列化、贷款到期与逾期、银行合同唯一性、破产无声丢失拒绝、投资 RNG 隔离、批量市场稳定性；
 - **完整 swift test、Xcode iOS15 编译/XCTest、iPhone7 与 iPhone13 强杀恢复、真机性能测试尚未执行**。本报告不把离线等价抽样称为已通过的应用测试，也不授权合并 main 或发布 IPA。
+
+## R2.1：Codex 股票订单预检一致性
+
+- 原问题：真正的 Engine 在 V2 贷款逾期时拒绝 `.stockBuy`，但 Codex 股票终端只依据 `StockMarketEngine.estimateBuy` / `StockTerminalState.rejection` 判断股数和现金，仍可能显示可点击的买入按钮以及非零“可买 N 股”。
+- 修复：把逾期资格收敛到 **`IntegratedBanking.hasOverdueLoan(ledger, player:)` 单一纯函数**。引擎入单、SwiftUI 报价预检引用同一状态判定；向终端传 `buyRestriction`，禁用买入、显示清晰提示且将最大可买量置零。卖出、行情图、交易手续费与其他已存在的 Codex 组件不变。
+- 新增 `StockTerminalStateTests` 源码测试：逾期限制仅阻止买入，允许正常卖出，并验证银行 V1 旧档不应用此限制。
+- 该改动仅涉及实时界面提示和既有规则的预检一致性，**不更改旧/新对局价格、持仓、现金或交易协议**。
+
+## 局部执行检查及剩余风险
+
+- 在容器 Linux Swift 6.2.1 下，使用与 R2 关键分支相同的版本化 Codable、到期排序、资产头寸检查、独立 RNG 运算编写 **隔离烟雾脚本**，以 `swiftc -warnings-as-errors` 编译执行，结果 PASS。此脚本是**摘取逻辑的独立测试替身**，不等同于实际 Github 包编译、XCTest 或 iOS 运行。
+- 本轮新增的多种子市场压力测试、贷款/破产/股票回归是**已入库但尚未执行**的 Swift XCTest 源码。整个仓库的 GitHub remote 与本地 Linux 不能直接等同。
+- 因 P5 联机与 iOS15 真机未完成，严禁以静态审计结果触发 `main` 合并、IPA 构建或版本发布。
