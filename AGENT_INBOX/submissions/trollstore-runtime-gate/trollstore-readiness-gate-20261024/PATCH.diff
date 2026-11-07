@@ -1,0 +1,208 @@
+diff --git a/VeilLink/Core/VeilTrollStoreReadinessGate.swift b/VeilLink/Core/VeilTrollStoreReadinessGate.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/VeilTrollStoreReadinessGate.swift
+@@ -0,0 +1,107 @@
++import Foundation
++
++/// An intentionally non-privileged gate for optional TrollStore-specific *candidate* features.
++/// Neither package markers nor this decision grants entitlements, permissions or sandbox access.
++/// A feature backend must independently enforce all OS permissions at every actual operation.
++enum VeilEnhancedFeature: String, CaseIterable {
++    case highMemoryLocalInference
++    case backgroundLinkContinuity
++    case expandedFileWorkspace
++    case extendedLocalDiagnostics
++}
++
++enum VeilInstallationClass: Equatable {
++    case ordinary
++    case trollStore
++    case trollStoreLite
++    case simulator
++    case unknown
++
++    var isEnhancedCandidate: Bool {
++        self == .trollStore || self == .trollStoreLite
++    }
++}
++
++enum VeilRuntimeProbeStatus: Equatable {
++    case verifiedAvailable
++    case verifiedUnavailable
++    case notChecked
++}
++
++/// App-owned probe evidence; never construct from a received message or untrusted preference.
++struct VeilRuntimeProbeEvidence: Equatable {
++    let status: VeilRuntimeProbeStatus
++    let observedAt: TimeInterval
++}
++
++struct VeilEnhancedGateInput {
++    let installation: VeilInstallationClass
++    let capabilityDeclaredInSignedApp: Bool
++    let probe: VeilRuntimeProbeEvidence?
++    let explicitlyEnabledByUser: Bool
++    let protectedDataAvailable: Bool
++    let foregroundActive: Bool
++    let thermalConstrained: Bool
++    let lowPowerMode: Bool
++    let legacyHardware: Bool
++}
++
++enum VeilEnhancedGateReason: String, Equatable {
++    case permittedCandidate
++    case ordinaryDistribution
++    case disabledByUser
++    case capabilityNotDeclared
++    case probeUnavailable
++    case probeUnverifiedOrExpired
++    case protectedDataUnavailable
++    case backgroundRestricted
++    case deviceResourceGuard
++}
++
++struct VeilEnhancedGateDecision: Equatable {
++    let enhancedAllowed: Bool
++    let reason: VeilEnhancedGateReason
++
++    /// The existing standard route is always used when optional enhancement is denied.
++    var useStandardFallback: Bool { !enhancedAllowed }
++}
++
++enum VeilTrollStoreReadinessGate {
++    static let maximumProbeAge: TimeInterval = 600
++
++    static func evaluate(
++        _ feature: VeilEnhancedFeature,
++        input: VeilEnhancedGateInput,
++        now: TimeInterval
++    ) -> VeilEnhancedGateDecision {
++        func denied(_ reason: VeilEnhancedGateReason) -> VeilEnhancedGateDecision {
++            VeilEnhancedGateDecision(enhancedAllowed: false, reason: reason)
++        }
++
++        guard input.installation.isEnhancedCandidate else { return denied(.ordinaryDistribution) }
++        guard input.explicitlyEnabledByUser else { return denied(.disabledByUser) }
++        guard input.capabilityDeclaredInSignedApp else { return denied(.capabilityNotDeclared) }
++        guard let probe = input.probe else { return denied(.probeUnverifiedOrExpired) }
++        guard now.isFinite, probe.observedAt.isFinite,
++              probe.observedAt <= now, now - probe.observedAt <= maximumProbeAge else {
++            return denied(.probeUnverifiedOrExpired)
++        }
++        guard probe.status == .verifiedAvailable else {
++            return denied(probe.status == .verifiedUnavailable ? .probeUnavailable : .probeUnverifiedOrExpired)
++        }
++        guard input.protectedDataAvailable else { return denied(.protectedDataUnavailable) }
++
++        if feature != .backgroundLinkContinuity && !input.foregroundActive {
++            return denied(.backgroundRestricted)
++        }
++        if feature == .highMemoryLocalInference &&
++            (input.legacyHardware || input.thermalConstrained || input.lowPowerMode) {
++            return denied(.deviceResourceGuard)
++        }
++        if feature == .backgroundLinkContinuity && input.thermalConstrained {
++            return denied(.deviceResourceGuard)
++        }
++
++        return VeilEnhancedGateDecision(enhancedAllowed: true, reason: .permittedCandidate)
++    }
++}
+diff --git a/VeilLinkTests/VeilTrollStoreReadinessGateTests.swift b/VeilLinkTests/VeilTrollStoreReadinessGateTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilTrollStoreReadinessGateTests.swift
+@@ -0,0 +1,91 @@
++import Foundation
++import XCTest
++@testable import VeilLink
++
++final class VeilTrollStoreReadinessGateTests: XCTestCase {
++    private let checkedAt: TimeInterval = 1_800_000_000
++
++    private func input(
++        source: VeilInstallationClass = .trollStore,
++        declared: Bool = true,
++        status: VeilRuntimeProbeStatus = .verifiedAvailable,
++        probedAt: TimeInterval? = 1_800_000_000,
++        enabled: Bool = true,
++        protected: Bool = true,
++        foreground: Bool = true,
++        thermal: Bool = false,
++        lowPower: Bool = false,
++        legacy: Bool = false
++    ) -> VeilEnhancedGateInput {
++        VeilEnhancedGateInput(
++            installation: source,
++            capabilityDeclaredInSignedApp: declared,
++            probe: probedAt.map { VeilRuntimeProbeEvidence(status: status, observedAt: $0) },
++            explicitlyEnabledByUser: enabled,
++            protectedDataAvailable: protected,
++            foregroundActive: foreground,
++            thermalConstrained: thermal,
++            lowPowerMode: lowPower,
++            legacyHardware: legacy
++        )
++    }
++
++    func testOrdinaryInstallAlwaysUsesSafeStandardPath() {
++        for source: VeilInstallationClass in [.ordinary, .simulator, .unknown] {
++            let decision = VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(source: source), now: checkedAt)
++            XCTAssertFalse(decision.enhancedAllowed)
++            XCTAssertEqual(decision.reason, .ordinaryDistribution)
++            XCTAssertTrue(decision.useStandardFallback)
++        }
++    }
++
++    func testBothTrollStoreVariantsAreCandidatesNotAutomaticGrants() {
++        for source: VeilInstallationClass in [.trollStore, .trollStoreLite] {
++            XCTAssertTrue(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(source: source), now: checkedAt).enhancedAllowed)
++            XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(source: source, declared: false), now: checkedAt).reason, .capabilityNotDeclared)
++        }
++    }
++
++    func testExplicitUserOptInIsMandatory() {
++        let decision = VeilTrollStoreReadinessGate.evaluate(.extendedLocalDiagnostics, input: input(enabled: false), now: checkedAt)
++        XCTAssertEqual(decision.reason, .disabledByUser)
++    }
++
++    func testMissingOrFailedProbeAlwaysDeniesEnhancement() {
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(probedAt: nil), now: checkedAt).reason, .probeUnverifiedOrExpired)
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(status: .notChecked), now: checkedAt).reason, .probeUnverifiedOrExpired)
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(status: .verifiedUnavailable), now: checkedAt).reason, .probeUnavailable)
++    }
++
++    func testStaleAndFutureProbeEvidenceDenied() {
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(probedAt: checkedAt - 601), now: checkedAt).reason, .probeUnverifiedOrExpired)
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(probedAt: checkedAt + 10), now: checkedAt).reason, .probeUnverifiedOrExpired)
++        XCTAssertTrue(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(probedAt: checkedAt - 600), now: checkedAt).enhancedAllowed)
++    }
++
++    func testLockedDeviceNeverGetsEnhancedPath() {
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.backgroundLinkContinuity, input: input(protected: false), now: checkedAt).reason, .protectedDataUnavailable)
++    }
++
++    func testForegroundRequirementsDifferByFeature() {
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(foreground: false), now: checkedAt).reason, .backgroundRestricted)
++        XCTAssertTrue(VeilTrollStoreReadinessGate.evaluate(.backgroundLinkContinuity, input: input(foreground: false), now: checkedAt).enhancedAllowed)
++    }
++
++    func testLegacyDeviceDisablesHighMemoryInferenceOnly() {
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.highMemoryLocalInference, input: input(legacy: true), now: checkedAt).reason, .deviceResourceGuard)
++        XCTAssertTrue(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(legacy: true), now: checkedAt).enhancedAllowed)
++    }
++
++    func testLowPowerAndThermalPressureFallBack() {
++        for constrained in [input(lowPower: true), input(thermal: true)] {
++            XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.highMemoryLocalInference, input: constrained, now: checkedAt).reason, .deviceResourceGuard)
++        }
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.backgroundLinkContinuity, input: input(thermal: true), now: checkedAt).reason, .deviceResourceGuard)
++    }
++
++    func testNoEnhancementFromMissingOrNonFiniteTime() {
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(), now: .nan).reason, .probeUnverifiedOrExpired)
++        XCTAssertEqual(VeilTrollStoreReadinessGate.evaluate(.expandedFileWorkspace, input: input(probedAt: .infinity), now: checkedAt).reason, .probeUnverifiedOrExpired)
++    }
++}
