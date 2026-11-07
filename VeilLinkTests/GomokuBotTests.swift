@@ -158,4 +158,34 @@ final class GomokuBotTests: XCTestCase {
     }
 
 
+
+    func testR4DoesNotThrowAwayUnstoppableCounterattack() {
+        var state = GomokuState()
+        // Host threatens to fork at 112 while Guest can create a separate
+        // unanswerable double five at 161. A purely defensive gate would
+        // accidentally remove the winning counterattack.
+        let host = [109, 110, 111, 67, 82, 97, 0]
+        let guest = [158, 159, 160, 116, 131, 146]
+        for i in 0..<guest.count {
+            XCTAssertTrue(state.apply(index: host[i], actor: .host))
+            XCTAssertTrue(state.apply(index: guest[i], actor: .guest))
+        }
+        XCTAssertTrue(state.apply(index: host[6], actor: .host))
+        XCTAssertNil(state.winner)
+        XCTAssertTrue(GomokuCounterForkR4.createsForcedDoubleWin(
+            in: state, player: .guest, virtualPlacement: 161
+        ))
+        XCTAssertGreaterThan(GomokuCounterForkR4.forkCellCount(
+            in: state, opponent: .host, virtualBlock: 161
+        ), 0)
+        let candidates = GomokuCounterForkR4.safeCandidates(
+            in: state, player: .guest, candidates: [112, 161, 200]
+        )
+        XCTAssertTrue(candidates.underThreat)
+        XCTAssertTrue(candidates.moves.contains(112))
+        XCTAssertTrue(candidates.moves.contains(161))
+        XCTAssertFalse(candidates.moves.contains(200))
+    }
+
+
 }
