@@ -493,6 +493,7 @@ public struct VeilopolyGameView: View {
  @StateObject private var model: GameSessionModel
  @State private var offerCash = "0"
  @State private var requestCash = "0"
+ @State private var directTransferAmount = "200"
  @State private var bidderCash = "10"
  @State private var bankAmount = "600"
  @State private var bankPeriods = "6"
@@ -1421,12 +1422,34 @@ public struct VeilopolyGameView: View {
    request: TradeTransfer(cash: Int(requestCash) ?? -1, tiles: chosenRequest.sorted()))
   let rejection = VeilopolyGamePresentation.rejection(model.game, move: proposal)
   return VStack(alignment: .leading, spacing: 12) {
-   Text("交易提案").font(.subheadline.weight(.semibold))
+   Text("城市合同与玩家转账").font(.subheadline.weight(.semibold))
    Picker("交易对象", selection: $tradeTarget) {
     ForEach(model.game.players.filter { $0.id != model.actor && !$0.bankrupt }, id:\.id) { p in
      Text(p.name).tag(p.id)
     }
    }.pickerStyle(.menu)
+   if model.game.banking?.financeRuleVersion == VeilopolyCityLongEconomy.version {
+    let transfer = Move(.transferCash, player: model.actor, seq: model.game.nextSeq,
+                        amount: Int(directTransferAmount), to: tradeTarget)
+    let transferError = VeilopolyGamePresentation.rejection(model.game, move: transfer)
+    VStack(alignment: .leading, spacing: 7) {
+     Label("直接转账 · 不需要对方确认", systemImage: "arrow.up.right.circle")
+      .font(.caption.weight(.semibold))
+     Text("向 \(model.game.players.indices.contains(tradeTarget) ? model.game.players[tradeTarget].name : "所选玩家") 赠送游戏币；确认后立即到账。仅转移双方现金，不会增加银行货币总量。")
+      .font(.caption2).foregroundStyle(.secondary)
+     VeilopolyNumericInput(title: "转账金额", text: $directTransferAmount)
+     action("立即转账", symbol: "paperplane.fill") {
+      model.perform(.transferCash, amount: Int(directTransferAmount), to: tradeTarget)
+     }
+     .disabled(transferError != nil)
+     if let transferError { Text(transferError).font(.caption2).foregroundStyle(.secondary) }
+    }
+    .padding(10)
+    .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+    Divider()
+   }
+   Text("交换合同 · 需要另一位玩家接受才能交割地产或现金")
+    .font(.caption.weight(.semibold))
    HStack {
     VeilopolyNumericInput(title: "我方现金", text: $offerCash)
     VeilopolyNumericInput(title: "对方现金", text: $requestCash)

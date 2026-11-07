@@ -10,7 +10,7 @@ public enum VeilopolyEngine {
   case .moveAnim: choices = [.applyMovement]
   case .tileResolve: choices = g.turn.pendingPurchase == nil ? [.resolveTile] : [.buyProperty, .startAuction]
   case .auction: choices = [.bid]
-  case .manage: choices = [.buildHouse, .sellHouse, .mortgage, .redeem, .proposeTrade, .endTurn,
+  case .manage: choices = [.buildHouse, .sellHouse, .mortgage, .redeem, .proposeTrade, .transferCash, .endTurn,
                            .bankDeposit, .bankWithdraw, .bankBorrow, .bankRepay, .bankInvest, .bankSettle,
                            .stockBuy, .stockSell, .stockTick]
   case .trade: choices = [.counterTrade, .acceptTrade, .rejectTrade]
@@ -238,6 +238,23 @@ public enum VeilopolyEngine {
    guard g.players[p].cash >= fee else { throw GameError.noCash }
    g.players[p].cash -= fee; g.board[i].mortgaged = false
    fx.append(Effect(.redeemed, player: p, tile: i, amount: fee))
+  case .transferCash:
+   // V4 solo (not yet enabled for legacy two-phone P5 rooms).
+   // A direct gift is immediate and requires no receiving-player signature.
+   guard g.banking?.financeRuleVersion == VeilopolyCityLongEconomy.version,
+         let recipient = m.to, (0..<4).contains(recipient),
+         recipient != p, !g.players[recipient].bankrupt,
+         let amount = m.amount, (1...1_000_000).contains(amount) else {
+    throw GameError.invalidPayload
+   }
+   guard g.players[p].cash >= amount else { throw GameError.noCash }
+   guard g.players[recipient].cash <= 1_000_000_000 - amount else {
+    throw GameError.invalidState
+   }
+   g.players[p].cash -= amount
+   g.players[recipient].cash += amount
+   fx.append(Effect(.cashChanged, player: p, to: recipient, amount: -amount,
+                    text: "playerTransfer"))
   case .proposeTrade:
    guard let to = m.to, to != p, (0..<4).contains(to), !g.players[to].bankrupt,
          let offer = m.offer, let request = m.request else { throw GameError.invalidPayload }

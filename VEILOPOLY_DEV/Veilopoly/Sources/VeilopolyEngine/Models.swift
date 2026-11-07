@@ -137,7 +137,7 @@ public struct PendingCard: Codable, Equatable { public var id: Int; public var d
 public enum MoveKind: String, Codable, CaseIterable {
  case rollDice, applyMovement, resolveTile, buyProperty, startAuction, bid
  case buildHouse, sellHouse, mortgage, redeem
- case proposeTrade, counterTrade, acceptTrade, rejectTrade
+ case proposeTrade, counterTrade, acceptTrade, rejectTrade, transferCash
  case payBail, useJailCard, declareBankruptcy, endTurn
  case bankDeposit, bankWithdraw, bankBorrow, bankRepay, bankInvest, bankSettle
  case stockBuy, stockSell, stockTick
