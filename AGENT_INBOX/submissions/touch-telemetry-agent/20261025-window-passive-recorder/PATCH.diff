@@ -1,0 +1,132 @@
+diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/DeepTelemetry.swift
+--- a/VeilLink/Diagnostics/DeepTelemetry.swift
++++ b/VeilLink/Diagnostics/DeepTelemetry.swift
+@@ -19,7 +19,10 @@
+     static let shared = DeepTelemetry()
+ 
+     @Published var rawTouchCaptureEnabled: Bool {
+-        didSet { UserDefaults.standard.set(rawTouchCaptureEnabled, forKey: Self.rawTouchKey) }
++        didSet {
++            UserDefaults.standard.set(rawTouchCaptureEnabled, forKey: Self.rawTouchKey)
++            if installed { UIInteractionProbe.sync(enabled: rawTouchCaptureEnabled) }
++        }
+     }
+     @Published var inputLifecycleCaptureEnabled: Bool {
+         didSet { UserDefaults.standard.set(inputLifecycleCaptureEnabled, forKey: Self.inputLifecycleKey) }
+@@ -52,7 +55,8 @@
+ 
+     private init() {
+         let defaults = UserDefaults.standard
+-        rawTouchCaptureEnabled = defaults.object(forKey: Self.rawTouchKey) as? Bool ?? true
++        // Window-level touch diagnostics require an explicit opt-in.
++        rawTouchCaptureEnabled = defaults.object(forKey: Self.rawTouchKey) as? Bool ?? false
+         inputLifecycleCaptureEnabled = defaults.object(forKey: Self.inputLifecycleKey) as? Bool ?? true
+         postInteractionSnapshotsEnabled = defaults.object(forKey: Self.postSnapshotKey) as? Bool ?? true
+         performanceWatchEnabled = defaults.object(forKey: Self.performanceWatchKey) as? Bool ?? true
+@@ -60,13 +64,13 @@
+ 
+     func install() {
+         guard !installed else {
+-            UIInteractionProbe.installOnApplicationWindows()
++            UIInteractionProbe.sync(enabled: rawTouchCaptureEnabled)
+             return
+         }
+         installed = true
+         UIDevice.current.isBatteryMonitoringEnabled = true
+         _ = ProcessInfo.processInfo.thermalState
+-        UIInteractionProbe.installOnApplicationWindows()
++        UIInteractionProbe.sync(enabled: rawTouchCaptureEnabled)
+         UIActionDispatcherProbe.install()
+         UIViewControllerLifecycleProbe.install()
+         MetricKitTelemetryReceiver.shared.start()
+@@ -253,7 +257,10 @@
+         let center = NotificationCenter.default
+ 
+         observers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+-            Task { @MainActor in DeepTelemetry.shared.setApplicationActive(true) }
++            Task { @MainActor in
++                DeepTelemetry.shared.setApplicationActive(true)
++                UIInteractionProbe.sync(enabled: DeepTelemetry.shared.rawTouchCaptureEnabled)
++            }
+         })
+         observers.append(center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in
+             Task { @MainActor in DeepTelemetry.shared.setApplicationActive(false) }
+@@ -763,26 +770,38 @@
+     }
+ }
+ 
+-@MainActor
+-private enum UIInteractionProbe {
+-    static func installOnApplicationWindows() {
+-        let windows = UIApplication.shared.connectedScenes
+-            .compactMap { $0 as? UIWindowScene }
+-            .flatMap(\.windows)
+-            .filter { !$0.isHidden }
+-
+-        for window in windows where !(window.gestureRecognizers ?? []).contains(where: { $0 is PassiveTouchRecorder }) {
+-            let recorder = PassiveTouchRecorder()
+-            recorder.cancelsTouchesInView = false
+-            recorder.delaysTouchesBegan = false
+-            recorder.delaysTouchesEnded = false
+-            window.addGestureRecognizer(recorder)
+-        }
+-    }
+-}
+-
+-@MainActor
+-private final class PassiveTouchRecorder: UIGestureRecognizer {
++@MainActor
++private enum UIInteractionProbe {
++    static func sync(enabled: Bool) {
++        let windows = UIApplication.shared.connectedScenes
++            .compactMap { $0 as? UIWindowScene }
++            .flatMap(\.windows)
++
++        for window in windows {
++            let installed = (window.gestureRecognizers ?? []).compactMap { $0 as? PassiveTouchRecorder }
++            if !enabled {
++                for recorder in installed { window.removeGestureRecognizer(recorder) }
++                continue
++            }
++            guard !window.isHidden, installed.isEmpty else { continue }
++            let recorder = PassiveTouchRecorder()
++            recorder.delegate = recorder
++            recorder.cancelsTouchesInView = false
++            recorder.delaysTouchesBegan = false
++            recorder.delaysTouchesEnded = false
++            window.addGestureRecognizer(recorder)
++        }
++    }
++}
++
++@MainActor
++private final class PassiveTouchRecorder: UIGestureRecognizer, UIGestureRecognizerDelegate {
++    // The recorder must never require normal controls/scrolling to fail.
++    func gestureRecognizer(
++        _ gestureRecognizer: UIGestureRecognizer,
++        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
++    ) -> Bool { true }
++
+     private var startedAt: TimeInterval = 0
+     private var startPoint = CGPoint.zero
+     private var lastPoint = CGPoint.zero
+@@ -842,9 +861,16 @@
+         state = .failed
+     }
+ 
+-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+-        state = .failed
+-    }
++    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
++        state = .failed
++        // Only count cancellations in owner-enabled diagnostics, never content/location.
++        guard DeepTelemetry.shared.rawTouchCaptureEnabled else { return }
++        DiagnosticLogStore.shared.log(
++            .debug, .ui, event: "ui.raw.cancelled",
++            screen: DeepTelemetry.shared.currentScreen,
++            metadata: ["touch_count": String(touches.count)]
++        )
++    }
+ 
+     override func reset() {
+         super.reset()
