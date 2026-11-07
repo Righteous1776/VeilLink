@@ -40,7 +40,7 @@ enum NativeGomokuSelfPlay {
             )
         case 3:
             return GomokuBotBudget(
-                candidateRadius: 2, rootCandidateLimit: 12,
+                candidateRadius: 2, rootCandidateLimit: 14,
                 replyCandidateLimit: 6, continuationCandidateLimit: 4,
                 timeLimitMilliseconds: 100
             )
