@@ -279,6 +279,7 @@ public struct VeilopolyGameView: View {
  @State private var showMore = false
  @State private var showExitConfirmation = false
  @State private var showGameInfo = false
+ @State private var showGuide = false
  @State private var controlsExpanded = false
  @State private var dayFelt = true
  @State private var managementSection: VeilopolyManagementSection = .property
@@ -358,6 +359,7 @@ public struct VeilopolyGameView: View {
    .disabled(!model.scene.supportsDayFelt)
    Button("重新开局") { showRestart = true }
    Button("本局信息") { showGameInfo = true }
+   Button("玩法辞典 · 23 篇") { showGuide = true }
    Button("取消", role: .cancel) {}
   }
   .confirmationDialog("重新开始本局？", isPresented: $showRestart) {
@@ -370,10 +372,14 @@ public struct VeilopolyGameView: View {
   } message: {
    Text("退出后返回上一级界面。当前本地对局会自动保存，下次打开继续。")
   }
+  .sheet(isPresented: $showGuide) {
+   VeilopolyGuideSheet(isPresented: $showGuide, game: model.game,
+                       saveSummary: model.saveSummary)
+  }
   .alert("本局信息", isPresented: $showGameInfo) {
    Button("知道了", role: .cancel) {}
   } message: {
-   Text("随机种子：\(model.game.seed)\n本地对局 · 4 名玩家\n同色地产均衡建造，银行与股票共用本局现金。\n存档：\(model.saveSummary)")
+   Text("随机种子：\(model.game.seed)\n本局席位：\(model.game.players.count) 名玩家\n\(VeilopolyGuideLibrary.status(model.game))\n地产、银行与模拟股市共用本局现金。\n存档：\(model.saveSummary)")
   }
   .overlay {
    if let card = model.shownCard {

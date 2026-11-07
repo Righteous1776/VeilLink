@@ -7,7 +7,7 @@
 ## Requirements
 
 - Swift 5.9+
-- iOS 16+
+- iOS 15+ (deployment target; full Xcode/iOS 15 runtime acceptance pending)
 - SpriteKit + SwiftUI (UI target is iOS-only)
 - No third-party runtime dependencies
 - Engine imports Foundation only; no UIKit, SwiftUI, AVFoundation, Date/UUID, ambient RNG, or floating-point comparison.
