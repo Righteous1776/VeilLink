@@ -1,0 +1,17 @@
+# [AGENT-DROP] VL-CONCURRENT-FABRIC-V1 — F1/F2/E1 governor preflight
+- agent_id: chatgpt
+- task_id: 20261106-concurrent-fabric-bridge-preflight
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- submission_path: AGENT_INBOX/submissions/chatgpt/20261106-concurrent-fabric-bridge-preflight/
+- mode: INBOX_ONLY
+- status: DROPPED — proposed arbitration, not applied
+- includes_inbox_prs: 146, 149, 150
+- deferred_inbox_pr: 137 (BLE reconnect + telemetry)
+- proposed_files:
+  - VeilLink/Voice/VoiceMessageAudioController.swift
+  - VeilLink/Voice/WalkieTalkieAudioController.swift
+  - VeilLinkTests/VoiceAndPTTTests.swift
+  - VeilLink/Core/RuntimeMaintenanceTuning.swift
+  - VeilLink/Transport/BLETransport.swift
+  - VeilLinkTests/BLETransportSafetyTests.swift
+- asset_grant: none
