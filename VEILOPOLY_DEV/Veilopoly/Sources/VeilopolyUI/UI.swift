@@ -44,6 +44,10 @@ public final class GameSessionModel: ObservableObject {
  public var onAuthoritativeMove: ((AuthoritativeMove) -> Void)?
  public var onGuestIntent: ((Move) -> Void)?
  public var onGuestIntentRejected: ((Move, String) -> Void)?
+ public var onGuestPresentationReady: (() -> Void)?
+ public var hasPendingHostPlayback: Bool {
+  isMultiplayerGuest && (animating || cardGate.isPresented || !pendingHostMoves.isEmpty)
+ }
  public var isMultiplayer: Bool { sessionMode != .solo }
  public var isMultiplayerGuest: Bool { sessionMode == .multiplayerGuest }
  public var isMultiplayerHost: Bool { sessionMode == .multiplayerHost }
@@ -273,6 +277,7 @@ public final class GameSessionModel: ObservableObject {
     if !animating { presentNext() }
     return
    }
+   if isMultiplayerGuest { onGuestPresentationReady?() }
    drive()
    return
   }
