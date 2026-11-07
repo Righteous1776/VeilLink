@@ -1,6 +1,7 @@
 import Combine
 import CryptoKit
 import Foundation
+import VeilopolyNet
 
 private enum WireProtocol {
     static let version = 4
@@ -593,6 +594,30 @@ final class SessionCoordinator: ObservableObject {
         try queueContent(WireChatContent(kind: .text, text: trimmed, attachment: nil, mimeType: nil, sentAt: Date(), attachmentByteCount: nil, attachmentSHA256: nil, attachmentChunkCount: nil), preview: ReplyTextCodec.previewText(for: trimmed), to: peerIdentityID)
     }
 
+    /// Veilopoly's two-device packets travel through the SAME authenticated,
+    /// queued, end-to-end encrypted chat path as the existing nearby games.
+    /// No raw Bluetooth payloads, no second identity store and no plaintext link.
+    func sendVeilopolyEnvelope(_ packet: GameEnvelope, to peerIdentityID: String) throws {
+        guard hasSecureSession(for: peerIdentityID) else {
+            throw NSError(domain: "VeilLink", code: 25, userInfo: [
+                NSLocalizedDescriptionKey: "好友安全链路尚未建立；请在附近完成配对，等待连接就绪。"
+            ])
+        }
+        let encoded = try VeilopolyRoomWire.encode(packet)
+        guard encoded.lengthOfBytes(using: .utf8) <= WireProtocol.maximumTextBytes else {
+            throw NSError(domain: "VeilLink", code: 23, userInfo: [
+                NSLocalizedDescriptionKey: "本次 Veilopoly 同步消息超出安全传输上限。"
+            ])
+        }
+        try queueContent(
+            WireChatContent(kind: .text, text: encoded, attachment: nil, mimeType: nil,
+                            sentAt: Date(), attachmentByteCount: nil,
+                            attachmentSHA256: nil, attachmentChunkCount: nil),
+            preview: VeilopolyRoomWire.previewText(for: encoded) ?? "[Veilopoly] 加密棋局更新",
+            to: peerIdentityID
+        )
+    }
+
     func sendMiniGamePacket(_ packet: MiniGamePacket, to peerIdentityID: String) throws {
         guard hasSecureSession(for: peerIdentityID) else {
             throw NSError(domain: "VeilLink", code: 25, userInfo: [NSLocalizedDescriptionKey: "对手安全链路尚未就绪，小游戏操作未发送。"])
@@ -917,7 +942,7 @@ final class SessionCoordinator: ObservableObject {
             let message = ChatMessage(id: payload.messageID, conversationID: conversationID, senderIdentityID: remote.identityID, body: body, sentAt: content.sentAt, isOutgoing: false, deliveryState: .delivered, transferProgress: progress)
             let preview: String
             switch content.kind {
-            case .text: preview = MiniGameCodec.previewText(for: message.body) ?? ReplyTextCodec.previewText(for: message.body)
+            case .text: preview = VeilopolyRoomWire.previewText(for: message.body) ?? MiniGameCodec.previewText(for: message.body) ?? ReplyTextCodec.previewText(for: message.body)
             case .image: preview = "[图片]"
             case .voice: preview = VoiceMessageCodec.decode(message.body).map { VoiceMessageCodec.preview(durationSeconds: $0.durationSeconds) } ?? "[语音]"
             }
