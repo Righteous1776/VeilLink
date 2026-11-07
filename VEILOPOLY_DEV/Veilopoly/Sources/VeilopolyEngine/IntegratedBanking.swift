@@ -253,6 +253,12 @@ public enum IntegratedBanking {
    guard period <= 1_000_000 - periods && g.players[p].cash <= 1_000_000_000 - principal else {
     throw GameError.invalidState
    }
+   // Protect queued claims, savings, investment payouts and equity exits
+   // before granting optional V5 credit; do not rewrite existing V4 loans.
+   if ledger.financeRuleVersion == VeilopolyCityLongEconomy.version &&
+      !VeilopolyFinancialStability.mayIssueCredit(g, amount: principal) {
+    throw GameError.bankLiquidity
+   }
    ledger.accounts[p].borrowCount += 1
    ledger.accounts[p].loans.append(.init(id: id, principal: principal,
                                          interestBasisPoints: policy.loanInterestBasisPoints[ordinal],

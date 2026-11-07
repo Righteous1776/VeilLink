@@ -1503,6 +1503,14 @@ public struct VeilopolyGameView: View {
    Text("银行与金融").font(.subheadline.weight(.semibold))
    if let available = model.game.banking?.reserveCash {
     VStack(alignment: .leading, spacing: 4) {
+     if let report = VeilopolyFinancialStability.inspect(model.game) {
+      Text("银行风险 \(report.level.rawValue) · 存款及投资等潜在兑付 ¥\(report.futureObligations) · 受保护储备 ¥\(report.protectedReserve)")
+       .font(.caption.monospacedDigit())
+       .fixedSize(horizontal: false, vertical: true)
+      Text("待支付债权 ¥\(report.queuedClaims) · 可新增贷款 ¥\(report.safeNewCredit) · 估算覆盖率 \(report.coverageBasisPoints / 100)%")
+       .font(.caption2).foregroundStyle(.secondary)
+       .fixedSize(horizontal: false, vertical: true)
+     }
      Label("城市中央银行 · 有限游戏币", systemImage: "building.columns.fill")
       .font(.subheadline.weight(.semibold))
      Text("银行储备 ¥\(available) · 玩家流通现金 ¥\(VeilopolyCityLongEconomy.circulatingCash(model.game)) · 全市货币总量 ¥\(VeilopolyCityLongEconomy.supplyCeiling(model.game) ?? 0)")

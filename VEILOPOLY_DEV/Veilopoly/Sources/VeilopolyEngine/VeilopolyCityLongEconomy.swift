@@ -81,9 +81,12 @@ public enum VeilopolyCityLongEconomy {
   let credit = game.banking?.accounts.reduce(0) {
    $0 + $1.loans.reduce(0) { $0 + $1.principal }
   } ?? 0
+  let level = VeilopolyFinancialStability.inspect(game)?.level
+  let stress = level == .crisis ? 140 : level == .stressed ? 90 :
+               level == .guarded ? 35 : 0
   let signal = (cash - 4 * expandedStartingCash) / 500 +
    min(75, buildings * 5) + min(32, credit / 2_000)
-   - min(55, max(0, richest - poorest) / 1_600)
+   - min(55, max(0, richest - poorest) / 1_600) - stress
   return max(-140, min(140, signal))
  }
  public static func terms() -> FinanceSandboxPolicy {
