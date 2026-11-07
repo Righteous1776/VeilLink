@@ -23,8 +23,25 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
         case .relaxed: return "保留明显容错，适合入门练习"
         case .balanced: return "稳定策略与本地学习"
         case .advanced: return "更宽候选、更深反击搜索"
-        case .master: return "设备允许时启用最深离线搜索"
+        case .master: return "更宽候选与更深搜索；可手动选择节能模式"
         }
+    }
+}
+
+/// User-directed compute preference: never silently downshift search solely
+/// because hardware is classified as iPhone 7 / SE1 / LEGACY-COMPACT.
+/// Full depth is the default on ALL devices. Economy is opt-in and can be
+/// changed at any time without modifying a saved match or a model archive.
+enum BoardSearchMode: String, CaseIterable, Identifiable, Sendable {
+    case full
+    case economy
+
+    var id: String { rawValue }
+    var title: String { self == .full ? "深度搜索" : "节能搜索" }
+
+    /// Explicit engine budget presets; not a device detection result.
+    var budgetProfileLabel: String {
+        self == .full ? "HIGH" : "LEGACY-COMPACT"
     }
 }
 
@@ -53,6 +70,9 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var lastDecisionMilliseconds: Int?
     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
     @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
+    @Published private(set) var boardSearchMode = BoardSearchMode(
+        rawValue: UserDefaults.standard.string(forKey: "VeilLink.Board.SearchMode.v1") ?? ""
+    ) ?? .full
     /// Explicit local opt-in; the incumbent search remains the default and fallback.
     @Published private(set) var useExternalGomokuEngine = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.V2.Enabled")
     @Published private(set) var gomokuFormationMode = GomokuFormationMode(
@@ -536,6 +556,12 @@ final class LocalAIGameController: ObservableObject {
         boardDifficulty = difficulty
     }
 
+    func setBoardSearchMode(_ mode: BoardSearchMode) {
+        guard game == .gomoku || game == .xiangqi else { return }
+        boardSearchMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "VeilLink.Board.SearchMode.v1")
+    }
+
     func setTacticalScenario(_ scenario: TacticalSoloScenario) {
         guard game == .tactical, tacticalScenario != scenario else { return }
         tacticalScenario = scenario
@@ -710,7 +736,7 @@ final class LocalAIGameController: ObservableObject {
                 : humanLearning
             let budget = GomokuBotBudget.forDifficulty(
                 boardDifficulty,
-                profileLabel: VeilDevicePerformance.current.label
+                profileLabel: boardSearchMode.budgetProfileLabel
             ).reinforced(by: learning.trainingLevel)
             let preference = GomokuFormationPreference(
                 mode: gomokuFormationMode,
@@ -781,7 +807,7 @@ final class LocalAIGameController: ObservableObject {
             let learning = learningStore.snapshot(currentPlies: learningPlies).applying(formation)
             let budget = XiangqiBotBudget.forDifficulty(
                 boardDifficulty,
-                profileLabel: VeilDevicePerformance.current.label
+                profileLabel: boardSearchMode.budgetProfileLabel
             ).reinforced(by: learning.trainingLevel)
             let result = await Task.detached(priority: .userInitiated) {
                 XiangqiBot.chooseMove(in: snapshot, for: computer, budget: budget, learning: learning)
