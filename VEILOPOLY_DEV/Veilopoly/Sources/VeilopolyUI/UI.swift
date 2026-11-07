@@ -1062,8 +1062,8 @@ public struct VeilopolyGameView: View {
   guard let quote = IntegratedBanking.ledger(model.game).market?.quotes.first else {
    return "行情未开放"
   }
-  let whole = quote.priceCents / 100
-  let fraction = abs(quote.priceCents % 100)
+  let whole = quote.currentPriceCents / 100
+  let fraction = abs(quote.currentPriceCents % 100)
   return "\(quote.symbol) ¥\(whole).\(String(format: "%02d", fraction))"
  }
 
@@ -1185,12 +1185,12 @@ public struct VeilopolyGameView: View {
    Text("五只虚构股票").font(.headline)
    Text("行情只用于当前离线棋局，非真实证券价格。")
     .font(.footnote).foregroundStyle(.secondary)
-   ForEach(market.quotes, id: \.symbol) { quote in
+   ForEach(market.quotes) { quote in
     HStack(spacing: 8) {
      Text(quote.symbol)
       .font(.headline.monospaced())
      Spacer(minLength: 8)
-     Text("¥\(quote.priceCents / 100).\(String(format: "%02d", abs(quote.priceCents % 100)))")
+     Text("¥\(quote.currentPriceCents / 100).\(String(format: "%02d", abs(quote.currentPriceCents % 100)))")
       .font(.system(.body, design: .monospaced))
      if quote.isHalted { Text("暂停").foregroundColor(.orange) }
     }
