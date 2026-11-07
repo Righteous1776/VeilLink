@@ -60,8 +60,12 @@ public enum VeilopolyRoomWire {
                          $0.observedHash.utf8.count <= 128 } == true
   case .snapshot:
    return packet.invite == nil && packet.intent == nil &&
-    packet.move == nil && packet.resync == nil &&
+    packet.move == nil && packet.resync == nil && packet.hostHeadSeq == nil &&
     packet.snapshot.map { $0.lastAppliedSeq >= -1 && !$0.stateHash.isEmpty } == true
+  case .syncHint:
+   return packet.invite == nil && packet.intent == nil &&
+    packet.move == nil && packet.snapshot == nil && packet.resync == nil &&
+    packet.hostHeadSeq.map { $0 >= -1 } == true
   }
  }
 
@@ -75,6 +79,7 @@ public enum VeilopolyRoomWire {
   case .move: return "[Veilopoly] 加密棋局已同步"
   case .resync: return "[Veilopoly] 请求恢复棋局"
   case .snapshot: return "[Veilopoly] 房主发送恢复快照"
+  case .syncHint: return "[Veilopoly] 可继续恢复离线回合
   }
  }
 }
