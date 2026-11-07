@@ -41,6 +41,46 @@ final class VeilopolyRoomWireTests: XCTestCase {
   XCTAssertFalse(VeilopolyRoomWire.isValid(GameEnvelope(gameId: "not-uuid", kind: .accept)))
  }
 
+ func testOnlyGuestMayAcceptAndHostMayCommit() {
+  XCTAssertTrue(VeilopolyRoomAuthorization.allows(.invite,
+   hostIsLocal: true, messageIsOutgoing: true))
+  XCTAssertFalse(VeilopolyRoomAuthorization.allows(.accept,
+   hostIsLocal: true, messageIsOutgoing: true))
+  XCTAssertTrue(VeilopolyRoomAuthorization.allows(.accept,
+   hostIsLocal: true, messageIsOutgoing: false))
+  XCTAssertFalse(VeilopolyRoomAuthorization.allows(.intent,
+   hostIsLocal: true, messageIsOutgoing: true))
+  XCTAssertTrue(VeilopolyRoomAuthorization.allows(.intent,
+   hostIsLocal: true, messageIsOutgoing: false))
+  XCTAssertTrue(VeilopolyRoomAuthorization.allows(.move,
+   hostIsLocal: false, messageIsOutgoing: false))
+  XCTAssertFalse(VeilopolyRoomAuthorization.allows(.move,
+   hostIsLocal: false, messageIsOutgoing: true))
+  XCTAssertFalse(VeilopolyRoomAuthorization.allows(.snapshot,
+   hostIsLocal: false, messageIsOutgoing: true))
+  XCTAssertTrue(VeilopolyRoomAuthorization.allows(.resync,
+   hostIsLocal: true, messageIsOutgoing: false))
+ }
+
+ func testTwoHumanSeatsProduceSameHostAndClientState() {
+  let initial = GameFactory.make(seed: 90210, humanCount: 2)
+  XCTAssertEqual(initial.players[0].kind, .human)
+  XCTAssertEqual(initial.players[1].kind, .human)
+  XCTAssertEqual(initial.players[2].kind, .ai)
+  XCTAssertEqual(initial.players[3].kind, .ai)
+  var authority = AuthoritativeHost(game: initial)
+  var guest = ReplicaClient(game: initial)
+  let move = Move(.rollDice, player: 0, seq: 0)
+  guard case .success(let committed) = authority.accept(move) else {
+   return XCTFail("host rejected valid opening roll")
+  }
+  guard case .success(let digest) = guest.replay(committed) else {
+   return XCTFail("guest rejected authenticated host commit")
+  }
+  XCTAssertEqual(digest, StateDigest.hash(authority.game))
+  XCTAssertEqual(guest.game, authority.game)
+ }
+
  func testResumeRoundTripAndRoomBinding() throws {
   let g = GameFactory.make(seed: 707, humanCount: 2)
   let request = MultiplayerResumeHandshake.request(gameID: room, guest: g)
