@@ -13,7 +13,7 @@ final class KimiK2SpriteKitIntegrationTests: XCTestCase {
   state.board[21].owner = 0; state.board[21].hotel = true
   model.scene.display(state)
   for index in [11, 21] {
-   let tile = try XCTUnwrap(model.scene.childNode(withName: KimiK2TileMap.tiles[index].id))
+   let tile = try XCTUnwrap(model.scene.childNode(withName: "//" + KimiK2TileMap.tiles[index].id))
    let building = try XCTUnwrap(tile.children.first { $0.name?.hasPrefix("Veilopoly/house-") == true || $0.name?.hasPrefix("Veilopoly/hotel-") == true })
    XCTAssertEqual(tile.zRotation + building.zRotation, 0, accuracy: 0.001)
   }
@@ -25,32 +25,47 @@ final class KimiK2SpriteKitIntegrationTests: XCTestCase {
 
  func testCityInlayUsesSafeLayerAndPreservesOriginalEmblemFallback() throws {
   let live = GameBoardScene(size: CGSize(width: 1024, height: 940))
-  let city = try XCTUnwrap(live.children.first { $0.name == "Astra/centerCity" } as? SKSpriteNode)
-  XCTAssertEqual(city.zPosition, 3.5)
-  XCTAssertEqual(city.size, CGSize(width: 448, height: 448))
-  XCTAssertEqual(city.position, CGPoint(x: 512, y: 470))
+  let boardRoot = try XCTUnwrap(live.children.first {
+   $0.name == IvoryUnifiedVisualSystem.boardRootName
+  })
+  let master = try XCTUnwrap(boardRoot.children.first {
+   $0.name == "Veilopoly/IvoryMasterInlay"
+  } as? SKSpriteNode)
+  XCTAssertEqual(master.zPosition, 3.5)
+  XCTAssertEqual(master.size, CGSize(width: 448, height: 448))
+  XCTAssertEqual(master.position, CGPoint(x: 512, y: 470))
+  XCTAssertNil(boardRoot.children.first { $0.name == "Astra/centerCity" })
+  live.setDayFelt(false)
   live.setDayFelt(true)
-  XCTAssertTrue(live.children.first { $0.name == "Astra/centerCity" } === city)
+  XCTAssertTrue(boardRoot.children.first {
+   $0.name == "Veilopoly/IvoryMasterInlay"
+  } === master)
 
   let folder = try XCTUnwrap(AstraCenterCityArtwork.resourceURL).deletingLastPathComponent()
   let fallback = SKScene(size: CGSize(width: 1024, height: 940))
   let skin = KimiK2BoardSkin.install(in: fallback) { name in
-   guard name != AstraCenterCityArtwork.alias,
+   guard name != IvoryUnifiedVisualSystem.masterImageAlias,
+         name != AstraCenterCityArtwork.alias,
          let image = UIImage(contentsOfFile: folder.appendingPathComponent(name + ".png").path) else { return nil }
    return SKTexture(image: image)
   }
   XCTAssertNotNil(skin)
-  XCTAssertNotNil(fallback.children.first { $0.name == "KimiK2/emblem" })
-  XCTAssertNil(fallback.children.first { $0.name == "Astra/centerCity" })
+  let fallbackRoot = try XCTUnwrap(fallback.children.first {
+   $0.name == IvoryUnifiedVisualSystem.boardRootName
+  })
+  XCTAssertNotNil(fallbackRoot.children.first { $0.name == "Veilopoly/CenterFallback" })
+  XCTAssertNil(fallbackRoot.children.first { $0.name == "Veilopoly/IvoryMasterInlay" })
  }
 
  func testAllFortyLiveVisualCellsUseOriginalCoordinates() {
   let scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
-  let sprites = scene.children.filter { $0.name?.hasPrefix("VL-K2-TILE-") == true }
+  let root = scene.children.first { $0.name == IvoryUnifiedVisualSystem.boardRootName }
+  XCTAssertNotNil(root)
+  let sprites = root?.children.filter { $0.name?.hasPrefix("VL-K2-TILE-") == true } ?? []
   XCTAssertEqual(sprites.count, 40)
   for corner in [0,10,20,30] {
    guard let geometry = KimiK2TileMap.visual(for: corner),
-         let sprite = scene.childNode(withName: geometry.id) else {
+         let sprite = scene.childNode(withName: "//" + geometry.id) else {
     XCTFail("Missing Kimi sprite at corner " + String(corner)); continue
    }
    XCTAssertEqual(sprite.position.x, CGFloat(geometry.centerX), accuracy: 0.01)
@@ -67,23 +82,24 @@ final class KimiK2SpriteKitIntegrationTests: XCTestCase {
  }
  func testDayNightSwitchReusesTheSameFortyTilesAndLeavesExitIndependent() {
   let scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
-  guard let corner = scene.childNode(withName: "VL-K2-TILE-000"),
-        let opposite = scene.childNode(withName: "VL-K2-TILE-020") else {
+  guard let corner = scene.childNode(withName: "//VL-K2-TILE-000"),
+        let opposite = scene.childNode(withName: "//VL-K2-TILE-020") else {
    return XCTFail("Kimi 40-cell board is not active")
   }
+  XCTAssertTrue(scene.isDayFelt, "The owner selected light ivory default")
   let cornerPosition = corner.position
   let oppositePosition = opposite.position
   let originalChildCount = scene.children.count
   scene.setDayFelt(true)
   XCTAssertTrue(scene.isDayFelt)
-  XCTAssertTrue(scene.childNode(withName: "VL-K2-TILE-000") === corner)
-  XCTAssertTrue(scene.childNode(withName: "VL-K2-TILE-020") === opposite)
+  XCTAssertTrue(scene.childNode(withName: "//VL-K2-TILE-000") === corner)
+  XCTAssertTrue(scene.childNode(withName: "//VL-K2-TILE-020") === opposite)
   XCTAssertEqual(corner.position, cornerPosition)
   XCTAssertEqual(opposite.position, oppositePosition)
   XCTAssertEqual(scene.children.count, originalChildCount)
   scene.setDayFelt(false)
   XCTAssertFalse(scene.isDayFelt)
-  XCTAssertTrue(scene.childNode(withName: "VL-K2-TILE-000") === corner)
+  XCTAssertTrue(scene.childNode(withName: "//VL-K2-TILE-000") === corner)
  }
 
  func testFourTokenShadowsFollowSnapshotsAndHideOnBankruptcy() {
@@ -127,7 +143,7 @@ final class KimiK2SpriteKitIntegrationTests: XCTestCase {
   let scene = model.scene
   for index in 0..<40 {
    let spec = KimiK2TileMap.tiles[index]
-   guard let tile = scene.childNode(withName: spec.id) as? SKSpriteNode else {
+   guard let tile = scene.childNode(withName: "//" + spec.id) as? SKSpriteNode else {
     XCTFail("Missing Kimi tile \(index)"); continue
    }
    let nameMasks = tile.children.filter { $0.name == "LiveNameMask" }
@@ -156,6 +172,16 @@ final class KimiK2SpriteKitIntegrationTests: XCTestCase {
   XCTAssertNotNil(skin)
   XCTAssertEqual(skin?.usesFineTiles, false)
   XCTAssertEqual(skin?.tiles.count, 40)
+ }
+
+ func testUnifiedRootContainsOneMasterAndBothIvoryDecks() throws {
+  let scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
+  let root = try XCTUnwrap(scene.children.first { $0.name == IvoryUnifiedVisualSystem.boardRootName })
+  XCTAssertEqual(root.children.filter { $0.name == "Veilopoly/IvoryMasterInlay" }.count, 1)
+  XCTAssertNotNil(root.children.first { $0.name == "Veilopoly/IvoryChanceDeck" })
+  XCTAssertNotNil(root.children.first { $0.name == "Veilopoly/IvoryChestDeck" })
+  XCTAssertNotNil(root.children.first { $0.name == "Veilopoly/IvoryTurnBanner" })
+  XCTAssertEqual(root.children.filter { $0.name?.hasPrefix("VL-K2-TILE-") == true }.count, 40)
  }
 
 }
