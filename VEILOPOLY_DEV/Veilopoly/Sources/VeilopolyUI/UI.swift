@@ -446,7 +446,7 @@ public struct VeilopolyGameView: View {
   } message: {
    Text("退出后返回上一级界面。当前本地对局会自动保存，下次打开继续。")
   }
-  .sheet(isPresented: $showGuide) {
+  .fullScreenCover(isPresented: $showGuide) {
     VeilopolyGuideSheet(isPresented: $showGuide, game: model.game,
                         saveSummary: model.saveSummary)
    }
@@ -596,9 +596,33 @@ public struct VeilopolyGameView: View {
     capsuleControls
     Spacer(minLength: 0)
     if !controlsExpanded {
-     // Daily gameplay operations have their own bottom-right entry.
-     collapsedStatusButton
-      .transition(.opacity)
+     // Read-only inspection must not require expanding the action drawer.
+     HStack(spacing: 8) {
+      if availableWidth - boardWidth >= 345 {
+       Button {
+        managementSection = .property
+        showAssetExplorer = true
+       } label: {
+        Label("资产浏览", systemImage: "square.grid.2x2")
+         .font(.system(size: 14, weight: .semibold))
+         .foregroundColor(.white)
+         .padding(.horizontal, 12)
+         .frame(minHeight: 50)
+         .background(Color(red: 0.08, green: 0.20, blue: 0.23),
+                     in: RoundedRectangle(cornerRadius: 12))
+         .overlay {
+          RoundedRectangle(cornerRadius: 12)
+           .strokeBorder(Color(red: 0.74, green: 0.59, blue: 0.34), lineWidth: 1)
+           .allowsHitTesting(false)
+         }
+         .contentShape(Rectangle())
+       }
+       .buttonStyle(.plain)
+       .accessibilityHint("任何回合可直接查看全局资产，不触发购买")
+      }
+      collapsedStatusButton
+       .transition(.opacity)
+     }
     }
    }
    .padding(.trailing, 6)
@@ -1225,6 +1249,7 @@ public struct VeilopolyGameView: View {
     Divider()
     ScrollView(.vertical) {
      managePanel
+      .disabled(model.pending || !model.waitingForHuman || model.game.turn.phase != .manage)
       .frame(maxWidth: 760, alignment: .leading)
       .padding(.vertical, 8)
       .frame(maxWidth: .infinity)
