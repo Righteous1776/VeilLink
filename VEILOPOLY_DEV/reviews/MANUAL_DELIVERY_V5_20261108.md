@@ -32,3 +32,8 @@ Both GitHub Markdown blobs and the PDF source Markdown share Git blob SHA-1 `b86
 - Existing 23-topic brief glossary includes old classic numbers. Toggle label explicitly distinguishes it from the V5 complete manual, and the full text names its applicable rules.
 - SwiftUI rendering of long Markdown tables should be tested in compact iPhone width. Future reader enhancement can render board/card tables as native accessible cards without altering canonical Markdown.
 - PDF is not bundled within the IPA; delivered separately by user chat. The in-app manual is the Markdown resource, not a PDF viewer.
+
+
+## Parallel manual conflict reconciliation (MANUAL-004)
+A concurrent lane also authored `VeilopolyEngine/VeilopolyCompleteManual.swift` (13 classifications, 162 independent reference entries), `VeilopolyUI/VeilopolyCompleteManualView.swift`, engine tests and associated Markdown/JSON under `VEILOPOLY_DEV/docs`. This is a distinct encyclopedia; its content is **not** the same source as the 27-chapter PDF. Both bodies are preserved. The UI module's Markdown resource helper was renamed to `VeilopolyMarkdownManual` so that unqualified `VeilopolyCompleteManual` resolves to the Engine encyclopedia inside `VeilopolyCompleteManualView`. The GuideSheet exposes the 162-entry encyclopedia through a separate NavigationLink, the 27-chapter PDF-parity document through a segment, and the original 23-topic glossary through the other segment. No document is silently overwritten.
+Exact SHA SwiftPM/XCTest and iOS SDK still **NOT_RUN**. Treat as statically reconciled only; no main promotion.
