@@ -443,18 +443,13 @@ final class GameBoardScene: SKScene {
  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
   guard let touch = touches.first else { return }
   let local = touch.location(in: self)
-  // Select the nearest of the forty squares. Dictionary iteration order must
-  // not decide which overlapping tile receives a tap.
-  let candidates = tiles.compactMap { (index, node) -> (Int, CGFloat)? in
-   let dx = local.x - node.position.x
-   let dy = local.y - node.position.y
-   let distance = dx * dx + dy * dy
-   return distance <= CGFloat(108 * 108) ? (index, distance) : nil
+  // Use a pure, deterministic geometry picker; scene scale is irrelevant.
+  let centers = tiles.map { index, node in
+   VeilopolyTileHitTarget(index: index, x: Double(node.position.x),
+                          y: Double(node.position.y))
   }
-  let hit = candidates.min { lhs, rhs in
-   if lhs.1 == rhs.1 { return lhs.0 < rhs.0 }
-   return lhs.1 < rhs.1
-  }?.0
+  let hit = VeilopolyTileHitTesting.nearest(
+   x: Double(local.x), y: Double(local.y), centers: centers)
   onBoardTap?(hit)
  }
  
