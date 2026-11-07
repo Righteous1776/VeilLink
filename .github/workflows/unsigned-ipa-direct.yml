@@ -56,6 +56,38 @@ jobs:
               Path(sys.argv[2]).write_bytes(z.read(ipas[0]))
           PY
           ditto -x -k "$RUNNER_TEMP/v29-native-source.ipa" "$RUNNER_TEMP/v29-native-source"
+          # Xcode strips Headers/Modules when embedding frameworks in an app.
+          # Restore the EXACT upstream b29c606 interface for compilation; the
+          # already-validated arm64 binary is unchanged, not recompiled.
+          HEADER_SOURCE="$RUNNER_TEMP/v29-llama-headers"
+          git init "$HEADER_SOURCE"
+          git -C "$HEADER_SOURCE" remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C "$HEADER_SOURCE" fetch --depth 1 --filter=blob:none origin b29c606e28a01b1bc8c1351026a0fa6e616bf6c4
+          git -C "$HEADER_SOURCE" sparse-checkout set --no-cone '/include/' '/ggml/include/' '/tools/mtmd/*.h'
+          git -C "$HEADER_SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$HEADER_SOURCE" rev-parse HEAD)" = b29c606e28a01b1bc8c1351026a0fa6e616bf6c4
+          python3 - "$HEADER_SOURCE" "$RUNNER_TEMP/v29-native-source/Payload/VeilLink.app/Frameworks/llama.framework" <<'PY'
+          from pathlib import Path
+          import shutil, sys
+          src, framework = map(Path, sys.argv[1:])
+          headers, modules = framework / 'Headers', framework / 'Modules'
+          headers.mkdir(exist_ok=True); modules.mkdir(exist_ok=True)
+          names = ['include/llama.h'] + ['ggml/include/' + n for n in
+                   ['ggml.h', 'ggml-opt.h', 'ggml-alloc.h', 'ggml-backend.h',
+                    'ggml-metal.h', 'ggml-cpu.h', 'ggml-blas.h', 'gguf.h']] + \
+                  ['tools/mtmd/mtmd.h', 'tools/mtmd/mtmd-helper.h']
+          for name in names:
+              shutil.copyfile(src / name, headers / Path(name).name)
+          (modules / 'module.modulemap').write_text('''framework module llama {
+              umbrella "Headers"
+              link "c++"
+              link framework "Accelerate"
+              link framework "Metal"
+              link framework "Foundation"
+              export *
+          }
+          ''')
+          PY
           mkdir -p Vendor
           xcodebuild -create-xcframework \
             -framework "$RUNNER_TEMP/v29-native-source/Payload/VeilLink.app/Frameworks/llama.framework" \
