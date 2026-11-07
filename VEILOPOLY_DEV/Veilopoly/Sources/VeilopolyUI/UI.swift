@@ -1194,6 +1194,33 @@ public struct VeilopolyGameView: View {
    if let receipt = VeilopolyCivicText.banking(model.game, player: model.actor) {
     VeilopolyCivicDocumentPanel(document: receipt)
    }
+   if let digest = VeilopolyBankAutomation.digest(model.game, player: model.actor) {
+    VStack(alignment: .leading, spacing: 5) {
+     Label("自动账期巡检 · 第\(digest.period)期", systemImage: "clock.arrow.circlepath")
+      .font(.caption.weight(.semibold))
+      .foregroundColor(Color(red: 0.83, green: 0.67, blue: 0.43))
+     Text(digest.memorandum)
+      .font(.caption2).fixedSize(horizontal: false, vertical: true)
+     ForEach(digest.notices.prefix(5)) { item in
+      Text(item.text).font(.caption2)
+       .foregroundColor(item.urgent ? .orange : .secondary)
+       .fixedSize(horizontal: false, vertical: true)
+     }
+     if digest.notices.count > 5 {
+      Text("还有 \(digest.notices.count - 5) 项到期信息，请查看完整账本。")
+       .font(.caption2).foregroundStyle(.secondary)
+     }
+    }
+    .padding(9)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color(red: 0.12,green: 0.27,blue: 0.28),
+                in: RoundedRectangle(cornerRadius: 10))
+    .overlay {
+     RoundedRectangle(cornerRadius: 10)
+      .strokeBorder(Color(red: 0.73,green: 0.56,blue: 0.32),lineWidth: 1)
+      .allowsHitTesting(false)
+    }
+   }
    HStack(spacing: 8) {
     TextField("金额", text: $bankAmount)
      .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
