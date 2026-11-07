@@ -34,24 +34,47 @@ public enum AstraB01Artwork {
 public struct AstraB01ButtonStyle: ButtonStyle {
  @Environment(\.isEnabled) private var isEnabled
  private let secondary: Bool
- public init(secondary: Bool = false) { self.secondary = secondary }
+ private let symbol: String?
+ public init(secondary: Bool = false, symbol: String? = nil) {
+  self.secondary = secondary; self.symbol = symbol
+ }
 
  public func makeBody(configuration: Configuration) -> some View {
   let image = secondary
    ? AstraB01AssetNames.secondaryButton(enabled: isEnabled, pressed: configuration.isPressed)
    : AstraB01AssetNames.primaryButton(enabled: isEnabled, pressed: configuration.isPressed)
   return configuration.label
-   .font(.system(size: 14, weight: .semibold))
-   .foregroundColor(Color(red: 0.92, green: 0.95, blue: 0.97))
-   .lineLimit(1).minimumScaleFactor(0.78)
-   .padding(.leading, 36).padding(.trailing, 8)
+   .font(.subheadline.weight(.semibold))
+   // Gold primary art needs dark ink; secondary glass gets a dark scrim for
+   // light labels. Do not rely on white text over the bright metal gradient.
+   .foregroundColor(isEnabled && !secondary
+    ? Color(red: 0.035, green: 0.095, blue: 0.10)
+    : Color(red: 0.92, green: 0.95, blue: 0.97))
+   .fixedSize(horizontal: false, vertical: true)
+   .multilineTextAlignment(.center)
+   .padding(.leading, symbol == nil && isEnabled ? 12 : 36).padding(.trailing, 12)
+   .padding(.vertical, 6)
    .frame(maxWidth: .infinity, minHeight: 44)
    .background {
     AstraB01Artwork.image(image)
      .resizable(capInsets: EdgeInsets(top: 12, leading: 42, bottom: 12, trailing: 12),
                 resizingMode: .stretch)
+     .overlay {
+      if secondary && isEnabled {
+       Color.black.opacity(0.60)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+      }
+     }
      .allowsHitTesting(false)
      .accessibilityHidden(true)
+   }
+   .overlay(alignment: .leading) {
+    // Disabled textures already include a lock in this exact gutter.
+    if isEnabled, let symbol {
+     Image(systemName: symbol).font(.system(size: 15, weight: .semibold))
+      .frame(width: 20).padding(.leading, 10)
+      .allowsHitTesting(false).accessibilityHidden(true)
+    }
    }
    .contentShape(Rectangle())
    .accessibilityAddTraits(.isButton)

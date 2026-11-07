@@ -1,5 +1,33 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## CODEX W1-008 — decision hierarchy / adaptive buttons — 2026-11-07
+
+- Owner asked for continued UI design; before `8f4898d`, main still `2c5b516`.
+  W1-007 Apple acceptance remains open; this is additional scoped source work.
+- Buy/auction/trade primary decisions pinned outside scrolling documents.
+  Native summaries come first; existing Astra hero/civic documents remain in
+  expandable details. Trade explicitly says what YOU give/receive (cash,
+  named properties, both jail-card types); cash counteroffer is separate.
+- Same reducer previews control disabled states; minimum auction bid only
+  fills the draft, never sends. Zero/empty input cannot silently fold through
+  the bid button. Classic/city bail label now uses existing canonical fee.
+- Adaptive at-most-two action columns, single accessibility column, wrapped
+  dynamic labels/metrics and >=44pt style bodies. Native icons use reserved
+  gutters; disabled art's existing lock is not doubled. Gold primary uses
+  dark ink; secondary glass gets a dark scrim. Actual contrast remains unmeasured.
+- Retained dragging/suspension, board size/camera, theme, all resource bytes,
+  numeric keypad, save/network/ACK and game rule semantics. Only UI/tests/docs.
+  Independent V5/risk/manual lanes untouched, no cross-lane conflict found.
+- Linux Swift6.2.1: new reviews11/11 PASS; final UI121/121 PASS (1.068s).
+  Full **340 cases / 1 failure / 68.532s — FAIL**, same pre-existing malformed
+  trade assertion from W1-006 clean-baseline reproduction; no Engine/test edit.
+  iOS15 syntax parse and scoped whitespace review PASS only; Apple SDK,
+  rendered gestures/accessibility/Dynamic Type/contrast/performance NOT_RUN.
+- Receipt `reviews/W1_008_DECISION_PANEL_HIERARCHY.md`; NEXT_ONE_TASK W1-007
+  exact-head Apple build + rendered acceptance of both UI waves, without IPA.
+  State SOURCE_IMPLEMENTED / PORTABLE_UI_VALIDATED, full/Apple gates OPEN.
+  No main/host/protocol/identity/DB/rules/assets/version/workflow/IPA changes.
+
 ## CODEX W1-006 — movable/suspendable panel UI — 2026-11-07
 
 - Owner reprioritized existing panel refinement. Source baseline fast-forwarded

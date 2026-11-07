@@ -512,6 +512,8 @@ public struct VeilopolyGameView: View {
  @GestureState private var panelTranslation = CGSize.zero
  @GestureState private var chipTranslation = CGSize.zero
  @State private var showPanelDetails = false
+ @State private var showDecisionDocument = false
+ @State private var showCounterOffer = false
  @State private var dayFelt = true
  @State private var managementSection: VeilopolyManagementSection = .property
  @Environment(\.dismiss) private var dismiss
@@ -561,10 +563,16 @@ public struct VeilopolyGameView: View {
   .onChange(of: model.pending) { pending in
    if !pending { revealDecisionIfNeeded() }
   }
-  .onChange(of: model.game.turn.phase) { _ in revealDecisionIfNeeded() }
+  .onChange(of: model.game.turn.phase) { _ in
+   showDecisionDocument = false
+   showCounterOffer = false
+   revealDecisionIfNeeded()
+  }
   .onChange(of: model.game.turn.pendingPurchase) { _ in revealDecisionIfNeeded() }
   .onChange(of: model.game.auction?.tile) { _ in revealDecisionIfNeeded() }
   .onChange(of: model.actor) { _ in
+   showDecisionDocument = false
+   showCounterOffer = false
    resetTradeDraft()
    if model.game.trade != nil { loadCounterCash() }
    managementSection = .property
@@ -581,6 +589,8 @@ public struct VeilopolyGameView: View {
    managementSection = .property
    panelWorkspace.resetSession()
    showPanelDetails = false
+   showDecisionDocument = false
+   showCounterOffer = false
   }
   .task(id: scenePhase) {
    // Wall time only schedules explicit reducer moves. Price generation itself
@@ -885,6 +895,9 @@ public struct VeilopolyGameView: View {
    }
    .id("\(model.game.turn.phase.rawValue)-\(model.actor)-\(managementSection.rawValue)")
    // iOS 15: keep system scroll indicators; .scrollIndicators(_:) is a later API.
+   if model.waitingForHuman && !model.pending {
+    decisionFooter
+   }
    if model.game.turn.phase == .manage && model.waitingForHuman {
     action(model.game.turn.rolledDouble ? "继续额外回合" : "结束回合", symbol: "checkmark.circle") {
      model.perform(.endTurn)
@@ -906,6 +919,8 @@ public struct VeilopolyGameView: View {
   // Scope semantic light text here, not to the whole game or native sheets.
   .foregroundColor(.white)
   .environment(\.colorScheme, .dark)
+  .environment(\.veilopolyDecisionContentWidth,
+               max(0, Double(layout.frame(for: .panel, anchor: panelWorkspace.panelAnchor).width) - 36))
  }
 
  private var managementNavigation: some View {
@@ -1253,10 +1268,10 @@ public struct VeilopolyGameView: View {
   else {
    switch model.game.turn.phase {
    case .roll:
-    HStack {
+    VeilopolyDecisionActions {
      action("掷骰子", symbol: "die.face.5") { model.perform(.rollDice) }
      if model.game.players[model.actor].jailTurns > 0 {
-      action("支付 ¥50",symbol:"lock.open") { model.perform(.payBail) }
+      action("保释 ¥\(VeilopolyCityLongEconomy.bail(model.game))",symbol:"lock.open") { model.perform(.payBail) }
       if model.game.players[model.actor].chanceJailCards + model.game.players[model.actor].chestJailCards > 0 {
        action("出狱卡",symbol:"rectangle.on.rectangle") { model.perform(.useJailCard) }
       }
@@ -1264,14 +1279,7 @@ public struct VeilopolyGameView: View {
     }
    case .tileResolve:
     if let i = model.game.turn.pendingPurchase {
-     VStack(alignment: .leading,spacing:10) {
-      astraBuyHero(model.game.board[i])
-      HStack {
-       action("购买",symbol:"house") { model.perform(.buyProperty,tile:i) }
-        .disabled(model.game.players[model.actor].cash < model.game.board[i].price)
-       action("送入拍卖",symbol:"gavel",secondary:true) { model.perform(.startAuction,tile:i) }
-      }
-     }
+     purchasePanel(tile: i)
     }
    case .auction: auctionPanel
    case .manage: managePanel
@@ -1293,10 +1301,62 @@ public struct VeilopolyGameView: View {
  private func action(_ title: String, symbol: String,
                      secondary: Bool = false, pressed: @escaping () -> Void) -> some View {
   Button(action: pressed) {
-   Text(title).frame(maxWidth: .infinity, minHeight: 44)
+   Text(title).frame(maxWidth: .infinity)
   }
-  .buttonStyle(AstraB01ButtonStyle(secondary: secondary))
+  .buttonStyle(AstraB01ButtonStyle(secondary: secondary, symbol: symbol))
   .accessibilityLabel(title)
+ }
+
+ @ViewBuilder private func purchasePanel(tile: Int) -> some View {
+  if let review = VeilopolyPurchaseReview(game: model.game, player: model.actor, tile: tile) {
+   VStack(alignment: .leading, spacing: 9) {
+    VeilopolyDecisionHeading(title: review.name, subtitle: "无主地产 · 选择购买或公开拍卖", symbol: "house")
+    VeilopolyDecisionMetric(title: "购买价格", value: "¥\(review.price)", emphasized: true)
+    VeilopolyDecisionMetric(title: "购买后现金", value: review.cashAfterPurchase.map { "¥\($0)" } ?? "现金不足")
+    if let reason = review.rejection { Text(reason).font(.caption).foregroundStyle(.orange) }
+    Text("送入拍卖不等于跳过；按现有规则，玩家将轮流竞价或弃权。")
+     .font(.caption).foregroundStyle(.secondary)
+     .fixedSize(horizontal: false, vertical: true)
+    DisclosureGroup(isExpanded: $showDecisionDocument) {
+     VStack(spacing: 9) {
+      astraBuyHero(model.game.board[tile])
+      if let deed = VeilopolyCivicText.deed(model.game, tileIndex: tile) {
+       VeilopolyCivicDocumentPanel(document: deed)
+      }
+     }.padding(.top, 8)
+    } label: { Text("图文地契与租金资料").font(.caption.weight(.semibold)).frame(minHeight: 44) }
+   }
+  } else {
+   Text("地块资料暂不可用，请查看当前对局状态。").font(.caption)
+  }
+ }
+
+ /// Critical decisions stay reachable while scrolling art or a long contract.
+ /// This is the same action routing as before, never an implicit confirm.
+ @ViewBuilder private var decisionFooter: some View {
+  if model.game.turn.phase == .tileResolve,
+     let tile = model.game.turn.pendingPurchase,
+     let review = VeilopolyPurchaseReview(game: model.game, player: model.actor, tile: tile) {
+   VeilopolyDecisionActions {
+    action("购买地产", symbol: "house.fill") { model.perform(.buyProperty, tile: tile) }
+     .disabled(review.rejection != nil)
+    action("送入拍卖", symbol: "gavel", secondary: true) { model.perform(.startAuction, tile: tile) }
+   }
+  } else if model.game.turn.phase == .auction, model.game.auction != nil {
+   VeilopolyDecisionActions {
+    action("确认出价", symbol: "hand.raised") { model.perform(.bid, amount: Int(bidderCash) ?? 0) }
+     .disabled(VeilopolyAuctionReview.rejection(game: model.game, player: model.actor, draft: bidderCash) != nil)
+    action("弃权", symbol: "xmark.circle", secondary: true) { model.perform(.bid, amount: 0) }
+   }
+  } else if model.game.turn.phase == .trade,
+            VeilopolyTradeReview(game: model.game, viewer: model.actor) != nil {
+   VeilopolyDecisionActions {
+    action("接受交易", symbol: "checkmark") { model.perform(.acceptTrade) }
+     .disabled(VeilopolyGamePresentation.rejection(model.game,
+      move: Move(.acceptTrade, player: model.actor, seq: model.game.nextSeq)) != nil)
+    action("拒绝交易", symbol: "xmark", secondary: true) { model.perform(.rejectTrade) }
+   }
+  }
  }
  // Astra B01 runtime cards: backgrounds are decorative; all values below
  // come from the current authoritative GameState, never baked into PNGs.
@@ -1422,22 +1482,31 @@ public struct VeilopolyGameView: View {
  }
  private var auctionPanel: some View {
   VStack(alignment: .leading,spacing: 9) {
-   if let auction = model.game.auction {
-    Text("拍卖 · \(model.game.board[auction.tile].name)").font(.headline)
-    astraAuctionHero
-    if let notice = VeilopolyCivicText.auction(model.game) {
-     VeilopolyCivicDocumentPanel(document: notice)
+   if let review = VeilopolyAuctionReview(game: model.game, player: model.actor) {
+    let reason = VeilopolyAuctionReview.rejection(game: model.game, player: model.actor, draft: bidderCash)
+    VeilopolyDecisionHeading(title: review.name, subtitle: "公开拍卖 · 当前由你报价", symbol: "gavel")
+    VeilopolyDecisionMetric(title: "当前最高价", value: "¥\(review.currentBid)", emphasized: true)
+    VeilopolyDecisionMetric(title: "领先玩家", value: review.leader)
+    VeilopolyNumericInput(title: "你的竞价 · 最低 ¥\(review.minimumBid)", text: $bidderCash)
+    Button { bidderCash = String(review.minimumBid) } label: {
+     Text("填入最低价 ¥\(review.minimumBid) · 仅填写")
+      .font(.caption).frame(maxWidth: .infinity, minHeight: 44)
+      .contentShape(Rectangle())
     }
-    HStack {
-     action("出价",symbol:"hand.raised") {
-      model.perform(.bid, amount: Int(bidderCash) ?? 0)
-     }
-     .disabled((Int(bidderCash) ?? 0) <= auction.currentBid ||
-               (Int(bidderCash) ?? 0) > model.game.players[model.actor].cash)
-     action("弃权",symbol:"xmark.circle",secondary:true) {
-      model.perform(.bid, amount: 0)
-     }
-    }
+    .buttonStyle(.bordered)
+    .disabled(review.cash < review.minimumBid)
+    if let reason { Text(reason).font(.caption).foregroundStyle(.orange) }
+    Text("弃权会退出本次竞拍；挂起面板只收起界面，不会替你弃权。")
+     .font(.caption).foregroundStyle(.secondary)
+     .fixedSize(horizontal: false, vertical: true)
+    DisclosureGroup(isExpanded: $showDecisionDocument) {
+     VStack(spacing: 9) {
+      astraAuctionHero
+      if let notice = VeilopolyCivicText.auction(model.game) {
+       VeilopolyCivicDocumentPanel(document: notice)
+      }
+     }.padding(.top, 8)
+    } label: { Text("图文拍卖公告").font(.caption.weight(.semibold)).frame(minHeight: 44) }
    }
   }
  }
@@ -1758,33 +1827,41 @@ public struct VeilopolyGameView: View {
   }
  }
  private var tradeResponsePanel: some View {
-  VStack(spacing: 12) {
-   Text("交易确认").font(.headline)
-   if let trade = model.game.trade {
-    astraTradeHero(trade)
-    if let contract = VeilopolyCivicText.trade(model.game) {
-     VeilopolyCivicDocumentPanel(document: contract)
-    }
-
-   }
-   HStack {
-    action("接受",symbol:"checkmark") { model.perform(.acceptTrade) }
-    action("拒绝",symbol:"xmark",secondary:true) { model.perform(.rejectTrade) }
-   }
-   if let trade = model.game.trade {
+  VStack(alignment: .leading, spacing: 9) {
+   if let trade = model.game.trade,
+      let review = VeilopolyTradeReview(game: model.game, viewer: model.actor) {
+    let acceptReason = VeilopolyGamePresentation.rejection(model.game,
+     move: Move(.acceptTrade, player: model.actor, seq: model.game.nextSeq))
+    VeilopolyDecisionHeading(title: "交易确认", subtitle: "与\(review.otherPlayer)交换 · 接受后一次性交割", symbol: "arrow.left.arrow.right")
+    VeilopolyTradeTransferCard(title: "你将交付", symbol: "arrow.up.right", transfer: review.giving)
+    VeilopolyTradeTransferCard(title: "你将收到", symbol: "arrow.down.left", transfer: review.receiving)
+    VeilopolyDecisionMetric(title: "成交后现金", value: "¥\(review.cashAfterTrade)")
+    if let acceptReason { Text(acceptReason).font(.caption).foregroundStyle(.orange) }
     let counter = VeilopolyGamePresentation.counterOffer(trade,
      offeredCash: Int(offerCash) ?? -1, requestedCash: Int(requestCash) ?? -1,
      sequence: model.game.nextSeq)
-    HStack {
-     VeilopolyNumericInput(title: "我方出资", text: $offerCash)
-     VeilopolyNumericInput(title: "对方出资", text: $requestCash)
-    }
-    Text("还价将保留当前地产与出狱卡条件，仅修改现金。")
-     .font(.caption2).foregroundStyle(.secondary)
-    action("提交还价", symbol: "arrow.triangle.2.circlepath") {
-     model.perform(.counterTrade, offer: counter.offer, request: counter.request)
-    }
-    .disabled(VeilopolyGamePresentation.rejection(model.game, move: counter) != nil)
+    DisclosureGroup(isExpanded: $showCounterOffer) {
+     VStack(alignment: .leading, spacing: 8) {
+      VeilopolyNumericInput(title: "你将交付的现金", text: $offerCash)
+      VeilopolyNumericInput(title: "你将收到的现金", text: $requestCash)
+      Text("仅修改现金；地产与出狱卡保留原条件，仍需对方接受。")
+       .font(.caption).foregroundStyle(.secondary)
+      action("提交还价", symbol: "arrow.triangle.2.circlepath") {
+       model.perform(.counterTrade, offer: counter.offer, request: counter.request)
+      }
+      .disabled(VeilopolyGamePresentation.rejection(model.game, move: counter) != nil)
+     }.padding(.top, 8)
+    } label: { Text("修改现金还价").font(.caption.weight(.semibold)).frame(minHeight: 44) }
+    DisclosureGroup(isExpanded: $showDecisionDocument) {
+     VStack(spacing: 9) {
+      astraTradeHero(trade)
+      if let contract = VeilopolyCivicText.trade(model.game) {
+       VeilopolyCivicDocumentPanel(document: contract)
+      }
+     }.padding(.top, 8)
+    } label: { Text("图文合同与完整条款").font(.caption.weight(.semibold)).frame(minHeight: 44) }
+   } else {
+    Text("交易资料已变化，请等待当前状态。").font(.caption)
    }
   }
   .onAppear { loadCounterCash() }
