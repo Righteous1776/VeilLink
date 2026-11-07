@@ -1,10 +1,32 @@
 #if os(iOS) && canImport(SpriteKit)
 import XCTest
 import SpriteKit
+import UIKit
 @testable import VeilopolyUI
 
 @MainActor
 final class KimiK2SpriteKitIntegrationTests: XCTestCase {
+ func testCityInlayUsesSafeLayerAndPreservesOriginalEmblemFallback() throws {
+  let live = GameBoardScene(size: CGSize(width: 1024, height: 940))
+  let city = try XCTUnwrap(live.children.first { $0.name == "Astra/centerCity" } as? SKSpriteNode)
+  XCTAssertEqual(city.zPosition, 3.5)
+  XCTAssertEqual(city.size, CGSize(width: 448, height: 448))
+  XCTAssertEqual(city.position, CGPoint(x: 512, y: 470))
+  live.setDayFelt(true)
+  XCTAssertTrue(live.children.first { $0.name == "Astra/centerCity" } === city)
+
+  let folder = try XCTUnwrap(AstraCenterCityArtwork.resourceURL).deletingLastPathComponent()
+  let fallback = SKScene(size: CGSize(width: 1024, height: 940))
+  let skin = KimiK2BoardSkin.install(in: fallback) { name in
+   guard name != AstraCenterCityArtwork.alias,
+         let image = UIImage(contentsOfFile: folder.appendingPathComponent(name + ".png").path) else { return nil }
+   return SKTexture(image: image)
+  }
+  XCTAssertNotNil(skin)
+  XCTAssertNotNil(fallback.children.first { $0.name == "KimiK2/emblem" })
+  XCTAssertNil(fallback.children.first { $0.name == "Astra/centerCity" })
+ }
+
  func testAllFortyLiveVisualCellsUseOriginalCoordinates() {
   let scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
   let sprites = scene.children.filter { $0.name?.hasPrefix("VL-K2-TILE-") == true }

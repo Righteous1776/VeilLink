@@ -1,5 +1,13 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## Generated center city inlay — 2026-11-07
+
+- Task `VEILOPOLY-ART-INLAY-005`, baseline `0978834e5120973440c9313a3c94c5b354753aa7`. Owner authorized actual image generation and local texture composition. Direct source-layer inspection identified sparse center art and flat token/building materials; transparent original emblem/frame were correctly inspected with alpha composition, not mistaken for solid images.
+- Generated transparent miniature financial-city art with the OpenAI image tool. Original 1254px / 1,855,374 bytes and provenance retained under `INCOMING_ASSETS/ASTRA_CENTER_CITY_R1`; runtime `astraCenterCity.png` is 512px RGBA / 222,089 bytes / ~1 MiB decoded. SHA-256 recorded for both in the manifest.
+- Optional z=3.5 city inlay replaces the center emblem only when present, keeps original emblem fallback and does not touch tiles, labels, tokens or interactions. Full 448pt square bounds do not overlap any of the 40 rotated tiles. Day/night source-layer composition previews visually inspected; they are not device screenshots.
+- Original baseline plus patch: Swift 6.2.1/Linux full XCTest 141/141 PASS, art/resource tests 5/5 PASS, iOS16 ARM64 frontend grammar parse PASS. Actual Apple rendering/type-check and GPU behavior remain PENDING. Audit, remaining modeling limits and preview command: `Veilopoly/docs/CENTER_CITY_ART_REPAIR_20261107.md`.
+- Synced additively onto concurrent remote save/resume baseline `69acec5`; full Linux XCTest repeated: 154/154 PASS, 0 failures. Art file hashes and original source payload retained unchanged.
+
 ## Unified gameplay composition — 2026-11-07
 
 - Task `VEILOPOLY-GAME-COMPOSITION-004`, baseline `f98b29a4223c0b3fd3acb961b6a217e273103e8b`. Source/art integration stays inside the existing dedicated branch live lane. Existing Kimi board and Astra controls are preserved and connected through one GameState/reducer/render ACK pipeline.

@@ -107,12 +107,15 @@ final class KimiK2BoardSkin {
    backgrounds[item.key] = background
    scene.addChild(background)
   }
-  if let texture = textures["kimiK2BoardCenterEmblem"] {
+  let centerCity = load(AstraCenterCityArtwork.alias)
+  if let texture = centerCity ?? textures["kimiK2BoardCenterEmblem"] {
    let emblem = SKSpriteNode(texture: texture)
-   emblem.position = CGPoint(x: 512, y: 470)
-   emblem.size = CGSize(width: 256, height: 256)
+   emblem.position = CGPoint(x: CGFloat(AstraCenterCityArtwork.centerX),
+                             y: CGFloat(AstraCenterCityArtwork.centerY))
+   let size: CGFloat = centerCity == nil ? 256 : CGFloat(AstraCenterCityArtwork.displaySize)
+   emblem.size = CGSize(width: size, height: size)
    emblem.zPosition = 3.5
-   emblem.name = "KimiK2/emblem"
+   emblem.name = centerCity == nil ? "KimiK2/emblem" : "Astra/centerCity"
    scene.addChild(emblem)
   }
 
