@@ -7,6 +7,7 @@ public enum GameMessageType: String, Codable {
  case accept = "vl-game-accept"
  case decline = "vl-game-decline"
  case intent = "vl-game-intent"
+ case rejected = "vl-game-rejected"
  case move = "vl-game-move"
  case snapshot = "vl-game-snapshot"
  case resync = "vl-game-resync"
@@ -49,14 +50,20 @@ public struct GameEnvelope: Codable, Equatable {
  public var resync: ResyncRequest?
  /// Last committed host sequence for bounded, multi-batch recovery.
  public var hostHeadSeq: Int?
+ /// Host rejection for a guest's invalid/stale proposal. No game state changes.
+ public var rejectedSeq: Int?
+ public var rejectionReason: String?
  public init(gameId: String, kind: GameMessageType, invite: GameInvite? = nil,
              intent: Move? = nil, move: AuthoritativeMove? = nil,
              snapshot: GameSnapshot? = nil, resync: ResyncRequest? = nil,
-             hostHeadSeq: Int? = nil) {
+             hostHeadSeq: Int? = nil, rejectedSeq: Int? = nil,
+             rejectionReason: String? = nil) {
   self.gameId = gameId; self.kind = kind; self.invite = invite
   self.intent = intent
   self.move = move; self.snapshot = snapshot; self.resync = resync
   self.hostHeadSeq = hostHeadSeq
+  self.rejectedSeq = rejectedSeq
+  self.rejectionReason = rejectionReason
  }
 }
 
