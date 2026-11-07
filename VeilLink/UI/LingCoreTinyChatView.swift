@@ -121,18 +121,44 @@ struct LingCoreTinyChatView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "lock.shield").foregroundColor(VeilTheme.gold)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Vertex 35M · 离线聊天").font(.headline)
-                    Text("独立文本通道 · 零工具/控制权限")
-                        .font(.caption2).foregroundColor(VeilTheme.secondaryText)
+            HStack(alignment: .center, spacing: 12) {
+                // Reuse the latest VeilLink Grok bot R5 renderer, not a second
+                // independently decoded video player. In legacy memory tiers
+                // the visual is smaller and remains completely touch-transparent.
+                VeilOpponentAvatarView(
+                    mood: chat.isGenerating ? .thinking : .idle,
+                    size: AgentCapabilityProfile.current.tier == .legacyA10 ? 54 : 72
+                )
+                .accessibilityLabel("Vertex 35M 的 Grok bot 动态形象")
+                .accessibilityIdentifier("vertex35m.chat.grok_avatar")
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Grok bot")
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.text)
+                    Text("Vertex 35M · 离线聊天")
+                        .font(.subheadline)
+                        .foregroundColor(VeilTheme.secondaryText)
+                    HStack(spacing: 5) {
+                        Image(systemName: "lock.shield")
+                        Text(chat.isGenerating ? "本机生成中 · 无控制权限" : "独立文本通道 · 零控制权限")
+                    }
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.mutedGold)
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
             .padding(12)
             .background(VeilTheme.panel.opacity(0.8))
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .accessibilityIdentifier("vertex35m.chat.identity_header")
+
+            if Bundle.main.url(forResource: "GrokBotFull", withExtension: "mp4") == nil {
+                Text("形象资源：当前使用 Grok bot 原生动态绘制版；完整版视频尚未打包。")
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.tertiaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             tokenDashboard
 
