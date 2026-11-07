@@ -1,0 +1,432 @@
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -70,6 +70,8 @@
+     @Published private(set) var coachTip = "每一步都会沉淀为下一局的本地训练证据。"
+     @Published private(set) var developerTeachingMode = false
+     @Published private(set) var developerFormationCount = 0
++    @Published private(set) var didRestoreBoardMatch = false
++    @Published private(set) var boardMatchSaveWarning: String?
+ 
+     let game: MiniGameKind
+     let humanPlayer: MiniGamePlayer = .host
+@@ -77,6 +79,10 @@
+     @Published private(set) var sessionID: String
+ 
+     private var aiTask: Task<Void, Never>?
++    private let boardMatchStore: LocalBoardMatchStore?
++    private var boardMatchMoves: [LocalBoardMatchMove] = []
++    private var boardMatchRecoveryBlocked = false
++    private var inSeparateTeachingSession = false
+     private let learningStore: AdaptiveBoardLearningStore
+     private let formationLibrary: DeveloperFormationLibrary?
+     private let formationDiscovery = GomokuFormationDiscoveryStore()
+@@ -90,9 +96,12 @@
+     init(
+         game: MiniGameKind,
+         learningStore: AdaptiveBoardLearningStore? = nil,
+-        formationLibrary: DeveloperFormationLibrary? = nil
++        formationLibrary: DeveloperFormationLibrary? = nil,
++        matchStore: LocalBoardMatchStore? = nil
+     ) {
+         self.game = game
++        self.boardMatchStore = game == .gomoku || game == .xiangqi
++            ? (matchStore ?? LocalBoardMatchStore(game: game)) : nil
+         let resolvedLearningStore = learningStore ?? AdaptiveBoardLearningStore.store(for: game)
+         self.learningStore = resolvedLearningStore
+         self.formationLibrary = formationLibrary
+@@ -110,9 +119,58 @@
+         discoveredGomokuFormations = formationDiscovery.candidateCount
+         trainedNativeGames = nativeTrainingStore?.summary.completedGames ?? 0
+         sessionID = UUID().uuidString
++        restoreSavedBoardMatch()
+         if game == .gomoku { importBundledNativeSeedIfNeeded() }
+     }
+ 
++    private func restoreSavedBoardMatch() {
++        guard let disk = boardMatchStore else { return }
++        do {
++            guard let saved = try disk.load(),
++                  let restored = LocalBoardMatchReplay.validate(saved) else { return }
++            gomoku = restored.gomoku
++            xiangqi = restored.xiangqi
++            learningPlies = restored.plies
++            boardMatchMoves = saved.moves
++            sessionID = saved.sessionID
++            boardDifficulty = BoardBotDifficulty(rawValue: saved.difficulty) ?? .balanced
++            if game == .gomoku {
++                if let winner = gomoku.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
++                else if gomoku.isDraw { outcome = .draw }
++            } else if game == .xiangqi {
++                if let winner = xiangqi.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
++                else if xiangqi.isDraw { outcome = .draw }
++            }
++            if outcome != .playing { learningPlies.removeAll() }
++            didRestoreBoardMatch = true
++            boardMatchSaveWarning = nil
++        } catch {
++            boardMatchRecoveryBlocked = true
++            boardMatchSaveWarning = "存档校验失败：旧文件保留；可以导出黑匣子或明确点击“重开”。"
++        }
++    }
++
++    private func persistBoardMove(_ move: MiniGameMove, actor: MiniGamePlayer) {
++        guard let disk = boardMatchStore, !inSeparateTeachingSession else { return }
++        boardMatchMoves.append(.init(actor: actor, move: move))
++        guard !boardMatchRecoveryBlocked else { return }
++        do {
++            try disk.save(.init(
++                version: LocalBoardMatchRecord.version, game: game,
++                sessionID: sessionID, difficulty: boardDifficulty.rawValue, moves: boardMatchMoves
++            ))
++            boardMatchSaveWarning = nil
++        } catch {
++            boardMatchSaveWarning = "本步存档失败：本局仍可继续，但强制退出可能丢失最近走子。"
++        }
++    }
++
++    func resumeBoardMatchIfNeeded() {
++        guard game == .gomoku || game == .xiangqi,
++              !inSeparateTeachingSession, !isAIThinking else { return }
++        scheduleAIIfNeeded()
++    }
++
+     var canHumanAct: Bool {
+         guard outcome == .playing, !isAIThinking else { return false }
+         switch game {
+@@ -140,6 +198,19 @@
+     }
+ 
+     func restart() {
++        if let disk = boardMatchStore {
++            do {
++                try disk.discardOnExplicitRestart()
++                boardMatchMoves.removeAll()
++                boardMatchRecoveryBlocked = false
++                boardMatchSaveWarning = nil
++                didRestoreBoardMatch = false
++                inSeparateTeachingSession = false
++            } catch {
++                boardMatchSaveWarning = "旧存档未能安全清除；已保留原棋局，重开取消。"
++                return
++            }
++        }
+         finalizeLearning(as: .unfinished)
+         aiTask?.cancel(); aiTask = nil
+         gomoku = GomokuState()
+@@ -171,6 +242,7 @@
+         guard state.apply(index: index, actor: humanPlayer) else { return }
+         learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: humanPlayer))
+         gomoku = state
++        persistBoardMove(.gomoku(index: index), actor: humanPlayer)
+         finishOrScheduleAI()
+     }
+ 
+@@ -182,11 +254,17 @@
+         }
+         developerTeachingMode = enabled
+         if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false }
++        if !enabled && inSeparateTeachingSession {
++            inSeparateTeachingSession = false
++            restoreSavedBoardMatch()
++        }
+     }
+ 
+     func beginDeveloperFormationRecording() {
+         guard game == .gomoku else { return }
+-        finalizeLearning(as: .unfinished)
++        // Work on a separate unsaved teaching board. The ordinary match file
++        // must never be replaced or finalized merely for opening this tool.
++        inSeparateTeachingSession = true
+         aiTask?.cancel(); aiTask = nil
+         gomoku = GomokuState()
+         outcome = .playing
+@@ -216,7 +294,11 @@
+         developerFormationCount = formationLibrary.lessons.count
+         developerFormationPlies.removeAll(keepingCapacity: true)
+         developerTeachingMode = false
+-        coachTip = "已保存开发者阵法：后续同一前缀局面会优先使用你录制的应手。"
++        if inSeparateTeachingSession {
++            inSeparateTeachingSession = false
++            restoreSavedBoardMatch()
++        }
++        coachTip = "阵法已保存；原单机对局不会被覆盖。"
+     }
+ 
+     func humanXiangqiMove(from: Int, to: Int) {
+@@ -227,6 +309,7 @@
+         guard state.apply(from: from, to: to, actor: humanPlayer) else { return }
+         learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: humanPlayer))
+         xiangqi = state
++        persistBoardMove(.xiangqi(from: from, to: to), actor: humanPlayer)
+         finishOrScheduleAI()
+     }
+ 
+@@ -448,7 +531,7 @@
+         stopNativeTraining()
+         aiTask?.cancel(); aiTask = nil
+         isAIThinking = false
+-        finalizeLearning(as: .unfinished)
++        // Navigation is not a resignation; leave unsaved learning plies intact.
+     }
+ 
+     func clearBoardLearning() {
+@@ -812,6 +895,7 @@
+             guard state.apply(index: index, actor: aiPlayer) else { return }
+             learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: aiPlayer))
+             gomoku = state
++            persistBoardMove(.gomoku(index: index), actor: aiPlayer)
+         case .xiangqi:
+             guard let from = candidate.metadata["from"].flatMap(Int.init),
+                   let to = candidate.metadata["to"].flatMap(Int.init) else { return }
+@@ -820,6 +904,7 @@
+             guard state.apply(from: from, to: to, actor: aiPlayer) else { return }
+             learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: aiPlayer))
+             xiangqi = state
++            persistBoardMove(.xiangqi(from: from, to: to), actor: aiPlayer)
+         case .ludo:
+             guard let piece = candidate.metadata["piece"].flatMap(Int.init) else { return }
+             var state = ludo
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -374,6 +374,7 @@
+         }
+         .onAppear {
+             model.agent.setComputeFocus(.gameDecision)
++            controller.resumeBoardMatchIfNeeded()
+             if game == .tactical,
+                !UserDefaults.standard.bool(forKey: TacticalSoloGuideView.completionKey) {
+                 showsTacticalGuide = true
+@@ -453,6 +454,16 @@
+                     Text("你 vs 本地电脑 · 完全离线")
+                         .font(.caption)
+                         .foregroundColor(VeilTheme.secondaryText)
++                    if controller.didRestoreBoardMatch {
++                        Text("已恢复上次棋局 · 每步自动保存")
++                            .font(.caption2)
++                            .foregroundColor(VeilTheme.gold)
++                    }
++                    if let warning = controller.boardMatchSaveWarning {
++                        Text(warning)
++                            .font(.caption2)
++                            .foregroundColor(.orange)
++                    }
+                 }
+                 Spacer()
+                 if controller.isAIThinking {
+diff --git a/VeilLink/Agent/Games/LocalBoardMatchStore.swift b/VeilLink/Agent/Games/LocalBoardMatchStore.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Agent/Games/LocalBoardMatchStore.swift
+@@ -0,0 +1,113 @@
++import Foundation
++
++struct LocalBoardMatchMove: Codable, Equatable {
++    let actor: MiniGamePlayer
++    let move: MiniGameMove
++}
++
++struct LocalBoardMatchRecord: Codable {
++    static let version = 1
++    let version: Int
++    let game: MiniGameKind
++    let sessionID: String
++    let difficulty: String
++    let moves: [LocalBoardMatchMove]
++}
++
++struct LocalBoardMatchReplay {
++    let gomoku: GomokuState
++    let xiangqi: XiangqiState
++    let plies: [AdaptiveBoardPly]
++
++    static func validate(_ archive: LocalBoardMatchRecord) -> LocalBoardMatchReplay? {
++        guard archive.version == LocalBoardMatchRecord.version,
++              archive.game == .gomoku || archive.game == .xiangqi,
++              !archive.sessionID.isEmpty, archive.sessionID.count <= 128,
++              !archive.moves.isEmpty,
++              archive.moves.count <= (archive.game == .gomoku ? 225 : 5_000)
++        else { return nil }
++
++        var gomoku = GomokuState()
++        var xiangqi = XiangqiState()
++        var plies: [AdaptiveBoardPly] = []
++        plies.reserveCapacity(archive.moves.count)
++        for event in archive.moves {
++            guard event.move.piece == nil else { return nil }
++            switch archive.game {
++            case .gomoku:
++                guard event.move.from == nil, let to = event.move.to else { return nil }
++                let position = AdaptiveBoardPosition.gomoku(gomoku)
++                guard gomoku.apply(index: to, actor: event.actor) else { return nil }
++                plies.append(.init(position: position, action: String(to), actor: event.actor))
++            case .xiangqi:
++                guard let from = event.move.from, let to = event.move.to else { return nil }
++                let position = AdaptiveBoardPosition.xiangqi(xiangqi)
++                guard xiangqi.apply(from: from, to: to, actor: event.actor) else { return nil }
++                plies.append(.init(position: position, action: "\(from):\(to)", actor: event.actor))
++            default: return nil
++            }
++        }
++        return .init(gomoku: gomoku, xiangqi: xiangqi, plies: plies)
++    }
++}
++
++enum LocalBoardMatchStoreError: LocalizedError {
++    case invalidArchive
++    var errorDescription: String? { "棋局存档校验失败，旧文件已保留。" }
++}
++
++/// An independent, per-board-game move journal. Not a training archive.
++final class LocalBoardMatchStore {
++    let game: MiniGameKind
++    let fileURL: URL
++
++    init(game: MiniGameKind, directory: URL? = nil) {
++        self.game = game
++        let support = FileManager.default.urls(
++            for: .applicationSupportDirectory, in: .userDomainMask
++        ).first ?? FileManager.default.temporaryDirectory
++        let root = directory ?? support
++            .appendingPathComponent("VeilLink", isDirectory: true)
++            .appendingPathComponent("LocalMatchesV1", isDirectory: true)
++        fileURL = root.appendingPathComponent("\(game.rawValue).json")
++    }
++
++    func load() throws -> LocalBoardMatchRecord? {
++        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
++        let size = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
++        guard size > 0, size <= 1_000_000 else { throw LocalBoardMatchStoreError.invalidArchive }
++        let bytes = try Data(contentsOf: fileURL)
++        guard let saved = try? JSONDecoder().decode(LocalBoardMatchRecord.self, from: bytes),
++              saved.game == game, LocalBoardMatchReplay.validate(saved) != nil else {
++            throw LocalBoardMatchStoreError.invalidArchive
++        }
++        return saved
++    }
++
++    func save(_ record: LocalBoardMatchRecord) throws {
++        guard record.game == game, LocalBoardMatchReplay.validate(record) != nil else {
++            throw LocalBoardMatchStoreError.invalidArchive
++        }
++        let bytes = try JSONEncoder().encode(record)
++        guard bytes.count <= 1_000_000 else { throw LocalBoardMatchStoreError.invalidArchive }
++        try FileManager.default.createDirectory(
++            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true
++        )
++        try bytes.write(to: fileURL, options: [
++            .atomic, .completeFileProtectionUntilFirstUserAuthentication
++        ])
++    }
++
++    /// Never delete corrupt evidence without first copying it aside.
++    func discardOnExplicitRestart() throws {
++        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
++        do { _ = try load() }
++        catch {
++            let backup = fileURL.deletingLastPathComponent().appendingPathComponent(
++                "\(game.rawValue)-recovery-\(UUID().uuidString).json"
++            )
++            try FileManager.default.copyItem(at: fileURL, to: backup)
++        }
++        try FileManager.default.removeItem(at: fileURL)
++    }
++}
+diff --git a/VeilLinkTests/LocalBoardMatchStoreTests.swift b/VeilLinkTests/LocalBoardMatchStoreTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/LocalBoardMatchStoreTests.swift
+@@ -0,0 +1,92 @@
++import Foundation
++import XCTest
++@testable import VeilLink
++
++@MainActor
++final class LocalBoardMatchStoreTests: XCTestCase {
++    private func store(_ game: MiniGameKind) throws -> (LocalBoardMatchStore, URL) {
++        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
++            "board-test-\(UUID().uuidString)", isDirectory: true
++        )
++        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
++        return (LocalBoardMatchStore(game: game, directory: directory), directory)
++    }
++
++    func testGomokuSurvivesControllerRecreationWhileComputerTurnPending() throws {
++        let (disk, folder) = try store(.gomoku)
++        defer { try? FileManager.default.removeItem(at: folder) }
++        let game = LocalAIGameController(game: .gomoku, matchStore: disk)
++        let originalID = game.sessionID
++        game.humanGomokuMove(112)
++        game.cancelAI()
++        let recovered = LocalAIGameController(game: .gomoku, matchStore: disk)
++        XCTAssertEqual(recovered.sessionID, originalID)
++        XCTAssertTrue(recovered.didRestoreBoardMatch)
++        XCTAssertEqual(recovered.gomoku.value(at: 112), 1)
++        XCTAssertEqual(recovered.gomoku.currentPlayer, .guest)
++        XCTAssertEqual(recovered.gomoku.moveCount, 1)
++        XCTAssertFalse(recovered.isAIThinking)
++    }
++
++    func testXiangqiRestoresPawnAndTurn() throws {
++        let (disk, folder) = try store(.xiangqi)
++        defer { try? FileManager.default.removeItem(at: folder) }
++        let game = LocalAIGameController(game: .xiangqi, matchStore: disk)
++        game.humanXiangqiMove(from: 54, to: 45)
++        game.cancelAI()
++        let recovered = LocalAIGameController(game: .xiangqi, matchStore: disk)
++        XCTAssertEqual(recovered.xiangqi.moveCount, 1)
++        XCTAssertEqual(recovered.xiangqi.currentPlayer, .guest)
++        XCTAssertEqual(recovered.xiangqi.piece(at: 45)?.side, .red)
++    }
++
++    func testCorruptFileIsNotOverwrittenUntilExplicitRestart() throws {
++        let (disk, folder) = try store(.gomoku)
++        defer { try? FileManager.default.removeItem(at: folder) }
++        let invalid = Data("{broken".utf8)
++        try invalid.write(to: disk.fileURL)
++        let game = LocalAIGameController(game: .gomoku, matchStore: disk)
++        XCTAssertNotNil(game.boardMatchSaveWarning)
++        game.humanGomokuMove(112)
++        game.cancelAI()
++        XCTAssertEqual(try Data(contentsOf: disk.fileURL), invalid)
++        game.restart()
++        XCTAssertNil(game.boardMatchSaveWarning)
++        XCTAssertNil(try disk.load())
++        let retained = try FileManager.default.contentsOfDirectory(
++            at: folder, includingPropertiesForKeys: nil
++        ).filter { $0.lastPathComponent.contains("-recovery-") }
++        XCTAssertEqual(retained.count, 1)
++    }
++
++    func testRejectsDuplicateOrOutOfTurnMoves() throws {
++        let (disk, folder) = try store(.gomoku)
++        defer { try? FileManager.default.removeItem(at: folder) }
++        let bad = LocalBoardMatchRecord(
++            version: 1, game: .gomoku, sessionID: UUID().uuidString,
++            difficulty: "balanced",
++            moves: [
++                .init(actor: .host, move: .gomoku(index: 112)),
++                .init(actor: .guest, move: .gomoku(index: 112))
++            ]
++        )
++        XCTAssertNil(LocalBoardMatchReplay.validate(bad))
++        XCTAssertThrowsError(try disk.save(bad))
++    }
++
++    func testRestartDoesNotClearOtherGame() throws {
++        let (_, sharedFolder) = try store(.gomoku)
++        defer { try? FileManager.default.removeItem(at: sharedFolder) }
++        let gomokuDisk = LocalBoardMatchStore(game: .gomoku, directory: sharedFolder)
++        let xiangqiDisk = LocalBoardMatchStore(game: .xiangqi, directory: sharedFolder)
++        let gomoku = LocalAIGameController(game: .gomoku, matchStore: gomokuDisk)
++        let xiangqi = LocalAIGameController(game: .xiangqi, matchStore: xiangqiDisk)
++        gomoku.humanGomokuMove(112); gomoku.cancelAI()
++        xiangqi.humanXiangqiMove(from: 54, to: 45); xiangqi.cancelAI()
++        let id = gomoku.sessionID
++        gomoku.restart()
++        XCTAssertNotEqual(gomoku.sessionID, id)
++        XCTAssertNil(try gomokuDisk.load())
++        XCTAssertEqual(try xiangqiDisk.load()?.moves.count, 1)
++    }
++}
