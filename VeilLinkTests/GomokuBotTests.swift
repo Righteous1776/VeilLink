@@ -135,4 +135,27 @@ final class GomokuBotTests: XCTestCase {
         ), 0)
     }
 
+
+    func testR4ActualNativeBotUsesForcedForkEscapeUnderLegacyBudget() {
+        var state = GomokuState()
+        let attacker = [109, 110, 111, 67, 82, 97]
+        let defender = [0, 2, 4, 6, 8]
+        for i in 0..<defender.count {
+            XCTAssertTrue(state.apply(index: attacker[i], actor: .host))
+            XCTAssertTrue(state.apply(index: defender[i], actor: .guest))
+        }
+        XCTAssertTrue(state.apply(index: attacker[5], actor: .host))
+        let decision = GomokuBot.chooseMove(
+            in: state, for: .guest,
+            budget: GomokuBotBudget.standard(profileLabel: "LEGACY-COMPACT")
+        )
+        XCTAssertEqual(decision?.index, 112,
+                       "Search must not discard the only fork-neutralizing root move")
+        if let decision {
+            XCTAssertTrue(state.apply(index: decision.index, actor: .guest))
+            XCTAssertEqual(GomokuCounterForkR4.forkCellCount(in: state, opponent: .host), 0)
+        }
+    }
+
+
 }
