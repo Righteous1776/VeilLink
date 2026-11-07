@@ -39,7 +39,6 @@ public struct VeilopolyStockMarketPanel: View {
 
  @State private var ticketSide: StockTicketSide = .buy
  @State private var positionsExpanded = true
- @FocusState private var quantityFocused: Bool
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
  public init(market: StockMarketState, player: Int, cash: Int,
@@ -124,12 +123,6 @@ public struct VeilopolyStockMarketPanel: View {
   }
   .shadow(color: .black.opacity(0.25), radius: 10, y: 6)
   .accessibilityElement(children: .contain)
-  .toolbar {
-   ToolbarItemGroup(placement: .keyboard) {
-    Spacer()
-    Button("完成") { quantityFocused = false }
-   }
-  }
  }
 
  private var terminalHeader: some View {
@@ -284,9 +277,7 @@ public struct VeilopolyStockMarketPanel: View {
    .accessibilityLabel("交易方向")
 
    HStack(spacing: 7) {
-    TextField("股数", text: $shareText)
-     .keyboardType(.numberPad).textFieldStyle(.plain)
-     .focused($quantityFocused)
+    VeilopolyNumericInput(title: "股数", text: $shareText, bounds: 1...10_000, showsTitle: false)
      .font(.system(size: 15, weight: .bold, design: .monospaced))
      .padding(.horizontal, 10).frame(height: 44)
      .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
@@ -329,7 +320,6 @@ public struct VeilopolyStockMarketPanel: View {
    }
 
    Button {
-    quantityFocused = false
     if ticketSide == .buy { onBuy(quote.symbol, quantity) }
     else { onSell(quote.symbol, quantity) }
    } label: {

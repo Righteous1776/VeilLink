@@ -1,5 +1,32 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## CODEX W1-003 — keyboard-safe numeric drafts — 2026-11-07
+
+- Task authority: #168 + current Owner; `dev/veilopoly:VEILOPOLY_DEV/**` only.
+  Main baseline still `2c5b5161027edff097b27fe3323d30f6ca3e430e` (live recheck).
+  Prior checkpoints: W0 `f3a7b12`, W1-001 `de8893f`, W1-002 `4f1b255`.
+- Replaced eight bank/auction/trade/stock numeric TextFields with a shared
+  bounded draft keypad sheet. Cancel does not write, Confirm only fills input;
+  existing reducer still authorizes and executes actual actions. No rule,
+  financial term, save format, resource, host or protocol change.
+- `swift build --package-path VEILOPOLY_DEV/Veilopoly --jobs 2` → success in
+  14.52s → PASS, with six pre-existing immutable Codable property warnings.
+- `swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2` → 244 tests,
+  0 failures, 32.310s → PASS. Numeric draft cases 4/4 PASS; asset projection
+  cases 3/3 PASS. New guarded camera cases are NOT_RUN on Linux, not counted.
+- iOS15 frontend grammar parse → exit 0 → PASS (syntax only). Apple SDK/iOS
+  XCTest/simulator/physical keyboard/touch/layout/VoiceOver/ACK → NOT_RUN.
+- Supplemental warnings-as-errors build → FAIL on unchanged historical
+  FinanceExpansion.swift:11–16. Recorded separately; no suppression, mutable
+  reference rules or fake strict PASS. See `reviews/W1_003_NUMERIC_INPUT.md`.
+- Cross-Agent conflicts: none in local worktree; #167 branch and closed #164
+  untouched. No main merge, workflow dispatch, signing, release or IPA.
+- NEXT_ONE_TASK: VLP-CODEX-W1-004 — theme consistency audit and scoped palette
+  fix; preserve Astra/Kimi art contracts and avoid black text on dark skins.
+- State: W0 complete; three W1 source slices implemented with portable tests;
+  W1 Apple/device acceptance remains open. Resume by fetching current HEAD,
+  reading latest #6/#168 and this topmost checkpoint. No background worker claim.
+
 ## CODEX W1-002 — independent asset browser — 2026-11-07
 
 - Baseline `de8893f`, same #168 dev-only authority. Added read-only native asset

@@ -1071,9 +1071,7 @@ public struct VeilopolyGameView: View {
               y: CGFloat(AstraB01AuctionHitZones.minus.centerY))
     .accessibilityLabel("降低竞价金额")
     .disabled(model.game.players[model.actor].cash <= auction.currentBid)
-    TextField("竞价金额", text: $bidderCash)
-     .keyboardType(.numberPad)
-     .textFieldStyle(.plain)
+    VeilopolyNumericInput(title: "竞价金额", text: $bidderCash, showsTitle: false)
      .font(.system(size: 15, weight: .semibold, design: .monospaced))
      .foregroundColor(Color(red: 0.19, green: 0.30, blue: 0.34))
      .multilineTextAlignment(.center)
@@ -1194,8 +1192,8 @@ public struct VeilopolyGameView: View {
     }
    }.pickerStyle(.menu)
    HStack {
-    TextField("我方现金",text:$offerCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-    TextField("对方现金",text:$requestCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+    VeilopolyNumericInput(title: "我方现金", text: $offerCash)
+    VeilopolyNumericInput(title: "对方现金", text: $requestCash)
    }
    HStack(alignment:.top) {
     VStack(alignment: .leading) {
@@ -1267,11 +1265,9 @@ public struct VeilopolyGameView: View {
     }
    }
    HStack(spacing: 8) {
-    TextField("金额", text: $bankAmount)
-     .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+    VeilopolyNumericInput(title: "金额", text: $bankAmount)
      .accessibilityLabel("银行操作金额")
-    TextField("期数", text: $bankPeriods)
-     .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+    VeilopolyNumericInput(title: "期数", text: $bankPeriods, bounds: 1...12)
      .accessibilityLabel("贷款期数")
    }
    HStack(spacing: 8) {
@@ -1353,8 +1349,8 @@ public struct VeilopolyGameView: View {
      offeredCash: Int(offerCash) ?? -1, requestedCash: Int(requestCash) ?? -1,
      sequence: model.game.nextSeq)
     HStack {
-     TextField("我方出资", text: $offerCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-     TextField("对方出资", text: $requestCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+     VeilopolyNumericInput(title: "我方出资", text: $offerCash)
+     VeilopolyNumericInput(title: "对方出资", text: $requestCash)
     }
     Text("还价将保留当前地产与出狱卡条件，仅修改现金。")
      .font(.caption2).foregroundStyle(.secondary)

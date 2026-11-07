@@ -64,8 +64,9 @@ struct VeilopolyAssetBrowser: View {
    HStack {
     Text("资产资料 · 只读").font(.headline)
     Spacer()
-    Button("返回对局") { dismiss() }
-     .frame(minWidth: 88, minHeight: 44)
+    Button { dismiss() } label: {
+     Text("返回对局").frame(minWidth: 88, minHeight: 44).contentShape(Rectangle())
+    }
      .accessibilityHint("关闭资料，回到原来的购买、竞价或回合操作")
    }
    HStack {

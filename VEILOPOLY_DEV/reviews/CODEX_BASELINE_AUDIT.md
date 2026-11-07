@@ -77,7 +77,14 @@ Rules awaiting Owner remain in SPEC_DECISIONS_REQUIRED and finance docs: yields,
 unapproved terms. Preserve current behavior. Do not silently activate #164's
 skipPurchase or introduce real money, wagering or exchangeable rewards.
 
-## Handoff
+### Supplemental strict-build finding
+
+During W1-003, optional warnings-as-errors build fails on six existing Codable
+immutable-default warnings in FinanceExpansion.swift:11–16. This file is unchanged
+from 2c5b516. Standard builds/tests are separate evidence, not a waiver or strict
+PASS. Queue compatibility-preserving Codable warning cleanup separately (W9).
+
+## W0 handoff (historical; current continuation is CHECKPOINT.md)
 
 Current stage: W0 audited; first commit contains this review only, as #168 asks.
 Cross-Agent conflict: no overlapping local changes; #167 task overlap registered
