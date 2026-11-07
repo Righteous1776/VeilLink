@@ -1,0 +1,164 @@
+diff --git a/VeilLink/Core/RuntimeMaintenanceTuning.swift b/VeilLink/Core/RuntimeMaintenanceTuning.swift
+--- a/VeilLink/Core/RuntimeMaintenanceTuning.swift
++++ b/VeilLink/Core/RuntimeMaintenanceTuning.swift
+@@ -1,5 +1,33 @@
+ import Foundation
+ 
++/// This is a logical scheduler topology; iOS chooses the actual worker threads.
++enum VeilConcurrentFabricLane: String, CaseIterable, Sendable {
++    case control, bulk, audioCapture, audioPlayback, maintenance
++}
++
++enum VeilConcurrentFabricPolicy {
++    static let storageQueueLabel = "studio.zeo.veillink.sqlite"
++
++    /// Preserve existing transport queue priorities; bound one active drain burst
++    /// so realtime audio can run between long bulk packet bursts.
++    static func bleDrainBurst(configuredLimit: Int, realtimePending: Bool) -> Int {
++        let base = max(1, configuredLimit)
++        return realtimePending ? min(base, 8) : base
++    }
++
++    static func maintenanceInterval(
++        tuning: VeilRuntimeMaintenanceTuning,
++        foreground: Bool,
++        queued: Bool,
++        connected: Bool
++    ) -> UInt64 {
++        if !foreground { return tuning.bleIdleMaintenanceNanoseconds }
++        if queued { return tuning.bleQueuedMaintenanceNanoseconds }
++        if connected { return tuning.bleConnectedMaintenanceNanoseconds }
++        return tuning.bleIdleMaintenanceNanoseconds
++    }
++}
++
+ struct VeilRuntimeMaintenanceTuning: Equatable, Sendable {
+     let outboundRetryIntervalNanoseconds: UInt64
+     let bleIdleMaintenanceNanoseconds: UInt64
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -158,6 +158,7 @@
+     var pendingCount: Int { control.pendingCount + realtime.pendingCount + bulk.pendingCount }
+     var pendingBytes: Int { control.pendingBytes + realtime.pendingBytes + bulk.pendingBytes }
+     var controlPendingCount: Int { control.pendingCount }
++    var realtimePendingCount: Int { realtime.pendingCount }
+     var isEmpty: Bool { control.isEmpty && realtime.isEmpty && bulk.isEmpty }
+ 
+     @discardableResult
+@@ -483,8 +484,12 @@
+         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
+         guard var queue = centralOutboundQueues[id] else { return }
+         let tuning = linkTuning(for: id)
++        let burstLimit = VeilConcurrentFabricPolicy.bleDrainBurst(
++            configuredLimit: tuning.packetBurstLimit,
++            realtimePending: queue.realtimePendingCount > 0
++        )
+         var sent = 0
+-        while sent < tuning.packetBurstLimit, peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
++        while sent < burstLimit, peripheral.canSendWriteWithoutResponse, let packet = queue.removeFirst() {
+             peripheral.writeValue(packet, for: characteristic, type: .withoutResponse)
+             sent += 1
+             queueProgress.recordProgress(.central, peerID: id, at: Date().timeIntervalSinceReferenceDate)
+@@ -511,8 +516,12 @@
+         }
+         guard var queue = peripheralOutboundQueues[centralID] else { return }
+         let tuning = linkTuning(for: centralID)
++        let burstLimit = VeilConcurrentFabricPolicy.bleDrainBurst(
++            configuredLimit: tuning.packetBurstLimit,
++            realtimePending: queue.realtimePendingCount > 0
++        )
+         var sent = 0
+-        while sent < tuning.packetBurstLimit, let packet = queue.first {
++        while sent < burstLimit, let packet = queue.first {
+             guard peripheralManager.updateValue(packet, for: characteristic, onSubscribedCentrals: [central]) else {
+                 peripheralOutboundQueues[centralID] = queue
+                 return
+@@ -840,14 +849,16 @@
+     }
+ 
+     private func currentMaintenanceIntervalNanoseconds() -> UInt64 {
+-        if !foregroundActive { return maintenanceTuning.bleIdleMaintenanceNanoseconds }
+         let hasQueuedPackets = centralOutboundQueues.values.contains { !$0.isEmpty }
+             || peripheralOutboundQueues.values.contains { !$0.isEmpty }
+-        if hasQueuedPackets { return maintenanceTuning.bleQueuedMaintenanceNanoseconds }
+         let hasConnectedPeer = remotePeripherals.values.contains { $0.state == .connected }
+             || !subscribedCentrals.isEmpty
+-        if hasConnectedPeer { return maintenanceTuning.bleConnectedMaintenanceNanoseconds }
+-        return maintenanceTuning.bleIdleMaintenanceNanoseconds
++        return VeilConcurrentFabricPolicy.maintenanceInterval(
++            tuning: maintenanceTuning,
++            foreground: foregroundActive,
++            queued: hasQueuedPackets,
++            connected: hasConnectedPeer
++        )
+     }
+ 
+     private func recoverStalledTransportQueuesIfNeeded() {
+diff --git a/VeilLink/Voice/WalkieTalkieAudioController.swift b/VeilLink/Voice/WalkieTalkieAudioController.swift
+--- a/VeilLink/Voice/WalkieTalkieAudioController.swift
++++ b/VeilLink/Voice/WalkieTalkieAudioController.swift
+@@ -258,6 +258,9 @@
+         lastIncomingAt = nil
+         meter = 0
+         state = .idle
++        // Do not leave the receive-only engine actively running between talk bursts.
++        playerNode.stop()
++        playbackEngine.stop()
+     }
+ 
+     private func publishJitterSnapshot(force: Bool = false) {
+diff --git a/VeilLinkTests/BLETransportSafetyTests.swift b/VeilLinkTests/BLETransportSafetyTests.swift
+--- a/VeilLinkTests/BLETransportSafetyTests.swift
++++ b/VeilLinkTests/BLETransportSafetyTests.swift
+@@ -2,6 +2,30 @@
+ @testable import VeilLink
+ 
+ final class BLETransportSafetyTests: XCTestCase {
++    func testConcurrentFabricBLEBurstKeepsRealtimeFairWithoutChangingPriority() {
++        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 64, realtimePending: true), 8)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 64, realtimePending: false), 64)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 3, realtimePending: true), 3)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 0, realtimePending: false), 1)
++    }
++
++    func testConcurrentFabricMaintainsIdleCadenceWhenBackgrounded() {
++        let tuning = VeilRuntimeMaintenanceTuning.resolved(performanceLabel: "13PRO")
++        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
++            tuning: tuning, foreground: false, queued: true, connected: true
++        ), tuning.bleIdleMaintenanceNanoseconds)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
++            tuning: tuning, foreground: true, queued: true, connected: true
++        ), tuning.bleQueuedMaintenanceNanoseconds)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
++            tuning: tuning, foreground: true, queued: false, connected: true
++        ), tuning.bleConnectedMaintenanceNanoseconds)
++        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
++            tuning: tuning, foreground: true, queued: false, connected: false
++        ), tuning.bleIdleMaintenanceNanoseconds)
++    }
++
++
+     func testFragmentationPlanAcceptsExactUInt16BoundaryAtLegacyATTSize() {
+         let packetSize = 20
+         let payloadBytes = (packetSize - BLEFragment.headerSize) * BLEFragment.maximumFragmentCount
+diff --git a/VeilLinkTests/VoiceAndPTTTests.swift b/VeilLinkTests/VoiceAndPTTTests.swift
+--- a/VeilLinkTests/VoiceAndPTTTests.swift
++++ b/VeilLinkTests/VoiceAndPTTTests.swift
+@@ -3,6 +3,16 @@
+ @testable import VeilLink
+ 
+ final class VoiceAndPTTTests: XCTestCase {
++    func testConcurrentFabricDefinesFiveLogicalResponsibilitiesPlusSQLiteSerialQueue() {
++        XCTAssertEqual(VeilConcurrentFabricLane.allCases.count, 5)
++        XCTAssertEqual(
++            Set(VeilConcurrentFabricLane.allCases.map(\.rawValue)),
++            Set(["control", "bulk", "audioCapture", "audioPlayback", "maintenance"])
++        )
++        XCTAssertEqual(VeilConcurrentFabricPolicy.storageQueueLabel, "studio.zeo.veillink.sqlite")
++    }
++
++
+     func testVoiceMetadataRoundTrip() {
+         let body = VoiceMessageCodec.encode(durationSeconds: 3.42)
+         let decoded = VoiceMessageCodec.decode(body)
