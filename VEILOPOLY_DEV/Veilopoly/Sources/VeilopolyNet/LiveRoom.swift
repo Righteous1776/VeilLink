@@ -100,6 +100,10 @@ public struct VeilopolyLiveRoom {
    throw VeilopolyRoomError.invalidProposal
   }
   guard move.seq == game.nextSeq else { throw VeilopolyRoomError.sequenceGap }
+  let actor = game.auction?.turn ?? game.trade?.to ?? game.pendingDebt?.player ?? game.turn.player
+  guard actor == 1, VeilopolyEngine.context(game).allowedMoves.contains(move.type) else {
+   throw VeilopolyRoomError.invalidProposal
+  }
  }
  public mutating func commitOnHost(_ move: Move) -> VeilopolyEngine.Transition {
   guard isHost else { return .failure(.notYourTurn) }
@@ -136,18 +140,27 @@ public struct VeilopolyLiveRoom {
         g.moveLog.enumerated().allSatisfy({ $0.offset == $0.element.seq }),
         g.players.enumerated().allSatisfy({ i, p in
          p.id == i && (0..<40).contains(p.position) && (0...1_000_000_000).contains(p.cash) &&
+         (0...16).contains(p.chanceJailCards) && (0...16).contains(p.chestJailCards) &&
+         p.jailTurns >= 0 && p.jailTurns < Int.max - 16 &&
          p.kind == (i < 2 ? .human : .ai)
         }), g.board.enumerated().allSatisfy({ i, t in
          t.i == i && (0...1_000_000).contains(t.price) && (0...1_000_000).contains(t.houseCost) &&
          (0...4).contains(t.houses) && (t.owner.map { (0..<4).contains($0) } ?? true) &&
          (t.kind != .street || t.rent.count == 6) && t.rent.allSatisfy({ (0...1_000_000).contains($0) })
         }), (0..<4).contains(g.turn.player), (0...12).contains(g.turn.pendingSteps),
+        g.turn.rollCount >= 0 && g.turn.rollCount < Int.max - 16 &&
+        g.turn.doubleCount >= 0 && g.turn.doubleCount < Int.max - 16,
         (g.turn.lastRoll.isEmpty || (g.turn.lastRoll.count == 2 && g.turn.lastRoll.allSatisfy({ (1...6).contains($0) }))),
         (g.turn.pendingPurchase.map { (0..<40).contains($0) } ?? true),
         (0...32).contains(g.bank.houses), (0...12).contains(g.bank.hotels),
         (g.banking.map { IntegratedBanking.validate($0) } ?? true) else { return false }
   let canonical = GameFactory.make(seed: configuration.seed, humanCount: 2)
-  guard g.cards == canonical.cards else { return false } // Reject incompatible rule/content builds.
+  guard g.cards == canonical.cards,
+        zip(g.board, canonical.board).allSatisfy({ tile, original in
+         tile.kind == original.kind && tile.name == original.name && tile.color == original.color &&
+         tile.price == original.price && tile.rent == original.rent && tile.houseCost == original.houseCost
+        }), (g.banking.map { $0.terms == FinanceSandboxPolicy() } ?? true)
+   else { return false } // Live v1 supports the canonical rules, not peer-injected paytables.
   for (deck, original) in [(g.chanceDeck, canonical.chanceDeck), (g.chestDeck, canonical.chestDeck)] {
    guard !deck.order.isEmpty, deck.cursor >= 0, deck.cursor < Int.max - 16,
          Set(deck.order).count == deck.order.count,

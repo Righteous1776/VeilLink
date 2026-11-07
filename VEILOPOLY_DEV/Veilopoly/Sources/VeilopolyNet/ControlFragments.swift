@@ -1,6 +1,6 @@
 import Foundation
 
-/// App-layer segmentation, NOT Wire v4 framing. A 512-byte slice leaves room
+/// App-layer segmentation, NOT Wire v4 framing. A 384-byte slice leaves room
 /// for JSON/base64 wrappers under the existing BLE control-event 2048-byte cap.
 public struct VeilopolyControlFragment: Codable, Equatable {
  public let roomID: String
@@ -19,9 +19,9 @@ public struct VeilopolyControlFragment: Codable, Equatable {
 }
 public enum VeilopolyControlCodec {
  public static let topic = "veilopoly.room.v1"
- public static let fragmentBytes = 512
+ public static let fragmentBytes = 384
  public static let maximumMessageBytes = 2 * 1024 * 1024
- public static let maximumFragments = maximumMessageBytes / fragmentBytes
+ public static let maximumFragments = (maximumMessageBytes + fragmentBytes - 1) / fragmentBytes
  public static func fragments(_ packet: VeilopolyRoomPacket, transferID: String = UUID().uuidString) throws -> [VeilopolyControlFragment] {
   guard packet.isValid, UUID(uuidString: transferID)?.uuidString == transferID else { throw VeilopolyRoomError.invalidPacket }
   let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]

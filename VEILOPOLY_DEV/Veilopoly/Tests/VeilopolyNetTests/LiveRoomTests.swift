@@ -27,7 +27,11 @@ final class LiveRoomTests: XCTestCase {
    XCTAssertThrowsError(try host.validateProposal(Move(kind, player: 1, seq: 0), from: "guest"))
   }
   XCTAssertThrowsError(try host.validateProposal(Move(.rollDice, player: 1, seq: 0), from: "stranger"))
-  XCTAssertNoThrow(try host.validateProposal(Move(.rollDice, player: 1, seq: 0), from: "guest"))
+  XCTAssertThrowsError(try host.validateProposal(Move(.rollDice, player: 1, seq: 0), from: "guest"))
+  var guestTurn = host.game
+  guestTurn.turn.player = 1
+  let ready = try VeilopolyLiveRoom(configuration: config, localIdentityID: "host", restoredGame: guestTurn)
+  XCTAssertNoThrow(try ready.validateProposal(Move(.rollDice, player: 1, seq: 0), from: "guest"))
   var guest = try VeilopolyLiveRoom(configuration: config, localIdentityID: "guest")
   guard case .failure(.notYourTurn) = guest.commitOnHost(Move(.rollDice, player: 0, seq: 0)) else {
    return XCTFail("A guest cannot become authoritative")
@@ -108,5 +112,48 @@ final class LiveRoomTests: XCTestCase {
   XCTAssertNil(try assembler.ingest(first, from: "host", now: 1))
   XCTAssertThrowsError(try assembler.ingest(.init(roomID: config.roomID, transferID: id,
    index: 0, count: 2, bytes: Data([2])), from: "host", now: 1))
+ }
+ func testResumeIndexIsScopedToIdentityAndCannotEscapeDirectory() throws {
+  let record = try VeilopolyRoomResumeRecord(configuration: config, localIdentityID: "guest")
+  let encoded = try JSONEncoder().encode(record)
+  let decoded = try JSONDecoder().decode(VeilopolyRoomResumeRecord.self, from: encoded)
+  XCTAssertTrue(decoded.isValid(for: "guest"))
+  XCTAssertFalse(decoded.isValid(for: "host"))
+  XCTAssertThrowsError(try VeilopolyRoomResumeRecord(configuration: config, localIdentityID: "stranger"))
+  let hostile = VeilopolyRoomResumeRecord.filename(for: "../../other/identity")
+  XCTAssertFalse(hostile.contains("/"))
+  XCTAssertFalse(hostile.contains(".."))
+  XCTAssertNotEqual(VeilopolyRoomResumeRecord.filename(for: "host"),
+                    VeilopolyRoomResumeRecord.filename(for: "guest"))
+ }
+ func testCorruptCounterAndDiceCannotOverflowReducerAfterSnapshot() throws {
+  var guest = try VeilopolyLiveRoom(configuration: config, localIdentityID: "guest")
+  var bad = guest.game
+  bad.turn.lastRoll = [Int.max, Int.max]
+  XCTAssertThrowsError(try guest.acceptSnapshot(GameSnapshot(bad), from: "host"))
+  bad = guest.game; bad.turn.rollCount = Int.max
+  XCTAssertThrowsError(try guest.acceptSnapshot(GameSnapshot(bad), from: "host"))
+  bad = guest.game; bad.chanceDeck.cursor = -1
+  XCTAssertThrowsError(try guest.acceptSnapshot(GameSnapshot(bad), from: "host"))
+ }
+ func testSnapshotCannotInjectDifferentPropertyOrFinancialTerms() throws {
+  var guest = try VeilopolyLiveRoom(configuration: config, localIdentityID: "guest")
+  var bad = guest.game
+  bad.board[1].price += 1
+  XCTAssertThrowsError(try guest.acceptSnapshot(GameSnapshot(bad), from: "host"))
+  bad = guest.game
+  var ledger = IntegratedBankLedger()
+  ledger.terms.demandYieldBasisPoints = 1000
+  bad.banking = ledger
+  XCTAssertThrowsError(try guest.acceptSnapshot(GameSnapshot(bad), from: "host"))
+ }
+ func testAssemblerBoundsNumberOfIncompleteTransfers() throws {
+  let packet = VeilopolyRoomPacket(roomID: config.roomID, kind: .snapshot,
+   snapshot: GameSnapshot(try VeilopolyLiveRoom(configuration: config, localIdentityID: "host").game))
+  var assembler = VeilopolyControlAssembler()
+  for _ in 0..<4 {
+   XCTAssertNil(try assembler.ingest(VeilopolyControlCodec.fragments(packet)[0], from: "host", now: 1))
+  }
+  XCTAssertThrowsError(try assembler.ingest(VeilopolyControlCodec.fragments(packet)[0], from: "host", now: 1))
  }
 }
