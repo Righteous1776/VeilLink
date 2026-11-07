@@ -135,7 +135,7 @@ public struct CardDefinition: Codable, Equatable {
 public struct PendingCard: Codable, Equatable { public var id: Int; public var deck: DeckKind }
 
 public enum MoveKind: String, Codable, CaseIterable {
- case rollDice, applyMovement, resolveTile, buyProperty, startAuction, bid
+ case rollDice, applyMovement, resolveTile, buyProperty, startAuction, skipPurchase, bid
  case buildHouse, sellHouse, mortgage, redeem
  case proposeTrade, counterTrade, acceptTrade, rejectTrade
  case payBail, useJailCard, declareBankruptcy, endTurn
