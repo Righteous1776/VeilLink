@@ -44,6 +44,14 @@ public extension View {
 /// supports an explicit UIWindowScene geometry preference request.
 /// Both paths require landscape in the *host* UISupportedInterfaceOrientations;
 /// a child package cannot override the host's Info.plist.
+/// Host-facing orientation hook for injected multiplayer game models.
+/// Uses exactly the same iOS 15+ path as the existing solo presentation.
+@MainActor
+public struct VeilopolyLandscapeOrientationRequest: View {
+ public init() {}
+ public var body: some View { LandscapeSceneRequest() }
+}
+
 private struct LandscapeSceneRequest: UIViewControllerRepresentable {
  func makeUIViewController(context: Context) -> OrientationProbe { OrientationProbe() }
  func updateUIViewController(_ uiViewController: OrientationProbe, context: Context) {}
