@@ -14,6 +14,14 @@ struct LlamaGenerationStats: Equatable, Sendable {
     let usedModelChatTemplate: Bool
 }
 
+/// Actual tokenizer counts and sampling progress; never inferred from characters.
+struct LlamaTokenProgress: Equatable, Sendable {
+    let promptTokens: Int
+    let generatedTokens: Int
+    let elapsedMilliseconds: Int
+    let tokensPerSecond: Double
+}
+
 enum LlamaEngineError: LocalizedError {
     case modelLoadFailed
     case contextCreationFailed
@@ -105,6 +113,7 @@ actor LlamaInferenceEngine {
         prompt fallbackPrompt: String,
         chatMessages: [QwenChatMessage]? = nil,
         maxNewTokens: Int,
+        onProgress: (@MainActor @Sendable (LlamaTokenProgress) -> Void)? = nil,
         onPiece: @escaping @MainActor @Sendable (String) -> Void
     ) async throws -> LlamaGenerationStats {
         guard let model, let context, let vocab, let sampler, var workingBatch = batch else {
@@ -131,6 +140,14 @@ actor LlamaInferenceEngine {
         }
 
         let started = DispatchTime.now().uptimeNanoseconds
+        if let onProgress {
+            await onProgress(LlamaTokenProgress(
+                promptTokens: tokens.count,
+                generatedTokens: 0,
+                elapsedMilliseconds: 0,
+                tokensPerSecond: 0
+            ))
+        }
         var cursor = 0
         while cursor < tokens.count {
             await Task.yield()
@@ -175,6 +192,15 @@ actor LlamaInferenceEngine {
                 await onPiece(visible)
             }
             generatedTokens += 1
+            if let onProgress, generatedTokens % 4 == 0 {
+                let elapsed = max(1, milliseconds(since: started))
+                await onProgress(LlamaTokenProgress(
+                    promptTokens: tokens.count,
+                    generatedTokens: generatedTokens,
+                    elapsedMilliseconds: elapsed,
+                    tokensPerSecond: Double(generatedTokens) * 1_000 / Double(elapsed)
+                ))
+            }
 
             clearBatch(&workingBatch)
             add(
@@ -203,6 +229,14 @@ actor LlamaInferenceEngine {
         let totalMilliseconds = max(1, milliseconds(since: started))
         let seconds = Double(totalMilliseconds) / 1_000.0
         let rate = Double(generatedTokens) / max(0.001, seconds)
+        if let onProgress {
+            await onProgress(LlamaTokenProgress(
+                promptTokens: tokens.count,
+                generatedTokens: generatedTokens,
+                elapsedMilliseconds: totalMilliseconds,
+                tokensPerSecond: rate
+            ))
+        }
         return LlamaGenerationStats(
             text: output,
             emittedChunkCount: emittedChunks,
