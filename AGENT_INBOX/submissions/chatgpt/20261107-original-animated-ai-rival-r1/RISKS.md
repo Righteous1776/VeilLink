@@ -6,3 +6,7 @@
 - View-level OFF gate prevents Timeline view creation; Reduce Motion pauses animation, but mood/state changes can still redraw a static image.
 - The nonofficial `Grok bot` feature label is requested by Owner. Before publication, assess whether that label creates confusion with xAI's official brand.
 - Existing source collisions with #159, #128, #141 and #129; single PR update does not integrate protected product code. No Xcode/iOS build/IPA.
+
+- Media asset is intentionally absent from PR branch: GIF playback is present in proposal code but will use fallback Canvas until an authorized binary is staged and bundled. Do not claim that PR #160 contains an actual GIF or the product has been modified.
+- Native UIImage animatedImage ignores varied individual GIF frame delays, but generated 24 frames use uniform 110ms durations so this does not affect timing.
+- 24-frame decoded cache at 112px has roughly 1.2MiB RGBA data plus overhead; verify device iPhone7 and recycle on memory warnings if needed.
