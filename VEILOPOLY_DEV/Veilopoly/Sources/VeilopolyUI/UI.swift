@@ -13,6 +13,7 @@ public final class GameSessionModel: ObservableObject {
  @Published public private(set) var errorMessage: String?
  @Published public private(set) var shownCard: String?
  @Published public private(set) var shownCardDeck: DeckKind = .chance
+ @Published public private(set) var shownCardID: Int?
  @Published public private(set) var boardSelectionRevision = 0
  @Published public private(set) var stockExecutions: [StockExecution] = []
  @Published public private(set) var stockOrderError: String?
@@ -80,6 +81,12 @@ public final class GameSessionModel: ObservableObject {
  public var waitingForHuman: Bool { !game.players[actor].bankrupt && game.players[actor].kind == .human }
  public var currentContext: GameContext { VeilopolyEngine.context(game) }
  public var pending: Bool { animating }
+ /// Read-only editorial copy for the EXACT engine card currently in the queue.
+ /// Persisted CardDefinition and gameplay effects remain authoritative.
+ public var shownEditorial: VeilopolyCardEditorialEntry? {
+  guard let id = shownCardID else { return nil }
+  return VeilopolyCardEditorial.presentation(id: id, deck: shownCardDeck, among: game.cards)
+ }
  public var saveSummary: String {
   saveWarning ?? "自动保存已启用 · 异常退出后可继续本局"
  }
@@ -170,12 +177,13 @@ public final class GameSessionModel: ObservableObject {
   }
   animating = true
   let command = queue.removeFirst()
-  if case .cardShow(let deck,let message) = command {
+  if case .cardShow(let deck,let id,let message) = command {
    // Only a human player's card requires a tap to proceed. AI-only games
    // must continue after the visual/audio timeline without blocking on UI.
    if game.players[game.turn.player].kind == .human {
     cardGate.present()
     shownCardDeck = deck
+    shownCardID = id
     shownCard = message
    } else {
     lastFeedback = "AI 卡牌 · " + message
@@ -193,6 +201,7 @@ public final class GameSessionModel: ObservableObject {
  public func dismissCard() {
   guard shownCard != nil else { return }
   shownCard = nil
+  shownCardID = nil
   switch cardGate.dismiss() {
   case .advanceQueue: presentNext()
   case .finishAnimation: scene.fastForward()
@@ -212,7 +221,7 @@ public final class GameSessionModel: ObservableObject {
    }
   }
   let newState = GameFactory.make(seed: seed, humanCount: configuredHumanCount)
-  game = newState; shownCard = nil; cardGate.reset(); queue = []; errorMessage = nil
+  game = newState; shownCard = nil; shownCardID = nil; cardGate.reset(); queue = []; errorMessage = nil
   stockExecutions = []; stockOrderError = nil
   lastFeedback = "新的一局已经准备好"
   checkpoint(force: true)
@@ -362,28 +371,58 @@ public struct VeilopolyGameView: View {
   }
   .overlay {
    if let card = model.shownCard {
+    let editorial = model.shownEditorial
     ZStack {
-     // Modal screen blocks the underlying board and financial action controls.
-     Color.black.opacity(0.70).ignoresSafeArea()
-     VStack(spacing: 12) {
+     // Same ivory / antique-gold / teal scheme as the single main board.
+     // Keep the modal intercepting touches until CardRevealGate is dismissed.
+     Color(red: 0.09, green: 0.18, blue: 0.18).opacity(0.66).ignoresSafeArea()
+     VStack(spacing: 8) {
       Image(IvoryR1Artwork.preferredCardAlias(isChance: model.shownCardDeck == .chance), bundle: .module)
-       .resizable().scaledToFit().frame(width: 76, height: 96)
+       .resizable().scaledToFit().frame(width: 74, height: 88)
        .accessibilityHidden(true)
-      Label(model.shownCardDeck == .chance ? "机会卡" : "宝箱卡", systemImage: "rectangle.on.rectangle.angled")
-       .font(.headline).foregroundColor(Color(red: 0.19, green: 0.30, blue: 0.34))
+      Text(VeilopolyCardEditorial.deckName(model.shownCardDeck))
+       .font(.system(size: 12, weight: .bold, design: .serif))
+       .tracking(3)
+       .foregroundColor(Color(red: 0.43, green: 0.33, blue: 0.18))
       ScrollView {
-       Text(card).font(.system(size: 16, weight: .semibold))
-        .foregroundColor(Color(red: 0.19, green: 0.30, blue: 0.34))
-        .multilineTextAlignment(.center)
+       if let editorial {
+        VStack(spacing: 7) {
+         Text(editorial.title)
+          .font(.system(size: 18, weight: .semibold, design: .serif))
+          .foregroundColor(Color(red: 0.12, green: 0.27, blue: 0.28))
+         Text(editorial.story)
+          .font(.system(size: 13, weight: .regular, design: .serif))
+          .foregroundColor(Color(red: 0.25, green: 0.33, blue: 0.32))
+          .fixedSize(horizontal: false, vertical: true)
+         Rectangle().fill(Color(red: 0.73, green: 0.58, blue: 0.33).opacity(0.65))
+          .frame(height: 1).padding(.vertical, 2)
+         Text("执行结果")
+          .font(.system(size: 10, weight: .bold))
+          .tracking(2)
+          .foregroundColor(Color(red: 0.50, green: 0.37, blue: 0.18))
+         Text(editorial.ruling)
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundColor(Color(red: 0.12, green: 0.27, blue: 0.28))
+          .fixedSize(horizontal: false, vertical: true)
+        }
         .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.center)
+        .accessibilityElement(children: .combine)
+       } else {
+        Text(card)
+         .font(.system(size: 15, weight: .semibold))
+         .foregroundColor(Color(red: 0.14, green: 0.29, blue: 0.30))
+         .multilineTextAlignment(.center)
+         .frame(maxWidth: .infinity)
+       }
       }
-      .frame(maxHeight: 88)
+      .frame(maxHeight: 118)
       Button("确认并继续") { model.dismissCard() }
        .buttonStyle(AstraB01ButtonStyle())
        .frame(minWidth: 160, minHeight: 44)
-       .accessibilityHint("阅读完毕后继续播放游戏事件")
+       .accessibilityHint("阅读卡牌与执行结果，然后继续游戏")
      }
-     .frame(maxWidth: 300).padding(18)
+     .frame(maxWidth: 300).padding(16)
      .background {
       RoundedRectangle(cornerRadius: 19, style: .continuous)
        .fill(Color(red: 0.97, green: 0.94, blue: 0.87))

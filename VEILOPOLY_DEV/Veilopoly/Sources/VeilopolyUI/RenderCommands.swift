@@ -10,7 +10,7 @@ public enum ViewCommand {
  case diceRoll(DiceAnim)
  case tokenMove(player: Int, path: [Int])
  case tileFx(tile: Int, kind: FxKind)
- case cardShow(deck: DeckKind, text: String)
+ case cardShow(deck: DeckKind, cardID: Int?, text: String)
  case cashFloat(player: Int, delta: Int)
  case banner(TurnInfo)
 }
@@ -30,7 +30,7 @@ public enum CommandTranslator {
     else if count < 0 { path = (1...(-count)).map { (from - $0 + 40) % 40 } }
     else { path = [to] }
     return .tokenMove(player: player, path: path)
-   case .cardDrawn: return .cardShow(deck: e.deck ?? .chance, text: e.text ?? "")
+   case .cardDrawn: return .cardShow(deck: e.deck ?? .chance, cardID: e.amount, text: e.text ?? "")
    case .bankDeposited, .bankWithdrawn, .bankBorrowed, .bankRepaid,
         .bankInvestmentOpened, .bankInvestmentSettled, .stockBought, .stockSold:
     return .cashFloat(player: e.player ?? 0, delta: e.amount ?? 0)

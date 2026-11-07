@@ -632,7 +632,7 @@ final class GameBoardScene: SKScene {
                                  finishedChip?.removeFromParent()
                                  ack()
                                 }]), withKey: "command")
-  case .cardShow(_, _):
+  case .cardShow(_, _, _):
    sound("card")
    run(SKAction.sequence([.wait(forDuration: 0.5),.run(ack)]),withKey: "command")
    finishImmediately = {}
