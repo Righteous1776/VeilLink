@@ -30,6 +30,8 @@ public final class GameSessionModel: ObservableObject {
  let scene: GameBoardScene
  private var queue: [ViewCommand] = []
  private var pendingGuestIntent: Move?
+ private var pendingHostMoves: [AuthoritativeMove] = []
+ private var lastMultiplayerStockTick = Date.distantPast
  @Published private var animating = false
  private var driving = false
  private let configuredHumanCount: Int
@@ -145,7 +147,7 @@ public final class GameSessionModel: ObservableObject {
                      deck: DeckKind? = nil, financeProduct: FinancialFeature? = nil,
                      financePeriods: Int? = nil, financeID: Int? = nil,
                      stockSymbol: String? = nil, stockShares: Int? = nil) {
-  guard !animating && !cardGate.isPresented else { return }
+  guard !animating && !cardGate.isPresented && !recoveryBlocked else { return }
   if isMultiplayer && !waitingForHuman {
    errorMessage = "请等待好友的回合"
    return
@@ -167,7 +169,12 @@ public final class GameSessionModel: ObservableObject {
  }
  public func advanceStockMarket() {
   guard !animating && !cardGate.isPresented && !isMultiplayerGuest &&
-         waitingForHuman && game.turn.phase == .manage else { return }
+         !recoveryBlocked && waitingForHuman && game.turn.phase == .manage else { return }
+  // A two-second simulation timer must not flood a 16KB-message BLE link.
+  if isMultiplayerHost {
+   guard Date().timeIntervalSince(lastMultiplayerStockTick) >= 20 else { return }
+   lastMultiplayerStockTick = Date()
+  }
   applyMove(Move(.stockTick, player: actor, seq: game.nextSeq))
  }
  private func applyMove(_ move: Move, authoritativeHash: String? = nil) {
@@ -248,6 +255,24 @@ public final class GameSessionModel: ObservableObject {
      return
     }
    }
+   if isMultiplayerGuest && !pendingHostMoves.isEmpty {
+    let next = pendingHostMoves.removeFirst()
+    guard next.seq == game.nextSeq else {
+     errorMessage = "好友棋局更新次序有误，请请求重新同步"
+     pendingHostMoves = []
+     return
+    }
+    let previous = game.nextSeq
+    applyMove(next.move, authoritativeHash: next.stateHash)
+    guard game.nextSeq == previous + 1 else {
+     pendingHostMoves = []
+     return
+    }
+    // applyMove already starts the animation queue for visual effects.
+    // Stock ticks have no animations and return immediately.
+    if !animating { presentNext() }
+    return
+   }
    drive()
    return
   }
@@ -276,7 +301,7 @@ public final class GameSessionModel: ObservableObject {
  }
  /// The host checks the remote player's seat, phase, and current sequence.
  public func acceptGuestIntent(_ move: Move) {
-  guard isMultiplayerHost, move.player == 1 else { return }
+  guard isMultiplayerHost, !recoveryBlocked, move.player == 1 else { return }
   guard actor == 1, game.nextSeq == move.seq else {
    onGuestIntentRejected?(move, "回合状态已经变化，请先恢复最新棋局")
    return
@@ -298,11 +323,20 @@ public final class GameSessionModel: ObservableObject {
 
  /// Guest accepts only a sequential host-signed (over the trusted chat) move.
  @discardableResult public func acceptHostMove(_ packet: AuthoritativeMove) -> Bool {
-  guard isMultiplayerGuest, packet.seq == game.nextSeq,
-        packet.move.seq == packet.seq else { return false }
-  let prior = game.nextSeq
+  guard isMultiplayerGuest, !recoveryBlocked,
+        packet.seq == packet.move.seq else { return false }
+  if let queued = pendingHostMoves.first(where: { $0.seq == packet.seq }) {
+   return queued == packet
+  }
+  guard packet.seq == game.nextSeq + pendingHostMoves.count else { return false }
+  if animating || cardGate.isPresented || !pendingHostMoves.isEmpty {
+   guard pendingHostMoves.count < 128 else { return false }
+   pendingHostMoves.append(packet)
+   return true
+  }
+  let previous = game.nextSeq
   applyMove(packet.move, authoritativeHash: packet.stateHash)
-  return game.nextSeq == prior + 1
+  return game.nextSeq == previous + 1
  }
 
  public func reportPeerError(_ message: String) { errorMessage = message }
@@ -339,6 +373,8 @@ public final class GameSessionModel: ObservableObject {
   }
   let newState = GameFactory.make(seed: seed, humanCount: configuredHumanCount)
   game = newState; shownCard = nil; shownCardID = nil; cardGate.reset(); queue = []
+  pendingHostMoves = []
+  pendingGuestIntent = nil
   errorMessage = nil; errorAdvice = nil
   stockExecutions = []; stockOrderError = nil
   bulletinFeed = VeilopolyBulletinFeed()
