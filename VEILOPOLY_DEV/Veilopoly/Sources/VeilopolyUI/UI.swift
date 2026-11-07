@@ -1501,6 +1501,14 @@ public struct VeilopolyGameView: View {
   return VStack(alignment: .leading, spacing: 8) {
    Divider()
    Text("银行与金融").font(.subheadline.weight(.semibold))
+   if let claims = model.game.banking?.queuedClaims {
+    let mine = claims.filter { $0.player == model.actor }.reduce(0) { $0 + $1.amount }
+    if mine > 0 {
+     Text("我的待兑付银行债权 ¥\(mine) · 需等待银行回收资金后按顺序结清")
+      .font(.caption.weight(.semibold))
+      .fixedSize(horizontal: false, vertical: true)
+    }
+   }
    if let available = model.game.banking?.reserveCash {
     VStack(alignment: .leading, spacing: 4) {
      if let report = VeilopolyFinancialStability.inspect(model.game) {

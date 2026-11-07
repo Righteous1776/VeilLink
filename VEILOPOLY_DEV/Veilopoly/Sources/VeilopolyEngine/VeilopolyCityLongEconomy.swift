@@ -84,7 +84,10 @@ public enum VeilopolyCityLongEconomy {
   let level = VeilopolyFinancialStability.inspect(game)?.level
   let stress = level == .crisis ? 140 : level == .stressed ? 90 :
                level == .guarded ? 35 : 0
-  let signal = (cash - 4 * expandedStartingCash) / 500 +
+  // Cash shifting out of the bank in a run is inflationary but capped.
+  // It must NOT override the crisis penalty and turn a run into a bull market.
+  let monetaryImpulse = max(-65, min(65, (cash - 4 * expandedStartingCash) / 500))
+  let signal = monetaryImpulse +
    min(75, buildings * 5) + min(32, credit / 2_000)
    - min(55, max(0, richest - poorest) / 1_600) - stress
   return max(-140, min(140, signal))

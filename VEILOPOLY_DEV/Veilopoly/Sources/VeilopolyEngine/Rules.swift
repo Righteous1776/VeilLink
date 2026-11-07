@@ -464,7 +464,10 @@ public enum VeilopolyEngine {
   // Older sealed V4 checkpoints may not have the claim list yet.
   // Materialize an empty list only on a committed payout, not during decode.
   var queue = ledger.queuedClaims ?? []
-  let paid = min(amount, freeCash)
+  // Preserve FIFO for V5: old bank claims are legally prior to new salaries
+  // or event windfalls. The reducer clears the old queue after this move.
+  let paid = VeilopolyCityLongEconomy.isExpanded(g) && !queue.isEmpty
+    ? 0 : min(amount, freeCash)
   guard g.players[player].cash <= 1_000_000_000 - paid else {
    throw GameError.invalidState
   }
