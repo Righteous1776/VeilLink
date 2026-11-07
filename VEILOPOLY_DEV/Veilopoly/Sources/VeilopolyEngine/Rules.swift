@@ -113,7 +113,7 @@ public enum VeilopolyEngine {
   case .resolveTile:
    try resolveLanding(&g, player: p, rentMultiplier: 1, depth: 0, &fx)
   case .buyProperty:
-   guard let tile = g.turn.pendingPurchase, m.tile == tile else { throw GameError.invalidTile }
+   guard let tile = g.turn.pendingPurchase, m.tile == tile, isTile(tile, in: g) else { throw GameError.invalidTile }
    guard g.board[tile].owner == nil else { throw GameError.alreadyOwned }
    let price = g.board[tile].price
    guard g.players[p].cash >= price else { throw GameError.noCash }
@@ -121,7 +121,7 @@ public enum VeilopolyEngine {
    g.turn.pendingPurchase = nil; g.turn.phase = .manage
    fx.append(Effect(.bought, player: p, tile: tile, amount: price))
   case .startAuction:
-   guard let tile = g.turn.pendingPurchase, m.tile == tile else { throw GameError.invalidTile }
+   guard let tile = g.turn.pendingPurchase, m.tile == tile, isTile(tile, in: g) else { throw GameError.invalidTile }
    let active = g.players.filter { !$0.bankrupt }.map(\.id)
    guard active.count > 1 else { throw GameError.invalidState }
    g.auction = AuctionState(tile: tile, active: active)
@@ -129,6 +129,7 @@ public enum VeilopolyEngine {
    fx.append(Effect(.auctionStarted, player: p, tile: tile))
   case .bid:
    guard var auction = g.auction, auction.turn == p else { throw GameError.invalidState }
+   guard isTile(auction.tile, in: g) else { throw GameError.invalidTile }
    let index = auction.active.firstIndex(of: p)
    guard let index = index else { throw GameError.invalidState }
    if let amount = m.amount, amount > 0 {

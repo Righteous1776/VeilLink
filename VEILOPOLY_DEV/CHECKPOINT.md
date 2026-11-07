@@ -1,5 +1,30 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## CODEX W2-001 — purchase/auction reference crash — 2026-11-07
+
+- Before `72521c9` (touch fix); theme slice `06a659a`. Same #168 dev-only
+  authority; main remains `2c5b5161027edff097b27fe3323d30f6ca3e430e`.
+- Reproduced baseline malformed purchase crash: exit 1, array index failure,
+  signal 4. Separate baseline auction/save tests: 3 cases, 18 assertion failures.
+- Added bounds checks before buy/startAuction/existing auction settlement;
+  storage rejects invalid pending/auction deed refs and falls back to older
+  valid slots. No rule/price/RNG/serialization/schema/resource/host changes.
+- Targeted Engine + save + existing buy/auction/bid suite 20/20 PASS. Full
+  Linux Swift 6.2.1 suite 255/255 PASS, 30.365s, including old sealed saves.
+  Apple SDK / iOS XCTest / simulator / real device / hard power loss NOT_RUN.
+- Same fixed AI corpora before (W1-005) vs after: 500×500 cap 0/500 complete,
+  500 capped, zero illegal actions in both; 20×6000 cap 9 complete/11 capped,
+  79,661 moves in both. Smoke runtime 21.837s → 13.428s; long runtime
+  13.661s → 12.451s. Uncontrolled Linux timings, NOT a speed/strength claim;
+  per-seed old/new final-hash differential benchmark NOT_RUN. AI policy unchanged.
+- See `reviews/W2_001_DEED_REFERENCE_SAFETY.md`; semantic validation is not a
+  complete malformed-state or security audit. FNV remains non-authenticating.
+  Historical strict Codable warnings unresolved; strict build not rerun here.
+- NEXT_ONE_TASK: VLP-CODEX-W2-002, remaining auction/trade/debt participant and
+  phase-payload bounds. W1 Apple acceptance and safe HUD dragging remain open.
+- State: scoped portable-verified fix, ready for Governor review; no main merge,
+  P5, release, IPA or workflow dispatch. Refresh HEAD/#6/#168 before continuation.
+
 ## CODEX W1-005 — touch-region minima — 2026-11-07
 
 - Before `06a659a` (theme fix), same #168 dev-only grant; main unchanged.

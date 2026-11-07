@@ -70,6 +70,56 @@ final class VeilopolySaveStoreTests: XCTestCase {
   XCTAssertNil(try store.load(gameID: "room-abc", mode: .solo))
   XCTAssertNotNil(try store.load(gameID: "room-abc", mode: .multiplayerHost))
  }
+ func testOutOfRangeDeedReferencesCannotReplaceCheckpoint() throws {
+  let (store, dir) = try sandbox(); defer { try? FileManager.default.removeItem(at: dir) }
+  let original = GameFactory.make(seed: 8203, humanCount: 1)
+  _ = try store.save(original, gameID: "solo", mode: .solo)
+  for index in [-1, 40, Int.min, Int.max] {
+   for phase in [Phase.tileResolve, .auction] {
+    var invalid = original
+    invalid.turn.phase = phase
+    if phase == .tileResolve { invalid.turn.pendingPurchase = index }
+    else { invalid.auction = AuctionState(tile: index, active: [0, 1]) }
+    XCTAssertThrowsError(try store.save(invalid, gameID: "solo", mode: .solo)) { error in
+     XCTAssertEqual(error as? VeilopolySaveError, .invalidGameState)
+    }
+    let restored = try XCTUnwrap(store.load(gameID: "solo", mode: .solo))
+    XCTAssertEqual(restored.revision, 1)
+    XCTAssertTrue(restored.game == original)
+   }
+  }
+ }
+
+ func testLoadSkipsCorrectlyChecksummedInvalidDeedReferences() throws {
+  let (store, dir) = try sandbox(); defer { try? FileManager.default.removeItem(at: dir) }
+  let original = GameFactory.make(seed: 8204, humanCount: 1)
+  _ = try store.save(original, gameID: "solo", mode: .solo)
+  _ = try store.save(original, gameID: "solo", mode: .solo)
+  let paths = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+  let olderSlot = try XCTUnwrap(paths.first { $0.lastPathComponent.hasSuffix("-a.json") })
+  for phase in [Phase.tileResolve, .auction] {
+   var invalid = original
+   invalid.turn.phase = phase
+   if phase == .tileResolve { invalid.turn.pendingPurchase = 40 }
+   else { invalid.auction = AuctionState(tile: 40, active: [0, 1]) }
+   let record = VeilopolySavedGame(schema: 1, gameID: "solo", mode: .solo,
+    revision: 3, savedAt: 1, stateHash: StateDigest.hash(invalid), game: invalid)
+   let encoder = JSONEncoder()
+   encoder.outputFormatting = [.sortedKeys]
+   let plain = try encoder.encode(record)
+   var hash: UInt64 = 14_695_981_039_346_656_037
+   for byte in plain { hash = (hash ^ UInt64(byte)) &* 1_099_511_628_211 }
+   let hex = String(hash, radix: 16)
+   struct SealedFixture: Encodable { let record: VeilopolySavedGame; let checksum: String }
+   let envelope = SealedFixture(record: record,
+    checksum: String(repeating: "0", count: max(0, 16 - hex.count)) + hex)
+   try encoder.encode(envelope).write(to: olderSlot, options: .atomic)
+   let restored = try XCTUnwrap(store.load(gameID: "solo", mode: .solo))
+   XCTAssertEqual(restored.revision, 2, "Semantic validation must reject even a checksum-valid malformed slot")
+   XCTAssertTrue(restored.game == original)
+  }
+ }
+
  func testRejectsMalformedGameAndPathTraversalIdentity() throws {
   let (store, dir) = try sandbox(); defer { try? FileManager.default.removeItem(at: dir) }
   let original = GameFactory.make(seed: 18)

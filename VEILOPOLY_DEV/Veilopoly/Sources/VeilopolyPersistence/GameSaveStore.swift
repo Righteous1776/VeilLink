@@ -135,6 +135,8 @@ public final class VeilopolySaveStore {
         g.nextSeq >= 0, g.moveLog.count == g.nextSeq,
         g.moveLog.enumerated().allSatisfy({ i, move in move.seq == i }),
         (0..<4).contains(g.turn.player),
+        (g.turn.pendingPurchase.map { g.board.indices.contains($0) } ?? true),
+        (g.auction.map { g.board.indices.contains($0.tile) } ?? true),
         (0...32).contains(g.bank.houses), (0...12).contains(g.bank.hotels),
         (g.banking.map { IntegratedBanking.validate($0) } ?? true) else { return false }
   if let winner = g.winner {
