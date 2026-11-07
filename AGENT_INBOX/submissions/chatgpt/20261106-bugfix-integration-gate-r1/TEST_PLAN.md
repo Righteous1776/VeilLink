@@ -1,0 +1,11 @@
+# Bugfix Integration — Formal Gate
+- [x] Read main governance, Issue #6 and latest owner/Governor context.
+- [x] Main HEAD = ccafebab147e069fbabfff579dbf323b0d54f191; 11 candidate PRs Draft, none merged.
+- [x] Read all 11 PATCH.diff blobs, 27 unique source/test file targets.
+- [x] Recount diff hunk old/new lines and screen for overlapping ranges: previous defects in #146 and #147 corrected and verified.
+- [x] Exact base-source line-match of #146/#147 patches: PASS (source anchor preflight).
+- [x] 9 file overlaps and 5 hunk intersections cataloged.
+- [ ] **NOT_RUN**: actual git apply --check / unified worktree merge.
+- [ ] **NOT_RUN**: Swift6 iOS build, full XCTest and UI test suite, schema/protocol security gate.
+- [ ] **NOT_RUN**: 2-phone E2EE message/order/game/transfer, HFP/A2DP coexistence, battery Instruments.
+- Governor must create isolated integration branch with CI gates, actual compile, device evidence and rollback checkpoint before any main promotion.
