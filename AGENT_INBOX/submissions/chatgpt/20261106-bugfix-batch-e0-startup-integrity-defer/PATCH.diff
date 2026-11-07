@@ -1,0 +1,96 @@
+diff --git a/VeilLink/App/AppModel.swift b/VeilLink/App/AppModel.swift
+--- a/VeilLink/App/AppModel.swift
++++ b/VeilLink/App/AppModel.swift
+@@ -55,8 +55,13 @@
+     private var messageRefreshTask: Task<Void, Never>?
+     private var a9RefreshTask: Task<Void, Never>?
+     private var a9PeriodicTask: Task<Void, Never>?
+-    private var lastAutomatedIntegrityCheckAt: Date?
+-    private var a9Cancellables = Set<AnyCancellable>()
++    private var lastAutomatedIntegrityCheckAt: Date?
++    /// A full SQLite PRAGMA integrity_check must not block AppModel's cold-start
++    /// construction on the SwiftUI main actor. Keep the health state UNCHECKED
++    /// until the first foreground frame has been shown and the utility check ends.
++    private var startupIntegrityCheckPending = true
++    private var startupIntegrityCheckScheduled = false
++    private var a9Cancellables = Set<AnyCancellable>()
+     private var pendingConversationRefresh = false
+     private var hostForegroundActive = true
+     private static let autoSaveReceivedImagesKey = "media.autoSaveReceivedImages"
+@@ -492,14 +497,54 @@
+         refreshA9Health()
+     }
+ 
+-    func runA9StorageCheck() {
+-        let result = database.integrityCheck().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+-        a9Health.setDatabaseIntegrity(result == "ok" ? .ok : .failed)
+-        lastAutomatedIntegrityCheckAt = Date()
+-        refreshA9Health()
+-    }
+-
+-    private func runAutomatedIntegrityCheckIfNeeded(now: Date = Date()) {
++    func runA9StorageCheck() {
++        let result = database.integrityCheck().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
++        a9Health.setDatabaseIntegrity(result == "ok" ? .ok : .failed)
++        lastAutomatedIntegrityCheckAt = Date()
++        startupIntegrityCheckPending = false
++        refreshA9Health()
++    }
++
++    /// First-foreground startup check: run full integrity verification only
++    /// after first UI presentation, using DatabaseStore's serialized SQL queue
++    /// from a utility worker instead of blocking SwiftUI startup.
++    private func scheduleStartupIntegrityCheckIfNeeded() {
++        guard startupIntegrityCheckPending, !startupIntegrityCheckScheduled else { return }
++        startupIntegrityCheckScheduled = true
++        let store = database
++        Task { @MainActor [weak self] in
++            try? await Task.sleep(nanoseconds: 750_000_000)
++            guard !Task.isCancelled, let self else { return }
++            guard self.hostForegroundActive else {
++                self.startupIntegrityCheckScheduled = false
++                return
++            }
++            let startedAt = Date()
++            DispatchQueue.global(qos: .utility).async { [weak self] in
++                let result = store.integrityCheck()
++                    .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
++                DispatchQueue.main.async { [weak self] in
++                    guard let self else { return }
++                    self.startupIntegrityCheckPending = false
++                    // A newer manual check wins over a slow startup worker.
++                    if let latest = self.lastAutomatedIntegrityCheckAt, latest > startedAt {
++                        return
++                    }
++                    self.lastAutomatedIntegrityCheckAt = Date()
++                    self.a9Health.setDatabaseIntegrity(result == "ok" ? .ok : .failed)
++                    if result != "ok" {
++                        DiagnosticLogStore.shared.log(
++                            .error, .storage, event: "governance.integrity_check.failed"
++                        )
++                    }
++                    self.refreshA9Health()
++                }
++            }
++        }
++    }
++
++    private func runAutomatedIntegrityCheckIfNeeded(now: Date = Date()) {
++        guard !startupIntegrityCheckPending else { return }
+         if let lastAutomatedIntegrityCheckAt,
+            now.timeIntervalSince(lastAutomatedIntegrityCheckAt) < 6 * 60 * 60 {
+             return
+@@ -606,9 +651,10 @@
+         hostForegroundActive = true
+         computeGovernor.setForegroundActive(true)
+         internetRelay.setForegroundActive(true)
+-        internetRelay.refreshNow()
+-        refreshA9Health()
+-        startA9PeriodicSampling()
++        internetRelay.refreshNow()
++        refreshA9Health()
++        startA9PeriodicSampling()
++        scheduleStartupIntegrityCheckIfNeeded()
+     }
+ 
+     func handleMemoryPressure() {
