@@ -91,7 +91,7 @@ public final class GameSessionModel: ObservableObject {
   recoveryBlocked = unreadable
   // Fresh OS entropy is sampled only at a NEW MATCH boundary; saved games
   // always resume their original seed and deterministic replay.
-  let initial = recovered?.game ?? room?.game ?? GameFactory.make(
+  let initial = recovered?.game ?? room?.game ?? VeilopolyCityLongEconomy.make(
    seed: seed ?? VeilopolyNewGameSeed.fresh(), humanCount: humanCount)
   game = initial
   scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
@@ -315,7 +315,7 @@ public final class GameSessionModel: ObservableObject {
     return
    }
   }
-  let newState = GameFactory.make(seed: seed, humanCount: configuredHumanCount)
+  let newState = VeilopolyCityLongEconomy.make(seed: seed, humanCount: configuredHumanCount)
   game = newState; shownCard = nil; shownCardID = nil; cardGate.reset(); queue = []
   errorMessage = nil; errorAdvice = nil
   stockExecutions = []; stockOrderError = nil

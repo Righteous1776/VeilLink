@@ -18,7 +18,8 @@ public struct AIProfile: Equatable {
 public enum VeilopolyAI {
  public static func decide(_ g: GameState, _ ctx: GameContext, me: Int, level: AILevel) -> Move {
   let profile = AIProfile.forLevel(level)
-  let reserve = FinancePolicyAdvisor.analyze(g, player: me, baseReserve: profile.reserveCash).reserve
+  let cashFloor = VeilopolyCityLongEconomy.isActive(g) ? profile.reserveCash * 3 : profile.reserveCash
+  let reserve = FinancePolicyAdvisor.analyze(g, player: me, baseReserve: cashFloor).reserve
   let p = g.players[me]
   let seq = g.nextSeq
   func m(_ kind: MoveKind, tile: Int? = nil, amount: Int? = nil) -> Move {

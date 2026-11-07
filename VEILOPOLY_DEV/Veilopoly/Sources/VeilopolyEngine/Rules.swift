@@ -116,9 +116,10 @@ public enum VeilopolyEngine {
     } else {
      g.players[p].jailTurns -= 1
      if g.players[p].jailTurns == 0 {
-      try charge(&g, debtor: p, amount: 50, creditor: nil, &fx)
+      let bail = VeilopolyCityLongEconomy.bail(g)
+      try charge(&g, debtor: p, amount: bail, creditor: nil, &fx)
       if g.pendingDebt != nil { return }
-      fx.append(Effect(.released, player: p, amount: -50))
+      fx.append(Effect(.released, player: p, amount: -bail))
      } else {
       g.turn.phase = .manage; g.turn.rolledDouble = false
       return
@@ -134,7 +135,7 @@ public enum VeilopolyEngine {
    let n = g.turn.pendingSteps
    let from = g.players[p].position
    let to = (from + n) % 40
-   if from + n >= 40 { g.players[p].cash += 200; fx.append(Effect(.passedGo, player: p, amount: 200)) }
+   if from + n >= 40 { let salary = VeilopolyCityLongEconomy.salary(g); g.players[p].cash += salary; fx.append(Effect(.passedGo, player: p, amount: salary)) }
    g.players[p].position = to
    g.turn.pendingSteps = 0
    fx.append(Effect(.playerMoved, player: p, from: from, to: to, steps: n))
@@ -251,9 +252,10 @@ public enum VeilopolyEngine {
    fx.append(Effect(.tradeRejected, player: p))
   case .payBail:
    guard g.players[p].jailTurns > 0 else { throw GameError.inJail }
-   guard g.players[p].cash >= 50 else { throw GameError.noCash }
-   g.players[p].cash -= 50; g.players[p].jailTurns = 0
-   fx.append(Effect(.released, player: p, amount: -50))
+   let bail = VeilopolyCityLongEconomy.bail(g)
+   guard g.players[p].cash >= bail else { throw GameError.noCash }
+   g.players[p].cash -= bail; g.players[p].jailTurns = 0
+   fx.append(Effect(.released, player: p, amount: -bail))
   case .useJailCard:
    guard g.players[p].jailTurns > 0 else { throw GameError.inJail }
    let useDeck: DeckKind
@@ -361,7 +363,8 @@ public enum VeilopolyEngine {
     if g.pendingDebt == nil { g.turn.phase = .manage }
    } else { g.turn.phase = .manage }
   case .tax:
-   try charge(&g, debtor: p, amount: i == 4 ? 200 : 100, creditor: nil, &fx)
+   let tax = VeilopolyCityLongEconomy.tax(g, tile: i)
+   try charge(&g, debtor: p, amount: tax, creditor: nil, &fx)
    if g.pendingDebt == nil { g.turn.phase = .manage }
   case .chance, .chest:
    let deck: DeckKind = tile.kind == .chance ? .chance : .chest
@@ -393,21 +396,22 @@ public enum VeilopolyEngine {
    switch effect.kind {
    case .cash:
     guard let amount = effect.amount, let target = effect.target else { throw GameError.invalidState }
+    let cash = VeilopolyCityLongEconomy.cardCash(g, amount: amount)
     if target == .allOthers {
      for other in g.players.indices where other != p && !g.players[other].bankrupt {
-      if amount >= 0 { try charge(&g, debtor: other, amount: amount, creditor: p, &fx) }
-      else { try charge(&g, debtor: p, amount: -amount, creditor: other, &fx) }
+      if cash >= 0 { try charge(&g, debtor: other, amount: cash, creditor: p, &fx) }
+      else { try charge(&g, debtor: p, amount: -cash, creditor: other, &fx) }
       if g.pendingDebt != nil { break }
      }
-    } else if amount >= 0 {
-     g.players[p].cash += amount
-     fx.append(Effect(.cashChanged, player: p, amount: amount))
-    } else { try charge(&g, debtor: p, amount: -amount, creditor: nil, &fx) }
+    } else if cash >= 0 {
+     g.players[p].cash += cash
+     fx.append(Effect(.cashChanged, player: p, amount: cash))
+    } else { try charge(&g, debtor: p, amount: -cash, creditor: nil, &fx) }
    case .moveTo:
     guard let dest = effect.tile, (0..<40).contains(dest) else { throw GameError.invalidState }
     let from = g.players[p].position
     if effect.collectGo == true && dest < from || (effect.collectGo == true && dest == 0) {
-     g.players[p].cash += 200; fx.append(Effect(.passedGo, player: p, amount: 200))
+     let salary = VeilopolyCityLongEconomy.salary(g); g.players[p].cash += salary; fx.append(Effect(.passedGo, player: p, amount: salary))
     }
     g.players[p].position = dest
     fx.append(Effect(.playerMoved, player: p, from: from, to: dest, steps: 0))
@@ -418,14 +422,14 @@ public enum VeilopolyEngine {
     let from = g.players[p].position
     guard let step = (1...40).first(where: { g.board[(from + $0) % 40].kind == kind }) else { throw GameError.invalidState }
     let dest = (from + step) % 40
-    if from + step >= 40 { g.players[p].cash += 200; fx.append(Effect(.passedGo, player: p, amount: 200)) }
+    if from + step >= 40 { let salary = VeilopolyCityLongEconomy.salary(g); g.players[p].cash += salary; fx.append(Effect(.passedGo, player: p, amount: salary)) }
     g.players[p].position = dest
     fx.append(Effect(.playerMoved, player: p, from: from, to: dest, steps: step))
     try resolveLanding(&g, player: p, rentMultiplier: max(1, effect.multiplier ?? 1), depth: depth, &fx)
    case .moveRelative:
     guard let delta = effect.delta, (-39...39).contains(delta) else { throw GameError.invalidState }
     let from = g.players[p].position; let dest = (from + delta + 40) % 40
-    if delta > 0 && from + delta >= 40 { g.players[p].cash += 200; fx.append(Effect(.passedGo, player: p, amount: 200)) }
+    if delta > 0 && from + delta >= 40 { let salary = VeilopolyCityLongEconomy.salary(g); g.players[p].cash += salary; fx.append(Effect(.passedGo, player: p, amount: salary)) }
     g.players[p].position = dest
     fx.append(Effect(.playerMoved, player: p, from: from, to: dest, steps: delta))
     try resolveLanding(&g, player: p, rentMultiplier: 1, depth: depth, &fx)
@@ -437,7 +441,8 @@ public enum VeilopolyEngine {
     guard let perHouse = effect.perHouse, let perHotel = effect.perHotel else { throw GameError.invalidState }
     let owned = g.board.filter { $0.owner == p }
     let cost = owned.reduce(0) { $0 + $1.houses * perHouse + ($1.hotel ? perHotel : 0) }
-    try charge(&g, debtor: p, amount: cost, creditor: nil, &fx)
+    let scaledCost = VeilopolyCityLongEconomy.repairCost(g, amount: cost)
+    try charge(&g, debtor: p, amount: scaledCost, creditor: nil, &fx)
    }
   }
  }
