@@ -146,7 +146,8 @@ public enum StockMarketEngine {
  public static let maximumHistoryPoints = 96
  public static let feeBasisPoints = 50 // 0.50%, minimum one game-credit unit.
 
- public static func initial(seed: UInt64, enhanced: Bool = false) -> StockMarketState {
+ public static func initial(seed: UInt64, enhanced: Bool = false,
+                            quoteScale: Int = 8) -> StockMarketState {
   let instruments = [
    StockQuote(symbol: "VTL", name: "维尔交通", sector: "交通", basePriceCents: 1_850,
               volatilityBasisPoints: 115, driftBasisPoints: 2),
@@ -161,7 +162,7 @@ public enum StockMarketEngine {
   ]
   let quotes = enhanced ? instruments.map { quote in
    StockQuote(symbol: quote.symbol, name: quote.name, sector: quote.sector,
-              basePriceCents: quote.basePriceCents * 8,
+              basePriceCents: quote.basePriceCents * quoteScale,
               volatilityBasisPoints: min(500, quote.volatilityBasisPoints * 3 / 2),
               driftBasisPoints: quote.driftBasisPoints)
   } : instruments

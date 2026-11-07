@@ -1437,7 +1437,7 @@ public struct VeilopolyGameView: View {
       })?.id ?? tradeTarget
      }
     }
-   if model.game.banking?.financeRuleVersion == VeilopolyCityLongEconomy.version {
+   if (model.game.banking?.financeRuleVersion ?? 0) >= VeilopolyCityLongEconomy.finiteVersion {
     let transfer = Move(.transferCash, player: model.actor, seq: model.game.nextSeq,
                         amount: Int(directTransferAmount), to: tradeTarget)
     let transferError = VeilopolyGamePresentation.rejection(model.game, move: transfer)
@@ -1505,7 +1505,7 @@ public struct VeilopolyGameView: View {
     VStack(alignment: .leading, spacing: 4) {
      Label("城市中央银行 · 有限游戏币", systemImage: "building.columns.fill")
       .font(.subheadline.weight(.semibold))
-     Text("银行可用 ¥\(available) · 全市货币上限 ¥\(VeilopolyCityLongEconomy.totalMoneySupply)")
+     Text("银行可用 ¥\(available) · 全市货币上限 ¥\(VeilopolyCityLongEconomy.supplyCeiling(model.game) ?? 0)")
       .font(.caption.monospacedDigit())
      Text("购地、建造、税费、股票买入回流银行；发薪、贷款、补助、股票卖出从银行支出。银行流动资金不足时相关付款会拒绝，已提交的玩家间转账不会凭空增发货币。")
       .font(.caption2).foregroundStyle(.secondary)
@@ -1640,7 +1640,7 @@ public struct VeilopolyGameView: View {
   let market = ledger.market ?? StockMarketEngine.initial(seed: model.game.seed)
   return VStack(alignment: .leading, spacing: 8) {
    if let balance = ledger.reserveCash {
-    Text("城市金融环境 · 银行可用 ¥\(balance) / 总量 ¥\(VeilopolyCityLongEconomy.totalMoneySupply) · 下一 Tick 宏观信号 \(VeilopolyCityLongEconomy.marketPressure(model.game)) bp")
+    Text("城市金融环境 · 银行可用 ¥\(balance) / 总量 ¥\(VeilopolyCityLongEconomy.supplyCeiling(model.game) ?? 0) · 下一 Tick 宏观信号 \(VeilopolyCityLongEconomy.marketPressure(model.game)) bp")
      .font(.caption2).foregroundStyle(.secondary)
      .fixedSize(horizontal: false, vertical: true)
     Text("地产购置、建造、贷款及直接转账造成的流动性与资金分布变化，会传导到下一次虚构股票报价；交易前请核对手续费与可用现金。")

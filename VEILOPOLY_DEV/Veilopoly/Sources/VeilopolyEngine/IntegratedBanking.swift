@@ -43,7 +43,7 @@ public struct IntegratedBankLedger: Codable, Equatable {
   self.market = market
   self.financeRuleVersion = financeRuleVersion
   self.reserveCash = reserveCash
-  self.queuedClaims = financeRuleVersion == VeilopolyCityLongEconomy.version ? [] : nil
+  self.queuedClaims = financeRuleVersion >= VeilopolyCityLongEconomy.finiteVersion ? [] : nil
  }
 
  // FinanceSandboxPolicy has enum-keyed dictionaries. Swift encodes these as
@@ -134,17 +134,17 @@ public enum IntegratedBanking {
  }
 
  public static func validate(_ ledger: IntegratedBankLedger) -> Bool {
-  (1...4).contains(ledger.financeRuleVersion) &&
-  (ledger.financeRuleVersion == VeilopolyCityLongEconomy.version
-   ? ((ledger.reserveCash.map { (0...VeilopolyCityLongEconomy.totalMoneySupply).contains($0) } ?? false) &&
-      (ledger.queuedClaims.map {
-       $0.count <= 4_096 && $0.allSatisfy { claim in
-        (0..<4).contains(claim.player) &&
-        (1...VeilopolyCityLongEconomy.totalMoneySupply).contains(claim.amount) &&
-        (1...32).contains(claim.source.utf8.count)
-       }
-      } ?? false))
-   : ledger.reserveCash == nil && ledger.queuedClaims == nil) &&
+  (1...5).contains(ledger.financeRuleVersion) &&
+  (VeilopolyCityLongEconomy.supplyCeiling(forVersion: ledger.financeRuleVersion).map { cap in
+   (ledger.reserveCash.map { (0...cap).contains($0) } ?? false) &&
+   (ledger.queuedClaims.map {
+    $0.count <= 4_096 && $0.allSatisfy { claim in
+     (0..<4).contains(claim.player) &&
+     (1...cap).contains(claim.amount) &&
+     (1...32).contains(claim.source.utf8.count)
+    }
+   } ?? (ledger.financeRuleVersion == VeilopolyCityLongEconomy.finiteVersion))
+  } ?? (ledger.reserveCash == nil && ledger.queuedClaims == nil)) &&
   (0...1_000_000).contains(ledger.completedTurns) && ledger.accounts.count == 4 &&
   ledger.terms.isWellFormed() && (ledger.market.map(StockMarketEngine.validate) ?? true) &&
   ledger.accounts.allSatisfy { acc in
