@@ -108,13 +108,17 @@ private struct DiagnosticExportIndex: Codable {
     let currentScreen: String
 }
 
-@MainActor
-final class DiagnosticLogStore: ObservableObject {
+final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
     static let shared = DiagnosticLogStore()
 
-    @Published private(set) var recentEntries: [DiagnosticLogEntry] = []
-    @Published private(set) var diskUsageBytes = 0
-    @Published private(set) var lastRefreshAt: Date?
+    let objectWillChange = ObservableObjectPublisher()
+
+    private let logQueue = DispatchQueue(label: "veil.diagnostics.log", qos: .utility)
+    private let stateLock = NSLock()
+    private var recentEntriesStorage: [DiagnosticLogEntry] = []
+    private var diskUsageBytesStorage = 0
+    private var lastRefreshAtStorage: Date?
+    private var observerNotificationPending = false
 
     private let fileManager = FileManager.default
     private let rootDirectory: URL
@@ -133,6 +137,18 @@ final class DiagnosticLogStore: ObservableObject {
     private var flushesSinceDiskUsageRefresh = 0
 
     let runtimeSessionID: String
+
+    var recentEntries: [DiagnosticLogEntry] {
+        withStateLock { recentEntriesStorage }
+    }
+
+    var diskUsageBytes: Int {
+        withStateLock { diskUsageBytesStorage }
+    }
+
+    var lastRefreshAt: Date? {
+        withStateLock { lastRefreshAtStorage }
+    }
 
     init(rootDirectory: URL? = nil) {
         runtimeSessionID = String(UUID().uuidString.prefix(8)).uppercased()
@@ -190,62 +206,76 @@ final class DiagnosticLogStore: ObservableObject {
         message: String = "",
         metadata: [String: String] = [:]
     ) {
-        let entry = DiagnosticLogEntry(
-            schemaVersion: 2,
-            id: UUID().uuidString,
-            sequence: nextSequence,
-            timestamp: Date(),
-            uptimeMilliseconds: UInt64(ProcessInfo.processInfo.systemUptime * 1_000),
-            sessionID: runtimeSessionID,
-            level: level,
-            category: category,
-            event: DiagnosticPrivacyFilter.sanitizeValue(event, limit: 128),
-            screen: screen.map { DiagnosticPrivacyFilter.sanitizeValue($0, limit: 128) },
-            message: DiagnosticPrivacyFilter.sanitizeValue(message, limit: 2_048),
-            metadata: DiagnosticPrivacyFilter.sanitizeMetadata(metadata)
-        )
-        nextSequence &+= 1
+        logQueue.async { [weak self] in
+            guard let self else { return }
+            self.stateLock.lock()
+            let entry = DiagnosticLogEntry(
+                schemaVersion: 2,
+                id: UUID().uuidString,
+                sequence: self.nextSequence,
+                timestamp: Date(),
+                uptimeMilliseconds: UInt64(ProcessInfo.processInfo.systemUptime * 1_000),
+                sessionID: self.runtimeSessionID,
+                level: level,
+                category: category,
+                event: DiagnosticPrivacyFilter.sanitizeValue(event, limit: 128),
+                screen: screen.map { DiagnosticPrivacyFilter.sanitizeValue($0, limit: 128) },
+                message: DiagnosticPrivacyFilter.sanitizeValue(message, limit: 2_048),
+                metadata: DiagnosticPrivacyFilter.sanitizeMetadata(metadata)
+            )
+            self.nextSequence &+= 1
 
-        recentEntries.append(entry)
-        if recentEntries.count > maxRecentEntries {
-            recentEntries.removeFirst(recentEntries.count - maxRecentEntries)
-        }
+            self.recentEntriesStorage.append(entry)
+            if self.recentEntriesStorage.count > self.maxRecentEntries {
+                self.recentEntriesStorage.removeFirst(self.recentEntriesStorage.count - self.maxRecentEntries)
+            }
 
-        guard let encoded = try? encoder.encode(entry) else { return }
-        pendingBuffer.append(encoded)
-        pendingBuffer.append(0x0A)
-
-        if pendingBuffer.count >= flushThresholdBytes {
-            flushPendingBuffer()
-        } else {
-            scheduleFlush()
+            if let encoded = try? self.encoder.encode(entry) {
+                self.pendingBuffer.append(encoded)
+                self.pendingBuffer.append(0x0A)
+                if self.pendingBuffer.count >= self.flushThresholdBytes {
+                    self.flushPendingBufferUnsafe()
+                } else {
+                    self.scheduleFlushUnsafe()
+                }
+            }
+            self.stateLock.unlock()
+            self.notifyObservers()
         }
     }
 
     func refreshFromDisk() {
-        flushPendingBuffer()
-        loadRecentEntriesFromDisk()
+        logQueue.async { [weak self] in
+            self?.flushPendingBuffer()
+            self?.loadRecentEntriesFromDisk()
+        }
     }
 
     func clear() {
-        flushTask?.cancel()
-        flushTask = nil
-        pendingBuffer.removeAll(keepingCapacity: false)
-        flushesSinceDiskUsageRefresh = 0
-        for url in allLogURLs() {
-            try? fileManager.removeItem(at: url)
+        logQueue.sync {
+            stateLock.lock()
+            flushTask?.cancel()
+            flushTask = nil
+            pendingBuffer.removeAll(keepingCapacity: false)
+            flushesSinceDiskUsageRefresh = 0
+            for url in allLogURLs() {
+                try? fileManager.removeItem(at: url)
+            }
+            for url in auxiliaryURLs() {
+                try? fileManager.removeItem(at: url)
+            }
+            recentEntriesStorage.removeAll(keepingCapacity: false)
+            diskUsageBytesStorage = 0
+            nextSequence = 1
+            lastRefreshAtStorage = Date()
+            stateLock.unlock()
         }
-        for url in auxiliaryURLs() {
-            try? fileManager.removeItem(at: url)
-        }
-        recentEntries.removeAll(keepingCapacity: false)
-        diskUsageBytes = 0
-        nextSequence = 1
-        lastRefreshAt = Date()
+        notifyObservers()
     }
 
+    @MainActor
     func exportBundle(context: String, extraFiles: [String: Data] = [:]) throws -> URL {
-        flushPendingBuffer()
+        logQueue.sync { flushPendingBuffer() }
 
         let staging = fileManager.temporaryDirectory
             .appendingPathComponent("VeilLink-Diagnostics-\(UUID().uuidString)", isDirectory: true)
@@ -331,12 +361,10 @@ final class DiagnosticLogStore: ObservableObject {
             options: [.atomic, .completeFileProtection]
         )
 
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
         let destination = fileManager.temporaryDirectory
-            .appendingPathComponent("VeilLink-DeepTelemetry-\(formatter.string(from: Date())).zip")
-        try? fileManager.removeItem(at: destination)
+            .appendingPathComponent(
+                VeilExportFileName.make(prefix: "VeilLink-DeepTelemetry-", suffix: ".zip")
+            )
         try fileManager.zipItem(at: staging, to: destination, shouldKeepParent: false)
         return destination
     }
@@ -344,51 +372,64 @@ final class DiagnosticLogStore: ObservableObject {
     @discardableResult
     func storeAuxiliaryArtifact(prefix: String, fileExtension: String, data: Data) -> String? {
         guard !data.isEmpty, data.count <= 8 * 1_024 * 1_024 else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
-        let safePrefix = safeExportFileName(prefix)
-        let safeExtension = safeExportFileName(fileExtension).replacingOccurrences(of: ".", with: "")
-        let name = "\(safePrefix)-\(formatter.string(from: Date())).\(safeExtension.isEmpty ? "bin" : safeExtension)"
-        let url = auxiliaryDirectory.appendingPathComponent(name)
-        do {
-            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-            trimAuxiliaryArtifacts(maxFiles: 24, maxBytes: maxAuxiliaryBytes)
-            refreshDiskUsage()
-            return name
-        } catch {
-            return nil
+        let result: String? = logQueue.sync {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+            let safePrefix = safeExportFileName(prefix)
+            let safeExtension = safeExportFileName(fileExtension).replacingOccurrences(of: ".", with: "")
+            let name = "\(safePrefix)-\(formatter.string(from: Date())).\(safeExtension.isEmpty ? "bin" : safeExtension)"
+            let url = auxiliaryDirectory.appendingPathComponent(name)
+            do {
+                try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                trimAuxiliaryArtifacts(maxFiles: 24, maxBytes: maxAuxiliaryBytes)
+                refreshDiskUsage()
+                return name
+            } catch {
+                return nil
+            }
         }
+        notifyObservers()
+        return result
     }
 
+    @MainActor
     private func makeExportIndex() -> DiagnosticExportIndex {
+        let entries = recentEntries
         var categoryCounts: [String: Int] = [:]
         var levelCounts: [String: Int] = [:]
-        for entry in recentEntries {
+        for entry in entries {
             categoryCounts[entry.category.rawValue, default: 0] += 1
             levelCounts[entry.level.rawValue, default: 0] += 1
         }
         return DiagnosticExportIndex(
             generatedAt: Date(),
-            firstTimestamp: recentEntries.first?.timestamp,
-            lastTimestamp: recentEntries.last?.timestamp,
-            eventCount: recentEntries.count,
+            firstTimestamp: entries.first?.timestamp,
+            lastTimestamp: entries.last?.timestamp,
+            eventCount: entries.count,
             categoryCounts: categoryCounts,
             levelCounts: levelCounts,
             currentScreen: DeepTelemetry.shared.currentScreen
         )
     }
 
-    private func scheduleFlush() {
+    private func scheduleFlushUnsafe() {
         guard flushTask == nil else { return }
-        flushTask = Task { @MainActor [weak self] in
+        flushTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled else { return }
-            self?.flushPendingBuffer()
+            self?.logQueue.async { [weak self] in self?.flushPendingBuffer() }
         }
     }
 
     private func flushPendingBuffer() {
+        stateLock.lock()
+        flushPendingBufferUnsafe()
+        stateLock.unlock()
+        notifyObservers()
+    }
+
+    private func flushPendingBufferUnsafe() {
         flushTask?.cancel()
         flushTask = nil
         guard !pendingBuffer.isEmpty else { return }
@@ -399,15 +440,22 @@ final class DiagnosticLogStore: ObservableObject {
         append(data)
         flushesSinceDiskUsageRefresh += 1
         if rotated || flushesSinceDiskUsageRefresh >= 8 {
-            refreshDiskUsage()
+            refreshDiskUsageUnsafe()
             flushesSinceDiskUsageRefresh = 0
         } else {
-            diskUsageBytes = min(retentionBytes, max(0, diskUsageBytes + data.count))
-            lastRefreshAt = Date()
+            diskUsageBytesStorage = min(retentionBytes, max(0, diskUsageBytesStorage + data.count))
+            lastRefreshAtStorage = Date()
         }
     }
 
     private func loadRecentEntriesFromDisk() {
+        stateLock.lock()
+        loadRecentEntriesFromDiskUnsafe()
+        stateLock.unlock()
+        notifyObservers()
+    }
+
+    private func loadRecentEntriesFromDiskUnsafe() {
         var loaded: [DiagnosticLogEntry] = []
         for url in orderedLogURLsForReading() {
             guard let data = try? Data(contentsOf: url),
@@ -421,10 +469,10 @@ final class DiagnosticLogStore: ObservableObject {
         if loaded.count > maxRecentEntries {
             loaded = Array(loaded.suffix(maxRecentEntries))
         }
-        recentEntries = loaded
+        recentEntriesStorage = loaded
         nextSequence = (loaded.last?.sequence ?? 0) &+ 1
-        lastRefreshAt = Date()
-        refreshDiskUsage()
+        lastRefreshAtStorage = Date()
+        refreshDiskUsageUnsafe()
     }
 
     private func protectDirectory() {
@@ -481,8 +529,15 @@ final class DiagnosticLogStore: ObservableObject {
     }
 
     private func refreshDiskUsage() {
-        diskUsageBytes = existingLogURLs().reduce(0) { $0 + fileSize($1) }
+        stateLock.lock()
+        refreshDiskUsageUnsafe()
+        stateLock.unlock()
+    }
+
+    private func refreshDiskUsageUnsafe() {
+        diskUsageBytesStorage = existingLogURLs().reduce(0) { $0 + fileSize($1) }
             + auxiliaryURLs().reduce(0) { $0 + fileSize($1) }
+        lastRefreshAtStorage = Date()
     }
 
     private func fileSize(_ url: URL) -> Int {
@@ -525,6 +580,30 @@ final class DiagnosticLogStore: ObservableObject {
             guard let oldest = urls.popLast() else { break }
             total -= fileSize(oldest)
             try? fileManager.removeItem(at: oldest)
+        }
+    }
+
+    private func withStateLock<T>(_ body: () -> T) -> T {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return body()
+    }
+
+    private func notifyObservers() {
+        stateLock.lock()
+        guard !observerNotificationPending else {
+            stateLock.unlock()
+            return
+        }
+        observerNotificationPending = true
+        stateLock.unlock()
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.stateLock.lock()
+            self.observerNotificationPending = false
+            self.stateLock.unlock()
+            self.objectWillChange.send()
         }
     }
 

@@ -1,0 +1,33 @@
+{
+  "schema": "veilopoly.generated-art.v1",
+  "task_id": "VEILOPOLY-ART-INLAY-005",
+  "created_utc_date": "2026-11-07",
+  "provenance": "Generated with the OpenAI image generation tool in this Owner-authorized session; no third-party stock asset used as generation input.",
+  "rights_note": "AI-generated commissioned project asset; no third-party open-source license or exclusivity claim is made.",
+  "generation_brief": "One isolated transparent financial-city miniature diorama. Art-deco bank, pale limestone and teal glass buildings, dark blue-grey oval plinth, restrained brass, trees and water courtyard; upper-left soft light; no text, logos or UI. Decorative board center only.",
+  "source": {
+    "path": "centerCity.source.png",
+    "tool_output": "/workspace/generated_images/exec-436f1a24-b573-4486-b042-c7fd7f46664b.png",
+    "size_px": [1254, 1254],
+    "bytes": 1855374,
+    "sha256": "fdea52db1acac6a788b019502050523dccd68447a03e571661baab4f11a07c62",
+    "runtime": false
+  },
+  "runtime": {
+    "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/astraCenterCity.png",
+    "alias": "astraCenterCity",
+    "size_px": [512, 512],
+    "bytes": 222089,
+    "sha256": "208e6c1208ece5aadcd2ba4665f1ff03bac3116b8b7bbe5c39433bf001d43d50",
+    "normalization": "ImageMagick: resize to 448x448, centered on transparent 512x512 canvas, strip metadata, RGBA8 PNG",
+    "estimated_decoded_rgba_bytes": 1048576,
+    "center_design_pt": [512, 470],
+    "display_design_pt": [448, 448],
+    "anchor": [0.5, 0.5],
+    "z_position": 3.5,
+    "purpose": "Optional decorative center inlay, below 40 playable tiles; original emblem is fallback",
+    "interactive": false,
+    "nine_slice": null,
+    "themes": ["dark", "light"]
+  }
+}

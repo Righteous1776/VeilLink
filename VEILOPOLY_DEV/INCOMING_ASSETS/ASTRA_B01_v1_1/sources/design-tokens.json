@@ -1,0 +1,55 @@
+{
+  "colors": {
+    "background": "#0B1420",
+    "panel": "#152533",
+    "gold": "#D4B77C",
+    "teal": "#84B8BD",
+    "text": "#EAF0F2",
+    "muted": "#A6B8C4",
+    "error": "#E79B98",
+    "light": "#E4E9E7",
+    "paper": "#F1EDDD",
+    "print_on_paper": "#314C57",
+    "property_groups": {
+      "umber": "#8A5D48",
+      "sky": "#69A7BE",
+      "orchid": "#AD729C",
+      "amber": "#D99A4E",
+      "coral": "#C96865",
+      "ochre": "#B5A64B",
+      "jade": "#5E9C81",
+      "cobalt": "#537EB3"
+    }
+  },
+  "radii": {
+    "panel": 16,
+    "control": 10,
+    "capsule": 22,
+    "paper": 8
+  },
+  "typography": {
+    "font": "System SF Pro + PingFang SC; preview uses Noto Sans CJK SC; fonts not redistributed",
+    "title": 22,
+    "body": 14,
+    "label": 12,
+    "micro": 11,
+    "amount": 22,
+    "numeric_features": "monospaced tabular"
+  },
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32
+  ],
+  "touch_min_pt": [
+    44,
+    44
+  ],
+  "runtime_texture_scale": [
+    2,
+    3
+  ]
+}

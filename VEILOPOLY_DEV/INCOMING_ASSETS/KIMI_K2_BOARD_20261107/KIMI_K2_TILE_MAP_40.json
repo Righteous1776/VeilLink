@@ -1,0 +1,1132 @@
+{
+  "schema": "veillopoly.kimi-k2-40-tiles.v1",
+  "source_map_sha256": "6da17faa28b0bed1ecbcd70b4e95cb8e7d6b236a267c65baa6486e3b643dbeda",
+  "atlas_px": [
+    2048,
+    1280
+  ],
+  "coordinate_note": "Design SpriteKit lower-left origin; atlas frame pixel coords top origin, normalized UV bottom origin; 15-degree projection already baked in some textures",
+  "status": "METADATA_ONLY",
+  "tiles": [
+    {
+      "id": "VL-K2-TILE-000",
+      "index": 0,
+      "alias": "tile_00",
+      "kind": "go",
+      "side": "bottom",
+      "center_design_pt": [
+        932,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        10,
+        10,
+        236,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.0048828125,
+        0.8078125,
+        0.115234375,
+        0.184375
+      ],
+      "display_pt": [
+        118,
+        118
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "id": "VL-K2-TILE-001",
+      "index": 1,
+      "alias": "tile_01",
+      "kind": "street",
+      "side": "bottom",
+      "center_design_pt": [
+        832,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        306,
+        10,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.1494140625,
+        0.8078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "id": "VL-K2-TILE-002",
+      "index": 2,
+      "alias": "tile_02",
+      "kind": "chest",
+      "side": "bottom",
+      "center_design_pt": [
+        752,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        562,
+        10,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.2744140625,
+        0.8078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "id": "VL-K2-TILE-003",
+      "index": 3,
+      "alias": "tile_03",
+      "kind": "street",
+      "side": "bottom",
+      "center_design_pt": [
+        672,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        818,
+        10,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.3994140625,
+        0.8078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "id": "VL-K2-TILE-004",
+      "index": 4,
+      "alias": "tile_04",
+      "kind": "taxIncome",
+      "side": "bottom",
+      "center_design_pt": [
+        592,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        1074,
+        10,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.5244140625,
+        0.8078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "id": "VL-K2-TILE-005",
+      "index": 5,
+      "alias": "tile_05",
+      "kind": "railroad",
+      "side": "bottom",
+      "center_design_pt": [
+        512,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        1330,
+        10,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.6494140625,
+        0.8078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "id": "VL-K2-TILE-006",
+      "index": 6,
+      "alias": "tile_06",
+      "kind": "street",
+      "side": "bottom",
+      "center_design_pt": [
+        432,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        1586,
+        10,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.7744140625,
+        0.8078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "id": "VL-K2-TILE-007",
+      "index": 7,
+      "alias": "tile_07",
+      "kind": "chance",
+      "side": "bottom",
+      "center_design_pt": [
+        352,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        1842,
+        10,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.8994140625,
+        0.8078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "id": "VL-K2-TILE-008",
+      "index": 8,
+      "alias": "tile_08",
+      "kind": "street",
+      "side": "bottom",
+      "center_design_pt": [
+        272,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        50,
+        266,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.0244140625,
+        0.6078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "id": "VL-K2-TILE-009",
+      "index": 9,
+      "alias": "tile_09",
+      "kind": "street",
+      "side": "bottom",
+      "center_design_pt": [
+        192,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        306,
+        266,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.1494140625,
+        0.6078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "id": "VL-K2-TILE-010",
+      "index": 10,
+      "alias": "tile_10",
+      "kind": "jail",
+      "side": "left",
+      "center_design_pt": [
+        92,
+        101.2889
+      ],
+      "frame_px_top_origin": [
+        522,
+        266,
+        236,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.2548828125,
+        0.6078125,
+        0.115234375,
+        0.184375
+      ],
+      "display_pt": [
+        118,
+        118
+      ],
+      "rotation_deg": -90
+    },
+    {
+      "id": "VL-K2-TILE-011",
+      "index": 11,
+      "alias": "tile_11",
+      "kind": "street",
+      "side": "left",
+      "center_design_pt": [
+        92,
+        194.6618
+      ],
+      "frame_px_top_origin": [
+        824,
+        266,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.40234375,
+        0.6078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": -90
+    },
+    {
+      "id": "VL-K2-TILE-012",
+      "index": 12,
+      "alias": "tile_12",
+      "kind": "utilityElectric",
+      "side": "left",
+      "center_design_pt": [
+        92,
+        265.4963
+      ],
+      "frame_px_top_origin": [
+        1080,
+        266,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.52734375,
+        0.6078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": -90
+    },
+    {
+      "id": "VL-K2-TILE-013",
+      "index": 13,
+      "alias": "tile_13",
+      "kind": "street",
+      "side": "left",
+      "center_design_pt": [
+        92,
+        336.3309
+      ],
+      "frame_px_top_origin": [
+        1336,
+        266,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.65234375,
+        0.6078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": -90
+    },
+    {
+      "id": "VL-K2-TILE-014",
+      "index": 14,
+      "alias": "tile_14",
+      "kind": "street",
+      "side": "left",
+      "center_design_pt": [
+        92,
+        407.1654
+      ],
+      "frame_px_top_origin": [
+        1592,
+        266,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.77734375,
+        0.6078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": -90
+    },
+    {
+      "id": "VL-K2-TILE-015",
+      "index": 15,
+      "alias": "tile_15",
+      "kind": "railroad",
+      "side": "left",
+      "center_design_pt": [
+        92,
+        478
+      ],
+      "frame_px_top_origin": [
+        1848,
+        266,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.90234375,
+        0.6078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": -90
+    },
+    {
+      "id": "VL-K2-TILE-016",
+      "index": 16,
+      "alias": "tile_16",
+      "kind": "street",
+      "side": "left",
+      "center_design_pt": [
+        92,
+        548.8346
+      ],
+      "frame_px_top_origin": [
+        56,
+        522,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.02734375,
+        0.4078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": -90
+    },
+    {
+      "id": "VL-K2-TILE-017",
+      "index": 17,
+      "alias": "tile_17",
+      "kind": "chest",
+      "side": "left",
+      "center_design_pt": [
+        92,
+        619.6691
+      ],
+      "frame_px_top_origin": [
+        312,
+        522,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.15234375,
+        0.4078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": -90
+    },
+    {
+      "id": "VL-K2-TILE-018",
+      "index": 18,
+      "alias": "tile_18",
+      "kind": "street",
+      "side": "left",
+      "center_design_pt": [
+        92,
+        690.5037
+      ],
+      "frame_px_top_origin": [
+        568,
+        522,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.27734375,
+        0.4078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": -90
+    },
+    {
+      "id": "VL-K2-TILE-019",
+      "index": 19,
+      "alias": "tile_19",
+      "kind": "street",
+      "side": "left",
+      "center_design_pt": [
+        92,
+        761.3382
+      ],
+      "frame_px_top_origin": [
+        824,
+        522,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.40234375,
+        0.4078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": -90
+    },
+    {
+      "id": "VL-K2-TILE-020",
+      "index": 20,
+      "alias": "tile_20",
+      "kind": "freeParking",
+      "side": "top",
+      "center_design_pt": [
+        92,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        1034,
+        522,
+        236,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.5048828125,
+        0.4078125,
+        0.115234375,
+        0.184375
+      ],
+      "display_pt": [
+        118,
+        118
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "id": "VL-K2-TILE-021",
+      "index": 21,
+      "alias": "tile_21",
+      "kind": "street",
+      "side": "top",
+      "center_design_pt": [
+        192,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        1330,
+        522,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.6494140625,
+        0.4078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "id": "VL-K2-TILE-022",
+      "index": 22,
+      "alias": "tile_22",
+      "kind": "chance",
+      "side": "top",
+      "center_design_pt": [
+        272,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        1586,
+        522,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.7744140625,
+        0.4078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "id": "VL-K2-TILE-023",
+      "index": 23,
+      "alias": "tile_23",
+      "kind": "street",
+      "side": "top",
+      "center_design_pt": [
+        352,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        1842,
+        522,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.8994140625,
+        0.4078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "id": "VL-K2-TILE-024",
+      "index": 24,
+      "alias": "tile_24",
+      "kind": "street",
+      "side": "top",
+      "center_design_pt": [
+        432,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        50,
+        778,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.0244140625,
+        0.2078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "id": "VL-K2-TILE-025",
+      "index": 25,
+      "alias": "tile_25",
+      "kind": "railroad",
+      "side": "top",
+      "center_design_pt": [
+        512,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        306,
+        778,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.1494140625,
+        0.2078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "id": "VL-K2-TILE-026",
+      "index": 26,
+      "alias": "tile_26",
+      "kind": "street",
+      "side": "top",
+      "center_design_pt": [
+        592,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        562,
+        778,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.2744140625,
+        0.2078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "id": "VL-K2-TILE-027",
+      "index": 27,
+      "alias": "tile_27",
+      "kind": "street",
+      "side": "top",
+      "center_design_pt": [
+        672,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        818,
+        778,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.3994140625,
+        0.2078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "id": "VL-K2-TILE-028",
+      "index": 28,
+      "alias": "tile_28",
+      "kind": "utilityWater",
+      "side": "top",
+      "center_design_pt": [
+        752,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        1074,
+        778,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.5244140625,
+        0.2078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "id": "VL-K2-TILE-029",
+      "index": 29,
+      "alias": "tile_29",
+      "kind": "street",
+      "side": "top",
+      "center_design_pt": [
+        832,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        1330,
+        778,
+        156,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.6494140625,
+        0.2078125,
+        0.076171875,
+        0.184375
+      ],
+      "display_pt": [
+        78,
+        118
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "id": "VL-K2-TILE-030",
+      "index": 30,
+      "alias": "tile_30",
+      "kind": "goToJail",
+      "side": "right",
+      "center_design_pt": [
+        932,
+        854.7111
+      ],
+      "frame_px_top_origin": [
+        1546,
+        778,
+        236,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.7548828125,
+        0.2078125,
+        0.115234375,
+        0.184375
+      ],
+      "display_pt": [
+        118,
+        118
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "id": "VL-K2-TILE-031",
+      "index": 31,
+      "alias": "tile_31",
+      "kind": "street",
+      "side": "right",
+      "center_design_pt": [
+        932,
+        761.3382
+      ],
+      "frame_px_top_origin": [
+        1848,
+        778,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.90234375,
+        0.2078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "id": "VL-K2-TILE-032",
+      "index": 32,
+      "alias": "tile_32",
+      "kind": "street",
+      "side": "right",
+      "center_design_pt": [
+        932,
+        690.5037
+      ],
+      "frame_px_top_origin": [
+        56,
+        1034,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.02734375,
+        0.0078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "id": "VL-K2-TILE-033",
+      "index": 33,
+      "alias": "tile_33",
+      "kind": "chest",
+      "side": "right",
+      "center_design_pt": [
+        932,
+        619.6691
+      ],
+      "frame_px_top_origin": [
+        312,
+        1034,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.15234375,
+        0.0078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "id": "VL-K2-TILE-034",
+      "index": 34,
+      "alias": "tile_34",
+      "kind": "street",
+      "side": "right",
+      "center_design_pt": [
+        932,
+        548.8346
+      ],
+      "frame_px_top_origin": [
+        568,
+        1034,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.27734375,
+        0.0078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "id": "VL-K2-TILE-035",
+      "index": 35,
+      "alias": "tile_35",
+      "kind": "railroad",
+      "side": "right",
+      "center_design_pt": [
+        932,
+        478
+      ],
+      "frame_px_top_origin": [
+        824,
+        1034,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.40234375,
+        0.0078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "id": "VL-K2-TILE-036",
+      "index": 36,
+      "alias": "tile_36",
+      "kind": "chance",
+      "side": "right",
+      "center_design_pt": [
+        932,
+        407.1654
+      ],
+      "frame_px_top_origin": [
+        1080,
+        1034,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.52734375,
+        0.0078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "id": "VL-K2-TILE-037",
+      "index": 37,
+      "alias": "tile_37",
+      "kind": "street",
+      "side": "right",
+      "center_design_pt": [
+        932,
+        336.3309
+      ],
+      "frame_px_top_origin": [
+        1336,
+        1034,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.65234375,
+        0.0078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "id": "VL-K2-TILE-038",
+      "index": 38,
+      "alias": "tile_38",
+      "kind": "taxLuxury",
+      "side": "right",
+      "center_design_pt": [
+        932,
+        265.4963
+      ],
+      "frame_px_top_origin": [
+        1592,
+        1034,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.77734375,
+        0.0078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "id": "VL-K2-TILE-039",
+      "index": 39,
+      "alias": "tile_39",
+      "kind": "street",
+      "side": "right",
+      "center_design_pt": [
+        932,
+        194.6618
+      ],
+      "frame_px_top_origin": [
+        1848,
+        1034,
+        144,
+        236
+      ],
+      "uv_bottom_origin": [
+        0.90234375,
+        0.0078125,
+        0.0703125,
+        0.184375
+      ],
+      "display_pt": [
+        72,
+        118
+      ],
+      "rotation_deg": 90
+    }
+  ]
+}

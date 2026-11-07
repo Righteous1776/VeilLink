@@ -1,0 +1,112 @@
+{
+  "schema": "veilopoly.kimi-k2-runtime-additions.v1",
+  "task": "VL-P4-KIMI-ASTRA-UNIFIED-20261107",
+  "source_archive": "Veilopoly_Kimi_Cumulative_20261106(1).zip",
+  "source_asset_manifest": "K2/ASSET_MANIFEST.json",
+  "status": "SWIFTPM_ASSETS_ADDED_IOS_RENDER_UNVERIFIED",
+  "asset_count": 10,
+  "total_bytes": 378614,
+  "policy": "New dark 2.5D board primary, Astra actions unchanged, optional Kimi sprites; do not import old board-base PNG, competing Kimi HUD previews or bulk PBR.",
+  "records": [
+    {
+      "id": "VL-K2-EXT-001",
+      "alias": "kimiTokenPawnBlue",
+      "source_member": "K2/assets/tokens/token-pawn-blue-512.png",
+      "bytes": 51150,
+      "sha256": "115cb81525f77ded1bee43dd512ed689b44c831bd7e89d61dd8322f1f456d53c",
+      "actual_git_blob_sha1": "2b7eb8f953732563217a5ab95fc874b70930ff78",
+      "license": "Kenney CC0",
+      "runtime_path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/kimiTokenPawnBlue.png"
+    },
+    {
+      "id": "VL-K2-EXT-002",
+      "alias": "kimiTokenCarRed",
+      "source_member": "K2/assets/tokens/token-car-red-512.png",
+      "bytes": 72502,
+      "sha256": "610582aef89d6f382dc605a178fa902c3ad0638e6bc42f9ad6854191d9ef285b",
+      "actual_git_blob_sha1": "6a883c2622dfa58a07320e28c66ad0aa22fe14ef",
+      "license": "Kenney CC0",
+      "runtime_path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/kimiTokenCarRed.png"
+    },
+    {
+      "id": "VL-K2-EXT-003",
+      "alias": "kimiTokenShipGreen",
+      "source_member": "K2/assets/tokens/token-ship-green-512.png",
+      "bytes": 70199,
+      "sha256": "b9f1a3fd0d88c192f3357b47d5dc4ad83d2c5e71a366878d6f4a546b11d6f556",
+      "actual_git_blob_sha1": "3616d57d0b82c98f4d98a55febc5436b9da8ebda",
+      "license": "Kenney CC0",
+      "runtime_path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/kimiTokenShipGreen.png"
+    },
+    {
+      "id": "VL-K2-EXT-004",
+      "alias": "kimiTokenPlaneYellow",
+      "source_member": "K2/assets/tokens/token-plane-yellow-512.png",
+      "bytes": 47511,
+      "sha256": "9579ced7b9be721ed21efee3d67885cfd4d19080ffccd1460f092bb0c50df45a",
+      "actual_git_blob_sha1": "5ffb53cd60e9fe351ddf0d5e1d89ea7aca40f319",
+      "license": "Kenney CC0",
+      "runtime_path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/kimiTokenPlaneYellow.png"
+    },
+    {
+      "id": "VL-K2-EXT-005",
+      "alias": "kimiFxTilePulseAtlas",
+      "source_member": "K2/assets/effects/fxTilePulseAtlas.png",
+      "bytes": 101004,
+      "sha256": "3d6c96c1e016af05d1f93f6940227c5bc996c58b4df084efa4a7074149d52b69",
+      "actual_git_blob_sha1": "f7d6602f2d57477876bb5e0f5575cd793e93717b",
+      "license": "Kimi program-drawn",
+      "runtime_path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/kimiFxTilePulseAtlas.png"
+    },
+    {
+      "id": "VL-K2-EXT-006",
+      "alias": "kimiFxCashChipAtlas",
+      "source_member": "K2/assets/effects/fxCashChipAtlas.png",
+      "bytes": 6597,
+      "sha256": "8618308ad57b19381f09d2cdb79c217dc1ad12c153bcf84a72b1f34b69981359",
+      "actual_git_blob_sha1": "1678c2db144a9e662077556d2efaa290d3cf5ded",
+      "license": "Kimi program-drawn",
+      "runtime_path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/kimiFxCashChipAtlas.png"
+    },
+    {
+      "id": "VL-K2-EXT-007",
+      "alias": "kimiFxPawnShadowAtlas",
+      "source_member": "K2/assets/effects/fxPawnShadowAtlas.png",
+      "bytes": 11368,
+      "sha256": "3751b41545f3259ba46435b8ac8af1b91e27c03d0200f33fc4098c3fe65ad10a",
+      "actual_git_blob_sha1": "ab423401c4dbec2bc218e76f59c78b6a82e8ecf4",
+      "license": "Kimi program-drawn",
+      "runtime_path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/kimiFxPawnShadowAtlas.png"
+    },
+    {
+      "id": "VL-K2-EXT-008",
+      "alias": "kimiFxTurnBanner",
+      "source_member": "K2/assets/effects/fxTurnBanner.png",
+      "bytes": 2221,
+      "sha256": "6279ae413d6b88ba662f00c06ee597fd141b800775f822d747f021c35a76c8ab",
+      "actual_git_blob_sha1": "7393402f46dbcfc9db8c3cef0e0b7f2415756e10",
+      "license": "Kimi program-drawn",
+      "runtime_path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/kimiFxTurnBanner.png"
+    },
+    {
+      "id": "VL-K2-EXT-009",
+      "alias": "kimiFxVictoryBadge",
+      "source_member": "K2/assets/effects/fxVictoryBadge.png",
+      "bytes": 12309,
+      "sha256": "4642cf987203bad9873f18c336270f0c63b50df1d499740bd711eb461b8f88c9",
+      "actual_git_blob_sha1": "8394fc4ce38cc48a5c4befd4d217fca23e305119",
+      "license": "Kimi program-drawn",
+      "runtime_path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/kimiFxVictoryBadge.png"
+    },
+    {
+      "id": "VL-K2-EXT-010",
+      "alias": "kimiCardFaceFrame",
+      "source_member": "K2/assets/cards/uiCardFaceFrame.png",
+      "bytes": 3753,
+      "sha256": "491259287b47dfb26d2adfead646250da780277aabf75cf915fffa4b8ddf648b",
+      "actual_git_blob_sha1": "646e798d0fb47020ef2075becbbc3b3ee152a172",
+      "license": "Kimi program-drawn",
+      "runtime_path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/kimiCardFaceFrame.png"
+    }
+  ]
+}

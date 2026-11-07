@@ -28,6 +28,7 @@ struct LegalConsentGateView: View {
     @State private var confirmsVersionRule = false
     @State private var errorText: String?
     @State private var copiedHash = false
+    @State private var signing = false
 
     private var canSign: Bool {
         VeilLegalConsentRequirements.canSign(
@@ -235,7 +236,7 @@ struct LegalConsentGateView: View {
                         .transition(.opacity)
                 }
 
-                VeilReleasePrimaryButton(title: "签署并进入 VeilLink", systemImage: "checkmark.shield.fill", enabled: confirmationsReady) {
+                VeilReleasePrimaryButton(title: "签署并进入 VeilLink", systemImage: "checkmark.shield.fill", enabled: confirmationsReady && !signing) {
                     sign()
                 }
 
@@ -300,15 +301,21 @@ struct LegalConsentGateView: View {
     }
 
     private func sign() {
+        guard !signing else { return }
+        signing = true
         VeilPreConsentBlackBox.shared.record(.signTapped, stage: .consent)
         // Commit any in-flight IME composition (e.g. a pinyin candidate bar that is still open)
-        // before evaluating the gate. Without this, the acknowledgement state still holds the
-        // intermediate composition text, canSign stays false and the disabled primary button
-        // silently swallows the first tap — the classic "first signing attempt does nothing".
+        // before evaluating the gate. UIKit delivers the final field value through the delegate;
+        // defer validation one main-loop turn so SwiftUI observes that committed binding value.
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        DispatchQueue.main.async { self.completeSign() }
+    }
+
+    private func completeSign() {
         guard canSign else {
             VeilPreConsentBlackBox.shared.record(.signIncomplete, stage: .consent)
             errorText = "请完成三项确认，并准确输入签署确认语。"
+            signing = false
             return
         }
         if controller.accept(acknowledgment: acknowledgment) {
@@ -319,6 +326,7 @@ struct LegalConsentGateView: View {
         } else {
             VeilPreConsentBlackBox.shared.record(.signStorageFailed, stage: .consent)
             errorText = "签署记录未能安全保存，请重试。"
+            signing = false
         }
     }
 }
@@ -394,6 +402,9 @@ private struct VeilLegalAcknowledgmentField: UIViewRepresentable {
         }
 
         func textFieldDidEndEditing(_ textField: UITextField) {
+            // Resigning first responder commits marked IME text. Publish the final UIKit value
+            // synchronously so the deferred signing check cannot observe stale SwiftUI state.
+            text.wrappedValue = textField.text ?? ""
             VeilPreConsentBlackBox.shared.record(.acknowledgmentUnfocused, stage: .consent)
         }
 

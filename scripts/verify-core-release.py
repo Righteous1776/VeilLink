@@ -12,8 +12,8 @@ import zipfile
 
 MAX_IPA_BYTES = 80 * 1024 * 1024
 MAX_APP_BYTES = 120 * 1024 * 1024
-EXPECTED_VERSION = "27.2"
-EXPECTED_BUILD = "64"
+EXPECTED_VERSION = "28.0"
+EXPECTED_BUILD = "65"
 EXPECTED_TACTICAL_MAP_SHA256 = "4bd450353ae993b0c8083b97ab5909c8260cd6984be6f6051db1967613edaaa5"
 EXPECTED_A10_M5_SOURCE_MODEL_HASH = "c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4"
 EXPECTED_A10_M5_FILES = {
@@ -137,6 +137,27 @@ def verify_a10_m5_assets(app):
     }
 
 
+def verify_veilopoly_resources(app):
+    """Verify actual shipped module files, not just source-manifest promises."""
+    source = Path(__file__).resolve().parent.parent / "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources"
+    expected = sorted(p for p in source.iterdir() if p.suffix.lower() in {".png", ".wav", ".xml"})
+    counts = {ext: sum(p.suffix.lower() == ext for p in expected) for ext in (".png", ".wav", ".xml")}
+    if counts != {".png": 99, ".wav": 13, ".xml": 1}:
+        fail(f"Veilopoly source inventory drift: {counts}")
+    bundles = [p for p in app.rglob("*.bundle") if p.name in {"Veilopoly_VeilopolyUI.bundle", "VeilopolyUI.bundle"}]
+    if len(bundles) != 1:
+        fail(f"expected one shipped Veilopoly UI bundle, got {len(bundles)}")
+    records = []
+    for original in expected:
+        target = bundles[0] / original.name
+        digest = sha256_file(original)
+        if not target.is_file() or sha256_file(target) != digest:
+            fail(f"Veilopoly bundled resource missing/changed: {original.name}")
+        records.append({"path": target.relative_to(app).as_posix(),
+                        "bytes": target.stat().st_size, "sha256": digest})
+    return {"result": "PASS", "images": 99, "sounds": 13, "metadata": 1, "files": records}
+
+
 def verify_app(app, expected_version, expected_build):
     for rel in ["Info.plist", "VeilLink", "Assets.car"]:
         p = app / rel
@@ -176,6 +197,7 @@ def verify_app(app, expected_version, expected_build):
         fail("Tactical V2 map SHA mismatch")
 
     a10_m5 = verify_a10_m5_assets(app)
+    veilopoly = verify_veilopoly_resources(app)
 
     app_bytes = directory_bytes(app)
     if app_bytes > MAX_APP_BYTES:
@@ -191,6 +213,7 @@ def verify_app(app, expected_version, expected_build):
         "assets_car_sha256": sha256_file(app / "Assets.car"),
         "tactical_map_sha256": EXPECTED_TACTICAL_MAP_SHA256,
         "a10_ultra_m5": a10_m5["report"],
+        "veilopoly_offline_resources": veilopoly,
         "heavy_ai_resources": "ABSENT",
         "llama_framework": "ABSENT",
     }
@@ -258,6 +281,11 @@ def verify_ipa(app, ipa, expected_version, expected_build):
             fail(f"expected one Tactical map in IPA, got {len(tactical_entries)}")
         if sha256_bytes(z.read(tactical_entries[0])) != EXPECTED_TACTICAL_MAP_SHA256:
             fail("IPA Tactical map SHA mismatch")
+
+        for resource in verify_veilopoly_resources(app)["files"]:
+            entry = prefix + resource["path"]
+            if entry not in names or sha256_bytes(z.read(entry)) != resource["sha256"]:
+                fail(f"IPA Veilopoly resource parity mismatch: {entry}")
 
     return {
         "sha256": sha256_file(ipa),

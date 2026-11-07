@@ -1,0 +1,201 @@
+import VeilopolyEngine
+
+/// Text-only fallback cues. Kimi may replace their presentation with animated
+/// skins, but the reducer remains the authoritative source for every message.
+public enum VeilopolyEventFeedback {
+ public static func summary(_ effects: [Effect]) -> String? {
+  for event in effects.reversed() {
+   switch event.kind {
+   case .gameWon: return "终章落款 · 本局胜者已确定"
+   case .bankrupt: return "清算公报 · 一名玩家已退出本局"
+   case .auctionWon: return "拍卖落槌 · 地产产权已重新登记"
+   case .bought: return "地契入册 · 新产权已登记"
+   case .built: return "工务回执 · 建筑等级已提升"
+   case .soldBuilding: return "撤建收据 · 建筑已售回银行"
+   case .mortgaged: return "抵押契据 · 此处暂不收租"
+   case .redeemed: return "赎回契据 · 此处恢复收租"
+   case .traded: return "契约签署 · 地产与款项已交割"
+   case .tradeRejected: return "谈判未果 · 本次提案已结束"
+   case .rentPaid: return "租约结算 · 租金已划转"
+   case .bankBorrowed: return "银号批复 · 贷款已入账，请留意到期日"
+   case .bankRepaid: return "偿款收据 · 本笔贷款已结清"
+   case .bankDeposited: return "存款存根 · 银行账本已更新"
+   case .bankWithdrawn:
+    return event.text == "automaticDebtCover"
+     ? "债务筹资 · 已依规则动用可用存款"
+     : (event.text == "estatePrincipal"
+       ? "清算通知 · 银行存款本金已处理"
+       : "取款凭证 · 资金已到账")
+   case .bankInvestmentOpened: return "投资凭证 · 新一期合约已登记"
+   case .bankInvestmentSettled: return "到期通知 · 投资已完成结算"
+   case .stockBought:
+    if let symbol = event.stockSymbol, let shares = event.stockShares, shares > 0 {
+     return "交易回执 · 已买入 \(symbol) \(shares) 股"
+    }
+    return "证券交易 · 买入结算已处理"
+   case .stockSold:
+    if event.text == "estateLiquidation" {
+     return "资产清算 · 证券头寸已按破产规则处置"
+    }
+    if event.text == "automaticDebtCover" {
+     return "筹资回执 · 为偿债自动变现部分证券"
+    }
+    if let symbol = event.stockSymbol, let shares = event.stockShares, shares > 0 {
+     return "交易回执 · 已卖出 \(symbol) \(shares) 股"
+    }
+    return "资产结算 · 证券账户已按规则调整"
+   case .stockHalted:
+    return event.stockSymbol.map { "停牌公告 · \($0) 暂停交易" }
+     ?? "交易所公告 · 存在暂停交易的标的"
+   case .passedGo: return "经过起点 · 通行奖金已入账"
+   case .extraRoll: return "双骰好运 · 额外回合已获准"
+   case .turnEnded: return "轮次更替 · 下一位玩家入场"
+   case .cardDrawn:
+    if event.deck == .chance { return "机会来函 · 阅后继续" }
+    if event.deck == .chest { return "命运来函 · 阅后继续" }
+    return "一封来函 · 阅后继续"
+   case .jailed: return "法庭通知 · 请查看出狱方式"
+   case .released: return "法庭回执 · 已办理出狱"
+   case .liquidation: return "资产清算 · 已尝试按规则筹措偿债资金"
+   case .bankMatured: return "银行到期提醒 · 有一笔账目进入可处理期"
+   case .diceRolled:
+    return "骰声已定 · 正在结算落点"
+   default: continue
+   }
+  }
+  return nil
+ }
+
+ /// Contextual notices use committed post-reducer state, not optimistic
+ /// projected transactions. Missing/surprising effects fall back to the
+ /// original universal UI copy. Never affects deterministic GameState.
+ public static func contextualSummary(_ effects: [Effect], state: GameState) -> String? {
+  guard let selected = effects.reversed().first(where: { summary([$0]) != nil ||
+       [.auctionStarted, .bid, .bidFold, .tradeProposed,
+        .liquidation, .bankMatured, .released, .cashChanged,
+        .playerMoved].contains($0.kind) })
+  else { return nil }
+  func actorName(_ id: Int?) -> String? {
+   guard let id, state.players.indices.contains(id) else { return nil }
+   return state.players[id].name
+  }
+  func tileName(_ id: Int?) -> String? {
+   guard let id, state.board.indices.contains(id) else { return nil }
+   return state.board[id].name
+  }
+  let player = actorName(selected.player)
+  let location = tileName(selected.tile)
+  switch selected.kind {
+  case .bought:
+   if let location, let player, let amount = selected.amount, amount >= 0 {
+    return "地契入册 · \(player) 以 ¥\(amount) 登记「\(location)」"
+   }
+  case .auctionStarted:
+   if let location { return "公开竞价 · 「\(location)」已进入拍卖程序" }
+  case .bid:
+   if let player, let amount = selected.amount, amount > 0 {
+    return "竞价举牌 · \(player) 报价 ¥\(amount)"
+   }
+  case .bidFold:
+   if let player { return "竞价撤牌 · \(player) 已退出本轮竞价" }
+  case .auctionWon:
+   if let location, let player, let amount = selected.amount, amount >= 0 {
+    return "拍卖落槌 · \(player) 以 ¥\(amount) 获得「\(location)」"
+   }
+  case .built:
+   if let location, let tileID = selected.tile, state.board.indices.contains(tileID) {
+    let t = state.board[tileID]
+    let structure = t.hotel ? "旅馆" : "第\(t.houses)栋房屋"
+    return "工务回执 · 「\(location)」已登记\(structure)"
+   }
+  case .soldBuilding:
+   if let location, let amount = selected.amount, amount >= 0 {
+    return "撤建回执 · 「\(location)」建筑出售，回收 ¥\(amount)"
+   }
+  case .released:
+   if let player { return "法庭批文 · \(player) 已办理出狱" }
+  case .liquidation:
+   if let player {
+    if let debt = state.pendingDebt, debt.player == selected.player {
+     return "债务筹资 · \(player) 已尝试处置资产，尚欠 ¥\(debt.amount)"
+    }
+    return "债务筹资 · \(player) 已按规则尝试处置资产"
+   }
+  case .bankMatured:
+   if let player, let period = selected.amount, period >= 0 {
+    return "银号到期提示 · \(player) 第\(period)期账目可查看"
+   }
+  case .bankDeposited:
+   if let player, let amount = selected.amount, amount < 0 {
+    return "存款存根 · \(player) 存入 ¥\(-amount)"
+   }
+  case .bankWithdrawn:
+   if selected.text == "automaticDebtCover", let player {
+    return "债务筹资 · \(player) 已从可用存款划转资金"
+   }
+   if let player, let amount = selected.amount, amount > 0 {
+    return "取款凭证 · \(player) 已取回 ¥\(amount)"
+   }
+  case .bankBorrowed:
+   if let player, let amount = selected.amount, amount > 0 {
+    return "贷款批复 · \(player) 已收到 ¥\(amount)"
+   }
+  case .bankRepaid:
+   if let player, let amount = selected.amount, amount < 0 {
+    return selected.text == "automaticMaturity"
+     ? "到期自动偿款 · \(player) 已按合同归还 ¥\(-amount)"
+     : "偿款收据 · \(player) 已偿还 ¥\(-amount)"
+   }
+  case .cashChanged:
+   if let player, let amount = selected.amount {
+    return amount < 0
+     ? "账本支出 · \(player) 支付 ¥\(-amount)"
+     : "账本收入 · \(player) 收到 ¥\(amount)"
+   }
+  case .playerMoved:
+   if let player, let dest = tileName(selected.to) {
+    return "行程札记 · \(player) 抵达「\(dest)」"
+   }
+  case .tradeRejected:
+   if let player { return "谈判归档 · \(player) 已结束本次议约" }
+  case .mortgaged:
+   if let location { return "抵押契据 · 「\(location)」暂停收租" }
+  case .redeemed:
+   if let location { return "赎回契据 · 「\(location)」恢复收租" }
+  case .rentPaid:
+   if let location, let amount = selected.amount, amount >= 0 {
+    if let debt = state.pendingDebt, debt.player == selected.player {
+     return "租约待清偿 · 「\(location)」仍有 ¥\(debt.amount) 待结算"
+    }
+    return "租约收据 · 「\(location)」租金 ¥\(amount) 已结算"
+   }
+  case .tradeProposed:
+   if let from = player, let to = actorName(selected.to) {
+    return "契约草案 · \(from) 已向 \(to) 发出交易提案"
+   }
+  case .stockBought:
+   if let player, let symbol = selected.stockSymbol,
+      let shares = selected.stockShares, let delta = selected.amount, delta < 0 {
+    return "证券成交回执 · \(player) 买入 \(symbol) ×\(shares)，现金支出 ¥\(-delta)"
+   }
+  case .stockSold:
+   if selected.text == "estateLiquidation" {
+    return "资产清算 · 股票账户已按破产规则处理"
+   }
+   if selected.text == "automaticDebtCover", let player {
+    return "债务筹资 · \(player) 已自动出售部分股票用于偿债"
+   }
+   if let player, let symbol = selected.stockSymbol,
+      let shares = selected.stockShares, let delta = selected.amount, delta > 0 {
+    return "证券成交回执 · \(player) 卖出 \(symbol) ×\(shares)，现金到账 ¥\(delta)"
+   }
+  case .gameWon:
+   if let winner = actorName(state.winner) {
+    return "终局公报 · \(winner) 成为本局胜者"
+   }
+  default: break
+  }
+  return summary(effects)
+ }
+
+}

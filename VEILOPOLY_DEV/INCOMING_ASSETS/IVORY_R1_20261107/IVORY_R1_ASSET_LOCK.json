@@ -1,0 +1,430 @@
+{
+  "schema": "veillopoly.ivory-r1-generated-asset-lock.v1",
+  "task": "VEILOPOLY-IVORY-R1-20261107",
+  "reference_base": "Codex/Kimi 2.5D classical ivory board, green-teal ink, antique gold strokes",
+  "origin": "OpenAI image generation during user authorized conversation; independent generated assets",
+  "source": {
+    "center": {
+      "file": "a_refined_high_resolution_decorative_board_game_1_batch_1.png",
+      "sha256": "c0bc07f75e260d1dc83ad87fa9f2d6a00f148596ca8071d8666210f83c7454af",
+      "bytes": 2824393,
+      "git_blob_sha1": "14ed88b4c6052b55184af97e636d6fa78559c2d6",
+      "stage_path": "VEILOPOLY_DEV/INCOMING_ASSETS/IVORY_R1_20261107/SOURCES/ivoryR1SourceCenter.png"
+    },
+    "chance": {
+      "file": "a_clean_high_resolution_isolated_card_art_trans_2_batch_2.png",
+      "sha256": "5c574cc13d1f28d37f7ec83249c45ea5e18956cd27fb778ba2cac46d2e609444",
+      "bytes": 2212857,
+      "git_blob_sha1": "f9584dd9750e67778e347a8b80fd8b6e3f57029f",
+      "stage_path": "VEILOPOLY_DEV/INCOMING_ASSETS/IVORY_R1_20261107/SOURCES/ivoryR1SourceChance.png"
+    },
+    "chest": {
+      "file": "a_single_isolated_well_detailed_board_game_card_f_3_batch_3.png",
+      "sha256": "19462e23743d025997ec5e4cb8bddddee1e78a446bb30b31049e0037beef0da3",
+      "bytes": 2386086,
+      "git_blob_sha1": "d05efc5bc68089713c6c446e4df83231f7ef0d0a",
+      "stage_path": "VEILOPOLY_DEV/INCOMING_ASSETS/IVORY_R1_20261107/SOURCES/ivoryR1SourceChest.png"
+    },
+    "icons": {
+      "file": "a_clean_flat_vector_icon_sheet_on_a_transparent_c_4_batch_4.png",
+      "sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "bytes": 1296165,
+      "git_blob_sha1": "ff4620ed7a7b61e462af7685264236a5be521e34",
+      "stage_path": "VEILOPOLY_DEV/INCOMING_ASSETS/IVORY_R1_20261107/SOURCES/ivoryR1SourceIcons.png"
+    },
+    "buildings": {
+      "file": "a_polished_asset_sheet_on_a_transparent_background_5_batch_5.png",
+      "sha256": "636c8d8e695310448fd47411387f34620e8a025f3fbbecaa9444fcae9b17165a",
+      "bytes": 1708932,
+      "git_blob_sha1": "361fbb3eef7985a4bd9a1b8e47f000736bfc83a3",
+      "stage_path": "VEILOPOLY_DEV/INCOMING_ASSETS/IVORY_R1_20261107/SOURCES/ivoryR1SourceBuildings.png"
+    },
+    "badge": {
+      "file": "a_clean_isolated_graphic_asset_sheet_on_a_transpar_6_batch_6.png",
+      "sha256": "2f5fa249b61228d82953cc2da1bb3b9adb6cef05d84f228051127ebcd6fe02f9",
+      "bytes": 1231567,
+      "git_blob_sha1": "5dbcea403e79e1f52b09b2bc39032f7e4d2d42a9",
+      "stage_path": "VEILOPOLY_DEV/INCOMING_ASSETS/IVORY_R1_20261107/SOURCES/ivoryR1SourceBadge.png"
+    }
+  },
+  "pixel_assets": [
+    {
+      "id": "VL-IVORY-R1-001",
+      "alias": "ivoryR1ChanceCard",
+      "source": "chance",
+      "source_sha256": "5c574cc13d1f28d37f7ec83249c45ea5e18956cd27fb778ba2cac46d2e609444",
+      "generated_sha256": "1d92d2d7851b05057aa5e26725264de6cbb20e7a5bbd5b8f85986070552c9399",
+      "git_blob_sha1": "926f2752a0d2a40d93ae1b033b477d734e5684e9",
+      "bytes": 307596,
+      "dimensions": [
+        355,
+        512
+      ],
+      "usage": "live chance thumbnail",
+      "activation": "activate",
+      "preserves_existing": "existing cardChance remains fallback",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1ChanceCard.png"
+    },
+    {
+      "id": "VL-IVORY-R1-002",
+      "alias": "ivoryR1ChestCard",
+      "source": "chest",
+      "source_sha256": "19462e23743d025997ec5e4cb8bddddee1e78a446bb30b31049e0037beef0da3",
+      "generated_sha256": "e08cdd76f140ba7522ca9f1bf147af1019fb31374b7a1ed9929728765feead9e",
+      "git_blob_sha1": "b75193e9839a5e5d836285d28575fa92263dedb8",
+      "bytes": 312915,
+      "dimensions": [
+        343,
+        512
+      ],
+      "usage": "live chest thumbnail",
+      "activation": "activate",
+      "preserves_existing": "existing cardChest remains fallback",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1ChestCard.png"
+    },
+    {
+      "id": "VL-IVORY-R1-003",
+      "alias": "ivoryR1VictoryBadge",
+      "source": "badge",
+      "source_sha256": "2f5fa249b61228d82953cc2da1bb3b9adb6cef05d84f228051127ebcd6fe02f9",
+      "generated_sha256": "5c820135ac53c336a4115741c5815a10fa103b64afff222d9578bdd20f64a802",
+      "git_blob_sha1": "8f40d15f68debd35027fee156ae1044821449dbf",
+      "bytes": 250175,
+      "dimensions": [
+        376,
+        384
+      ],
+      "usage": "engine-driven winner badge",
+      "activation": "activate",
+      "preserves_existing": "kimiFxVictoryBadge retained fallback",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1VictoryBadge.png"
+    },
+    {
+      "id": "VL-IVORY-R1-004",
+      "alias": "ivoryR1CenterInlay",
+      "source": "center",
+      "source_sha256": "c0bc07f75e260d1dc83ad87fa9f2d6a00f148596ca8071d8666210f83c7454af",
+      "generated_sha256": "abe2f4615e29140d58f7fce63cdaffaa044e6352392f976b829917e701fd255d",
+      "git_blob_sha1": "8fdb360b629e74820d26005ddab2154e20414058",
+      "bytes": 650551,
+      "dimensions": [
+        576,
+        572
+      ],
+      "usage": "optional center alternative",
+      "activation": "candidate",
+      "preserves_existing": "astraCenterCity stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1CenterInlay.png"
+    },
+    {
+      "id": "VL-IVORY-R1-005",
+      "alias": "ivoryR1HousePerspective",
+      "source": "buildings",
+      "source_sha256": "636c8d8e695310448fd47411387f34620e8a025f3fbbecaa9444fcae9b17165a",
+      "generated_sha256": "d61495a020617853a196be81fcc2f076afdc8a7b6b5a5fbf205ce3a29ca3a28e",
+      "git_blob_sha1": "7ca6874e7b15c84bce46400afa94751b93e9418b",
+      "bytes": 106370,
+      "dimensions": [
+        256,
+        251
+      ],
+      "usage": "house style alternate",
+      "activation": "candidate",
+      "preserves_existing": "astraHouseGreen stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1HousePerspective.png"
+    },
+    {
+      "id": "VL-IVORY-R1-006",
+      "alias": "ivoryR1HotelPerspective",
+      "source": "buildings",
+      "source_sha256": "636c8d8e695310448fd47411387f34620e8a025f3fbbecaa9444fcae9b17165a",
+      "generated_sha256": "a4fbe39327bddfc2b783a9493b1d113b4ab6e52e5818ea6a35ece59fd99e8586",
+      "git_blob_sha1": "eb95ef1594d18ab0fa15abd8d6b1b99e0bae2a18",
+      "bytes": 148289,
+      "dimensions": [
+        257,
+        320
+      ],
+      "usage": "hotel style alternate",
+      "activation": "candidate",
+      "preserves_existing": "astraHotelRed stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1HotelPerspective.png"
+    },
+    {
+      "id": "VL-IVORY-R1-007",
+      "alias": "ivoryR1TurnBanner",
+      "source": "badge",
+      "source_sha256": "2f5fa249b61228d82953cc2da1bb3b9adb6cef05d84f228051127ebcd6fe02f9",
+      "generated_sha256": "7268cee8f9ec932c4cb2f508fbc18c4d11238cdcbbe8f0fd819017e5a9edc3a6",
+      "git_blob_sha1": "d036b32b92981ad3dda465067c14314439919fab",
+      "bytes": 147927,
+      "dimensions": [
+        700,
+        159
+      ],
+      "usage": "optional end-user turn banner (baked EN text)",
+      "activation": "candidate",
+      "preserves_existing": "Kimi and Astra native turn UI retained",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1TurnBanner.png"
+    },
+    {
+      "id": "VL-IVORY-R1-008",
+      "alias": "ivoryR1IconRail",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "dc5b57a4c9e901372a7c3a28c13ae5ff57029a7ed7f4fa3226b9bbb81f336c1b",
+      "git_blob_sha1": "087cda76867287b9a6596569229c45a9264503df",
+      "bytes": 31095,
+      "dimensions": [
+        155,
+        160
+      ],
+      "usage": "optional rail tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconRail.png"
+    },
+    {
+      "id": "VL-IVORY-R1-009",
+      "alias": "ivoryR1IconElectric",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "7362cc7e3e5b398750d4a0019937ef3a71f0c2eecc825794a2122c3f9162aede",
+      "git_blob_sha1": "7b1c874e2e580db9dbdd415198024d04f6bbac4b",
+      "bytes": 29085,
+      "dimensions": [
+        155,
+        160
+      ],
+      "usage": "optional electric tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconElectric.png"
+    },
+    {
+      "id": "VL-IVORY-R1-010",
+      "alias": "ivoryR1IconWater",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "23cf42b8dd0b5d8ac0f235562395699d6a7939646cdf135bb62d1fa525526777",
+      "git_blob_sha1": "d06313643054196dd07b3c28ea96abda33a4499d",
+      "bytes": 29899,
+      "dimensions": [
+        155,
+        160
+      ],
+      "usage": "optional water tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconWater.png"
+    },
+    {
+      "id": "VL-IVORY-R1-011",
+      "alias": "ivoryR1IconTax",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "0756ed96e85b251b6ebbf274b817d0774d9df1e15062e13439741e1352f9141b",
+      "git_blob_sha1": "8387c455cf43a325338520eab3a3d96629a57e9b",
+      "bytes": 36762,
+      "dimensions": [
+        155,
+        160
+      ],
+      "usage": "optional tax tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconTax.png"
+    },
+    {
+      "id": "VL-IVORY-R1-012",
+      "alias": "ivoryR1IconInspect",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "5a741d5aff4a5aff5d73c381100d38369c1f8c08b0c9763ae551fe5647c72c85",
+      "git_blob_sha1": "ed743fb185b839a210040311e8d800edb7e94900",
+      "bytes": 33407,
+      "dimensions": [
+        154,
+        160
+      ],
+      "usage": "optional inspect tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconInspect.png"
+    },
+    {
+      "id": "VL-IVORY-R1-013",
+      "alias": "ivoryR1IconChance",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "97ab04f49feddb182cf939fc5fe1843467b839488e5a3c4b40cf412ae5a107b8",
+      "git_blob_sha1": "070d6c935fe9614291601c03a303d73ec56bf8f6",
+      "bytes": 30255,
+      "dimensions": [
+        155,
+        160
+      ],
+      "usage": "optional chance tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconChance.png"
+    },
+    {
+      "id": "VL-IVORY-R1-014",
+      "alias": "ivoryR1IconTrade",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "696c0fdd38ac227360d876e9afb4ec317ec58870d6ffeeb6f8393b377b2716a4",
+      "git_blob_sha1": "f10d5f71818988ccefa126680609db17ab1f1da1",
+      "bytes": 30919,
+      "dimensions": [
+        154,
+        160
+      ],
+      "usage": "optional trade tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconTrade.png"
+    },
+    {
+      "id": "VL-IVORY-R1-015",
+      "alias": "ivoryR1IconTransfer",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "dc4b5dba0e43833797baea8f1d866dee1ba2cd6c76f5694fd9bad9cc69c2025c",
+      "git_blob_sha1": "239c8cd9930458ace40bf8241d16bc3b73bdf1c3",
+      "bytes": 28974,
+      "dimensions": [
+        155,
+        160
+      ],
+      "usage": "optional transfer tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconTransfer.png"
+    },
+    {
+      "id": "VL-IVORY-R1-016",
+      "alias": "ivoryR1IconJail",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "9ab62ed61ee5522072de08731686fe08a501161c9be70642d87f0e77bd1ad897",
+      "git_blob_sha1": "23636ca6f9818e9f770359aec91a14ce02d8b4f3",
+      "bytes": 28781,
+      "dimensions": [
+        155,
+        160
+      ],
+      "usage": "optional jail tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconJail.png"
+    },
+    {
+      "id": "VL-IVORY-R1-017",
+      "alias": "ivoryR1IconParking",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "b413da2faf96798b8e07074ea60e411fef6b20dd43daa3e73786feaac76325df",
+      "git_blob_sha1": "7a921218648c72957f7027a9fedbe4d5fd4bbd96",
+      "bytes": 29229,
+      "dimensions": [
+        155,
+        160
+      ],
+      "usage": "optional parking tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconParking.png"
+    },
+    {
+      "id": "VL-IVORY-R1-018",
+      "alias": "ivoryR1IconMove",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "52b6f5b6773fbeb32c07883528b0c6e18693e03422b90fb61671724895b857d4",
+      "git_blob_sha1": "3e22a86ca1d945ebb7dca7dbef1829a4de29fdf7",
+      "bytes": 28378,
+      "dimensions": [
+        155,
+        160
+      ],
+      "usage": "optional move tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconMove.png"
+    },
+    {
+      "id": "VL-IVORY-R1-019",
+      "alias": "ivoryR1IconBrand",
+      "source": "icons",
+      "source_sha256": "be0a63b3151d02b0fd36fcbdccc975c33c43fd179f88ff153e62f79625573b56",
+      "generated_sha256": "4764f0c99639e068c6823535e6b74e9b551a088e53325d8bf96d4eacd48cf050",
+      "git_blob_sha1": "cc05a9d40b34e8bcd3e25b4b8cf19cb9ab03fe79",
+      "bytes": 33259,
+      "dimensions": [
+        155,
+        160
+      ],
+      "usage": "optional brand tile icon",
+      "activation": "candidate",
+      "preserves_existing": "Codex astraTile* stays canonical",
+      "target": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconBrand.png"
+    }
+  ],
+  "selected_count": 19,
+  "selected_bytes": 2293866,
+  "runtime_activated": [
+    "ivoryR1ChanceCard",
+    "ivoryR1ChestCard",
+    "ivoryR1VictoryBadge"
+  ],
+  "policy": "Never overwrite Codex existing art or authoritative GameState; stage new unique aliases with local fallback. Baked lettering in generated assets is display-only.",
+  "notes": [
+    "full-resolution raw source sheets are preserved in the local handoff ZIP",
+    "all derived sprite filenames have unique ivoryR1 prefixes",
+    "icon sheet is manually cropped to individually addressable PNGs",
+    "iOS Xcode and SpriteKit frame validation still required"
+  ],
+  "blob_upload": "GITHUB_TREE_ATTACHED_AND_REMOTE_VERIFIED_19_OF_19",
+  "codex_preservation": [
+    "astraCenterCity",
+    "astraHouseGreen",
+    "astraHotelRed",
+    "astraTileFace",
+    "astraTileGo",
+    "astraTileJail",
+    "astraTilePark",
+    "astraTileGoToJail",
+    "astraTileRail",
+    "astraTileElectric",
+    "astraTileWater",
+    "astraTileChest",
+    "astraTileChance",
+    "astraTileTax"
+  ],
+  "branch": "dev/veilopoly",
+  "baseline_sha": "08e33d486ee8d9c56d64ce1c79ea0ceaccc123f1",
+  "git_uploaded": 19,
+  "activation_verified": [
+    "ivoryR1ChanceCard",
+    "ivoryR1ChestCard",
+    "ivoryR1VictoryBadge"
+  ],
+  "git_blob_check": "19/19 EXACT",
+  "runtime_status": "SOURCE_HOOKUP_ONLY; IOS_NOT_BUILT",
+  "upload_commit": "e0d77996e33e803599c03e4e4fee0cc23a613b52",
+  "verification": {
+    "remote_git_blob_and_bytes": "PASS_19_OF_19",
+    "local_sha256_and_png_dimensions": "PASS_19_OF_19",
+    "runtime_active": 3,
+    "preloaded_candidates": 16,
+    "codex_assets_overwritten": 0,
+    "swift6_2_1_registry_typecheck": "PASS_WITH_BUNDLE_MODULE_STUB",
+    "xcode_ios_rendering": "NOT_TESTED"
+  },
+  "source_binary_count": 6,
+  "source_bytes": 11660000,
+  "source_git_blob_verified": "6/6 exact Git blob SHA1",
+  "source_status": "ORIGINAL_6_SOURCE_IMAGES_STAGED_NOT_RUNTIME"
+}

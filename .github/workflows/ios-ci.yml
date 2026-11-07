@@ -44,6 +44,12 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen 2>&1 | tee ci-artifacts/install-xcodegen.log
 
+      - name: Test offline Veilopoly package
+        run: |
+          set -o pipefail
+          python3 scripts/test-verify-veilopoly-release.py 2>&1 | tee ci-artifacts/veilopoly-resource-gate-tests.log
+          swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2 2>&1 | tee ci-artifacts/veilopoly-package-tests.log
+
       - name: Record XcodeGen version
         run: xcodegen --version | tee ci-artifacts/xcodegen-version.log
 

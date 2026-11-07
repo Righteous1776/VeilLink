@@ -13,6 +13,7 @@ struct TacticalV2SoloView: View {
     @State private var visibilityCache = TacticalV2.VisibilityCacheV2()
     @State private var sessionID = UUID().uuidString
     @State private var statusText = "正在装载 48×27 官渡战场…"
+    @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
     @State private var errorText: String?
 
     var body: some View {
@@ -52,12 +53,19 @@ struct TacticalV2SoloView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            Text(statusText)
-                .font(.caption2.monospaced())
-                .foregroundColor(VeilTheme.secondaryText)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-                .background(VeilTheme.panel.opacity(0.94))
+            HStack(spacing: 8) {
+                if grokBotEnabled {
+                    VeilOpponentAvatarView(mood: truth == nil ? .thinking : .idle, size: 42)
+                }
+                Text(statusText)
+                    .font(.caption2.monospaced())
+                    .foregroundColor(VeilTheme.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(VeilTheme.panel.opacity(0.94))
         }
         .onAppear {
             model.agent.setComputeFocus(.gameDecision)

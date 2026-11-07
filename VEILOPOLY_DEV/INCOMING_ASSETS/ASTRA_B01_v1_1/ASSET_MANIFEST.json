@@ -1,0 +1,6116 @@
+{
+  "schema": "veilopoly.astra.art.b01.v1",
+  "package_version": "1.1",
+  "assets": [
+    {
+      "alias": "astra.icon.purchase",
+      "path": "ui/icons/purchase.png",
+      "source": "ui/icons/purchase.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        9,
+        9,
+        87,
+        84
+      ],
+      "bytes": 1725,
+      "sha256": "f61215d663ef0501ffd7e61ccddea6d5833bad16ff4b04648366d34a7f9a9893",
+      "source_sha256": "7acb3c28c9d46bd6e3e4eafdce27af07ed4d83232cd445d279836a8c777afe51"
+    },
+    {
+      "alias": "astra.icon.auction",
+      "path": "ui/icons/auction.png",
+      "source": "ui/icons/auction.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        6,
+        3,
+        75,
+        84
+      ],
+      "bytes": 1256,
+      "sha256": "4ec3ba3f731f4292b9eede0164319b0e2ac73b84d0f58e89e3725b14f626877d",
+      "source_sha256": "9933e45e16ac7e98d5205e0609669b0828a0e4c7175160ba4265832246077c53"
+    },
+    {
+      "alias": "astra.icon.trade",
+      "path": "ui/icons/trade.png",
+      "source": "ui/icons/trade.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        9,
+        12,
+        87,
+        84
+      ],
+      "bytes": 966,
+      "sha256": "a02695837044b1a3a7801dd9e048a6567913d20d48648a38ed48b98adf1d66ac",
+      "source_sha256": "08b7fe8a9bbc866437c2891bff5a176288cf0de2f2bf7141120bbb9813d7a130"
+    },
+    {
+      "alias": "astra.icon.bank",
+      "path": "ui/icons/bank.png",
+      "source": "ui/icons/bank.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        6,
+        6,
+        90,
+        87
+      ],
+      "bytes": 1147,
+      "sha256": "68b693c5635c36b817d454a016d0a770c88a826f12c38f2eaccc54dfbe510375",
+      "source_sha256": "b0b6a976f8d635825d00e8299f676fa1dee09b721d18aeebda40bc0d63c83b1a"
+    },
+    {
+      "alias": "astra.icon.settlement",
+      "path": "ui/icons/settlement.png",
+      "source": "ui/icons/settlement.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        12,
+        9,
+        84,
+        87
+      ],
+      "bytes": 1765,
+      "sha256": "bd6cd1120dd85e0451392dcb6257c685d3743f412462c0295a4f6914e2139f4d",
+      "source_sha256": "54db8e9e87bc8346bde99162897dc7ebbdf67e90d7adc2a6e7e0e6b1bc1926cc"
+    },
+    {
+      "alias": "astra.icon.wallet",
+      "path": "ui/icons/wallet.png",
+      "source": "ui/icons/wallet.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        12,
+        9,
+        87,
+        81
+      ],
+      "bytes": 1033,
+      "sha256": "b6986f78bea879ceff7733e114e978796412897e26a03dbf03173e44e96971eb",
+      "source_sha256": "d1fe374d0f087f2f5a48f42ed604450b8012d53c95bc64515d034d135dd6078c"
+    },
+    {
+      "alias": "astra.icon.location",
+      "path": "ui/icons/location.png",
+      "source": "ui/icons/location.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        15,
+        3,
+        81,
+        90
+      ],
+      "bytes": 3996,
+      "sha256": "4e4ae0c256e74e64567b96823040700ed1d1364e28e52187be1a4f77762fc758",
+      "source_sha256": "cdf3b293358780f7c047f28f6483ac2a6ae4d2870c78f77685f19f58434fb1e0"
+    },
+    {
+      "alias": "astra.icon.lock",
+      "path": "ui/icons/lock.png",
+      "source": "ui/icons/lock.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        15,
+        3,
+        81,
+        90
+      ],
+      "bytes": 1595,
+      "sha256": "bfab01a20f41bdb391b6b71ecebcd86eadda9724932d712451781882349a2104",
+      "source_sha256": "5661a0f6a0aff9bc6a4e45fc17722a99c2a796afc96ffec064e8fd3dd39ca261"
+    },
+    {
+      "alias": "astra.icon.bankrupt",
+      "path": "ui/icons/bankrupt.png",
+      "source": "ui/icons/bankrupt.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        12,
+        12,
+        84,
+        84
+      ],
+      "bytes": 1597,
+      "sha256": "831fbf2254e6605db2011343fee2e1901cc67f1fd0edffdb4e2bf3d271d747ab",
+      "source_sha256": "346a4aeb53016c6d3dd51d8f17fd89693cab3e126f7ab7fd7af49f042febe8ea"
+    },
+    {
+      "alias": "astra.icon.turn",
+      "path": "ui/icons/turn.png",
+      "source": "ui/icons/turn.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        3,
+        6,
+        82,
+        85
+      ],
+      "bytes": 3299,
+      "sha256": "4a04278e019c349da996e2311e1e92ee80fa3325a005294385b5dec4008caa3f",
+      "source_sha256": "307c6622471e68483355be2515942051a184805808022b8629389770d4f69e3b"
+    },
+    {
+      "alias": "astra.icon.period",
+      "path": "ui/icons/period.png",
+      "source": "ui/icons/period.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        12,
+        6,
+        84,
+        90
+      ],
+      "bytes": 811,
+      "sha256": "d2958aac20ff0801852c5fd387f1a5a9f65081e8162b4404b867f062cdd65a59",
+      "source_sha256": "8849ee36da1e90fe405719d401b0a3e8f1930c66532d77ad8cdb44085531a9ca"
+    },
+    {
+      "alias": "astra.icon.check",
+      "path": "ui/icons/check.png",
+      "source": "ui/icons/check.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        12,
+        21,
+        84,
+        72
+      ],
+      "bytes": 915,
+      "sha256": "d2afe1a605662f257f714c34b031e6541743434803cdc4f322c8bad8bbafa314",
+      "source_sha256": "73c6e541a3f8b3766ac70d58de6b204ef38734b0e02adbc10d20e7e26e9dd360"
+    },
+    {
+      "alias": "astra.icon.error",
+      "path": "ui/icons/error.png",
+      "source": "ui/icons/error.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        3,
+        6,
+        93,
+        87
+      ],
+      "bytes": 2458,
+      "sha256": "580ef6c2d991166cd6ffc51a3c7a0f2d65b7bd0f822feb8d8e00f0a38885d4a7",
+      "source_sha256": "58fb2c566e72e415eb3aa7abd41905cb7ce1f83ac0db86e4156561108c224171"
+    },
+    {
+      "alias": "astra.icon.pending",
+      "path": "ui/icons/pending.png",
+      "source": "ui/icons/pending.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        6,
+        6,
+        90,
+        90
+      ],
+      "bytes": 2971,
+      "sha256": "ce08e8a61bc262208043850b20ab79d6071f9092d79ba70f88bd7a8f465a5cad",
+      "source_sha256": "d7dcd7d59a3b83ff3c68c827ab6c137a2bd7879f71580f5b6426d9b747141baf"
+    },
+    {
+      "alias": "astra.icon.plus",
+      "path": "ui/icons/plus.png",
+      "source": "ui/icons/plus.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        15,
+        15,
+        81,
+        81
+      ],
+      "bytes": 583,
+      "sha256": "04f0fc78630e51c473068d78c59cd74ee9c8531df12d4243a76a3e50a687a6ae",
+      "source_sha256": "83b174ec2b6f64fa563bc6fdc8f3cd49b1ff75a826896fa868810aab1b66b7c5"
+    },
+    {
+      "alias": "astra.icon.minus",
+      "path": "ui/icons/minus.png",
+      "source": "ui/icons/minus.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        15,
+        45,
+        81,
+        51
+      ],
+      "bytes": 478,
+      "sha256": "32962c6926149d8693493cdfcfd8975eb2d0f0fe478535528f2bec0fa9457b91",
+      "source_sha256": "79de6b0ffdab76f76bd150e8966f2f3e4b19284c3d05e290ac0822b80e6d8033"
+    },
+    {
+      "alias": "astra.icon.close",
+      "path": "ui/icons/close.png",
+      "source": "ui/icons/close.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        18,
+        18,
+        78,
+        78
+      ],
+      "bytes": 1030,
+      "sha256": "3b9236078fdfbd75a0f5a939d268bcef54acbd64d510f88048f4e7870e989045",
+      "source_sha256": "bfef62bb36aa91acec6b15a4b670d9e0a1b35d5adf705b9be774141526da9065"
+    },
+    {
+      "alias": "astra.icon.chevron",
+      "path": "ui/icons/chevron.png",
+      "source": "ui/icons/chevron.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        33,
+        18,
+        66,
+        78
+      ],
+      "bytes": 804,
+      "sha256": "3de5778c7f298c42246463f7680b4a55fce702290a7a3e5f7e248dd71f0a939b",
+      "source_sha256": "b5ff20504be26ac806aad3176eb696093f1289ea67ab0053afe8f83cf36f6de1"
+    },
+    {
+      "alias": "astra.icon.deposit",
+      "path": "ui/icons/deposit.png",
+      "source": "ui/icons/deposit.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        9,
+        3,
+        87,
+        90
+      ],
+      "bytes": 1031,
+      "sha256": "dc382546c433223acaef07fe65ec583fdf5a4b0c3a910d17e59c7167397f215e",
+      "source_sha256": "7e7c725b0fca3852ef403d291eb47e6208d7413b32437a3961f0e4387b7b1c00"
+    },
+    {
+      "alias": "astra.icon.loan",
+      "path": "ui/icons/loan.png",
+      "source": "ui/icons/loan.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        12,
+        18,
+        84,
+        81
+      ],
+      "bytes": 825,
+      "sha256": "bd987dc5b5c0e8bdcaf94892388f6ea9bb309a6a8ebe8825a39541519d2bf791",
+      "source_sha256": "42af97345f92eb421e856e59bc2bda6da25c2ae2c7b34990280b664aff44b90a"
+    },
+    {
+      "alias": "astra.icon.investment",
+      "path": "ui/icons/investment.png",
+      "source": "ui/icons/investment.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        9,
+        6,
+        87,
+        84
+      ],
+      "bytes": 611,
+      "sha256": "c6d01e8519588a146b761e763fcb3897cf8ae6e815d857e4ff5d9e9994d91597",
+      "source_sha256": "8a29478673001cc7c3ebd43353b7f80d1f0ee58f600af388cfd8e5898d6e0833"
+    },
+    {
+      "alias": "astra.icon.shield",
+      "path": "ui/icons/shield.png",
+      "source": "ui/icons/shield.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        12,
+        6,
+        84,
+        90
+      ],
+      "bytes": 3007,
+      "sha256": "d4ddfbbc76e999e5b2154d8122ef61b08fed6b8afcca2aca318fb18a38b8b953",
+      "source_sha256": "9a5f2a62a38784935b7b11874473841bda696a866173244763380fc08b567b5e"
+    },
+    {
+      "alias": "astra.icon.card",
+      "path": "ui/icons/card.png",
+      "source": "ui/icons/card.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        18,
+        9,
+        78,
+        90
+      ],
+      "bytes": 1134,
+      "sha256": "baf5db00307fce0cb36f05f5755a717b6a0653df1df9ea1cb458081dbb01707d",
+      "source_sha256": "f32468f57205c9486f534340439a187cebf394dc5dfe3855e35b80450368e664"
+    },
+    {
+      "alias": "astra.icon.sound",
+      "path": "ui/icons/sound.png",
+      "source": "ui/icons/sound.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        9,
+        12,
+        84,
+        84
+      ],
+      "bytes": 2257,
+      "sha256": "661c41f86cd03c775cf553abfe335af4918c51f69b0aff390f4cdb4c1dc72a1f",
+      "source_sha256": "08a2e58a08bf79fa571cdf469b27acf20b9f14d9a30a484d2ac5a16f8a947e35"
+    },
+    {
+      "alias": "astra.icon.info",
+      "path": "ui/icons/info.png",
+      "source": "ui/icons/info.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        3,
+        3,
+        93,
+        93
+      ],
+      "bytes": 3700,
+      "sha256": "b39df97ebbe3d0b31cf9379b8786eed2f8f2f9d16c9fefae7e4bbee8f00c787f",
+      "source_sha256": "1ca121f3690754454bf36ca6da77fdae401e25500849047e52271ced277c89ca"
+    },
+    {
+      "alias": "astra.icon.mortgage",
+      "path": "ui/icons/mortgage.png",
+      "source": "ui/icons/mortgage.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        12,
+        9,
+        84,
+        84
+      ],
+      "bytes": 1488,
+      "sha256": "8ab9bf4accfa2877688e48b8d6a38accfc9c9f5d467511eaa14efed4addea6b0",
+      "source_sha256": "0ee33261324cde4964973da052ee42a7d77756cf9fd0e126b265a66a21559dfc"
+    },
+    {
+      "alias": "astra.icon.star",
+      "path": "ui/icons/star.png",
+      "source": "ui/icons/star.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        3,
+        6,
+        93,
+        93
+      ],
+      "bytes": 2934,
+      "sha256": "fa0c6c1b4343de333679d765fdca38f289f9484e4177559e97c8b9f6d2908b63",
+      "source_sha256": "6d2b1c8e971f6458dd659c2fc825400f1ad21cd1063e8423b4deb21168d8b9e1"
+    },
+    {
+      "alias": "astra.icon.player",
+      "path": "ui/icons/player.png",
+      "source": "ui/icons/player.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        96,
+        96
+      ],
+      "density": 3,
+      "kind": "icon",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        12,
+        9,
+        84,
+        90
+      ],
+      "bytes": 2606,
+      "sha256": "cb6de113d35986092f1e1931ceba4347fd91b55a47d30dfa5a030230b9519edf",
+      "source_sha256": "3efb5e55caa8d4cec475c6b39cd2ff172a6a1415a1eb2ee2fc43c7dbe6acdbb9"
+    },
+    {
+      "alias": "astra.button.primary.normal",
+      "path": "ui/components/button-primary-normal.png",
+      "source": "ui/components/button-primary-normal.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        84,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "label",
+          "rect": [
+            44,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 4895,
+      "sha256": "c9a00db01730cb40061345651f1abe34ffc294845d67655525a20a8efdb38ab0",
+      "source_sha256": "b8fa8b731f6082d189f3b587b53058f1840e7bc3f39713705887ea7e3fa21542"
+    },
+    {
+      "alias": "astra.button.primary.pressed",
+      "path": "ui/components/button-primary-pressed.png",
+      "source": "ui/components/button-primary-pressed.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "pressed",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        84,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "label",
+          "rect": [
+            44,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 2118,
+      "sha256": "c411238ee22de3fda9682ecc0f7701e718f40de6546b41de216489505ab48c91",
+      "source_sha256": "77a71e5388fad9feeb68e6f16ca9199be5371fc61cd99452e0d865e5cb34c0c4"
+    },
+    {
+      "alias": "astra.button.primary.disabled",
+      "path": "ui/components/button-primary-disabled.png",
+      "source": "ui/components/button-primary-disabled.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "disabled",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        84,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "label",
+          "rect": [
+            44,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 2783,
+      "sha256": "8918785b001b22addd3f47a3dbba9378bfae0de85270d47e1c420494ea0db935",
+      "source_sha256": "e4c370365206fc78901657026705d6121d983bf1bc0fb4ccfc6bc2994cb56beb"
+    },
+    {
+      "alias": "astra.button.primary.loading",
+      "path": "ui/components/button-primary-loading.png",
+      "source": "ui/components/button-primary-loading.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "loading",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        84,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "label",
+          "rect": [
+            44,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 6798,
+      "sha256": "d32a03769768e19ac7ede7c48055c7ab609e5484395925e2aed75311ac3bc993",
+      "source_sha256": "b177a3ba2a6cbe98d04bc14caeafbe228f1c3bab0941a2e6a43b9eac7de1aeae"
+    },
+    {
+      "alias": "astra.button.secondary.normal",
+      "path": "ui/components/button-secondary-normal.png",
+      "source": "ui/components/button-secondary-normal.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        84,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "label",
+          "rect": [
+            44,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 5994,
+      "sha256": "008c47a98abb9804d2cf632dedf1d79087bbedeedea2d0dcd38e8dce95f751ca",
+      "source_sha256": "bb02b6d438049d0fc41a73b131beab4438f4096d71997e37dc2e2817a0c792fb"
+    },
+    {
+      "alias": "astra.button.secondary.pressed",
+      "path": "ui/components/button-secondary-pressed.png",
+      "source": "ui/components/button-secondary-pressed.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "pressed",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        84,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "label",
+          "rect": [
+            44,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 2032,
+      "sha256": "894dabc69e41dd1b1611c0eb2c75ead5be7c2f6bdb76adc10f4955f4a5b42885",
+      "source_sha256": "4eee5c3a885d0dcc4df03926145a3423bdf2e6b8d781ffa04febd9eeb28a41bd"
+    },
+    {
+      "alias": "astra.button.secondary.disabled",
+      "path": "ui/components/button-secondary-disabled.png",
+      "source": "ui/components/button-secondary-disabled.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "disabled",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        84,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "label",
+          "rect": [
+            44,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 2783,
+      "sha256": "8918785b001b22addd3f47a3dbba9378bfae0de85270d47e1c420494ea0db935",
+      "source_sha256": "e4c370365206fc78901657026705d6121d983bf1bc0fb4ccfc6bc2994cb56beb"
+    },
+    {
+      "alias": "astra.button.secondary.loading",
+      "path": "ui/components/button-secondary-loading.png",
+      "source": "ui/components/button-secondary-loading.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "loading",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        84,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "label",
+          "rect": [
+            44,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 8026,
+      "sha256": "4e5050b38e6f2451c4d16a26489b5cc0cb6bc7d5a62b413716fca36c9d07d0c7",
+      "source_sha256": "7da17e1a2ee378bebf6b70eb7d4ad8215ec1df495d4460983f1339a16b5b7b5b"
+    },
+    {
+      "alias": "astra.panel.action",
+      "path": "ui/panels/action.png",
+      "source": "ui/panels/action.svg",
+      "logical_size_pt": [
+        320,
+        320
+      ],
+      "pixel_dimensions": [
+        640,
+        640
+      ],
+      "density": 2,
+      "kind": "panel",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "cap_insets_px": [
+        48,
+        48,
+        48,
+        48
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        640,
+        640
+      ],
+      "bytes": 37234,
+      "sha256": "9c8c17a7508e450cb5e76dec106ddb334804e646d2703c73e9c7813d823bf8e7",
+      "source_sha256": "8895ac4f3fb003677058aac89e0b16f3f03e70c1ff43ef63d6b5fabf3dbeda87"
+    },
+    {
+      "alias": "astra.panel.glass",
+      "path": "ui/panels/glass.png",
+      "source": "ui/panels/glass.svg",
+      "logical_size_pt": [
+        320,
+        320
+      ],
+      "pixel_dimensions": [
+        640,
+        640
+      ],
+      "density": 2,
+      "kind": "panel",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "cap_insets_px": [
+        48,
+        48,
+        48,
+        48
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        640,
+        640
+      ],
+      "bytes": 37237,
+      "sha256": "9106fc0aa019471501303c135a077f427146fe5c5b838311a6d7669b4ba14b91",
+      "source_sha256": "6c79073c318b3e22eee30d13539feef1b7cd4a39a65249360d305aeb7efd7536"
+    },
+    {
+      "alias": "astra.panel.light",
+      "path": "ui/panels/light.png",
+      "source": "ui/panels/light.svg",
+      "logical_size_pt": [
+        320,
+        320
+      ],
+      "pixel_dimensions": [
+        640,
+        640
+      ],
+      "density": 2,
+      "kind": "panel",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "cap_insets_px": [
+        48,
+        48,
+        48,
+        48
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        640,
+        640
+      ],
+      "bytes": 5816,
+      "sha256": "7036ba8c9ba0472422eb0331c1d7968984a86dfbb5f49f56a3279ecbdd79c03b",
+      "source_sha256": "a4c42d1dbded29a4b7001cdbfe3e17d74f18d94160ee6877a5dd1d84ef9578ba"
+    },
+    {
+      "alias": "astra.panel.inset",
+      "path": "ui/panels/inset.png",
+      "source": "ui/panels/inset.svg",
+      "logical_size_pt": [
+        240,
+        72
+      ],
+      "pixel_dimensions": [
+        480,
+        144
+      ],
+      "density": 2,
+      "kind": "panel",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        144
+      ],
+      "bytes": 2352,
+      "sha256": "2226ff63fe0243c08cc9c87ff6a491cffea142ee4aec233eda848f0d54014c8b",
+      "source_sha256": "9a38e0bfd94f4859d197fca15013bad220cd57326825b71e30f44dc2cbe718f1"
+    },
+    {
+      "alias": "astra.texture.brushed",
+      "path": "ui/panels/brushed-metal.png",
+      "source": "ui/panels/brushed-metal.svg",
+      "logical_size_pt": [
+        64,
+        64
+      ],
+      "pixel_dimensions": [
+        128,
+        128
+      ],
+      "density": 2,
+      "kind": "texture",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        128,
+        128
+      ],
+      "bytes": 495,
+      "sha256": "c0c3ec75013d58c8c82a6084662d3d700c7084b5fcbc156592a7064aad726a05",
+      "source_sha256": "48bebc34daea42c5468bdc458eb927ce13946ae0c1d1ae26a1abff5a14d904f0"
+    },
+    {
+      "alias": "astra.modal.scrim",
+      "path": "ui/panels/modal-scrim.png",
+      "source": "ui/panels/modal-scrim.svg",
+      "logical_size_pt": [
+        32,
+        32
+      ],
+      "pixel_dimensions": [
+        32,
+        32
+      ],
+      "density": 1,
+      "kind": "scrim",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "cap_insets_px": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        32,
+        32
+      ],
+      "bytes": 167,
+      "sha256": "7845d89122e92b76140cf50cdde743b4dcdb83a1d257d1195d7853e94d5a24b1",
+      "source_sha256": "473cff9141204dd3b2b24d441008cb5192910c2570b8bba14691e3cd25cbf207"
+    },
+    {
+      "alias": "astra.hud.player.normal",
+      "path": "ui/components/player-normal.png",
+      "source": "ui/components/player-normal.svg",
+      "logical_size_pt": [
+        180,
+        68
+      ],
+      "pixel_dimensions": [
+        360,
+        136
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        16,
+        52,
+        16,
+        16
+      ],
+      "cap_insets_px": [
+        32,
+        104,
+        32,
+        32
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "name",
+          "rect": [
+            54,
+            8,
+            116,
+            20
+          ],
+          "font_pt": 12
+        },
+        {
+          "key": "cash",
+          "rect": [
+            54,
+            28,
+            116,
+            24
+          ],
+          "font_pt": 18
+        },
+        {
+          "key": "position_status",
+          "rect": [
+            54,
+            50,
+            116,
+            16
+          ],
+          "font_pt": 11
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        360,
+        136
+      ],
+      "bytes": 11782,
+      "sha256": "63c4fe515225898dbad703db1bac6bc5baf539f1762b440eb3986c85b6c38173",
+      "source_sha256": "140eb602bd59d2891ad06e49aa3c9e7c2c99c6b8e02f54138ec35a3f1d25af98"
+    },
+    {
+      "alias": "astra.hud.player.current",
+      "path": "ui/components/player-current.png",
+      "source": "ui/components/player-current.svg",
+      "logical_size_pt": [
+        180,
+        68
+      ],
+      "pixel_dimensions": [
+        360,
+        136
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "current",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        16,
+        52,
+        16,
+        16
+      ],
+      "cap_insets_px": [
+        32,
+        104,
+        32,
+        32
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "name",
+          "rect": [
+            54,
+            8,
+            116,
+            20
+          ],
+          "font_pt": 12
+        },
+        {
+          "key": "cash",
+          "rect": [
+            54,
+            28,
+            116,
+            24
+          ],
+          "font_pt": 18
+        },
+        {
+          "key": "position_status",
+          "rect": [
+            54,
+            50,
+            116,
+            16
+          ],
+          "font_pt": 11
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        360,
+        136
+      ],
+      "bytes": 12806,
+      "sha256": "cae18210236cd23704f9352823e56b795a38fdbf87e38d9374a2fa91f63a78ae",
+      "source_sha256": "d70c7379a32a7f590c5b0545e965af120eed423f99481d79fdc1c4984f9a6f42"
+    },
+    {
+      "alias": "astra.hud.player.jailed",
+      "path": "ui/components/player-jailed.png",
+      "source": "ui/components/player-jailed.svg",
+      "logical_size_pt": [
+        180,
+        68
+      ],
+      "pixel_dimensions": [
+        360,
+        136
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "jailed",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        16,
+        52,
+        16,
+        16
+      ],
+      "cap_insets_px": [
+        32,
+        104,
+        32,
+        32
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "name",
+          "rect": [
+            54,
+            8,
+            116,
+            20
+          ],
+          "font_pt": 12
+        },
+        {
+          "key": "cash",
+          "rect": [
+            54,
+            28,
+            116,
+            24
+          ],
+          "font_pt": 18
+        },
+        {
+          "key": "position_status",
+          "rect": [
+            54,
+            50,
+            116,
+            16
+          ],
+          "font_pt": 11
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        360,
+        136
+      ],
+      "bytes": 11946,
+      "sha256": "5ee7a28faee4a5a92e7703b98f282c55c8ffb0b3e9d3e3eb5ea20885b2c9febe",
+      "source_sha256": "6175ac7d2be542238f1bd710173c1b2cbd5e88f7437bc1c7359f1ab254ae92fb"
+    },
+    {
+      "alias": "astra.hud.player.bankrupt",
+      "path": "ui/components/player-bankrupt.png",
+      "source": "ui/components/player-bankrupt.svg",
+      "logical_size_pt": [
+        180,
+        68
+      ],
+      "pixel_dimensions": [
+        360,
+        136
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "bankrupt",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        16,
+        52,
+        16,
+        16
+      ],
+      "cap_insets_px": [
+        32,
+        104,
+        32,
+        32
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "name",
+          "rect": [
+            54,
+            8,
+            116,
+            20
+          ],
+          "font_pt": 12
+        },
+        {
+          "key": "cash",
+          "rect": [
+            54,
+            28,
+            116,
+            24
+          ],
+          "font_pt": 18
+        },
+        {
+          "key": "position_status",
+          "rect": [
+            54,
+            50,
+            116,
+            16
+          ],
+          "font_pt": 11
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        360,
+        136
+      ],
+      "bytes": 12150,
+      "sha256": "ac319ab0c2e0fa875810027ca5cd7d2cd8957278d115a5173fe64a675cc59a22",
+      "source_sha256": "bfde37228764dc7a123a1c1f9fd5c1c8ebb12e726336273dceb10b2359efda2f"
+    },
+    {
+      "alias": "astra.feedback.positive",
+      "path": "ui/components/feedback-positive.png",
+      "source": "ui/components/feedback-positive.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "positive",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        88,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "message_or_delta",
+          "rect": [
+            48,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 2362,
+      "sha256": "5d4472674ab9ba3a6aeb6df230f16aaccf4046a3065d2487799498d8c489dbdf",
+      "source_sha256": "dcdfa8bd28b563ad682d2b5173e0aca003b5913245e42d690ea76e7df0a30aa9"
+    },
+    {
+      "alias": "astra.feedback.negative",
+      "path": "ui/components/feedback-negative.png",
+      "source": "ui/components/feedback-negative.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "negative",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        88,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "message_or_delta",
+          "rect": [
+            48,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 2243,
+      "sha256": "e38027e4331a54c465eb134c2cad1260f62957aa12df72e3e97950405b80cab7",
+      "source_sha256": "54de08e6eb3c1e15bc711da53ba32e2a7226a33dccc9ce47a6b17330152f1ed1"
+    },
+    {
+      "alias": "astra.feedback.confirmed",
+      "path": "ui/components/feedback-confirmed.png",
+      "source": "ui/components/feedback-confirmed.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "confirmed",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        88,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "message_or_delta",
+          "rect": [
+            48,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 2524,
+      "sha256": "d035559aab75928ed2d73827d9d70b73de6deac7f8d6e63a23b8666039082de1",
+      "source_sha256": "771e578be6c476a4c9dbb046b1730ddd29cafaf776429c77f5cb9bca3577634d"
+    },
+    {
+      "alias": "astra.feedback.error",
+      "path": "ui/components/feedback-error.png",
+      "source": "ui/components/feedback-error.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "error",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        88,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "message_or_delta",
+          "rect": [
+            48,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 3650,
+      "sha256": "1b6d0a9dab276901a44f730845ad65998a126d5319fdc766984f9182c16b9648",
+      "source_sha256": "e88ade2e322162d2445642c568979458d5331c1ad69bb36297f0c1167d166628"
+    },
+    {
+      "alias": "astra.feedback.loading",
+      "path": "ui/components/feedback-loading.png",
+      "source": "ui/components/feedback-loading.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "loading",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        88,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "message_or_delta",
+          "rect": [
+            48,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 3738,
+      "sha256": "214b3e3d524052ddb60800a19d80987666849190be8e0c857c9b0aa676e0c454",
+      "source_sha256": "5ab58f254b7dac9c33f7e38614ea104067f963d2af67a3b212d93746d5d4265a"
+    },
+    {
+      "alias": "astra.feedback.empty",
+      "path": "ui/components/feedback-empty.png",
+      "source": "ui/components/feedback-empty.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "empty",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "cap_insets_px": [
+        24,
+        88,
+        24,
+        24
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "message_or_delta",
+          "rect": [
+            48,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 4106,
+      "sha256": "429773e532a58d765cd31900604190aaca0800513da5b7e54f082ba9e519a7c4",
+      "source_sha256": "8d2729a085ee888947f4b9c1fc0c1b7e5bdeb3cbe8d384f09cf13aa989b1dad4"
+    },
+    {
+      "alias": "astra.card.face",
+      "path": "ui/panels/card-face.png",
+      "source": "ui/panels/card-face.svg",
+      "logical_size_pt": [
+        280,
+        360
+      ],
+      "pixel_dimensions": [
+        560,
+        720
+      ],
+      "density": 2,
+      "kind": "panel",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        88,
+        26,
+        26,
+        26
+      ],
+      "cap_insets_px": [
+        176,
+        52,
+        52,
+        52
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "card_title",
+          "rect": [
+            24,
+            96,
+            232,
+            32
+          ],
+          "font_pt": 20
+        },
+        {
+          "key": "card_body",
+          "rect": [
+            24,
+            144,
+            232,
+            150
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        560,
+        720
+      ],
+      "bytes": 35795,
+      "sha256": "116f90ca7e2c1f3736d4c950c04259c5a0063d3914a1eab4ed6ce575c5524154",
+      "source_sha256": "155d8580eb00a6472d6d8ee77cba3b419ab39acf35fc41a2c2ada0556bfe9386"
+    },
+    {
+      "alias": "astra.hud.period",
+      "path": "ui/components/period.png",
+      "source": "ui/components/period.svg",
+      "logical_size_pt": [
+        180,
+        40
+      ],
+      "pixel_dimensions": [
+        360,
+        80
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        18,
+        42,
+        18,
+        18
+      ],
+      "cap_insets_px": [
+        36,
+        84,
+        36,
+        36
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "period_status",
+          "rect": [
+            42,
+            6,
+            124,
+            28
+          ],
+          "font_pt": 12
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        360,
+        80
+      ],
+      "bytes": 4049,
+      "sha256": "8a8c76515449e6271fbd7e22f1cae118dbb541160fb6341b15e693678853c086",
+      "source_sha256": "38780713e85771f29641998e5ed91cb2f3e880aa47a4b998f7ce3d90d7071d88"
+    },
+    {
+      "alias": "astra.hud.capsule.sample",
+      "path": "ui/components/capsule-sample.png",
+      "source": "ui/components/capsule-sample.svg",
+      "logical_size_pt": [
+        93,
+        44
+      ],
+      "pixel_dimensions": [
+        186,
+        88
+      ],
+      "density": 2,
+      "kind": "reference_only",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        186,
+        88
+      ],
+      "bytes": 5621,
+      "sha256": "781b3426d4e3d751f9d33c99d7569795e2dcd4dbf7d50374d2cb5061a96befa9",
+      "source_sha256": "8e7e38e297f1695a108a9916c28a5b148c8c2fb6973a4f19bce744415c1802fa"
+    },
+    {
+      "alias": "astra.phase.buy.ornament",
+      "path": "ui/components/buy-ornament.png",
+      "source": "ui/components/buy-ornament.svg",
+      "logical_size_pt": [
+        288,
+        84
+      ],
+      "pixel_dimensions": [
+        576,
+        168
+      ],
+      "density": 2,
+      "kind": "ornament",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_or_context_title",
+          "rect": [
+            84,
+            29,
+            184,
+            26
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        168
+      ],
+      "bytes": 27028,
+      "sha256": "ccf9f732c253bc917bb12309b168d2b3a57f91a2556b335a91c36c1b9e178555",
+      "source_sha256": "760f732b3a5db1e0fb7ae7577e9048123d1fe8abbf385281ebc827f0c52e0e0a"
+    },
+    {
+      "alias": "astra.phase.auction.ornament",
+      "path": "ui/components/auction-ornament.png",
+      "source": "ui/components/auction-ornament.svg",
+      "logical_size_pt": [
+        288,
+        84
+      ],
+      "pixel_dimensions": [
+        576,
+        168
+      ],
+      "density": 2,
+      "kind": "ornament",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_or_context_title",
+          "rect": [
+            84,
+            29,
+            184,
+            26
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        168
+      ],
+      "bytes": 27555,
+      "sha256": "f5bc505437697a63cd7069fb3abce2895473d5458fcd8e2fbf642e593e73ad29",
+      "source_sha256": "082237d23003648c7e09143daa447db73e88f5603a7529b0079adf33ae195863"
+    },
+    {
+      "alias": "astra.phase.trade.ornament",
+      "path": "ui/components/trade-ornament.png",
+      "source": "ui/components/trade-ornament.svg",
+      "logical_size_pt": [
+        288,
+        84
+      ],
+      "pixel_dimensions": [
+        576,
+        168
+      ],
+      "density": 2,
+      "kind": "ornament",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_or_context_title",
+          "rect": [
+            84,
+            29,
+            184,
+            26
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        168
+      ],
+      "bytes": 27875,
+      "sha256": "d7bb755641fcc6a26afc118318cc98fab318c74d5a5bab15390f8803e6ed875c",
+      "source_sha256": "eb3297ff4c4c05ec3647efd55c6d824229f56f0d01dcb31a892325c726d30946"
+    },
+    {
+      "alias": "astra.phase.bank.ornament",
+      "path": "ui/components/bank-ornament.png",
+      "source": "ui/components/bank-ornament.svg",
+      "logical_size_pt": [
+        288,
+        84
+      ],
+      "pixel_dimensions": [
+        576,
+        168
+      ],
+      "density": 2,
+      "kind": "ornament",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_or_context_title",
+          "rect": [
+            84,
+            29,
+            184,
+            26
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        168
+      ],
+      "bytes": 26801,
+      "sha256": "c3944e676abd3f182f88a848702730b2828d8dbed64e6453941a9d33f0a1681f",
+      "source_sha256": "e7d56c3c08761c8c38d4e903aab04143aee606b9007399a6d3cdfde855ebe4e7"
+    },
+    {
+      "alias": "astra.phase.settlement.ornament",
+      "path": "ui/components/settlement-ornament.png",
+      "source": "ui/components/settlement-ornament.svg",
+      "logical_size_pt": [
+        288,
+        84
+      ],
+      "pixel_dimensions": [
+        576,
+        168
+      ],
+      "density": 2,
+      "kind": "ornament",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_or_context_title",
+          "rect": [
+            84,
+            29,
+            184,
+            26
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        168
+      ],
+      "bytes": 27396,
+      "sha256": "b0538087a9d68050417dd1a48bd04bea6630870414363ad304088dbfd2a7f620",
+      "source_sha256": "dae3debc741e0c4824602d7447fe3e5477f46b46d030e4e35ce90f5823222df0"
+    },
+    {
+      "alias": "astra.deed.umber",
+      "path": "ui/tabletop/deed-umber.png",
+      "source": "ui/tabletop/deed-umber.svg",
+      "logical_size_pt": [
+        288,
+        360
+      ],
+      "pixel_dimensions": [
+        576,
+        720
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            24,
+            137,
+            240,
+            38
+          ],
+          "font_pt": 20
+        },
+        {
+          "key": "price_rent_owner",
+          "rect": [
+            24,
+            179,
+            240,
+            136
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        720
+      ],
+      "bytes": 55367,
+      "sha256": "d75859efa4aa6db96836e1d5cc4cdc00ec06522808e3b613ca2283e254e2c248",
+      "source_sha256": "8453455d62af313e122fb5c45a4710c8a395c91688b3324ac3d6b7d640162679"
+    },
+    {
+      "alias": "astra.deed.sky",
+      "path": "ui/tabletop/deed-sky.png",
+      "source": "ui/tabletop/deed-sky.svg",
+      "logical_size_pt": [
+        288,
+        360
+      ],
+      "pixel_dimensions": [
+        576,
+        720
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            24,
+            137,
+            240,
+            38
+          ],
+          "font_pt": 20
+        },
+        {
+          "key": "price_rent_owner",
+          "rect": [
+            24,
+            179,
+            240,
+            136
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        720
+      ],
+      "bytes": 53110,
+      "sha256": "78ebd2eb2b63b3879f9701abaf4c73c7857c5ca15f2b230a8f41949e072fb65e",
+      "source_sha256": "080ab34f87b9e1359ff16ac0decf51026964eb82dcb822e56ab595d3c044052e"
+    },
+    {
+      "alias": "astra.deed.orchid",
+      "path": "ui/tabletop/deed-orchid.png",
+      "source": "ui/tabletop/deed-orchid.svg",
+      "logical_size_pt": [
+        288,
+        360
+      ],
+      "pixel_dimensions": [
+        576,
+        720
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            24,
+            137,
+            240,
+            38
+          ],
+          "font_pt": 20
+        },
+        {
+          "key": "price_rent_owner",
+          "rect": [
+            24,
+            179,
+            240,
+            136
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        720
+      ],
+      "bytes": 53457,
+      "sha256": "08b2cdd81169494ec903b6af2357a1d130777f6d57b55b53752fad918d16a348",
+      "source_sha256": "732f26d6e9ed93298f0a742d820ec7ff6ad606443786ef7bb6079d61d996d4a8"
+    },
+    {
+      "alias": "astra.deed.amber",
+      "path": "ui/tabletop/deed-amber.png",
+      "source": "ui/tabletop/deed-amber.svg",
+      "logical_size_pt": [
+        288,
+        360
+      ],
+      "pixel_dimensions": [
+        576,
+        720
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            24,
+            137,
+            240,
+            38
+          ],
+          "font_pt": 20
+        },
+        {
+          "key": "price_rent_owner",
+          "rect": [
+            24,
+            179,
+            240,
+            136
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        720
+      ],
+      "bytes": 53678,
+      "sha256": "c06a8e3e1c7177286fbc1af8bbb104853bca7dc6967bd45d399546b661e01d47",
+      "source_sha256": "0a8d894ebb5fd87e045d646d170c025c66e8d80d952c006afcd4374ec177d08a"
+    },
+    {
+      "alias": "astra.deed.coral",
+      "path": "ui/tabletop/deed-coral.png",
+      "source": "ui/tabletop/deed-coral.svg",
+      "logical_size_pt": [
+        288,
+        360
+      ],
+      "pixel_dimensions": [
+        576,
+        720
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            24,
+            137,
+            240,
+            38
+          ],
+          "font_pt": 20
+        },
+        {
+          "key": "price_rent_owner",
+          "rect": [
+            24,
+            179,
+            240,
+            136
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        720
+      ],
+      "bytes": 54106,
+      "sha256": "fd4833f28a866283c1b4d153f2b373e190ca56ff69a2e07ab12e2bbad047028c",
+      "source_sha256": "f05c7e4ae489aba70f65064fe7dc7a76ea311a3fcebf588c95111ab9e62a9559"
+    },
+    {
+      "alias": "astra.deed.ochre",
+      "path": "ui/tabletop/deed-ochre.png",
+      "source": "ui/tabletop/deed-ochre.svg",
+      "logical_size_pt": [
+        288,
+        360
+      ],
+      "pixel_dimensions": [
+        576,
+        720
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            24,
+            137,
+            240,
+            38
+          ],
+          "font_pt": 20
+        },
+        {
+          "key": "price_rent_owner",
+          "rect": [
+            24,
+            179,
+            240,
+            136
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        720
+      ],
+      "bytes": 53834,
+      "sha256": "78a077f77d0f1c55a1ac1628404b9a1cd9a880d3fa2b475bf6f0da94a099bc71",
+      "source_sha256": "b699772c151b8cf060852c4f5d72560eb3ac87558d11ba2e372578e492b3c391"
+    },
+    {
+      "alias": "astra.deed.jade",
+      "path": "ui/tabletop/deed-jade.png",
+      "source": "ui/tabletop/deed-jade.svg",
+      "logical_size_pt": [
+        288,
+        360
+      ],
+      "pixel_dimensions": [
+        576,
+        720
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            24,
+            137,
+            240,
+            38
+          ],
+          "font_pt": 20
+        },
+        {
+          "key": "price_rent_owner",
+          "rect": [
+            24,
+            179,
+            240,
+            136
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        720
+      ],
+      "bytes": 54506,
+      "sha256": "59e1419aae7e769e4b6ff27f67587c17d59b8ec87b7b9bd2d87afa1c93e60e95",
+      "source_sha256": "05d9d6cceb7bdb9a63271a4eeeb1070e10e5656ff5cad1276c99b7a27f596613"
+    },
+    {
+      "alias": "astra.deed.cobalt",
+      "path": "ui/tabletop/deed-cobalt.png",
+      "source": "ui/tabletop/deed-cobalt.svg",
+      "logical_size_pt": [
+        288,
+        360
+      ],
+      "pixel_dimensions": [
+        576,
+        720
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            24,
+            137,
+            240,
+            38
+          ],
+          "font_pt": 20
+        },
+        {
+          "key": "price_rent_owner",
+          "rect": [
+            24,
+            179,
+            240,
+            136
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        720
+      ],
+      "bytes": 54357,
+      "sha256": "54b63acdccfe5aaa0a257c3253fcbebd0d5d7815eb3b57c6021671982f48196d",
+      "source_sha256": "a98970535caa27517d8f49d3f92ef64cf7fe7eeca6464d2d4fb2affe8adf4fde"
+    },
+    {
+      "alias": "astra.voucher.cobalt",
+      "path": "ui/tabletop/voucher-cobalt.png",
+      "source": "ui/tabletop/voucher-cobalt.svg",
+      "logical_size_pt": [
+        320,
+        144
+      ],
+      "pixel_dimensions": [
+        640,
+        288
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "currency_context",
+          "rect": [
+            132,
+            34,
+            126,
+            20
+          ],
+          "font_pt": 12
+        },
+        {
+          "key": "amount",
+          "rect": [
+            132,
+            58,
+            126,
+            32
+          ],
+          "font_pt": 24
+        },
+        {
+          "key": "status",
+          "rect": [
+            132,
+            94,
+            126,
+            18
+          ],
+          "font_pt": 11
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        640,
+        288
+      ],
+      "bytes": 51721,
+      "sha256": "b727ebcc32a4c009fb9e1f4e89e4513a276fbbcde1e4530de1e7352235c38e75",
+      "source_sha256": "41b879bf9e3dd51c155afca39838677e876edf70ad8294bc87918beeacf8e63e"
+    },
+    {
+      "alias": "astra.voucher.jade",
+      "path": "ui/tabletop/voucher-jade.png",
+      "source": "ui/tabletop/voucher-jade.svg",
+      "logical_size_pt": [
+        320,
+        144
+      ],
+      "pixel_dimensions": [
+        640,
+        288
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "currency_context",
+          "rect": [
+            132,
+            34,
+            126,
+            20
+          ],
+          "font_pt": 12
+        },
+        {
+          "key": "amount",
+          "rect": [
+            132,
+            58,
+            126,
+            32
+          ],
+          "font_pt": 24
+        },
+        {
+          "key": "status",
+          "rect": [
+            132,
+            94,
+            126,
+            18
+          ],
+          "font_pt": 11
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        640,
+        288
+      ],
+      "bytes": 51920,
+      "sha256": "870a67d0f53d9e6c1dca8911adcbe857cf3c94e7cbca36c88c731291952cf973",
+      "source_sha256": "ecdd7d2313e75e1748436143371788033d195be4d47605525efc9ccb97cedea6"
+    },
+    {
+      "alias": "astra.voucher.coral",
+      "path": "ui/tabletop/voucher-coral.png",
+      "source": "ui/tabletop/voucher-coral.svg",
+      "logical_size_pt": [
+        320,
+        144
+      ],
+      "pixel_dimensions": [
+        640,
+        288
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "currency_context",
+          "rect": [
+            132,
+            34,
+            126,
+            20
+          ],
+          "font_pt": 12
+        },
+        {
+          "key": "amount",
+          "rect": [
+            132,
+            58,
+            126,
+            32
+          ],
+          "font_pt": 24
+        },
+        {
+          "key": "status",
+          "rect": [
+            132,
+            94,
+            126,
+            18
+          ],
+          "font_pt": 11
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        640,
+        288
+      ],
+      "bytes": 51287,
+      "sha256": "38fbeb223bb481ec9f4ee939cfc2693e9304a89afa2ead91d7ab9ae0980f9a96",
+      "source_sha256": "d8279cf2e2210df01b5600f11e7b9225e3a225b4ed4883b6047284a9050fbf88"
+    },
+    {
+      "alias": "astra.voucher.amber",
+      "path": "ui/tabletop/voucher-amber.png",
+      "source": "ui/tabletop/voucher-amber.svg",
+      "logical_size_pt": [
+        320,
+        144
+      ],
+      "pixel_dimensions": [
+        640,
+        288
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "currency_context",
+          "rect": [
+            132,
+            34,
+            126,
+            20
+          ],
+          "font_pt": 12
+        },
+        {
+          "key": "amount",
+          "rect": [
+            132,
+            58,
+            126,
+            32
+          ],
+          "font_pt": 24
+        },
+        {
+          "key": "status",
+          "rect": [
+            132,
+            94,
+            126,
+            18
+          ],
+          "font_pt": 11
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        640,
+        288
+      ],
+      "bytes": 50081,
+      "sha256": "c8b4f3a300b2e6710741b6ebc5ffdcab8ab872a679a546f576862147ac66c1a7",
+      "source_sha256": "d67141f609a87b8a5d9692b9b3d46b3858e3be8aa0909b8109c155eab5763d39"
+    },
+    {
+      "alias": "astra.auction.ticket",
+      "path": "ui/tabletop/auction-ticket.png",
+      "source": "ui/tabletop/auction-ticket.svg",
+      "logical_size_pt": [
+        320,
+        160
+      ],
+      "pixel_dimensions": [
+        640,
+        320
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            108,
+            49,
+            188,
+            26
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "current_bid",
+          "rect": [
+            108,
+            80,
+            188,
+            32
+          ],
+          "font_pt": 24
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        640,
+        320
+      ],
+      "bytes": 39251,
+      "sha256": "18b6f09a1ec6ea943103d4b2284af65fd3a93504bc6291d631d7f989fa9593e3",
+      "source_sha256": "8e6e36754d10d23cf8f7a8aae631f011ca7c1e041ba889dd0240007151be23f2"
+    },
+    {
+      "alias": "astra.trade.offer",
+      "path": "ui/tabletop/trade-offer.png",
+      "source": "ui/tabletop/trade-offer.svg",
+      "logical_size_pt": [
+        288,
+        188
+      ],
+      "pixel_dimensions": [
+        576,
+        376
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "offered_assets",
+          "rect": [
+            20,
+            82,
+            102,
+            30
+          ],
+          "font_pt": 14
+        },
+        {
+          "key": "requested_assets",
+          "rect": [
+            166,
+            82,
+            102,
+            30
+          ],
+          "font_pt": 14
+        },
+        {
+          "key": "offered_cash",
+          "rect": [
+            20,
+            128,
+            102,
+            32
+          ],
+          "font_pt": 18
+        },
+        {
+          "key": "requested_cash",
+          "rect": [
+            166,
+            128,
+            102,
+            32
+          ],
+          "font_pt": 18
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        376
+      ],
+      "bytes": 24735,
+      "sha256": "e40da399f76b7964c970f419b04f432862c85ffd1af7a66ff9d15485c10358f5",
+      "source_sha256": "998e9f1ce87eaf2ae10fc0dd4696dbabcc24c34fdd15be7eeecfd90085ad8ea9"
+    },
+    {
+      "alias": "astra.settlement.certificate",
+      "path": "ui/tabletop/settlement-certificate.png",
+      "source": "ui/tabletop/settlement-certificate.svg",
+      "logical_size_pt": [
+        320,
+        280
+      ],
+      "pixel_dimensions": [
+        640,
+        560
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "winner",
+          "rect": [
+            28,
+            96,
+            264,
+            28
+          ],
+          "font_pt": 20
+        },
+        {
+          "key": "net_worth",
+          "rect": [
+            28,
+            149,
+            264,
+            40
+          ],
+          "font_pt": 28
+        },
+        {
+          "key": "summary",
+          "rect": [
+            28,
+            200,
+            264,
+            36
+          ],
+          "font_pt": 13
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        640,
+        560
+      ],
+      "bytes": 53758,
+      "sha256": "ca0d1f0019f35c91c5452e28a97dbaab224faeb1f9b4231ca0282356d65813c8",
+      "source_sha256": "9a75dfcf9dee0f90f56fbe4ff87499ce3ee3e65f1c2f3327e60ead13ec09fddc"
+    },
+    {
+      "alias": "astra.texture.paper",
+      "path": "ui/tabletop/paper-fiber.png",
+      "source": "ui/tabletop/paper-fiber.svg",
+      "logical_size_pt": [
+        64,
+        64
+      ],
+      "pixel_dimensions": [
+        128,
+        128
+      ],
+      "density": 2,
+      "kind": "texture",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        128,
+        128
+      ],
+      "bytes": 11632,
+      "sha256": "1d80c2f6e863e497d1cf5b06333edd1adee818b0bca0e4445b1b97e6d8a0ab89",
+      "source_sha256": "c47b458d9a512813d9986e964795a60191e42747dfa065e0e0b178948f3e2bf3"
+    },
+    {
+      "alias": "astra.hero.buy",
+      "path": "ui/tabletop/hero-buy.png",
+      "source": "ui/tabletop/hero-buy.svg",
+      "logical_size_pt": [
+        256,
+        174
+      ],
+      "pixel_dimensions": [
+        512,
+        348
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            76,
+            44,
+            160,
+            24
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "price",
+          "rect": [
+            142,
+            82,
+            94,
+            24
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "cash_after",
+          "rect": [
+            142,
+            108,
+            94,
+            24
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "rent",
+          "rect": [
+            142,
+            134,
+            94,
+            24
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        512,
+        348
+      ],
+      "bytes": 30804,
+      "sha256": "c5be013fe792c878d016bf1cf2cf474c584dc99b5a0a48bc26cfc84d3c8336ec",
+      "source_sha256": "cecb5033414b903bed04e7c9bfeed6787d04a70848424a411f7d0ad677d51046"
+    },
+    {
+      "alias": "astra.hero.auction",
+      "path": "ui/tabletop/hero-auction.png",
+      "source": "ui/tabletop/hero-auction.svg",
+      "logical_size_pt": [
+        256,
+        174
+      ],
+      "pixel_dimensions": [
+        512,
+        348
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            60,
+            22,
+            176,
+            28
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "highest_bid",
+          "rect": [
+            146,
+            62,
+            90,
+            24
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "leading_player",
+          "rect": [
+            146,
+            87,
+            90,
+            24
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "bid_input",
+          "rect": [
+            72,
+            124,
+            112,
+            32
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "hit_targets_local_pt": {
+        "decrease_bid": [
+          12,
+          118,
+          44,
+          44
+        ],
+        "bid_input": [
+          62,
+          118,
+          132,
+          44
+        ],
+        "increase_bid": [
+          200,
+          118,
+          44,
+          44
+        ]
+      },
+      "alpha_bounds_px": [
+        0,
+        0,
+        512,
+        348
+      ],
+      "bytes": 28886,
+      "sha256": "aee1cba27c2a60a17cf09145d6b35409eab5f7dce9f594ead26b66b420abeb68",
+      "source_sha256": "86481cd1e25734a9eefbb640b5925ac585b6149d7ee6c793f5ff67f40812df7a"
+    },
+    {
+      "alias": "astra.hero.trade",
+      "path": "ui/tabletop/hero-trade.png",
+      "source": "ui/tabletop/hero-trade.svg",
+      "logical_size_pt": [
+        256,
+        174
+      ],
+      "pixel_dimensions": [
+        512,
+        348
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "my_assets",
+          "rect": [
+            20,
+            83,
+            84,
+            28
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "their_assets",
+          "rect": [
+            152,
+            83,
+            84,
+            28
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "my_cash",
+          "rect": [
+            20,
+            126,
+            84,
+            32
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "their_cash",
+          "rect": [
+            152,
+            126,
+            84,
+            32
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        512,
+        348
+      ],
+      "bytes": 22975,
+      "sha256": "bfc4103c3adb36d5b745ef17378d791e3d310b1b1a1902bdbd3665e833f035b1",
+      "source_sha256": "98cf7994053d5647806fa616874eae45e44b33fcb706c9938c3b4284e81e79d1"
+    },
+    {
+      "alias": "astra.hero.bank",
+      "path": "ui/tabletop/hero-bank.png",
+      "source": "ui/tabletop/hero-bank.svg",
+      "logical_size_pt": [
+        256,
+        174
+      ],
+      "pixel_dimensions": [
+        512,
+        348
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "wallet",
+          "rect": [
+            88,
+            34,
+            116,
+            28
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "deposit",
+          "rect": [
+            12,
+            142,
+            98,
+            26
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "loan",
+          "rect": [
+            146,
+            142,
+            98,
+            26
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        512,
+        348
+      ],
+      "bytes": 32364,
+      "sha256": "b0ac2e5984860deb20830c996db32ca0aef3d8b0125deba0e1d128748fe3dfc1",
+      "source_sha256": "e82c9b3245fc7faba99b26e595df02c7d9f68dff6aeb62f62ddea34691dcf409"
+    },
+    {
+      "alias": "astra.hero.settlement",
+      "path": "ui/tabletop/hero-settlement.png",
+      "source": "ui/tabletop/hero-settlement.svg",
+      "logical_size_pt": [
+        256,
+        174
+      ],
+      "pixel_dimensions": [
+        512,
+        348
+      ],
+      "density": 2,
+      "kind": "card",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "aspect_fit",
+      "cap_insets_pt": null,
+      "cap_insets_px": null,
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "winner",
+          "rect": [
+            24,
+            64,
+            208,
+            22
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "net_worth",
+          "rect": [
+            24,
+            109,
+            208,
+            29
+          ],
+          "font_pt": 16
+        },
+        {
+          "key": "property_count",
+          "rect": [
+            144,
+            144,
+            88,
+            24
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        512,
+        348
+      ],
+      "bytes": 33384,
+      "sha256": "5946cd37bc9897e78f633390515943c98b5e248f59d29e66f007c600baf51c5c",
+      "source_sha256": "1ac9fb0d51bfb9c003687e092c8a024dd1c8ba9f0110354c2b3dfffef78072bb"
+    },
+    {
+      "alias": "astra.input.normal",
+      "path": "ui/components/input-normal.png",
+      "source": "ui/components/input-normal.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        12,
+        12,
+        40
+      ],
+      "cap_insets_px": [
+        24,
+        24,
+        24,
+        80
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "editable_value",
+          "rect": [
+            14,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 2100,
+      "sha256": "ea311166aa572100305f8dc9b910294230c624a05a6c1f35477c93d66c5cae41",
+      "source_sha256": "1fa59b173f527d78e38bf7438f2eddba28cda83eb84bdd85ff4ba4010c57699a"
+    },
+    {
+      "alias": "astra.input.focused",
+      "path": "ui/components/input-focused.png",
+      "source": "ui/components/input-focused.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "focused",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        12,
+        12,
+        40
+      ],
+      "cap_insets_px": [
+        24,
+        24,
+        24,
+        80
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "editable_value",
+          "rect": [
+            14,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 2156,
+      "sha256": "2914046af503cdf15fc0a63c4b60584da208b7e73455a2de72a2a2433089ab30",
+      "source_sha256": "786add55d2b622cacfc017196936ed21e604ce94cb8b425bc6222bc4f08d400b"
+    },
+    {
+      "alias": "astra.input.error",
+      "path": "ui/components/input-error.png",
+      "source": "ui/components/input-error.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "error",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        12,
+        12,
+        40
+      ],
+      "cap_insets_px": [
+        24,
+        24,
+        24,
+        80
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "editable_value",
+          "rect": [
+            14,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 3639,
+      "sha256": "33a4c3d3a7674fb3aa5261ab3e64a5bda5a27912f7e55b22d3b4bc62f0610414",
+      "source_sha256": "0ea1b8f48a99b3bdfdfaa4bb86b04e7237b519d04e70a4ca0e1db79f80359322"
+    },
+    {
+      "alias": "astra.input.disabled",
+      "path": "ui/components/input-disabled.png",
+      "source": "ui/components/input-disabled.svg",
+      "logical_size_pt": [
+        240,
+        48
+      ],
+      "pixel_dimensions": [
+        480,
+        96
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "disabled",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        12,
+        12,
+        12,
+        40
+      ],
+      "cap_insets_px": [
+        24,
+        24,
+        24,
+        80
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "editable_value",
+          "rect": [
+            14,
+            8,
+            180,
+            32
+          ],
+          "font_pt": 16
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        480,
+        96
+      ],
+      "bytes": 2784,
+      "sha256": "8f6e16a59f2ff7385c1fdbf35abe27b5db0c29c84cf29a8b909b6915b3047e59",
+      "source_sha256": "3011cc31b1a0e4bd7a8aa005dab817db778c4e8feef66c50d0da120531c0be0a"
+    },
+    {
+      "alias": "astra.badge.owned",
+      "path": "ui/components/badge-owned.png",
+      "source": "ui/components/badge-owned.svg",
+      "logical_size_pt": [
+        144,
+        32
+      ],
+      "pixel_dimensions": [
+        288,
+        64
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "owned",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        14,
+        34,
+        14,
+        14
+      ],
+      "cap_insets_px": [
+        28,
+        68,
+        28,
+        28
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "status",
+          "rect": [
+            34,
+            4,
+            98,
+            24
+          ],
+          "font_pt": 12
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        288,
+        64
+      ],
+      "bytes": 3074,
+      "sha256": "26017b98d02fe7c5a34541494a93cc1fde48c2145fb306789d821c9219cb25b1",
+      "source_sha256": "dba751ab9ae70967aa47c45c929a19050d1b5a9d1b3b9bbb63faa46a863373c0"
+    },
+    {
+      "alias": "astra.badge.mortgaged",
+      "path": "ui/components/badge-mortgaged.png",
+      "source": "ui/components/badge-mortgaged.svg",
+      "logical_size_pt": [
+        144,
+        32
+      ],
+      "pixel_dimensions": [
+        288,
+        64
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "mortgaged",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        14,
+        34,
+        14,
+        14
+      ],
+      "cap_insets_px": [
+        28,
+        68,
+        28,
+        28
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "status",
+          "rect": [
+            34,
+            4,
+            98,
+            24
+          ],
+          "font_pt": 12
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        288,
+        64
+      ],
+      "bytes": 3499,
+      "sha256": "c4f81127fd32213f26b008bb928c0b7138bc602890c763063ecfb8e6207d3e93",
+      "source_sha256": "feec97c63f56062df991109d6ca537f519bd5064477d582328cb5a5e7cd79864"
+    },
+    {
+      "alias": "astra.badge.draft",
+      "path": "ui/components/badge-draft.png",
+      "source": "ui/components/badge-draft.svg",
+      "logical_size_pt": [
+        144,
+        32
+      ],
+      "pixel_dimensions": [
+        288,
+        64
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "draft",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        14,
+        34,
+        14,
+        14
+      ],
+      "cap_insets_px": [
+        28,
+        68,
+        28,
+        28
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "status",
+          "rect": [
+            34,
+            4,
+            98,
+            24
+          ],
+          "font_pt": 12
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        288,
+        64
+      ],
+      "bytes": 3455,
+      "sha256": "79ee1872d12045288e733f91eaa9fef1640043ebe45c029867d991aa4de4dd72",
+      "source_sha256": "8494ac881e9bae415a78c8cf4db0262fc5e4126c46f19cc48540f807c2abd863"
+    },
+    {
+      "alias": "astra.badge.winner",
+      "path": "ui/components/badge-winner.png",
+      "source": "ui/components/badge-winner.svg",
+      "logical_size_pt": [
+        144,
+        32
+      ],
+      "pixel_dimensions": [
+        288,
+        64
+      ],
+      "density": 2,
+      "kind": "component",
+      "state": "winner",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        14,
+        34,
+        14,
+        14
+      ],
+      "cap_insets_px": [
+        28,
+        68,
+        28,
+        28
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "status",
+          "rect": [
+            34,
+            4,
+            98,
+            24
+          ],
+          "font_pt": 12
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        288,
+        64
+      ],
+      "bytes": 4086,
+      "sha256": "6ce948bcfefd555f2a58d6f6e8d25f0381df1accd7cfc8bcb7712fd45e17b4cd",
+      "source_sha256": "56355879bf6f55c661c9790b969bb61f96e1278c8897ac004ed81672055dfb17"
+    },
+    {
+      "alias": "astra.bank.loanQuote",
+      "path": "ui/panels/loan-quote.png",
+      "source": "ui/panels/loan-quote.svg",
+      "logical_size_pt": [
+        320,
+        280
+      ],
+      "pixel_dimensions": [
+        640,
+        560
+      ],
+      "density": 2,
+      "kind": "panel",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        72,
+        20,
+        20,
+        20
+      ],
+      "cap_insets_px": [
+        144,
+        40,
+        40,
+        40
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "loan_ordinal",
+          "rect": [
+            64,
+            20,
+            236,
+            32
+          ],
+          "font_pt": 18
+        },
+        {
+          "key": "draft_rules",
+          "rect": [
+            20,
+            76,
+            280,
+            28
+          ],
+          "font_pt": 12
+        },
+        {
+          "key": "collateral_duration_total_due",
+          "rect": [
+            20,
+            116,
+            280,
+            140
+          ],
+          "font_pt": 14
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        640,
+        560
+      ],
+      "bytes": 33142,
+      "sha256": "9075a320540da02754841789eae27ba7e571ce48eb03aa394f5c0f95ff6ff523",
+      "source_sha256": "8758386396c52dfb67258ed7434c1fcef89fb1672d27c074390b9ecf2d63a44e"
+    },
+    {
+      "alias": "astra.bank.product",
+      "path": "ui/panels/finance-product.png",
+      "source": "ui/panels/finance-product.svg",
+      "logical_size_pt": [
+        288,
+        104
+      ],
+      "pixel_dimensions": [
+        576,
+        208
+      ],
+      "density": 2,
+      "kind": "panel",
+      "state": "normal",
+      "anchor_top_left": [
+        0,
+        0
+      ],
+      "spritekit_anchor": [
+        0,
+        1
+      ],
+      "alpha": true,
+      "transparent_region": "Outside silhouette; see alpha_bounds_px after render",
+      "resize_mode": "nine_slice",
+      "cap_insets_pt": [
+        18,
+        60,
+        18,
+        36
+      ],
+      "cap_insets_px": [
+        36,
+        120,
+        36,
+        72
+      ],
+      "dynamic_text_baked": false,
+      "text_slots": [
+        {
+          "key": "product_name",
+          "rect": [
+            60,
+            16,
+            180,
+            28
+          ],
+          "font_pt": 14
+        },
+        {
+          "key": "period_and_pending",
+          "rect": [
+            60,
+            48,
+            200,
+            40
+          ],
+          "font_pt": 12
+        }
+      ],
+      "K1_delta": "NEW",
+      "target_scene": [
+        "BUY",
+        "AUCTION",
+        "TRADE",
+        "BANK",
+        "SETTLEMENT"
+      ],
+      "original_asset_url": null,
+      "source_license": "Original commissioned vector artwork; Owner may use, modify and distribute; no third-party artwork",
+      "provenance": "sources/build_assets.py — original procedural SVG geometry",
+      "alpha_bounds_px": [
+        0,
+        0,
+        576,
+        208
+      ],
+      "bytes": 15100,
+      "sha256": "c58b23fddf438a5c3e3ecb570718ec205c0105e7b009ef1a6cb6a0744de2be4e",
+      "source_sha256": "b8e7caaff12ece615522558a3460f94c5e1921d190565f5ab5df19cfdf08a950"
+    }
+  ],
+  "NEW": 91,
+  "UPDATED": [],
+  "delta_from_astra_v1": {
+    "added_aliases": 21,
+    "updated_aliases": [
+      "astra.phase.buy.ornament",
+      "astra.phase.auction.ornament",
+      "astra.phase.trade.ornament",
+      "astra.phase.bank.ornament",
+      "astra.phase.settlement.ornament"
+    ],
+    "updated_previews": 15
+  },
+  "UNCHANGED_K1": [
+    "all original board/token/dice/card-back/audio assets; not redistributed"
+  ],
+  "PENDING": [
+    "ChatGPT integration",
+    "Apple layout/hit testing",
+    "Kimi final scene composition",
+    "B02 animation atlases"
+  ],
+  "reference_branch": "dev/veilopoly",
+  "reference_sha": "3a0973bb1bdf839f019ccf46f6d62c7b45796058"
+}

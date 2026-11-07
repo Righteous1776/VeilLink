@@ -124,17 +124,19 @@ struct SettingsView: View {
             guard case .success(let selectedURL) = result else { return }
             Task {
                 do {
-                    restoreURL = try await VeilImportedFileAccess.materializeInBackground(
+                    let staged = try await VeilImportedFileAccess.materializeInBackground(
                         selectedURL,
                         acceptedExtensions: ["zip"]
                     )
+                    discardRestoreSnapshot()
+                    restoreURL = staged
                     showsRestorePassword = true
                 } catch {
                     model.alertMessage = error.localizedDescription
                 }
             }
         }
-        .sheet(isPresented: $showsRestorePassword) {
+        .sheet(isPresented: $showsRestorePassword, onDismiss: discardRestoreSnapshot) {
             BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { password in
                 if let restoreURL { model.restoreBackup(url: restoreURL, password: password) }
             }
@@ -206,7 +208,7 @@ struct SettingsView: View {
                 showsBackupSheet = false
                 showsRestorePassword = false
                 showsImporter = false
-                restoreURL = nil
+                discardRestoreSnapshot()
                 DeviceStressCommandBus.acknowledge(
                     request,
                     detail: "settings presentation state cleared"
@@ -215,6 +217,12 @@ struct SettingsView: View {
                 break
             }
         }
+    }
+
+    private func discardRestoreSnapshot() {
+        guard let restoreURL else { return }
+        VeilImportedFileAccess.removeStagedCopy(restoreURL)
+        self.restoreURL = nil
     }
 
     private var profileCard: some View {

@@ -1,9 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import VeilopolyUI
 
 struct GameLobbyView: View {
     @ObservedObject var model: AppModel
     @State private var nearbyConversation: ConversationSummary?
+    @State private var showsVeilopoly = false
 
     init(model: AppModel) {
         self.model = model
@@ -29,6 +31,7 @@ struct GameLobbyView: View {
         .sheet(item: $nearbyConversation) { conversation in
             MiniGameHubView(model: model, conversation: conversation)
         }
+        .veilopolyFullscreen(isPresented: $showsVeilopoly, humanCount: 1)
     }
 
     private var hero: some View {
@@ -70,6 +73,16 @@ struct GameLobbyView: View {
     private var singlePlayerSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("单机 · 本地电脑", subtitle: "棋盘策略 + 2D 物理与赛道玩法，全部离线运行")
+            Button {
+                model.haptics.selection()
+                showsVeilopoly = true
+            } label: {
+                realtimeGameRow(title: "大富翁 · Veilopoly",
+                    detail: "地产经营 · 银行与股市 · 城市快讯 · 自动续局",
+                    motif: .circuit, badge: "离线")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("game-lobby.veilopoly")
             NavigationLink(destination: LocalAIGameView(model: model, game: .artillery)) {
                 gameRow(.artillery, detail: "可视化弹道 · 确定性风力 · 本地参数搜索 Bot", enabled: true)
             }
@@ -86,12 +99,12 @@ struct GameLobbyView: View {
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
-                gameRow(.gomoku, detail: "你执黑先手 · 四档棋力 · 个性化本地陪练", enabled: true)
+                gameRow(.gomoku, detail: "可选黑白与先后手 · 四档棋力 · 个性化本地陪练", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
-                gameRow(.xiangqi, detail: "你执红先手 · 四档棋力 · 自学习阵法预判", enabled: true)
+                gameRow(.xiangqi, detail: "可选红黑与先后手 · 四档棋力 · 自学习阵法预判", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
             .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
@@ -324,6 +337,7 @@ struct LocalAIGameView: View {
     @State private var showsLearningShare = false
     @State private var learningExportURL: URL?
     @State private var learningExchangeMessage: String?
+    @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: AppModel, game: MiniGameKind) {
@@ -335,7 +349,8 @@ struct LocalAIGameView: View {
             game: game,
             formationLibrary: game == .gomoku
                 ? DeveloperFormationLibrary(game: game, keychain: model.keychain)
-                : nil
+                : nil,
+            matchStore: game == .gomoku || game == .xiangqi ? LocalBoardMatchStore(game: game) : nil
         ))
     }
 
@@ -343,6 +358,23 @@ struct LocalAIGameView: View {
         ScrollView {
             VStack(spacing: 14) {
                 statusCard
+                if VeilOpponentAvatarPolicy.shouldRender(
+                    enabled: grokBotEnabled, hasComputerOpponent: true
+                ) {
+                    HStack(spacing: 12) {
+                        VeilOpponentAvatarView(mood: grokBotMood, size: 76)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Grok bot").font(.caption.weight(.semibold))
+                            Text(grokBotMood.label)
+                                .font(.caption2).foregroundColor(VeilTheme.secondaryText)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .veilCard()
+                    .accessibilityIdentifier("game.grok_bot.avatar")
+                }
                 if game == .gomoku || game == .xiangqi { learningCard }
                 if game == .tactical { tacticalControlCard }
                 board
@@ -374,6 +406,7 @@ struct LocalAIGameView: View {
         }
         .onAppear {
             model.agent.setComputeFocus(.gameDecision)
+            controller.resumeBoardMatchIfNeeded()
             if game == .tactical,
                !UserDefaults.standard.bool(forKey: TacticalSoloGuideView.completionKey) {
                 showsTacticalGuide = true
@@ -389,7 +422,12 @@ struct LocalAIGameView: View {
         .sheet(isPresented: $showsTacticalGuide) {
             TacticalSoloGuideView()
         }
-        .sheet(isPresented: $showsLearningShare, onDismiss: { learningExportURL = nil }) {
+        .sheet(isPresented: $showsLearningShare, onDismiss: {
+            if let learningExportURL {
+                try? FileManager.default.removeItem(at: learningExportURL)
+            }
+            learningExportURL = nil
+        }) {
             if let learningExportURL {
                 ShareSheet(items: [learningExportURL])
             }
@@ -443,8 +481,28 @@ struct LocalAIGameView: View {
         }
     }
 
+    private var grokBotMood: VeilOpponentAvatarMood {
+        if controller.isAIThinking { return .thinking }
+        switch controller.outcome {
+        case .playing: return .idle
+        case .aiWon: return .won
+        case .humanWon: return .lost
+        case .draw: return .draw
+        }
+    }
+
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 9) {
+            if game == .gomoku || game == .xiangqi {
+                Picker("你的棋子", selection: Binding(
+                    get: { controller.humanPlayer },
+                    set: { controller.setBoardHumanPlayer($0) }
+                )) {
+                    Text(game == .gomoku ? "黑 · 先手" : "红 · 先手").tag(MiniGamePlayer.host)
+                    Text(game == .gomoku ? "白 · 后手" : "黑 · 后手").tag(MiniGamePlayer.guest)
+                }
+                .pickerStyle(.segmented)
+            }
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(controller.statusText)
@@ -453,6 +511,16 @@ struct LocalAIGameView: View {
                     Text("你 vs 本地电脑 · 完全离线")
                         .font(.caption)
                         .foregroundColor(VeilTheme.secondaryText)
+                    if controller.didRestoreBoardMatch {
+                        Text("已恢复上次棋局 · 每步自动保存")
+                            .font(.caption2)
+                            .foregroundColor(VeilTheme.gold)
+                    }
+                    if let warning = controller.boardMatchSaveWarning {
+                        Text(warning)
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
                 }
                 Spacer()
                 if controller.isAIThinking {
@@ -587,6 +655,19 @@ struct LocalAIGameView: View {
                         .font(.caption2)
                         .foregroundColor(VeilTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        do {
+                            learningExportURL = try controller.exportNativeSelfPlayDetails()
+                            showsLearningShare = true
+                        } catch {
+                            learningExchangeMessage = error.localizedDescription
+                        }
+                    } label: {
+                        Label("导出自对弈明细（逐手棋谱）", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(controller.trainedNativeGames == 0 || controller.isImportingNativeSeed)
+                    .accessibilityHint("包含每局胜负、保存时间、双方逐手落点与阵法统计")
                 }
                 .padding(10)
                 .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))

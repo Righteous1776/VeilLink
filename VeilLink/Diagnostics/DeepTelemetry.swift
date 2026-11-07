@@ -51,6 +51,8 @@ final class DeepTelemetry: ObservableObject {
     private var applicationActive = UIApplication.shared.applicationState == .active
     private var heartbeatCounter = 0
     private var lastSnapshotUptime: TimeInterval = 0
+    private var lastBrightnessSnapshotUptime: TimeInterval?
+    private var lastCapturedBrightness: Double?
     private var postInteractionSnapshotTask: Task<Void, Never>?
 
     private init() {
@@ -223,6 +225,24 @@ final class DeepTelemetry: ObservableObject {
         store.log(.debug, .ui, event: "ui.snapshot", screen: currentScreen, metadata: metadata)
     }
 
+    /// Coalesce noisy auto-brightness changes before doing the expensive
+    /// complete system snapshot (including filesystem free-space lookup).
+    /// Periodic and incident-triggered snapshots remain entirely unchanged.
+    private func captureBrightnessSnapshotIfNeeded() {
+        guard installed, applicationActive else { return }
+        let brightness = Double(UIScreen.main.brightness)
+        let uptime = ProcessInfo.processInfo.systemUptime
+        guard DeepTelemetryBrightnessSnapshotPolicy.shouldCapture(
+            brightness: brightness,
+            previousBrightness: lastCapturedBrightness,
+            nowUptime: uptime,
+            previousUptime: lastBrightnessSnapshotUptime
+        ) else { return }
+        lastCapturedBrightness = brightness
+        lastBrightnessSnapshotUptime = uptime
+        captureSystemSnapshot(reason: "brightness-change")
+    }
+
     func captureSystemSnapshot(reason: String, extra: [String: String] = [:]) {
         var metadata = SystemDiagnosticsSnapshot.capture()
         metadata["reason"] = reason
@@ -298,7 +318,7 @@ final class DeepTelemetry: ObservableObject {
             Task { @MainActor in DeepTelemetry.shared.captureSystemSnapshot(reason: "battery-state-change") }
         })
         observers.append(center.addObserver(forName: UIScreen.brightnessDidChangeNotification, object: nil, queue: .main) { _ in
-            Task { @MainActor in DeepTelemetry.shared.captureSystemSnapshot(reason: "brightness-change") }
+            Task { @MainActor in DeepTelemetry.shared.captureBrightnessSnapshotIfNeeded() }
         })
         observers.append(center.addObserver(forName: UIContentSizeCategory.didChangeNotification, object: nil, queue: .main) { _ in
             Task { @MainActor in DeepTelemetry.shared.captureSystemSnapshot(reason: "content-size-category-change") }

@@ -120,10 +120,12 @@ struct OnboardingView: View {
             case .success(let selectedURL):
                 Task {
                     do {
-                        restoreURL = try await VeilImportedFileAccess.materializeInBackground(
+                        let staged = try await VeilImportedFileAccess.materializeInBackground(
                             selectedURL,
                             acceptedExtensions: ["zip"]
                         )
+                        discardRestoreSnapshot()
+                        restoreURL = staged
                         showsRestorePassword = true
                     } catch {
                         model.alertMessage = error.localizedDescription
@@ -133,11 +135,17 @@ struct OnboardingView: View {
                 model.alertMessage = "无法选择备份：\(error.localizedDescription)"
             }
         }
-        .sheet(isPresented: $showsRestorePassword) {
+        .sheet(isPresented: $showsRestorePassword, onDismiss: discardRestoreSnapshot) {
             BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { backupPassword in
                 if let restoreURL { model.restoreBackup(url: restoreURL, password: backupPassword) }
             }
         }
+    }
+
+    private func discardRestoreSnapshot() {
+        guard let restoreURL else { return }
+        VeilImportedFileAccess.removeStagedCopy(restoreURL)
+        self.restoreURL = nil
     }
 
     private var canCreate: Bool {

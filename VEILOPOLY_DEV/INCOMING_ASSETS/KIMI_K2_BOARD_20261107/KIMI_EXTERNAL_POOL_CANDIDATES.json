@@ -1,0 +1,135 @@
+{
+  "schema": "veillopoly.kimi-external-source-pool.v1",
+  "source_parts": [
+    {
+      "name": "Veilopoly_Kimi_ALL_20261107_Part2_Textures-A.zip",
+      "sha256": "555c4f03554c48d1eec2ccc2bdc55c119802d4b93f247e3a1f579817f409ee70"
+    },
+    {
+      "name": "Veilopoly_Kimi_ALL_20261107_Part3_Rest.zip",
+      "sha256": "369fce222d8f83c7687a1667f5af9f3b0dbcecf221972419d0c9cf2caf9fa66d"
+    }
+  ],
+  "status": "REFERENCE_ONLY_NOT_IMPORTED",
+  "materials": [
+    {
+      "id": "VL-K2-MAT-001",
+      "name": "Wood026",
+      "sha256": "66ce02780f03e68068fb8d1bc7d5797819073d0218c6f83d7ecf310991b30407",
+      "purpose": "wood board",
+      "status": "DEFERRED_PBR_SOURCE"
+    },
+    {
+      "id": "VL-K2-MAT-002",
+      "name": "Fabric001",
+      "sha256": "cea13f8f2b44ba8a9d4bced83d26ab344e39502dba24b0b4025b7bd3a180a4c2",
+      "purpose": "felt table",
+      "status": "DEFERRED_PBR_SOURCE"
+    },
+    {
+      "id": "VL-K2-MAT-003",
+      "name": "Paper006",
+      "sha256": "cd21850eb598b374f16c4ff2eaf2e22d8b56e0fe0b4b94d83db807a928bfce57",
+      "purpose": "card paper",
+      "status": "DEFERRED_PBR_SOURCE"
+    },
+    {
+      "id": "VL-K2-MAT-004",
+      "name": "Metal032",
+      "sha256": "9e4f363905a647958c273154fa125d2a6440892d0e583f9b3af24bb08b5afc3c",
+      "purpose": "metal frame",
+      "status": "DEFERRED_PBR_SOURCE"
+    },
+    {
+      "id": "VL-K2-MAT-005",
+      "name": "Leather026",
+      "sha256": "6af2f446f9855c641da2a072f128d30965431ffae3306d22d75dbfff99c04646",
+      "purpose": "dice",
+      "status": "DEFERRED_PBR_SOURCE"
+    },
+    {
+      "id": "VL-K2-MAT-006",
+      "name": "WoodFloor043",
+      "sha256": "0bd1309b36c9a0add6fd9b4108f8cba73ba475afb6fb824c42bb05080c01403b",
+      "purpose": "alternate wood",
+      "status": "DEFERRED_PBR_SOURCE"
+    },
+    {
+      "id": "VL-K2-MAT-007",
+      "name": "Marble004",
+      "sha256": "b6d9d67a1e93868e234e4e19cd8198c6bb9f895989bc06643a00f90af20e6593",
+      "purpose": "alternate theme",
+      "status": "DEFERRED_PBR_SOURCE"
+    },
+    {
+      "id": "VL-K2-MAT-008",
+      "name": "Carpet001",
+      "sha256": "f06d551e40d4d4d31a84df310bad2a1ec70753cd330342c7d8bcff3587fccbd1",
+      "purpose": "alternate felt",
+      "status": "DEFERRED_PBR_SOURCE"
+    }
+  ],
+  "icons": [
+    {
+      "id": "VL-K2-ICON-001",
+      "name": "dice",
+      "sha256": "786b0a96e528ad6ca8508e7fc293f0da8e724b78bde146f6f9e76d022f55519d",
+      "status": "DEFERRED_UI_ICON"
+    },
+    {
+      "id": "VL-K2-ICON-002",
+      "name": "pawn",
+      "sha256": "66edcb856f249b62113b670bd2ce7fbaf289ba510acb5ad6c7cd351d18b7fde6",
+      "status": "DEFERRED_UI_ICON"
+    },
+    {
+      "id": "VL-K2-ICON-003",
+      "name": "card_flip",
+      "sha256": "521fdcfaf9e98f4f56d71afb99fd2942b7297955b24904671b14fd0adcb678c2",
+      "status": "DEFERRED_UI_ICON"
+    },
+    {
+      "id": "VL-K2-ICON-004",
+      "name": "structure_house",
+      "sha256": "822beba594bf1b88dff3c9b1bf0972b39ab50e52540f0801b847d38ccf60259d",
+      "status": "DEFERRED_UI_ICON"
+    },
+    {
+      "id": "VL-K2-ICON-005",
+      "name": "dollar",
+      "sha256": "729677f8ce07738d14e9bdff1f2fe0b487bec242ddbe799287e32462b58e13b0",
+      "status": "DEFERRED_UI_ICON"
+    },
+    {
+      "id": "VL-K2-ICON-006",
+      "name": "lock_closed",
+      "sha256": "cb242cecafabfd15a6bd713c29ff7325106e05c2e94e816e12f9dcc2beccc98e",
+      "status": "DEFERRED_UI_ICON"
+    },
+    {
+      "id": "VL-K2-ICON-007",
+      "name": "lock_open",
+      "sha256": "f520f78e43e103f5de9e289f054ebec8044a953f5362ed25bad64084885a45a3",
+      "status": "DEFERRED_UI_ICON"
+    },
+    {
+      "id": "VL-K2-ICON-008",
+      "name": "crown_a",
+      "sha256": "67cfe50c77f2120ea3dd98f5cf08eaf329a242daeff0d9ad74825f044530b26a",
+      "status": "DEFERRED_UI_ICON"
+    }
+  ],
+  "effects": [
+    {
+      "id": "VL-K2-SFX-001",
+      "member": "sfx/kenney_impact-sounds.zip/Audio/impactBell_heavy_002.ogg",
+      "sha256": "a4171ed1a4a17fb858a38de1c59b5b42e50d8f046c525706c0e3ac8671f189f5"
+    },
+    {
+      "id": "VL-K2-SFX-002",
+      "member": "sfx/kenney_interface-sounds.zip/Audio/bong_001.ogg",
+      "sha256": "d21d0f0b782445db579d11e2506b24cd1ac9d664ee33aeaf807761aa7b6fd710"
+    }
+  ],
+  "license_caution": "Kimi states ambientCG CC0; nested texture archives lacked named LICENSE files in local scan. Kenney nested SFX have License.txt. Supplied fonts lack separate bundled OFL license files, so fonts are deferred."
+}

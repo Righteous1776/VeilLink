@@ -1,0 +1,3281 @@
+{
+  "coordinate_system": "top-left pt; SpriteKit convert Y and use anchor (0,1)",
+  "assets": {
+    "astra.icon.purchase": {
+      "path": "ui/icons/purchase.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.auction": {
+      "path": "ui/icons/auction.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.trade": {
+      "path": "ui/icons/trade.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.bank": {
+      "path": "ui/icons/bank.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.settlement": {
+      "path": "ui/icons/settlement.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.wallet": {
+      "path": "ui/icons/wallet.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.location": {
+      "path": "ui/icons/location.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.lock": {
+      "path": "ui/icons/lock.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.bankrupt": {
+      "path": "ui/icons/bankrupt.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.turn": {
+      "path": "ui/icons/turn.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.period": {
+      "path": "ui/icons/period.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.check": {
+      "path": "ui/icons/check.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.error": {
+      "path": "ui/icons/error.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.pending": {
+      "path": "ui/icons/pending.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.plus": {
+      "path": "ui/icons/plus.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.minus": {
+      "path": "ui/icons/minus.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.close": {
+      "path": "ui/icons/close.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.chevron": {
+      "path": "ui/icons/chevron.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.deposit": {
+      "path": "ui/icons/deposit.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.loan": {
+      "path": "ui/icons/loan.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.investment": {
+      "path": "ui/icons/investment.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.shield": {
+      "path": "ui/icons/shield.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.card": {
+      "path": "ui/icons/card.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.sound": {
+      "path": "ui/icons/sound.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.info": {
+      "path": "ui/icons/info.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.mortgage": {
+      "path": "ui/icons/mortgage.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.star": {
+      "path": "ui/icons/star.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.icon.player": {
+      "path": "ui/icons/player.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 3,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.button.primary.normal": {
+      "path": "ui/components/button-primary-normal.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.button.primary.pressed": {
+      "path": "ui/components/button-primary-pressed.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "states": "pressed",
+      "z_position": 20
+    },
+    "astra.button.primary.disabled": {
+      "path": "ui/components/button-primary-disabled.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "states": "disabled",
+      "z_position": 20
+    },
+    "astra.button.primary.loading": {
+      "path": "ui/components/button-primary-loading.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "states": "loading",
+      "z_position": 20
+    },
+    "astra.button.secondary.normal": {
+      "path": "ui/components/button-secondary-normal.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.button.secondary.pressed": {
+      "path": "ui/components/button-secondary-pressed.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "states": "pressed",
+      "z_position": 20
+    },
+    "astra.button.secondary.disabled": {
+      "path": "ui/components/button-secondary-disabled.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "states": "disabled",
+      "z_position": 20
+    },
+    "astra.button.secondary.loading": {
+      "path": "ui/components/button-secondary-loading.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        42,
+        12,
+        12
+      ],
+      "states": "loading",
+      "z_position": 20
+    },
+    "astra.panel.action": {
+      "path": "ui/panels/action.png",
+      "size_pt": [
+        320,
+        320
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.panel.glass": {
+      "path": "ui/panels/glass.png",
+      "size_pt": [
+        320,
+        320
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.panel.light": {
+      "path": "ui/panels/light.png",
+      "size_pt": [
+        320,
+        320
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.panel.inset": {
+      "path": "ui/panels/inset.png",
+      "size_pt": [
+        240,
+        72
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.texture.brushed": {
+      "path": "ui/panels/brushed-metal.png",
+      "size_pt": [
+        64,
+        64
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.modal.scrim": {
+      "path": "ui/panels/modal-scrim.png",
+      "size_pt": [
+        32,
+        32
+      ],
+      "density": 1,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": "normal",
+      "z_position": 100
+    },
+    "astra.hud.player.normal": {
+      "path": "ui/components/player-normal.png",
+      "size_pt": [
+        180,
+        68
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        16,
+        52,
+        16,
+        16
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.hud.player.current": {
+      "path": "ui/components/player-current.png",
+      "size_pt": [
+        180,
+        68
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        16,
+        52,
+        16,
+        16
+      ],
+      "states": "current",
+      "z_position": 20
+    },
+    "astra.hud.player.jailed": {
+      "path": "ui/components/player-jailed.png",
+      "size_pt": [
+        180,
+        68
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        16,
+        52,
+        16,
+        16
+      ],
+      "states": "jailed",
+      "z_position": 20
+    },
+    "astra.hud.player.bankrupt": {
+      "path": "ui/components/player-bankrupt.png",
+      "size_pt": [
+        180,
+        68
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        16,
+        52,
+        16,
+        16
+      ],
+      "states": "bankrupt",
+      "z_position": 20
+    },
+    "astra.feedback.positive": {
+      "path": "ui/components/feedback-positive.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "states": "positive",
+      "z_position": 20
+    },
+    "astra.feedback.negative": {
+      "path": "ui/components/feedback-negative.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "states": "negative",
+      "z_position": 20
+    },
+    "astra.feedback.confirmed": {
+      "path": "ui/components/feedback-confirmed.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "states": "confirmed",
+      "z_position": 20
+    },
+    "astra.feedback.error": {
+      "path": "ui/components/feedback-error.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "states": "error",
+      "z_position": 20
+    },
+    "astra.feedback.loading": {
+      "path": "ui/components/feedback-loading.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "states": "loading",
+      "z_position": 20
+    },
+    "astra.feedback.empty": {
+      "path": "ui/components/feedback-empty.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        44,
+        12,
+        12
+      ],
+      "states": "empty",
+      "z_position": 20
+    },
+    "astra.card.face": {
+      "path": "ui/panels/card-face.png",
+      "size_pt": [
+        280,
+        360
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        88,
+        26,
+        26,
+        26
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.hud.period": {
+      "path": "ui/components/period.png",
+      "size_pt": [
+        180,
+        40
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        18,
+        42,
+        18,
+        18
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.hud.capsule.sample": {
+      "path": "ui/components/capsule-sample.png",
+      "size_pt": [
+        93,
+        44
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.phase.buy.ornament": {
+      "path": "ui/components/buy-ornament.png",
+      "size_pt": [
+        288,
+        84
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.phase.auction.ornament": {
+      "path": "ui/components/auction-ornament.png",
+      "size_pt": [
+        288,
+        84
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.phase.trade.ornament": {
+      "path": "ui/components/trade-ornament.png",
+      "size_pt": [
+        288,
+        84
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.phase.bank.ornament": {
+      "path": "ui/components/bank-ornament.png",
+      "size_pt": [
+        288,
+        84
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.phase.settlement.ornament": {
+      "path": "ui/components/settlement-ornament.png",
+      "size_pt": [
+        288,
+        84
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.deed.umber": {
+      "path": "ui/tabletop/deed-umber.png",
+      "size_pt": [
+        288,
+        360
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.deed.sky": {
+      "path": "ui/tabletop/deed-sky.png",
+      "size_pt": [
+        288,
+        360
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.deed.orchid": {
+      "path": "ui/tabletop/deed-orchid.png",
+      "size_pt": [
+        288,
+        360
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.deed.amber": {
+      "path": "ui/tabletop/deed-amber.png",
+      "size_pt": [
+        288,
+        360
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.deed.coral": {
+      "path": "ui/tabletop/deed-coral.png",
+      "size_pt": [
+        288,
+        360
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.deed.ochre": {
+      "path": "ui/tabletop/deed-ochre.png",
+      "size_pt": [
+        288,
+        360
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.deed.jade": {
+      "path": "ui/tabletop/deed-jade.png",
+      "size_pt": [
+        288,
+        360
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.deed.cobalt": {
+      "path": "ui/tabletop/deed-cobalt.png",
+      "size_pt": [
+        288,
+        360
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.voucher.cobalt": {
+      "path": "ui/tabletop/voucher-cobalt.png",
+      "size_pt": [
+        320,
+        144
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.voucher.jade": {
+      "path": "ui/tabletop/voucher-jade.png",
+      "size_pt": [
+        320,
+        144
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.voucher.coral": {
+      "path": "ui/tabletop/voucher-coral.png",
+      "size_pt": [
+        320,
+        144
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.voucher.amber": {
+      "path": "ui/tabletop/voucher-amber.png",
+      "size_pt": [
+        320,
+        144
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.auction.ticket": {
+      "path": "ui/tabletop/auction-ticket.png",
+      "size_pt": [
+        320,
+        160
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.trade.offer": {
+      "path": "ui/tabletop/trade-offer.png",
+      "size_pt": [
+        288,
+        188
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.settlement.certificate": {
+      "path": "ui/tabletop/settlement-certificate.png",
+      "size_pt": [
+        320,
+        280
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.texture.paper": {
+      "path": "ui/tabletop/paper-fiber.png",
+      "size_pt": [
+        64,
+        64
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.hero.buy": {
+      "path": "ui/tabletop/hero-buy.png",
+      "size_pt": [
+        256,
+        174
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.hero.auction": {
+      "path": "ui/tabletop/hero-auction.png",
+      "size_pt": [
+        256,
+        174
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.hero.trade": {
+      "path": "ui/tabletop/hero-trade.png",
+      "size_pt": [
+        256,
+        174
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.hero.bank": {
+      "path": "ui/tabletop/hero-bank.png",
+      "size_pt": [
+        256,
+        174
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.hero.settlement": {
+      "path": "ui/tabletop/hero-settlement.png",
+      "size_pt": [
+        256,
+        174
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": null,
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.input.normal": {
+      "path": "ui/components/input-normal.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        12,
+        12,
+        40
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.input.focused": {
+      "path": "ui/components/input-focused.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        12,
+        12,
+        40
+      ],
+      "states": "focused",
+      "z_position": 20
+    },
+    "astra.input.error": {
+      "path": "ui/components/input-error.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        12,
+        12,
+        40
+      ],
+      "states": "error",
+      "z_position": 20
+    },
+    "astra.input.disabled": {
+      "path": "ui/components/input-disabled.png",
+      "size_pt": [
+        240,
+        48
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        12,
+        12,
+        12,
+        40
+      ],
+      "states": "disabled",
+      "z_position": 20
+    },
+    "astra.badge.owned": {
+      "path": "ui/components/badge-owned.png",
+      "size_pt": [
+        144,
+        32
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        14,
+        34,
+        14,
+        14
+      ],
+      "states": "owned",
+      "z_position": 20
+    },
+    "astra.badge.mortgaged": {
+      "path": "ui/components/badge-mortgaged.png",
+      "size_pt": [
+        144,
+        32
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        14,
+        34,
+        14,
+        14
+      ],
+      "states": "mortgaged",
+      "z_position": 20
+    },
+    "astra.badge.draft": {
+      "path": "ui/components/badge-draft.png",
+      "size_pt": [
+        144,
+        32
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        14,
+        34,
+        14,
+        14
+      ],
+      "states": "draft",
+      "z_position": 20
+    },
+    "astra.badge.winner": {
+      "path": "ui/components/badge-winner.png",
+      "size_pt": [
+        144,
+        32
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        14,
+        34,
+        14,
+        14
+      ],
+      "states": "winner",
+      "z_position": 20
+    },
+    "astra.bank.loanQuote": {
+      "path": "ui/panels/loan-quote.png",
+      "size_pt": [
+        320,
+        280
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        72,
+        20,
+        20,
+        20
+      ],
+      "states": "normal",
+      "z_position": 20
+    },
+    "astra.bank.product": {
+      "path": "ui/panels/finance-product.png",
+      "size_pt": [
+        288,
+        104
+      ],
+      "density": 2,
+      "anchor": [
+        0,
+        1
+      ],
+      "cap_insets_pt": [
+        18,
+        60,
+        18,
+        36
+      ],
+      "states": "normal",
+      "z_position": 20
+    }
+  },
+  "layouts": {
+    "BUY_844x390": {
+      "canvas_pt": [
+        844,
+        390
+      ],
+      "safe_area_reference": [
+        6,
+        44,
+        22,
+        44
+      ],
+      "board_viewport": [
+        44,
+        62,
+        452,
+        232
+      ],
+      "right_panel": [
+        512,
+        62,
+        288,
+        306
+      ],
+      "scroll_clip": [
+        528,
+        114,
+        256,
+        178
+      ],
+      "fixed_footer": [
+        528,
+        308,
+        256,
+        44
+      ],
+      "capsule": [
+        707,
+        6,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          707,
+          6,
+          46,
+          44
+        ],
+        [
+          754,
+          6,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        44,
+        306,
+        452,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            604.0,
+            162.0,
+            160.0,
+            24.0
+          ],
+          "binding": "property_name",
+          "value": "runtime"
+        },
+        {
+          "key": "price",
+          "rect": [
+            670.0,
+            200.0,
+            94.0,
+            24.0
+          ],
+          "binding": "price",
+          "value": "runtime"
+        },
+        {
+          "key": "cash_after",
+          "rect": [
+            670.0,
+            226.0,
+            94.0,
+            24.0
+          ],
+          "binding": "cash_after",
+          "value": "runtime"
+        },
+        {
+          "key": "rent",
+          "rect": [
+            670.0,
+            252.0,
+            94.0,
+            24.0
+          ],
+          "binding": "rent",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.buy",
+      "hero_rect": [
+        528,
+        118,
+        256.0,
+        174.0
+      ]
+    },
+    "AUCTION_844x390": {
+      "canvas_pt": [
+        844,
+        390
+      ],
+      "safe_area_reference": [
+        6,
+        44,
+        22,
+        44
+      ],
+      "board_viewport": [
+        44,
+        62,
+        452,
+        232
+      ],
+      "right_panel": [
+        512,
+        62,
+        288,
+        306
+      ],
+      "scroll_clip": [
+        528,
+        114,
+        256,
+        178
+      ],
+      "fixed_footer": [
+        528,
+        308,
+        256,
+        44
+      ],
+      "capsule": [
+        707,
+        6,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          707,
+          6,
+          46,
+          44
+        ],
+        [
+          754,
+          6,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        44,
+        306,
+        452,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            588.0,
+            140.0,
+            176.0,
+            28.0
+          ],
+          "binding": "property_name",
+          "value": "runtime"
+        },
+        {
+          "key": "highest_bid",
+          "rect": [
+            674.0,
+            180.0,
+            90.0,
+            24.0
+          ],
+          "binding": "highest_bid",
+          "value": "runtime"
+        },
+        {
+          "key": "leading_player",
+          "rect": [
+            674.0,
+            205.0,
+            90.0,
+            24.0
+          ],
+          "binding": "leading_player",
+          "value": "runtime"
+        },
+        {
+          "key": "bid_input",
+          "rect": [
+            600.0,
+            242.0,
+            112.0,
+            32.0
+          ],
+          "binding": "bid_input",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.auction",
+      "hero_rect": [
+        528,
+        118,
+        256.0,
+        174.0
+      ],
+      "bid_controls": {
+        "decrease_bid": [
+          540.0,
+          236.0,
+          44.0,
+          44.0
+        ],
+        "bid_input": [
+          590.0,
+          236.0,
+          132.0,
+          44.0
+        ],
+        "increase_bid": [
+          728.0,
+          236.0,
+          44.0,
+          44.0
+        ]
+      }
+    },
+    "TRADE_844x390": {
+      "canvas_pt": [
+        844,
+        390
+      ],
+      "safe_area_reference": [
+        6,
+        44,
+        22,
+        44
+      ],
+      "board_viewport": [
+        44,
+        62,
+        452,
+        232
+      ],
+      "right_panel": [
+        512,
+        62,
+        288,
+        306
+      ],
+      "scroll_clip": [
+        528,
+        114,
+        256,
+        178
+      ],
+      "fixed_footer": [
+        528,
+        308,
+        256,
+        44
+      ],
+      "capsule": [
+        707,
+        6,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          707,
+          6,
+          46,
+          44
+        ],
+        [
+          754,
+          6,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        44,
+        306,
+        452,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "my_assets",
+          "rect": [
+            548.0,
+            201.0,
+            84.0,
+            28.0
+          ],
+          "binding": "my_assets",
+          "value": "runtime"
+        },
+        {
+          "key": "their_assets",
+          "rect": [
+            680.0,
+            201.0,
+            84.0,
+            28.0
+          ],
+          "binding": "their_assets",
+          "value": "runtime"
+        },
+        {
+          "key": "my_cash",
+          "rect": [
+            548.0,
+            244.0,
+            84.0,
+            32.0
+          ],
+          "binding": "my_cash",
+          "value": "runtime"
+        },
+        {
+          "key": "their_cash",
+          "rect": [
+            680.0,
+            244.0,
+            84.0,
+            32.0
+          ],
+          "binding": "their_cash",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.trade",
+      "hero_rect": [
+        528,
+        118,
+        256.0,
+        174.0
+      ]
+    },
+    "BANK_844x390": {
+      "canvas_pt": [
+        844,
+        390
+      ],
+      "safe_area_reference": [
+        6,
+        44,
+        22,
+        44
+      ],
+      "board_viewport": [
+        44,
+        62,
+        452,
+        232
+      ],
+      "right_panel": [
+        512,
+        62,
+        288,
+        306
+      ],
+      "scroll_clip": [
+        528,
+        114,
+        256,
+        178
+      ],
+      "fixed_footer": [
+        528,
+        308,
+        256,
+        44
+      ],
+      "capsule": [
+        707,
+        6,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          707,
+          6,
+          46,
+          44
+        ],
+        [
+          754,
+          6,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        44,
+        306,
+        452,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "wallet",
+          "rect": [
+            616.0,
+            152.0,
+            116.0,
+            28.0
+          ],
+          "binding": "wallet",
+          "value": "runtime"
+        },
+        {
+          "key": "deposit",
+          "rect": [
+            540.0,
+            260.0,
+            98.0,
+            26.0
+          ],
+          "binding": "deposit",
+          "value": "runtime"
+        },
+        {
+          "key": "loan",
+          "rect": [
+            674.0,
+            260.0,
+            98.0,
+            26.0
+          ],
+          "binding": "loan",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.bank",
+      "hero_rect": [
+        528,
+        118,
+        256.0,
+        174.0
+      ]
+    },
+    "SETTLEMENT_844x390": {
+      "canvas_pt": [
+        844,
+        390
+      ],
+      "safe_area_reference": [
+        6,
+        44,
+        22,
+        44
+      ],
+      "board_viewport": [
+        44,
+        62,
+        452,
+        232
+      ],
+      "right_panel": [
+        512,
+        62,
+        288,
+        306
+      ],
+      "scroll_clip": [
+        528,
+        114,
+        256,
+        178
+      ],
+      "fixed_footer": [
+        528,
+        308,
+        256,
+        44
+      ],
+      "capsule": [
+        707,
+        6,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          707,
+          6,
+          46,
+          44
+        ],
+        [
+          754,
+          6,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        44,
+        306,
+        452,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "winner",
+          "rect": [
+            552.0,
+            182.0,
+            208.0,
+            22.0
+          ],
+          "binding": "winner",
+          "value": "runtime"
+        },
+        {
+          "key": "net_worth",
+          "rect": [
+            552.0,
+            227.0,
+            208.0,
+            29.0
+          ],
+          "binding": "net_worth",
+          "value": "runtime"
+        },
+        {
+          "key": "property_count",
+          "rect": [
+            672.0,
+            262.0,
+            88.0,
+            24.0
+          ],
+          "binding": "property_count",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.settlement",
+      "hero_rect": [
+        528,
+        118,
+        256.0,
+        174.0
+      ]
+    },
+    "BUY_852x393": {
+      "canvas_pt": [
+        852,
+        393
+      ],
+      "safe_area_reference": [
+        6,
+        44,
+        22,
+        44
+      ],
+      "board_viewport": [
+        44,
+        62,
+        460,
+        235
+      ],
+      "right_panel": [
+        520,
+        62,
+        288,
+        309
+      ],
+      "scroll_clip": [
+        536,
+        114,
+        256,
+        181
+      ],
+      "fixed_footer": [
+        536,
+        311,
+        256,
+        44
+      ],
+      "capsule": [
+        715,
+        6,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          715,
+          6,
+          46,
+          44
+        ],
+        [
+          762,
+          6,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        44,
+        309,
+        460,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            612.0,
+            162.0,
+            160.0,
+            24.0
+          ],
+          "binding": "property_name",
+          "value": "runtime"
+        },
+        {
+          "key": "price",
+          "rect": [
+            678.0,
+            200.0,
+            94.0,
+            24.0
+          ],
+          "binding": "price",
+          "value": "runtime"
+        },
+        {
+          "key": "cash_after",
+          "rect": [
+            678.0,
+            226.0,
+            94.0,
+            24.0
+          ],
+          "binding": "cash_after",
+          "value": "runtime"
+        },
+        {
+          "key": "rent",
+          "rect": [
+            678.0,
+            252.0,
+            94.0,
+            24.0
+          ],
+          "binding": "rent",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.buy",
+      "hero_rect": [
+        536,
+        118,
+        256.0,
+        174.0
+      ]
+    },
+    "AUCTION_852x393": {
+      "canvas_pt": [
+        852,
+        393
+      ],
+      "safe_area_reference": [
+        6,
+        44,
+        22,
+        44
+      ],
+      "board_viewport": [
+        44,
+        62,
+        460,
+        235
+      ],
+      "right_panel": [
+        520,
+        62,
+        288,
+        309
+      ],
+      "scroll_clip": [
+        536,
+        114,
+        256,
+        181
+      ],
+      "fixed_footer": [
+        536,
+        311,
+        256,
+        44
+      ],
+      "capsule": [
+        715,
+        6,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          715,
+          6,
+          46,
+          44
+        ],
+        [
+          762,
+          6,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        44,
+        309,
+        460,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            596.0,
+            140.0,
+            176.0,
+            28.0
+          ],
+          "binding": "property_name",
+          "value": "runtime"
+        },
+        {
+          "key": "highest_bid",
+          "rect": [
+            682.0,
+            180.0,
+            90.0,
+            24.0
+          ],
+          "binding": "highest_bid",
+          "value": "runtime"
+        },
+        {
+          "key": "leading_player",
+          "rect": [
+            682.0,
+            205.0,
+            90.0,
+            24.0
+          ],
+          "binding": "leading_player",
+          "value": "runtime"
+        },
+        {
+          "key": "bid_input",
+          "rect": [
+            608.0,
+            242.0,
+            112.0,
+            32.0
+          ],
+          "binding": "bid_input",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.auction",
+      "hero_rect": [
+        536,
+        118,
+        256.0,
+        174.0
+      ],
+      "bid_controls": {
+        "decrease_bid": [
+          548.0,
+          236.0,
+          44.0,
+          44.0
+        ],
+        "bid_input": [
+          598.0,
+          236.0,
+          132.0,
+          44.0
+        ],
+        "increase_bid": [
+          736.0,
+          236.0,
+          44.0,
+          44.0
+        ]
+      }
+    },
+    "TRADE_852x393": {
+      "canvas_pt": [
+        852,
+        393
+      ],
+      "safe_area_reference": [
+        6,
+        44,
+        22,
+        44
+      ],
+      "board_viewport": [
+        44,
+        62,
+        460,
+        235
+      ],
+      "right_panel": [
+        520,
+        62,
+        288,
+        309
+      ],
+      "scroll_clip": [
+        536,
+        114,
+        256,
+        181
+      ],
+      "fixed_footer": [
+        536,
+        311,
+        256,
+        44
+      ],
+      "capsule": [
+        715,
+        6,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          715,
+          6,
+          46,
+          44
+        ],
+        [
+          762,
+          6,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        44,
+        309,
+        460,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "my_assets",
+          "rect": [
+            556.0,
+            201.0,
+            84.0,
+            28.0
+          ],
+          "binding": "my_assets",
+          "value": "runtime"
+        },
+        {
+          "key": "their_assets",
+          "rect": [
+            688.0,
+            201.0,
+            84.0,
+            28.0
+          ],
+          "binding": "their_assets",
+          "value": "runtime"
+        },
+        {
+          "key": "my_cash",
+          "rect": [
+            556.0,
+            244.0,
+            84.0,
+            32.0
+          ],
+          "binding": "my_cash",
+          "value": "runtime"
+        },
+        {
+          "key": "their_cash",
+          "rect": [
+            688.0,
+            244.0,
+            84.0,
+            32.0
+          ],
+          "binding": "their_cash",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.trade",
+      "hero_rect": [
+        536,
+        118,
+        256.0,
+        174.0
+      ]
+    },
+    "BANK_852x393": {
+      "canvas_pt": [
+        852,
+        393
+      ],
+      "safe_area_reference": [
+        6,
+        44,
+        22,
+        44
+      ],
+      "board_viewport": [
+        44,
+        62,
+        460,
+        235
+      ],
+      "right_panel": [
+        520,
+        62,
+        288,
+        309
+      ],
+      "scroll_clip": [
+        536,
+        114,
+        256,
+        181
+      ],
+      "fixed_footer": [
+        536,
+        311,
+        256,
+        44
+      ],
+      "capsule": [
+        715,
+        6,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          715,
+          6,
+          46,
+          44
+        ],
+        [
+          762,
+          6,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        44,
+        309,
+        460,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "wallet",
+          "rect": [
+            624.0,
+            152.0,
+            116.0,
+            28.0
+          ],
+          "binding": "wallet",
+          "value": "runtime"
+        },
+        {
+          "key": "deposit",
+          "rect": [
+            548.0,
+            260.0,
+            98.0,
+            26.0
+          ],
+          "binding": "deposit",
+          "value": "runtime"
+        },
+        {
+          "key": "loan",
+          "rect": [
+            682.0,
+            260.0,
+            98.0,
+            26.0
+          ],
+          "binding": "loan",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.bank",
+      "hero_rect": [
+        536,
+        118,
+        256.0,
+        174.0
+      ]
+    },
+    "SETTLEMENT_852x393": {
+      "canvas_pt": [
+        852,
+        393
+      ],
+      "safe_area_reference": [
+        6,
+        44,
+        22,
+        44
+      ],
+      "board_viewport": [
+        44,
+        62,
+        460,
+        235
+      ],
+      "right_panel": [
+        520,
+        62,
+        288,
+        309
+      ],
+      "scroll_clip": [
+        536,
+        114,
+        256,
+        181
+      ],
+      "fixed_footer": [
+        536,
+        311,
+        256,
+        44
+      ],
+      "capsule": [
+        715,
+        6,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          715,
+          6,
+          46,
+          44
+        ],
+        [
+          762,
+          6,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        44,
+        309,
+        460,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "winner",
+          "rect": [
+            560.0,
+            182.0,
+            208.0,
+            22.0
+          ],
+          "binding": "winner",
+          "value": "runtime"
+        },
+        {
+          "key": "net_worth",
+          "rect": [
+            560.0,
+            227.0,
+            208.0,
+            29.0
+          ],
+          "binding": "net_worth",
+          "value": "runtime"
+        },
+        {
+          "key": "property_count",
+          "rect": [
+            680.0,
+            262.0,
+            88.0,
+            24.0
+          ],
+          "binding": "property_count",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.settlement",
+      "hero_rect": [
+        536,
+        118,
+        256.0,
+        174.0
+      ]
+    },
+    "BUY_1180x820": {
+      "canvas_pt": [
+        1180,
+        820
+      ],
+      "safe_area_reference": [
+        12,
+        24,
+        22,
+        24
+      ],
+      "board_viewport": [
+        24,
+        68,
+        716,
+        652
+      ],
+      "right_panel": [
+        756,
+        68,
+        400,
+        730
+      ],
+      "scroll_clip": [
+        772,
+        120,
+        368,
+        602
+      ],
+      "fixed_footer": [
+        772,
+        738,
+        368,
+        44
+      ],
+      "capsule": [
+        1063,
+        12,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          1063,
+          12,
+          46,
+          44
+        ],
+        [
+          1110,
+          12,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        24,
+        732,
+        716,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            881.25,
+            187.25,
+            230.0,
+            34.5
+          ],
+          "binding": "property_name",
+          "value": "runtime"
+        },
+        {
+          "key": "price",
+          "rect": [
+            976.125,
+            241.875,
+            135.125,
+            34.5
+          ],
+          "binding": "price",
+          "value": "runtime"
+        },
+        {
+          "key": "cash_after",
+          "rect": [
+            976.125,
+            279.25,
+            135.125,
+            34.5
+          ],
+          "binding": "cash_after",
+          "value": "runtime"
+        },
+        {
+          "key": "rent",
+          "rect": [
+            976.125,
+            316.625,
+            135.125,
+            34.5
+          ],
+          "binding": "rent",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.buy",
+      "hero_rect": [
+        772,
+        124,
+        368.0,
+        250.125
+      ]
+    },
+    "AUCTION_1180x820": {
+      "canvas_pt": [
+        1180,
+        820
+      ],
+      "safe_area_reference": [
+        12,
+        24,
+        22,
+        24
+      ],
+      "board_viewport": [
+        24,
+        68,
+        716,
+        652
+      ],
+      "right_panel": [
+        756,
+        68,
+        400,
+        730
+      ],
+      "scroll_clip": [
+        772,
+        120,
+        368,
+        602
+      ],
+      "fixed_footer": [
+        772,
+        738,
+        368,
+        44
+      ],
+      "capsule": [
+        1063,
+        12,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          1063,
+          12,
+          46,
+          44
+        ],
+        [
+          1110,
+          12,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        24,
+        732,
+        716,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "property_name",
+          "rect": [
+            858.25,
+            155.625,
+            253.0,
+            40.25
+          ],
+          "binding": "property_name",
+          "value": "runtime"
+        },
+        {
+          "key": "highest_bid",
+          "rect": [
+            981.875,
+            213.125,
+            129.375,
+            34.5
+          ],
+          "binding": "highest_bid",
+          "value": "runtime"
+        },
+        {
+          "key": "leading_player",
+          "rect": [
+            981.875,
+            249.0625,
+            129.375,
+            34.5
+          ],
+          "binding": "leading_player",
+          "value": "runtime"
+        },
+        {
+          "key": "bid_input",
+          "rect": [
+            875.5,
+            302.25,
+            161.0,
+            46.0
+          ],
+          "binding": "bid_input",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.auction",
+      "hero_rect": [
+        772,
+        124,
+        368.0,
+        250.125
+      ],
+      "bid_controls": {
+        "decrease_bid": [
+          789.25,
+          293.625,
+          63.25,
+          63.25
+        ],
+        "bid_input": [
+          861.125,
+          293.625,
+          189.75,
+          63.25
+        ],
+        "increase_bid": [
+          1059.5,
+          293.625,
+          63.25,
+          63.25
+        ]
+      }
+    },
+    "TRADE_1180x820": {
+      "canvas_pt": [
+        1180,
+        820
+      ],
+      "safe_area_reference": [
+        12,
+        24,
+        22,
+        24
+      ],
+      "board_viewport": [
+        24,
+        68,
+        716,
+        652
+      ],
+      "right_panel": [
+        756,
+        68,
+        400,
+        730
+      ],
+      "scroll_clip": [
+        772,
+        120,
+        368,
+        602
+      ],
+      "fixed_footer": [
+        772,
+        738,
+        368,
+        44
+      ],
+      "capsule": [
+        1063,
+        12,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          1063,
+          12,
+          46,
+          44
+        ],
+        [
+          1110,
+          12,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        24,
+        732,
+        716,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "my_assets",
+          "rect": [
+            800.75,
+            243.3125,
+            120.75,
+            40.25
+          ],
+          "binding": "my_assets",
+          "value": "runtime"
+        },
+        {
+          "key": "their_assets",
+          "rect": [
+            990.5,
+            243.3125,
+            120.75,
+            40.25
+          ],
+          "binding": "their_assets",
+          "value": "runtime"
+        },
+        {
+          "key": "my_cash",
+          "rect": [
+            800.75,
+            305.125,
+            120.75,
+            46.0
+          ],
+          "binding": "my_cash",
+          "value": "runtime"
+        },
+        {
+          "key": "their_cash",
+          "rect": [
+            990.5,
+            305.125,
+            120.75,
+            46.0
+          ],
+          "binding": "their_cash",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.trade",
+      "hero_rect": [
+        772,
+        124,
+        368.0,
+        250.125
+      ]
+    },
+    "BANK_1180x820": {
+      "canvas_pt": [
+        1180,
+        820
+      ],
+      "safe_area_reference": [
+        12,
+        24,
+        22,
+        24
+      ],
+      "board_viewport": [
+        24,
+        68,
+        716,
+        652
+      ],
+      "right_panel": [
+        756,
+        68,
+        400,
+        730
+      ],
+      "scroll_clip": [
+        772,
+        120,
+        368,
+        602
+      ],
+      "fixed_footer": [
+        772,
+        738,
+        368,
+        44
+      ],
+      "capsule": [
+        1063,
+        12,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          1063,
+          12,
+          46,
+          44
+        ],
+        [
+          1110,
+          12,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        24,
+        732,
+        716,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "wallet",
+          "rect": [
+            898.5,
+            172.875,
+            166.75,
+            40.25
+          ],
+          "binding": "wallet",
+          "value": "runtime"
+        },
+        {
+          "key": "deposit",
+          "rect": [
+            789.25,
+            328.125,
+            140.875,
+            37.375
+          ],
+          "binding": "deposit",
+          "value": "runtime"
+        },
+        {
+          "key": "loan",
+          "rect": [
+            981.875,
+            328.125,
+            140.875,
+            37.375
+          ],
+          "binding": "loan",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.bank",
+      "hero_rect": [
+        772,
+        124,
+        368.0,
+        250.125
+      ]
+    },
+    "SETTLEMENT_1180x820": {
+      "canvas_pt": [
+        1180,
+        820
+      ],
+      "safe_area_reference": [
+        12,
+        24,
+        22,
+        24
+      ],
+      "board_viewport": [
+        24,
+        68,
+        716,
+        652
+      ],
+      "right_panel": [
+        756,
+        68,
+        400,
+        730
+      ],
+      "scroll_clip": [
+        772,
+        120,
+        368,
+        602
+      ],
+      "fixed_footer": [
+        772,
+        738,
+        368,
+        44
+      ],
+      "capsule": [
+        1063,
+        12,
+        93,
+        44
+      ],
+      "capsule_targets": [
+        [
+          1063,
+          12,
+          46,
+          44
+        ],
+        [
+          1110,
+          12,
+          46,
+          44
+        ]
+      ],
+      "hud": [
+        24,
+        732,
+        716,
+        62
+      ],
+      "text_slots": [
+        {
+          "key": "winner",
+          "rect": [
+            806.5,
+            216.0,
+            299.0,
+            31.625
+          ],
+          "binding": "winner",
+          "value": "runtime"
+        },
+        {
+          "key": "net_worth",
+          "rect": [
+            806.5,
+            280.6875,
+            299.0,
+            41.6875
+          ],
+          "binding": "net_worth",
+          "value": "runtime"
+        },
+        {
+          "key": "property_count",
+          "rect": [
+            979.0,
+            331.0,
+            126.5,
+            34.5
+          ],
+          "binding": "property_count",
+          "value": "runtime"
+        }
+      ],
+      "board_is_layout_placeholder": true,
+      "hero_asset": "astra.hero.settlement",
+      "hero_rect": [
+        772,
+        124,
+        368.0,
+        250.125
+      ]
+    }
+  }
+}

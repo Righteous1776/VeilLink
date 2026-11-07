@@ -4,6 +4,33 @@ import XCTest
 @testable import VeilLink
 
 final class DatabaseStoreTests: XCTestCase {
+    func testEqualTimestampMessagesFollowLocalInsertionOrderAcrossReadPaths() throws {
+        let (store, root) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let conversation = try store.createConversation(
+            localIdentityID: "local-order", peerIdentityID: "peer-order", title: "Order"
+        )
+        let instant = Date(timeIntervalSince1970: 1_700_000_000.125)
+        // Reverse lexical ID order to distinguish rowid from UUID-string ordering.
+        let ids = ["zz-last-lexical", "aa-first-lexical", "mm-middle-lexical"]
+        for (index, id) in ids.enumerated() {
+            try store.saveMessage(ChatMessage(
+                id: id, conversationID: conversation,
+                senderIdentityID: index.isMultiple(of: 2) ? "local-order" : "peer-order",
+                body: "message-\(index)", sentAt: instant,
+                isOutgoing: index.isMultiple(of: 2), deliveryState: .queued
+            ))
+        }
+        XCTAssertEqual(store.fetchMessageIDs(conversationID: conversation), ids)
+        XCTAssertEqual(store.fetchMessages(conversationID: conversation).map(\.id), ids)
+        XCTAssertEqual(store.fetchRecentMessages(conversationID: conversation, limit: 32).messages.map(\.id), ids)
+        // Duplicate retransmission must not move the original record.
+        try store.saveMessage(ChatMessage(
+            id: ids[0], conversationID: conversation, senderIdentityID: "local-order",
+            body: "duplicate", sentAt: instant, isOutgoing: true, deliveryState: .queued
+        ))
+        XCTAssertEqual(store.fetchMessageIDs(conversationID: conversation), ids)
+    }
     func testIdentityDeletionClearsDurableControlPayloadAndTargets() throws {
         let (store, root) = try makeStore()
         defer { try? FileManager.default.removeItem(at: root) }

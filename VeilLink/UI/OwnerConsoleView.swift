@@ -65,6 +65,7 @@ struct OwnerConsoleView: View {
     @State private var stressExportURL: URL?
     @State private var showsClearDiagnosticsConfirmation = false
     @State private var showsStressConfiguration = false
+    @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
 
     init(model: AppModel) {
         self.model = model
@@ -89,6 +90,7 @@ struct OwnerConsoleView: View {
                     capabilityCard
                     developerModeCard
                     performanceOverrideCard
+                    grokBotCard
                     easterEggCard
                     Text("权限边界：Owner Mode 不读取消息正文、不导出私钥、不绕过其他用户的应用锁。")
                         .font(.caption)
@@ -652,6 +654,45 @@ struct OwnerConsoleView: View {
                 metadata: ["name": title, "enabled": String(value)]
             )
         }
+    }
+
+    private var grokBotCard: some View {
+        let allowed = ownerMode.isAuthorized(for: .visualEffects)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("AI RIVAL AVATAR")
+                .font(.system(.subheadline, design: .monospaced))
+                .foregroundColor(VeilTheme.gold)
+            Toggle(isOn: $grokBotEnabled) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Grok bot").font(.subheadline.weight(.semibold))
+                    Text("原创实时动态对战形象 · 非 xAI 官方角色；所有单机人机对战通用")
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+            }
+            .tint(VeilTheme.gold)
+            .disabled(!allowed)
+            .accessibilityIdentifier("owner.grok_bot.toggle")
+            .onChange(of: grokBotEnabled) { enabled in
+                RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                    "owner.grok_bot.toggle",
+                    metadata: ["enabled": String(enabled)]
+                )
+            }
+            if grokBotEnabled {
+                HStack(spacing: 12) {
+                    VeilOpponentAvatarView(mood: .thinking, size: 64)
+                    Text("动态预览 · 不遮挡触控")
+                        .font(.caption2).foregroundColor(VeilTheme.secondaryText)
+                    Spacer(minLength: 0)
+                }
+            }
+            if !allowed {
+                Text("仅上帝模式视觉特效权限可修改此选项。")
+                    .font(.caption2).foregroundColor(VeilTheme.tertiaryText)
+            }
+        }
+        .veilCard(emphasized: grokBotEnabled)
     }
 
     private var easterEggCard: some View {

@@ -2,6 +2,54 @@ import XCTest
 @testable import VeilLink
 
 final class BLETransportSafetyTests: XCTestCase {
+    func testBluetoothHeadsetCoexistenceOnlyReducesOptionalScanWork() {
+        XCTAssertTrue(BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
+            foreground: true, bluetoothAudioActive: false
+        ))
+        XCTAssertFalse(BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
+            foreground: true, bluetoothAudioActive: true
+        ))
+        XCTAssertFalse(BLEAudioCoexistencePolicy.allowsDuplicateDiscoveries(
+            foreground: false, bluetoothAudioActive: false
+        ))
+        XCTAssertFalse(BLEAudioCoexistencePolicy.shouldPollRSSI(
+            foreground: true, bluetoothAudioActive: true, elapsed: 20, interval: 2
+        ))
+        XCTAssertFalse(BLEAudioCoexistencePolicy.shouldPollRSSI(
+            foreground: false, bluetoothAudioActive: false, elapsed: 20, interval: 2
+        ))
+        XCTAssertFalse(BLEAudioCoexistencePolicy.shouldPollRSSI(
+            foreground: true, bluetoothAudioActive: false, elapsed: 1, interval: 2
+        ))
+        XCTAssertTrue(BLEAudioCoexistencePolicy.shouldPollRSSI(
+            foreground: true, bluetoothAudioActive: false, elapsed: 2, interval: 2
+        ))
+    }
+
+    func testConcurrentFabricBLEBurstKeepsRealtimeFairWithoutChangingPriority() {
+        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 64, realtimePending: true), 8)
+        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 64, realtimePending: false), 64)
+        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 3, realtimePending: true), 3)
+        XCTAssertEqual(VeilConcurrentFabricPolicy.bleDrainBurst(configuredLimit: 0, realtimePending: false), 1)
+    }
+
+    func testConcurrentFabricMaintainsIdleCadenceWhenBackgrounded() {
+        let tuning = VeilRuntimeMaintenanceTuning.resolved(performanceLabel: "13PRO")
+        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
+            tuning: tuning, foreground: false, queued: true, connected: true
+        ), tuning.bleIdleMaintenanceNanoseconds)
+        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
+            tuning: tuning, foreground: true, queued: true, connected: true
+        ), tuning.bleQueuedMaintenanceNanoseconds)
+        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
+            tuning: tuning, foreground: true, queued: false, connected: true
+        ), tuning.bleConnectedMaintenanceNanoseconds)
+        XCTAssertEqual(VeilConcurrentFabricPolicy.maintenanceInterval(
+            tuning: tuning, foreground: true, queued: false, connected: false
+        ), tuning.bleIdleMaintenanceNanoseconds)
+    }
+
+
     func testFragmentationPlanAcceptsExactUInt16BoundaryAtLegacyATTSize() {
         let packetSize = 20
         let payloadBytes = (packetSize - BLEFragment.headerSize) * BLEFragment.maximumFragmentCount

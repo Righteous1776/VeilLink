@@ -70,13 +70,29 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var coachTip = "每一步都会沉淀为下一局的本地训练证据。"
     @Published private(set) var developerTeachingMode = false
     @Published private(set) var developerFormationCount = 0
+    @Published private(set) var didRestoreBoardMatch = false
+    @Published private(set) var boardMatchSaveWarning: String?
 
     let game: MiniGameKind
-    let humanPlayer: MiniGamePlayer = .host
-    let aiPlayer: MiniGamePlayer = .guest
+    @Published private(set) var humanPlayer: MiniGamePlayer = .host
+    var aiPlayer: MiniGamePlayer { humanPlayer.opponent }
+
+    func setBoardHumanPlayer(_ player: MiniGamePlayer) {
+        guard game == .gomoku || game == .xiangqi, player != humanPlayer else { return }
+        let previousID = sessionID
+        restart(startAI: false)
+        guard previousID != sessionID else { return } // failed safe reset preserves the old seat
+        humanPlayer = player
+        scheduleAIIfNeeded()
+    }
     @Published private(set) var sessionID: String
 
     private var aiTask: Task<Void, Never>?
+    private let boardMatchStore: LocalBoardMatchStore?
+    private var boardMatchMoves: [LocalBoardMatchMove] = []
+    private var boardMatchRecoveryBlocked = false
+    private var inSeparateTeachingSession = false
+    private var suspendedTeachingMatch: (board: GomokuState, outcome: Outcome, sessionID: String)?
     private let learningStore: AdaptiveBoardLearningStore
     private let formationLibrary: DeveloperFormationLibrary?
     private let formationDiscovery = GomokuFormationDiscoveryStore()
@@ -90,9 +106,13 @@ final class LocalAIGameController: ObservableObject {
     init(
         game: MiniGameKind,
         learningStore: AdaptiveBoardLearningStore? = nil,
-        formationLibrary: DeveloperFormationLibrary? = nil
+        formationLibrary: DeveloperFormationLibrary? = nil,
+        matchStore: LocalBoardMatchStore? = nil
     ) {
         self.game = game
+        // The real hall injects durable storage. Standalone controllers/tests
+        // remain fresh and do not contaminate each other's default directory.
+        self.boardMatchStore = game == .gomoku || game == .xiangqi ? matchStore : nil
         let resolvedLearningStore = learningStore ?? AdaptiveBoardLearningStore.store(for: game)
         self.learningStore = resolvedLearningStore
         self.formationLibrary = formationLibrary
@@ -110,7 +130,58 @@ final class LocalAIGameController: ObservableObject {
         discoveredGomokuFormations = formationDiscovery.candidateCount
         trainedNativeGames = nativeTrainingStore?.summary.completedGames ?? 0
         sessionID = UUID().uuidString
+        restoreSavedBoardMatch()
         if game == .gomoku { importBundledNativeSeedIfNeeded() }
+    }
+
+    private func restoreSavedBoardMatch() {
+        guard let disk = boardMatchStore else { return }
+        do {
+            guard let saved = try disk.load(),
+                  let restored = LocalBoardMatchReplay.validate(saved) else { return }
+            humanPlayer = saved.humanPlayer ?? .host
+            gomoku = restored.gomoku
+            xiangqi = restored.xiangqi
+            learningPlies = restored.plies
+            boardMatchMoves = saved.moves
+            sessionID = saved.sessionID
+            boardDifficulty = BoardBotDifficulty(rawValue: saved.difficulty) ?? .balanced
+            if game == .gomoku {
+                if let winner = gomoku.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+                else if gomoku.isDraw { outcome = .draw }
+            } else if game == .xiangqi {
+                if let winner = xiangqi.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+                else if xiangqi.isDraw { outcome = .draw }
+            }
+            if outcome != .playing { learningPlies.removeAll() }
+            didRestoreBoardMatch = true
+            boardMatchSaveWarning = nil
+        } catch {
+            boardMatchRecoveryBlocked = true
+            boardMatchSaveWarning = "存档校验失败：旧文件保留；可以导出黑匣子或明确点击“重开”。"
+        }
+    }
+
+    private func persistBoardMove(_ move: MiniGameMove, actor: MiniGamePlayer) {
+        guard let disk = boardMatchStore, !inSeparateTeachingSession else { return }
+        boardMatchMoves.append(.init(actor: actor, move: move))
+        guard !boardMatchRecoveryBlocked else { return }
+        do {
+            try disk.save(.init(
+                version: LocalBoardMatchRecord.version, game: game,
+                sessionID: sessionID, difficulty: boardDifficulty.rawValue, moves: boardMatchMoves,
+                humanPlayer: humanPlayer
+            ))
+            boardMatchSaveWarning = nil
+        } catch {
+            boardMatchSaveWarning = "本步存档失败：本局仍可继续，但强制退出可能丢失最近走子。"
+        }
+    }
+
+    func resumeBoardMatchIfNeeded() {
+        guard game == .gomoku || game == .xiangqi,
+              !inSeparateTeachingSession, !isAIThinking else { return }
+        scheduleAIIfNeeded()
     }
 
     var canHumanAct: Bool {
@@ -139,7 +210,21 @@ final class LocalAIGameController: ObservableObject {
         }
     }
 
-    func restart() {
+    func restart(startAI: Bool = true) {
+        if let disk = boardMatchStore {
+            do {
+                try disk.discardOnExplicitRestart()
+                boardMatchMoves.removeAll()
+                boardMatchRecoveryBlocked = false
+                boardMatchSaveWarning = nil
+                didRestoreBoardMatch = false
+                inSeparateTeachingSession = false
+                suspendedTeachingMatch = nil
+            } catch {
+                boardMatchSaveWarning = "旧存档未能安全清除；已保留原棋局，重开取消。"
+                return
+            }
+        }
         finalizeLearning(as: .unfinished)
         aiTask?.cancel(); aiTask = nil
         gomoku = GomokuState()
@@ -161,6 +246,7 @@ final class LocalAIGameController: ObservableObject {
         developerTeachingMode = false
         lastDecisionMode = "规则 Bot"
         lastDecisionMilliseconds = nil
+        if startAI { scheduleAIIfNeeded() }
     }
 
     func humanGomokuMove(_ index: Int) {
@@ -169,8 +255,9 @@ final class LocalAIGameController: ObservableObject {
         let position = AdaptiveBoardPosition.gomoku(state)
         coachTip = GomokuBot.coachingHint(beforePlaying: index, in: state, for: humanPlayer)
         guard state.apply(index: index, actor: humanPlayer) else { return }
-        learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: humanPlayer))
+        learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: .host))
         gomoku = state
+        persistBoardMove(.gomoku(index: index), actor: humanPlayer)
         finishOrScheduleAI()
     }
 
@@ -182,11 +269,32 @@ final class LocalAIGameController: ObservableObject {
         }
         developerTeachingMode = enabled
         if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false }
+        if !enabled && inSeparateTeachingSession {
+            restoreAfterTeaching()
+        }
+    }
+
+    private func restoreAfterTeaching() {
+        inSeparateTeachingSession = false
+        if let saved = suspendedTeachingMatch {
+            gomoku = saved.board
+            outcome = saved.outcome
+            sessionID = saved.sessionID
+            suspendedTeachingMatch = nil
+        } else {
+            restoreSavedBoardMatch()
+        }
+        scheduleAIIfNeeded()
     }
 
     func beginDeveloperFormationRecording() {
         guard game == .gomoku else { return }
-        finalizeLearning(as: .unfinished)
+        // Work on a separate unsaved teaching board. The ordinary match file
+        // must never be replaced or finalized merely for opening this tool.
+        if !inSeparateTeachingSession {
+            suspendedTeachingMatch = (gomoku, outcome, sessionID)
+        }
+        inSeparateTeachingSession = true
         aiTask?.cancel(); aiTask = nil
         gomoku = GomokuState()
         outcome = .playing
@@ -216,7 +324,10 @@ final class LocalAIGameController: ObservableObject {
         developerFormationCount = formationLibrary.lessons.count
         developerFormationPlies.removeAll(keepingCapacity: true)
         developerTeachingMode = false
-        coachTip = "已保存开发者阵法：后续同一前缀局面会优先使用你录制的应手。"
+        if inSeparateTeachingSession {
+            restoreAfterTeaching()
+        }
+        coachTip = "阵法已保存；原单机对局不会被覆盖。"
     }
 
     func humanXiangqiMove(from: Int, to: Int) {
@@ -225,8 +336,9 @@ final class LocalAIGameController: ObservableObject {
         let position = AdaptiveBoardPosition.xiangqi(state)
         coachTip = XiangqiBot.coachingHint(beforePlayingFrom: from, to: to, in: state, for: humanPlayer)
         guard state.apply(from: from, to: to, actor: humanPlayer) else { return }
-        learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: humanPlayer))
+        learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: .host))
         xiangqi = state
+        persistBoardMove(.xiangqi(from: from, to: to), actor: humanPlayer)
         finishOrScheduleAI()
     }
 
@@ -448,7 +560,7 @@ final class LocalAIGameController: ObservableObject {
         stopNativeTraining()
         aiTask?.cancel(); aiTask = nil
         isAIThinking = false
-        finalizeLearning(as: .unfinished)
+        // Navigation is not a resignation; leave unsaved learning plies intact.
     }
 
     func clearBoardLearning() {
@@ -469,6 +581,31 @@ final class LocalAIGameController: ObservableObject {
 
     func exportBoardLearning() throws -> URL {
         try learningStore.exportPackage()
+    }
+
+    /// Native Bot-vs-Bot records have their own durable archive. The ordinary
+    /// player-learning export intentionally does not contain these game records.
+    func exportNativeSelfPlayDetails() throws -> URL {
+        guard game == .gomoku, let archive = nativeTrainingStore,
+              archive.lastSaveSucceeded else {
+            throw NativeSelfPlayExportError.archiveUnavailable
+        }
+        guard archive.summary.completedGames > 0, archive.hasSavedGameDetails else {
+            throw NativeSelfPlayExportError.noSavedGames
+        }
+        return try archive.exportPackage(filenameLabel: "GomokuNativeSelfPlay")
+    }
+
+    enum NativeSelfPlayExportError: LocalizedError {
+        case archiveUnavailable
+        case noSavedGames
+
+        var errorDescription: String? {
+            switch self {
+            case .archiveUnavailable: return "自对弈训练档案不可用或需要修复，未导出空白文件。"
+            case .noSavedGames: return "还没有已完成并保存的原生自对弈棋局。"
+            }
+        }
     }
 
     func importBoardLearning(from url: URL) throws -> AdaptiveBoardLearningImportReport {
@@ -510,6 +647,7 @@ final class LocalAIGameController: ObservableObject {
             if let winner = magneticHockey.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
             else if magneticHockey.isDraw { outcome = .draw }
         }
+        guard !developerTeachingMode else { return }
         switch outcome {
         case .humanWon: finalizeLearning(as: .humanWon)
         case .aiWon: finalizeLearning(as: .aiWon)
@@ -519,7 +657,7 @@ final class LocalAIGameController: ObservableObject {
     }
 
     private func scheduleAIIfNeeded() {
-        guard outcome == .playing else { return }
+        guard outcome == .playing, !developerTeachingMode else { return }
         let current: MiniGamePlayer?
         switch game {
         case .gomoku: current = gomoku.currentPlayer
@@ -550,6 +688,7 @@ final class LocalAIGameController: ObservableObject {
     }
 
     private func selectAIMove() async -> AgentActionCandidate? {
+        let computer = aiPlayer
         switch game {
         case .gomoku:
             let snapshot = gomoku
@@ -567,8 +706,8 @@ final class LocalAIGameController: ObservableObject {
             ).reinforced(by: learning.trainingLevel)
             let preference = GomokuFormationPreference(
                 mode: gomokuFormationMode,
-                aiHistory: learningPlies.filter { $0.actor == aiPlayer }.compactMap { Int($0.action) },
-                opponentHistory: learningPlies.filter { $0.actor == humanPlayer }.compactMap { Int($0.action) },
+                aiHistory: learningPlies.filter { $0.actor == .guest }.compactMap { Int($0.action) },
+                opponentHistory: learningPlies.filter { $0.actor == .host }.compactMap { Int($0.action) },
                 discovered: formationDiscovery.eligibleSignatures
             )
             var chosen: GomokuBotMove?
@@ -580,13 +719,13 @@ final class LocalAIGameController: ObservableObject {
                 // touches gameplay/DB and is validated by our own rule gate.
                 let external = await VeilOfflineGomokuEngine.shared.chooseMove(
                     in: snapshot,
-                    for: .guest,
+                    for: computer,
                     timeLimitMilliseconds: budget.timeLimitMilliseconds,
                     maxDepth: boardDifficulty == .master ? 7 : boardDifficulty == .advanced ? 5 : 3
                 )
                 if let external {
                     var trial = snapshot
-                    if trial.apply(index: external.index, actor: .guest) {
+                    if trial.apply(index: external.index, actor: computer) {
                         chosen = external
                         engineName = "PVS/VCF"
                     }
@@ -595,7 +734,7 @@ final class LocalAIGameController: ObservableObject {
             if chosen == nil {
                 chosen = await Task.detached(priority: .userInitiated) {
                     GomokuBot.chooseMove(
-                        in: snapshot, for: .guest, budget: budget,
+                        in: snapshot, for: computer, budget: budget,
                         learning: learning, formationPreference: preference
                     )
                 }.value
@@ -603,7 +742,7 @@ final class LocalAIGameController: ObservableObject {
             guard let result = chosen else { return nil }
 
             var ruleGate = gomoku
-            guard ruleGate.apply(index: result.index, actor: .guest) else { return nil }
+            guard ruleGate.apply(index: result.index, actor: computer) else { return nil }
             let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
             let formationLabel = formation.matchedLessonNames.first.map { " · 阵法：\($0)" } ?? ""
             // Preserve the incumbent controller's observable status contract.
@@ -637,12 +776,12 @@ final class LocalAIGameController: ObservableObject {
                 profileLabel: VeilDevicePerformance.current.label
             ).reinforced(by: learning.trainingLevel)
             let result = await Task.detached(priority: .userInitiated) {
-                XiangqiBot.chooseMove(in: snapshot, for: .guest, budget: budget, learning: learning)
+                XiangqiBot.chooseMove(in: snapshot, for: computer, budget: budget, learning: learning)
             }.value
             guard let result else { return nil }
 
             var ruleGate = xiangqi
-            guard ruleGate.apply(from: result.from, to: result.to, actor: .guest) else { return nil }
+            guard ruleGate.apply(from: result.from, to: result.to, actor: computer) else { return nil }
             let baseMode = result.completedDepth > 0
                 ? "象棋 · \(boardDifficulty.title) D\(result.completedDepth)"
                 : "象棋 · \(boardDifficulty.title) 快速着"
@@ -810,16 +949,18 @@ final class LocalAIGameController: ObservableObject {
             var state = gomoku
             let position = AdaptiveBoardPosition.gomoku(state)
             guard state.apply(index: index, actor: aiPlayer) else { return }
-            learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: aiPlayer))
+            learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: .guest))
             gomoku = state
+            persistBoardMove(.gomoku(index: index), actor: aiPlayer)
         case .xiangqi:
             guard let from = candidate.metadata["from"].flatMap(Int.init),
                   let to = candidate.metadata["to"].flatMap(Int.init) else { return }
             var state = xiangqi
             let position = AdaptiveBoardPosition.xiangqi(state)
             guard state.apply(from: from, to: to, actor: aiPlayer) else { return }
-            learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: aiPlayer))
+            learningPlies.append(AdaptiveBoardPly(position: position, action: "\(from):\(to)", actor: .guest))
             xiangqi = state
+            persistBoardMove(.xiangqi(from: from, to: to), actor: aiPlayer)
         case .ludo:
             guard let piece = candidate.metadata["piece"].flatMap(Int.init) else { return }
             var state = ludo

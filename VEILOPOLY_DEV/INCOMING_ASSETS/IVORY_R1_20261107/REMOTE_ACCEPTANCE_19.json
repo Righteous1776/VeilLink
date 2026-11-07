@@ -1,0 +1,262 @@
+{
+  "schema": "veilopoly.ivory-r1.remote-acceptance.v1",
+  "branch": "dev/veilopoly",
+  "materialized_commit": "e0d77996e33e803599c03e4e4fee0cc23a613b52",
+  "asset_count": 19,
+  "bytes": 2293866,
+  "active_aliases": [
+    "ivoryR1ChanceCard",
+    "ivoryR1ChestCard",
+    "ivoryR1VictoryBadge"
+  ],
+  "xcode_result": "NOT_TESTED",
+  "assets": [
+    {
+      "id": "VL-IVORY-R1-001",
+      "alias": "ivoryR1ChanceCard",
+      "bytes": 307596,
+      "git_blob_sha1": "926f2752a0d2a40d93ae1b033b477d734e5684e9",
+      "sha256": "1d92d2d7851b05057aa5e26725264de6cbb20e7a5bbd5b8f85986070552c9399",
+      "dimensions": [
+        355,
+        512
+      ],
+      "activation": "activate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1ChanceCard.png"
+    },
+    {
+      "id": "VL-IVORY-R1-002",
+      "alias": "ivoryR1ChestCard",
+      "bytes": 312915,
+      "git_blob_sha1": "b75193e9839a5e5d836285d28575fa92263dedb8",
+      "sha256": "e08cdd76f140ba7522ca9f1bf147af1019fb31374b7a1ed9929728765feead9e",
+      "dimensions": [
+        343,
+        512
+      ],
+      "activation": "activate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1ChestCard.png"
+    },
+    {
+      "id": "VL-IVORY-R1-003",
+      "alias": "ivoryR1VictoryBadge",
+      "bytes": 250175,
+      "git_blob_sha1": "8f40d15f68debd35027fee156ae1044821449dbf",
+      "sha256": "5c820135ac53c336a4115741c5815a10fa103b64afff222d9578bdd20f64a802",
+      "dimensions": [
+        376,
+        384
+      ],
+      "activation": "activate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1VictoryBadge.png"
+    },
+    {
+      "id": "VL-IVORY-R1-004",
+      "alias": "ivoryR1CenterInlay",
+      "bytes": 650551,
+      "git_blob_sha1": "8fdb360b629e74820d26005ddab2154e20414058",
+      "sha256": "abe2f4615e29140d58f7fce63cdaffaa044e6352392f976b829917e701fd255d",
+      "dimensions": [
+        576,
+        572
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1CenterInlay.png"
+    },
+    {
+      "id": "VL-IVORY-R1-005",
+      "alias": "ivoryR1HousePerspective",
+      "bytes": 106370,
+      "git_blob_sha1": "7ca6874e7b15c84bce46400afa94751b93e9418b",
+      "sha256": "d61495a020617853a196be81fcc2f076afdc8a7b6b5a5fbf205ce3a29ca3a28e",
+      "dimensions": [
+        256,
+        251
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1HousePerspective.png"
+    },
+    {
+      "id": "VL-IVORY-R1-006",
+      "alias": "ivoryR1HotelPerspective",
+      "bytes": 148289,
+      "git_blob_sha1": "eb95ef1594d18ab0fa15abd8d6b1b99e0bae2a18",
+      "sha256": "a4fbe39327bddfc2b783a9493b1d113b4ab6e52e5818ea6a35ece59fd99e8586",
+      "dimensions": [
+        257,
+        320
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1HotelPerspective.png"
+    },
+    {
+      "id": "VL-IVORY-R1-007",
+      "alias": "ivoryR1TurnBanner",
+      "bytes": 147927,
+      "git_blob_sha1": "d036b32b92981ad3dda465067c14314439919fab",
+      "sha256": "7268cee8f9ec932c4cb2f508fbc18c4d11238cdcbbe8f0fd819017e5a9edc3a6",
+      "dimensions": [
+        700,
+        159
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1TurnBanner.png"
+    },
+    {
+      "id": "VL-IVORY-R1-008",
+      "alias": "ivoryR1IconRail",
+      "bytes": 31095,
+      "git_blob_sha1": "087cda76867287b9a6596569229c45a9264503df",
+      "sha256": "dc5b57a4c9e901372a7c3a28c13ae5ff57029a7ed7f4fa3226b9bbb81f336c1b",
+      "dimensions": [
+        155,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconRail.png"
+    },
+    {
+      "id": "VL-IVORY-R1-009",
+      "alias": "ivoryR1IconElectric",
+      "bytes": 29085,
+      "git_blob_sha1": "7b1c874e2e580db9dbdd415198024d04f6bbac4b",
+      "sha256": "7362cc7e3e5b398750d4a0019937ef3a71f0c2eecc825794a2122c3f9162aede",
+      "dimensions": [
+        155,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconElectric.png"
+    },
+    {
+      "id": "VL-IVORY-R1-010",
+      "alias": "ivoryR1IconWater",
+      "bytes": 29899,
+      "git_blob_sha1": "d06313643054196dd07b3c28ea96abda33a4499d",
+      "sha256": "23cf42b8dd0b5d8ac0f235562395699d6a7939646cdf135bb62d1fa525526777",
+      "dimensions": [
+        155,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconWater.png"
+    },
+    {
+      "id": "VL-IVORY-R1-011",
+      "alias": "ivoryR1IconTax",
+      "bytes": 36762,
+      "git_blob_sha1": "8387c455cf43a325338520eab3a3d96629a57e9b",
+      "sha256": "0756ed96e85b251b6ebbf274b817d0774d9df1e15062e13439741e1352f9141b",
+      "dimensions": [
+        155,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconTax.png"
+    },
+    {
+      "id": "VL-IVORY-R1-012",
+      "alias": "ivoryR1IconInspect",
+      "bytes": 33407,
+      "git_blob_sha1": "ed743fb185b839a210040311e8d800edb7e94900",
+      "sha256": "5a741d5aff4a5aff5d73c381100d38369c1f8c08b0c9763ae551fe5647c72c85",
+      "dimensions": [
+        154,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconInspect.png"
+    },
+    {
+      "id": "VL-IVORY-R1-013",
+      "alias": "ivoryR1IconChance",
+      "bytes": 30255,
+      "git_blob_sha1": "070d6c935fe9614291601c03a303d73ec56bf8f6",
+      "sha256": "97ab04f49feddb182cf939fc5fe1843467b839488e5a3c4b40cf412ae5a107b8",
+      "dimensions": [
+        155,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconChance.png"
+    },
+    {
+      "id": "VL-IVORY-R1-014",
+      "alias": "ivoryR1IconTrade",
+      "bytes": 30919,
+      "git_blob_sha1": "f10d5f71818988ccefa126680609db17ab1f1da1",
+      "sha256": "696c0fdd38ac227360d876e9afb4ec317ec58870d6ffeeb6f8393b377b2716a4",
+      "dimensions": [
+        154,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconTrade.png"
+    },
+    {
+      "id": "VL-IVORY-R1-015",
+      "alias": "ivoryR1IconTransfer",
+      "bytes": 28974,
+      "git_blob_sha1": "239c8cd9930458ace40bf8241d16bc3b73bdf1c3",
+      "sha256": "dc4b5dba0e43833797baea8f1d866dee1ba2cd6c76f5694fd9bad9cc69c2025c",
+      "dimensions": [
+        155,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconTransfer.png"
+    },
+    {
+      "id": "VL-IVORY-R1-016",
+      "alias": "ivoryR1IconJail",
+      "bytes": 28781,
+      "git_blob_sha1": "23636ca6f9818e9f770359aec91a14ce02d8b4f3",
+      "sha256": "9ab62ed61ee5522072de08731686fe08a501161c9be70642d87f0e77bd1ad897",
+      "dimensions": [
+        155,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconJail.png"
+    },
+    {
+      "id": "VL-IVORY-R1-017",
+      "alias": "ivoryR1IconParking",
+      "bytes": 29229,
+      "git_blob_sha1": "7a921218648c72957f7027a9fedbe4d5fd4bbd96",
+      "sha256": "b413da2faf96798b8e07074ea60e411fef6b20dd43daa3e73786feaac76325df",
+      "dimensions": [
+        155,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconParking.png"
+    },
+    {
+      "id": "VL-IVORY-R1-018",
+      "alias": "ivoryR1IconMove",
+      "bytes": 28378,
+      "git_blob_sha1": "3e22a86ca1d945ebb7dca7dbef1829a4de29fdf7",
+      "sha256": "52b6f5b6773fbeb32c07883528b0c6e18693e03422b90fb61671724895b857d4",
+      "dimensions": [
+        155,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconMove.png"
+    },
+    {
+      "id": "VL-IVORY-R1-019",
+      "alias": "ivoryR1IconBrand",
+      "bytes": 33259,
+      "git_blob_sha1": "cc05a9d40b34e8bcd3e25b4b8cf19cb9ab03fe79",
+      "sha256": "4764f0c99639e068c6823535e6b74e9b551a088e53325d8bf96d4eacd48cf050",
+      "dimensions": [
+        155,
+        160
+      ],
+      "activation": "candidate",
+      "path": "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources/ivoryR1IconBrand.png"
+    }
+  ]
+}

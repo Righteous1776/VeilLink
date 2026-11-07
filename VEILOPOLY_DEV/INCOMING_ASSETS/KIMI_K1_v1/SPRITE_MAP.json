@@ -1,0 +1,274 @@
+{
+ "schema": "veillopoly.sprite-map.k1.v1",
+ "generated": "2026-11-06",
+ "coordinateSystem": {
+  "logicUnit": "24u 网格（board.json layout）",
+  "designWidthPt": 1080,
+  "yAxis": "SpriteKit 默认 y 向上；布局坐标 v 向上，project() 负责翻转换算",
+  "tiltDeg": 15,
+  "note": "project(u,v,h) 见 LAYOUT_SPEC §2；token 站立高 h=0.45u"
+ },
+ "layers": [
+  {
+   "layer": "L0",
+   "name": "tableFelt",
+   "content": "背景桌布",
+   "zPosition": 0,
+   "colorDark": "#0B1220",
+   "colorLight": "#F5F0E6"
+  },
+  {
+   "layer": "L1",
+   "name": "boardBase",
+   "content": "40 格底板（SKShapeNode 网格）",
+   "zPosition": 10
+  },
+  {
+   "layer": "L2",
+   "name": "estateMarks",
+   "content": "色条/房屋/旅馆/抵押斜杠",
+   "zPosition": 20
+  },
+  {
+   "layer": "L3",
+   "name": "tileContent",
+   "content": "铁路/事业图标、卡牌角标",
+   "zPosition": 30
+  },
+  {
+   "layer": "L4",
+   "name": "tokens",
+   "content": "4 玩家棋子（动态 y 排序）",
+   "zPosition": 40
+  },
+  {
+   "layer": "L5",
+   "name": "dice",
+   "content": "双骰",
+   "zPosition": 50
+  },
+  {
+   "layer": "L6",
+   "name": "fx",
+   "content": "飘字/粒子/栅栏",
+   "zPosition": 60
+  },
+  {
+   "layer": "L7",
+   "name": "vignette",
+   "content": "暗角遮罩",
+   "zPosition": 70
+  }
+ ],
+ "sprites": [
+  {
+   "alias": "pawnBlue",
+   "file": "pawnBlue.png",
+   "layer": "L4",
+   "anchor": [
+    0.5,
+    0.12
+   ],
+   "displaySizePt": [
+    26,
+    30
+   ],
+   "shadow": {
+    "ellipsePt": [
+     22,
+     8
+    ],
+    "alpha": 0.25,
+    "dy": 4
+   },
+   "scalePresets": {
+    "iphone": 1.0,
+    "ipad": 1.35
+   }
+  },
+  {
+   "alias": "carRed",
+   "file": "carRed.png",
+   "layer": "L4",
+   "anchor": [
+    0.5,
+    0.12
+   ],
+   "displaySizePt": [
+    26,
+    30
+   ],
+   "shadow": {
+    "ellipsePt": [
+     22,
+     8
+    ],
+    "alpha": 0.25,
+    "dy": 4
+   },
+   "scalePresets": {
+    "iphone": 1.0,
+    "ipad": 1.35
+   }
+  },
+  {
+   "alias": "shipGreen",
+   "file": "shipGreen.png",
+   "layer": "L4",
+   "anchor": [
+    0.5,
+    0.12
+   ],
+   "displaySizePt": [
+    26,
+    30
+   ],
+   "shadow": {
+    "ellipsePt": [
+     22,
+     8
+    ],
+    "alpha": 0.25,
+    "dy": 4
+   },
+   "scalePresets": {
+    "iphone": 1.0,
+    "ipad": 1.35
+   }
+  },
+  {
+   "alias": "planeYellow",
+   "file": "planeYellow.png",
+   "layer": "L4",
+   "anchor": [
+    0.5,
+    0.12
+   ],
+   "displaySizePt": [
+    26,
+    30
+   ],
+   "shadow": {
+    "ellipsePt": [
+     22,
+     8
+    ],
+    "alpha": 0.25,
+    "dy": 4
+   },
+   "scalePresets": {
+    "iphone": 1.0,
+    "ipad": 1.35
+   }
+  },
+  {
+   "alias": "die1..die6",
+   "file": "die1.png..die6.png",
+   "layer": "L5",
+   "anchor": [
+    0.5,
+    0.5
+   ],
+   "displaySizePt": [
+    34,
+    34
+   ],
+   "pairSpacingPt": 64,
+   "tumbleAtlas": "diceSheetWhite.png（6帧 64px）",
+   "scalePresets": {
+    "iphone": 1.0,
+    "ipad": 1.3
+   }
+  },
+  {
+   "alias": "house",
+   "file": "house.png",
+   "layer": "L2",
+   "anchor": [
+    0.5,
+    0.5
+   ],
+   "displaySizePt": [
+    14,
+    14
+   ],
+   "maxPerTile": 4,
+   "slotGrid": "2×2 偏移 ±(0.45,0.30)u（layout-projection houseSlots）",
+   "scalePresets": {
+    "iphone": 1.0,
+    "ipad": 1.3
+   }
+  },
+  {
+   "alias": "hotel",
+   "file": "hotel.png",
+   "layer": "L2",
+   "anchor": [
+    0.5,
+    0.5
+   ],
+   "displaySizePt": [
+    20,
+    20
+   ],
+   "placement": "居中 1 个，取代 4 房",
+   "scalePresets": {
+    "iphone": 1.0,
+    "ipad": 1.3
+   }
+  },
+  {
+   "alias": "cardChance",
+   "file": "cardChance.png",
+   "layer": "UI-SwiftUI",
+   "usage": "机会卡背面（3D 翻转牌面）",
+   "aspect": [
+    0.7,
+    1.0
+   ],
+   "displaySizePt": [
+    120,
+    171
+   ]
+  },
+  {
+   "alias": "cardChest",
+   "file": "cardChest.png",
+   "layer": "UI-SwiftUI",
+   "usage": "命运卡背面",
+   "aspect": [
+    0.7,
+    1.0
+   ],
+   "displaySizePt": [
+    120,
+    171
+   ]
+  },
+  {
+   "alias": "mortgageSlash",
+   "source": "程序化 SKShapeNode 斜杠",
+   "layer": "L2",
+   "style": "strokeEnd 0→1, 红色 #E23B3B, width 3pt"
+  },
+  {
+   "alias": "colorBar",
+   "source": "程序化（tile.colorHex 填充）",
+   "layer": "L2",
+   "style": "沿格内缘 0.25u 宽"
+  }
+ ],
+ "atlasAdvice": {
+  "pack": [
+   "pawnBlue",
+   "carRed",
+   "shipGreen",
+   "planeYellow",
+   "die1..die6",
+   "house",
+   "hotel"
+  ],
+  "tool": "Xcode Asset Catalog（自动 1x/2x/3x）或直接 SKTextureAtlas",
+  "note": "Kenney 源 PNG 为单尺寸矢量导出，@2x/@3x 由 SpriteKit 平滑缩放，无需多倍图"
+ }
+}

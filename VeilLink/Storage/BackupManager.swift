@@ -113,10 +113,9 @@ final class BackupManager {
             appropriateFor: nil,
             create: true
         )
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let destination = exports.appendingPathComponent("VeilLink-\(formatter.string(from: Date())).zip")
-        try? fileManager.removeItem(at: destination)
+        let destination = exports.appendingPathComponent(
+            VeilExportFileName.make(prefix: "VeilLink-", suffix: ".zip")
+        )
         try fileManager.zipItem(at: staging, to: destination, shouldKeepParent: false)
         return destination
     }

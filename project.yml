@@ -7,14 +7,16 @@ options:
 settings:
   base:
     SWIFT_VERSION: 5.9
-    MARKETING_VERSION: "27.2"
-    CURRENT_PROJECT_VERSION: "64"
+    MARKETING_VERSION: "28.0"
+    CURRENT_PROJECT_VERSION: "65"
     SWIFT_STRICT_CONCURRENCY: complete
     IPHONEOS_DEPLOYMENT_TARGET: 15.0
     TARGETED_DEVICE_FAMILY: "1,2"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
 packages:
+  Veilopoly:
+    path: VEILOPOLY_DEV/Veilopoly
   CodeScanner:
     url: https://github.com/twostraws/CodeScanner.git
     exactVersion: 2.5.2
@@ -69,6 +71,8 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
+      - package: Veilopoly
+        product: VeilopolyUI
       - sdk: libsqlite3.tbd
       - package: CodeScanner
       - package: SwiftSoup
