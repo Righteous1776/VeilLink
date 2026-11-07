@@ -132,7 +132,7 @@ final class CityLongCardBalanceTests: XCTestCase {
   let city = VeilopolyCityLongEconomy.make(seed: 91206)
   XCTAssertEqual(old.cards, SampleCards.all)
   XCTAssertNotEqual(old.cards, city.cards)
-  XCTAssertEqual(city.cards, VeilopolyCityLongCards.all)
+  XCTAssertEqual(city.cards, VeilopolyCityLongCards.allV4)
   XCTAssertNotNil(VeilopolyCardEditorial.presentation(for: old.cards[5]))
   XCTAssertNotNil(VeilopolyCardEditorial.presentation(for: city.cards[5]))
   var corrupt = city.cards[5]

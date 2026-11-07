@@ -105,6 +105,11 @@ struct VeilopolyAssetBrowser: View {
     .font(.subheadline).monospacedDigit()
    Text("账面净资产不是可用现金；查看资料不会购买、拍卖、借款或成交。")
     .font(.caption).foregroundColor(.secondary)
+   if let bankCash = game.banking?.reserveCash {
+    Text("城市银行 ¥\(bankCash) / 总货币量 ¥\(VeilopolyCityLongEconomy.totalMoneySupply) · 宏观股市信号 \(VeilopolyCityLongEconomy.marketPressure(game)) bp")
+     .font(.caption2).foregroundColor(.secondary)
+     .fixedSize(horizontal: false, vertical: true)
+   }
    if VeilopolyCityLongEconomy.isActive(game) {
     Text("城市长局 · 本期单次地块租金上限 ¥\(VeilopolyCityLongEconomy.rentCeiling(game))；随有效结算期逐渐上调。铁路及公用事业基础租金按长局规模调整。")
      .font(.caption2).foregroundColor(.secondary)

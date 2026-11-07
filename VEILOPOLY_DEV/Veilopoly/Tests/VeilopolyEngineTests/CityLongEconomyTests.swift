@@ -22,7 +22,7 @@ final class CityLongEconomyTests: XCTestCase {
   XCTAssertEqual(city.chanceDeck, old.chanceDeck)
   XCTAssertEqual(city.chestDeck, old.chestDeck)
   XCTAssertEqual(city.rngCounter, old.rngCounter)
-  XCTAssertEqual(city.banking?.financeRuleVersion, 3)
+  XCTAssertEqual(city.banking?.financeRuleVersion, 4)
   XCTAssertEqual(city.banking?.terms.loanInterestBasisPoints, [800,1100,1400,1700])
   XCTAssertNotNil(city.banking)
   XCTAssertTrue(IntegratedBanking.validate(city.banking!))
@@ -109,7 +109,7 @@ final class CityLongEconomyTests: XCTestCase {
   let restored = try JSONDecoder().decode(GameState.self, from: encoder.encode(initial))
   XCTAssertEqual(initial, restored)
   XCTAssertEqual(StateDigest.hash(initial), StateDigest.hash(restored))
-  XCTAssertEqual(restored.banking?.financeRuleVersion, 3)
+  XCTAssertEqual(restored.banking?.financeRuleVersion, 4)
   XCTAssertEqual(restored.banking?.market?.algorithmVersion, 3)
  }
 }

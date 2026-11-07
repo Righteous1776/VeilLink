@@ -102,7 +102,8 @@ public enum VeilopolyCityLongCards {
  /// Editorial is only displayed for an exact canonical match. Custom cards,
  /// legacy saves and modified effect arrays cannot masquerade as V3 copy.
  public static func presentation(for card: CardDefinition) -> VeilopolyCardEditorialEntry? {
-  if let blueprint = blueprintsV4.first(where: {
+  if (card.id == 13 || card.id == 27),
+     let blueprint = blueprintsV4.first(where: {
    $0.id == card.id && $0.deck == card.deck && $0.canonical == card
   }) {
    let marker = String(format: "VL-CITY-V4-%@-%03d",
