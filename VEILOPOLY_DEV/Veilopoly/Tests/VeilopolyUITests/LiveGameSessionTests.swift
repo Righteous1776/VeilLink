@@ -105,6 +105,31 @@ final class LiveGameSessionTests: XCTestCase {
   let stored = try VeilopolySaveStore(directory: dir).load(gameID: config.roomID, mode: .multiplayerGuest)
   XCTAssertEqual(stored?.game.nextSeq, 2, "Durability follows logical authority, not delayed animation")
  }
+ func testHostLifecycleRequiresFreshPeerStatusAfterBackground() throws {
+  let (config, dir) = try fixture(); defer { try? FileManager.default.removeItem(at: dir) }
+  var sent: [VeilopolyRoomPacket] = []
+  let host = try GameSessionModel(multiplayer: config, localIdentityID: "host", saveDirectory: dir) {
+   sent.append($0)
+  }
+  host.setNetworkAvailability(true, message: "initial matching status")
+  XCTAssertTrue(host.networkReady)
+  host.setNetworkForeground(false)
+  XCTAssertFalse(host.networkReady)
+  host.setNetworkAvailability(true, message: "stale bridge callback")
+  XCTAssertFalse(host.networkReady, "Background state cannot be reopened by a stale callback")
+  host.receiveNetworkPacket(.init(roomID: config.roomID, kind: .status,
+   nextSeq: host.game.nextSeq, stateHash: StateDigest.hash(host.game)), from: "guest")
+  host.perform(.rollDice)
+  XCTAssertEqual(host.game.nextSeq, 0, "Background host must not roll")
+  host.setNetworkForeground(true)
+  XCTAssertFalse(host.networkReady, "Returning to foreground requires fresh matching peer status")
+  XCTAssertTrue(sent.contains(where: { $0.kind == .snapshot }), "Host requests resynchronization")
+  host.receiveNetworkPacket(.init(roomID: config.roomID, kind: .status,
+   nextSeq: host.game.nextSeq, stateHash: StateDigest.hash(host.game)), from: "guest")
+  XCTAssertTrue(host.networkReady)
+  host.perform(.rollDice)
+  XCTAssertGreaterThan(host.game.nextSeq, 0)
+ }
  func testBackgroundDoesNotResumeFromIncomingStatusOrExecuteAnotherRoll() throws {
   let (config, dir) = try fixture(); defer { try? FileManager.default.removeItem(at: dir) }
   let host = try GameSessionModel(multiplayer: config, localIdentityID: "host", saveDirectory: dir) { _ in }

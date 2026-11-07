@@ -153,6 +153,9 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
             self?.enqueue(packet, to: peer)
         }
         configuration = config; boundLocalIdentity = local; peerLeft = false; gameModel = game
+        // The lobby can be backgrounded while constructing/restoring a room.
+        // Keep the game reducer's lifecycle gate aligned with the bridge gate.
+        game.setNetworkForeground(foreground)
         lastHeard = Date(); lastError = nil
         persistResumeRecord(config, local: local)
         startMonitoring()
@@ -205,10 +208,13 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
 
     func setForeground(_ active: Bool) {
         foreground = active
-        if !active {
-            gameModel?.flushSave()
-            gameModel?.setNetworkAvailability(false, message: "应用进入后台，联机操作暂停")
-        } else { lastHeard = Date(); gameModel?.requestNetworkSync() }
+        // Model.setNetworkForeground owns save/pause and blocks packet commits.
+        // A bridge-only flag would leave a room playable in the background.
+        gameModel?.setNetworkForeground(active)
+        if active {
+            lastHeard = Date()
+            gameModel?.requestNetworkSync()
+        }
     }
 
     func reconnectAndSync() {
