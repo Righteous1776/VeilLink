@@ -1,4 +1,5 @@
 import SwiftUI
+import VeilopolyNet
 import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
@@ -1256,7 +1257,7 @@ private struct MessageBubble: View {
                 } else if message.body == "[图片]", let progress = message.transferProgress {
                     TransferShardView(image: nil, progress: progress, mode: .receiving)
                         .frame(width: 190)
-                } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
+                } else if let gamePreview = VeilopolyRoomWire.previewText(for: message.body) ?? MiniGameCodec.previewText(for: message.body) {
                     Text(gamePreview)
                         .font(.body.weight(.medium))
                         .padding(.horizontal, 14)
