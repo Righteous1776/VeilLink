@@ -340,7 +340,11 @@ final class AdaptiveBoardLearningStore {
                     // that beat the bot receive a little more attention.
                     raw = actionStat.count * 42 + max(0, -actionStat.aiReward) * 20
                 }
-                actions[action] = max(actions[action] ?? 0, min(900, max(-180, raw)))
+                // R2: keep losses as negative evidence instead of silently
+                // discarding them via max(0, raw). Retain bundled opening
+                // priors while allowing real observed failures to weaken them.
+                let learned = min(900, max(-180, raw))
+                actions[action] = min(900, max(-180, (actions[action] ?? 0) + learned))
             }
             result[position] = actions
         }
