@@ -34,6 +34,13 @@ struct AgentHomeView: View {
                 }
                 .accessibilityLabel("打开 AI 控制中心")
 
+                #if VERTEX_CHAT_ONLY && canImport(llama)
+                NavigationLink(destination: LingCoreTinyChatView()) {
+                    Image(systemName: "text.bubble")
+                }
+                .accessibilityLabel("进入 Vertex 35M 离线微型聊天")
+                #endif
+
                 NavigationLink(destination: AgentVideoChatView(coordinator: model.agent)) {
                     Image(systemName: "video")
                 }
