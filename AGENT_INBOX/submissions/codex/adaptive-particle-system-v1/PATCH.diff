@@ -1,0 +1,478 @@
+diff --git a/VeilLink/App/VeilLinkApp.swift b/VeilLink/App/VeilLinkApp.swift
+--- a/VeilLink/App/VeilLinkApp.swift
++++ b/VeilLink/App/VeilLinkApp.swift
+@@ -301,7 +301,8 @@ private struct RootContainer: View {
+     @ObservedObject var identity: IdentityManager
+     @ObservedObject var appLock: AppLockController
+     @ObservedObject var legalConsent: VeilLegalConsentController
+     @ObservedObject var stressTest: DeviceStressTestController
++    @ObservedObject var performanceOverrides: PerformanceOverrideController
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+     private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
+ 
+@@ -309,7 +310,12 @@ private struct RootContainer: View {
+         identity = model.identity
+         appLock = model.appLock
+         legalConsent = model.legalConsent
+         stressTest = DeviceStressTestController.shared
++        performanceOverrides = model.performanceOverrides
++    }
++
++    private var particleEventToken: String {
++        "\(legalConsent.isSatisfied)-\(identity.activeIdentity == nil)-\(appLock.isLocked)-\(model.selectedSection.rawValue)"
+     }
+ 
+     var body: some View {
+@@ -333,6 +339,7 @@ private struct RootContainer: View {
+                 AdaptiveRootView(model: model)
+                     .transition(motionReduced ? .opacity : .opacity.combined(with: .scale(scale: 1.006)))
+             }
+         }
++        .veilAdaptiveParticles(eventToken: particleEventToken, overrideSnapshot: performanceOverrides.snapshot)
+         .overlay(alignment: .topTrailing) {
+             if stressTest.isRunning {
+diff --git a/VeilLink/Core/VeilParticlePerformancePolicy.swift b/VeilLink/Core/VeilParticlePerformancePolicy.swift
+new file mode 100644
+index 0000000..ae9e019
+--- /dev/null
++++ b/VeilLink/Core/VeilParticlePerformancePolicy.swift
+@@ -0,0 +1,112 @@
++import Foundation
++
++enum VeilParticleThermalLevel: Int, Comparable, Sendable {
++    case nominal = 0
++    case fair = 1
++    case serious = 2
++    case critical = 3
++
++    static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
++}
++
++enum VeilParticleQuality: String, Equatable, Sendable {
++    case off
++    case efficient
++    case balanced
++    case cinematic
++}
++
++struct VeilParticlePerformanceInputs: Equatable {
++    let isAppActive: Bool
++    let usesLegacyCompositor: Bool
++    let reduceMotionEnabled: Bool
++    let lowPowerModeEnabled: Bool
++    let thermalLevel: VeilParticleThermalLevel
++    let visualComplexity: TransferVisualComplexity
++    let forceFullVisualEffects: Bool
++    let allowPersistentAnimations: Bool
++}
++
++struct VeilParticleBudget: Equatable, Sendable {
++    let quality: VeilParticleQuality
++    let ambientCount: Int
++    let trailFragmentsPerSample: Int
++    let burstCount: Int
++    let maximumTrailSamples: Int
++    let frameInterval: TimeInterval
++    let usesGlow: Bool
++
++    var isEnabled: Bool { quality != .off }
++    var allowsAmbientMotion: Bool { ambientCount > 0 }
++
++    static let off = VeilParticleBudget(
++        quality: .off,
++        ambientCount: 0,
++        trailFragmentsPerSample: 0,
++        burstCount: 0,
++        maximumTrailSamples: 0,
++        frameInterval: 1,
++        usesGlow: false
++    )
++}
++
++enum VeilParticlePerformancePolicy {
++    static func resolve(_ input: VeilParticlePerformanceInputs) -> VeilParticleBudget {
++        guard input.isAppActive else { return .off }
++
++        // God Mode is deliberately authoritative for visual quality, including on legacy
++        // devices and with Reduce Motion enabled. Persistent ambience still requires its
++        // separate explicit switch so a transient-effects override cannot create an endless loop.
++        if input.forceFullVisualEffects {
++            return VeilParticleBudget(
++                quality: .cinematic,
++                ambientCount: input.allowPersistentAnimations ? 48 : 0,
++                trailFragmentsPerSample: 5,
++                burstCount: 84,
++                maximumTrailSamples: 18,
++                frameInterval: 1.0 / 60.0,
++                usesGlow: true
++            )
++        }
++
++        guard !input.usesLegacyCompositor,
++              !input.reduceMotionEnabled,
++              !input.lowPowerModeEnabled,
++              input.thermalLevel < .serious,
++              input.visualComplexity != .minimal else { return .off }
++
++        if input.thermalLevel == .fair || input.visualComplexity == .balanced {
++            return VeilParticleBudget(
++                quality: .efficient,
++                ambientCount: input.allowPersistentAnimations ? 8 : 0,
++                trailFragmentsPerSample: 2,
++                burstCount: 18,
++                maximumTrailSamples: 8,
++                frameInterval: 1.0 / 15.0,
++                usesGlow: false
++            )
++        }
++
++        return VeilParticleBudget(
++            quality: .balanced,
++            ambientCount: input.allowPersistentAnimations ? 22 : 0,
++            trailFragmentsPerSample: 3,
++            burstCount: 42,
++            maximumTrailSamples: 12,
++            frameInterval: 1.0 / 30.0,
++            usesGlow: true
++        )
++    }
++}
++
++enum VeilParticleSeed {
++    static func unit(_ seed: Int, lane: Int) -> Double {
++        var value = UInt64(bitPattern: Int64(seed &+ lane &* 7_919))
++        value ^= value >> 30
++        value &*= 0xbf58_476d_1ce4_e5b9
++        value ^= value >> 27
++        value &*= 0x94d0_49bb_1331_11eb
++        value ^= value >> 31
++        return Double(value % 10_000) / 10_000
++    }
++}
+diff --git a/VeilLink/UI/VeilAdaptiveParticleLayer.swift b/VeilLink/UI/VeilAdaptiveParticleLayer.swift
+new file mode 100644
+index 0000000..dc836c2
+--- /dev/null
++++ b/VeilLink/UI/VeilAdaptiveParticleLayer.swift
+@@ -0,0 +1,222 @@
++import SwiftUI
++
++private struct VeilParticleTrailSample: Equatable {
++    let point: CGPoint
++    let time: TimeInterval
++}
++
++private struct VeilParticleBurst: Equatable {
++    let id: Int
++    let origin: CGPoint?
++    let time: TimeInterval
++}
++
++private struct VeilAdaptiveParticleModifier: ViewModifier {
++    let eventToken: String
++    let overrideSnapshot: PerformanceOverrideSnapshot
++
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
++    @State private var trail: [VeilParticleTrailSample] = []
++    @State private var burst: VeilParticleBurst?
++    @State private var eventSequence = 0
++    @State private var runtimeRevision = 0
++
++    private var budget: VeilParticleBudget {
++        VeilParticlePerformancePolicy.resolve(.init(
++            isAppActive: scenePhase == .active,
++            usesLegacyCompositor: VeilRenderProfile.usesLegacyCompositorPath,
++            reduceMotionEnabled: reduceMotion,
++            lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
++            thermalLevel: thermalLevel,
++            visualComplexity: VeilDevicePerformance.base.transferVisualComplexity,
++            forceFullVisualEffects: overrideSnapshot.isEnabled && overrideSnapshot.forceFullVisualEffects,
++            allowPersistentAnimations: overrideSnapshot.isEnabled
++                ? overrideSnapshot.allowPersistentAnimations
++                : VeilRenderProfile.allowsPersistentAnimations
++        ))
++    }
++
++    func body(content: Content) -> some View {
++        let resolvedBudget = budget
++        content
++            .overlay {
++                if resolvedBudget.isEnabled {
++                    TimelineView(.animation(
++                        minimumInterval: resolvedBudget.frameInterval,
++                        paused: !resolvedBudget.allowsAmbientMotion && trail.isEmpty && burst == nil
++                    )) { timeline in
++                        VeilAdaptiveParticleCanvas(
++                            time: timeline.date.timeIntervalSinceReferenceDate,
++                            budget: resolvedBudget,
++                            trail: trail,
++                            burst: burst,
++                            runtimeRevision: runtimeRevision
++                        )
++                    }
++                    .allowsHitTesting(false)
++                    .accessibilityHidden(true)
++                }
++            }
++            .simultaneousGesture(dragGesture(budget: resolvedBudget))
++            .onChange(of: eventToken) { _ in
++                guard resolvedBudget.burstCount > 0 else { return }
++                emitBurst(at: nil)
++            }
++            .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
++                runtimeRevision &+= 1
++            }
++            .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
++                runtimeRevision &+= 1
++            }
++    }
++
++    private func dragGesture(budget: VeilParticleBudget) -> some Gesture {
++        DragGesture(minimumDistance: 8, coordinateSpace: .local)
++            .onChanged { value in
++                guard budget.trailFragmentsPerSample > 0 else { return }
++                let now = Date().timeIntervalSinceReferenceDate
++                if let last = trail.last {
++                    let distance = hypot(value.location.x - last.point.x, value.location.y - last.point.y)
++                    guard distance >= 10 || now - last.time >= 0.05 else { return }
++                    if now - last.time > 0.7 { trail.removeAll(keepingCapacity: true) }
++                }
++                trail.append(.init(point: value.location, time: now))
++                if trail.count > budget.maximumTrailSamples {
++                    trail.removeFirst(trail.count - budget.maximumTrailSamples)
++                }
++            }
++            .onEnded { value in
++                guard budget.burstCount > 0 else { return }
++                emitBurst(at: value.location)
++            }
++    }
++
++    private func emitBurst(at point: CGPoint?) {
++        eventSequence &+= 1
++        let sequence = eventSequence
++        burst = VeilParticleBurst(
++            id: sequence,
++            origin: point,
++            time: Date().timeIntervalSinceReferenceDate
++        )
++        DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) {
++            guard eventSequence == sequence else { return }
++            burst = nil
++            trail.removeAll(keepingCapacity: true)
++        }
++    }
++
++    private var thermalLevel: VeilParticleThermalLevel {
++        switch ProcessInfo.processInfo.thermalState {
++        case .nominal: return .nominal
++        case .fair: return .fair
++        case .serious: return .serious
++        case .critical: return .critical
++        @unknown default: return .serious
++        }
++    }
++}
++
++private struct VeilAdaptiveParticleCanvas: View {
++    let time: TimeInterval
++    let budget: VeilParticleBudget
++    let trail: [VeilParticleTrailSample]
++    let burst: VeilParticleBurst?
++    let runtimeRevision: Int
++
++    var body: some View {
++        Canvas(opaque: false, colorMode: .linear, rendersAsynchronously: true) { context, size in
++            context.blendMode = .plusLighter
++            drawAmbient(context: &context, size: size)
++            drawTrail(context: &context)
++            drawBurst(context: &context, size: size)
++        }
++        .id(runtimeRevision)
++    }
++
++    private func drawAmbient(context: inout GraphicsContext, size: CGSize) {
++        guard budget.ambientCount > 0, size.width > 0, size.height > 0 else { return }
++        for index in 0..<budget.ambientCount {
++            let xSeed = VeilParticleSeed.unit(73, lane: index * 4)
++            let ySeed = VeilParticleSeed.unit(73, lane: index * 4 + 1)
++            let speed = 0.018 + VeilParticleSeed.unit(73, lane: index * 4 + 2) * 0.035
++            let cycle = (time * speed + ySeed).truncatingRemainder(dividingBy: 1)
++            let sway = sin(time * (0.22 + speed) + Double(index)) * 0.025
++            let x = size.width * CGFloat(max(0.01, min(0.99, xSeed + sway)))
++            let y = size.height * CGFloat(1.03 - cycle * 1.08)
++            let radius = CGFloat(0.7 + VeilParticleSeed.unit(73, lane: index * 4 + 3) * 1.8)
++            let alpha = 0.05 + sin(cycle * .pi) * 0.16
++            let color = index.isMultiple(of: 4) ? VeilTheme.goldBright : VeilTheme.paleMetal
++            context.fill(
++                Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)),
++                with: .color(color.opacity(alpha))
++            )
++        }
++    }
++
++    private func drawTrail(context: inout GraphicsContext) {
++        guard budget.trailFragmentsPerSample > 0 else { return }
++        for (sampleIndex, sample) in trail.enumerated() {
++            let age = time - sample.time
++            guard age >= 0, age < 0.72 else { continue }
++            let life = 1 - age / 0.72
++            for fragment in 0..<budget.trailFragmentsPerSample {
++                let lane = sampleIndex * 11 + fragment
++                let angle = VeilParticleSeed.unit(191, lane: lane) * .pi * 2
++                let distance = CGFloat(age * (18 + VeilParticleSeed.unit(193, lane: lane) * 34))
++                let point = CGPoint(
++                    x: sample.point.x + CGFloat(cos(angle)) * distance,
++                    y: sample.point.y + CGFloat(sin(angle)) * distance - CGFloat(age * 18)
++                )
++                let radius = CGFloat(1.2 + VeilParticleSeed.unit(197, lane: lane) * 2.4) * CGFloat(life)
++                let color = fragment.isMultiple(of: 2) ? VeilTheme.goldBright : VeilTheme.paleMetal
++                context.fill(
++                    Path(ellipseIn: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)),
++                    with: .color(color.opacity(life * (budget.usesGlow ? 0.78 : 0.48)))
++                )
++            }
++        }
++    }
++
++    private func drawBurst(context: inout GraphicsContext, size: CGSize) {
++        guard let burst, budget.burstCount > 0 else { return }
++        let age = time - burst.time
++        guard age >= 0, age < 0.88 else { return }
++        let progress = min(1, age / 0.88)
++        let life = 1 - progress
++        let origin = burst.origin ?? CGPoint(x: size.width * 0.5, y: size.height * 0.48)
++
++        for index in 0..<budget.burstCount {
++            let angle = VeilParticleSeed.unit(burst.id, lane: index * 3) * .pi * 2
++            let velocity = 34 + VeilParticleSeed.unit(burst.id, lane: index * 3 + 1) * 150
++            let distance = CGFloat(velocity * progress)
++            let point = CGPoint(
++                x: origin.x + CGFloat(cos(angle)) * distance,
++                y: origin.y + CGFloat(sin(angle)) * distance + CGFloat(42 * progress * progress)
++            )
++            let base = CGFloat(1.2 + VeilParticleSeed.unit(burst.id, lane: index * 3 + 2) * 3.4)
++            let radius = max(0.35, base * CGFloat(life))
++            let color = index.isMultiple(of: 3) ? VeilTheme.goldBright : (index.isMultiple(of: 2) ? VeilTheme.gold : VeilTheme.paleMetal)
++            var shard = Path()
++            shard.move(to: CGPoint(x: point.x, y: point.y - radius * 1.7))
++            shard.addLine(to: CGPoint(x: point.x + radius, y: point.y))
++            shard.addLine(to: CGPoint(x: point.x, y: point.y + radius * 1.7))
++            shard.addLine(to: CGPoint(x: point.x - radius, y: point.y))
++            shard.closeSubpath()
++            context.fill(shard, with: .color(color.opacity(life * (budget.usesGlow ? 0.92 : 0.60))))
++        }
++    }
++}
++
++extension View {
++    func veilAdaptiveParticles(
++        eventToken: String,
++        overrideSnapshot: PerformanceOverrideSnapshot
++    ) -> some View {
++        modifier(VeilAdaptiveParticleModifier(
++            eventToken: eventToken,
++            overrideSnapshot: overrideSnapshot
++        ))
++    }
++}
+diff --git a/VeilLinkTests/VeilParticlePerformancePolicyTests.swift b/VeilLinkTests/VeilParticlePerformancePolicyTests.swift
+new file mode 100644
+index 0000000..ae8cf5b
+--- /dev/null
++++ b/VeilLinkTests/VeilParticlePerformancePolicyTests.swift
+@@ -0,0 +1,92 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilParticlePerformancePolicyTests: XCTestCase {
++    func testLegacyDeviceIsOffInAutomaticMode() {
++        XCTAssertEqual(resolve(legacy: true).quality, .off)
++    }
++
++    func testReduceMotionIsOffInAutomaticMode() {
++        XCTAssertEqual(resolve(reduceMotion: true).quality, .off)
++    }
++
++    func testLowPowerModeIsOffInAutomaticMode() {
++        XCTAssertEqual(resolve(lowPower: true).quality, .off)
++    }
++
++    func testSeriousAndCriticalThermalStatesAreOff() {
++        XCTAssertEqual(resolve(thermal: .serious).quality, .off)
++        XCTAssertEqual(resolve(thermal: .critical).quality, .off)
++    }
++
++    func testFairThermalStateDowngradesToEfficient() {
++        let budget = resolve(thermal: .fair)
++        XCTAssertEqual(budget.quality, .efficient)
++        XCTAssertEqual(budget.frameInterval, 1.0 / 15.0, accuracy: 0.0001)
++        XCTAssertFalse(budget.usesGlow)
++    }
++
++    func testFullModernProfileUsesBoundedBalancedBudget() {
++        let budget = resolve()
++        XCTAssertEqual(budget.quality, .balanced)
++        XCTAssertEqual(budget.ambientCount, 22)
++        XCTAssertEqual(budget.burstCount, 42)
++        XCTAssertLessThanOrEqual(budget.maximumTrailSamples * budget.trailFragmentsPerSample, 36)
++    }
++
++    func testGodModeForcesCinematicEffectsOnLegacyReducedCriticalDevice() {
++        let budget = resolve(
++            legacy: true,
++            reduceMotion: true,
++            lowPower: true,
++            thermal: .critical,
++            forceFull: true,
++            persistent: true
++        )
++        XCTAssertEqual(budget.quality, .cinematic)
++        XCTAssertEqual(budget.ambientCount, 48)
++        XCTAssertEqual(budget.frameInterval, 1.0 / 60.0, accuracy: 0.0001)
++    }
++
++    func testGodTransientOverrideDoesNotImplicitlyEnablePersistentAmbient() {
++        let budget = resolve(legacy: true, forceFull: true, persistent: false)
++        XCTAssertEqual(budget.quality, .cinematic)
++        XCTAssertEqual(budget.ambientCount, 0)
++        XCTAssertGreaterThan(budget.burstCount, 0)
++    }
++
++    func testInactiveAppAlwaysDisablesRenderingIncludingGodMode() {
++        XCTAssertEqual(resolve(active: false, forceFull: true, persistent: true), .off)
++    }
++
++    func testSeedIsDeterministicAndNormalized() {
++        for lane in 0..<100 {
++            let first = VeilParticleSeed.unit(42, lane: lane)
++            XCTAssertEqual(first, VeilParticleSeed.unit(42, lane: lane))
++            XCTAssertGreaterThanOrEqual(first, 0)
++            XCTAssertLessThan(first, 1)
++        }
++    }
++
++    private func resolve(
++        active: Bool = true,
++        legacy: Bool = false,
++        reduceMotion: Bool = false,
++        lowPower: Bool = false,
++        thermal: VeilParticleThermalLevel = .nominal,
++        complexity: TransferVisualComplexity = .full,
++        forceFull: Bool = false,
++        persistent: Bool = true
++    ) -> VeilParticleBudget {
++        VeilParticlePerformancePolicy.resolve(.init(
++            isAppActive: active,
++            usesLegacyCompositor: legacy,
++            reduceMotionEnabled: reduceMotion,
++            lowPowerModeEnabled: lowPower,
++            thermalLevel: thermal,
++            visualComplexity: complexity,
++            forceFullVisualEffects: forceFull,
++            allowPersistentAnimations: persistent
++        ))
++    }
++}
+
