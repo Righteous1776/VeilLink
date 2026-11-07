@@ -1061,6 +1061,163 @@ public struct VeilopolyGameView: View {
   return "\(quote.symbol) ¥\(whole).\(String(format: "%02d", fraction))"
  }
 
+
+ // Read-only browsing never depends on turn.phase and never calls the reducer.
+ private var readOnlyOverviewShortcut: some View {
+  Button { showAssetExplorer = true } label: {
+   Label("无需购买，先查看地产 / 银行 / 股票 / 交易",
+         systemImage: "info.circle")
+    .font(.system(size: 13, weight: .semibold))
+    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    .contentShape(Rectangle())
+  }
+  .buttonStyle(.plain)
+  .foregroundColor(.mint)
+  .accessibilityHint("打开只读浏览器，不会提交购买或竞价")
+ }
+
+ private var assetExplorerSheet: some View {
+  NavigationView {
+   VStack(spacing: 10) {
+    Text("全部信息均可先看；浏览不代表同意购买、拍卖或交易。")
+     .font(.subheadline)
+     .foregroundStyle(.secondary)
+     .frame(maxWidth: .infinity, alignment: .leading)
+    managementNavigation
+    ScrollView {
+     assetOverviewContents
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.vertical, 8)
+    }
+   }
+   .padding(16)
+   .navigationTitle("资产与城市信息")
+   .navigationBarTitleDisplayMode(.inline)
+   .toolbar {
+    ToolbarItem(placement: .confirmationAction) {
+     Button("返回对局") { showAssetExplorer = false }
+    }
+   }
+  }
+  .navigationViewStyle(.stack)
+  .preferredColorScheme(.dark)
+ }
+
+ @ViewBuilder private var assetOverviewContents: some View {
+  switch managementSection {
+  case .property: assetPropertyContents
+  case .bank: assetBankContents
+  case .market: assetMarketContents
+  case .trade: assetTradeContents
+  }
+ }
+
+ private var assetPropertyContents: some View {
+  VStack(alignment: .leading, spacing: 10) {
+   Text("40 格地产与建筑").font(.headline)
+   if model.game.board.indices.contains(overviewTile) {
+    let tile = model.game.board[overviewTile]
+    Text("当前查看：#\(tile.i) · \(tile.name)")
+     .font(.title3.weight(.semibold))
+    Text(tile.purchasable
+         ? "价格 ¥\(tile.price) · 基础租金 ¥\(tile.rent.first ?? 0)"
+         : "特殊地块")
+     .font(.subheadline)
+    Text(tile.owner.map { "业主：\(model.game.players[$0].name)" } ?? "无主")
+     .foregroundStyle(.secondary)
+    if let deed = VeilopolyCivicText.deed(model.game, tileIndex: overviewTile) {
+     VeilopolyCivicDocumentPanel(document: deed)
+    }
+   }
+   ForEach(model.game.board, id: \.i) { tile in
+    Button { overviewTile = tile.i } label: {
+     HStack {
+      Text("#\(tile.i) · \(tile.name)")
+       .lineLimit(1)
+      Spacer(minLength: 10)
+      Text(tile.owner.map { model.game.players[$0].name } ?? "无主")
+       .foregroundColor(.secondary)
+     }
+     .padding(.horizontal, 8)
+     .frame(minHeight: 44)
+     .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+   }
+  }
+ }
+
+ private var assetBankContents: some View {
+  VStack(alignment: .leading, spacing: 12) {
+   Text("银行账户与债务").font(.headline)
+   Text("现金 ¥\(model.game.players[model.actor].cash)")
+    .font(.title3.monospacedDigit())
+   Text("账面净资产 ¥\(netWorth(model.game.players[model.actor]))")
+    .font(.headline.monospacedDigit())
+   if let ledger = model.game.banking,
+      ledger.accounts.indices.contains(model.actor) {
+    let account = ledger.accounts[model.actor]
+    Text("存款本金 ¥\(account.savings.reduce(0) { $0 + $1.principal })")
+    Text("贷款待还 ¥\(account.loans.reduce(0) { $0 + $1.totalDue })")
+    Text("持有投资：\(account.positions.count) 项")
+    Text("账期：\(ledger.completedTurns)")
+   }
+   if let digest = VeilopolyBankAutomation.digest(model.game, player: model.actor) {
+    Text(digest.memorandum)
+     .fixedSize(horizontal: false, vertical: true)
+   }
+   Text("这里只显示账户状态；存取款及贷款需满足当前规则。")
+    .font(.footnote).foregroundStyle(.secondary)
+  }
+ }
+
+ private var assetMarketContents: some View {
+  let ledger = IntegratedBanking.ledger(model.game)
+  let market = ledger.market ?? StockMarketEngine.initial(seed: model.game.seed)
+  return VStack(alignment: .leading, spacing: 12) {
+   Text("五只虚构股票").font(.headline)
+   Text("行情只用于当前离线棋局，非真实证券价格。")
+    .font(.footnote).foregroundStyle(.secondary)
+   ForEach(market.quotes, id: \.symbol) { quote in
+    HStack(spacing: 8) {
+     Text(quote.symbol)
+      .font(.headline.monospaced())
+     Spacer(minLength: 8)
+     Text("¥\(quote.priceCents / 100).\(String(format: "%02d", abs(quote.priceCents % 100)))")
+      .font(.system(.body, design: .monospaced))
+     if quote.isHalted { Text("暂停").foregroundColor(.orange) }
+    }
+    .frame(minHeight: 44)
+   }
+   Text("只读浏览不会提交订单；买卖按钮只在合法管理阶段生效。")
+    .font(.footnote).foregroundStyle(.secondary)
+  }
+ }
+
+ private var assetTradeContents: some View {
+  VStack(alignment: .leading, spacing: 12) {
+   Text("玩家与产权分布").font(.headline)
+   ForEach(model.game.players, id: \.id) { player in
+    VStack(alignment: .leading, spacing: 4) {
+     Text(player.name).font(.headline)
+     Text("现金 ¥\(player.cash) · 地产 \(model.game.board.filter { $0.owner == player.id }.count) 处")
+      .font(.subheadline)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(10)
+    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+   }
+   if model.game.trade == nil {
+    Text("当前无待确认的交易。")
+   } else {
+    Text("当前存在待确认交易。")
+   }
+   Text("交易信息可随时查看，但发起或接受交易仍需合法回合。")
+    .font(.footnote).foregroundStyle(.secondary)
+  }
+ }
+
  private var portraitFallback: some View {
   VStack(spacing: 16) {
    Image(systemName: "iphone.gen3.radiowaves.left.and.right")
