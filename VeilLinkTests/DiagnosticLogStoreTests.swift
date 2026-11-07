@@ -72,11 +72,17 @@ final class DiagnosticLogStoreTests: XCTestCase {
     }
 
     private func waitForEntries(_ count: Int, in store: DiagnosticLogStore) async {
-        for _ in 0..<200 {
-            if store.recentEntries.count >= count { return }
-            try? await Task.sleep(nanoseconds: 5_000_000)
+        // The existing export API synchronizes the serial log queue before
+        // reading it. Use that real completion barrier instead of assuming
+        // a utility queue will finish within 200 short scheduler sleeps.
+        // All record-count, uniqueness and ordering assertions remain intact.
+        do {
+            let snapshot = try store.exportBundle(context: "xctest.log-queue-barrier")
+            defer { try? FileManager.default.removeItem(at: snapshot) }
+        } catch {
+            XCTFail("Could not synchronize diagnostic records: \(error)")
         }
-        XCTFail("Timed out waiting for \(count) diagnostic entries; observed \(store.recentEntries.count)")
+        XCTAssertGreaterThanOrEqual(store.recentEntries.count, count)
     }
 
     func testStallPolicyRejectsSuspensionAndResumeGrace() {
