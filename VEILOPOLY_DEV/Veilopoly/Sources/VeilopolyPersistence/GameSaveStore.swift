@@ -137,6 +137,32 @@ public final class VeilopolySaveStore {
         (0..<4).contains(g.turn.player),
         (g.turn.pendingPurchase.map { g.board.indices.contains($0) } ?? true),
         (g.auction.map { g.board.indices.contains($0.tile) } ?? true),
+        (g.auction.map { a in
+         !a.active.isEmpty && a.active.count <= 4 &&
+         Set(a.active).count == a.active.count &&
+         a.active.allSatisfy { (0..<4).contains($0) } &&
+         a.active.contains(a.turn) &&
+         (a.bidder.map { (0..<4).contains($0) } ?? true) &&
+         (0...1_000_000_000).contains(a.currentBid)
+        } ?? true),
+        (g.trade.map { t in
+         (0..<4).contains(t.from) && (0..<4).contains(t.to) && t.from != t.to &&
+         [t.offer, t.request].allSatisfy { x in
+          (0...1_000_000_000).contains(x.cash) &&
+          x.tiles.allSatisfy { g.board.indices.contains($0) } &&
+          (0...16).contains(x.chanceCards) && (0...16).contains(x.chestCards)
+         }
+        } ?? true),
+        (g.pendingDebt.map { d in
+         (0..<4).contains(d.player) &&
+         (d.creditor.map { (0..<4).contains($0) } ?? true) &&
+         (0...1_000_000_000).contains(d.amount)
+        } ?? true),
+        (0..<Int.max - 16).contains(g.turn.rollCount),
+        (0..<Int.max - 16).contains(g.turn.doubleCount),
+        (0...12).contains(g.turn.pendingSteps),
+        (0..<Int.max - 16).contains(g.chanceDeck.cursor),
+        (0..<Int.max - 16).contains(g.chestDeck.cursor),
         (0...32).contains(g.bank.houses), (0...12).contains(g.bank.hotels),
         (g.banking.map { IntegratedBanking.validate($0) } ?? true) else { return false }
   if let winner = g.winner {
