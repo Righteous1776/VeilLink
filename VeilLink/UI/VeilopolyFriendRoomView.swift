@@ -32,6 +32,7 @@ private final class VeilopolyFriendRoomController: ObservableObject {
  let model: AppModel
  let conversation: ConversationSummary
  private var processedIDs = Set<String>()
+ private var processedSyncHints = Set<String>()
  private var lastGuestIntentSeq: Int?
  private var lastResyncAt = Date.distantPast
 
@@ -129,6 +130,7 @@ private final class VeilopolyFriendRoomController: ObservableObject {
   activeGame = VeilopolyOpenFriendGame(id: room.id,
                                         isHost: room.hostIsLocal, model: session)
   processedIDs = []
+  processedSyncHints = []
   refresh()
   if !room.hostIsLocal { requestResync() }
  }
@@ -208,6 +210,18 @@ private final class VeilopolyFriendRoomController: ObservableObject {
     }
     lastGuestIntentSeq = nil
    }
+   // The authoritative host may have sent more than one bounded replay
+   // batch. A new host-head hint requests the next part exactly once.
+   for (message, packet) in records where packet.gameId == active.id &&
+                                        !message.isOutgoing && packet.kind == .syncHint {
+    guard !processedSyncHints.contains(message.id) else { continue }
+    processedSyncHints.insert(message.id)
+    if let lastHostSeq = packet.hostHeadSeq,
+       active.model.game.nextSeq - 1 < lastHostSeq {
+     lastResyncAt = .distantPast
+     requestResync()
+    }
+   }
   }
  }
 
@@ -226,7 +240,13 @@ private final class VeilopolyFriendRoomController: ObservableObject {
    }
    dispatched += 1
    if dispatched >= 48 {
-    statusMessage = "已补发 48 条历史操作；若尚未同步，请再次选择恢复。"
+    // Tell the guest whether more packets remain; it automatically requests
+    // another bounded batch after verifying the current one.
+    if verified.seq < game.nextSeq - 1 {
+     _ = outbound(GameEnvelope(gameId: roomID, kind: .syncHint,
+                               hostHeadSeq: game.nextSeq - 1))
+    }
+    statusMessage = "已补发一批历史回合，剩余回合由好友自动接续同步。"
     return
    }
   }
