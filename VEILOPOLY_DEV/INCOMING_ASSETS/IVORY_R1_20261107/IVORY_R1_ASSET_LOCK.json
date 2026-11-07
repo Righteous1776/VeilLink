@@ -374,7 +374,7 @@
     "icon sheet is manually cropped to individually addressable PNGs",
     "iOS Xcode and SpriteKit frame validation still required"
   ],
-  "blob_upload": "GITHUB_CREATE_BLOB_VERIFIED_19_OF_19_NOT_YET_TREE_ATTACHED",
+  "blob_upload": "GITHUB_TREE_ATTACHED_AND_REMOTE_VERIFIED_19_OF_19",
   "codex_preservation": [
     "astraCenterCity",
     "astraHouseGreen",
@@ -400,5 +400,15 @@
     "ivoryR1VictoryBadge"
   ],
   "git_blob_check": "19/19 EXACT",
-  "runtime_status": "SOURCE_HOOKUP_ONLY; IOS_NOT_BUILT"
+  "runtime_status": "SOURCE_HOOKUP_ONLY; IOS_NOT_BUILT",
+  "upload_commit": "e0d77996e33e803599c03e4e4fee0cc23a613b52",
+  "verification": {
+    "remote_git_blob_and_bytes": "PASS_19_OF_19",
+    "local_sha256_and_png_dimensions": "PASS_19_OF_19",
+    "runtime_active": 3,
+    "preloaded_candidates": 16,
+    "codex_assets_overwritten": 0,
+    "swift6_2_1_registry_typecheck": "PASS_WITH_BUNDLE_MODULE_STUB",
+    "xcode_ios_rendering": "NOT_TESTED"
+  }
 }
