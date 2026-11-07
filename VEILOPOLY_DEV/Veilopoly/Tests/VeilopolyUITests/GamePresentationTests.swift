@@ -103,6 +103,25 @@ final class GamePresentationTests: XCTestCase {
   XCTAssertEqual(live.turn.player, 1)
  }
 
+
+ func testEveryKnownEngineFailureHasUsefulRecoveryText() {
+  let failures: [GameError] = [
+   .noCash,.notOwner,.invalidTile,.setNotComplete,.buildUneven,
+   .alreadyMortgaged,.alreadyOwned,.insufficientBankSupply,.invalidBid,
+   .tradeMismatch,.financeTermsPending,.financePositionLocked,
+   .stockTradingHalted,.insufficientShares,.stockNotFound,.wrongPhase,
+   .notYourTurn,.gameFinished,.noJailCard,.inJail,.alreadyBankrupt,
+   .noDebt,.invalidPayload,.invalidSequence,.invalidContext,.invalidState
+  ]
+  XCTAssertEqual(Set(failures.map(\.rawValue)).count,26)
+  for error in failures {
+   XCTAssertGreaterThan(VeilopolyGamePresentation.advice(error).count,12)
+   XCTAssertFalse(VeilopolyGamePresentation.message(error).isEmpty)
+  }
+  XCTAssertTrue(VeilopolyGamePresentation.advice(.financeTermsPending).contains("尚未完成"))
+  XCTAssertTrue(VeilopolyGamePresentation.advice(.invalidState).contains("保留本地存档"))
+ }
+
  #if os(iOS) && canImport(SpriteKit)
  func testStockCashEffectsUseExistingBoardFeedbackPipeline() {
   let commands = CommandTranslator.translate([

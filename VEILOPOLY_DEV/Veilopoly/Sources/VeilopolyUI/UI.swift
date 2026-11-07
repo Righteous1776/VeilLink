@@ -11,6 +11,7 @@ import VeilopolyPersistence
 public final class GameSessionModel: ObservableObject {
  @Published public private(set) var game: GameState
  @Published public private(set) var errorMessage: String?
+ @Published public private(set) var errorAdvice: String?
  @Published public private(set) var shownCard: String?
  @Published public private(set) var shownCardDeck: DeckKind = .chance
  @Published public private(set) var shownCardID: Int?
@@ -131,6 +132,7 @@ public final class GameSessionModel: ObservableObject {
   switch result {
   case .failure(let err):
    errorMessage = VeilopolyGamePresentation.message(err)
+   errorAdvice = VeilopolyGamePresentation.advice(err)
    if move.type == .stockBuy || move.type == .stockSell {
     stockOrderError = StockTerminalState.rejection(
      market: IntegratedBanking.ledger(game).market ?? StockMarketEngine.initial(seed: game.seed),
@@ -148,6 +150,7 @@ public final class GameSessionModel: ObservableObject {
     return
    }
    errorMessage = nil
+   errorAdvice = nil
    if move.type == .stockBuy || move.type == .stockSell {
     stockOrderError = nil
     for effect in effects {
@@ -227,7 +230,8 @@ public final class GameSessionModel: ObservableObject {
    }
   }
   let newState = GameFactory.make(seed: seed, humanCount: configuredHumanCount)
-  game = newState; shownCard = nil; shownCardID = nil; cardGate.reset(); queue = []; errorMessage = nil
+  game = newState; shownCard = nil; shownCardID = nil; cardGate.reset(); queue = []
+  errorMessage = nil; errorAdvice = nil
   stockExecutions = []; stockOrderError = nil
   lastFeedback = "新的一局已经准备好"
   checkpoint(force: true)
@@ -592,12 +596,20 @@ public struct VeilopolyGameView: View {
      .background(AstraB01PanelSkin(.glass))
      .accessibilityLabel("最近事件：\(model.lastFeedback)")
      if let error = model.errorMessage {
-      Label("操作未完成：\(error)", systemImage: "exclamationmark.triangle.fill")
-       .labelStyle(.titleOnly)
-       .foregroundColor(.white).font(.caption.weight(.medium))
-       .padding(.leading, 48).padding(.trailing, 10).padding(.vertical, 12)
-       .frame(maxWidth: .infinity, alignment: .leading)
-       .background(AstraB01FeedbackSkin(error: true))
+      VStack(alignment: .leading, spacing: 5) {
+       Label("操作未完成：\(error)", systemImage: "exclamationmark.triangle.fill")
+        .font(.caption.weight(.semibold))
+       if let advice = model.errorAdvice {
+        Text(advice)
+         .font(.caption2)
+         .fixedSize(horizontal: false, vertical: true)
+       }
+      }
+      .foregroundColor(.white)
+      .padding(.horizontal, 12).padding(.vertical, 10)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(AstraB01FeedbackSkin(error: true))
+      .accessibilityElement(children: .combine)
      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)

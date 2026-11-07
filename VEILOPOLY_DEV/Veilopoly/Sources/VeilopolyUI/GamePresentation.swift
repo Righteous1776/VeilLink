@@ -86,4 +86,38 @@ public enum VeilopolyGamePresentation {
   case .invalidSequence, .invalidContext, .invalidState: return "当前状态无法执行此操作，请稍后重试"
   }
  }
+
+ /// How to recover from a rejected operation. The Engine error remains the
+ /// authoritative reason; guidance never precommits a move or changes balances.
+ public static func advice(_ error: GameError) -> String {
+  switch error {
+  case .noCash: return "请核对当前现金。可以先查看合法的抵押、卖房或银行操作，系统不会因本提示自动变卖财产。"
+  case .notOwner: return "在地产管理中切换到自己名下的地块。仅查看其他人的地契不会赋予操作权限。"
+  case .invalidTile: return "重新选择有效的街区、铁路或公共事业。特殊地块不能当成普通地产操作。"
+  case .setNotComplete: return "先取得同色组全部街区，并检查组内是否存在抵押。"
+  case .buildUneven: return "同色地块应优先建设等级较低者；卖房时应从等级最高者开始。"
+  case .alreadyMortgaged: return "此项操作与抵押状态冲突。检查是否先要赎回，或先清除同色组建筑。"
+  case .alreadyOwned: return "该产权已登记所有者，不能再次按无主地块价格购买。"
+  case .insufficientBankSupply: return "银行可用房屋或旅馆不足，当前建设或降级无法完成。"
+  case .invalidBid: return "竞价必须高于现有最高价，且不得超过当前玩家可用现金。"
+  case .tradeMismatch: return "对方资产、现金或交易席位可能已经变化；请重新核对合同两方条件。"
+  case .financeTermsPending: return "相关金融条款尚未完成规则裁决；此研发版本不会编造收益或期限。"
+  case .financePositionLocked: return "该存款或投资尚未达到约定期数。请在账本中查看到期时间。"
+  case .stockTradingHalted: return "标的处于模拟停牌阶段，等待行情恢复后再考虑提交订单。"
+  case .insufficientShares: return "卖出数量不得超过当前真实持仓数量。"
+  case .stockNotFound: return "请重新选择五只现有的虚构股票之一。"
+  case .wrongPhase: return "本回合尚未进入该操作阶段。等待当前结算完成，再在对应面板操作。"
+  case .notYourTurn: return "当前行动权属于其他席位。不要在结算动画中重复点击提交。"
+  case .gameFinished: return "对局已经进入终局，可以查看结算公报或明确重新开局。"
+  case .noJailCard: return "当前没有可使用的机会／命运出狱卡；可按既定规则尝试其他出狱方式。"
+  case .inJail: return "当前仍处于监狱状态，先完成合法的出狱步骤。"
+  case .alreadyBankrupt: return "该席位已在当前局淘汰，后续操作需要由未破产玩家进行。"
+  case .noDebt: return "当前并无待确认的清算债务，不需要提交破产动作。"
+  case .invalidPayload: return "请核对金额、股数、期数、地块编号与所选产品是否符合当前规则。"
+  case .invalidSequence: return "操作序号已过期。界面应重新读取当前状态，请勿反复发送旧订单。"
+  case .invalidContext: return "当前阶段已变化。等待最新回合状态显示后再决定下一步。"
+  case .invalidState: return "检测到无法继续的状态。请保留本地存档及诊断信息，避免直接清除应用数据。"
+  }
+ }
+
 }
