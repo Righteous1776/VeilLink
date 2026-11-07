@@ -42,7 +42,7 @@ public enum VeilopolyCityLongEconomy {
  public static func marketPressure(_ game: GameState) -> Int {
   guard game.banking?.financeRuleVersion == version else { return 0 }
   let totalPlayerCash = game.players.reduce(0) { $0 + $1.cash }
-  let cashImpulse = (totalPlayerCash - 4 * startingCash) / 300
+  let cashImpulse = (totalPlayerCash - 4 * startingCash) / 90
   let buildings = game.board.reduce(0) { $0 + $1.houses + ($1.hotel ? 5 : 0) }
   let infrastructure = min(80, buildings * 7)
   let richest = game.players.map(\.cash).max() ?? 0

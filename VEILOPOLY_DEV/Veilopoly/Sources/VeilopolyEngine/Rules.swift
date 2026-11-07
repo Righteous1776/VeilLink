@@ -27,6 +27,12 @@ public enum VeilopolyEngine {
   var effects: [Effect] = []
   let openingCash = state.players.reduce(0) { $0 + $1.cash }
   do {
+   if state.banking?.financeRuleVersion == VeilopolyCityLongEconomy.version {
+    guard let reserve = state.banking?.reserveCash,
+          reserve + openingCash == VeilopolyCityLongEconomy.totalMoneySupply else {
+     throw GameError.invalidState
+    }
+   }
    guard g.board.count == 40, g.players.count == 4,
          g.players.enumerated().allSatisfy({ $0.offset == $0.element.id }),
          g.players.allSatisfy({ (0...1_000_000_000).contains($0.cash) && (0..<40).contains($0.position) }),
