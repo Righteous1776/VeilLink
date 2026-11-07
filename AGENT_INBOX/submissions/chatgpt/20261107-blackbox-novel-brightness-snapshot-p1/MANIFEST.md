@@ -1,0 +1,12 @@
+# [AGENT-DROP] Blackbox Final P1 – Brightness Snapshot Storm
+- agent_id: chatgpt
+- task_id: 20261107-blackbox-novel-brightness-snapshot-p1
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- mode: INBOX_ONLY
+- status: DROPPED
+- patch_targets:
+  - VeilLink/Diagnostics/DeepTelemetry.swift
+  - VeilLink/Diagnostics/DeepTelemetryBrightnessSnapshotPolicy.swift
+  - VeilLinkTests/DeepTelemetryBrightnessSnapshotPolicyTests.swift
+- binary_assets: none
+- source_artifact: owner-supplied VeilLink-DeepTelemetry-20261106-163838.zip (not committed; contains technical identifiers)
