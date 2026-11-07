@@ -507,12 +507,29 @@ final class AdaptiveBoardLearningStore {
         guard scopedGame == .gomoku, !requiresRecovery, !games.isEmpty else { return 0 }
         let previous = database
         var accepted = 0
+        // Historical archives are preserved. A repeated complete line is not a
+        // new learning experience, regardless of how many times it was replayed.
+        var seenGames = Set(database.recentGames.map { $0.actions })
         for game in games {
-            guard game.result != .unfinished, !game.plies.isEmpty,
-                  game.plies.allSatisfy({
-                      $0.position.hasPrefix("g:")
-                      && Int($0.action).map { (0..<225).contains($0) } == true
-                  }) else { continue }
+            guard game.result != .unfinished, !game.plies.isEmpty else { continue }
+            var replay = GomokuState()
+            var recordedMoves: [String] = []
+            recordedMoves.reserveCapacity(game.plies.count)
+            var fullyLegal = true
+            for ply in game.plies {
+                guard ply.position == AdaptiveBoardPosition.gomoku(replay),
+                      ply.actor == replay.currentPlayer,
+                      let index = Int(ply.action),
+                      replay.apply(index: index, actor: ply.actor) else {
+                    fullyLegal = false
+                    break
+                }
+                recordedMoves.append((ply.actor == .host ? "h" : "a") + ply.action)
+            }
+            guard fullyLegal, replay.winner != nil || replay.isDraw,
+                  game.result == (replay.isDraw ? .draw
+                    : (replay.winner == .guest ? .aiWon : .humanWon)),
+                  seenGames.insert(recordedMoves).inserted else { continue }
             database.sequence += 1
             let sequence = database.sequence
             for ply in game.plies {
@@ -529,7 +546,7 @@ final class AdaptiveBoardLearningStore {
             database.recentGames.append(GameRecord(
                 game: .gomoku,
                 result: game.result,
-                actions: game.plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
+                actions: recordedMoves,
                 finishedAt: Date()
             ))
             accepted += 1
