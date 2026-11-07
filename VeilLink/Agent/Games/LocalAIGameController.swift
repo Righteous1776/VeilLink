@@ -23,7 +23,7 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
         case .relaxed: return "保留明显容错，适合入门练习"
         case .balanced: return "稳定策略与本地学习"
         case .advanced: return "更宽候选、更深反击搜索"
-        case .master: return "设备允许时启用最深离线搜索"
+        case .master: return "启用最深离线搜索；可单独关闭深度搜索"
         }
     }
 }
@@ -53,6 +53,11 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var lastDecisionMilliseconds: Int?
     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
     @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
+    /// User choice, persisted across sessions. Enabled by default on ALL
+    /// supported devices: physical device labels must never silently remove
+    /// deeper chess search. Disabling selects the original device budget.
+    @Published private(set) var unrestrictedBoardSearch: Bool =
+        (UserDefaults.standard.object(forKey: "VeilLink.Board.UnrestrictedSearch.v1") as? Bool) ?? true
     /// Explicit local opt-in; the incumbent search remains the default and fallback.
     @Published private(set) var useExternalGomokuEngine = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.V2.Enabled")
     @Published private(set) var gomokuFormationMode = GomokuFormationMode(
@@ -536,6 +541,19 @@ final class LocalAIGameController: ObservableObject {
         boardDifficulty = difficulty
     }
 
+    func setUnrestrictedBoardSearch(_ enabled: Bool) {
+        guard game == .gomoku || game == .xiangqi else { return }
+        unrestrictedBoardSearch = enabled
+        UserDefaults.standard.set(enabled, forKey: "VeilLink.Board.UnrestrictedSearch.v1")
+    }
+
+    /// A device class is not permission to revoke strategic search.
+    /// Full-depth versus compact search is determined ONLY by the player's
+    /// persisted switch. Turning it off must also work on modern devices.
+    nonisolated static func boardSearchProfile(deviceLabel: String, unrestricted: Bool) -> String {
+        unrestricted ? "HIGH-PERFORMANCE" : "LEGACY-COMPACT"
+    }
+
     func setTacticalScenario(_ scenario: TacticalSoloScenario) {
         guard game == .tactical, tacticalScenario != scenario else { return }
         tacticalScenario = scenario
@@ -710,7 +728,10 @@ final class LocalAIGameController: ObservableObject {
                 : humanLearning
             let budget = GomokuBotBudget.forDifficulty(
                 boardDifficulty,
-                profileLabel: VeilDevicePerformance.current.label
+                profileLabel: Self.boardSearchProfile(
+                    deviceLabel: VeilDevicePerformance.current.label,
+                    unrestricted: unrestrictedBoardSearch
+                )
             ).reinforced(by: learning.trainingLevel)
             let preference = GomokuFormationPreference(
                 mode: gomokuFormationMode,
@@ -729,7 +750,8 @@ final class LocalAIGameController: ObservableObject {
                     in: snapshot,
                     for: computer,
                     timeLimitMilliseconds: budget.timeLimitMilliseconds,
-                    maxDepth: boardDifficulty == .master ? 7 : boardDifficulty == .advanced ? 5 : 3
+                    maxDepth: boardDifficulty == .master ? (unrestrictedBoardSearch ? 8 : 7)
+                        : boardDifficulty == .advanced ? 5 : 3
                 )
                 if let external {
                     var trial = snapshot
@@ -781,7 +803,10 @@ final class LocalAIGameController: ObservableObject {
             let learning = learningStore.snapshot(currentPlies: learningPlies).applying(formation)
             let budget = XiangqiBotBudget.forDifficulty(
                 boardDifficulty,
-                profileLabel: VeilDevicePerformance.current.label
+                profileLabel: Self.boardSearchProfile(
+                    deviceLabel: VeilDevicePerformance.current.label,
+                    unrestricted: unrestrictedBoardSearch
+                )
             ).reinforced(by: learning.trainingLevel)
             let result = await Task.detached(priority: .userInitiated) {
                 XiangqiBot.chooseMove(in: snapshot, for: computer, budget: budget, learning: learning)
