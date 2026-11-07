@@ -357,7 +357,8 @@ public enum VeilopolyEngine {
   case .street, .railroad, .utility:
    if tile.owner == nil { g.turn.pendingPurchase = i; g.turn.phase = .tileResolve }
    else if tile.owner != p && !tile.mortgaged {
-    let fee = rent(g, i: i, dice: g.turn.lastRoll.reduce(0,+), multiplier: rentMultiplier)
+    let baseRent = rent(g, i: i, dice: g.turn.lastRoll.reduce(0,+), multiplier: rentMultiplier)
+    let fee = VeilopolyCityLongEconomy.chargedRent(g, base: baseRent, tileKind: tile.kind)
     try charge(&g, debtor: p, amount: fee, creditor: tile.owner, &fx)
     fx.append(Effect(.rentPaid, player: p, tile: i, to: tile.owner, amount: fee))
     if g.pendingDebt == nil { g.turn.phase = .manage }
@@ -371,6 +372,9 @@ public enum VeilopolyEngine {
    var d = deck == .chance ? g.chanceDeck : g.chestDeck
    guard !d.order.isEmpty else { throw GameError.invalidState }
    let id = d.order[d.cursor % d.order.count]; d.cursor += 1
+   if VeilopolyCityLongEconomy.isActive(g) {
+    VeilopolyCityLongCards.reshuffleOnCycle(&d, kind: deck, seed: g.seed)
+   }
    if deck == .chance { g.chanceDeck = d } else { g.chestDeck = d }
    guard let card = g.cards.first(where: { $0.id == id && $0.deck == deck }) else { throw GameError.invalidState }
    g.pendingCard = PendingCard(id: id, deck: deck)
@@ -435,7 +439,14 @@ public enum VeilopolyEngine {
     try resolveLanding(&g, player: p, rentMultiplier: 1, depth: depth, &fx)
    case .goToJail: jail(&g, p, &fx)
    case .jailCard:
-    if card.deck == .chance { g.players[p].chanceJailCards += 1 }
+    let alreadyHasSameCard = card.deck == .chance
+      ? g.players[p].chanceJailCards > 0 : g.players[p].chestJailCards > 0
+    if VeilopolyCityLongEconomy.isActive(g) && alreadyHasSameCard {
+     guard g.players[p].cash <= 1_000_000_000 - 250 else { throw GameError.invalidState }
+     g.players[p].cash += 250
+     fx.append(Effect(.cashChanged, player: p, amount: 250,
+                      text: "duplicateJailCardExchange"))
+    } else if card.deck == .chance { g.players[p].chanceJailCards += 1 }
     else { g.players[p].chestJailCards += 1 }
    case .repair:
     guard let perHouse = effect.perHouse, let perHotel = effect.perHotel else { throw GameError.invalidState }

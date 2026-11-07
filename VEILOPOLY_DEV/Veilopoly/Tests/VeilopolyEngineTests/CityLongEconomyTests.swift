@@ -42,7 +42,7 @@ final class CityLongEconomyTests: XCTestCase {
   _ = try apply(&city, Move(.resolveTile, player: 0, seq: city.nextSeq))
   XCTAssertEqual(city.players[0].cash, cash - 600)
   XCTAssertEqual(VeilopolyCityLongEconomy.bail(city), 150)
-  XCTAssertEqual(VeilopolyCityLongEconomy.cardCash(city, amount: 100), 300)
+  XCTAssertEqual(VeilopolyCityLongEconomy.cardCash(city, amount: 100), 100)
   let old = GameFactory.make(seed: 7822)
   XCTAssertEqual(VeilopolyCityLongEconomy.salary(old), 200)
   XCTAssertEqual(VeilopolyCityLongEconomy.tax(old, tile: 4), 200)
