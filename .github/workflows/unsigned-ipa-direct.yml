@@ -1,10 +1,11 @@
-name: Build unsigned IPA (direct release)
+name: V29 parallel device candidate (not publication)
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   direct-release:
@@ -36,25 +37,37 @@ jobs:
           set -o pipefail
           brew install xcodegen 2>&1 | tee ci-artifacts/install-xcodegen.log
 
+      - name: Reuse exact pinned successful native device runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/Righteous1776/VeilLink/actions/runs/42397878336 \
+            --jq '.head_sha == "cdd9faeaa58533be786acaa00bd89179157a7a60" and .conclusion == "success"' | grep -qx true
+          gh api repos/Righteous1776/VeilLink/actions/artifacts/13585396616/zip > "$RUNNER_TEMP/v29-native-source.zip"
+          echo "d84a418fbb9565cd024c6142f001b1be3b231837c3c836fd48171a19945b3f88  $RUNNER_TEMP/v29-native-source.zip" | shasum -a 256 -c -
+          python3 - "$RUNNER_TEMP/v29-native-source.zip" "$RUNNER_TEMP/v29-native-source.ipa" <<'PY'
+          import sys, zipfile
+          from pathlib import Path
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              assert z.testzip() is None
+              ipas = [n for n in z.namelist() if n.endswith('.ipa')]
+              assert len(ipas) == 1
+              Path(sys.argv[2]).write_bytes(z.read(ipas[0]))
+          PY
+          ditto -x -k "$RUNNER_TEMP/v29-native-source.ipa" "$RUNNER_TEMP/v29-native-source"
+          mkdir -p Vendor
+          xcodebuild -create-xcframework \
+            -framework "$RUNNER_TEMP/v29-native-source/Payload/VeilLink.app/Frameworks/llama.framework" \
+            -output "$PWD/Vendor/llama.xcframework"
+          python3 scripts/verify-vertex35m-model.py
+          python3 scripts/make-vertex35m-project.py
+
       - name: Generate Core Xcode project
         run: |
           set -o pipefail
-          xcodegen generate --spec project.yml 2>&1 | tee ci-artifacts/xcodegen-core.log
+          xcodegen generate --spec project.vertex35m.yml 2>&1 | tee ci-artifacts/xcodegen-core.log
           cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.core.pbxproj
-
-      - name: Build for iOS Simulator
-        run: |
-          set -o pipefail
-          rm -rf ci-artifacts/Direct-SimulatorBuild.xcresult
-          xcodebuild \
-            -project VeilLink.xcodeproj \
-            -scheme VeilLink \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -resultBundlePath ci-artifacts/Direct-SimulatorBuild.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee ci-artifacts/direct-simulator-build.log
 
       - name: Build unsigned Core iPhoneOS app
         run: |
@@ -89,6 +102,7 @@ jobs:
         run: |
           set -o pipefail
           python3 scripts/verify-core-release.py \
+            --experimental-vertex \
             --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
             --ipa "build/VeilLink-unsigned.ipa" \
             --manifest CORE_RELEASE_MANIFEST.json \
@@ -126,7 +140,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: VeilLink-Core-unsigned-v${{ steps.release_identity.outputs.version }}-b${{ steps.release_identity.outputs.build }}-direct
+          name: VeilLink-v${{ steps.release_identity.outputs.version }}-b${{ steps.release_identity.outputs.build }}-CANDIDATE-PENDING-FULL-XCTEST
           path: |
             build/VeilLink-unsigned.ipa
             CORE_RELEASE_MANIFEST.json
