@@ -114,6 +114,7 @@ public struct VeilopolyStockMarketPanel: View {
    RoundedRectangle(cornerRadius: 16, style: .continuous)
     .stroke(LinearGradient(colors: [StockTerminalPalette.gold.opacity(0.55), .white.opacity(0.06)],
                            startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+     .allowsHitTesting(false)
   }
   // An ivory-gold bezel keeps the working dark-teal screen visually bonded
   // to the single classical board without reducing white-on-teal legibility.
@@ -197,7 +198,8 @@ public struct VeilopolyStockMarketPanel: View {
       .overlay {
        RoundedRectangle(cornerRadius: 9)
         .stroke(selected ? StockTerminalPalette.gold.opacity(0.9) : .white.opacity(0.07),
-                lineWidth: selected ? 1.2 : 1)
+                 lineWidth: selected ? 1.2 : 1)
+         .allowsHitTesting(false)
       }
      }
      .buttonStyle(.plain)
@@ -308,7 +310,7 @@ public struct VeilopolyStockMarketPanel: View {
       .font(.system(size: 15, weight: .bold, design: .monospaced))
       .padding(.horizontal, 10).frame(height: 44)
       .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
-      .overlay { RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(0.10)) }
+      .overlay { RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(0.10)).allowsHitTesting(false) }
       .accessibilityLabel("交易股数")
     }
     Stepper("", value: Binding(
@@ -372,7 +374,7 @@ public struct VeilopolyStockMarketPanel: View {
   }
   .padding(10)
   .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
-  .overlay { RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.07)) }
+  .overlay { RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.07)).allowsHitTesting(false) }
  }
 
  private func quantityButton(_ title: String, action: @escaping () -> Void) -> some View {
