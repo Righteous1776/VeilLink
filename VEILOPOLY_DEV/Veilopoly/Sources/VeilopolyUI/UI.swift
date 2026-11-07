@@ -346,7 +346,11 @@ public final class GameSessionModel: ObservableObject {
    case .tileResolve where game.turn.pendingPurchase == nil:
     automatic = Move(.resolveTile, player: actor, seq: game.nextSeq)
    default:
-    if !waitingForHuman {
+    // The remote human must NEVER be replaced by a computer player just
+    // because the current device does not own that human's seat.
+    if isMultiplayer && game.players[actor].kind == .human {
+     automatic = nil
+    } else if !waitingForHuman {
      automatic = VeilopolyAI.decide(game, context, me: actor, level: game.players[actor].aiLevel)
     } else { automatic = nil }
    }
