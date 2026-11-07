@@ -251,8 +251,10 @@ public struct VeilopolyStockMarketPanel: View {
   let quantity = max(0, Int(shareText) ?? 0)
   let portfolio = market.portfolios.indices.contains(player) ? market.portfolios[player] : StockPortfolio()
   let owned = portfolio.position(symbol: quote.symbol)?.shares ?? 0
-  let maxBuy = StockMarketEngine.maximumBuyableShares(market, player: player,
-                                                       symbol: quote.symbol, cash: cash)
+  let maxBuy = buyRestriction == nil
+   ? StockMarketEngine.maximumBuyableShares(market, player: player,
+                                            symbol: quote.symbol, cash: cash)
+   : 0
   let estimate: StockTradeEstimate? = {
    if ticketSide == .buy {
     return try? StockMarketEngine.estimateBuy(market, player: player,
