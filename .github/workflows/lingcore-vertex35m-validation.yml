@@ -18,6 +18,11 @@ on:
 permissions:
   contents: read
 
+# Superseded pushes must not consume multiple macOS native-build runners.
+concurrency:
+  group: vertex35m-native-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   native-chat:
     if: github.repository == 'Righteous1776/VeilLink' && github.ref == 'refs/heads/integration/lingcore-vertex35m-model-20261108'
