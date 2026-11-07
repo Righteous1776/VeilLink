@@ -77,4 +77,62 @@ final class GomokuBotTests: XCTestCase {
         XCTAssertEqual(GomokuBot.trainedR3ForkBonus(index: 112, state: GomokuState(), player: .host), 0)
     }
 
+
+    func testR4DefenderDetectsARealForkAndKeepsOnlySafeEscapes() {
+        // Opponent has intersecting horizontal/vertical three-in-five
+        // threats. The future fork at the intersection must be blocked.
+        var board = GomokuState()
+        let host = [109, 110, 111, 67, 82, 97]
+        let guest = [0, 2, 4, 6, 8]
+        for i in 0..<guest.count {
+            XCTAssertTrue(board.apply(index: host[i], actor: .host))
+            XCTAssertTrue(board.apply(index: guest[i], actor: .guest))
+        }
+        XCTAssertTrue(board.apply(index: host[5], actor: .host))
+        XCTAssertNil(board.winner)
+        XCTAssertEqual(board.currentPlayer, .guest)
+
+        let before = GomokuCounterForkR4.forkCellCount(in: board, opponent: .host)
+        XCTAssertGreaterThan(before, 0)
+        XCTAssertEqual(GomokuCounterForkR4.forkCellCount(
+            in: board, opponent: .host, virtualBlock: 112
+        ), 0)
+        let guarded = GomokuCounterForkR4.safeCandidates(
+            in: board, player: .guest, candidates: [112, 140, 141]
+        )
+        XCTAssertTrue(guarded.underThreat)
+        XCTAssertEqual(guarded.moves, [112])
+        XCTAssertNotEqual(
+            GomokuCounterForkR4.trainedDefensiveBonus(in: board, player: .guest, index: 112), 0
+        )
+    }
+
+    func testR4DefenderLeavesNonThreatenedOpeningUnchanged() {
+        var board = GomokuState()
+        XCTAssertTrue(board.apply(index: 112, actor: .host))
+        let oldCandidates = [111, 113, 96, 98]
+        let guarded = GomokuCounterForkR4.safeCandidates(
+            in: board, player: .guest, candidates: oldCandidates
+        )
+        XCTAssertFalse(guarded.underThreat)
+        XCTAssertEqual(guarded.moves, oldCandidates)
+        XCTAssertEqual(GomokuCounterForkR4.forkCellCount(in: board, opponent: .host), 0)
+    }
+
+    func testR4DefensiveModelIsDeterministicBoundedAndNoModelFileNeeded() {
+        var board = GomokuState()
+        XCTAssertTrue(board.apply(index: 112, actor: .host))
+        XCTAssertTrue(board.apply(index: 111, actor: .guest))
+        let scores = [97, 98, 113, 127].map {
+            GomokuCounterForkR4.trainedDefensiveBonus(in: board, player: .host, index: $0)
+        }
+        XCTAssertEqual(scores, [97, 98, 113, 127].map {
+            GomokuCounterForkR4.trainedDefensiveBonus(in: board, player: .host, index: $0)
+        })
+        XCTAssertTrue(scores.allSatisfy { (-48_000...48_000).contains($0) })
+        XCTAssertEqual(GomokuCounterForkR4.trainedDefensiveBonus(
+            in: board, player: .host, index: 112
+        ), 0)
+    }
+
 }
