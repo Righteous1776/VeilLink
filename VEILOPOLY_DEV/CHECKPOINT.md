@@ -1,5 +1,15 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## GPT CONTINUATION-004 — checkpointed W2 save validation — 2026-11-07
+
+- Current preceding source commits: P5 foreground propagation 09ac83b; W5 journal 2a0975e; W2 reducer preflight 6d51426; W2 persistence preflight 109fb10.
+- W2-003: two-slot save now rejects out-of-range auction, trade and debt participant references, transferred tile references and malformed counters/deck cursors before replacing a verified slot. Test source covers 7 bad states and retention of the last good slot.
+- W5: 16 read-only achievements were added through a separate native journal, derived from Move log/current holdings; no rules or currency rewards. Local structural Swift smoke PASS; no full-package or iOS proof.
+- Device/platform: Apple SDK/XCTest, simulator, two-phone BLE/LAN and actual iOS full-screen lifecycle are NOT_RUN. Existing 271/271 Linux baseline is prior-head evidence ONLY, not current HEAD.
+- Scopes: all product changes confined to dev/veilopoly with the prior Owner-approved hall/host exception; main, signing, workflows, version, packaging and IPA unchanged.
+- Next task: exact-head full SwiftPM regression (without release), then Apple SDK typecheck/XCTest and two-phone lifecycle/large snapshot validation. Continue additional gameplay content only without destabilizing these gates.
+
+
 ## GPT CONTINUATION-003 — Pure Engine malformed state guards — 2026-11-07
 
 - Base 2a0975e. Guard invalid trade/auction/debt participant references, negative deck cursors and overflow counters before indexing or mutation. Four regression tests added; full SwiftPM and Apple SDK NOT_RUN; no rules or persistence format change.
