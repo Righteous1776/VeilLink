@@ -44,5 +44,42 @@ final class WorldEventEditorialTests: XCTestCase {
    ],state:g),"地契入册 · 新产权已登记")
   XCTAssertNil(VeilopolyEventFeedback.contextualSummary([],state:g))
  }
+ func testAutomatedLiquidationNeverInventsStockSymbolOrShareCount() {
+  let g=GameFactory.make(seed: 100)
+  let liquidated=Effect(.stockSold,player:0,amount:80,text:"estateLiquidation")
+  let text=VeilopolyEventFeedback.contextualSummary([liquidated],state:g) ?? ""
+  XCTAssertTrue(text.contains("破产"))
+  XCTAssertFalse(text.contains("--"))
+  XCTAssertFalse(text.contains("0 股"))
+  let automatic=Effect(.stockSold,player:0,amount:80,text:"automaticDebtCover",
+                       stockSymbol:"VTL",stockShares:2,stockPriceCents:1850)
+  XCTAssertTrue(VeilopolyEventFeedback.contextualSummary([automatic],state:g)?
+                .contains("偿债") == true)
+ }
+ func testMaturedAccountAndForcedLiquidationUseRealStatus() {
+  var g=GameFactory.make(seed:100)
+  let maturity=VeilopolyEventFeedback.contextualSummary([
+   Effect(.turnEnded,player:0,to:1),
+   Effect(.bankMatured,player:1,amount:3)
+  ],state:g)
+  XCTAssertEqual(maturity,"银号到期提示 · 玩家 2 第3期账目可查看")
+  g.pendingDebt=PendingDebt(player:0,amount:115,creditor:1)
+  XCTAssertEqual(VeilopolyEventFeedback.contextualSummary([
+    Effect(.liquidation,player:0,amount:300)
+   ],state:g),"债务筹资 · 玩家 1 已尝试处置资产，尚欠 ¥115")
+ }
+ func testBankCashCopyUsesCommittedSignWithoutProjectingProfit() {
+  let g=GameFactory.make(seed:101)
+  XCTAssertEqual(VeilopolyEventFeedback.contextualSummary([
+    Effect(.bankDeposited,player:0,amount:-180)
+   ],state:g),"存款存根 · 玩家 1 存入 ¥180")
+  XCTAssertEqual(VeilopolyEventFeedback.contextualSummary([
+    Effect(.bankRepaid,player:0,amount:-215)
+   ],state:g),"偿款收据 · 玩家 1 已偿还 ¥215")
+  XCTAssertEqual(VeilopolyEventFeedback.contextualSummary([
+    Effect(.soldBuilding,player:0,tile:1,amount:25)
+   ],state:g),"撤建回执 · 「地中海大道」建筑出售，回收 ¥25")
+ }
+
 }
 #endif

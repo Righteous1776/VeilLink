@@ -20,14 +20,33 @@ public enum VeilopolyEventFeedback {
    case .bankBorrowed: return "银号批复 · 贷款已入账，请留意到期日"
    case .bankRepaid: return "偿款收据 · 本笔贷款已结清"
    case .bankDeposited: return "存款存根 · 银行账本已更新"
-   case .bankWithdrawn: return "取款凭证 · 资金已到账"
+   case .bankWithdrawn:
+    return event.text == "automaticDebtCover"
+     ? "债务筹资 · 已依规则动用可用存款"
+     : (event.text == "estatePrincipal"
+       ? "清算通知 · 银行存款本金已处理"
+       : "取款凭证 · 资金已到账")
    case .bankInvestmentOpened: return "投资凭证 · 新一期合约已登记"
    case .bankInvestmentSettled: return "到期通知 · 投资已完成结算"
    case .stockBought:
-    return "交易回执 · 已买入 \(event.stockSymbol ?? "--") \(event.stockShares ?? 0) 股"
+    if let symbol = event.stockSymbol, let shares = event.stockShares, shares > 0 {
+     return "交易回执 · 已买入 \(symbol) \(shares) 股"
+    }
+    return "证券交易 · 买入结算已处理"
    case .stockSold:
-    return "交易回执 · 已卖出 \(event.stockSymbol ?? "--") \(event.stockShares ?? 0) 股"
-   case .stockHalted: return "停牌公告 · \(event.stockSymbol ?? "--") 暂停交易"
+    if event.text == "estateLiquidation" {
+     return "资产清算 · 证券头寸已按破产规则处置"
+    }
+    if event.text == "automaticDebtCover" {
+     return "筹资回执 · 为偿债自动变现部分证券"
+    }
+    if let symbol = event.stockSymbol, let shares = event.stockShares, shares > 0 {
+     return "交易回执 · 已卖出 \(symbol) \(shares) 股"
+    }
+    return "资产结算 · 证券账户已按规则调整"
+   case .stockHalted:
+    return event.stockSymbol.map { "停牌公告 · \($0) 暂停交易" }
+     ?? "交易所公告 · 存在暂停交易的标的"
    case .passedGo: return "经过起点 · 通行奖金已入账"
    case .extraRoll: return "双骰好运 · 额外回合已获准"
    case .turnEnded: return "轮次更替 · 下一位玩家入场"
@@ -36,6 +55,10 @@ public enum VeilopolyEventFeedback {
     if event.deck == .chest { return "命运来函 · 阅后继续" }
     return "一封来函 · 阅后继续"
    case .jailed: return "法庭通知 · 请查看出狱方式"
+   case .released: return "法庭回执 · 已办理出狱"
+   case .liquidation: return "资产清算 · 已尝试按规则筹措偿债资金"
+   case .bankMatured: return "银行到期提醒 · 有一笔账目进入可处理期"
+   case .soldBuilding: return "撤建回执 · 建筑已售回银行"
    case .diceRolled:
     return "骰声已定 · 正在结算落点"
    default: continue
@@ -49,7 +72,9 @@ public enum VeilopolyEventFeedback {
  /// original universal UI copy. Never affects deterministic GameState.
  public static func contextualSummary(_ effects: [Effect], state: GameState) -> String? {
   guard let selected = effects.reversed().first(where: { summary([$0]) != nil ||
-       [.auctionStarted, .bid, .bidFold, .tradeProposed].contains($0.kind) })
+       [.auctionStarted, .bid, .bidFold, .tradeProposed,
+        .liquidation, .bankMatured, .released, .cashChanged,
+        .playerMoved].contains($0.kind) })
   else { return nil }
   func actorName(_ id: Int?) -> String? {
    guard let id, state.players.indices.contains(id) else { return nil }
@@ -84,6 +109,54 @@ public enum VeilopolyEventFeedback {
     let structure = t.hotel ? "旅馆" : "第\(t.houses)栋房屋"
     return "工务回执 · 「\(location)」已登记\(structure)"
    }
+  case .soldBuilding:
+   if let location, let amount = selected.amount, amount >= 0 {
+    return "撤建回执 · 「\(location)」建筑出售，回收 ¥\(amount)"
+   }
+  case .released:
+   if let player { return "法庭批文 · \(player) 已办理出狱" }
+  case .liquidation:
+   if let player {
+    if let debt = state.pendingDebt, debt.player == selected.player {
+     return "债务筹资 · \(player) 已尝试处置资产，尚欠 ¥\(debt.amount)"
+    }
+    return "债务筹资 · \(player) 已按规则尝试处置资产"
+   }
+  case .bankMatured:
+   if let player, let period = selected.amount, period >= 0 {
+    return "银号到期提示 · \(player) 第\(period)期账目可查看"
+   }
+  case .bankDeposited:
+   if let player, let amount = selected.amount, amount < 0 {
+    return "存款存根 · \(player) 存入 ¥\(-amount)"
+   }
+  case .bankWithdrawn:
+   if selected.text == "automaticDebtCover", let player {
+    return "债务筹资 · \(player) 已从可用存款划转资金"
+   }
+   if let player, let amount = selected.amount, amount > 0 {
+    return "取款凭证 · \(player) 已取回 ¥\(amount)"
+   }
+  case .bankBorrowed:
+   if let player, let amount = selected.amount, amount > 0 {
+    return "贷款批复 · \(player) 已收到 ¥\(amount)"
+   }
+  case .bankRepaid:
+   if let player, let amount = selected.amount, amount < 0 {
+    return "偿款收据 · \(player) 已偿还 ¥\(-amount)"
+   }
+  case .cashChanged:
+   if let player, let amount = selected.amount {
+    return amount < 0
+     ? "账本支出 · \(player) 支付 ¥\(-amount)"
+     : "账本收入 · \(player) 收到 ¥\(amount)"
+   }
+  case .playerMoved:
+   if let player, let dest = tileName(selected.to) {
+    return "行程札记 · \(player) 抵达「\(dest)」"
+   }
+  case .tradeRejected:
+   if let player { return "谈判归档 · \(player) 已结束本次议约" }
   case .mortgaged:
    if let location { return "抵押契据 · 「\(location)」暂停收租" }
   case .redeemed:
@@ -105,6 +178,12 @@ public enum VeilopolyEventFeedback {
     return "证券成交回执 · \(player) 买入 \(symbol) ×\(shares)，现金支出 ¥\(-delta)"
    }
   case .stockSold:
+   if selected.text == "estateLiquidation" {
+    return "资产清算 · 股票账户已按破产规则处理"
+   }
+   if selected.text == "automaticDebtCover", let player {
+    return "债务筹资 · \(player) 已自动出售部分股票用于偿债"
+   }
    if let player, let symbol = selected.stockSymbol,
       let shares = selected.stockShares, let delta = selected.amount, delta > 0 {
     return "证券成交回执 · \(player) 卖出 \(symbol) ×\(shares)，现金到账 ¥\(delta)"
