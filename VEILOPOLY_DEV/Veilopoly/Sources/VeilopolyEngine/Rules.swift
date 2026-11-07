@@ -458,8 +458,12 @@ public enum VeilopolyEngine {
    g.players[player].cash += amount
    return amount
   }
-  guard var ledger = g.banking, let freeCash = ledger.reserveCash,
-        var queue = ledger.queuedClaims else { throw GameError.invalidState }
+  guard var ledger = g.banking, let freeCash = ledger.reserveCash else {
+   throw GameError.invalidState
+  }
+  // Older sealed V4 checkpoints may not have the claim list yet.
+  // Materialize an empty list only on a committed payout, not during decode.
+  var queue = ledger.queuedClaims ?? []
   let paid = min(amount, freeCash)
   guard g.players[player].cash <= 1_000_000_000 - paid else {
    throw GameError.invalidState
