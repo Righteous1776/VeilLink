@@ -13,8 +13,8 @@ public struct VeilopolyStockLineChart: View {
  public var body: some View {
   let points = Array(quote.history.suffix(60))
   let accent = quote.changeBasisPoints >= 0
-   ? Color(red: 0.96, green: 0.39, blue: 0.31)
-   : Color(red: 0.20, green: 0.77, blue: 0.60)
+   ? Color(red: 0.94, green: 0.57, blue: 0.44)
+   : Color(red: 0.47, green: 0.82, blue: 0.67)
   ZStack(alignment: .topLeading) {
    Canvas { context, size in
     guard points.count > 1,

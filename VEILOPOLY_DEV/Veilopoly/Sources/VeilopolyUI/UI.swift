@@ -52,6 +52,7 @@ public final class GameSessionModel: ObservableObject {
   recoveryBlocked = unreadable
   let initial = recovered?.game ?? GameFactory.make(seed: seed, humanCount: humanCount)
   game = initial
+  stockExecutions = (recovered?.stockReceipts ?? []).map(StockExecution.init(record:))
   scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
   scene.display(initial)
   scene.highlightTile(selectedTile)
@@ -98,7 +99,8 @@ public final class GameSessionModel: ObservableObject {
    return
   }
   do {
-   _ = try saveStore.save(game, gameID: saveSessionID, mode: .solo)
+   _ = try saveStore.save(game, gameID: saveSessionID, mode: .solo,
+                          stockReceipts: stockExecutions.map(\.persisted))
    lastCheckpointAt = Date()
    saveWarning = nil
   } catch {

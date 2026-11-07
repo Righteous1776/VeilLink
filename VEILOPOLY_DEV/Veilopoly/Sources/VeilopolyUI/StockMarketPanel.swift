@@ -10,12 +10,13 @@ private enum StockTicketSide: String, CaseIterable, Identifiable {
 }
 
 private enum StockTerminalPalette {
- static let ink = Color(red: 0.035, green: 0.065, blue: 0.105)
- static let panel = Color(red: 0.065, green: 0.105, blue: 0.155)
- static let gold = Color(red: 0.86, green: 0.70, blue: 0.38)
- static let up = Color(red: 0.96, green: 0.39, blue: 0.31)
- static let down = Color(red: 0.20, green: 0.77, blue: 0.60)
- static let flat = Color(red: 0.65, green: 0.70, blue: 0.76)
+ // Deep teal instrument display within the same ivory/antique-gold board.
+ static let ink = Color(red: 0.047, green: 0.17, blue: 0.18)
+ static let panel = Color(red: 0.11, green: 0.26, blue: 0.27)
+ static let gold = Color(red: 0.75, green: 0.59, blue: 0.34)
+ static let up = Color(red: 0.94, green: 0.57, blue: 0.44)
+ static let down = Color(red: 0.47, green: 0.82, blue: 0.67)
+ static let flat = Color(red: 0.77, green: 0.77, blue: 0.71)
  static func direction(_ basisPoints: Int) -> Color {
   basisPoints > 0 ? up : (basisPoints < 0 ? down : flat)
  }
@@ -81,7 +82,17 @@ public struct VeilopolyStockMarketPanel: View {
     .stroke(LinearGradient(colors: [StockTerminalPalette.gold.opacity(0.55), .white.opacity(0.06)],
                            startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
   }
-  .shadow(color: .black.opacity(0.30), radius: 10, y: 6)
+  // An ivory-gold bezel keeps the working dark-teal screen visually bonded
+  // to the single classical board without reducing white-on-teal legibility.
+  .padding(3)
+  .background(Color(red: 0.96, green: 0.93, blue: 0.86),
+              in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+  .overlay {
+   RoundedRectangle(cornerRadius: 19, style: .continuous)
+    .strokeBorder(StockTerminalPalette.gold, lineWidth: 1.5)
+    .allowsHitTesting(false)
+  }
+  .shadow(color: .black.opacity(0.25), radius: 10, y: 6)
   .accessibilityElement(children: .contain)
   .toolbar {
    ToolbarItemGroup(placement: .keyboard) {
@@ -102,7 +113,7 @@ public struct VeilopolyStockMarketPanel: View {
     VStack(alignment: .leading, spacing: 0) {
      Text("VEIL EXCHANGE").font(.system(size: 12, weight: .bold, design: .rounded))
       .tracking(1.1)
-     Text("离线模拟交易终端").font(.system(size: 9, weight: .medium))
+     Text("城市证券交易所 · 离线行情").font(.system(size: 9, weight: .medium))
       .foregroundStyle(.white.opacity(0.52))
     }
     Spacer(minLength: 4)
@@ -116,7 +127,7 @@ public struct VeilopolyStockMarketPanel: View {
     .background(.white.opacity(0.06), in: Capsule())
    }
    HStack(spacing: 7) {
-    Text("T+(market.tick)").font(.system(size: 9, weight: .bold, design: .monospaced))
+    Text("T+\(market.tick)").font(.system(size: 9, weight: .bold, design: .monospaced))
     ProgressView(value: Double(market.tick % StockMarketEngine.sessionTicks),
                  total: Double(StockMarketEngine.sessionTicks))
      .tint(StockTerminalPalette.gold)

@@ -105,4 +105,48 @@ final class VeilopolySaveStoreTests: XCTestCase {
   XCTAssertEqual(try store.load(gameID: "solo", mode: .solo)?.game.seed, 516)
  }
 
+ func testReceiptsRoundTripInSameAtomicCheckpoint() throws {
+  let (store, dir) = try sandbox(); defer { try? FileManager.default.removeItem(at: dir) }
+  var initial = GameFactory.make(seed: 20261107, humanCount: 1)
+  initial.turn.phase = .manage
+  let order = Move(.stockBuy, player: 0, seq: initial.nextSeq,
+                   stockSymbol: "VTL", stockShares: 3)
+  guard case .success((let traded, let effects)) =
+   VeilopolyEngine.apply(initial, VeilopolyEngine.context(initial), order),
+   let fill = effects.first(where: { $0.kind == .stockBought }),
+   let price = fill.stockPriceCents, let delta = fill.amount else {
+    return XCTFail("Expected a canonical stock buy")
+  }
+  let receipt = VeilopolyStockExecutionRecord(id: 0, symbol: "VTL", shares: 3,
+                    priceCents: price, cashDelta: delta, bought: true, player: 0)
+  _ = try store.save(traded, gameID: "solo-1", mode: .solo,
+                     stockReceipts: [receipt])
+  let restored = try XCTUnwrap(store.load(gameID: "solo-1", mode: .solo))
+  XCTAssertEqual(restored.game, traded)
+  XCTAssertEqual(restored.stockReceipts, [receipt])
+  XCTAssertEqual(restored.stateHash, StateDigest.hash(traded))
+  // All receipt metadata is outside GameState and doesn't affect net replay.
+  XCTAssertEqual(restored.game.nextSeq, traded.nextSeq)
+ }
+ func testOldSealedSavesStayByteCompatibleWithoutExtraKey() throws {
+  let (store, dir) = try sandbox(); defer { try? FileManager.default.removeItem(at: dir) }
+  let game = GameFactory.make(seed: 551)
+  _ = try store.save(game, gameID: "legacy", mode: .solo)
+  let slot = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys:nil)
+    .first { $0.lastPathComponent.hasSuffix("-a.json") })
+  let json = try String(contentsOf: slot, encoding: .utf8)
+  XCTAssertFalse(json.contains("stockReceipts"))
+  XCTAssertNil(try store.load(gameID: "legacy", mode: .solo)?.stockReceipts)
+ }
+ func testRejectsForgedOrOtherSessionReceipts() throws {
+  let (store, dir) = try sandbox(); defer { try? FileManager.default.removeItem(at: dir) }
+  let game = GameFactory.make(seed: 773)
+  let forged = VeilopolyStockExecutionRecord(id: 0, symbol: "VTL", shares: 2,
+               priceCents: 1_850, cashDelta: -38, bought: true, player: 0)
+  XCTAssertThrowsError(try store.save(game, gameID: "solo", mode: .solo,
+                         stockReceipts: [forged]))
+  _ = try store.save(game, gameID: "solo", mode: .solo, stockReceipts: [])
+  XCTAssertEqual(try store.load(gameID: "solo", mode: .solo)?.stockReceipts, [])
+ }
+
 }

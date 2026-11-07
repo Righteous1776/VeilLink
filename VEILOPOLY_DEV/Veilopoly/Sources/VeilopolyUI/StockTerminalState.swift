@@ -1,4 +1,5 @@
 import VeilopolyEngine
+import VeilopolyPersistence
 
 /// A bounded, session-local view of actual reducer executions, not submitted orders.
 public struct StockExecution: Equatable, Identifiable {
@@ -17,6 +18,16 @@ public struct StockExecution: Equatable, Identifiable {
   self.id = sequence; self.symbol = symbol; self.shares = shares
   self.priceCents = price; self.cashDelta = delta; self.bought = effect.kind == .stockBought
   self.player = player
+ }
+ /// The full receipt survives relaunch in the SAME A/B checkpoint as GameState.
+ public var persisted: VeilopolyStockExecutionRecord {
+  VeilopolyStockExecutionRecord(id: id, symbol: symbol, shares: shares,
+   priceCents: priceCents, cashDelta: cashDelta, bought: bought, player: player)
+ }
+ public init(record: VeilopolyStockExecutionRecord) {
+  self.id=record.id; self.symbol=record.symbol; self.shares=record.shares
+  self.priceCents=record.priceCents; self.cashDelta=record.cashDelta
+  self.bought=record.bought; self.player=record.player
  }
 }
 
