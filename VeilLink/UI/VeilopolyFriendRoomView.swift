@@ -358,6 +358,8 @@ struct VeilopolyFriendRoomView: View {
    VeilopolyGameView(multiplayerModel: live.model) {
     room.closeGame()
    }
+   .background(VeilopolyLandscapeOrientationRequest())
+   .statusBarHidden(true)
   }
  }
 }
