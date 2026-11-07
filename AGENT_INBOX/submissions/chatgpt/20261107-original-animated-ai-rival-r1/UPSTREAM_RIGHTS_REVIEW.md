@@ -1,9 +1,12 @@
-# grok-icon-study rights and permitted architecture
+# grok-icon-study — inspected reference vs original implementation
 
 Upstream: https://github.com/blessonism/grok-icon-study
-Checked README on 2026-11-07. GitHub REST API returns `license: null`.
-README explicitly says project is an unofficial study/replica of a Grok Bot app UI; third-party visual assets, vectors, geometry, trademarks and extracted content belong to xAI/rightsholders and are **not redistributable or commercially usable**.
+Reviewed on 2026-11-07: README and public `replica/src/character.js`, `pose.js`, `eyes.js`, `tricks.js`, `math.js`, and `replica/index.html`.
 
-Therefore DO NOT import original JS engine, extracted resources, geometry-data.js, SVGs, app icons, animation files or mimic its original proprietary shapes. Merely being public on GitHub is not redistribution permission.
+## Source-supported behavior
+The reference project orchestrates character pose, 2D shape, eyes/eye transitions and spring timing. Its README says the app character, proprietary art, extracted fragments and trademarks belong to their owners, and this repository is for study only, not commercial or redistributed reuse. GitHub REST exposes no open-source license.
 
-This Inbox proposal creates a newly authored native SwiftUI animated rival with independent rectangular geometry, independently defined LED/celestial orbit motion and spring-inspired damped oscillation. It uses NO upstream bytes. Owner's label is "Grok bot" but UI marks the character as original/nonofficial. Legal review is necessary before a public release if the name implies sponsorship. Exact character inclusion would require explicit rightsholder permission.
+## VeilLink treatment
+Owner describes personal, noncommercial use; that is materially different from publishing a publicly distributed app, and legal treatment may vary by jurisdiction. The R2 proposal intentionally does not include copied assets, geometry or original repo source. It implements the public concepts via new authored parametric SwiftUI Canvas contour animation, distinct eyes and independent transition equations.
+
+The user-requested toggle name is `Grok bot`, alongside a nonofficial/original description. Renaming a copied character would not by itself create license rights; do not describe this renderer as official xAI.
