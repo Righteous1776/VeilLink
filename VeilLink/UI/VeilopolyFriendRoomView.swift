@@ -33,6 +33,7 @@ private final class VeilopolyFriendRoomController: ObservableObject {
  let conversation: ConversationSummary
  private var processedIDs = Set<String>()
  private var processedSyncHints = Set<String>()
+ private var processedRejections = Set<String>()
  private var lastGuestIntentSeq: Int?
  private var lastResyncAt = Date.distantPast
 
@@ -115,6 +116,12 @@ private final class VeilopolyFriendRoomController: ObservableObject {
     session.reportPeerError("本地操作已保存，但尚未发送到好友。恢复连接后请手动同步。")
    }
   }
+  session.onGuestIntentRejected = { [weak self] proposal, reason in
+   guard let self else { return }
+   let packet = GameEnvelope(gameId: room.id, kind: .rejected,
+                             rejectedSeq: proposal.seq, rejectionReason: reason)
+   _ = self.outbound(packet)
+  }
   session.onGuestIntent = { [weak self] intent in
    guard let self else { return }
    guard self.lastGuestIntentSeq != intent.seq else {
@@ -131,6 +138,7 @@ private final class VeilopolyFriendRoomController: ObservableObject {
                                         isHost: room.hostIsLocal, model: session)
   processedIDs = []
   processedSyncHints = []
+  processedRejections = []
   refresh()
   if !room.hostIsLocal { requestResync() }
  }
@@ -209,6 +217,18 @@ private final class VeilopolyFriendRoomController: ObservableObject {
      break
     }
     lastGuestIntentSeq = nil
+   }
+   // Invalid proposals are explicitly rejected so guest input can be edited.
+   for (message, packet) in records where packet.gameId == active.id &&
+                                        !message.isOutgoing && packet.kind == .rejected {
+    guard !processedRejections.contains(message.id),
+          VeilopolyRoomAuthorization.allows(packet.kind,
+            hostIsLocal: false, messageIsOutgoing: message.isOutgoing) else { continue }
+    processedRejections.insert(message.id)
+    if packet.rejectedSeq == active.model.game.nextSeq {
+     lastGuestIntentSeq = nil
+     active.model.reportPeerError(packet.rejectionReason ?? "操作未通过房主校验")
+    }
    }
    // The authoritative host may have sent more than one bounded replay
    // batch. A new host-head hint requests the next part exactly once.
