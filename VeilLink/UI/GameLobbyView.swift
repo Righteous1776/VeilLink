@@ -7,6 +7,9 @@ struct GameLobbyView: View {
     @State private var nearbyConversation: ConversationSummary?
     @State private var veilopolyConversation: ConversationSummary?
     @State private var showsVeilopoly = false
+    @State private var inviteFromSoloPending = false
+    @State private var showsVeilopolyFriendPicker = false
+    @State private var pickedVeilopolyFriend: ConversationSummary?
 
     init(model: AppModel) {
         self.model = model
@@ -35,7 +38,56 @@ struct GameLobbyView: View {
         .sheet(item: $veilopolyConversation) { conversation in
             VeilopolyFriendRoomView(model: model, conversation: conversation)
         }
-        .veilopolyFullscreen(isPresented: $showsVeilopoly, humanCount: 1)
+        .sheet(isPresented: $showsVeilopolyFriendPicker, onDismiss: {
+            if let selected = pickedVeilopolyFriend {
+                pickedVeilopolyFriend = nil
+                veilopolyConversation = selected
+            }
+        }) {
+            NavigationView {
+                List {
+                    if model.conversations.isEmpty {
+                        Text("还没有已配对的好友。请先到「附近」完成设备配对，再回来邀请。")
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    ForEach(model.conversations) { conversation in
+                        Button {
+                            pickedVeilopolyFriend = conversation
+                            showsVeilopolyFriendPicker = false
+                        } label: {
+                            HStack(spacing: 12) {
+                                VeilIdentityGlyph(seed: conversation.peerIdentityID, size: 38, active: false)
+                                Text(conversation.title)
+                                Spacer(minLength: 5)
+                                Image(systemName: "chevron.right")
+                            }
+                            .frame(minHeight: 50)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .navigationTitle("邀请好友 · Veilopoly")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("取消") { showsVeilopolyFriendPicker = false }
+                    }
+                }
+            }
+            .navigationViewStyle(.stack)
+        }
+        .veilopolyFullscreen(isPresented: $showsVeilopoly, humanCount: 1,
+            onInviteFriends: {
+                inviteFromSoloPending = true
+                showsVeilopoly = false
+            },
+            onDismiss: {
+                if inviteFromSoloPending {
+                    inviteFromSoloPending = false
+                    showsVeilopolyFriendPicker = true
+                }
+            })
     }
 
     private var hero: some View {
