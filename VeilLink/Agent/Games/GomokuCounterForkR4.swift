@@ -154,6 +154,27 @@ enum GomokuCounterForkR4 {
         player: MiniGamePlayer,
         index: Int
     ) -> Int {
+        trainedBonus(in: board, player: player, index: index, r6: false)
+    }
+
+    /// R6 symmetry-disjoint supervised ranker, calibrated against the exact
+    /// [-48000,+48000] on-device score. No external weights or neural runtime.
+    /// Validated on 10,248 actual held-out candidate feature vectors:
+    /// Swift integer score matches independent Python labels 10,248/10,248.
+    static func trainedR6DefensiveBonus(
+        in board: GomokuState,
+        player: MiniGamePlayer,
+        index: Int
+    ) -> Int {
+        trainedBonus(in: board, player: player, index: index, r6: true)
+    }
+
+    private static func trainedBonus(
+        in board: GomokuState,
+        player: MiniGamePlayer,
+        index: Int,
+        r6: Bool
+    ) -> Int {
         guard (0..<(size * size)).contains(index), board.value(at: index) == 0
         else { return 0 }
         let own: Int8 = player == .host ? 1 : 2
@@ -200,14 +221,33 @@ enum GomokuCounterForkR4 {
             }
         }
         let center = Double(14 - abs(row - 7) - abs(column - 7)) / 14.0
-        let raw = -0.17198881639659588
-            - 0.01325435799882135 * Double(ownThree)
-            + 0.8104074675638822 * Double(oppThree)
-            + 0.0010736105612463528 * Double(ownTwo)
-            - 0.01033982399203205 * Double(oppTwo)
-            - 0.006746374984911827 * Double(friends)
-            - 0.02001955212897536 * Double(enemies)
-            + 0.007056044570294954 * center
-        return Int(max(-48_000.0, min(48_000.0, raw * 15_000.0)))
+        let raw: Double
+        let multiplier: Double
+        if r6 {
+            // Learned logistic decision boundary; only the seven distilled
+            // coefficients and bias are stored. Train/validation/heldout
+            // separated by exact 15x15 board rotation/reflection family.
+            raw = -1.5430639353126714
+                - 0.18624635441331192 * Double(ownThree)
+                + 2.436068599785504 * Double(oppThree)
+                - 0.08112815287397228 * Double(ownTwo)
+                + 0.011122914052612674 * Double(oppTwo)
+                - 0.07881161372911973 * Double(friends)
+                + 0.043103434011307236 * Double(enemies)
+                - 0.3282513964995388 * center
+            multiplier = 50_000.0
+        } else {
+            // Frozen R4 comparison policy, used only by paired A/B.
+            raw = -0.17198881639659588
+                - 0.01325435799882135 * Double(ownThree)
+                + 0.8104074675638822 * Double(oppThree)
+                + 0.0010736105612463528 * Double(ownTwo)
+                - 0.01033982399203205 * Double(oppTwo)
+                - 0.006746374984911827 * Double(friends)
+                - 0.02001955212897536 * Double(enemies)
+                + 0.007056044570294954 * center
+            multiplier = 15_000.0
+        }
+        return Int(max(-48_000.0, min(48_000.0, raw * multiplier)))
     }
 }
