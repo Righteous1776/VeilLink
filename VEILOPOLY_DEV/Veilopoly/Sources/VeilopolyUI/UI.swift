@@ -329,8 +329,12 @@ public struct VeilopolyGameView: View {
  @State private var probabilityMatches = 0
  @State private var overviewTile = 1
  @State private var amountTarget: VeilopolyAmountTarget?
- @State private var showFinanceHUD = true
- @State private var showMarketHUD = true
+ @AppStorage("veilopoly.financeHUD.visible.v1") private var showFinanceHUD = true
+ @AppStorage("veilopoly.marketHUD.visible.v1") private var showMarketHUD = true
+ @AppStorage("veilopoly.financeHUD.x.v1") private var savedFinanceHUDX: Double = 0
+ @AppStorage("veilopoly.financeHUD.y.v1") private var savedFinanceHUDY: Double = 0
+ @AppStorage("veilopoly.marketHUD.x.v1") private var savedMarketHUDX: Double = 0
+ @AppStorage("veilopoly.marketHUD.y.v1") private var savedMarketHUDY: Double = 0
  @State private var financeHUDOffset = CGSize.zero
  @State private var marketHUDOffset = CGSize.zero
  @GestureState private var financeHUDDrag = CGSize.zero
@@ -368,6 +372,8 @@ public struct VeilopolyGameView: View {
   .onAppear {
    model.scene.reduceMotion = reduceMotion
     model.scene.stepDuration = slowSteps ? 0.42 : 0.26
+    financeHUDOffset = CGSize(width: savedFinanceHUDX, height: savedFinanceHUDY)
+    marketHUDOffset = CGSize(width: savedMarketHUDX, height: savedMarketHUDY)
     if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
   }
   .onDisappear { model.flushSave() }
@@ -421,6 +427,10 @@ public struct VeilopolyGameView: View {
    Button("悬浮窗归位") {
     financeHUDOffset = .zero
     marketHUDOffset = .zero
+    savedFinanceHUDX = 0
+    savedFinanceHUDY = 0
+    savedMarketHUDX = 0
+    savedMarketHUDY = 0
    }
    Button("完整资产浏览（任何回合）") { showAssetExplorer = true }
    Button("概率小游戏 · 无下注") { showProbabilityLab = true }
@@ -1139,6 +1149,8 @@ public struct VeilopolyGameView: View {
      .onEnded { gesture in
       financeHUDOffset = clampHUD(financeHUDOffset, delta: gesture.translation,
                                   minX: minX, maxX: maxX, maxY: maxY)
+      savedFinanceHUDX = Double(financeHUDOffset.width)
+      savedFinanceHUDY = Double(financeHUDOffset.height)
      })
     .accessibilityLabel("拖动资产悬浮窗")
   }
@@ -1187,6 +1199,8 @@ public struct VeilopolyGameView: View {
      .onEnded { gesture in
       marketHUDOffset = clampHUD(marketHUDOffset, delta: gesture.translation,
                                  minX: minX, maxX: maxX, maxY: maxY)
+      savedMarketHUDX = Double(marketHUDOffset.width)
+      savedMarketHUDY = Double(marketHUDOffset.height)
      })
     .accessibilityLabel("拖动股市悬浮窗")
   }
