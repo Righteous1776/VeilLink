@@ -10,6 +10,7 @@ public enum GameMessageType: String, Codable {
  case move = "vl-game-move"
  case snapshot = "vl-game-snapshot"
  case resync = "vl-game-resync"
+ case syncHint = "vl-game-sync-hint"
 }
 public struct AuthoritativeMove: Codable, Equatable {
  public let seq: Int
@@ -46,12 +47,16 @@ public struct GameEnvelope: Codable, Equatable {
  public var move: AuthoritativeMove?
  public var snapshot: GameSnapshot?
  public var resync: ResyncRequest?
+ /// Last committed host sequence for bounded, multi-batch recovery.
+ public var hostHeadSeq: Int?
  public init(gameId: String, kind: GameMessageType, invite: GameInvite? = nil,
              intent: Move? = nil, move: AuthoritativeMove? = nil,
-             snapshot: GameSnapshot? = nil, resync: ResyncRequest? = nil) {
+             snapshot: GameSnapshot? = nil, resync: ResyncRequest? = nil,
+             hostHeadSeq: Int? = nil) {
   self.gameId = gameId; self.kind = kind; self.invite = invite
   self.intent = intent
   self.move = move; self.snapshot = snapshot; self.resync = resync
+  self.hostHeadSeq = hostHeadSeq
  }
 }
 
