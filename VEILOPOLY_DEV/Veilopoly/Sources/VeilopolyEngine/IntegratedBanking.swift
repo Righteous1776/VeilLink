@@ -11,6 +11,16 @@ public struct IntegratedBankAccount: Codable, Equatable {
  public init() {}
 }
 
+/// Nominal pending city-bank obligation, NOT additional circulating cash.
+public struct VeilopolyBankClaim: Codable, Equatable {
+ public var player: Int
+ public var amount: Int
+ public var source: String
+ public init(player: Int, amount: Int, source: String) {
+  self.player = player; self.amount = amount; self.source = source
+ }
+}
+
 public struct IntegratedBankLedger: Codable, Equatable {
  public var completedTurns: Int
  public var terms: FinanceSandboxPolicy
@@ -22,6 +32,8 @@ public struct IntegratedBankLedger: Codable, Equatable {
  public var financeRuleVersion: Int
  /// Liquid treasury backing the finite-currency V4 city. Nil in V1/V2/V3 saves.
  public var reserveCash: Int?
+ /// V4 only; nil in every pre-V4 saved match (key omitted to preserve ABI).
+ public var queuedClaims: [VeilopolyBankClaim]?
  public init(completedTurns: Int = 0, terms: FinanceSandboxPolicy = FinanceSandboxPolicy(),
              market: StockMarketState? = nil, financeRuleVersion: Int = 2,
              reserveCash: Int? = nil) {
@@ -31,12 +43,13 @@ public struct IntegratedBankLedger: Codable, Equatable {
   self.market = market
   self.financeRuleVersion = financeRuleVersion
   self.reserveCash = reserveCash
+  self.queuedClaims = financeRuleVersion == VeilopolyCityLongEconomy.version ? [] : nil
  }
 
  // FinanceSandboxPolicy has enum-keyed dictionaries. Swift encodes these as
  // unkeyed key/value arrays, whose iteration order is unstable between runs.
  // Explicit string-keyed DTOs make the entire GameState hash reproducible.
- private enum CodingKeys: String, CodingKey { case completedTurns, terms, accounts, market, financeRuleVersion, reserveCash }
+ private enum CodingKeys: String, CodingKey { case completedTurns, terms, accounts, market, financeRuleVersion, reserveCash, queuedClaims }
  private struct CanonicalTerms: Codable {
   var loanInterestBasisPoints: [Int]
   var loanCapsByProperties: [Int]
@@ -82,6 +95,7 @@ public struct IntegratedBankLedger: Codable, Equatable {
   try c.encodeIfPresent(market, forKey: .market)
   // Nil is omitted, preserving exact old checkpoint hash/JSON.
   try c.encodeIfPresent(reserveCash, forKey: .reserveCash)
+  try c.encodeIfPresent(queuedClaims, forKey: .queuedClaims)
   // Omitting the v1 key preserves its historical sealed checkpoint checksum.
   if financeRuleVersion != 1 {
    try c.encode(financeRuleVersion, forKey: .financeRuleVersion)
@@ -94,6 +108,7 @@ public struct IntegratedBankLedger: Codable, Equatable {
   accounts = try c.decode([IntegratedBankAccount].self, forKey: .accounts)
   market = try c.decodeIfPresent(StockMarketState.self, forKey: .market)
   reserveCash = try c.decodeIfPresent(Int.self, forKey: .reserveCash)
+  queuedClaims = try c.decodeIfPresent([VeilopolyBankClaim].self, forKey: .queuedClaims)
   financeRuleVersion = try c.decodeIfPresent(Int.self, forKey: .financeRuleVersion) ?? 1
  }
 }
@@ -121,8 +136,15 @@ public enum IntegratedBanking {
  public static func validate(_ ledger: IntegratedBankLedger) -> Bool {
   (1...4).contains(ledger.financeRuleVersion) &&
   (ledger.financeRuleVersion == VeilopolyCityLongEconomy.version
-   ? (ledger.reserveCash.map { (0...VeilopolyCityLongEconomy.totalMoneySupply).contains($0) } ?? false)
-   : ledger.reserveCash == nil) &&
+   ? ((ledger.reserveCash.map { (0...VeilopolyCityLongEconomy.totalMoneySupply).contains($0) } ?? false) &&
+      (ledger.queuedClaims.map {
+       $0.count <= 4_096 && $0.allSatisfy { claim in
+        (0..<4).contains(claim.player) &&
+        (1...VeilopolyCityLongEconomy.totalMoneySupply).contains(claim.amount) &&
+        (1...32).contains(claim.source.utf8.count)
+       }
+      } ?? false))
+   : ledger.reserveCash == nil && ledger.queuedClaims == nil) &&
   (0...1_000_000).contains(ledger.completedTurns) && ledger.accounts.count == 4 &&
   ledger.terms.isWellFormed() && (ledger.market.map(StockMarketEngine.validate) ?? true) &&
   ledger.accounts.allSatisfy { acc in
