@@ -6,7 +6,7 @@
 - Mapped monetary base, protected bank reserves, liabilities/IOUs, loan underwriting, property/house inventory, event payouts, peer transfers and stock exposure. P0 V5 estate changed to noncash transfer/writeoff; V4 kept unchanged.
 - Revised interest/maturity receipt text, liquidity no-liability display, crisis exposure reporting, FIFO priority and forced liquidation. Estate tests authored, **not executed**.
 - Formal review: `VEILOPOLY_DEV/reviews/MACRO_FINAL_20261108.md`.
-- **Next one gate**: reproduce current branch with Swift 6.2.1, full `swift test`, fix failed cases, 100+ seed stress, then Owner/Governor review of branch conflicts. No build IPA, signing, release or merging.
+- New current-head 100-seed stress test **source committed, execution NOT_RUN**; reports natural finished vs capped games, bank IOU peaks, first bankruptcy and crisis ticks. **Next one gate**: reproduce current branch with Swift 6.2.1, full `swift test`, execute stress tests and fix failed cases, then Owner/Governor review of branch conflicts. No build IPA, signing, release or merging.
 - Do NOT claim complete crisis robustness, Apple SDK pass, iOS playability or measured game duration.
 
 

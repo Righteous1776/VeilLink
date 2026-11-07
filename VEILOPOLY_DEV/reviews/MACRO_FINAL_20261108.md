@@ -39,3 +39,10 @@ P2: Stock market currently has simulated, seeded quotation but no enterprise bal
 - Confirmed by GitHub source: implemented functions and committed regression source, currency constants, all changes confined to allowed branch path.
 - NOT confirmed: that `swift test` passes, that a human match lasts longer than 20 minutes, that none of the stress seeds freeze, that iOS builds or two-device communication work.
 - Product status: **unreleased experimental economic engine**, independent review lane; keep main and IPA untouched.
+
+
+## MACRO-005 balance instrumentation (SOURCE, not measured outcomes)
+- `EconomyAutoplayEvidence` now includes bank reserve, unresolved and peak bank claims, loan principal outstanding, stressed-move count and crisis-move count. The measurements derive from the **real game reducer state**, not simulated offline approximations or elapsed wall time.
+- `MacroFinalSeedStressTests.swift` exercises 100 independent V5 seeded AI games (max 1,200 engine actions each) and checks monetary-base conservation on every final state, natural completion vs capped runs, first bankruptcy, median completed turns, max claims and crisis duration. First three seeds have exact deterministic replay checks.
+- `testOneHundredDeterministicV5SeedsReportBankLiquidityAndEarlyBankruptcy` is potentially expensive and **NOT_RUN**; its existence is not evidence that 100 games passed or that play duration improved.
+- Avoid interpreting capped tests as natural completions or engine actions as human minutes. If V5 AI stalls during debt, report the specific failure rather than suppressing the result.
