@@ -704,6 +704,11 @@ public struct VeilopolyGameView: View {
       model.waitingForHuman && !model.pending {
     purchaseDecisionBar(tileID: tileID)
    }
+   if model.game.turn.phase == .auction,
+      let auction = model.game.auction,
+      model.waitingForHuman && !model.pending {
+    auctionDecisionBar(auction: auction)
+   }
    ScrollView(.vertical) {
     VStack(alignment: .leading, spacing: 10) {
      HStack {
@@ -1716,6 +1721,59 @@ public struct VeilopolyGameView: View {
   .accessibilityElement(children: .contain)
  }
 
+
+ /// Auction controls stay above the scroll area, including Leave/Pass.
+ /// A player must never scroll past artwork to reach the button to decline.
+ private func auctionDecisionBar(auction: AuctionState) -> some View {
+  VStack(alignment: .leading, spacing: 7) {
+   HStack {
+    Text("竞拍 \(model.game.board[auction.tile].name)")
+     .font(.system(size: 14, weight: .bold))
+     .lineLimit(1)
+    Spacer(minLength: 6)
+    Text("最高价 ¥\(auction.currentBid)")
+     .font(.system(size: 13, weight: .semibold, design: .monospaced))
+     .lineLimit(1)
+   }
+   HStack(spacing: 6) {
+    Button { adjustAuctionBid(by: -1) } label: {
+     Image(systemName: "minus.circle.fill")
+      .font(.system(size: 23))
+      .frame(width: 46, height: 46)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("减少竞价")
+    .disabled((Int(bidderCash) ?? 0) <= auction.currentBid + 1)
+    numericEntry("我的出价", value: bidderCash, target: .bid)
+     .frame(maxWidth: .infinity, minHeight: 46)
+    Button { adjustAuctionBid(by: 1) } label: {
+     Image(systemName: "plus.circle.fill")
+      .font(.system(size: 23))
+      .frame(width: 46, height: 46)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("增加竞价")
+    .disabled((Int(bidderCash) ?? 0) >= model.game.players[model.actor].cash)
+   }
+   HStack(spacing: 8) {
+    action("放弃竞价", symbol: "xmark.circle", secondary: true) {
+     model.perform(.bid, amount: 0)
+    }
+    action("确认出价", symbol: "checkmark.circle") {
+     model.perform(.bid, amount: Int(bidderCash) ?? 0)
+    }
+    .disabled((Int(bidderCash) ?? 0) <= auction.currentBid ||
+              (Int(bidderCash) ?? 0) > model.game.players[model.actor].cash)
+   }
+  }
+  .padding(9)
+  .background(Color(red: 0.06, green: 0.23, blue: 0.24),
+              in: RoundedRectangle(cornerRadius: 12))
+  .accessibilityElement(children: .contain)
+ }
+
  private func action(_ title: String, symbol: String,
                      secondary: Bool = false, pressed: @escaping () -> Void) -> some View {
   Button(action: pressed) {
@@ -1849,43 +1907,10 @@ public struct VeilopolyGameView: View {
   .accessibilityElement(children: .combine)
  }
  private var auctionPanel: some View {
-  VStack(alignment: .leading, spacing: 12) {
+  VStack(alignment: .leading, spacing: 8) {
    if let auction = model.game.auction {
     Text("公开拍卖 · \(model.game.board[auction.tile].name)")
-     .font(.system(size: 18, weight: .bold))
-    Text("当前最高价 ¥\(auction.currentBid) · 你可以出价或直接弃权。")
-     .font(.system(size: 14, weight: .medium))
-    HStack(spacing: 8) {
-     Button { adjustAuctionBid(by: -1) } label: {
-      Image(systemName: "minus.circle.fill")
-       .font(.system(size: 26))
-       .frame(width: 48, height: 48)
-       .contentShape(Rectangle())
-     }
-     .buttonStyle(.plain)
-     .accessibilityLabel("减少出价")
-     .disabled((Int(bidderCash) ?? 0) <= auction.currentBid + 1)
-     numericEntry("拟出价", value: bidderCash, target: .bid)
-     Button { adjustAuctionBid(by: 1) } label: {
-      Image(systemName: "plus.circle.fill")
-       .font(.system(size: 26))
-       .frame(width: 48, height: 48)
-       .contentShape(Rectangle())
-     }
-     .buttonStyle(.plain)
-     .accessibilityLabel("增加出价")
-     .disabled((Int(bidderCash) ?? 0) >= model.game.players[model.actor].cash)
-    }
-    HStack(spacing: 8) {
-     action("确认出价", symbol: "checkmark.circle") {
-      model.perform(.bid, amount: Int(bidderCash) ?? 0)
-     }
-     .disabled((Int(bidderCash) ?? 0) <= auction.currentBid ||
-               (Int(bidderCash) ?? 0) > model.game.players[model.actor].cash)
-     action("放弃竞价", symbol: "xmark.circle", secondary: true) {
-      model.perform(.bid, amount: 0)
-     }
-    }
+     .font(.system(size: 17, weight: .bold))
     astraAuctionHero
     if let notice = VeilopolyCivicText.auction(model.game) {
      VeilopolyCivicDocumentPanel(document: notice)
