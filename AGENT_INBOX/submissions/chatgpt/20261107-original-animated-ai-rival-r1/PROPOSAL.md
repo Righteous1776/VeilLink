@@ -31,3 +31,10 @@ This R2 upgrades the existing **PR #160** in place, replacing its rectangular ro
 - Proposed SwiftUI component checks GrokBotFull.mp4 first and uses AVQueuePlayer plus AVPlayerLooper and AVPlayerLayer for infinite native playback; GIF and Canvas remain fallbacks.
 - Owner Mode Grok bot toggle and the nine AI-game placements remain intact, decorative view ignores touches, playback muted and pauses on inactive scene / Reduce Motion.
 - This PR contains the advisory source patch and video handoff metadata, but NOT the MP4 binary: the currently active Asset Drop grant excludes this agent and .mp4. A downloadable integration ZIP with the actual video was created in the user conversation.
+
+## R5 — Round corners only (owner final choice)
+- Use the **original complete MP4**, retaining its white background and all original footage. No alpha-keying, matting, cropping, re-encoding or video asset changes.
+- For the MP4 branch only, apply a continuous rounded-square clip with adaptive radius `min(26, 0.30 * avatarSize)`: 22.8 pt at 76 pt, 12.6 pt at 42 pt; a subtle 0.8 pt semi-transparent stroke softens the edge against VeilLink game cards.
+- Apply matching `layer.cornerRadius` and `masksToBounds` directly to the AVPlayerLayer-backed UIView to guarantee clipping on iOS15, while retaining SwiftUI clipShape.
+- `resizeAspect` remains, so full video content is visible. The gif/Canvas fallback is unchanged.
+- Owner Mode Grok bot toggle, 9 AI-game placements, playback, pause/resume and other repairs remain unchanged. No duplicate PR.
