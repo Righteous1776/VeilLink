@@ -58,8 +58,11 @@ public final class GameSessionModel: ObservableObject {
   let recovered: VeilopolySavedGame?
   let unreadable: Bool
   do {
-   recovered = try store?.load(gameID: sessionID, mode: sessionMode)
-   unreadable = recovered.map { roomID != nil && $0.game.seed != seed } ?? false
+   let candidate = try store?.load(gameID: sessionID, mode: sessionMode)
+   let mismatchedRoom = roomID != nil && candidate.map { $0.game.seed != seed } == true
+   recovered = mismatchedRoom ? nil : candidate
+   // A different seeded game must never be substituted into this peer room.
+   unreadable = mismatchedRoom
   } catch {
    // Preserve unreadable files; never silently overwrite a user's game.
    recovered = nil
@@ -83,7 +86,9 @@ public final class GameSessionModel: ObservableObject {
    }
   }
   if unreadable {
-   saveWarning = "本地存档无法读取，已保留原文件。可从「重新开局」明确重置。"
+   saveWarning = isMultiplayer
+    ? "联机存档与本局邀请不匹配或无法读取，已保留旧数据并阻止覆盖。"
+    : "本地存档无法读取，已保留原文件。可从「重新开局」明确重置。"
    lastFeedback = "上次存档异常 · 未覆盖旧数据"
   } else if let recovered {
    lastFeedback = "已恢复上次对局 · 进度 #\(recovered.game.nextSeq)"
