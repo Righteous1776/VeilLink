@@ -320,6 +320,8 @@ public struct VeilopolyGameView: View {
  @State private var controlsExpanded = false
  @AppStorage("veilopoly.dayFelt.v1") private var dayFelt = false
  @State private var showTileInformation = false
+ @State private var showAssetExplorer = false
+ @State private var overviewTile = 1
  @State private var amountTarget: VeilopolyAmountTarget?
  @State private var showFinanceHUD = true
  @State private var showMarketHUD = true
@@ -967,66 +969,85 @@ public struct VeilopolyGameView: View {
  
  /// Draggable, read-only mini windows are opt-in from More. They live in
  /// the unused landscape space, never in a full-screen gesture layer.
+
  private var floatingHUDs: some View {
   HStack(alignment: .top, spacing: 6) {
-   if showFinanceHUD {
-    Button {
-     managementSection = .bank
-     controlsExpanded = true
-    } label: {
-     VStack(alignment: .leading, spacing: 3) {
-      Label("现金与资产", systemImage: "building.columns")
-       .font(.caption.weight(.semibold))
-      Text("¥\(model.game.players[model.actor].cash)")
-       .font(.system(size: 15, weight: .bold, design: .monospaced))
-     }
-     .padding(9).frame(width: 148, alignment: .leading)
-     .background(Color(red: 0.08, green: 0.19, blue: 0.22),
-                 in: RoundedRectangle(cornerRadius: 11))
-    }
-    .buttonStyle(.plain)
-    .offset(x: financeHUDOffset.width + financeHUDDrag.width,
-            y: financeHUDOffset.height + financeHUDDrag.height)
-    .gesture(DragGesture(minimumDistance: 8)
-     .updating($financeHUDDrag) { change, state, _ in state = change.translation }
-     .onEnded {
-      financeHUDOffset.width += $0.translation.width
-      financeHUDOffset.height += $0.translation.height
-     })
-    .accessibilityHint("点击展开银行，拖动可移动此窗口")
-   }
-   if showMarketHUD {
-    let market = IntegratedBanking.ledger(model.game).market
-    Button {
-     managementSection = .market
-     controlsExpanded = true
-    } label: {
-     VStack(alignment: .leading, spacing: 3) {
-      Label("模拟证券", systemImage: "chart.xyaxis.line")
-       .font(.caption.weight(.semibold))
-      Text(market?.quotes.first.map {
-       "\($0.symbol) ¥\($0.priceCents / 100).\(String(format: "%02d", $0.priceCents % 100))"
-      } ?? "行情未开放")
-       .font(.system(size: 12, weight: .bold, design: .monospaced))
-       .lineLimit(1)
-     }
-     .padding(9).frame(width: 148, alignment: .leading)
-     .background(Color(red: 0.08, green: 0.19, blue: 0.22),
-                 in: RoundedRectangle(cornerRadius: 11))
-    }
-    .buttonStyle(.plain)
-    .offset(x: marketHUDOffset.width + marketHUDDrag.width,
-            y: marketHUDOffset.height + marketHUDDrag.height)
-    .gesture(DragGesture(minimumDistance: 8)
-     .updating($marketHUDDrag) { change, state, _ in state = change.translation }
-     .onEnded {
-      marketHUDOffset.width += $0.translation.width
-      marketHUDOffset.height += $0.translation.height
-     })
-    .accessibilityHint("点击展开股市，拖动可移动此窗口")
-   }
+   if showFinanceHUD { financeMiniCard }
+   if showMarketHUD { marketMiniCard }
   }
   .foregroundColor(.white)
+ }
+ 
+ private var financeMiniCard: some View {
+  Button {
+   showAssetExplorer = true
+   managementSection = .bank
+  } label: {
+   VStack(alignment: .leading, spacing: 3) {
+    Label("现金与资产", systemImage: "building.columns")
+     .font(.caption.weight(.semibold))
+    Text("¥\(model.game.players[model.actor].cash)")
+     .font(.system(size: 15, weight: .bold, design: .monospaced))
+   }
+   .padding(9)
+   .frame(width: 148, alignment: .leading)
+   .background(miniCardColor, in: RoundedRectangle(cornerRadius: 11))
+   .contentShape(Rectangle())
+  }
+  .buttonStyle(.plain)
+  .offset(x: financeHUDOffset.width + financeHUDDrag.width,
+          y: financeHUDOffset.height + financeHUDDrag.height)
+  .gesture(DragGesture(minimumDistance: 8)
+   .updating($financeHUDDrag) { change, state, _ in
+    state = change.translation
+   }
+   .onEnded { value in
+    financeHUDOffset.width += value.translation.width
+    financeHUDOffset.height += value.translation.height
+   })
+  .accessibilityLabel("现金与资产，点击查看独立资产浏览器")
+ }
+ 
+ private var marketMiniCard: some View {
+  Button {
+   showAssetExplorer = true
+   managementSection = .market
+  } label: {
+   VStack(alignment: .leading, spacing: 3) {
+    Label("模拟证券", systemImage: "chart.xyaxis.line")
+     .font(.caption.weight(.semibold))
+    Text(firstQuoteSummary)
+     .font(.system(size: 12, weight: .bold, design: .monospaced))
+     .lineLimit(1)
+   }
+   .padding(9)
+   .frame(width: 148, alignment: .leading)
+   .background(miniCardColor, in: RoundedRectangle(cornerRadius: 11))
+   .contentShape(Rectangle())
+  }
+  .buttonStyle(.plain)
+  .offset(x: marketHUDOffset.width + marketHUDDrag.width,
+          y: marketHUDOffset.height + marketHUDDrag.height)
+  .gesture(DragGesture(minimumDistance: 8)
+   .updating($marketHUDDrag) { change, state, _ in
+    state = change.translation
+   }
+   .onEnded { value in
+    marketHUDOffset.width += value.translation.width
+    marketHUDOffset.height += value.translation.height
+   })
+  .accessibilityLabel("模拟证券行情，点击查看独立资产浏览器")
+ }
+ 
+ private var miniCardColor: Color { Color(red: 0.08, green: 0.19, blue: 0.22) }
+ 
+ private var firstQuoteSummary: String {
+  guard let quote = IntegratedBanking.ledger(model.game).market?.quotes.first else {
+   return "行情未开放"
+  }
+  let whole = quote.priceCents / 100
+  let fraction = abs(quote.priceCents % 100)
+  return "\(quote.symbol) ¥\(whole).\(String(format: "%02d", fraction))"
  }
 
  private var portraitFallback: some View {
