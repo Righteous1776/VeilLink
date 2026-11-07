@@ -297,3 +297,29 @@ extension IntegratedBankingTests {
   XCTAssertEqual(g.banking?.accounts[0].savings.count,1)
  }
 }
+
+extension IntegratedBankingTests {
+ func testRepeatedFinancialPositionIDsCannotDeleteTwoDebtsForOneRepayment() {
+  var ledger=IntegratedBankLedger(completedTurns:2)
+  ledger.accounts[0].loans=[
+   SandboxLoan(id:42,principal:100,interestBasisPoints:2000,
+               duePeriod:1,periods:1,totalDue:120),
+   SandboxLoan(id:42,principal:200,interestBasisPoints:2000,
+               duePeriod:2,periods:1,totalDue:240)]
+  XCTAssertFalse(IntegratedBanking.validate(ledger))
+  var game=Fixture.game(.manage)
+  game.banking=ledger
+  fails(game,Move(.bankRepay,player:0,seq:game.nextSeq,
+                  financeID:42),.invalidState)
+ }
+ func testDistinctBankIdsRemainValidAcrossProductKinds() {
+  var ledger=IntegratedBankLedger(completedTurns:2)
+  ledger.accounts[0].loans=[
+   SandboxLoan(id:42,principal:100,interestBasisPoints:2000,
+               duePeriod:1,periods:1,totalDue:120)]
+  ledger.accounts[0].savings=[
+   SandboxSaving(id:43,feature:.demandDeposit,principal:100,
+                 unlockPeriod:0,payoutBasisPoints:0)]
+  XCTAssertTrue(IntegratedBanking.validate(ledger))
+ }
+}

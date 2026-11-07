@@ -115,6 +115,9 @@ public enum IntegratedBanking {
   ledger.accounts.allSatisfy { acc in
    (0...4).contains(acc.borrowCount) && acc.savings.count <= 1000 &&
    acc.loans.count <= 4 && acc.positions.count <= 1000 &&
+   Set(acc.savings.map(\.id)).count == acc.savings.count &&
+   Set(acc.loans.map(\.id)).count == acc.loans.count &&
+   Set(acc.positions.map(\.id)).count == acc.positions.count &&
    acc.savings.allSatisfy {
     $0.id >= 0 && [.demandDeposit, .fixedDeposit].contains($0.feature) &&
     (1...1_000_000).contains($0.principal) && (0...1_000_000).contains($0.unlockPeriod) &&
