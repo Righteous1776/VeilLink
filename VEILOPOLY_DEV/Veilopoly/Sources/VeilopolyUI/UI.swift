@@ -34,7 +34,7 @@ public final class GameSessionModel: ObservableObject {
  private var recoveryBlocked = false
  private var lastCheckpointAt = Date.distantPast
 
- public init(seed: UInt64 = 1729123, humanCount: Int = 1) {
+ public init(seed: UInt64? = nil, humanCount: Int = 1) {
   configuredHumanCount = humanCount
   let sessionID = "solo-\(humanCount)"
   saveSessionID = sessionID
@@ -51,7 +51,10 @@ public final class GameSessionModel: ObservableObject {
    unreadable = true
   }
   recoveryBlocked = unreadable
-  let initial = recovered?.game ?? GameFactory.make(seed: seed, humanCount: humanCount)
+  // Fresh OS entropy is sampled only at a NEW MATCH boundary; saved games
+  // always resume their original seed and deterministic replay.
+  let initial = recovered?.game ?? GameFactory.make(
+   seed: seed ?? VeilopolyNewGameSeed.fresh(), humanCount: humanCount)
   game = initial
   scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
   stockExecutions = (recovered?.stockReceipts ?? []).map(StockExecution.init(record:))
@@ -291,7 +294,7 @@ public struct VeilopolyGameView: View {
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
  @Environment(\.scenePhase) private var scenePhase
  private let onExit: (() -> Void)?
- public init(seed: UInt64 = 1729123, humanCount: Int = 1, onExit: (() -> Void)? = nil) {
+ public init(seed: UInt64? = nil, humanCount: Int = 1, onExit: (() -> Void)? = nil) {
   _model = StateObject(wrappedValue: GameSessionModel(seed: seed, humanCount: humanCount))
   self.onExit = onExit
  }
@@ -367,7 +370,7 @@ public struct VeilopolyGameView: View {
    Button("取消", role: .cancel) {}
   }
   .confirmationDialog("重新开始本局？", isPresented: $showRestart) {
-   Button("重开", role: .destructive) { model.reset(seed: model.game.seed &+ 1) }
+   Button("重开", role: .destructive) { model.reset(seed: VeilopolyNewGameSeed.fresh(excluding: model.game.seed)) }
    Button("取消", role: .cancel) {}
   }
   .confirmationDialog("退出 Veilopoly？", isPresented: $showExitConfirmation) {
@@ -1307,7 +1310,9 @@ public struct VeilopolyGameView: View {
      Text("账面净资产 ¥\(netWorth(p))")
     }.font(.subheadline)
    }
-   action("再来一局",symbol:"arrow.clockwise") { model.reset(seed: model.game.seed &+ 1) }
+   action("再来一局",symbol:"arrow.clockwise") {
+    model.reset(seed: VeilopolyNewGameSeed.fresh(excluding: model.game.seed))
+   }
    Text("净资产按地产账面价值、存款及投资本金、股票市值减应还贷款计算。")
     .font(.caption2).foregroundStyle(.secondary)
   }
