@@ -45,3 +45,21 @@ Separate validation/v29-device-candidate lane restores exact-digest device llama
 from successful native source run42397878336, rebuilds current V29 app and
 verifies its bytes. That fast artifact remains PENDING primary complete gates,
 not a published release. Original CI and source branches are not overwritten.
+
+Apple full run42401398082: 909/910 host tests passed; the UI smoke test and all
+nine real-host live-session tests passed. One Gomoku test incorrectly required
+the wall-clock-limited legacy search always choose defensive112 on a position
+that also offers proven winning attacks at3 and5. The same run chose5, not an
+illegal move. Corrected the isolated R4 fixture to remove counterattack (exact
+rule-safe candidates must equal[112]); the R8 comparison now requires a legal
+legacy reply that neutralizes ALL forks OR proves a double immediate victory.
+R8 still MUST choose3 and win both endpoint-block continuations. No production
+search behavior changed and no test was skipped. Local Swift6.2.1 proof against
+the actual unchanged rule/fork source: unique R4 escape[112] PASS; original
+attacks3/5 each defeat EVERY legal host reply (426 continuations) PASS. This is
+portable rule evidence, not Apple XCTest. A new exact-head full CI is required.
+
+Parallel device run42401910361 SUCCESS: actual unsigned29.0/build66 IPA
+50,971,873 bytes, app93,936,800 bytes, model/framework/114 module resources,
+protected hashes and size gates PASS. Artifact13586091649 remains explicitly
+candidate-only until full tests pass. No merge/release/phone result yet.
