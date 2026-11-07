@@ -78,10 +78,55 @@ enum GomokuCounterForkR4 {
         return forks
     }
 
+    /// After our hypothetical move, detect a double immediate five threat:
+    /// two DISTINCT legal empty cells complete our five on the following turn.
+    /// The opponent cannot both block the two wins and create its own fork.
+    /// This preserves forcing counterattack instead of making the AI passive.
+    static func createsForcedDoubleWin(
+        in board: GomokuState,
+        player: MiniGamePlayer,
+        virtualPlacement: Int
+    ) -> Bool {
+        guard (0..<(size * size)).contains(virtualPlacement),
+              board.value(at: virtualPlacement) == 0 else { return false }
+        let own: Int8 = player == .host ? 1 : 2
+        var found = [Bool](repeating: false, count: size * size)
+        var count = 0
+        for row in 0..<size {
+            for column in 0..<size {
+                for (dr, dc) in axes {
+                    let endRow = row + 4 * dr
+                    let endCol = column + 4 * dc
+                    guard (0..<size).contains(endRow),
+                          (0..<size).contains(endCol) else { continue }
+                    var ownCount = 0, empty = -1, invalid = false
+                    for offset in 0..<5 {
+                        let index = (row + offset * dr) * size + column + offset * dc
+                        let value: Int8 = index == virtualPlacement
+                            ? own : board.value(at: index)
+                        if value == own { ownCount += 1 }
+                        else if value == 0 {
+                            if empty < 0 { empty = index }
+                            else { invalid = true; break }
+                        } else { invalid = true; break }
+                    }
+                    guard !invalid, ownCount == 4, empty >= 0 else { continue }
+                    if !found[empty] {
+                        found[empty] = true
+                        count += 1
+                        if count >= 2 { return true }
+                    }
+                }
+            }
+        }
+        return false
+    }
+
     /// Called strictly after the native immediate-win and immediate-block
     /// gates. If the opponent has a fork-in-one, keep only moves that remove
     /// ALL such threats when any such move is present. If no complete
     /// defense exists, retain ALL candidates to allow counterattack/search.
+    /// Even with safe blocks available, preserve a winning double-threat attack.
     static func safeCandidates(
         in board: GomokuState,
         player: MiniGamePlayer,
@@ -91,8 +136,11 @@ enum GomokuCounterForkR4 {
         let opponent = player.opponent
         let baseline = forkCellCount(in: board, opponent: opponent)
         guard baseline > 0 else { return (candidates, false) }
-        let escapes = candidates.filter {
-            forkCellCount(in: board, opponent: opponent, virtualBlock: $0) == 0
+        let escapes = candidates.filter { candidate in
+            // First keep genuine defences; if not defensive, retain any move
+            // with TWO independent next-turn wins (forcing counterattack).
+            forkCellCount(in: board, opponent: opponent, virtualBlock: candidate) == 0
+                || createsForcedDoubleWin(in: board, player: player, virtualPlacement: candidate)
         }
         return (escapes.isEmpty ? candidates : escapes, true)
     }
