@@ -533,6 +533,7 @@ public struct VeilopolyGameView: View {
     if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
    }
    if !model.isMultiplayer { Button("重新开局") { showRestart = true } }
+    else { Button("返回好友房间") { exitGame() } }
    Button("本局信息") { showGameInfo = true }
    Button("玩法辞典 · 23 篇") { showGuide = true }
    Button("取消", role: .cancel) {}
@@ -777,8 +778,8 @@ public struct VeilopolyGameView: View {
     }
     .buttonStyle(.plain)
     .accessibilityHint("不需要购买地产，也可以随时查看全部资产")
-    Text("操作面板")
-     .font(.system(size: 15, weight: .bold, design: .rounded))
+    Text(model.isMultiplayer ? (model.isMultiplayerHost ? "联机 · 房主" : "联机 · 客人") : "操作面板")
+      .font(.system(size: 15, weight: .bold, design: .rounded))
      .lineLimit(1)
      .minimumScaleFactor(0.8)
     Spacer(minLength: 0)
@@ -1730,7 +1731,13 @@ public struct VeilopolyGameView: View {
    }
   }
   else if model.pending { ProgressView("动画播放中") }
-  else if !model.waitingForHuman { Text("AI 正在行动……").foregroundStyle(.secondary) }
+  else if !model.waitingForHuman {
+    Text(model.isMultiplayer && model.game.players[model.actor].kind == .human
+         ? "等待好友行动；你仍可查看地块和资产。"
+         : "电脑正在行动……")
+     .font(.subheadline)
+     .foregroundStyle(.secondary)
+   }
   else {
    switch model.game.turn.phase {
    case .roll:
