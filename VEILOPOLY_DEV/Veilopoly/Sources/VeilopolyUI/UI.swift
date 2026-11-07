@@ -319,6 +319,7 @@ public struct VeilopolyGameView: View {
  @State private var showGuide = false
  @State private var controlsExpanded = false
  @AppStorage("veilopoly.dayFelt.v1") private var dayFelt = false
+ @AppStorage("veilopoly.slowSteps.v1") private var slowSteps = true
  @State private var showTileInformation = false
  @State private var showAssetExplorer = false
  @State private var showProbabilityLab = false
@@ -361,17 +362,19 @@ public struct VeilopolyGameView: View {
    }
    .frame(width: geometry.size.width, height: geometry.size.height)
   }
-  .preferredColorScheme(.dark)
-  .statusBarHidden()
+  .preferredColorScheme(dayFelt ? .light : .dark)
+   .statusBarHidden()
   .onAppear {
    model.scene.reduceMotion = reduceMotion
-   if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
+    model.scene.stepDuration = slowSteps ? 0.42 : 0.26
+    if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
   }
   .onDisappear { model.flushSave() }
   .onChange(of: scenePhase) { phase in
    if phase != .active { model.flushSave() }
   }
   .onChange(of: reduceMotion) { model.scene.reduceMotion = $0 }
+   .onChange(of: slowSteps) { model.scene.stepDuration = $0 ? 0.42 : 0.26 }
   .onChange(of: model.pending) { pending in
    if !pending { revealDecisionIfNeeded() }
   }
@@ -409,6 +412,9 @@ public struct VeilopolyGameView: View {
    Button(showMarketHUD ? "隐藏股市悬浮窗" : "显示股市悬浮窗") { showMarketHUD.toggle() }
    Button("完整资产浏览（任何回合）") { showAssetExplorer = true }
    Button("概率小游戏 · 无下注") { showProbabilityLab = true }
+   Button(slowSteps ? "移动节奏：舒缓（切标准）" : "移动节奏：标准（切舒缓）") {
+    slowSteps.toggle()
+   }
    Button(dayFelt ? "切换全局夜间主题" : "切换全局日间主题") {
     dayFelt.toggle()
     if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
@@ -432,8 +438,8 @@ public struct VeilopolyGameView: View {
     VeilopolyGuideSheet(isPresented: $showGuide, game: model.game,
                         saveSummary: model.saveSummary)
    }
-   .sheet(isPresented: $showTileInformation) { selectedTileDetailSheet }
-   .sheet(isPresented: $showAssetExplorer) { assetExplorerSheet }
+   .fullScreenCover(isPresented: $showTileInformation) { selectedTileDetailSheet }
+    .fullScreenCover(isPresented: $showAssetExplorer) { assetExplorerSheet }
    .sheet(isPresented: $showProbabilityLab) { probabilityLabSheet }
   .alert("本局信息", isPresented: $showGameInfo) {
    Button("知道了", role: .cancel) {}
@@ -478,7 +484,7 @@ public struct VeilopolyGameView: View {
        if let editorial {
         VStack(spacing: 7) {
          Text(editorial.story)
-          .font(.system(size: 13, weight: .regular, design: .serif))
+           .font(.system(size: 16, weight: .regular, design: .serif))
           .foregroundColor(Color(red: 0.25, green: 0.33, blue: 0.32))
           .fixedSize(horizontal: false, vertical: true)
          Rectangle().fill(Color(red: 0.73, green: 0.58, blue: 0.33).opacity(0.65))
@@ -488,7 +494,7 @@ public struct VeilopolyGameView: View {
           .tracking(2)
           .foregroundColor(Color(red: 0.50, green: 0.37, blue: 0.18))
          Text(editorial.ruling)
-          .font(.system(size: 13, weight: .semibold))
+           .font(.system(size: 16, weight: .semibold))
           .foregroundColor(Color(red: 0.12, green: 0.27, blue: 0.28))
           .fixedSize(horizontal: false, vertical: true)
         }
@@ -503,13 +509,13 @@ public struct VeilopolyGameView: View {
          .frame(maxWidth: .infinity)
        }
       }
-      .frame(maxHeight: 126)
+      .frame(maxHeight: 180)
       Button("确认并继续") { model.dismissCard() }
        .buttonStyle(AstraB01ButtonStyle())
        .frame(minWidth: 160, minHeight: 44)
        .accessibilityHint("阅读卡牌与执行结果，然后继续游戏")
      }
-     .frame(maxWidth: 300).padding(16)
+     .frame(maxWidth: 520).padding(18)
      .background {
       RoundedRectangle(cornerRadius: 19, style: .continuous)
        .fill(Color(red: 0.97, green: 0.94, blue: 0.87))
@@ -563,6 +569,7 @@ public struct VeilopolyGameView: View {
 
    if controlsExpanded {
     controlsDrawer
+     .environment(\.colorScheme, .dark)
      .frame(width: drawerWidth, height: drawerHeight)
      .padding(.top, CGFloat(VeilopolyLandscapeLayout.drawerTopInset))
      .padding(.trailing, 6)
@@ -644,6 +651,11 @@ public struct VeilopolyGameView: View {
    .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
    // Browsing is always allowed. Actual transactions remain phase-gated.
    managementNavigation
+   if model.game.turn.phase == .tileResolve,
+      let tileID = model.game.turn.pendingPurchase,
+      model.waitingForHuman && !model.pending {
+    purchaseDecisionBar(tileID: tileID)
+   }
    ScrollView(.vertical) {
     VStack(alignment: .leading, spacing: 10) {
      HStack {
@@ -731,8 +743,9 @@ public struct VeilopolyGameView: View {
       Image(systemName: section.symbol)
       Text(section.rawValue)
      }
-     .font(.system(size: 11, weight: .semibold))
-     .frame(maxWidth: .infinity, minHeight: 44)
+     .font(.system(size: 13, weight: .semibold))
+     .frame(maxWidth: .infinity, minHeight: 50)
+     .contentShape(Rectangle())
      .foregroundStyle(managementSection == section ? Color.mint : Color.white.opacity(0.65))
      .background(managementSection == section ? Color.white.opacity(0.12) : .clear,
                  in: RoundedRectangle(cornerRadius: 9))
@@ -821,7 +834,10 @@ public struct VeilopolyGameView: View {
   let tile = model.game.board[model.selectedTile]
   let ownerName = tile.owner.map { model.game.players[$0].name } ?? "尚未购买"
   return HStack(spacing: 8) {
-   Button { model.selectedTile = (model.selectedTile + 39) % 40 } label: {
+   Button {
+     model.selectedTile = (model.selectedTile + 39) % 40
+     showTileInformation = true
+    } label: {
     Image(systemName: "chevron.left").frame(width: 44, height: 44)
    }
    .buttonStyle(.plain)
@@ -844,7 +860,10 @@ public struct VeilopolyGameView: View {
     }
    }
    .frame(maxWidth: .infinity, alignment: .leading)
-   Button { model.selectedTile = (model.selectedTile + 1) % 40 } label: {
+   Button {
+     model.selectedTile = (model.selectedTile + 1) % 40
+     showTileInformation = true
+    } label: {
     Image(systemName: "chevron.right").frame(width: 44, height: 44)
    }
    .buttonStyle(.plain)
@@ -893,7 +912,7 @@ public struct VeilopolyGameView: View {
    }
   }
   .navigationViewStyle(.stack)
-  .preferredColorScheme(.dark)
+  .preferredColorScheme(dayFelt ? .light : .dark)
  }
 
  
@@ -1106,7 +1125,7 @@ public struct VeilopolyGameView: View {
    }
   }
   .navigationViewStyle(.stack)
-  .preferredColorScheme(.dark)
+  .preferredColorScheme(dayFelt ? .light : .dark)
  }
 
  @ViewBuilder private var assetOverviewContents: some View {
@@ -1404,22 +1423,21 @@ public struct VeilopolyGameView: View {
      }
     }
    case .tileResolve:
-    if let i = model.game.turn.pendingPurchase {
-     VStack(alignment: .leading,spacing:10) {
-      astraBuyHero(model.game.board[i])
-      Text("购房完全自愿：可购买、按经典规则进入拍卖，或使用休闲规则直接路过，不扣款也不转让产权。")
-       .font(.caption).fixedSize(horizontal: false, vertical: true)
-      HStack {
-       action("购买 ¥\(model.game.board[i].price)",symbol:"house") { model.perform(.buyProperty,tile:i) }
-        .disabled(model.game.players[model.actor].cash < model.game.board[i].price)
-       action("不购买（拍卖）",symbol:"gavel",secondary:true) { model.perform(.startAuction,tile:i) }
-       action("直接路过（休闲规则）", symbol:"figure.walk", secondary:true) {
-        model.perform(.skipPurchase, tile: i)
+     if let i = model.game.turn.pendingPurchase {
+      VStack(alignment: .leading, spacing: 7) {
+       Label("落到 \(model.game.board[i].name)", systemImage: "building.2")
+        .font(.system(size: 15, weight: .bold))
+       Text("价格 ¥\(model.game.board[i].price) · 基础租金 ¥\(model.game.board[i].rent.first ?? 0)")
+        .font(.system(size: 14, weight: .medium, design: .monospaced))
+       Button("查看完整产权与租金说明") {
+        model.selectedTile = i
+        showTileInformation = true
        }
+       .font(.system(size: 14, weight: .semibold))
+       .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
       }
      }
-    }
-   case .auction: auctionPanel
+    case .auction: auctionPanel
    case .manage: managePanel
    case .trade: tradeResponsePanel
    case .debt:
@@ -1436,20 +1454,72 @@ public struct VeilopolyGameView: View {
    }
   }
  }
+
+ /// Always visible above the scrollable content on purchase decisions.
+ private func purchaseDecisionBar(tileID: Int) -> some View {
+  let tile = model.game.board[tileID]
+  return VStack(alignment: .leading, spacing: 6) {
+   Text("抵达 \(tile.name) · 自由选择")
+    .font(.system(size: 14, weight: .bold))
+    .lineLimit(1)
+   HStack(spacing: 8) {
+    action("直接路过", symbol: "figure.walk", secondary: true) {
+     model.perform(.skipPurchase, tile: tileID)
+    }
+    action("购买 ¥\(tile.price)", symbol: "house.fill") {
+     model.perform(.buyProperty, tile: tileID)
+    }
+    .disabled(model.game.players[model.actor].cash < tile.price)
+   }
+   HStack(spacing: 8) {
+    action("公开拍卖", symbol: "gavel", secondary: true) {
+     model.perform(.startAuction, tile: tileID)
+    }
+    action("查看地块", symbol: "info.circle", secondary: true) {
+     model.selectedTile = tileID
+     showTileInformation = true
+    }
+   }
+   Text("直接路过不扣款、不拍卖，地产仍无主。")
+    .font(.system(size: 12, weight: .medium))
+    .fixedSize(horizontal: false, vertical: true)
+    .foregroundStyle(.white.opacity(0.82))
+  }
+  .padding(8)
+  .background(Color(red: 0.06, green: 0.23, blue: 0.24),
+              in: RoundedRectangle(cornerRadius: 12))
+  .accessibilityElement(children: .contain)
+ }
+
  private func action(_ title: String, symbol: String,
                      secondary: Bool = false, pressed: @escaping () -> Void) -> some View {
   Button(action: pressed) {
-   HStack(spacing: 6) {
+   HStack(spacing: 8) {
     Image(systemName: symbol)
-     .font(.system(size: 15, weight: .semibold))
-     .frame(width: 19, height: 19)
+     .font(.system(size: 17, weight: .semibold))
+     .frame(width: 22, height: 22)
      .accessibilityHidden(true)
-    Text(title).lineLimit(2).minimumScaleFactor(0.85)
+    Text(title)
+     .font(.system(size: 14, weight: .semibold))
+     .lineLimit(2)
+     .minimumScaleFactor(0.9)
    }
-   .frame(maxWidth: .infinity, minHeight: 44)
+   .foregroundColor(.white)
+   .padding(.horizontal, 10)
+   .frame(maxWidth: .infinity, minHeight: 48)
+   .background(secondary
+               ? Color(red: 0.17, green: 0.28, blue: 0.33)
+               : Color(red: 0.44, green: 0.34, blue: 0.18),
+               in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+   .overlay {
+    RoundedRectangle(cornerRadius: 11)
+     .strokeBorder(Color(red: 0.75, green: 0.60, blue: 0.35).opacity(0.85),
+                   lineWidth: 1)
+     .allowsHitTesting(false)
+   }
    .contentShape(Rectangle())
   }
-  .buttonStyle(AstraB01ButtonStyle(secondary: secondary))
+  .buttonStyle(.plain)
   .accessibilityLabel(title)
  }
  // Astra B01 runtime cards: backgrounds are decorative; all values below
