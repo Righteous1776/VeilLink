@@ -81,6 +81,41 @@ final class VeilopolyRoomWireTests: XCTestCase {
   XCTAssertEqual(guest.game, authority.game)
  }
 
+ func testGuestReceivesHumanReadableHostRejection() throws {
+  let event = GameEnvelope(gameId: room, kind: .rejected,
+                           rejectedSeq: 12,
+                           rejectionReason: "出价不能超过现金余额")
+  let wire = try VeilopolyRoomWire.encode(event)
+  XCTAssertEqual(VeilopolyRoomWire.decode(wire), event)
+  XCTAssertNotNil(VeilopolyRoomWire.previewText(for: wire))
+  XCTAssertTrue(VeilopolyRoomAuthorization.allows(.rejected,
+   hostIsLocal: false, messageIsOutgoing: false))
+  XCTAssertFalse(VeilopolyRoomAuthorization.allows(.rejected,
+   hostIsLocal: false, messageIsOutgoing: true))
+ }
+
+ func testRejectsForgedHostRejectionOrOverlongReason() {
+  XCTAssertFalse(VeilopolyRoomWire.isValid(
+   GameEnvelope(gameId: room, kind: .rejected,
+                rejectedSeq: nil, rejectionReason: "invalid")))
+  XCTAssertFalse(VeilopolyRoomWire.isValid(
+   GameEnvelope(gameId: room, kind: .rejected,
+                rejectedSeq: 3, rejectionReason: String(repeating: "x", count: 241))))
+  XCTAssertFalse(VeilopolyRoomWire.isValid(
+   GameEnvelope(gameId: room, kind: .accept,
+                rejectedSeq: 3, rejectionReason: "hidden rejection")))
+ }
+
+ func testHostResyncHintHasExactValidDirectionAndShape() throws {
+  let event = GameEnvelope(gameId: room, kind: .syncHint, hostHeadSeq: 777)
+  XCTAssertEqual(VeilopolyRoomWire.decode(try VeilopolyRoomWire.encode(event)), event)
+  XCTAssertFalse(VeilopolyRoomAuthorization.allows(.syncHint,
+   hostIsLocal: true, messageIsOutgoing: false))
+  XCTAssertFalse(VeilopolyRoomWire.isValid(
+   GameEnvelope(gameId: room, kind: .syncHint,
+                intent: Move(.rollDice, player: 1, seq: 1), hostHeadSeq: 4)))
+ }
+
  func testResumeRoundTripAndRoomBinding() throws {
   let g = GameFactory.make(seed: 707, humanCount: 2)
   let request = MultiplayerResumeHandshake.request(gameID: room, guest: g)
