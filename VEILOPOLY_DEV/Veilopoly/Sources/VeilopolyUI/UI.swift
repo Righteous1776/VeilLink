@@ -41,6 +41,7 @@ public final class GameSessionModel: ObservableObject {
  private let localSeat: Int
  public var onAuthoritativeMove: ((AuthoritativeMove) -> Void)?
  public var onGuestIntent: ((Move) -> Void)?
+ public var onGuestIntentRejected: ((Move, String) -> Void)?
  public var isMultiplayer: Bool { sessionMode != .solo }
  public var isMultiplayerGuest: Bool { sessionMode == .multiplayerGuest }
  public var isMultiplayerHost: Bool { sessionMode == .multiplayerHost }
@@ -275,14 +276,24 @@ public final class GameSessionModel: ObservableObject {
  }
  /// The host checks the remote player's seat, phase, and current sequence.
  public func acceptGuestIntent(_ move: Move) {
-  guard isMultiplayerHost, move.player == 1, actor == 1,
-        game.nextSeq == move.seq else { return }
+  guard isMultiplayerHost, move.player == 1 else { return }
+  guard actor == 1, game.nextSeq == move.seq else {
+   onGuestIntentRejected?(move, "回合状态已经变化，请先恢复最新棋局")
+   return
+  }
   if animating {
    pendingGuestIntent = move
    return
   }
-  applyMove(move)
-  drive()
+  // Preview the same deterministic reducer before committing. Failed guest
+  // proposals must receive an explicit reply so the player can edit/retry.
+  switch VeilopolyEngine.apply(game, currentContext, move) {
+  case .failure(let reason):
+   onGuestIntentRejected?(move, VeilopolyGamePresentation.message(reason))
+  case .success:
+   applyMove(move)
+   drive()
+  }
  }
 
  /// Guest accepts only a sequential host-signed (over the trusted chat) move.
