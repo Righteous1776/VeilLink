@@ -9,6 +9,9 @@ import VeilopolyEngine
 final class GameBoardScene: SKScene {
  private var tiles: [Int: SKShapeNode] = [:]
  private var kimiSkin: KimiK2BoardSkin?
+ private var proceduralBoardBase: SKShapeNode?
+ private var proceduralBoardTitle: SKLabelNode?
+ private var proceduralIndices: [SKLabelNode] = []
  private var tilePriceLabels: [Int: SKLabelNode] = [:]
  private var tileCaptions: [Int: SKLabelNode] = [:]
  private let activeTileMarker = SKShapeNode(rectOf: CGSize(width: 84, height: 76), cornerRadius: 8)
@@ -103,14 +106,37 @@ final class GameBoardScene: SKScene {
  }
  /// Kimi board theme is a purely visual preference, never a reducer command.
  func setDayFelt(_ enabled: Bool) {
-  // Do not claim a light procedural fallback when the Kimi art is absent.
-  guard let kimiSkin else { dayFelt = false; return }
   dayFelt = enabled
-  kimiSkin.setLight(enabled)
+  kimiSkin?.setLight(enabled)
   backgroundColor = enabled ? SKColor(red: 0.96, green: 0.94, blue: 0.90, alpha: 1)
                             : SKColor(red: 0.065, green: 0.09, blue: 0.13, alpha: 1)
+  // Keep the procedural board coherent with the surrounding day/night canvas.
+  guard kimiSkin == nil else { return }
+  proceduralBoardBase?.fillColor = enabled
+   ? SKColor(red: 0.88, green: 0.84, blue: 0.74, alpha: 1)
+   : SKColor(red: 0.11, green: 0.18, blue: 0.22, alpha: 1)
+  proceduralBoardBase?.strokeColor = enabled
+   ? SKColor(red: 0.48, green: 0.36, blue: 0.19, alpha: 1)
+   : SKColor(red: 0.26, green: 0.45, blue: 0.48, alpha: 1)
+  proceduralBoardTitle?.fontColor = enabled
+   ? SKColor(red: 0.17, green: 0.33, blue: 0.34, alpha: 0.27)
+   : SKColor(red: 0.66, green: 0.85, blue: 0.87, alpha: 0.22)
+  for node in tiles.values {
+   node.fillColor = enabled ? SKColor(red: 0.98, green: 0.96, blue: 0.91, alpha: 1)
+                            : SKColor(red: 0.16, green: 0.23, blue: 0.28, alpha: 1)
+   node.strokeColor = enabled ? SKColor(red: 0.63, green: 0.51, blue: 0.34, alpha: 1)
+                              : SKColor(red: 0.37, green: 0.52, blue: 0.55, alpha: 0.6)
+  }
+  for node in tileCaptions.values {
+   node.fontColor = enabled ? SKColor(red: 0.14, green: 0.28, blue: 0.29, alpha: 1)
+                            : SKColor(white: 0.96, alpha: 0.93)
+  }
+  for node in proceduralIndices {
+   node.fontColor = enabled ? SKColor(red: 0.21, green: 0.32, blue: 0.32, alpha: 1)
+                            : SKColor(white: 0.85, alpha: 1)
+  }
  }
- var supportsDayFelt: Bool { kimiSkin != nil }
+ var supportsDayFelt: Bool { true }
  var isDayFelt: Bool { dayFelt }
  private func buildBoard() {
   // Promote only when the COMPLETE dark K2 asset set is present in Bundle.module.
@@ -121,10 +147,12 @@ final class GameBoardScene: SKScene {
    base.fillColor = SKColor(red: 0.11, green: 0.18, blue: 0.22, alpha: 1)
    base.strokeColor = SKColor(red: 0.26, green: 0.45, blue: 0.48, alpha: 1)
    base.lineWidth = 4; base.zPosition = 1; addChild(base)
+   proceduralBoardBase = base
    let center = SKLabelNode(text: "VEILOPOLY")
    center.fontName = "AvenirNext-Heavy"; center.fontSize = 78
    center.fontColor = SKColor(red: 0.66, green: 0.85, blue: 0.87, alpha: 0.22)
    center.position = CGPoint(x: 510, y: 465); center.zPosition = 2; addChild(center)
+   proceduralBoardTitle = center
   }
   for i in 0..<40 {
    let spot = point(i)
@@ -157,6 +185,7 @@ final class GameBoardScene: SKScene {
     index.position = CGPoint(x: spot.x, y: spot.y + 13)
     index.zPosition = 6
     addChild(index)
+    proceduralIndices.append(index)
    }
 
    // No Kimi preview text is embedded in the live game: authoritative Engine
