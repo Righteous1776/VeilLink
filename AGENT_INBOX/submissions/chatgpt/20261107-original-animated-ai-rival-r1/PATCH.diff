@@ -188,11 +188,12 @@ diff --git a/VeilLink/UI/VeilOpponentAvatarView.swift b/VeilLink/UI/VeilOpponent
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/VeilOpponentAvatarView.swift
-@@ -0,0 +1,314 @@
+@@ -0,0 +1,375 @@
 +import Foundation
 +import SwiftUI
 +import ImageIO
 +import UIKit
++import AVFoundation
 +
 +/// Original VeilLink liquid-form character. Developed independently from
 +/// concepts such as organic contours, eye expressions and spring motion.
@@ -301,7 +302,9 @@ new file mode 100644
 +            reduceMotion: reduceMotion, sceneIsActive: scenePhase == .active
 +        )
 +        Group {
-+            if Bundle.main.url(forResource: "GrokBotLoop", withExtension: "gif") != nil {
++            if Bundle.main.url(forResource: "GrokBotFull", withExtension: "mp4") != nil {
++                VeilGrokBotFullVideoPlayer(running: animated)
++            } else if Bundle.main.url(forResource: "GrokBotLoop", withExtension: "gif") != nil {
 +                VeilGrokBotGIFPlayer(running: animated)
 +            } else {
 +                TimelineView(.animation(
@@ -501,6 +504,64 @@ new file mode 100644
 +        } else {
 +            uiView.stopAnimating()
 +        }
++    }
++}
++    
++// Plays the complete Owner-supplied H.264 animation (921 frames, 30.7 seconds).
++// No transcoding or frame extraction is required in the running app.
++private final class VeilGrokBotVideoSurface: UIView {
++    override static var layerClass: AnyClass { AVPlayerLayer.self }
++
++    var videoLayer: AVPlayerLayer { layer as! AVPlayerLayer }
++}
++
++private struct VeilGrokBotFullVideoPlayer: UIViewRepresentable {
++    let running: Bool
++
++    final class Coordinator {
++        let player: AVQueuePlayer
++        let looper: AVPlayerLooper?
++
++        init() {
++            let queue = AVQueuePlayer()
++            queue.isMuted = true
++            queue.actionAtItemEnd = .none
++            player = queue
++            if let url = Bundle.main.url(forResource: "GrokBotFull", withExtension: "mp4") {
++                looper = AVPlayerLooper(
++                    player: queue, templateItem: AVPlayerItem(url: url)
++                )
++            } else {
++                looper = nil
++            }
++        }
++    }
++
++    func makeCoordinator() -> Coordinator { Coordinator() }
++
++    func makeUIView(context: Context) -> VeilGrokBotVideoSurface {
++        let view = VeilGrokBotVideoSurface(frame: .zero)
++        view.isUserInteractionEnabled = false
++        view.backgroundColor = .clear
++        view.videoLayer.videoGravity = .resizeAspect
++        view.videoLayer.player = context.coordinator.player
++        if running { context.coordinator.player.play() }
++        return view
++    }
++
++    func updateUIView(_ view: VeilGrokBotVideoSurface, context: Context) {
++        if running {
++            context.coordinator.player.play()
++        } else {
++            context.coordinator.player.pause()
++        }
++    }
++
++    static func dismantleUIView(_ view: VeilGrokBotVideoSurface, coordinator: Coordinator) {
++        coordinator.player.pause()
++        view.videoLayer.player = nil
++        coordinator.looper?.disableLooping()
++        coordinator.player.removeAllItems()
 +    }
 +}
 diff --git a/VeilLinkTests/VeilOpponentAvatarPolicyTests.swift b/VeilLinkTests/VeilOpponentAvatarPolicyTests.swift
