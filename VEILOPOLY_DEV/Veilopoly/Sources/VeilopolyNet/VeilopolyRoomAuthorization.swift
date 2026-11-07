@@ -8,7 +8,7 @@ public enum VeilopolyRoomAuthorization {
                            hostIsLocal: Bool, messageIsOutgoing: Bool) -> Bool {
   let fromHost = messageIsOutgoing == hostIsLocal
   switch command {
-  case .invite, .move, .snapshot, .syncHint: return fromHost
+  case .invite, .move, .snapshot, .syncHint, .rejected: return fromHost
   case .accept, .decline, .intent, .resync: return !fromHost
   }
  }
