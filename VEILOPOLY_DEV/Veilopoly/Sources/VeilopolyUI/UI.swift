@@ -883,6 +883,9 @@ public struct VeilopolyGameView: View {
    case .debt:
     VStack(alignment: .leading, spacing: 10) {
      Label("债务清算", systemImage: "exclamationmark.triangle").font(.headline)
+     if let notice = VeilopolyCivicText.debt(model.game) {
+      VeilopolyCivicDocumentPanel(document: notice)
+     }
      if let debt = model.game.pendingDebt {
       Text("待支付 ¥\(debt.amount) · 当前现金 ¥\(model.game.players[debt.player].cash)")
        .font(.caption)
@@ -1032,6 +1035,9 @@ public struct VeilopolyGameView: View {
    if let auction = model.game.auction {
     Text("拍卖 · \(model.game.board[auction.tile].name)").font(.headline)
     astraAuctionHero
+    if let notice = VeilopolyCivicText.auction(model.game) {
+     VeilopolyCivicDocumentPanel(document: notice)
+    }
     HStack {
      action("出价",symbol:"hand.raised") {
       model.perform(.bid, amount: Int(bidderCash) ?? 0)
@@ -1064,6 +1070,9 @@ public struct VeilopolyGameView: View {
    } label: {
     Label("地块 #\(model.selectedTile) · \(model.game.board[model.selectedTile].name)",systemImage:"square.grid.3x3")
      .frame(maxWidth:.infinity,alignment:.leading)
+   }
+   if let deed = VeilopolyCivicText.deed(model.game, tileIndex: model.selectedTile) {
+    VeilopolyCivicDocumentPanel(document: deed)
    }
    HStack {
     propertyAction("建造", symbol: "hammer", kind: .buildHouse)
@@ -1150,6 +1159,9 @@ public struct VeilopolyGameView: View {
    Divider()
    Text("银行与金融").font(.subheadline.weight(.semibold))
    astraBankHero
+   if let receipt = VeilopolyCivicText.banking(model.game, player: model.actor) {
+    VeilopolyCivicDocumentPanel(document: receipt)
+   }
    HStack(spacing: 8) {
     TextField("金额", text: $bankAmount)
      .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
@@ -1221,6 +1233,9 @@ public struct VeilopolyGameView: View {
    Text("交易确认").font(.headline)
    if let trade = model.game.trade {
     astraTradeHero(trade)
+    if let contract = VeilopolyCivicText.trade(model.game) {
+     VeilopolyCivicDocumentPanel(document: contract)
+    }
     Text("\(model.game.players[trade.from].name) 提议交易 · 现金 ¥\(trade.offer.cash) / ¥\(trade.request.cash)")
      .font(.caption)
     Text("地产：\(trade.offer.tiles.map(String.init).joined(separator:",")) ⇄ \(trade.request.tiles.map(String.init).joined(separator:","))")
@@ -1257,6 +1272,9 @@ public struct VeilopolyGameView: View {
  private var settlementPanel: some View {
   VStack(spacing: 12) {
    astraSettlementHero
+   if let report = VeilopolyCivicText.settlement(model.game) {
+    VeilopolyCivicDocumentPanel(document: report)
+   }
    ForEach(model.game.players.sorted(by:{ a,b in netWorth(a) > netWorth(b) }),id:\.id) { p in
     HStack {
      Text(p.name); Spacer()
