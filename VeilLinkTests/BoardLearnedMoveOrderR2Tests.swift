@@ -33,10 +33,10 @@ final class BoardLearnedMoveOrderR2Tests: XCTestCase {
         var state = GomokuState()
         XCTAssertTrue(state.apply(index: 112, actor: .host))
         let key = AdaptiveBoardPosition.gomoku(state)
-        archive.record(game: .gomoku, plies: [AdaptiveBoardPly(position: key, action: "111", actor: .guest)], result: .humanWon)
-        XCTAssertLessThan(archive.snapshot().bonus(position: key, action: "111"), 0)
+        archive.record(game: .gomoku, plies: [AdaptiveBoardPly(position: key, action: "114", actor: .guest)], result: .humanWon)
+        XCTAssertLessThan(archive.snapshot().bonus(position: key, action: "114"), 0)
         let reloaded = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
-        XCTAssertEqual(reloaded.snapshot().bonus(position: key, action: "111"), archive.snapshot().bonus(position: key, action: "111"))
+        XCTAssertEqual(reloaded.snapshot().bonus(position: key, action: "114"), archive.snapshot().bonus(position: key, action: "114"))
     }
 
     @MainActor
