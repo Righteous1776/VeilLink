@@ -76,7 +76,8 @@ enum GomokuBot {
         learning: AdaptiveBoardLearningSnapshot = .empty,
         formationPreference: GomokuFormationPreference = .disabled,
         diagnosticCounterForkR4: Bool = true,
-        diagnosticUseR6Defense: Bool = true
+        diagnosticUseR6Defense: Bool = true,
+        diagnosticR8ForcedWin: Bool = true
     ) -> GomokuBotMove? {
         guard state.winner == nil,
               !state.isDraw,
@@ -116,6 +117,19 @@ enum GomokuBot {
             if completesFive(index: index, in: state, stone: opposingStone) {
                 return result(index: index, score: winScore / 2, nodes: nodes, started: started)
             }
+        }
+
+        // R8: one-pass deterministic proof of win-in-two from real native
+        // missed opportunities. More reliable than hoping a short search
+        // budget will rank the winning fork. Never override immediate
+        // own-win or mandatory immediate-opponent-block checks above.
+        // Diagnostic opt-out preserves prior R3/R4/R6 paired comparisons.
+        if diagnosticR8ForcedWin,
+           let forcing = GomokuCounterForkR4.immediateTwoTurnWinCandidate(
+                in: state, player: player, candidates: candidates
+           ) {
+            nodes += 1
+            return result(index: forcing, score: winScore - 1, nodes: nodes, started: started)
         }
 
         let urgentDefense = formationPreference.enabled
