@@ -6,6 +6,7 @@ import UIKit
 import VeilopolyEngine
 import VeilopolyAI
 import VeilopolyPersistence
+import VeilopolyNet
 
 @MainActor
 public final class GameSessionModel: ObservableObject {
@@ -35,18 +36,29 @@ public final class GameSessionModel: ObservableObject {
  private let saveSessionID: String
  private var recoveryBlocked = false
  private var lastCheckpointAt = Date.distantPast
+ private let sessionMode: VeilopolySaveMode
+ private let localSeat: Int
+ public var onAuthoritativeMove: ((AuthoritativeMove) -> Void)?
+ public var onGuestIntent: ((Move) -> Void)?
+ public var isMultiplayer: Bool { sessionMode != .solo }
+ public var isMultiplayerGuest: Bool { sessionMode == .multiplayerGuest }
+ public var isMultiplayerHost: Bool { sessionMode == .multiplayerHost }
 
- public init(seed: UInt64? = nil, humanCount: Int = 1) {
-  configuredHumanCount = humanCount
-  let sessionID = "solo-\(humanCount)"
+ public init(seed: UInt64? = nil, humanCount: Int = 1,
+             roomID: String? = nil, localSeat: Int = 0, isHost: Bool = true) {
+  let actualHumanCount = roomID == nil ? humanCount : 2
+  configuredHumanCount = actualHumanCount
+  self.localSeat = roomID == nil ? 0 : localSeat
+  sessionMode = roomID == nil ? .solo : (isHost ? .multiplayerHost : .multiplayerGuest)
+  let sessionID = roomID ?? "solo-\(actualHumanCount)"
   saveSessionID = sessionID
   let store = try? VeilopolySaveStore()
   saveStore = store
   let recovered: VeilopolySavedGame?
   let unreadable: Bool
   do {
-   recovered = try store?.load(gameID: sessionID, mode: .solo)
-   unreadable = false
+   recovered = try store?.load(gameID: sessionID, mode: sessionMode)
+   unreadable = recovered.map { roomID != nil && $0.game.seed != seed } ?? false
   } catch {
    // Preserve unreadable files; never silently overwrite a user's game.
    recovered = nil
@@ -56,7 +68,7 @@ public final class GameSessionModel: ObservableObject {
   // Fresh OS entropy is sampled only at a NEW MATCH boundary; saved games
   // always resume their original seed and deterministic replay.
   let initial = recovered?.game ?? GameFactory.make(
-   seed: seed ?? VeilopolyNewGameSeed.fresh(), humanCount: humanCount)
+   seed: seed ?? VeilopolyNewGameSeed.fresh(), humanCount: actualHumanCount)
   game = initial
   scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
   stockExecutions = (recovered?.stockReceipts ?? []).map(StockExecution.init(record:))
@@ -79,12 +91,15 @@ public final class GameSessionModel: ObservableObject {
   }
   // A killed app can resume in .moveAnim/.tileResolve. Finish the pending
   // deterministic reducer step without replaying an already committed roll.
-  if humanCount == 0 || recovered != nil {
+  if sessionMode != .multiplayerGuest && (actualHumanCount == 0 || recovered != nil) {
    Task { @MainActor [weak self] in self?.drive() }
   }
  }
  public var actor: Int { game.auction?.turn ?? game.trade?.to ?? game.pendingDebt?.player ?? game.turn.player }
- public var waitingForHuman: Bool { !game.players[actor].bankrupt && game.players[actor].kind == .human }
+ public var waitingForHuman: Bool {
+  !game.players[actor].bankrupt && game.players[actor].kind == .human &&
+   (sessionMode == .solo || actor == localSeat)
+ }
  public var currentContext: GameContext { VeilopolyEngine.context(game) }
  public var pending: Bool { animating }
  /// Read-only editorial copy for the EXACT engine card currently in the queue.
@@ -104,7 +119,7 @@ public final class GameSessionModel: ObservableObject {
    return
   }
   do {
-   _ = try saveStore.save(game, gameID: saveSessionID, mode: .solo,
+   _ = try saveStore.save(game, gameID: saveSessionID, mode: sessionMode,
                           stockReceipts: stockExecutions.map(\.persisted))
    lastCheckpointAt = Date()
    saveWarning = nil
@@ -124,18 +139,31 @@ public final class GameSessionModel: ObservableObject {
                      financePeriods: Int? = nil, financeID: Int? = nil,
                      stockSymbol: String? = nil, stockShares: Int? = nil) {
   guard !animating && !cardGate.isPresented else { return }
+  if isMultiplayer && !waitingForHuman {
+   errorMessage = "请等待好友的回合"
+   return
+  }
   let move = Move(kind, player: actor, seq: game.nextSeq, tile: tile, amount: amount,
                   to: to, offer: offer, request: request, deck: deck,
                   financeProduct: financeProduct, financePeriods: financePeriods, financeID: financeID,
                   stockSymbol: stockSymbol, stockShares: stockShares)
-  applyMove(move)
-  drive()
+  if isMultiplayerGuest {
+   guard let onGuestIntent else {
+    errorMessage = "好友连接尚未就绪，操作未发送"
+    return
+   }
+   onGuestIntent(move)
+  } else {
+   applyMove(move)
+   drive()
+  }
  }
  public func advanceStockMarket() {
-  guard !animating && !cardGate.isPresented && waitingForHuman && game.turn.phase == .manage else { return }
+  guard !animating && !cardGate.isPresented && !isMultiplayerGuest &&
+         waitingForHuman && game.turn.phase == .manage else { return }
   applyMove(Move(.stockTick, player: actor, seq: game.nextSeq))
  }
- private func applyMove(_ move: Move) {
+ private func applyMove(_ move: Move, authoritativeHash: String? = nil) {
   let result = VeilopolyEngine.apply(game, currentContext, move)
   switch result {
   case .failure(let err):
@@ -150,6 +178,10 @@ public final class GameSessionModel: ObservableObject {
     UINotificationFeedbackGenerator().notificationOccurred(.error)
    }
   case .success((let newState, let effects)):
+   if let authoritativeHash, StateDigest.hash(newState) != authoritativeHash {
+    errorMessage = "好友棋局状态校验失败，已停止同步"
+    return
+   }
    if newsEnabled {
     if let notice = VeilopolyBulletinCopy.event(effects, state: newState, sequence: move.seq) {
      bulletinFeed.enqueue(notice)
@@ -164,6 +196,10 @@ public final class GameSessionModel: ObservableObject {
     // periodically, and always flush on lifecycle departure or player action.
     game = newState
     checkpoint(force: false)
+    if isMultiplayerHost {
+     onAuthoritativeMove?(AuthoritativeMove(seq: move.seq, move: move,
+                                            stateHash: StateDigest.hash(newState)))
+    }
     return
    }
    errorMessage = nil
@@ -183,6 +219,10 @@ public final class GameSessionModel: ObservableObject {
    // Persist the COMMITTED reducer state before starting presentation
    // animations, which are intentionally never replayed after a crash.
    checkpoint(force: true)
+   if isMultiplayerHost {
+    onAuthoritativeMove?(AuthoritativeMove(seq: move.seq, move: move,
+                                           stateHash: StateDigest.hash(newState)))
+   }
    scene.display(newState, snapTokens: !effects.contains(where: { $0.kind == .playerMoved }))
    queue.append(contentsOf: commands)
    if effects.contains(where: { $0.kind == .stockBought || $0.kind == .stockSold }) {
@@ -220,6 +260,25 @@ public final class GameSessionModel: ObservableObject {
    if self.cardGate.animationDidComplete() { self.presentNext() }
   }
  }
+ /// The host checks the remote player's seat, phase, and current sequence.
+ public func acceptGuestIntent(_ move: Move) {
+  guard isMultiplayerHost, move.player == 1, actor == 1,
+        game.nextSeq == move.seq, !animating else { return }
+  applyMove(move)
+  drive()
+ }
+
+ /// Guest accepts only a sequential host-signed (over the trusted chat) move.
+ @discardableResult public func acceptHostMove(_ packet: AuthoritativeMove) -> Bool {
+  guard isMultiplayerGuest, packet.seq == game.nextSeq,
+        packet.move.seq == packet.seq else { return false }
+  let prior = game.nextSeq
+  applyMove(packet.move, authoritativeHash: packet.stateHash)
+  return game.nextSeq == prior + 1
+ }
+
+ public func reportPeerError(_ message: String) { errorMessage = message }
+
  public func fastForward() {
   // Card reading is a deliberate decision, not a skippable scene effect.
   if animating && !cardGate.isPresented { scene.fastForward() }
@@ -236,6 +295,10 @@ public final class GameSessionModel: ObservableObject {
  }
  public func reset(seed: UInt64) {
   guard !animating else { return }
+  if isMultiplayer {
+   errorMessage = "联机对局不能单方面重开，请退出后重新邀请好友"
+   return
+  }
   if recoveryBlocked {
    guard let saveStore else { return }
    do {
@@ -258,7 +321,7 @@ public final class GameSessionModel: ObservableObject {
   if configuredHumanCount == 0 { drive() }
  }
  private func drive() {
-  guard !animating && !driving else { return }
+  guard !animating && !driving && !isMultiplayerGuest else { return }
   driving = true
   defer { driving = false }
   // All internal and AI moves use the same public pure reducer as human input.
@@ -346,6 +409,13 @@ public struct VeilopolyGameView: View {
  private let onExit: (() -> Void)?
  public init(seed: UInt64? = nil, humanCount: Int = 1, onExit: (() -> Void)? = nil) {
   _model = StateObject(wrappedValue: GameSessionModel(seed: seed, humanCount: humanCount))
+  self.onExit = onExit
+ }
+
+ /// Multiplayer and solo views share the same board, with the host app owning
+ /// the E2EE room lifecycle and the authoritative game event adapter.
+ public init(multiplayerModel: GameSessionModel, onExit: (() -> Void)? = nil) {
+  _model = StateObject(wrappedValue: multiplayerModel)
   self.onExit = onExit
  }
  public var body: some View {
@@ -441,7 +511,7 @@ public struct VeilopolyGameView: View {
     dayFelt.toggle()
     if model.scene.supportsDayFelt { model.scene.setDayFelt(dayFelt) }
    }
-   Button("重新开局") { showRestart = true }
+   if !model.isMultiplayer { Button("重新开局") { showRestart = true } }
    Button("本局信息") { showGameInfo = true }
    Button("玩法辞典 · 23 篇") { showGuide = true }
    Button("取消", role: .cancel) {}
