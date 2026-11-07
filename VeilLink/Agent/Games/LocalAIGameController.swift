@@ -548,9 +548,10 @@ final class LocalAIGameController: ObservableObject {
     }
 
     /// A device class is not permission to revoke strategic search.
-    /// Only the explicit user-off path opts into a compact device budget.
+    /// Full-depth versus compact search is determined ONLY by the player's
+    /// persisted switch. Turning it off must also work on modern devices.
     nonisolated static func boardSearchProfile(deviceLabel: String, unrestricted: Bool) -> String {
-        unrestricted ? "HIGH-PERFORMANCE" : deviceLabel
+        unrestricted ? "HIGH-PERFORMANCE" : "LEGACY-COMPACT"
     }
 
     func setTacticalScenario(_ scenario: TacticalSoloScenario) {
