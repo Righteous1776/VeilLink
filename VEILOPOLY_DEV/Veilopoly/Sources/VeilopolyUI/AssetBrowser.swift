@@ -11,6 +11,7 @@ struct VeilopolyAssetBrowser: View {
  @State private var section: VeilopolyManagementSection = .property
  @State private var showAllTiles = false
  @State private var selectedSymbol = "VTL"
+ @State private var showAchievementJournal = false
  @Environment(\.dismiss) private var dismiss
 
  init(game: GameState, initialPlayer: Int) {
@@ -57,6 +58,9 @@ struct VeilopolyAssetBrowser: View {
   .padding(12)
   .background(Color(uiColor: .systemBackground).ignoresSafeArea())
   .foregroundColor(.primary)
+  .sheet(isPresented: $showAchievementJournal) {
+   VeilopolyAchievementJournal(game: game, player: selectedPlayer)
+  }
  }
 
  private var header: some View {
@@ -78,10 +82,18 @@ struct VeilopolyAssetBrowser: View {
     .pickerStyle(.menu)
     .frame(minWidth: 88, minHeight: 44)
     Spacer(minLength: 4)
-    Text("仅查看，不提交操作；对局与行情继续更新")
-     .font(.caption2).foregroundColor(.secondary)
-     .fixedSize(horizontal: false, vertical: true)
+    Button { showAchievementJournal = true } label: {
+     Label("成就档案", systemImage: "rosette")
+      .font(.caption.weight(.semibold))
+      .frame(minHeight: 44)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.bordered)
+    .accessibilityHint("查看本局累计行动里程碑和当前资产目标，不会提交游戏操作")
    }
+   Text("仅查看，不提交操作；对局与行情继续更新")
+    .font(.caption2).foregroundColor(.secondary)
+    .fixedSize(horizontal: false, vertical: true)
   }
  }
 

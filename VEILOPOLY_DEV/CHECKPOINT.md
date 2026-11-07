@@ -1,5 +1,13 @@
 # Veilopoly Development Checkpoint — 2026-11-06
 
+## GPT CONTINUATION-002 — Read-only achievements — 2026-11-07
+
+- Prior live head `09ac83b`. Added 16 original no-stakes achievement milestones and phase-independent journal in asset browser. Historical counters derive only from recorded committed moves; portfolio objectives deliberately reflect current holdings. No added persistent schema, rewards, gameplay move, market effect, RNG or wire format.
+- New four-case Engine unit suite plus iOS journal UI; isolated Swift 6.2.1 smoke PASS against minimal matching interfaces; full SwiftPM package, Apple SDK, iOS XCTest, simulator and devices NOT_RUN.
+- Review: `reviews/GPT_CONTINUATION_002_ACHIEVEMENTS.md`. No main merge, packaging, workflow, version, release or IPA.
+- NEXT_ONE_TASK: bounded snapshot/phase reference hardening and validation; verify platform gates when possible.
+
+
 ## CODEX P5-001 — Owner-authorized live integration — 2026-11-07
 
 - Owner explicitly expanded scope to Veilopoly + hall/host bridge/tests on dev,
