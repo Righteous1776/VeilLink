@@ -1,4 +1,4 @@
-name: V29 verified artifact promotion
+name: V29 verified artifact promotion (OWNER HOLD)
 
 on:
   workflow_dispatch:
@@ -13,6 +13,9 @@ concurrency:
 
 jobs:
   promote:
+    # Owner paused formal V29 on 2026-11-08: chat invite and live-mode parity
+    # are not accepted. CI success must NOT override this product HOLD.
+    if: ${{ false }}
     runs-on: macos-15
     timeout-minutes: 15
     env:
