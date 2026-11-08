@@ -1,0 +1,894 @@
+diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyEngine/VeilopolyCityLongEconomy.swift b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyEngine/VeilopolyCityLongEconomy.swift
+index 6534575229ecf8e245bc41285bc545e71a147e16..39af2d160539f90f327a1485f5253696b05ec4ae 100644
+--- a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyEngine/VeilopolyCityLongEconomy.swift
++++ b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyEngine/VeilopolyCityLongEconomy.swift
+@@ -134,7 +134,8 @@ public enum VeilopolyCityLongEconomy {
+   policy.loanCapsByProperties = [6_000, 12_000, 24_000, 40_000]
+   return policy
+  }
+- /// New solo only; no retroactive V4 revaluation.
++ /// Current NEW-match profile (solo or explicitly negotiated live V5).
++ /// Never retroactively revalue an existing V4/classic save.
+  public static func make(seed: UInt64, humanCount: Int = 1,
+                          levels: [AILevel] = [.balanced,.balanced,.balanced,.balanced],
+                          cards: [CardDefinition] = VeilopolyCityLongCards.allV5) -> GameState {
+diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyNet/LiveRoom.swift b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyNet/LiveRoom.swift
+index b7afeb4ec06733f8043301ff82c622153042d63c..72f4de8612c12e5fff9859b374a65a8d3ed2d219 100644
+--- a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyNet/LiveRoom.swift
++++ b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyNet/LiveRoom.swift
+@@ -8,15 +8,32 @@ public struct VeilopolyRoomConfiguration: Codable, Equatable {
+  public let seed: UInt64
+  public let hostIdentityID: String
+  public let guestIdentityID: String
+- public init(roomID: String, seed: UInt64, hostIdentityID: String, guestIdentityID: String) {
++ /// Absent in existing room indexes/invites: preserve their classic rules.
++ public let rulesVersion: Int?
++ public var effectiveRulesVersion: Int { rulesVersion ?? 1 }
++ public var rulesTitle: String { effectiveRulesVersion == 5 ? "城市经济 V5" : "经典旧局" }
++ public init(roomID: String, seed: UInt64, hostIdentityID: String, guestIdentityID: String,
++             rulesVersion: Int? = nil) {
+   self.roomID = roomID; self.seed = seed
+   self.hostIdentityID = hostIdentityID; self.guestIdentityID = guestIdentityID
++  self.rulesVersion = rulesVersion
++ }
++ /// Product entry for NEW rooms. Never infer/migrate an existing room's rules.
++ public static func current(roomID: String, seed: UInt64, hostIdentityID: String,
++                            guestIdentityID: String) -> Self {
++  Self(roomID: roomID, seed: seed, hostIdentityID: hostIdentityID,
++       guestIdentityID: guestIdentityID, rulesVersion: VeilopolyCityLongEconomy.version)
++ }
++ public func initialGame() -> GameState {
++  effectiveRulesVersion == VeilopolyCityLongEconomy.version
++   ? VeilopolyCityLongEconomy.make(seed: seed, humanCount: 2)
++   : GameFactory.make(seed: seed, humanCount: 2)
+  }
+  public var isValid: Bool {
+   UUID(uuidString: roomID)?.uuidString == roomID &&
+   !hostIdentityID.isEmpty && !guestIdentityID.isEmpty &&
+   hostIdentityID.utf8.count <= 128 && guestIdentityID.utf8.count <= 128 &&
+-  hostIdentityID != guestIdentityID
++  hostIdentityID != guestIdentityID && [1, VeilopolyCityLongEconomy.version].contains(effectiveRulesVersion)
+  }
+  public func seat(for identity: String) -> Int? {
+   identity == hostIdentityID ? 0 : (identity == guestIdentityID ? 1 : nil)
+@@ -40,17 +57,24 @@ public struct VeilopolyRoomPacket: Codable {
+              configuration: VeilopolyRoomConfiguration? = nil, proposal: Move? = nil,
+              committed: AuthoritativeMove? = nil, snapshot: GameSnapshot? = nil,
+              nextSeq: Int? = nil, stateHash: String? = nil) {
+-  version = 1; self.roomID = roomID; self.kind = kind; self.configuration = configuration
++  // Only the new-profile INVITE uses application-packet v2. Old apps reject
++  // it instead of accepting and silently starting a classic game. Control
++  // fragments, encrypted VeilControlEvent and Wire v4 are unchanged.
++  version = kind == .invite && configuration?.effectiveRulesVersion == 5 ? 2 : 1
++  self.roomID = roomID; self.kind = kind; self.configuration = configuration
+   self.proposal = proposal; self.committed = committed; self.snapshot = snapshot
+   self.nextSeq = nextSeq; self.stateHash = stateHash
+  }
+  public var isValid: Bool {
+-  guard version == 1, UUID(uuidString: roomID)?.uuidString == roomID else { return false }
++  guard (version == 1 || (version == 2 && kind == .invite)),
++        UUID(uuidString: roomID)?.uuidString == roomID else { return false }
+   let fields = [configuration != nil, proposal != nil, committed != nil, snapshot != nil,
+                 nextSeq != nil, stateHash != nil]
+   switch kind {
+   case .invite: return fields == [true,false,false,false,false,false] &&
+-    configuration?.isValid == true && configuration?.roomID == roomID
++    configuration?.isValid == true && configuration?.roomID == roomID &&
++    ((version == 1 && configuration?.effectiveRulesVersion == 1) ||
++     (version == 2 && configuration?.effectiveRulesVersion == 5))
+   case .proposal: return fields == [false,true,false,false,false,false]
+   case .commit: return fields == [false,false,true,false,false,false]
+   case .snapshot: return fields == [false,false,false,true,false,false]
+@@ -82,7 +106,7 @@ public struct VeilopolyLiveRoom {
+   guard configuration.isValid, configuration.seat(for: localIdentityID) != nil
+    else { throw VeilopolyRoomError.invalidConfiguration }
+   self.configuration = configuration; self.localIdentityID = localIdentityID
+-  let initial = restoredGame ?? GameFactory.make(seed: configuration.seed, humanCount: 2)
++  let initial = restoredGame ?? configuration.initialGame()
+   guard Self.validSnapshotState(initial, configuration: configuration) else {
+    throw VeilopolyRoomError.invalidSnapshot
+   }
+@@ -157,13 +181,24 @@ public struct VeilopolyLiveRoom {
+         (g.turn.pendingPurchase.map { (0..<40).contains($0) } ?? true),
+         (0...32).contains(g.bank.houses), (0...12).contains(g.bank.hotels),
+         (g.banking.map { IntegratedBanking.validate($0) } ?? true) else { return false }
+-  let canonical = GameFactory.make(seed: configuration.seed, humanCount: 2)
++  let canonical = configuration.initialGame()
+   guard g.cards == canonical.cards,
+         zip(g.board, canonical.board).allSatisfy({ tile, original in
+          tile.kind == original.kind && tile.name == original.name && tile.color == original.color &&
+          tile.price == original.price && tile.rent == original.rent && tile.houseCost == original.houseCost
+-        }), (g.banking.map { $0.terms == FinanceSandboxPolicy() } ?? true)
+-   else { return false } // Live v1 supports the canonical rules, not peer-injected paytables.
++        }) else { return false }
++  if configuration.effectiveRulesVersion == 5 {
++   guard let ledger = g.banking, let expected = canonical.banking,
++         ledger.financeRuleVersion == 5, ledger.terms == expected.terms,
++         ledger.market?.algorithmVersion == expected.market?.algorithmVersion,
++         let reserve = ledger.reserveCash,
++         reserve + g.players.reduce(0, { $0 + $1.cash }) == VeilopolyCityLongEconomy.expandedTotalMoneySupply
++    else { return false }
++  } else {
++   guard g.banking.map({ $0.terms == FinanceSandboxPolicy() &&
++         (1...2).contains($0.financeRuleVersion) && $0.reserveCash == nil }) ?? true
++    else { return false }
++  } // Both profiles reject peer-injected paytables and silent rule downgrades.
+   for (deck, original) in [(g.chanceDeck, canonical.chanceDeck), (g.chestDeck, canonical.chestDeck)] {
+    guard !deck.order.isEmpty, deck.cursor >= 0, deck.cursor < Int.max - 16,
+          Set(deck.order).count == deck.order.count,
+diff --git a/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyNetTests/CurrentRoomRulesTests.swift b/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyNetTests/CurrentRoomRulesTests.swift
+new file mode 100644
+index 0000000000000000000000000000000000000000..f6e308f10928948e3a243d5b0aa5ed1fb792deb2
+--- /dev/null
++++ b/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyNetTests/CurrentRoomRulesTests.swift
+@@ -0,0 +1,126 @@
++import Foundation
++import XCTest
++import VeilopolyEngine
++@testable import VeilopolyNet
++
++final class CurrentRoomRulesTests: XCTestCase {
++ private func current() -> VeilopolyRoomConfiguration {
++  .current(roomID: UUID().uuidString, seed: 20261108,
++           hostIdentityID: "host", guestIdentityID: "guest")
++ }
++ func testNewLiveRoomUsesExactlyTheCurrentSoloRulesAndContent() throws {
++  let config = current()
++  let host = try VeilopolyLiveRoom(configuration: config, localIdentityID: "host")
++  let guest = try VeilopolyLiveRoom(configuration: config, localIdentityID: "guest")
++  let sameRules = VeilopolyCityLongEconomy.make(seed: config.seed, humanCount: 2)
++  XCTAssertEqual(host.game, sameRules)
++  XCTAssertEqual(guest.game, sameRules)
++  XCTAssertEqual(host.game.players.map(\.cash), [25_000,25_000,25_000,25_000])
++  XCTAssertEqual(host.game.banking?.reserveCash, 2_000_000)
++  XCTAssertEqual(host.game.banking?.financeRuleVersion, 5)
++  XCTAssertEqual(host.game.cards, VeilopolyCityLongCards.allV5)
++ }
++ func testLegacyRoomMetadataResumesClassicWithoutAddingARulesKey() throws {
++  let old = VeilopolyRoomConfiguration(roomID: UUID().uuidString, seed: 99,
++   hostIdentityID: "host", guestIdentityID: "guest")
++  let data = try JSONEncoder().encode(old)
++  XCTAssertNil((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["rulesVersion"])
++  let decoded = try JSONDecoder().decode(VeilopolyRoomConfiguration.self, from: data)
++  XCTAssertEqual(decoded.effectiveRulesVersion, 1)
++  XCTAssertEqual(try VeilopolyLiveRoom(configuration: decoded, localIdentityID: "host").game,
++                 GameFactory.make(seed: 99, humanCount: 2))
++  XCTAssertEqual(VeilopolyRoomPacket(roomID: old.roomID, kind: .invite, configuration: old).version, 1)
++ }
++ func testCurrentInviteCannotMasqueradeAsAnOldClientCompatibleInvite() throws {
++  let config = current()
++  let packet = VeilopolyRoomPacket(roomID: config.roomID, kind: .invite, configuration: config)
++  XCTAssertEqual(packet.version, 2, "Legacy apps only accept application version1")
++  XCTAssertTrue(packet.isValid)
++  var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(packet)) as? [String: Any])
++  object["version"] = 1
++  let disguised = try JSONDecoder().decode(VeilopolyRoomPacket.self, from: JSONSerialization.data(withJSONObject: object))
++  XCTAssertFalse(disguised.isValid)
++  object["version"] = 3
++  XCTAssertFalse(try JSONDecoder().decode(VeilopolyRoomPacket.self,
++   from: JSONSerialization.data(withJSONObject: object)).isValid)
++ }
++ func testCurrentInviteSurvivesUnchangedControlFragmentsAndRuleMetadata() throws {
++  let config = current()
++  let invite = VeilopolyRoomPacket(roomID: config.roomID, kind: .invite, configuration: config)
++  var assembler = VeilopolyControlAssembler()
++  var received: VeilopolyRoomPacket?
++  for fragment in try VeilopolyControlCodec.fragments(invite).reversed() {
++   if let complete = try assembler.ingest(fragment, from: "host", now: 1) { received = complete }
++  }
++  XCTAssertEqual(received?.configuration, config)
++  XCTAssertEqual(received?.version, 2)
++  XCTAssertEqual(VeilopolyRoomPacket(roomID: config.roomID, kind: .accept).version, 1)
++ }
++ func testCurrentFinanceActionsReplayIdenticallyOnHostAndGuest() throws {
++  let config = current()
++  var initial = config.initialGame(); initial.turn.phase = .manage
++  var host = try VeilopolyLiveRoom(configuration: config, localIdentityID: "host", restoredGame: initial)
++  var guest = try VeilopolyLiveRoom(configuration: config, localIdentityID: "guest", restoredGame: initial)
++  for kind in [MoveKind.stockBuy, .bankDeposit, .endTurn] {
++   let move = Move(kind, player: 0, seq: host.game.nextSeq, amount: 1_000,
++                   financeProduct: .demandDeposit, stockSymbol: "VTL", stockShares: 1)
++   let next = try host.commitOnHost(move).get().0
++   _ = try guest.acceptCommit(.init(seq: move.seq, move: move, stateHash: StateDigest.hash(next)), from: "host")
++   XCTAssertEqual(host.game, guest.game)
++   XCTAssertTrue(VeilopolyLiveRoom.validSnapshotState(next, configuration: config))
++  }
++  XCTAssertEqual(guest.game.nextSeq, 3)
++ }
++ func testSnapshotCannotDowngradeCurrentRulesOrInjectFinanceTermsOrCurrency() throws {
++  let config = current()
++  var guest = try VeilopolyLiveRoom(configuration: config, localIdentityID: "guest")
++  let original = guest.game
++  var variants = [GameFactory.make(seed: config.seed, humanCount: 2)]
++  var bad = original; bad.banking?.financeRuleVersion = 4; variants.append(bad)
++  bad = original; bad.banking?.reserveCash = 2_000_001; variants.append(bad)
++  bad = original; bad.banking?.terms.loanCapsByProperties[0] += 1; variants.append(bad)
++  bad = original; bad.banking?.market?.algorithmVersion = 1; variants.append(bad)
++  bad = original; bad.banking = nil; variants.append(bad)
++  for variant in variants {
++   XCTAssertThrowsError(try guest.acceptSnapshot(GameSnapshot(variant), from: "host"))
++   XCTAssertEqual(guest.game, original)
++  }
++ }
++ func testUnknownRoomRulesFailBeforeCreatingAGame() {
++  let config = VeilopolyRoomConfiguration(roomID: UUID().uuidString, seed: 1,
++   hostIdentityID: "host", guestIdentityID: "guest", rulesVersion: 6)
++  XCTAssertFalse(config.isValid)
++  XCTAssertThrowsError(try VeilopolyLiveRoom(configuration: config, localIdentityID: "host"))
++ }
++ func testLongestValidCurrentInviteFitsUnknownRoomAssemblyBudget() throws {
++  let config = VeilopolyRoomConfiguration.current(roomID: UUID().uuidString, seed: .max,
++   hostIdentityID: String(repeating: "h", count: 128), guestIdentityID: String(repeating: "g", count: 128))
++  let fragments = try VeilopolyControlCodec.fragments(.init(roomID: config.roomID,
++   kind: .invite, configuration: config))
++  XCTAssertLessThanOrEqual(fragments.count, 4, "Host bridge bounds unknown rooms at four fragments")
++ }
++ func testCurrentGuestFinanceOrderUsesHostAuthorityAndSameResult() throws {
++  let config = current()
++  var initial = config.initialGame(); initial.turn.player = 1; initial.turn.phase = .manage
++  var host = try VeilopolyLiveRoom(configuration: config, localIdentityID: "host", restoredGame: initial)
++  var guest = try VeilopolyLiveRoom(configuration: config, localIdentityID: "guest", restoredGame: initial)
++  let order = Move(.stockBuy, player: 1, seq: 0, stockSymbol: "VTL", stockShares: 1)
++  try host.validateProposal(order, from: "guest")
++  XCTAssertThrowsError(try guest.validateProposal(order, from: "host"))
++  let committed = try host.commitOnHost(order).get().0
++  _ = try guest.acceptCommit(.init(seq: 0, move: order, stateHash: StateDigest.hash(committed)), from: "host")
++  XCTAssertEqual(guest.game, host.game)
++  XCTAssertEqual(guest.game.banking?.financeRuleVersion, 5)
++ }
++ func testCurrentRoomEncodedSnapshotAndResumeKeepV5InsteadOfClassic() throws {
++  let config = current()
++  let initial = try VeilopolyLiveRoom(configuration: config, localIdentityID: "host").game
++  let bytes = try JSONEncoder().encode(GameSnapshot(initial))
++  let snapshot = try JSONDecoder().decode(GameSnapshot.self, from: bytes)
++  var guest = try VeilopolyLiveRoom(configuration: config, localIdentityID: "guest")
++  try guest.acceptSnapshot(snapshot, from: "host")
++  let restored = try VeilopolyLiveRoom(configuration: config, localIdentityID: "guest", restoredGame: snapshot.game)
++  XCTAssertEqual(restored.game, initial)
++  XCTAssertEqual(guest.game, initial)
++ }
++}
+diff --git a/VeilLink/App/AppModel.swift b/VeilLink/App/AppModel.swift
+index d95cd990e9759286ae04b7620fd734e1539f56a6..2bf4c75a2ba57fa32cad610b138702232d31b847 100644
+--- a/VeilLink/App/AppModel.swift
++++ b/VeilLink/App/AppModel.swift
+@@ -663,6 +663,8 @@ final class AppModel: ObservableObject {
+     func handleForegroundTransition() {
+         guard legalConsent.isSatisfied else { return }
+         hostForegroundActive = true
++        veilopolyMultiplayer.setForeground(true)
++        veilopolyMultiplayer.restoreIfNeeded()
+         computeGovernor.setForegroundActive(true)
+         internetRelay.setForegroundActive(true)
+         internetRelay.refreshNow()
+@@ -684,6 +686,7 @@ final class AppModel: ObservableObject {
+         a10M5Governance.cancel()
+         a10M5GovernanceRuntime.trimMemory()
+         hostForegroundActive = false
++        veilopolyMultiplayer.setForeground(false)
+         computeGovernor.setForegroundActive(false)
+         internetRelay.setForegroundActive(false)
+         a9PeriodicTask?.cancel()
+diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/VeilopolyMultiplayerBridge.swift
+index bd20b1c2ce81c048e5dff6f71b092e196fa06af7..6f664a53de7d8f884239e6f4a8d13db2914357fc 100644
+--- a/VeilLink/App/VeilopolyMultiplayerBridge.swift
++++ b/VeilLink/App/VeilopolyMultiplayerBridge.swift
+@@ -3,6 +3,16 @@ import Combine
+ import VeilopolyNet
+ import VeilopolyUI
+ 
++/// Host boundary for a real encrypted control channel; fakeable without
++/// altering SessionCoordinator, feature negotiation, identities or Wire v4.
++@MainActor
++protocol VeilopolyControlChannel: AnyObject {
++    func hasSecureSession(for peerIdentityID: String) -> Bool
++    func recoverSecureSession(for peerIdentityID: String) -> Bool
++    func sendControlEvent(_ event: VeilControlEvent, to peerIdentityID: String) -> TransportSendResult
++}
++extension SessionCoordinator: VeilopolyControlChannel {}
++
+ /// Product-layer P5 hookup only. SessionCoordinator authenticates/decrypts the
+ /// sender and owns all transport, replay-window, key and database behavior.
+ @MainActor
+@@ -13,9 +23,13 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
+     @Published private(set) var status = "两名真人 + 两名 AI · 使用现有加密链路"
+     @Published private(set) var lastError: String?
+     @Published var isGamePresented = false
+-    private let sessions: SessionCoordinator
++    @Published private(set) var presentationContext = "game-lobby"
++    @Published private(set) var lastActionPeer: String?
++    private let sessions: any VeilopolyControlChannel
+     private let localIdentity: @MainActor () -> String?
+     private let fixedResumeURL: URL?
++    private let gameSaveDirectory: URL?
++    private enum SendFailure: Error { case unsupportedPeer }
+     private var resumeURL: URL {
+         fixedResumeURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+             .appendingPathComponent("Veilopoly", isDirectory: true)
+@@ -37,38 +51,67 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
+     private var peerLeft = false
+     private var foreground = true
+ 
+-    init(sessions: SessionCoordinator, localIdentity: @escaping @MainActor () -> String?, resumeURL: URL? = nil) {
++    init(sessions: any VeilopolyControlChannel, localIdentity: @escaping @MainActor () -> String?,
++         resumeURL: URL? = nil, gameSaveDirectory: URL? = nil) {
+         self.sessions = sessions
+         self.localIdentity = localIdentity
+         self.fixedResumeURL = resumeURL
++        self.gameSaveDirectory = gameSaveDirectory
+     }
+ 
+-    func invite(_ conversation: ConversationSummary) {
+-        guard gameModel == nil, incomingInvitation == nil, outgoingInvitation == nil,
+-              let local = localIdentity(), local != conversation.peerIdentityID else { return }
+-        guard sessions.hasSecureSession(for: conversation.peerIdentityID) else {
+-            _ = sessions.recoverSecureSession(for: conversation.peerIdentityID)
+-            lastError = "对手加密链路尚未就绪，请先完成配对或重连后再邀请。"
++    var activePeerIdentityID: String? {
++        guard let config = configuration ?? incomingInvitation ?? outgoingInvitation,
++              let local = boundLocalIdentity ?? localIdentity() else { return nil }
++        return peer(for: config, local: local)
++    }
++    var activeRulesTitle: String {
++        (configuration ?? incomingInvitation ?? outgoingInvitation)?.rulesTitle ?? "城市经济 V5"
++    }
++    func presentGame(context: String = "game-lobby") {
++        guard gameModel != nil else { return }
++        presentationContext = context; isGamePresented = true
++    }
++    func invite(_ conversation: ConversationSummary, presentationContext: String = "game-lobby") {
++        lastActionPeer = conversation.peerIdentityID
++        guard let local = localIdentity(), local != conversation.peerIdentityID else {
++            lastError = "请先启用本机身份，再邀请其他联系人。"
+             return
+         }
+-        let config = VeilopolyRoomConfiguration(roomID: UUID().uuidString, seed: VeilopolyNewGameSeed.fresh(),
++        guard gameModel == nil, incomingInvitation == nil, outgoingInvitation == nil else {
++            lastError = "已有联机房间或待处理邀请，请先继续、拒绝或离开，再邀请。"
++            return
++        }
++        let config = VeilopolyRoomConfiguration.current(roomID: UUID().uuidString, seed: VeilopolyNewGameSeed.fresh(),
+             hostIdentityID: local, guestIdentityID: conversation.peerIdentityID)
++        guard config.isValid else {
++            lastError = "当前联系人身份无效，未创建或发送联机邀请。"
++            return
++        }
+         outgoingInvitation = config; boundLocalIdentity = local
++        self.presentationContext = presentationContext
+         lastError = nil
+-        invitationBegan = Date(); lastInviteSent = Date()
+-        status = "邀请已发出，等待对方明确接受（120 秒有效）"
+-        enqueue(.init(roomID: config.roomID, kind: .invite, configuration: config), to: config.guestIdentityID)
++        invitationBegan = Date(); lastInviteSent = .distantPast
++        if foreground && sessions.hasSecureSession(for: conversation.peerIdentityID) {
++            lastInviteSent = Date()
++            status = "正在发送城市经济 V5 邀请（120 秒有效）"
++            enqueue(.init(roomID: config.roomID, kind: .invite, configuration: config), to: config.guestIdentityID)
++        } else {
++            // Retain this ONE explicit user intent. Recovery does not require
++            // a second tap and never retries security-context resets on a timer.
++            status = "等待对方加密链路就绪后发送邀请（120 秒有效）"
++            if foreground { _ = sessions.recoverSecureSession(for: conversation.peerIdentityID) }
++        }
+         startMonitoring()
+     }
+ 
+-    func acceptInvitation() {
++    func acceptInvitation(presentationContext: String = "game-lobby") {
+         guard let config = incomingInvitation, config.guestIdentityID == localIdentity(),
+               Date().timeIntervalSince(invitationBegan) <= 120 else { return }
+         do {
+             try createGame(config)
+             incomingInvitation = nil; waitingForHostAcceptance = true
+             enqueue(.init(roomID: config.roomID, kind: .accept), to: config.hostIdentityID)
+-            isGamePresented = true
++            presentGame(context: presentationContext)
+         } catch { lastError = "无法创建联机对局，原存档未清除。" }
+     }
+ 
+@@ -77,6 +120,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
+             enqueue(.init(roomID: config.roomID, kind: .decline), to: config.hostIdentityID)
+         }
+         incomingInvitation = nil
++        lastError = nil; status = "已拒绝大富翁邀请"
+     }
+ 
+     func receive(_ event: VeilControlEvent, from authenticatedPeer: String) {
+@@ -104,8 +148,9 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
+                       Date().timeIntervalSince1970 - event.createdAt <= 120,
+                       event.createdAt - Date().timeIntervalSince1970 <= 60 else { return }
+                 if incomingInvitation?.roomID != config.roomID { invitationBegan = Date() }
+-                incomingInvitation = config; boundLocalIdentity = local
+-                status = "收到大富翁邀请；接受后加入同一局，不会覆盖单机存档"
++                incomingInvitation = config; boundLocalIdentity = local; lastError = nil
++                lastActionPeer = authenticatedPeer
++                status = "收到大富翁\(config.rulesTitle)邀请；不会覆盖单机存档"
+                 startMonitoring()
+             case .accept:
+                 if let pending = outgoingInvitation, pending.roomID == packet.roomID,
+@@ -149,7 +194,8 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
+         }
+         let peer = peer(for: config, local: local)
+         let game = try GameSessionModel(multiplayer: config, localIdentityID: local,
+-            requiresExistingSave: restoring && local == config.hostIdentityID) { [weak self] packet in
++            requiresExistingSave: restoring && local == config.hostIdentityID,
++            saveDirectory: gameSaveDirectory) { [weak self] packet in
+             self?.enqueue(packet, to: peer)
+         }
+         configuration = config; boundLocalIdentity = local; peerLeft = false; gameModel = game
+@@ -188,6 +234,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
+     }
+ 
+     func leaveRoom() {
++        lastError = nil; lastActionPeer = nil
+         let active = configuration ?? outgoingInvitation
+         let removeResumeIndex = configuration != nil
+         senderTask?.cancel(); senderTask = nil; senderGeneration = UUID(); outgoing = []
+@@ -272,7 +319,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
+                         }
+                         switch sessions.sendControlEvent(event, to: item.peer) {
+                         case .accepted: sent = true
+-                        case .unsupportedLink: throw VeilopolyRoomError.invalidPacket
++                        case .unsupportedLink: throw SendFailure.unsupportedPeer
+                         case .temporarilyUnavailable: break
+                         }
+                         if sent { break }
+@@ -281,10 +328,18 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
+                     guard sent else { throw VeilopolyRoomError.sequenceGap }
+                     try await Task.sleep(nanoseconds: 20_000_000)
+                 }
++                if item.packet.kind == .invite, outgoingInvitation?.roomID == item.packet.roomID {
++                    status = "城市经济 V5 邀请已提交加密通道，等待对方接受（120 秒有效）"
++                }
+             } catch {
+                 if Task.isCancelled || generation != senderGeneration { return }
+                 outgoing = [] // Authoritative state is saved; recovery sends a NEW snapshot, not stale moves.
+-                status = "加密控制通道暂不可用，已暂停；请确认两端支持后重连并同步"
++                if error is SendFailure {
++                    status = "对方链路未声明支持联机控制消息，请确认两端均已升级并重新连接。"
++                    if item.packet.kind == .invite { outgoingInvitation = nil }
++                } else {
++                    status = "加密控制通道暂不可用，已暂停；请重连后重试或取消邀请。"
++                }
+                 lastError = status
+                 gameModel?.setNetworkAvailability(false, message: status)
+                 return
+@@ -302,13 +357,14 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
+             }
+         }
+     }
+-    private func tick() {
++    func tick() {
+         guard boundLocalIdentity == localIdentity() else { suspendForIdentityChange(); return }
+         guard foreground else { return }
+         if (incomingInvitation != nil || outgoingInvitation != nil), Date().timeIntervalSince(invitationBegan) > 120 {
+             incomingInvitation = nil; outgoingInvitation = nil; status = "邀请已过期，请重新邀请"
+         }
+-        if let invite = outgoingInvitation, Date().timeIntervalSince(lastInviteSent) >= 10 {
++        if let invite = outgoingInvitation, sessions.hasSecureSession(for: invite.guestIdentityID),
++           Date().timeIntervalSince(lastInviteSent) >= 10 {
+             lastInviteSent = Date()
+             enqueue(.init(roomID: invite.roomID, kind: .invite, configuration: invite), to: invite.guestIdentityID)
+         }
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+index 1771703b4f1307b06a1bd1f537dd113e0c15f1d4..346834b1adb40a0b5ad4a3ddd124e7ff58dcf191 100644
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -586,6 +586,8 @@ struct ChatView: View {
+             }
+ 
+             VStack(spacing: 0) {
++                VeilopolyConversationInvitationView(bridge: model.veilopolyMultiplayer,
++                    peerIdentityID: conversation.peerIdentityID, presentationID: "chat-" + conversation.id)
+                 if let mediaStatus {
+                     HStack(spacing: 8) {
+                         if isPreparingImage { ProgressView().controlSize(.small) }
+@@ -658,6 +660,13 @@ struct ChatView: View {
+                             }
+                             Divider()
+                             Menu {
++                                Button {
++                                    model.veilopolyMultiplayer.invite(conversation,
++                                        presentationContext: "chat-" + conversation.id)
++                                } label: {
++                                    Label("大富翁 · 城市经济 V5", systemImage: "building.2")
++                                }
++                                .accessibilityIdentifier("veilopoly.chat.invite-direct")
+                                 ForEach(MiniGameKind.allCases) { game in
+                                     Button {
+                                         sendGameInvite(game)
+@@ -832,6 +841,8 @@ struct ChatView: View {
+         .sheet(isPresented: $showsMiniGames, onDismiss: { miniGameInitialSessionID = nil }) {
+             MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
+         }
++        .modifier(VeilopolyRoomPresentation(bridge: model.veilopolyMultiplayer,
++            context: "chat-" + conversation.id))
+         .fileImporter(
+             isPresented: $showsChatFileImporter,
+             // Selection is broad; policy enforcement occurs on the owned staging copy.
+diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
+index 279fa3b0f5f2aa5017958d7a1e4d3104656feb13..8343d0c12e551d9ca323eac1cb858c0c2703283c 100644
+--- a/VeilLink/UI/MiniGameViews.swift
++++ b/VeilLink/UI/MiniGameViews.swift
+@@ -53,6 +53,7 @@ struct MiniGameHubView: View {
+             ScrollView {
+                 VStack(alignment: .leading, spacing: 20) {
+                     header
++                    VeilopolyMultiplayerLobby(model: model, conversation: conversation)
+                     if statistics.completed > 0 { statisticsOverview }
+                     gamePicker
+ 
+diff --git a/VeilLink/UI/VeilopolyMultiplayerLobby.swift b/VeilLink/UI/VeilopolyMultiplayerLobby.swift
+index 2e187758378caef57e0360f9f3453641f824854a..61b0105337fd40344d92d81d3e34242620dc030f 100644
+--- a/VeilLink/UI/VeilopolyMultiplayerLobby.swift
++++ b/VeilLink/UI/VeilopolyMultiplayerLobby.swift
+@@ -8,8 +8,11 @@ struct VeilopolyMultiplayerLobby: View {
+     @ObservedObject var model: AppModel
+     @ObservedObject private var bridge: VeilopolyMultiplayerBridge
+     @Environment(\.scenePhase) private var scenePhase
+-    init(model: AppModel) {
++    private let conversation: ConversationSummary?
++    private var presentationID: String { conversation.map { "hub-" + $0.id } ?? "game-lobby" }
++    init(model: AppModel, conversation: ConversationSummary? = nil) {
+         self.model = model
++        self.conversation = conversation
+         _bridge = ObservedObject(wrappedValue: model.veilopolyMultiplayer)
+     }
+     var body: some View {
+@@ -18,24 +21,41 @@ struct VeilopolyMultiplayerLobby: View {
+                 .font(.headline)
+             Text("两台手机 · 两名真人 + 两名 AI · 房主裁决 · 对手须支持同版功能")
+                 .font(.caption).foregroundColor(.secondary)
+-            Text("双方先打开游戏大厅，再由一方邀请、另一方接受。")
++            Text("新局与单机共用城市经济 V5；聊天区可直接邀请、接受与进入。旧局按原规则续玩。")
+                 .font(.caption2).foregroundColor(.secondary)
+             Text(bridge.status).font(.caption).fixedSize(horizontal: false, vertical: true)
++            if bridge.activePeerIdentityID != nil && bridge.activeRulesTitle == "经典旧局" {
++                Text("这是保留的经典旧局，不会自动改价。若要体验 V5，请先离开房间、保留旧存档，再重新邀请。")
++                    .font(.caption).foregroundColor(.secondary)
++            }
+             if let error = bridge.lastError {
+                 Text(error).font(.caption).foregroundColor(.orange)
+             }
+-            if bridge.incomingInvitation != nil {
++            if let conversation, let peer = bridge.activePeerIdentityID,
++               peer != conversation.peerIdentityID {
++                Text("已有与其他联系人的房间或邀请，请到独立游戏大厅处理；不会邀请错当前聊天对象。")
++                    .font(.caption).foregroundColor(.secondary)
++            } else if bridge.incomingInvitation != nil {
+                 HStack {
+-                    lobbyButton("接受邀请", symbol: "checkmark") { bridge.acceptInvitation() }
++                    lobbyButton("接受邀请 · \(bridge.activeRulesTitle)", symbol: "checkmark") {
++                        bridge.acceptInvitation(presentationContext: presentationID)
++                    }
+                     lobbyButton("拒绝", symbol: "xmark") { bridge.declineInvitation() }
+                 }
+             } else if bridge.outgoingInvitation != nil {
+                 ProgressView("等待对方接受")
+                 lobbyButton("取消邀请", symbol: "xmark.circle") { bridge.leaveRoom() }
+             } else if bridge.gameModel != nil {
+-                lobbyButton("进入／继续联机对局", symbol: "gamecontroller") { bridge.isGamePresented = true }
++                lobbyButton("继续联机 · \(bridge.activeRulesTitle)", symbol: "gamecontroller") {
++                    bridge.presentGame(context: presentationID)
++                }
+                 lobbyButton("重连并同步", symbol: "arrow.triangle.2.circlepath") { bridge.reconnectAndSync() }
+                 lobbyButton("离开房间（保留本地对局记录）", symbol: "rectangle.portrait.and.arrow.right") { bridge.leaveRoom() }
++            } else if let conversation {
++                lobbyButton("邀请 \(conversation.title) · 城市经济 V5", symbol: "paperplane") {
++                    bridge.invite(conversation, presentationContext: presentationID)
++                }
++                .accessibilityIdentifier("veilopoly.chat.invite")
+             } else if model.conversations.isEmpty {
+                 Text("先在“附近”完成可信配对，再从这里邀请联系人。")
+                     .font(.caption).foregroundColor(.secondary)
+@@ -48,11 +68,7 @@ struct VeilopolyMultiplayerLobby: View {
+         .veilCard()
+         .onAppear { bridge.restoreIfNeeded(); bridge.setForeground(scenePhase == .active) }
+         .onChange(of: scenePhase) { bridge.setForeground($0 == .active) }
+-        .fullScreenCover(isPresented: $bridge.isGamePresented) {
+-            if let session = bridge.gameModel {
+-                VeilopolyMultiplayerGameView(session: session) { bridge.isGamePresented = false }
+-            }
+-        }
++        .modifier(VeilopolyRoomPresentation(bridge: bridge, context: presentationID))
+         .accessibilityIdentifier("game-lobby.veilopoly-multiplayer")
+     }
+     private func lobbyButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+@@ -64,3 +80,63 @@ struct VeilopolyMultiplayerLobby: View {
+         .buttonStyle(.bordered)
+     }
+ }
++
++/// Exactly one route may present the shared room. In particular the hidden
++/// Games tab cannot race a chat sheet for the same full-screen presentation.
++@MainActor
++struct VeilopolyRoomPresentation: ViewModifier {
++    @ObservedObject var bridge: VeilopolyMultiplayerBridge
++    let context: String
++    func body(content: Content) -> some View {
++        content.fullScreenCover(isPresented: Binding(
++            get: { bridge.isGamePresented && bridge.presentationContext == context },
++            set: { if !$0 && bridge.presentationContext == context { bridge.isGamePresented = false } }
++        )) {
++            if let session = bridge.gameModel {
++                VeilopolyMultiplayerGameView(session: session) { bridge.isGamePresented = false }
++            }
++        }
++    }
++}
++
++/// Transient room status, deliberately outside the message ScrollView: it
++/// cannot steal the latest-message anchor or pretend to be persisted chat.
++@MainActor
++struct VeilopolyConversationInvitationView: View {
++    @ObservedObject var bridge: VeilopolyMultiplayerBridge
++    let peerIdentityID: String
++    let presentationID: String
++    var body: some View {
++        Group {
++            if bridge.activePeerIdentityID == peerIdentityID ||
++                (bridge.lastActionPeer == peerIdentityID && bridge.lastError != nil) {
++                VStack(alignment: .leading, spacing: 6) {
++                    Label("大富翁 · \(bridge.activeRulesTitle)", systemImage: "building.2")
++                        .font(.caption.weight(.semibold))
++                    Text((bridge.lastActionPeer == peerIdentityID ? bridge.lastError : nil) ?? bridge.status)
++                        .font(.caption).fixedSize(horizontal: false, vertical: true)
++                    if bridge.activePeerIdentityID == peerIdentityID {
++                        HStack {
++                            if bridge.incomingInvitation != nil {
++                                Button("接受邀请") { bridge.acceptInvitation(presentationContext: presentationID) }
++                                    .accessibilityIdentifier("veilopoly.chat.accept")
++                                Button("拒绝") { bridge.declineInvitation() }
++                            } else if bridge.gameModel != nil {
++                                Button("进入／继续") { bridge.presentGame(context: presentationID) }
++                                    .accessibilityIdentifier("veilopoly.chat.resume")
++                            } else if bridge.outgoingInvitation != nil {
++                                Button("取消邀请") { bridge.leaveRoom() }
++                            }
++                        }
++                        .buttonStyle(.bordered)
++                        .frame(minHeight: 44)
++                    }
++                }
++                .padding(10)
++                .frame(maxWidth: .infinity, alignment: .leading)
++                .background(VeilTheme.gold.opacity(0.08))
++                .accessibilityIdentifier("veilopoly.chat.room-status")
++            }
++        }
++    }
++}
+diff --git a/VeilLinkTests/VeilopolyInvitationBridgeTests.swift b/VeilLinkTests/VeilopolyInvitationBridgeTests.swift
+new file mode 100644
+index 0000000000000000000000000000000000000000..de3d74bff086d07bcee288a96e0e8cda2a6cf80d
+--- /dev/null
++++ b/VeilLinkTests/VeilopolyInvitationBridgeTests.swift
+@@ -0,0 +1,123 @@
++import Foundation
++import XCTest
++import VeilopolyNet
++@testable import VeilLink
++
++@MainActor
++private final class InvitationChannel: VeilopolyControlChannel {
++    var ready = true
++    var result: TransportSendResult = .accepted
++    var recoveries = 0
++    var sent: [(VeilControlEvent, String)] = []
++    var firstSend: (() -> Void)?
++    func hasSecureSession(for peerIdentityID: String) -> Bool { ready }
++    func recoverSecureSession(for peerIdentityID: String) -> Bool { recoveries += 1; return true }
++    func sendControlEvent(_ event: VeilControlEvent, to peerIdentityID: String) -> TransportSendResult {
++        sent.append((event, peerIdentityID))
++        let callback = firstSend; firstSend = nil; callback?()
++        return result
++    }
++}
++
++/// Real host bridge with a fake authenticated channel. These tests do NOT
++/// claim BLE/LAN/two-phone or rendered iPhone interaction acceptance.
++@MainActor
++final class VeilopolyInvitationBridgeTests: XCTestCase {
++    private func conversation(_ peer: String = "guest") -> ConversationSummary {
++        .init(id: "conversation-" + peer, title: peer, peerIdentityID: peer,
++              lastMessage: "", updatedAt: Date(), unreadCount: 0, isPinned: false)
++    }
++    private func makeBridge(_ channel: InvitationChannel, local: String = "host") -> (VeilopolyMultiplayerBridge, URL) {
++        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
++        return (.init(sessions: channel, localIdentity: { local },
++                      resumeURL: directory.appendingPathComponent("room.json"), gameSaveDirectory: directory), directory)
++    }
++    func testChatInviteUsesSameBridgeAndCurrentRulesWithoutOpeningGameHall() async throws {
++        let channel = InvitationChannel(); let (bridge, directory) = makeBridge(channel)
++        defer { bridge.leaveRoom(); try? FileManager.default.removeItem(at: directory) }
++        let sent = expectation(description: "encrypted control attempt")
++        channel.firstSend = { sent.fulfill() }
++        bridge.invite(conversation(), presentationContext: "chat-conversation-guest")
++        XCTAssertEqual(bridge.outgoingInvitation?.effectiveRulesVersion, 5)
++        XCTAssertEqual(bridge.activePeerIdentityID, "guest")
++        XCTAssertEqual(bridge.presentationContext, "chat-conversation-guest")
++        await fulfillment(of: [sent], timeout: 3)
++        XCTAssertEqual(channel.sent.first?.1, "guest")
++        XCTAssertEqual(channel.recoveries, 0, "Healthy chat security must not be reset")
++        XCTAssertTrue(try channel.sent.allSatisfy { try VeilControlEventCodec.encode($0.0).count <= 2_048 })
++    }
++    func testOneExplicitInviteWaitsForRecoveryWithoutRequiringASecondTap() async {
++        let channel = InvitationChannel(); channel.ready = false
++        let (bridge, directory) = makeBridge(channel)
++        defer { bridge.leaveRoom(); try? FileManager.default.removeItem(at: directory) }
++        bridge.invite(conversation(), presentationContext: "chat")
++        let roomID = bridge.outgoingInvitation?.roomID
++        XCTAssertNotNil(roomID)
++        XCTAssertTrue(channel.sent.isEmpty)
++        XCTAssertEqual(channel.recoveries, 1)
++        bridge.tick(); bridge.tick()
++        XCTAssertEqual(channel.recoveries, 1, "A game timer cannot keep resetting chat security")
++        let sent = expectation(description: "same invitation sent after readiness")
++        channel.firstSend = { sent.fulfill() }
++        channel.ready = true; bridge.tick()
++        await fulfillment(of: [sent], timeout: 3)
++        XCTAssertEqual(bridge.outgoingInvitation?.roomID, roomID)
++        XCTAssertEqual(channel.recoveries, 1)
++    }
++    func testIncomingInviteAndAcceptanceWorkWithoutInstantiatingLobby() throws {
++        let (bridge, directory) = makeBridge(InvitationChannel(), local: "guest")
++        defer { bridge.leaveRoom(); try? FileManager.default.removeItem(at: directory) }
++        let config = VeilopolyRoomConfiguration.current(roomID: UUID().uuidString, seed: 77,
++            hostIdentityID: "host", guestIdentityID: "guest")
++        let invite = VeilopolyRoomPacket(roomID: config.roomID, kind: .invite, configuration: config)
++        for fragment in try VeilopolyControlCodec.fragments(invite) {
++            bridge.receive(.init(topic: VeilopolyControlCodec.topic, payload: try JSONEncoder().encode(fragment)), from: "host")
++        }
++        XCTAssertEqual(bridge.incomingInvitation, config)
++        XCTAssertFalse(bridge.isGamePresented, "Receiving is never automatic consent")
++        bridge.acceptInvitation(presentationContext: "chat-guest")
++        XCTAssertTrue(bridge.isGamePresented)
++        XCTAssertEqual(bridge.presentationContext, "chat-guest")
++        XCTAssertEqual(bridge.gameModel?.game.banking?.financeRuleVersion, 5)
++        XCTAssertEqual(bridge.gameModel?.game.players.first?.cash, 25_000)
++        bridge.presentGame(context: "game-lobby")
++        XCTAssertEqual(bridge.presentationContext, "game-lobby", "Only the chosen route presents the shared room")
++    }
++    func testBusyRoomDoesNotSilentlyDropAnotherConversationInvite() {
++        let channel = InvitationChannel(); channel.ready = false
++        let (bridge, directory) = makeBridge(channel)
++        defer { bridge.leaveRoom(); try? FileManager.default.removeItem(at: directory) }
++        bridge.invite(conversation())
++        let roomID = bridge.outgoingInvitation?.roomID
++        bridge.invite(conversation("other"))
++        XCTAssertEqual(bridge.outgoingInvitation?.roomID, roomID)
++        XCTAssertEqual(bridge.activePeerIdentityID, "guest")
++        XCTAssertEqual(bridge.lastActionPeer, "other")
++        XCTAssertNotNil(bridge.lastError)
++    }
++    func testUnsupportedPeerShowsAnErrorInsteadOfAnInvitationSentClaim() async {
++        let channel = InvitationChannel(); channel.result = .unsupportedLink
++        let (bridge, directory) = makeBridge(channel)
++        defer { bridge.leaveRoom(); try? FileManager.default.removeItem(at: directory) }
++        let sent = expectation(description: "capability-rejected control attempt")
++        channel.firstSend = { sent.fulfill() }
++        bridge.invite(conversation(), presentationContext: "chat")
++        await fulfillment(of: [sent], timeout: 3)
++        XCTAssertNil(bridge.outgoingInvitation)
++        XCTAssertTrue(bridge.lastError?.contains("未声明支持") == true)
++        XCTAssertEqual(bridge.lastActionPeer, "guest")
++    }
++    func testInvitationCannotBeRelabelledAsADifferentAuthenticatedPeer() throws {
++        let (bridge, directory) = makeBridge(InvitationChannel(), local: "guest")
++        defer { bridge.leaveRoom(); try? FileManager.default.removeItem(at: directory) }
++        let config = VeilopolyRoomConfiguration.current(roomID: UUID().uuidString, seed: 1,
++            hostIdentityID: "host", guestIdentityID: "guest")
++        for fragment in try VeilopolyControlCodec.fragments(.init(roomID: config.roomID,
++            kind: .invite, configuration: config)) {
++            bridge.receive(.init(topic: VeilopolyControlCodec.topic,
++                payload: try JSONEncoder().encode(fragment)), from: "stranger")
++        }
++        XCTAssertNil(bridge.incomingInvitation)
++        XCTAssertNil(bridge.gameModel)
++    }
++}
+diff --git a/docs/engineering/V29_CANDIDATE_HOLD_20261108.md b/docs/engineering/V29_CANDIDATE_HOLD_20261108.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a646205ff7b0b15bbb4f872f0f881c2a8044ae8d
+--- /dev/null
++++ b/docs/engineering/V29_CANDIDATE_HOLD_20261108.md
+@@ -0,0 +1,99 @@
++# V29 candidate repair — publication HOLD
++
++Task: VLP-P5-CHAT-PARITY-001. Owner explicitly paused formal V29 on
++2026-11-08 after testing a candidate. This supersedes the earlier release
++authorization. Do not merge main, create a release or dispatch publication.
++
++Verified main: 2c5b5161027edff097b27fe3323d30f6ca3e430e.
++Previous tested candidate: 7ecdccedc7833a073217c5a142bb1c19d9cbf2dc.
++Full Apple CI42403714966 succeeded, but does NOT satisfy Owner acceptance:
++chat invitation access and live/solo parity were not covered by that suite.
++PR181 remains draft/unmerged. No formal v29.0-b66 Release exists.
++Auxiliary promotion branch572bdb7 disables its publication job (if:false).
++
++## Confirmed call-chain defects
++
++- ChatView's invitation menu and MiniGameHubView only enumerated MiniGameKind.
++  Veilopoly was absent. Its bridge UI existed only in the independent Games tab.
++- LiveRoom created GameFactory classic states and validated classic paytables;
++  solo created VeilopolyCityLongEconomy V5. Both used the same GameView, but
++  balances, cards, property prices and financial behavior were different.
++- An explicit invite with an unready secure session requested recovery and
++  discarded the intent, requiring another tap. Busy rooms returned silently.
++- Multiple mounted entry points must not race for the room's full-screen cover.
++
++## Applied source repairs (candidate only)
++
++- Chat invitation menu adds Veilopoly directly; chat's game hub adds a
++  current-conversation-scoped multiplayer panel. A transient status/accept/resume
++  card is outside the message scroller; no SQLite/chat message schema change.
++- A presentation-context ID selects exactly one chat/hub/hall cover for the
++  SAME room model. Background Games tabs cannot also present a chat's game.
++  Cross-conversation actions cannot accept another peer's invitation by mistake.
++- One explicit invite is retained for the existing120s lifetime while secure
++  recovery completes. Recovery is requested once, never reset on a game timer.
++  Actual unsupported control capability remains rejected with a visible error;
++  no text-channel bypass or weakened E2EE checks. Sent status follows transport
++  acceptance, not the button tap; transport acceptance is not delivery proof.
++- New room metadata explicitly selects V5 and uses the same V5 factory as solo
++  (two human/two AI seats). Snapshot validation binds cards, paytables, financial
++  version/terms, market algorithm and the fixed2,100,000 currency pool.
++- New-profile invitations use APPLICATION packet version2 so legacy version1
++  apps reject rather than silently open a classic room. Existing encrypted
++  control-event codec, fragments/topic, BLE2048-byte cap and Wire v4 unchanged.
++- Absent rulesVersion means the existing classic room. Old room indexes/saves
++  are not rewritten/repriced; UI labels them classic and explains a fresh V5
++  invitation requires explicitly leaving. No save deletion/migration.
++- App foreground/background propagates to the room regardless of the current
++  tab; chat reception does not require constructing the game lobby first.
++
++## Verification and scope
++
++Initial directed package run21/21 PASS (current-profile7 + existing live14).
++Initial full Linux Swift6.2.1 package375/375 PASS111.366s. A further longest
++identity/fragment-budget test and host bridge tests were added afterward;
++second full package376/376 PASS91.498s; final directed current/live room suite
++24/24 PASS0.290s includes guest financial orders and encoded V5 resume.
++Final complete package378/378 PASS97.173s on Linux Swift6.2.1.
++Host tests exercise
++real bridge + fake authenticated channel, not physical transport.
++
++Portable resource verifier5/5 PASS. The model verifier initially failed fixture
++setup because the local overlay filled; removed only96MiB of reproducible .build
++cache from the prior clean-baseline test checkout (source/logs retained), then
++model verifier7/7 PASS. No product resource/model/native binary was changed.
++
++Apple SDK typecheck/host XCTest, rendered chat navigation, keyboard/landscape
++cover behavior and real two-phone invitation/acceptance for this repair are
++NOT_RUN until separate evidence. No claim this candidate is owner-accepted.
++Prior green tests do not validate the new source. Historical frozen manual/PDF
++artifacts remain dated source material; current room rules label is authoritative.
++
++All product edits are isolated on integration/v29-veilopoly-candidate-fix-20261108.
++No main/source-branch overwrite, force push, transport/security/identity/SQLite/
++A9/A10/A13/version/signing changes. Current VeilLink governance V1.1 is authoritative;
++new skill's unavailable seal/readset/07/session/exchange gates are PARTIAL,
++not invented PASS and not installed silently.
++
++NEXT_ONE_TASK: exact-head Apple candidate-only compile/XCTest and an actual
++chat-to-chat invitation acceptance check. Publication remains OWNER HOLD even
++if CI turns green. Resume formal publication only on a new Owner instruction.
++
++## Required candidate acceptance (not yet executed on phones)
++
++1. Both devices install the SAME repaired candidate; retain the old save files.
++2. In an existing chat, + -> Send game invitation -> Veilopoly: one tap produces
++   a scoped pending card. No need to open either device's separate Games tab.
++3. The correct peer sees accept/decline in chat. No other contact can accept it.
++   Accept opens one full-screen shared room, not two covers or a separate solo.
++4. Both NEW-room states show V5, each player25,000, bank2,000,000; property/card/
++   stock/finance behavior matches current solo with the two-human topology.
++5. Hide/reopen from chat, chat game hub and independent Games tab; all must
++   retain the same room/model/sequence, movable panels, native art and manual.
++6. Temporarily unavailable security: exactly one user invite intent waits for
++   readiness; it sends without a second tap and expires after120s. No repeated
++   security resets; unsupported control capability yields explicit upgrade error.
++7. Existing classic room resumes unchanged, labelled classic. Explicitly leave
++   (keeping A/B saves), then invite to start V5. Never silently reprice old assets.
++8. Check background/foreground resync, one stock/bank guest proposal, save/reopen
++   and no duplicate roll/payment. Real BLE/LAN acceptance still requires phones.
