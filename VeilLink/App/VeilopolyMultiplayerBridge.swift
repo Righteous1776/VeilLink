@@ -3,6 +3,16 @@ import Combine
 import VeilopolyNet
 import VeilopolyUI
 
+/// Host boundary for a real encrypted control channel; fakeable without
+/// altering SessionCoordinator, feature negotiation, identities or Wire v4.
+@MainActor
+protocol VeilopolyControlChannel: AnyObject {
+    func hasSecureSession(for peerIdentityID: String) -> Bool
+    func recoverSecureSession(for peerIdentityID: String) -> Bool
+    func sendControlEvent(_ event: VeilControlEvent, to peerIdentityID: String) -> TransportSendResult
+}
+extension SessionCoordinator: VeilopolyControlChannel {}
+
 /// Product-layer P5 hookup only. SessionCoordinator authenticates/decrypts the
 /// sender and owns all transport, replay-window, key and database behavior.
 @MainActor
@@ -13,9 +23,13 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
     @Published private(set) var status = "两名真人 + 两名 AI · 使用现有加密链路"
     @Published private(set) var lastError: String?
     @Published var isGamePresented = false
-    private let sessions: SessionCoordinator
+    @Published private(set) var presentationContext = "game-lobby"
+    @Published private(set) var lastActionPeer: String?
+    private let sessions: any VeilopolyControlChannel
     private let localIdentity: @MainActor () -> String?
     private let fixedResumeURL: URL?
+    private let gameSaveDirectory: URL?
+    private enum SendFailure: Error { case unsupportedPeer }
     private var resumeURL: URL {
         fixedResumeURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Veilopoly", isDirectory: true)
@@ -37,38 +51,67 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
     private var peerLeft = false
     private var foreground = true
 
-    init(sessions: SessionCoordinator, localIdentity: @escaping @MainActor () -> String?, resumeURL: URL? = nil) {
+    init(sessions: any VeilopolyControlChannel, localIdentity: @escaping @MainActor () -> String?,
+         resumeURL: URL? = nil, gameSaveDirectory: URL? = nil) {
         self.sessions = sessions
         self.localIdentity = localIdentity
         self.fixedResumeURL = resumeURL
+        self.gameSaveDirectory = gameSaveDirectory
     }
 
-    func invite(_ conversation: ConversationSummary) {
-        guard gameModel == nil, incomingInvitation == nil, outgoingInvitation == nil,
-              let local = localIdentity(), local != conversation.peerIdentityID else { return }
-        guard sessions.hasSecureSession(for: conversation.peerIdentityID) else {
-            _ = sessions.recoverSecureSession(for: conversation.peerIdentityID)
-            lastError = "对手加密链路尚未就绪，请先完成配对或重连后再邀请。"
+    var activePeerIdentityID: String? {
+        guard let config = configuration ?? incomingInvitation ?? outgoingInvitation,
+              let local = boundLocalIdentity ?? localIdentity() else { return nil }
+        return peer(for: config, local: local)
+    }
+    var activeRulesTitle: String {
+        (configuration ?? incomingInvitation ?? outgoingInvitation)?.rulesTitle ?? "城市经济 V5"
+    }
+    func presentGame(context: String = "game-lobby") {
+        guard gameModel != nil else { return }
+        presentationContext = context; isGamePresented = true
+    }
+    func invite(_ conversation: ConversationSummary, presentationContext: String = "game-lobby") {
+        lastActionPeer = conversation.peerIdentityID
+        guard let local = localIdentity(), local != conversation.peerIdentityID else {
+            lastError = "请先启用本机身份，再邀请其他联系人。"
             return
         }
-        let config = VeilopolyRoomConfiguration(roomID: UUID().uuidString, seed: VeilopolyNewGameSeed.fresh(),
+        guard gameModel == nil, incomingInvitation == nil, outgoingInvitation == nil else {
+            lastError = "已有联机房间或待处理邀请，请先继续、拒绝或离开，再邀请。"
+            return
+        }
+        let config = VeilopolyRoomConfiguration.current(roomID: UUID().uuidString, seed: VeilopolyNewGameSeed.fresh(),
             hostIdentityID: local, guestIdentityID: conversation.peerIdentityID)
+        guard config.isValid else {
+            lastError = "当前联系人身份无效，未创建或发送联机邀请。"
+            return
+        }
         outgoingInvitation = config; boundLocalIdentity = local
+        self.presentationContext = presentationContext
         lastError = nil
-        invitationBegan = Date(); lastInviteSent = Date()
-        status = "邀请已发出，等待对方明确接受（120 秒有效）"
-        enqueue(.init(roomID: config.roomID, kind: .invite, configuration: config), to: config.guestIdentityID)
+        invitationBegan = Date(); lastInviteSent = .distantPast
+        if foreground && sessions.hasSecureSession(for: conversation.peerIdentityID) {
+            lastInviteSent = Date()
+            status = "正在发送城市经济 V5 邀请（120 秒有效）"
+            enqueue(.init(roomID: config.roomID, kind: .invite, configuration: config), to: config.guestIdentityID)
+        } else {
+            // Retain this ONE explicit user intent. Recovery does not require
+            // a second tap and never retries security-context resets on a timer.
+            status = "等待对方加密链路就绪后发送邀请（120 秒有效）"
+            if foreground { _ = sessions.recoverSecureSession(for: conversation.peerIdentityID) }
+        }
         startMonitoring()
     }
 
-    func acceptInvitation() {
+    func acceptInvitation(presentationContext: String = "game-lobby") {
         guard let config = incomingInvitation, config.guestIdentityID == localIdentity(),
               Date().timeIntervalSince(invitationBegan) <= 120 else { return }
         do {
             try createGame(config)
             incomingInvitation = nil; waitingForHostAcceptance = true
             enqueue(.init(roomID: config.roomID, kind: .accept), to: config.hostIdentityID)
-            isGamePresented = true
+            presentGame(context: presentationContext)
         } catch { lastError = "无法创建联机对局，原存档未清除。" }
     }
 
@@ -77,6 +120,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
             enqueue(.init(roomID: config.roomID, kind: .decline), to: config.hostIdentityID)
         }
         incomingInvitation = nil
+        lastError = nil; status = "已拒绝大富翁邀请"
     }
 
     func receive(_ event: VeilControlEvent, from authenticatedPeer: String) {
@@ -104,8 +148,9 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
                       Date().timeIntervalSince1970 - event.createdAt <= 120,
                       event.createdAt - Date().timeIntervalSince1970 <= 60 else { return }
                 if incomingInvitation?.roomID != config.roomID { invitationBegan = Date() }
-                incomingInvitation = config; boundLocalIdentity = local
-                status = "收到大富翁邀请；接受后加入同一局，不会覆盖单机存档"
+                incomingInvitation = config; boundLocalIdentity = local; lastError = nil
+                lastActionPeer = authenticatedPeer
+                status = "收到大富翁\(config.rulesTitle)邀请；不会覆盖单机存档"
                 startMonitoring()
             case .accept:
                 if let pending = outgoingInvitation, pending.roomID == packet.roomID,
@@ -149,7 +194,8 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
         }
         let peer = peer(for: config, local: local)
         let game = try GameSessionModel(multiplayer: config, localIdentityID: local,
-            requiresExistingSave: restoring && local == config.hostIdentityID) { [weak self] packet in
+            requiresExistingSave: restoring && local == config.hostIdentityID,
+            saveDirectory: gameSaveDirectory) { [weak self] packet in
             self?.enqueue(packet, to: peer)
         }
         configuration = config; boundLocalIdentity = local; peerLeft = false; gameModel = game
@@ -188,6 +234,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
     }
 
     func leaveRoom() {
+        lastError = nil; lastActionPeer = nil
         let active = configuration ?? outgoingInvitation
         let removeResumeIndex = configuration != nil
         senderTask?.cancel(); senderTask = nil; senderGeneration = UUID(); outgoing = []
@@ -272,7 +319,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
                         }
                         switch sessions.sendControlEvent(event, to: item.peer) {
                         case .accepted: sent = true
-                        case .unsupportedLink: throw VeilopolyRoomError.invalidPacket
+                        case .unsupportedLink: throw SendFailure.unsupportedPeer
                         case .temporarilyUnavailable: break
                         }
                         if sent { break }
@@ -281,10 +328,18 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
                     guard sent else { throw VeilopolyRoomError.sequenceGap }
                     try await Task.sleep(nanoseconds: 20_000_000)
                 }
+                if item.packet.kind == .invite, outgoingInvitation?.roomID == item.packet.roomID {
+                    status = "城市经济 V5 邀请已提交加密通道，等待对方接受（120 秒有效）"
+                }
             } catch {
                 if Task.isCancelled || generation != senderGeneration { return }
                 outgoing = [] // Authoritative state is saved; recovery sends a NEW snapshot, not stale moves.
-                status = "加密控制通道暂不可用，已暂停；请确认两端支持后重连并同步"
+                if error is SendFailure {
+                    status = "对方链路未声明支持联机控制消息，请确认两端均已升级并重新连接。"
+                    if item.packet.kind == .invite { outgoingInvitation = nil }
+                } else {
+                    status = "加密控制通道暂不可用，已暂停；请重连后重试或取消邀请。"
+                }
                 lastError = status
                 gameModel?.setNetworkAvailability(false, message: status)
                 return
@@ -302,13 +357,14 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
             }
         }
     }
-    private func tick() {
+    func tick() {
         guard boundLocalIdentity == localIdentity() else { suspendForIdentityChange(); return }
         guard foreground else { return }
         if (incomingInvitation != nil || outgoingInvitation != nil), Date().timeIntervalSince(invitationBegan) > 120 {
             incomingInvitation = nil; outgoingInvitation = nil; status = "邀请已过期，请重新邀请"
         }
-        if let invite = outgoingInvitation, Date().timeIntervalSince(lastInviteSent) >= 10 {
+        if let invite = outgoingInvitation, sessions.hasSecureSession(for: invite.guestIdentityID),
+           Date().timeIntervalSince(lastInviteSent) >= 10 {
             lastInviteSent = Date()
             enqueue(.init(roomID: invite.roomID, kind: .invite, configuration: invite), to: invite.guestIdentityID)
         }

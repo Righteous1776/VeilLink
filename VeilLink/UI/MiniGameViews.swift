@@ -53,6 +53,7 @@ struct MiniGameHubView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
+                    VeilopolyMultiplayerLobby(model: model, conversation: conversation)
                     if statistics.completed > 0 { statisticsOverview }
                     gamePicker
 

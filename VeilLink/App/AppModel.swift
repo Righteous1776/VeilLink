@@ -663,6 +663,8 @@ final class AppModel: ObservableObject {
     func handleForegroundTransition() {
         guard legalConsent.isSatisfied else { return }
         hostForegroundActive = true
+        veilopolyMultiplayer.setForeground(true)
+        veilopolyMultiplayer.restoreIfNeeded()
         computeGovernor.setForegroundActive(true)
         internetRelay.setForegroundActive(true)
         internetRelay.refreshNow()
@@ -684,6 +686,7 @@ final class AppModel: ObservableObject {
         a10M5Governance.cancel()
         a10M5GovernanceRuntime.trimMemory()
         hostForegroundActive = false
+        veilopolyMultiplayer.setForeground(false)
         computeGovernor.setForegroundActive(false)
         internetRelay.setForegroundActive(false)
         a9PeriodicTask?.cancel()

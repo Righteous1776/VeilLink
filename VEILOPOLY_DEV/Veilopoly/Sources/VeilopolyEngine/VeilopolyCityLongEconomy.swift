@@ -134,7 +134,8 @@ public enum VeilopolyCityLongEconomy {
   policy.loanCapsByProperties = [6_000, 12_000, 24_000, 40_000]
   return policy
  }
- /// New solo only; no retroactive V4 revaluation.
+ /// Current NEW-match profile (solo or explicitly negotiated live V5).
+ /// Never retroactively revalue an existing V4/classic save.
  public static func make(seed: UInt64, humanCount: Int = 1,
                          levels: [AILevel] = [.balanced,.balanced,.balanced,.balanced],
                          cards: [CardDefinition] = VeilopolyCityLongCards.allV5) -> GameState {
