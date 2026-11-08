@@ -54,7 +54,8 @@ Initial full Linux Swift6.2.1 package375/375 PASS111.366s. A further longest
 identity/fragment-budget test and host bridge tests were added afterward;
 second full package376/376 PASS91.498s; final directed current/live room suite
 24/24 PASS0.290s includes guest financial orders and encoded V5 resume.
-Final complete378-case run remains PENDING until separately recorded. Host tests exercise
+Final complete package378/378 PASS97.173s on Linux Swift6.2.1.
+Host tests exercise
 real bridge + fake authenticated channel, not physical transport.
 
 Portable resource verifier5/5 PASS. The model verifier initially failed fixture
@@ -77,3 +78,22 @@ not invented PASS and not installed silently.
 NEXT_ONE_TASK: exact-head Apple candidate-only compile/XCTest and an actual
 chat-to-chat invitation acceptance check. Publication remains OWNER HOLD even
 if CI turns green. Resume formal publication only on a new Owner instruction.
+
+## Required candidate acceptance (not yet executed on phones)
+
+1. Both devices install the SAME repaired candidate; retain the old save files.
+2. In an existing chat, + -> Send game invitation -> Veilopoly: one tap produces
+   a scoped pending card. No need to open either device's separate Games tab.
+3. The correct peer sees accept/decline in chat. No other contact can accept it.
+   Accept opens one full-screen shared room, not two covers or a separate solo.
+4. Both NEW-room states show V5, each player25,000, bank2,000,000; property/card/
+   stock/finance behavior matches current solo with the two-human topology.
+5. Hide/reopen from chat, chat game hub and independent Games tab; all must
+   retain the same room/model/sequence, movable panels, native art and manual.
+6. Temporarily unavailable security: exactly one user invite intent waits for
+   readiness; it sends without a second tap and expires after120s. No repeated
+   security resets; unsupported control capability yields explicit upgrade error.
+7. Existing classic room resumes unchanged, labelled classic. Explicitly leave
+   (keeping A/B saves), then invite to start V5. Never silently reprice old assets.
+8. Check background/foreground resync, one stock/bank guest proposal, save/reopen
+   and no duplicate roll/payment. Real BLE/LAN acceptance still requires phones.
