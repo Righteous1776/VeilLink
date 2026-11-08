@@ -60,4 +60,60 @@ final class XiangqiBotTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(trainedRelaxed.maxDepth, relaxed.maxDepth)
         XCTAssertGreaterThan(trainedRelaxed.timeLimitMilliseconds, relaxed.timeLimitMilliseconds)
     }
+
+    func testR3XiangqiOrderingPolicyAffectsLegalOpeningMovesWithinBounds() {
+        let board = XiangqiState()
+        XCTAssertTrue(board.legalDestinations(from: 64, actor: .host).contains(55))
+        XCTAssertTrue(board.legalDestinations(from: 82, actor: .host).contains(65))
+        let cannon = XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 64, to: 55, givesCheck: false
+        )
+        let horse = XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 82, to: 65, givesCheck: false
+        )
+        XCTAssertNotEqual(cannon, horse)
+        XCTAssertTrue((-72...72).contains(cannon))
+        XCTAssertTrue((-72...72).contains(horse))
+        XCTAssertEqual(XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 90, to: 0, givesCheck: false
+        ), 0)
+    }
+
+
+    func testR4AllocationFreeXiangqiPriorMatchesFrozenSourceFixtures() {
+        // Scores from the R3 21-feature trained model evaluated independently.
+        // These are ordering bonuses, not best-move evaluations.
+        let board = XiangqiState()
+        XCTAssertEqual(XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 64, to: 55, givesCheck: false
+        ), -11)
+        XCTAssertEqual(XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 82, to: 65, givesCheck: false
+        ), 4)
+        XCTAssertEqual(XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 81, to: 72, givesCheck: false
+        ), -13)
+        XCTAssertEqual(XiangqiBot.trainedR3OrderingBonus(
+            in: board, from: 54, to: 45, givesCheck: false
+        ), 2)
+    }
+
+
+    func testUserSelectedFullXiangqiSearchIsNotAutoDisabledForLegacyDevices() {
+        // Deliberately test the SAME explicit search mode for every device;
+        // it is never derived from performance classifier or OS version.
+        let full = XiangqiBotBudget.forDifficulty(
+            .master, profileLabel: BoardSearchMode.full.budgetProfileLabel
+        )
+        let saving = XiangqiBotBudget.forDifficulty(
+            .master, profileLabel: BoardSearchMode.economy.budgetProfileLabel
+        )
+        XCTAssertEqual(full.maxDepth, 9)
+        XCTAssertEqual(full.quiescenceDepth, 4)
+        XCTAssertEqual(full.timeLimitMilliseconds, 1_350)
+        XCTAssertEqual(saving.maxDepth, 6)
+        XCTAssertEqual(saving.timeLimitMilliseconds, 650)
+    }
+
+
 }

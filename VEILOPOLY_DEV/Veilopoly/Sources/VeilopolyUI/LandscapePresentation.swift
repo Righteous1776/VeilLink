@@ -39,6 +39,22 @@ public extension View {
  }
 }
 
+/// The host supplies the already-bound live model; never creates a solo save
+/// or a second game while presenting a multiplayer room.
+@MainActor
+public struct VeilopolyMultiplayerGameView: View {
+ private let session: GameSessionModel
+ private let onExit: () -> Void
+ public init(session: GameSessionModel, onExit: @escaping () -> Void) {
+  self.session = session; self.onExit = onExit
+ }
+ public var body: some View {
+  VeilopolyGameView(session: session, onExit: onExit)
+   .background(LandscapeSceneRequest())
+   .statusBarHidden(true)
+ }
+}
+
 /// iOS 15 supports controller-declared orientations and the public
 /// attemptRotationToDeviceOrientation() fallback. iOS 16+ additionally
 /// supports an explicit UIWindowScene geometry preference request.

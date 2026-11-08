@@ -10,7 +10,7 @@ public enum VeilopolyEngine {
   case .moveAnim: choices = [.applyMovement]
   case .tileResolve: choices = g.turn.pendingPurchase == nil ? [.resolveTile] : [.buyProperty, .startAuction]
   case .auction: choices = [.bid]
-  case .manage: choices = [.buildHouse, .sellHouse, .mortgage, .redeem, .proposeTrade, .endTurn,
+  case .manage: choices = [.buildHouse, .sellHouse, .mortgage, .redeem, .proposeTrade, .transferCash, .endTurn,
                            .bankDeposit, .bankWithdraw, .bankBorrow, .bankRepay, .bankInvest, .bankSettle,
                            .stockBuy, .stockSell, .stockTick]
   case .trade: choices = [.counterTrade, .acceptTrade, .rejectTrade]
@@ -25,7 +25,12 @@ public enum VeilopolyEngine {
  public static func apply(_ state: GameState, _ ctx: GameContext, _ move: Move) -> Transition {
   var g = state
   var effects: [Effect] = []
+  let openingCash = state.players.reduce(0) { $0 + $1.cash }
   do {
+   if let cap = VeilopolyCityLongEconomy.supplyCeiling(state) {
+    guard let reserve = state.banking?.reserveCash,
+          reserve + openingCash == cap else { throw GameError.invalidState }
+   }
    guard g.board.count == 40, g.players.count == 4,
          g.players.enumerated().allSatisfy({ $0.offset == $0.element.id }),
          g.players.allSatisfy({ (0...1_000_000_000).contains($0.cash) && (0..<40).contains($0.position) }),
@@ -39,6 +44,35 @@ public enum VeilopolyEngine {
           (e.perHouse == nil || (0...1_000_000).contains(e.perHouse!)) &&
           (e.perHotel == nil || (0...1_000_000).contains(e.perHotel!))
          }) }) else { throw GameError.invalidState }
+   // Stop malformed saved/remote states before participant or deck subscripts.
+   // Keep tile-specific invalidTile failures in their existing move handlers.
+   guard (0..<4).contains(g.turn.player), g.nextSeq >= 0, g.nextSeq < Int.max - 16,
+         (0..<Int.max - 16).contains(g.turn.rollCount),
+         (0..<Int.max - 16).contains(g.turn.doubleCount),
+         (0...12).contains(g.turn.pendingSteps),
+         (0..<Int.max - 16).contains(g.chanceDeck.cursor),
+         (0..<Int.max - 16).contains(g.chestDeck.cursor),
+         (g.auction.map { a in
+          !a.active.isEmpty && a.active.count <= 4 &&
+          Set(a.active).count == a.active.count &&
+          a.active.allSatisfy { (0..<4).contains($0) } &&
+          a.active.contains(a.turn) &&
+          (a.bidder.map { (0..<4).contains($0) } ?? true) &&
+          (0...1_000_000_000).contains(a.currentBid)
+         } ?? true),
+         (g.trade.map { t in
+          (0..<4).contains(t.from) && (0..<4).contains(t.to) && t.from != t.to &&
+          [t.offer, t.request].allSatisfy { x in
+           (0...1_000_000_000).contains(x.cash) &&
+           x.tiles.allSatisfy { g.board.indices.contains($0) && g.board[$0].purchasable } &&
+           (0...16).contains(x.chanceCards) && (0...16).contains(x.chestCards)
+          }
+         } ?? true),
+         (g.pendingDebt.map { d in
+          (0..<4).contains(d.player) &&
+          (d.creditor.map { (0..<4).contains($0) } ?? true) &&
+          (0...1_000_000_000).contains(d.amount)
+         } ?? true) else { throw GameError.invalidState }
    guard (g.banking.map { IntegratedBanking.validate($0) } ?? true) else { throw GameError.invalidState }
    guard ctx == context(g) else { throw GameError.invalidContext }
    guard g.winner == nil else { throw GameError.gameFinished }
@@ -53,6 +87,42 @@ public enum VeilopolyEngine {
    guard move.player == expected else { throw GameError.notYourTurn }
    guard ctx.allowedMoves.contains(move.type) else { throw GameError.wrongPhase }
    try transition(&g, move, &effects)
+   // V4 central bank: every net change of aggregate player cash must be
+   // backed by the same finite treasury. Player-to-player gifts/rent/trades
+   // cancel automatically. GameError rolls back every partial mutation.
+   if let treasuryBefore = state.banking?.reserveCash {
+    guard var ledger = g.banking,
+          let cap = VeilopolyCityLongEconomy.supplyCeiling(g) else {
+     throw GameError.invalidState
+    }
+    let closingCash = g.players.reduce(0) { $0 + $1.cash }
+    let newTreasury = treasuryBefore - (closingCash - openingCash)
+    guard (0...cap).contains(newTreasury) else {
+     throw GameError.bankLiquidity
+    }
+    ledger.reserveCash = newTreasury
+    if var queue = ledger.queuedClaims {
+     var freeCash = newTreasury
+     var n = 0
+     while freeCash > 0 && !queue.isEmpty && n < 4_096 {
+      var claim = queue[0]
+      if g.players[claim.player].bankrupt { queue.removeFirst(); n += 1; continue }
+      let limit = 1_000_000_000 - g.players[claim.player].cash
+      guard limit > 0 else { break }
+      let paid = min(claim.amount, freeCash, limit)
+      guard paid > 0 else { break }
+      g.players[claim.player].cash += paid
+      freeCash -= paid; claim.amount -= paid
+      effects.append(Effect(.cashChanged, player: claim.player,
+                            amount: paid, text: "bankClaimSettlement"))
+      if claim.amount == 0 { queue.removeFirst() } else { queue[0] = claim }
+      n += 1
+     }
+     ledger.reserveCash = freeCash
+     ledger.queuedClaims = queue
+    }
+    g.banking = ledger
+   }
    // Validate the output as well as the input. A large legal receipt must not
    // produce an out-of-range persisted state that crashes the next turn.
    guard g.players.allSatisfy({ (0...1_000_000_000).contains($0.cash) }),
@@ -87,9 +157,10 @@ public enum VeilopolyEngine {
     } else {
      g.players[p].jailTurns -= 1
      if g.players[p].jailTurns == 0 {
-      try charge(&g, debtor: p, amount: 50, creditor: nil, &fx)
+      let bail = VeilopolyCityLongEconomy.bail(g)
+      try charge(&g, debtor: p, amount: bail, creditor: nil, &fx)
       if g.pendingDebt != nil { return }
-      fx.append(Effect(.released, player: p, amount: -50))
+      fx.append(Effect(.released, player: p, amount: -bail))
      } else {
       g.turn.phase = .manage; g.turn.rolledDouble = false
       return
@@ -105,7 +176,7 @@ public enum VeilopolyEngine {
    let n = g.turn.pendingSteps
    let from = g.players[p].position
    let to = (from + n) % 40
-   if from + n >= 40 { g.players[p].cash += 200; fx.append(Effect(.passedGo, player: p, amount: 200)) }
+   if from + n >= 40 { let due = VeilopolyCityLongEconomy.salary(g); let salary = try payBank(&g, to: p, requested: due, source: "startSalary", &fx); fx.append(Effect(.passedGo, player: p, amount: salary)) }
    g.players[p].position = to
    g.turn.pendingSteps = 0
    fx.append(Effect(.playerMoved, player: p, from: from, to: to, steps: n))
@@ -113,7 +184,7 @@ public enum VeilopolyEngine {
   case .resolveTile:
    try resolveLanding(&g, player: p, rentMultiplier: 1, depth: 0, &fx)
   case .buyProperty:
-   guard let tile = g.turn.pendingPurchase, m.tile == tile else { throw GameError.invalidTile }
+   guard let tile = g.turn.pendingPurchase, m.tile == tile, isTile(tile, in: g) else { throw GameError.invalidTile }
    guard g.board[tile].owner == nil else { throw GameError.alreadyOwned }
    let price = g.board[tile].price
    guard g.players[p].cash >= price else { throw GameError.noCash }
@@ -121,7 +192,7 @@ public enum VeilopolyEngine {
    g.turn.pendingPurchase = nil; g.turn.phase = .manage
    fx.append(Effect(.bought, player: p, tile: tile, amount: price))
   case .startAuction:
-   guard let tile = g.turn.pendingPurchase, m.tile == tile else { throw GameError.invalidTile }
+   guard let tile = g.turn.pendingPurchase, m.tile == tile, isTile(tile, in: g) else { throw GameError.invalidTile }
    let active = g.players.filter { !$0.bankrupt }.map(\.id)
    guard active.count > 1 else { throw GameError.invalidState }
    g.auction = AuctionState(tile: tile, active: active)
@@ -129,6 +200,7 @@ public enum VeilopolyEngine {
    fx.append(Effect(.auctionStarted, player: p, tile: tile))
   case .bid:
    guard var auction = g.auction, auction.turn == p else { throw GameError.invalidState }
+   guard isTile(auction.tile, in: g) else { throw GameError.invalidTile }
    let index = auction.active.firstIndex(of: p)
    guard let index = index else { throw GameError.invalidState }
    if let amount = m.amount, amount > 0 {
@@ -190,6 +262,23 @@ public enum VeilopolyEngine {
    guard g.players[p].cash >= fee else { throw GameError.noCash }
    g.players[p].cash -= fee; g.board[i].mortgaged = false
    fx.append(Effect(.redeemed, player: p, tile: i, amount: fee))
+  case .transferCash:
+   // V4 solo (not yet enabled for legacy two-phone P5 rooms).
+   // A direct gift is immediate and requires no receiving-player signature.
+   guard (g.banking?.financeRuleVersion ?? 0) >= VeilopolyCityLongEconomy.finiteVersion,
+         let recipient = m.to, (0..<4).contains(recipient),
+         recipient != p, !g.players[recipient].bankrupt,
+         let amount = m.amount, (1...1_000_000).contains(amount) else {
+    throw GameError.invalidPayload
+   }
+   guard g.players[p].cash >= amount else { throw GameError.noCash }
+   guard g.players[recipient].cash <= 1_000_000_000 - amount else {
+    throw GameError.invalidState
+   }
+   g.players[p].cash -= amount
+   g.players[recipient].cash += amount
+   fx.append(Effect(.cashChanged, player: p, to: recipient, amount: -amount,
+                    text: "playerTransfer"))
   case .proposeTrade:
    guard let to = m.to, to != p, (0..<4).contains(to), !g.players[to].bankrupt,
          let offer = m.offer, let request = m.request else { throw GameError.invalidPayload }
@@ -221,9 +310,10 @@ public enum VeilopolyEngine {
    fx.append(Effect(.tradeRejected, player: p))
   case .payBail:
    guard g.players[p].jailTurns > 0 else { throw GameError.inJail }
-   guard g.players[p].cash >= 50 else { throw GameError.noCash }
-   g.players[p].cash -= 50; g.players[p].jailTurns = 0
-   fx.append(Effect(.released, player: p, amount: -50))
+   let bail = VeilopolyCityLongEconomy.bail(g)
+   guard g.players[p].cash >= bail else { throw GameError.noCash }
+   g.players[p].cash -= bail; g.players[p].jailTurns = 0
+   fx.append(Effect(.released, player: p, amount: -bail))
   case .useJailCard:
    guard g.players[p].jailTurns > 0 else { throw GameError.inJail }
    let useDeck: DeckKind
@@ -325,19 +415,24 @@ public enum VeilopolyEngine {
   case .street, .railroad, .utility:
    if tile.owner == nil { g.turn.pendingPurchase = i; g.turn.phase = .tileResolve }
    else if tile.owner != p && !tile.mortgaged {
-    let fee = rent(g, i: i, dice: g.turn.lastRoll.reduce(0,+), multiplier: rentMultiplier)
+    let baseRent = rent(g, i: i, dice: g.turn.lastRoll.reduce(0,+), multiplier: rentMultiplier)
+    let fee = VeilopolyCityLongEconomy.chargedRent(g, base: baseRent, tileKind: tile.kind)
     try charge(&g, debtor: p, amount: fee, creditor: tile.owner, &fx)
     fx.append(Effect(.rentPaid, player: p, tile: i, to: tile.owner, amount: fee))
     if g.pendingDebt == nil { g.turn.phase = .manage }
    } else { g.turn.phase = .manage }
   case .tax:
-   try charge(&g, debtor: p, amount: i == 4 ? 200 : 100, creditor: nil, &fx)
+   let tax = VeilopolyCityLongEconomy.tax(g, tile: i)
+   try charge(&g, debtor: p, amount: tax, creditor: nil, &fx)
    if g.pendingDebt == nil { g.turn.phase = .manage }
   case .chance, .chest:
    let deck: DeckKind = tile.kind == .chance ? .chance : .chest
    var d = deck == .chance ? g.chanceDeck : g.chestDeck
    guard !d.order.isEmpty else { throw GameError.invalidState }
    let id = d.order[d.cursor % d.order.count]; d.cursor += 1
+   if VeilopolyCityLongEconomy.isActive(g) {
+    VeilopolyCityLongCards.reshuffleOnCycle(&d, kind: deck, seed: g.seed)
+   }
    if deck == .chance { g.chanceDeck = d } else { g.chestDeck = d }
    guard let card = g.cards.first(where: { $0.id == id && $0.deck == deck }) else { throw GameError.invalidState }
    g.pendingCard = PendingCard(id: id, deck: deck)
@@ -349,7 +444,50 @@ public enum VeilopolyEngine {
   default: g.turn.phase = .manage
   }
  }
- private static func jail(_ g: inout GameState, _ p: Int, _ fx: inout [Effect]) {
+  /// Mandatory payments draw real treasury cash; any unpaid portion becomes
+ /// a noncash claim. Claimed amounts are NOT minted and retain FIFO priority.
+ private static func payBank(_ g: inout GameState, to player: Int,
+                             requested amount: Int, source: String,
+                             _ fx: inout [Effect]) throws -> Int {
+  guard (0...1_000_000).contains(amount),
+        g.players.indices.contains(player) else { throw GameError.invalidState }
+  if (g.banking?.financeRuleVersion ?? 0) < VeilopolyCityLongEconomy.finiteVersion {
+   guard g.players[player].cash <= 1_000_000_000 - amount else {
+    throw GameError.invalidState
+   }
+   g.players[player].cash += amount
+   return amount
+  }
+  guard var ledger = g.banking, let freeCash = ledger.reserveCash else {
+   throw GameError.invalidState
+  }
+  // Older sealed V4 checkpoints may not have the claim list yet.
+  // Materialize an empty list only on a committed payout, not during decode.
+  var queue = ledger.queuedClaims ?? []
+  // Preserve FIFO for V5: old bank claims are legally prior to new salaries
+  // or event windfalls. The reducer clears the old queue after this move.
+  let paid = VeilopolyCityLongEconomy.isExpanded(g) && !queue.isEmpty
+    ? 0 : min(amount, freeCash)
+  guard g.players[player].cash <= 1_000_000_000 - paid else {
+   throw GameError.invalidState
+  }
+  let remainder = amount - paid
+  if remainder > 0 {
+   guard queue.count < 4_096, (1...32).contains(source.utf8.count) else {
+    throw GameError.invalidState
+   }
+   queue.append(VeilopolyBankClaim(player: player, amount: remainder, source: source))
+   fx.append(Effect(.cashChanged, player: player, amount: 0,
+                    text: "bankClaimIssued:\(remainder)"))
+  }
+  g.players[player].cash += paid
+  ledger.reserveCash = freeCash - paid
+  ledger.queuedClaims = queue
+  g.banking = ledger
+  return paid
+ }
+
+private static func jail(_ g: inout GameState, _ p: Int, _ fx: inout [Effect]) {
   g.players[p].position = 10; g.players[p].jailTurns = 3
   g.turn.pendingSteps = 0; g.turn.pendingPurchase = nil
   g.turn.rolledDouble = false; g.turn.doubleCount = 0
@@ -363,21 +501,22 @@ public enum VeilopolyEngine {
    switch effect.kind {
    case .cash:
     guard let amount = effect.amount, let target = effect.target else { throw GameError.invalidState }
+    let cash = VeilopolyCityLongEconomy.cardCash(g, amount: amount)
     if target == .allOthers {
      for other in g.players.indices where other != p && !g.players[other].bankrupt {
-      if amount >= 0 { try charge(&g, debtor: other, amount: amount, creditor: p, &fx) }
-      else { try charge(&g, debtor: p, amount: -amount, creditor: other, &fx) }
+      if cash >= 0 { try charge(&g, debtor: other, amount: cash, creditor: p, &fx) }
+      else { try charge(&g, debtor: p, amount: -cash, creditor: other, &fx) }
       if g.pendingDebt != nil { break }
      }
-    } else if amount >= 0 {
-     g.players[p].cash += amount
-     fx.append(Effect(.cashChanged, player: p, amount: amount))
-    } else { try charge(&g, debtor: p, amount: -amount, creditor: nil, &fx) }
+    } else if cash >= 0 {
+     let paid = try payBank(&g, to: p, requested: cash, source: "eventCash", &fx)
+     fx.append(Effect(.cashChanged, player: p, amount: paid))
+    } else { try charge(&g, debtor: p, amount: -cash, creditor: nil, &fx) }
    case .moveTo:
     guard let dest = effect.tile, (0..<40).contains(dest) else { throw GameError.invalidState }
     let from = g.players[p].position
     if effect.collectGo == true && dest < from || (effect.collectGo == true && dest == 0) {
-     g.players[p].cash += 200; fx.append(Effect(.passedGo, player: p, amount: 200))
+     let due = VeilopolyCityLongEconomy.salary(g); let salary = try payBank(&g, to: p, requested: due, source: "startSalary", &fx); fx.append(Effect(.passedGo, player: p, amount: salary))
     }
     g.players[p].position = dest
     fx.append(Effect(.playerMoved, player: p, from: from, to: dest, steps: 0))
@@ -388,26 +527,61 @@ public enum VeilopolyEngine {
     let from = g.players[p].position
     guard let step = (1...40).first(where: { g.board[(from + $0) % 40].kind == kind }) else { throw GameError.invalidState }
     let dest = (from + step) % 40
-    if from + step >= 40 { g.players[p].cash += 200; fx.append(Effect(.passedGo, player: p, amount: 200)) }
+    if from + step >= 40 { let due = VeilopolyCityLongEconomy.salary(g); let salary = try payBank(&g, to: p, requested: due, source: "startSalary", &fx); fx.append(Effect(.passedGo, player: p, amount: salary)) }
     g.players[p].position = dest
     fx.append(Effect(.playerMoved, player: p, from: from, to: dest, steps: step))
     try resolveLanding(&g, player: p, rentMultiplier: max(1, effect.multiplier ?? 1), depth: depth, &fx)
    case .moveRelative:
     guard let delta = effect.delta, (-39...39).contains(delta) else { throw GameError.invalidState }
     let from = g.players[p].position; let dest = (from + delta + 40) % 40
-    if delta > 0 && from + delta >= 40 { g.players[p].cash += 200; fx.append(Effect(.passedGo, player: p, amount: 200)) }
+    if delta > 0 && from + delta >= 40 { let due = VeilopolyCityLongEconomy.salary(g); let salary = try payBank(&g, to: p, requested: due, source: "startSalary", &fx); fx.append(Effect(.passedGo, player: p, amount: salary)) }
     g.players[p].position = dest
     fx.append(Effect(.playerMoved, player: p, from: from, to: dest, steps: delta))
     try resolveLanding(&g, player: p, rentMultiplier: 1, depth: depth, &fx)
    case .goToJail: jail(&g, p, &fx)
    case .jailCard:
-    if card.deck == .chance { g.players[p].chanceJailCards += 1 }
+    let alreadyHasSameCard = card.deck == .chance
+      ? g.players[p].chanceJailCards > 0 : g.players[p].chestJailCards > 0
+    if VeilopolyCityLongEconomy.isActive(g) && alreadyHasSameCard {
+     let requested = VeilopolyCityLongEconomy.isExpanded(g) ? 1_000 : 250
+     let paid = try payBank(&g, to: p, requested: requested,
+                            source: "duplicateJailCard", &fx)
+     fx.append(Effect(.cashChanged, player: p, amount: paid,
+                      text: "duplicateJailCardExchange"))
+    } else if card.deck == .chance { g.players[p].chanceJailCards += 1 }
     else { g.players[p].chestJailCards += 1 }
+   case .grantHouse:
+    guard (g.banking?.financeRuleVersion ?? 0) >= VeilopolyCityLongEconomy.finiteVersion else {
+     throw GameError.invalidState
+    }
+    let eligible = g.board.indices.filter { i in
+     let tile = g.board[i]
+     guard tile.kind == .street, tile.owner == p, tile.houses < 4,
+           !tile.mortgaged, !tile.hotel, let group = tile.color else { return false }
+     let mates = groupIndices(g, group)
+     return mates.allSatisfy { g.board[$0].owner == p && !g.board[$0].mortgaged } &&
+       tile.houses == (mates.map { buildingLevel(g.board[$0]) }.min() ?? 0)
+    }
+    let chosen = eligible.sorted {
+     g.board[$0].houseCost == g.board[$1].houseCost
+      ? $0 < $1 : g.board[$0].houseCost > g.board[$1].houseCost
+    }.first
+    if g.bank.houses > 0, let i = chosen {
+     g.bank.houses -= 1
+     g.board[i].houses += 1
+     fx.append(Effect(.built, player: p, tile: i, amount: 0, text: "freeHouse"))
+    } else {
+     let fallback = effect.amount ?? 0
+     let paid = try payBank(&g, to: p, requested: fallback,
+                            source: "freeHouseFallback", &fx)
+     fx.append(Effect(.cashChanged, player: p, amount: paid, text: "freeHouseFallback"))
+    }
    case .repair:
     guard let perHouse = effect.perHouse, let perHotel = effect.perHotel else { throw GameError.invalidState }
     let owned = g.board.filter { $0.owner == p }
     let cost = owned.reduce(0) { $0 + $1.houses * perHouse + ($1.hotel ? perHotel : 0) }
-    try charge(&g, debtor: p, amount: cost, creditor: nil, &fx)
+    let scaledCost = VeilopolyCityLongEconomy.repairCost(g, amount: cost)
+    try charge(&g, debtor: p, amount: scaledCost, creditor: nil, &fx)
    }
   }
  }
@@ -447,7 +621,7 @@ public enum VeilopolyEngine {
   }
  }
  private static func bankrupt(_ g: inout GameState, debtor p: Int, creditor: Int?, _ fx: inout [Effect]) throws {
-  try IntegratedBanking.closeBankruptAccount(&g, player: p, effects: &fx)
+  try IntegratedBanking.closeBankruptAccount(&g, player: p, creditor: creditor, effects: &fx)
   let receiver = creditor.flatMap { id in (0..<g.players.count).contains(id) && id != p && !g.players[id].bankrupt ? id : nil }
   if let receiver = receiver {
    g.players[receiver].cash += g.players[p].cash

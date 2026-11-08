@@ -12,8 +12,11 @@ import zipfile
 
 MAX_IPA_BYTES = 80 * 1024 * 1024
 MAX_APP_BYTES = 120 * 1024 * 1024
-EXPECTED_VERSION = "28.0"
-EXPECTED_BUILD = "65"
+EXPECTED_VERSION = "29.0"
+EXPECTED_BUILD = "66"
+VERTEX_NAME = "Vertex-0.6-35M-Instruct-Q4_K_M.gguf"
+VERTEX_BYTES = 29_203_168
+VERTEX_SHA256 = "c55c3c32740d5a283c505fc9f9b7313e4b3f0c98bb11efd21b651651d5cb36b5"
 EXPECTED_TACTICAL_MAP_SHA256 = "4bd450353ae993b0c8083b97ab5909c8260cd6984be6f6051db1967613edaaa5"
 EXPECTED_A10_M5_SOURCE_MODEL_HASH = "c5ba826dab1ebe1db02e90e8b4bfd2c060e99586413970fa3bd4d848e378a8b4"
 EXPECTED_A10_M5_FILES = {
@@ -140,7 +143,7 @@ def verify_a10_m5_assets(app):
 def verify_veilopoly_resources(app):
     """Verify actual shipped module files, not just source-manifest promises."""
     source = Path(__file__).resolve().parent.parent / "VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/Resources"
-    expected = sorted(p for p in source.iterdir() if p.suffix.lower() in {".png", ".wav", ".xml"})
+    expected = sorted(p for p in source.iterdir() if p.suffix.lower() in {".png", ".wav", ".xml", ".md"})
     counts = {ext: sum(p.suffix.lower() == ext for p in expected) for ext in (".png", ".wav", ".xml")}
     if counts != {".png": 99, ".wav": 13, ".xml": 1}:
         fail(f"Veilopoly source inventory drift: {counts}")
@@ -155,10 +158,30 @@ def verify_veilopoly_resources(app):
             fail(f"Veilopoly bundled resource missing/changed: {original.name}")
         records.append({"path": target.relative_to(app).as_posix(),
                         "bytes": target.stat().st_size, "sha256": digest})
-    return {"result": "PASS", "images": 99, "sounds": 13, "metadata": 1, "files": records}
+    return {"result": "PASS", "images": 99, "sounds": 13, "metadata": 1,
+            "manuals": sum(p.suffix == ".md" for p in expected), "files": records}
 
 
-def verify_app(app, expected_version, expected_build):
+def verify_vertex_resources(app, linked):
+    model = find_one(app, VERTEX_NAME)
+    models = [p for p in app.rglob("*.gguf") if p.is_file()]
+    if models != [model] or model.stat().st_size != VERTEX_BYTES or sha256_file(model) != VERTEX_SHA256:
+        fail("experimental Vertex model count/bytes/SHA256 mismatch")
+    binary = app / "Frameworks/llama.framework/llama"
+    if not binary.is_file() or binary.stat().st_size == 0 or "llama.framework" not in linked:
+        fail("experimental Vertex requires linked AND embedded native llama")
+    arches = subprocess.check_output(["lipo", "-archs", str(binary)], text=True).split()
+    if set(arches) != {"arm64"}:
+        fail(f"llama must be device arm64, not simulator: {arches}")
+    build = subprocess.check_output(["vtool", "-show-build", str(binary)], text=True)
+    if not re.search(r"platform\s+IOS\b", build) or not re.search(r"minos\s+15(?:\.0)?\b", build):
+        fail("llama must target iOS device with minimum OS15")
+    return {"status": "EXPERIMENTAL", "chinese_quality": "NOT_VALIDATED",
+            "model_path": model.relative_to(app).as_posix(), "bytes": VERTEX_BYTES,
+            "sha256": VERTEX_SHA256, "framework_sha256": sha256_file(binary)}
+
+
+def verify_app(app, expected_version, expected_build, experimental_vertex=False):
     for rel in ["Info.plist", "VeilLink", "Assets.car"]:
         p = app / rel
         if not p.is_file() or p.stat().st_size <= 0:
@@ -168,7 +191,7 @@ def verify_app(app, expected_version, expected_build):
         fail("unsigned Core app contains _CodeSignature")
     if (app / "embedded.mobileprovision").exists():
         fail("unsigned Core app contains embedded.mobileprovision")
-    if (app / "Frameworks/llama.framework").exists():
+    if not experimental_vertex and (app / "Frameworks/llama.framework").exists():
         fail("Core app must not contain llama.framework")
 
     found_forbidden = []
@@ -189,8 +212,11 @@ def verify_app(app, expected_version, expected_build):
         fail(f"expected build {expected_build}, got {actual_build}")
 
     linked = subprocess.check_output(["otool", "-L", str(app / "VeilLink")], text=True)
-    if "llama.framework" in linked:
+    if not experimental_vertex and "llama.framework" in linked:
         fail("Core executable unexpectedly links llama.framework")
+    vertex = verify_vertex_resources(app, linked) if experimental_vertex else None
+    if not experimental_vertex and any(app.rglob("*.gguf")):
+        fail("standard Core must not contain any GGUF model")
 
     tactical = find_one(app, "guandu_large_map_v2_48x27.json")
     if sha256_file(tactical) != EXPECTED_TACTICAL_MAP_SHA256:
@@ -215,10 +241,11 @@ def verify_app(app, expected_version, expected_build):
         "a10_ultra_m5": a10_m5["report"],
         "veilopoly_offline_resources": veilopoly,
         "heavy_ai_resources": "ABSENT",
-        "llama_framework": "ABSENT",
+        "llama_framework": "PRESENT_VERIFIED" if vertex else "ABSENT",
+        "experimental_vertex": vertex,
     }
 
-def verify_ipa(app, ipa, expected_version, expected_build):
+def verify_ipa(app, ipa, expected_version, expected_build, experimental_vertex=False):
     if not ipa.is_file():
         fail("IPA missing")
     if ipa.stat().st_size > MAX_IPA_BYTES:
@@ -236,8 +263,23 @@ def verify_ipa(app, ipa, expected_version, expected_build):
         for name in names:
             if Path(name).name in FORBIDDEN_NAMES:
                 fail(f"IPA contains forbidden AI resource: {name}")
-            if "/Frameworks/llama.framework/" in name:
+            if not experimental_vertex and "/Frameworks/llama.framework/" in name:
                 fail("IPA contains llama.framework")
+
+        ggufs = [n for n in names if n.endswith(".gguf")]
+        if experimental_vertex:
+            if len(ggufs) != 1 or Path(ggufs[0]).name != VERTEX_NAME or sha256_bytes(z.read(ggufs[0])) != VERTEX_SHA256:
+                fail("IPA must contain exactly the pinned Vertex model")
+            model = find_one(app, VERTEX_NAME)
+            if prefix + model.relative_to(app).as_posix() != ggufs[0]:
+                fail("IPA/app model location mismatch")
+            for path in (app / "Frameworks/llama.framework").rglob("*"):
+                if path.is_file():
+                    entry = prefix + path.relative_to(app).as_posix()
+                    if entry not in names or sha256_bytes(z.read(entry)) != sha256_file(path):
+                        fail(f"IPA/app llama parity mismatch: {entry}")
+        elif ggufs:
+            fail("standard Core IPA contains a GGUF model")
 
         for rel in ["VeilLink", "Assets.car"]:
             entry = prefix + rel
@@ -307,20 +349,21 @@ def main():
     parser.add_argument("--provenance", default="CORE_RELEASE_PROVENANCE.json")
     parser.add_argument("--sums", default="CORE_RELEASE_SHA256SUMS.txt")
     parser.add_argument("--project", default="project.yml")
+    parser.add_argument("--experimental-vertex", action="store_true")
     args = parser.parse_args()
 
     app = Path(args.app).resolve()
     ipa = Path(args.ipa).resolve()
 
     expected_version, expected_build = expected_release_identity(args.project)
-    app_report = verify_app(app, expected_version, expected_build)
-    ipa_report = verify_ipa(app, ipa, expected_version, expected_build)
+    app_report = verify_app(app, expected_version, expected_build, args.experimental_vertex)
+    ipa_report = verify_ipa(app, ipa, expected_version, expected_build, args.experimental_vertex)
 
     manifest = {
         "schema": 1,
         "result": "PASS",
         "release_eligible": True,
-        "edition": "Core",
+        "edition": "Core+ExperimentalVertex" if args.experimental_vertex else "Core",
         "unsigned": True,
         "size_policy": {
             "ipa_max_bytes": MAX_IPA_BYTES,
@@ -333,7 +376,7 @@ def main():
 
     provenance = {
         "schema": 1,
-        "edition": "Core",
+        "edition": "Core+ExperimentalVertex" if args.experimental_vertex else "Core",
         "git_head": git_output("git", "rev-parse", "HEAD"),
         "github_run_id": os.environ.get("GITHUB_RUN_ID"),
         "github_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),

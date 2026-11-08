@@ -33,6 +33,8 @@ struct VeilTransportHealthRollup: Equatable {
 
 @MainActor
 final class AppModel: ObservableObject {
+    lazy var veilopolyMultiplayer = VeilopolyMultiplayerBridge(sessions: sessions,
+        localIdentity: { [weak self] in self?.identity.activeIdentity?.id })
     private static let startupSignposter = OSSignposter(
         subsystem: "studio.zeo.veillink",
         category: "startup"
@@ -284,6 +286,11 @@ final class AppModel: ObservableObject {
         }
         sessions.onMessagesChanged = { [weak self] refreshConversations in
             self?.scheduleMessageRefresh(refreshConversations: refreshConversations)
+        }
+        let previousControlEventHandler = sessions.onControlEventReceived
+        sessions.onControlEventReceived = { [weak self] event, authenticatedPeer in
+            previousControlEventHandler?(event, authenticatedPeer)
+            self?.veilopolyMultiplayer.receive(event, from: authenticatedPeer)
         }
         sessions.onInboundMessageReceived = { [weak self] in
             self?.haptics.receive()
@@ -656,6 +663,8 @@ final class AppModel: ObservableObject {
     func handleForegroundTransition() {
         guard legalConsent.isSatisfied else { return }
         hostForegroundActive = true
+        veilopolyMultiplayer.setForeground(true)
+        veilopolyMultiplayer.restoreIfNeeded()
         computeGovernor.setForegroundActive(true)
         internetRelay.setForegroundActive(true)
         internetRelay.refreshNow()
@@ -677,6 +686,7 @@ final class AppModel: ObservableObject {
         a10M5Governance.cancel()
         a10M5GovernanceRuntime.trimMemory()
         hostForegroundActive = false
+        veilopolyMultiplayer.setForeground(false)
         computeGovernor.setForegroundActive(false)
         internetRelay.setForegroundActive(false)
         a9PeriodicTask?.cancel()

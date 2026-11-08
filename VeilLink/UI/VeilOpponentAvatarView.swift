@@ -102,22 +102,26 @@ private struct VeilLiquidContour: Shape {
 struct VeilOpponentAvatarView: View {
     let mood: VeilOpponentAvatarMood
     let size: CGFloat
+    /// Prevents video/GIF decoding and timer-driven animation on legacy devices.
+    /// Other Grok Bot avatar consumers keep their original animation defaults.
+    let staticOnly: Bool
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var changedAt = Date()
 
-    init(mood: VeilOpponentAvatarMood, size: CGFloat = 76) {
+    init(mood: VeilOpponentAvatarMood, size: CGFloat = 76, staticOnly: Bool = false) {
         self.mood = mood
         self.size = size
+        self.staticOnly = staticOnly
     }
 
     var body: some View {
-        let animated = VeilOpponentAvatarPolicy.shouldAnimate(
+        let animated = !staticOnly && VeilOpponentAvatarPolicy.shouldAnimate(
             reduceMotion: reduceMotion, sceneIsActive: scenePhase == .active
         )
         Group {
-            if Bundle.main.url(forResource: "GrokBotFull", withExtension: "mp4") != nil {
+            if !staticOnly && Bundle.main.url(forResource: "GrokBotFull", withExtension: "mp4") != nil {
                 VeilGrokBotFullVideoPlayer(
                     running: animated,
                     cornerRadius: VeilOpponentAvatarPolicy.videoCornerRadius(for: size)
@@ -135,7 +139,7 @@ struct VeilOpponentAvatarView: View {
                     .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8)
                 )
                 .accessibilityIdentifier("game.grok_bot.rounded_video")
-            } else if Bundle.main.url(forResource: "GrokBotLoop", withExtension: "gif") != nil {
+            } else if !staticOnly && Bundle.main.url(forResource: "GrokBotLoop", withExtension: "gif") != nil {
                 VeilGrokBotGIFPlayer(running: animated)
             } else {
                 TimelineView(.animation(

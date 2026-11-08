@@ -586,6 +586,8 @@ struct ChatView: View {
             }
 
             VStack(spacing: 0) {
+                VeilopolyConversationInvitationView(bridge: model.veilopolyMultiplayer,
+                    peerIdentityID: conversation.peerIdentityID, presentationID: "chat-" + conversation.id)
                 if let mediaStatus {
                     HStack(spacing: 8) {
                         if isPreparingImage { ProgressView().controlSize(.small) }
@@ -658,6 +660,13 @@ struct ChatView: View {
                             }
                             Divider()
                             Menu {
+                                Button {
+                                    model.veilopolyMultiplayer.invite(conversation,
+                                        presentationContext: "chat-" + conversation.id)
+                                } label: {
+                                    Label("大富翁 · 城市经济 V5", systemImage: "building.2")
+                                }
+                                .accessibilityIdentifier("veilopoly.chat.invite-direct")
                                 ForEach(MiniGameKind.allCases) { game in
                                     Button {
                                         sendGameInvite(game)
@@ -832,6 +841,8 @@ struct ChatView: View {
         .sheet(isPresented: $showsMiniGames, onDismiss: { miniGameInitialSessionID = nil }) {
             MiniGameHubView(model: model, conversation: conversation, initialSessionID: miniGameInitialSessionID)
         }
+        .modifier(VeilopolyRoomPresentation(bridge: model.veilopolyMultiplayer,
+            context: "chat-" + conversation.id))
         .fileImporter(
             isPresented: $showsChatFileImporter,
             // Selection is broad; policy enforcement occurs on the owned staging copy.

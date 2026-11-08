@@ -17,6 +17,7 @@ struct VeilFileIntegrityToolView: View {
     @State private var copiedReport = false
     @State private var errorText: String?
     @State private var inspectionTask: Task<Void, Never>?
+    @State private var importerTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -75,12 +76,22 @@ struct VeilFileIntegrityToolView: View {
             switch result {
             case .success(let urls):
                 guard let selectedURL = urls.first else { return }
-                Task {
+                busySlot = slot
+                importerTask = Task { @MainActor in
                     do {
                         let url = try await VeilImportedFileAccess.materializeInBackground(selectedURL)
+                        guard !Task.isCancelled else {
+                            VeilImportedFileAccess.removeStagedCopy(url)
+                            return
+                        }
                         inspect(url: url, into: slot)
+                    } catch is CancellationError {
+                        if !Task.isCancelled { busySlot = nil }
                     } catch {
-                        errorText = error.localizedDescription
+                        if !Task.isCancelled {
+                            errorText = error.localizedDescription
+                            busySlot = nil
+                        }
                     }
                 }
             case .failure(let error):
@@ -88,6 +99,8 @@ struct VeilFileIntegrityToolView: View {
             }
         }
         .onDisappear {
+            importerTask?.cancel()
+            importerTask = nil
             inspectionTask?.cancel()
             inspectionTask = nil
         }
@@ -218,9 +231,13 @@ struct VeilFileIntegrityToolView: View {
         inspectionTask = Task {
             defer { VeilImportedFileAccess.removeStagedCopy(url) }
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
+                let worker = Task.detached(priority: .userInitiated) {
                     try VeilFileIntegrityEngine.inspect(url: url)
-                }.value
+                }
+                let result = try await withTaskCancellationHandler(
+                    operation: { try await worker.value },
+                    onCancel: { worker.cancel() }
+                )
                 try Task.checkCancellation()
                 if slot == .first {
                     first = result

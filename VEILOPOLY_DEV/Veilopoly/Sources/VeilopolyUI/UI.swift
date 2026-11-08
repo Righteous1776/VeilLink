@@ -6,6 +6,7 @@ import UIKit
 import VeilopolyEngine
 import VeilopolyAI
 import VeilopolyPersistence
+import VeilopolyNet
 
 @MainActor
 public final class GameSessionModel: ObservableObject {
@@ -33,32 +34,69 @@ public final class GameSessionModel: ObservableObject {
  private let configuredHumanCount: Int
  private let saveStore: VeilopolySaveStore?
  private let saveSessionID: String
+ private let saveMode: VeilopolySaveMode
+ private var liveRoom: VeilopolyLiveRoom?
+ private let networkSender: (@MainActor (VeilopolyRoomPacket) -> Void)?
+ private var deferredRemoteProposal: (VeilopolyRoomPacket, String)?
+ private var pendingLocalMove: Move?
+ private var guestPresentations: [(GameState, [Effect], Move)] = []
+ private var drainingGuestPresentation = false
+ private var networkForeground = true
+ @Published public private(set) var networkReady = true
+ @Published public private(set) var awaitingHost = false
+ @Published public private(set) var networkStatus = ""
  private var recoveryBlocked = false
  private var lastCheckpointAt = Date.distantPast
 
- public init(seed: UInt64? = nil, humanCount: Int = 1) {
+ public convenience init(seed: UInt64? = nil, humanCount: Int = 1) {
+  self.init(seed: seed, humanCount: humanCount, room: nil, networkSender: nil,
+            requiresExistingSave: false, saveDirectory: nil)
+ }
+ public convenience init(multiplayer configuration: VeilopolyRoomConfiguration, localIdentityID: String,
+                         requiresExistingSave: Bool = false,
+                         saveDirectory: URL? = nil,
+                         onSend: @escaping @MainActor (VeilopolyRoomPacket) -> Void) throws {
+  let room = try VeilopolyLiveRoom(configuration: configuration, localIdentityID: localIdentityID)
+  self.init(seed: configuration.seed, humanCount: 2, room: room, networkSender: onSend,
+            requiresExistingSave: requiresExistingSave, saveDirectory: saveDirectory)
+ }
+ private init(seed: UInt64?, humanCount: Int, room: VeilopolyLiveRoom?,
+              networkSender: (@MainActor (VeilopolyRoomPacket) -> Void)?, requiresExistingSave: Bool, saveDirectory: URL?) {
   configuredHumanCount = humanCount
-  let sessionID = "solo-\(humanCount)"
+  let sessionID = room?.configuration.roomID ?? "solo-\(humanCount)"
+  let mode: VeilopolySaveMode = room.map { $0.isHost ? .multiplayerHost : .multiplayerGuest } ?? .solo
+  saveMode = mode
   saveSessionID = sessionID
-  let store = try? VeilopolySaveStore()
+  liveRoom = room
+  self.networkSender = networkSender
+  let store = try? VeilopolySaveStore(directory: saveDirectory)
   saveStore = store
-  let recovered: VeilopolySavedGame?
-  let unreadable: Bool
+  var recovered: VeilopolySavedGame?
+  var unreadable: Bool
   do {
-   recovered = try store?.load(gameID: sessionID, mode: .solo)
+   recovered = try store?.load(gameID: sessionID, mode: mode)
    unreadable = false
   } catch {
    // Preserve unreadable files; never silently overwrite a user's game.
    recovered = nil
    unreadable = true
   }
+  if requiresExistingSave && recovered == nil { unreadable = true }
+  if let room, let restored = recovered {
+   do {
+    liveRoom = try VeilopolyLiveRoom(configuration: room.configuration,
+     localIdentityID: room.localIdentityID, restoredGame: restored.game)
+   } catch { recovered = nil; unreadable = true }
+  }
   recoveryBlocked = unreadable
   // Fresh OS entropy is sampled only at a NEW MATCH boundary; saved games
   // always resume their original seed and deterministic replay.
-  let initial = recovered?.game ?? GameFactory.make(
+  let initial = recovered?.game ?? room?.game ?? VeilopolyCityLongEconomy.make(
    seed: seed ?? VeilopolyNewGameSeed.fresh(), humanCount: humanCount)
   game = initial
   scene = GameBoardScene(size: CGSize(width: 1024, height: 940))
+  networkReady = room == nil
+  networkStatus = room == nil ? "" : "等待对方确认同一房间与进度"
   stockExecutions = (recovered?.stockReceipts ?? []).map(StockExecution.init(record:))
   scene.display(initial)
   scene.highlightTile(selectedTile)
@@ -80,14 +118,21 @@ public final class GameSessionModel: ObservableObject {
   }
   // A killed app can resume in .moveAnim/.tileResolve. Finish the pending
   // deterministic reducer step without replaying an already committed roll.
-  if humanCount == 0 || recovered != nil {
+  if room == nil && (humanCount == 0 || recovered != nil) {
    Task { @MainActor [weak self] in self?.drive() }
   }
  }
  public var actor: Int { game.auction?.turn ?? game.trade?.to ?? game.pendingDebt?.player ?? game.turn.player }
- public var waitingForHuman: Bool { !game.players[actor].bankrupt && game.players[actor].kind == .human }
+ public var waitingForHuman: Bool {
+  game.players.indices.contains(actor) && !game.players[actor].bankrupt &&
+  game.players[actor].kind == .human && (liveRoom == nil || liveRoom?.localSeat == actor)
+ }
+ public var isMultiplayer: Bool { liveRoom != nil }
+ public var isHost: Bool { liveRoom?.isHost ?? false }
+ public var roomConfiguration: VeilopolyRoomConfiguration? { liveRoom?.configuration }
+ public var canSkipAnimation: Bool { animating && !cardGate.isPresented }
  public var currentContext: GameContext { VeilopolyEngine.context(game) }
- public var pending: Bool { animating }
+ public var pending: Bool { animating || awaitingHost || (isMultiplayer && !networkReady) }
  /// Read-only editorial copy for the EXACT engine card currently in the queue.
  /// Persisted CardDefinition and gameplay effects remain authoritative.
  public var shownEditorial: VeilopolyCardEditorialEntry? {
@@ -105,7 +150,7 @@ public final class GameSessionModel: ObservableObject {
    return
   }
   do {
-   _ = try saveStore.save(game, gameID: saveSessionID, mode: .solo,
+   _ = try saveStore.save(liveRoom?.game ?? game, gameID: saveSessionID, mode: saveMode,
                           stockReceipts: stockExecutions.map(\.persisted))
    lastCheckpointAt = Date()
    saveWarning = nil
@@ -124,22 +169,35 @@ public final class GameSessionModel: ObservableObject {
                      deck: DeckKind? = nil, financeProduct: FinancialFeature? = nil,
                      financePeriods: Int? = nil, financeID: Int? = nil,
                      stockSymbol: String? = nil, stockShares: Int? = nil) {
-  guard !animating && !cardGate.isPresented else { return }
+  guard !pending && !cardGate.isPresented, !isMultiplayer || waitingForHuman else { return }
   let move = Move(kind, player: actor, seq: game.nextSeq, tile: tile, amount: amount,
                   to: to, offer: offer, request: request, deck: deck,
                   financeProduct: financeProduct, financePeriods: financePeriods, financeID: financeID,
                   stockSymbol: stockSymbol, stockShares: stockShares)
+  if let room = liveRoom, !room.isHost {
+   awaitingHost = true
+   pendingLocalMove = move
+   networkSender?(.init(roomID: room.configuration.roomID, kind: .proposal, proposal: move))
+   return
+  }
   applyMove(move)
   drive()
  }
  public func advanceStockMarket() {
-  guard !animating && !cardGate.isPresented && waitingForHuman && game.turn.phase == .manage else { return }
+  let humanTurn = isMultiplayer ? game.players[actor].kind == .human : waitingForHuman
+  guard !pending && !cardGate.isPresented && humanTurn && game.turn.phase == .manage,
+        liveRoom == nil || liveRoom?.isHost == true else { return }
   applyMove(Move(.stockTick, player: actor, seq: game.nextSeq))
  }
- private func applyMove(_ move: Move) {
-  let result = VeilopolyEngine.apply(game, currentContext, move)
+ private func applyMove(_ move: Move, reportErrors: Bool = true) {
+  let result: VeilopolyEngine.Transition
+  if var room = liveRoom {
+   result = room.commitOnHost(move)
+   liveRoom = room
+  } else { result = VeilopolyEngine.apply(game, currentContext, move) }
   switch result {
   case .failure(let err):
+   guard reportErrors else { return }
    errorMessage = VeilopolyGamePresentation.message(err)
    errorAdvice = VeilopolyGamePresentation.advice(err)
    if move.type == .stockBuy || move.type == .stockSell {
@@ -151,6 +209,14 @@ public final class GameSessionModel: ObservableObject {
     UINotificationFeedbackGenerator().notificationOccurred(.error)
    }
   case .success((let newState, let effects)):
+   if let room = liveRoom {
+    networkSender?(.init(roomID: room.configuration.roomID, kind: .commit,
+     committed: .init(seq: move.seq, move: move, stateHash: StateDigest.hash(newState))))
+   }
+   presentCommittedState(newState, effects: effects, move: move)
+  }
+ }
+ private func presentCommittedState(_ newState: GameState, effects: [Effect], move: Move) {
    if newsEnabled {
     if let notice = VeilopolyBulletinCopy.event(effects, state: newState, sequence: move.seq) {
      bulletinFeed.enqueue(notice)
@@ -172,7 +238,8 @@ public final class GameSessionModel: ObservableObject {
    if move.type == .stockBuy || move.type == .stockSell {
     stockOrderError = nil
     for effect in effects {
-     if let execution = StockExecution(sequence: move.seq, effect: effect) {
+     if let execution = StockExecution(sequence: move.seq, effect: effect),
+        !stockExecutions.contains(where: { $0.id == execution.id }) {
       stockExecutions.insert(execution, at: 0)
      }
     }
@@ -190,11 +257,11 @@ public final class GameSessionModel: ObservableObject {
     UIImpactFeedbackGenerator(style: .soft).impactOccurred()
    }
    if !animating { presentNext() }
-  }
  }
  private func presentNext() {
   guard !queue.isEmpty else {
    animating = false
+   if isMultiplayer && !isHost { drainGuestPresentations() }
    drive()
    return
   }
@@ -203,7 +270,8 @@ public final class GameSessionModel: ObservableObject {
   if case .cardShow(let deck,let id,let message) = command {
    // Only a human player's card requires a tap to proceed. AI-only games
    // must continue after the visual/audio timeline without blocking on UI.
-   if game.players[game.turn.player].kind == .human {
+   if game.players[game.turn.player].kind == .human &&
+       (!isMultiplayer || liveRoom?.localSeat == game.turn.player) {
     cardGate.present()
     shownCardDeck = deck
     shownCardID = id
@@ -236,18 +304,18 @@ public final class GameSessionModel: ObservableObject {
   }
  }
  public func reset(seed: UInt64) {
-  guard !animating else { return }
+  guard !animating, !isMultiplayer else { return } // New linked games require a fresh mutual invitation.
   if recoveryBlocked {
    guard let saveStore else { return }
    do {
-    _ = try saveStore.quarantineUnreadable(gameID: saveSessionID, mode: .solo)
+    _ = try saveStore.quarantineUnreadable(gameID: saveSessionID, mode: saveMode)
     recoveryBlocked = false
    } catch {
     saveWarning = "无法隔离损坏存档，未清除原数据"
     return
    }
   }
-  let newState = GameFactory.make(seed: seed, humanCount: configuredHumanCount)
+  let newState = VeilopolyCityLongEconomy.make(seed: seed, humanCount: configuredHumanCount)
   game = newState; shownCard = nil; shownCardID = nil; cardGate.reset(); queue = []
   errorMessage = nil; errorAdvice = nil
   stockExecutions = []; stockOrderError = nil
@@ -259,12 +327,18 @@ public final class GameSessionModel: ObservableObject {
   if configuredHumanCount == 0 { drive() }
  }
  private func drive() {
-  guard !animating && !driving else { return }
+  guard !animating && !driving,
+        !isMultiplayer || (isHost && networkReady && !recoveryBlocked) else { return }
+  if let deferred = deferredRemoteProposal {
+   deferredRemoteProposal = nil
+   receiveNetworkPacket(deferred.0, from: deferred.1)
+   return
+  }
   driving = true
   defer { driving = false }
   // All internal and AI moves use the same public pure reducer as human input.
   for _ in 0..<200 {
-   if animating || game.winner != nil { return }
+   if animating || game.winner != nil || (isMultiplayer && !networkReady) { return }
    let context = currentContext
    let automatic: Move?
    switch context.phase {
@@ -272,7 +346,7 @@ public final class GameSessionModel: ObservableObject {
    case .tileResolve where game.turn.pendingPurchase == nil:
     automatic = Move(.resolveTile, player: actor, seq: game.nextSeq)
    default:
-    if !waitingForHuman {
+    if game.players[actor].kind == .ai {
      automatic = VeilopolyAI.decide(game, context, me: actor, level: game.players[actor].aiLevel)
     } else { automatic = nil }
    }
@@ -283,6 +357,135 @@ public final class GameSessionModel: ObservableObject {
   }
   errorMessage = "自动回合超过安全步数上限"
  }
+
+ public func setNetworkAvailability(_ available: Bool, message: String) {
+  guard isMultiplayer else { return }
+  networkReady = available && !recoveryBlocked && networkForeground
+  networkStatus = recoveryBlocked ? "联机存档异常，原文件已保留；请返回大厅明确新建房间"
+   : (networkForeground ? message : "应用后台暂停，回到前台后重新同步")
+  if networkReady { drive() }
+ }
+ public func setNetworkForeground(_ active: Bool) {
+  guard isMultiplayer, networkForeground != active else { return }
+  networkForeground = active
+  if !active {
+   flushSave()
+   setNetworkAvailability(false, message: "应用后台暂停")
+  } else { requestNetworkSync() }
+ }
+ public func sendNetworkStatus() {
+  guard let room = liveRoom, !recoveryBlocked, networkForeground else { return }
+  networkSender?(.init(roomID: room.configuration.roomID, kind: .status,
+   nextSeq: room.game.nextSeq, stateHash: StateDigest.hash(room.game)))
+ }
+ public func requestNetworkSync() {
+  guard let room = liveRoom, !recoveryBlocked, networkForeground else { return }
+  if room.isHost { sendNetworkSnapshot() }
+  else {
+   networkSender?(.init(roomID: room.configuration.roomID, kind: .resync, nextSeq: room.game.nextSeq))
+  }
+ }
+ private func sendNetworkSnapshot() {
+  guard let room = liveRoom, room.isHost, !recoveryBlocked, networkForeground else { return }
+  networkSender?(.init(roomID: room.configuration.roomID, kind: .snapshot, snapshot: GameSnapshot(room.game)))
+ }
+ public func receiveNetworkPacket(_ packet: VeilopolyRoomPacket, from sender: String) {
+  guard var room = liveRoom, !recoveryBlocked, networkForeground else { return }
+  do { try room.validate(packet, from: sender) } catch { return }
+  do {
+   switch packet.kind {
+   case .proposal:
+    guard let move = packet.proposal else { return }
+    try room.validateProposal(move, from: sender)
+    if animating || cardGate.isPresented {
+     if deferredRemoteProposal == nil { deferredRemoteProposal = (packet, sender) }
+     return
+    }
+    guard networkReady else { sendNetworkSnapshot(); return }
+    let before = game.nextSeq
+    applyMove(move, reportErrors: false)
+    if game.nextSeq == before { sendNetworkSnapshot() }
+    drive()
+   case .commit:
+    guard let committed = packet.committed else { return }
+    if committed.seq < room.game.nextSeq { return } // Retransmitted committed action, never execute twice.
+    let (next, effects) = try room.acceptCommit(committed, from: sender)
+    liveRoom = room
+    if pendingLocalMove == committed.move { awaitingHost = false; pendingLocalMove = nil }
+    networkReady = !recoveryBlocked; networkStatus = "联机同步 · 进度 #\(next.nextSeq)"
+    if committed.move.type == .stockBuy || committed.move.type == .stockSell {
+     for effect in effects {
+      if let execution = StockExecution(sequence: committed.seq, effect: effect),
+         !stockExecutions.contains(where: { $0.id == execution.id }) {
+       stockExecutions.insert(execution, at: 0)
+      }
+     }
+     stockExecutions = Array(stockExecutions.prefix(40))
+    }
+    checkpoint(force: committed.move.type != .stockTick)
+    if committed.move.type == .stockTick, guestPresentations.last?.2.type == .stockTick {
+     guestPresentations[guestPresentations.count - 1] = (next, effects, committed.move)
+    } else { guestPresentations.append((next, effects, committed.move)) }
+    if guestPresentations.count > 64 { installNetworkSnapshot(next) }
+    else { drainGuestPresentations() }
+   case .snapshot:
+    guard let snapshot = packet.snapshot else { return }
+    try room.acceptSnapshot(snapshot, from: sender)
+    liveRoom = room
+    installNetworkSnapshot(room.game)
+    sendNetworkStatus()
+   case .resync:
+    guard room.isHost, let sequence = packet.nextSeq else { return }
+    guard sequence <= room.game.nextSeq else {
+     setNetworkAvailability(false, message: "房主存档落后于客端，已暂停；不会自动回退对方进度")
+     return
+    }
+    sendNetworkSnapshot()
+   case .status:
+    guard let sequence = packet.nextSeq, let hash = packet.stateHash else { return }
+    if sequence == room.game.nextSeq && hash == StateDigest.hash(room.game) {
+     let wasReady = networkReady
+     setNetworkAvailability(true, message: "\(room.isHost ? "房主" : "客端") · 两端进度一致 #\(sequence)")
+     if !wasReady && networkReady { sendNetworkStatus() }
+    } else if room.isHost && sequence > room.game.nextSeq {
+     setNetworkAvailability(false, message: "房主存档落后，已暂停等待核对")
+    } else { requestNetworkSync() }
+   case .leave: setNetworkAvailability(false, message: "对方已离开房间；本地进度已保留")
+   case .invite, .accept, .decline: break // Invitation lifecycle belongs to the authenticated host bridge.
+   }
+  } catch {
+   if room.isHost { sendNetworkSnapshot() }
+   else {
+    setNetworkAvailability(false, message: "同步校验未通过，正在请求房主进度")
+    if packet.kind != .snapshot { requestNetworkSync() }
+   }
+  }
+ }
+ private func drainGuestPresentations() {
+  guard !drainingGuestPresentation else { return }
+  drainingGuestPresentation = true
+  defer { drainingGuestPresentation = false }
+  while !animating && !cardGate.isPresented && !guestPresentations.isEmpty {
+   let next = guestPresentations.removeFirst()
+   presentCommittedState(next.0, effects: next.1, move: next.2)
+  }
+ }
+ private func installNetworkSnapshot(_ snapshot: GameState) {
+  // Gate driving before old SpriteKit ACKs; never replay a committed roll/payment.
+  networkReady = false
+  guestPresentations = []; queue = []; shownCard = nil; shownCardID = nil; cardGate.reset()
+  scene.fastForward(); animating = false
+  game = snapshot; awaitingHost = false; pendingLocalMove = nil
+  stockExecutions = stockExecutions.filter { execution in
+   let r = execution.persisted
+   guard snapshot.moveLog.indices.contains(r.id) else { return false }
+   let move = snapshot.moveLog[r.id]
+   return move.player == r.player && move.stockSymbol == r.symbol && move.stockShares == r.shares &&
+    move.type == (r.bought ? .stockBuy : .stockSell)
+  }
+  scene.display(snapshot); checkpoint(force: true)
+  networkReady = !recoveryBlocked; networkStatus = "已同步房主进度 #\(snapshot.nextSeq)"
+ }
 }
 
 @MainActor
@@ -290,9 +493,10 @@ public struct VeilopolyGameView: View {
  @StateObject private var model: GameSessionModel
  @State private var offerCash = "0"
  @State private var requestCash = "0"
+ @State private var directTransferAmount = "200"
  @State private var bidderCash = "10"
- @State private var bankAmount = "200"
- @State private var bankPeriods = "3"
+ @State private var bankAmount = "600"
+ @State private var bankPeriods = "6"
  @State private var stockSymbol = "VTL"
  @State private var stockShares = "1"
  @State private var tradeTarget = 1
@@ -303,15 +507,26 @@ public struct VeilopolyGameView: View {
  @State private var showExitConfirmation = false
  @State private var showGameInfo = false
  @State private var showGuide = false
- @State private var controlsExpanded = false
+ @State private var showAssetBrowser = false
+ @State private var panelWorkspace = VeilopolyPanelWorkspace()
+ @GestureState private var panelTranslation = CGSize.zero
+ @GestureState private var chipTranslation = CGSize.zero
+ @State private var showPanelDetails = false
+ @State private var showDecisionDocument = false
+ @State private var showCounterOffer = false
  @State private var dayFelt = true
  @State private var managementSection: VeilopolyManagementSection = .property
  @Environment(\.dismiss) private var dismiss
  @Environment(\.accessibilityReduceMotion) private var reduceMotion
  @Environment(\.scenePhase) private var scenePhase
  private let onExit: (() -> Void)?
+ private var interfaceTheme: VeilopolyInterfaceTheme { .init(dayFelt: dayFelt) }
  public init(seed: UInt64? = nil, humanCount: Int = 1, onExit: (() -> Void)? = nil) {
   _model = StateObject(wrappedValue: GameSessionModel(seed: seed, humanCount: humanCount))
+  self.onExit = onExit
+ }
+ public init(session: GameSessionModel, onExit: (() -> Void)? = nil) {
+  _model = StateObject(wrappedValue: session)
   self.onExit = onExit
  }
  public var body: some View {
@@ -319,8 +534,7 @@ public struct VeilopolyGameView: View {
    ZStack {
     // Ivory paper is the scene canvas; dark teal Astra controls sit as one
     // gold-rimmed functional overlay, not a separate blue-black application.
-    LinearGradient(colors: [Color(red: 0.97,green: 0.95,blue: 0.90),
-                            Color(red: 0.87,green: 0.82,blue: 0.71)],
+    LinearGradient(colors: [interfaceTheme.canvasStart.color, interfaceTheme.canvasEnd.color],
                    startPoint: .topLeading, endPoint: .bottomTrailing)
      .ignoresSafeArea()
     if VeilopolyLandscapeLayout.isLandscape(width: Double(geometry.size.width), height: Double(geometry.size.height)) {
@@ -332,22 +546,33 @@ public struct VeilopolyGameView: View {
    }
    .frame(width: geometry.size.width, height: geometry.size.height)
   }
-  .preferredColorScheme(.dark)
+  .preferredColorScheme(interfaceTheme.colorScheme)
   .statusBarHidden()
   .onAppear {
    model.scene.reduceMotion = reduceMotion
+   model.setNetworkForeground(scenePhase == .active)
    dayFelt = model.scene.isDayFelt
+   revealDecisionIfNeeded()
   }
   .onDisappear { model.flushSave() }
   .onChange(of: scenePhase) { phase in
    if phase != .active { model.flushSave() }
+   model.setNetworkForeground(phase == .active)
   }
   .onChange(of: reduceMotion) { model.scene.reduceMotion = $0 }
   .onChange(of: model.pending) { pending in
    if !pending { revealDecisionIfNeeded() }
   }
-  .onChange(of: model.game.turn.phase) { _ in revealDecisionIfNeeded() }
+  .onChange(of: model.game.turn.phase) { _ in
+   showDecisionDocument = false
+   showCounterOffer = false
+   revealDecisionIfNeeded()
+  }
+  .onChange(of: model.game.turn.pendingPurchase) { _ in revealDecisionIfNeeded() }
+  .onChange(of: model.game.auction?.tile) { _ in revealDecisionIfNeeded() }
   .onChange(of: model.actor) { _ in
+   showDecisionDocument = false
+   showCounterOffer = false
    resetTradeDraft()
    if model.game.trade != nil { loadCounterCash() }
    managementSection = .property
@@ -356,12 +581,16 @@ public struct VeilopolyGameView: View {
   .onChange(of: tradeTarget) { _ in chosenRequest = [] }
   .onChange(of: model.boardSelectionRevision) { _ in
    managementSection = .property
-   withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { controlsExpanded = true }
+   showPanelDetails = true
+   withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { panelWorkspace.open() }
   }
   .onChange(of: model.game.seed) { _ in
    resetTradeDraft()
    managementSection = .property
-   controlsExpanded = false
+   panelWorkspace.resetSession()
+   showPanelDetails = false
+   showDecisionDocument = false
+   showCounterOffer = false
   }
   .task(id: scenePhase) {
    // Wall time only schedules explicit reducer moves. Price generation itself
@@ -376,13 +605,19 @@ public struct VeilopolyGameView: View {
    }
   }
   .confirmationDialog("更多", isPresented: $showMore) {
+   Button("资产资料 · 只读") { showAssetBrowser = true }
+   Button("复位面板位置") { panelWorkspace.resetPlacement() }
    Button(model.newsEnabled ? "暂停城市快讯" : "开启城市快讯") { model.newsEnabled.toggle() }
-   Button(dayFelt ? "切换夜间棋盘" : "切换日间棋盘") {
+   Button(dayFelt ? "切换夜间主题" : "切换日间主题") {
     dayFelt.toggle()
     model.scene.setDayFelt(dayFelt)
    }
    .disabled(!model.scene.supportsDayFelt)
    Button("重新开局") { showRestart = true }
+    .disabled(model.isMultiplayer)
+   if model.isMultiplayer {
+    Button("重新同步联机进度") { model.requestNetworkSync() }
+   }
    Button("本局信息") { showGameInfo = true }
    Button("玩法辞典 · 23 篇") { showGuide = true }
    Button("取消", role: .cancel) {}
@@ -400,6 +635,10 @@ public struct VeilopolyGameView: View {
   .sheet(isPresented: $showGuide) {
    VeilopolyGuideSheet(isPresented: $showGuide, game: model.game,
                        saveSummary: model.saveSummary)
+  }
+  .sheet(isPresented: $showAssetBrowser) {
+   VeilopolyAssetBrowser(game: model.game, initialPlayer: model.actor)
+    .preferredColorScheme(interfaceTheme.colorScheme)
   }
   .alert("本局信息", isPresented: $showGameInfo) {
    Button("知道了", role: .cancel) {}
@@ -490,12 +729,22 @@ public struct VeilopolyGameView: View {
     .zIndex(100)
    }
   }
+  .environment(\.veilopolyInterfaceTheme, interfaceTheme)
  }
 
  private func revealDecisionIfNeeded() {
-  guard !model.pending, model.waitingForHuman || model.game.winner != nil,
-        VeilopolyGamePresentation.requiresDecision(model.game.turn.phase) else { return }
-  withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { controlsExpanded = true }
+  // An in-flight animation is not a new decision. In particular, do not forget
+  // a suspended purchase just because another ACK or price update arrives.
+  guard !model.pending else { return }
+  let needsDecision = (model.waitingForHuman || model.game.winner != nil)
+   && VeilopolyGamePresentation.requiresDecision(model.game.turn.phase)
+  let subject = model.game.turn.pendingPurchase ?? model.game.auction?.tile
+  let decision = needsDecision ? VeilopolyPanelDecision(
+   seed: model.game.seed, actor: model.actor,
+   phase: model.game.turn.phase.rawValue, subject: subject) : nil
+  withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+   panelWorkspace.observe(decision)
+  }
  }
 
  private func resetTradeDraft() {
@@ -512,11 +761,14 @@ public struct VeilopolyGameView: View {
    availableHeight: Double(availableHeight))
   let boardWidth = CGFloat(measured.width)
   let boardHeight = CGFloat(measured.height)
-  let drawerWidth = CGFloat(VeilopolyLandscapeLayout.overlayDrawerWidth(for: Double(availableWidth)))
-  let drawerHeight = CGFloat(VeilopolyLandscapeLayout.overlayDrawerHeight(for: Double(availableHeight)))
+  let layout = VeilopolyPanelLayout(width: Double(availableWidth), height: Double(availableHeight))
+  let panel = layout.frame(for: .panel, anchor: panelWorkspace.panelAnchor,
+                          dx: Double(panelTranslation.width), dy: Double(panelTranslation.height))
+  let chip = layout.frame(for: .chip, anchor: panelWorkspace.chipAnchor,
+                         dx: Double(chipTranslation.width), dy: Double(chipTranslation.height))
   let bulletinWidth = CGFloat(VeilopolyLandscapeLayout.bulletinWidth(
    availableWidth: Double(availableWidth), boardWidth: Double(boardWidth)))
-  return ZStack(alignment: .topTrailing) {
+  return ZStack(alignment: .topLeading) {
    boardViewport
     .frame(width: boardWidth, height: boardHeight)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -524,29 +776,31 @@ public struct VeilopolyGameView: View {
     .padding(.vertical, CGFloat(VeilopolyLandscapeLayout.boardVerticalInset))
     .zIndex(0)
 
-   if controlsExpanded {
-    controlsDrawer
-     .frame(width: drawerWidth, height: drawerHeight)
-     .padding(.top, CGFloat(VeilopolyLandscapeLayout.drawerTopInset))
-     .padding(.trailing, 6)
-     .transition(.move(edge: .trailing).combined(with: .opacity))
-     .zIndex(1)
-   }
+   // Keep the drawer mounted: suspension must not discard stock ticket input,
+   // chart selection, disclosures or the current scroll position. A hidden
+   // panel cannot consume touches or VoiceOver focus. Never pause game logic.
+   controlsDrawer(in: layout)
+    .frame(width: CGFloat(panel.width), height: CGFloat(panel.height))
+    .position(x: CGFloat(panel.midX), y: CGFloat(panel.midY))
+    .opacity(panelWorkspace.isExpanded ? 1 : 0)
+    .allowsHitTesting(panelWorkspace.isExpanded)
+    .accessibilityHidden(!panelWorkspace.isExpanded)
+    .zIndex(1)
 
    // The top-right capsule is RESERVED for More / Exit only.
    // Do not put gameplay toggles next to Exit: an accidental tap is costly.
-   VStack(alignment: .trailing, spacing: 8) {
-    capsuleControls
-    Spacer(minLength: 0)
-    if !controlsExpanded {
-     // Daily gameplay operations have their own bottom-right entry.
-     collapsedStatusButton
-      .transition(.opacity)
-    }
+   capsuleControls
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+    .padding(.trailing, 6)
+    .padding(.top, 5)
+    .zIndex(2)
+   if !panelWorkspace.isExpanded {
+    suspendedPanelChip(in: layout)
+     .frame(width: CGFloat(chip.width), height: CGFloat(chip.height))
+     .position(x: CGFloat(chip.midX), y: CGFloat(chip.midY))
+     .transition(.opacity)
+     .zIndex(2)
    }
-   .padding(.trailing, 6)
-   .padding(.vertical, 5)
-   .zIndex(2)
   }
   .overlay(alignment: .topLeading) {
    if model.newsEnabled, let notice = model.bulletinFeed.current, bulletinWidth >= 90 {
@@ -558,47 +812,26 @@ public struct VeilopolyGameView: View {
    }
   }
   .frame(width: availableWidth, height: availableHeight)
+  .coordinateSpace(name: "VeilopolyWorkspace")
  }
 
  /// Keep Astra's real actions and HUD. Only the panel's placement changes:
  /// on iPhone it floats over otherwise unused right-side space; on iPad it
  /// may temporarily cover the board edge until collapsed.
- private var controlsDrawer: some View {
+ private func controlsDrawer(in layout: VeilopolyPanelLayout) -> some View {
   VStack(alignment: .leading, spacing: 8) {
-   HStack(spacing: 8) {
-    // Far-left inside the floating drawer; not near the top-right Exit.
-    Button {
-     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
-      controlsExpanded = false
-     }
-    } label: {
-     Label("收起", systemImage: "chevron.right")
-      .font(.caption.weight(.semibold))
-      .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.drawerCloseMinWidth),
-             minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .background(.white.opacity(0.12), in: Capsule())
-    .accessibilityLabel("收起操作面板")
-    .accessibilityHint("返回最大化棋盘；与退出按钮分离")
-    Text("操作面板")
-     .font(.system(size: 15, weight: .bold, design: .rounded))
-     .lineLimit(1)
-     .minimumScaleFactor(0.8)
-    Spacer(minLength: 0)
-    Text(phaseLabel(model.game.turn.phase))
-     .font(.caption2.weight(.semibold))
-     .foregroundStyle(.mint)
-     .lineLimit(1)
-   }
-   .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
+   panelToolbar(in: layout)
    if model.game.turn.phase == .manage && model.waitingForHuman {
     managementNavigation
      .disabled(model.pending)
    }
    ScrollView(.vertical) {
     VStack(alignment: .leading, spacing: 10) {
+     if model.isMultiplayer {
+      Text(model.networkStatus).font(.caption2)
+       .fixedSize(horizontal: false, vertical: true)
+       .accessibilityLabel("联机状态：" + model.networkStatus)
+     }
      HStack {
       Text(model.game.players[model.actor].name).font(.subheadline.weight(.semibold))
       Spacer()
@@ -614,8 +847,6 @@ public struct VeilopolyGameView: View {
       .padding(8)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(AstraB01PanelSkin(.action))
-     tileInspector
-     playerStrip
      HStack(alignment: .top, spacing: 7) {
       Image(systemName: "sparkles").foregroundStyle(.mint)
       Text(model.lastFeedback)
@@ -648,11 +879,25 @@ public struct VeilopolyGameView: View {
       .background(AstraB01FeedbackSkin(error: true))
       .accessibilityElement(children: .combine)
      }
+     DisclosureGroup(isExpanded: $showPanelDetails) {
+      VStack(spacing: 10) {
+       tileInspector
+       playerStrip
+      }.padding(.top, 8)
+     } label: {
+      Label("地块与四人状态", systemImage: "square.grid.2x2")
+       .font(.caption.weight(.semibold))
+       .frame(minHeight: 44)
+     }
+     .tint(.mint)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
    }
    .id("\(model.game.turn.phase.rawValue)-\(model.actor)-\(managementSection.rawValue)")
    // iOS 15: keep system scroll indicators; .scrollIndicators(_:) is a later API.
+   if model.waitingForHuman && !model.pending {
+    decisionFooter
+   }
    if model.game.turn.phase == .manage && model.waitingForHuman {
     action(model.game.turn.rolledDouble ? "继续额外回合" : "结束回合", symbol: "checkmark.circle") {
      model.perform(.endTurn)
@@ -670,6 +915,12 @@ public struct VeilopolyGameView: View {
   }
   .shadow(color: .black.opacity(0.42), radius: 14, x: -5, y: 7)
   .accessibilityElement(children: .contain)
+  // Signed Astra art is a dark instrument surface in BOTH table themes.
+  // Scope semantic light text here, not to the whole game or native sheets.
+  .foregroundColor(.white)
+  .environment(\.colorScheme, .dark)
+  .environment(\.veilopolyDecisionContentWidth,
+               max(0, Double(layout.frame(for: .panel, anchor: panelWorkspace.panelAnchor).width) - 36))
  }
 
  private var managementNavigation: some View {
@@ -692,43 +943,125 @@ public struct VeilopolyGameView: View {
   }
  }
 
- /// Bottom-right gameplay entry is separated from the top-right More/Exit
- /// capsule. This live status button replaces the permanent wide sidebar.
- private var collapsedStatusButton: some View {
-  Button {
-   withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
-    controlsExpanded = true
+ /// Separate drag handles keep content scrolling, chart scrubbing and numeric
+ /// input independent from window movement. VoiceOver has non-drag docking.
+ private func panelToolbar(in layout: VeilopolyPanelLayout) -> some View {
+  HStack(spacing: 4) {
+   // Preserve the earlier Owner separation rule: the frequent suspension
+   // action belongs at the LEFT of the panel, not just underneath Exit.
+   Button {
+    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { panelWorkspace.suspend() }
+   } label: {
+    panelToolLabel("挂起", symbol: "minus.rectangle")
    }
-  } label: {
-   HStack(spacing: 10) {
-    playerToken(model.actor).frame(width: 32, height: 36)
+   .accessibilityLabel("挂起操作面板")
+   .accessibilityHint("保留输入和滚动位置；不退出、不取消决策、不暂停对局")
+   HStack(spacing: 6) {
+    Image(systemName: "line.3.horizontal").font(.caption)
     VStack(alignment: .leading, spacing: 2) {
-     Text("\(model.game.players[model.actor].name) · \(phaseLabel(model.game.turn.phase))")
-      .font(.caption.weight(.semibold))
-      .lineLimit(1)
-     Text("¥\(model.game.players[model.actor].cash) · " +
-          (model.pending ? "动画中" : (model.waitingForHuman ? "点击进行操作" : "AI 行动中")))
-      .font(.caption2)
-      .lineLimit(1)
+     Text("操作面板").font(.subheadline.weight(.semibold))
+     Text(phaseLabel(model.game.turn.phase)).font(.caption2).foregroundStyle(.mint)
     }
-    Image(systemName: "chevron.left")
-     .font(.caption.weight(.bold))
+    .lineLimit(1)
    }
-   .foregroundStyle(.white)
-   .padding(.horizontal, 14)
-   .padding(.vertical, 10)
-   .frame(minHeight: CGFloat(VeilopolyLandscapeLayout.capsuleTouchHeight))
-   .background(AstraB01PanelSkin(.glass))
-   .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-   .overlay {
-    RoundedRectangle(cornerRadius: 13)
-     .stroke(Color(red: 0.73, green: 0.59, blue: 0.34), lineWidth: 1)
-     .allowsHitTesting(false)
+   .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+   .contentShape(Rectangle())
+   .gesture(panelDrag(in: layout))
+   .accessibilityElement(children: .ignore)
+   .accessibilityLabel("移动操作面板")
+   .accessibilityHint("也可用停靠菜单选择左侧、右侧或复位")
+   Button { showAssetBrowser = true } label: {
+    panelToolLabel("资料", symbol: "doc.text.magnifyingglass")
    }
+   .accessibilityLabel("查看资产资料，只读")
+   .accessibilityHint("独立查看地产、银行、股市、交易，不改变当前决策")
+   Menu {
+    Button("停靠左侧") { panelWorkspace.panelAnchor.x = 0 }
+    Button("停靠右侧") { panelWorkspace.panelAnchor.x = 1 }
+    Button("复位所有面板位置") { panelWorkspace.resetPlacement() }
+   } label: {
+    panelToolLabel("停靠", symbol: "arrow.up.left.and.arrow.down.right")
+   }
+   .accessibilityLabel("操作面板停靠与复位")
   }
   .buttonStyle(.plain)
-  .accessibilityLabel("展开操作面板，当前\(model.game.players[model.actor].name)，\(phaseLabel(model.game.turn.phase))")
-  .accessibilityHint("可使用掷骰、购买、拍卖、交易、银行和管理功能")
+  .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+ }
+
+ private func panelToolLabel(_ title: String, symbol: String) -> some View {
+  VStack(spacing: 2) {
+   Image(systemName: symbol).font(.system(size: 14, weight: .medium))
+   Text(title).font(.system(size: 10, weight: .semibold))
+  }
+  .frame(width: 44, height: 44)
+  .contentShape(Rectangle())
+ }
+
+ private func panelDrag(in layout: VeilopolyPanelLayout) -> some Gesture {
+  DragGesture(minimumDistance: 8, coordinateSpace: .named("VeilopolyWorkspace"))
+   .updating($panelTranslation) { value, translation, _ in translation = value.translation }
+   .onEnded { value in
+    panelWorkspace.panelAnchor = layout.moved(panelWorkspace.panelAnchor, surface: .panel,
+     dx: Double(value.translation.width), dy: Double(value.translation.height))
+   }
+ }
+
+ private func suspendedPanelChip(in layout: VeilopolyPanelLayout) -> some View {
+  HStack(spacing: 0) {
+   Button {
+    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { panelWorkspace.open() }
+   } label: {
+    HStack(spacing: 8) {
+     playerToken(model.actor).frame(width: 26, height: 34)
+     VStack(alignment: .leading, spacing: 2) {
+      Text("\(model.game.players[model.actor].name) · \(phaseLabel(model.game.turn.phase))")
+       .font(.caption.weight(.semibold)).lineLimit(1)
+      Text("现金 ¥\(model.game.players[model.actor].cash)")
+       .font(.caption2.monospacedDigit()).lineLimit(1)
+      Text(panelWorkspace.decision != nil ? "待你决策 · 点击恢复" : "操作面板 · 点击展开")
+       .font(.caption2.weight(.semibold)).lineLimit(1)
+       .foregroundColor(panelWorkspace.decision != nil ? .yellow : .mint)
+     }
+     .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(.leading, 10)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    .contentShape(Rectangle())
+   }
+   .buttonStyle(.plain)
+   .accessibilityLabel("恢复操作面板，\(model.game.players[model.actor].name)，\(phaseLabel(model.game.turn.phase))，现金\(model.game.players[model.actor].cash)")
+   .accessibilityHint(panelWorkspace.decision != nil ? "有待处理决策；挂起不会自动购买或弃拍" : "返回原来的分区、输入和滚动位置")
+   Image(systemName: "line.3.horizontal")
+    .font(.caption)
+    .frame(width: 44, height: 60)
+    .contentShape(Rectangle())
+    .gesture(DragGesture(minimumDistance: 8, coordinateSpace: .named("VeilopolyWorkspace"))
+     .updating($chipTranslation) { value, translation, _ in translation = value.translation }
+     .onEnded { value in
+      panelWorkspace.chipAnchor = layout.moved(panelWorkspace.chipAnchor, surface: .chip,
+       dx: Double(value.translation.width), dy: Double(value.translation.height))
+     })
+    .accessibilityLabel("移动挂起入口")
+    .accessibilityHint("向上调整停靠右下角，向下调整停靠左下角；也可使用自定操作")
+    .accessibilityAdjustableAction { direction in
+     switch direction {
+     case .increment: panelWorkspace.chipAnchor = .bottomRight
+     case .decrement: panelWorkspace.chipAnchor = .init(x: 0, y: 1)
+     @unknown default: break
+     }
+    }
+    .accessibilityAction(named: Text("停靠左下角")) { panelWorkspace.chipAnchor = .init(x: 0, y: 1) }
+    .accessibilityAction(named: Text("停靠右下角")) { panelWorkspace.chipAnchor = .bottomRight }
+  }
+  .foregroundColor(.white)
+  .background(AstraB01PanelSkin(.glass))
+  .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+  .overlay {
+   RoundedRectangle(cornerRadius: 13)
+    .stroke(panelWorkspace.decision != nil ? Color.yellow : Color(red: 0.73, green: 0.59, blue: 0.34), lineWidth: 1)
+    .allowsHitTesting(false)
+  }
+  .environment(\.colorScheme, .dark)
  }
 
  private var boardViewport: some View {
@@ -739,7 +1072,7 @@ public struct VeilopolyGameView: View {
    let height = CGFloat(measured.height)
    SpriteView(scene: model.scene, options: [.ignoresSiblingOrder])
     .frame(width: width, height: height)
-    .background(Color(red: 0.94, green: 0.91, blue: 0.83),
+    .background(interfaceTheme.paper.color,
                 in: RoundedRectangle(cornerRadius: 12))
     .overlay {
      RoundedRectangle(cornerRadius: 12)
@@ -747,11 +1080,14 @@ public struct VeilopolyGameView: View {
       .allowsHitTesting(false)
     }
     .overlay(alignment: .bottom) {
-     if model.pending && model.shownCard == nil {
+     if model.canSkipAnimation {
       Button { model.fastForward() } label: {
        Label("跳过当前动画", systemImage: "forward.end.fill")
         .font(.caption2.weight(.semibold)).padding(.horizontal, 11)
         .padding(.vertical, 7)
+        .frame(minWidth: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide),
+               minHeight: CGFloat(VeilopolyLandscapeLayout.minimumControlTouchSide))
+        .contentShape(Rectangle())
       }
       .buttonStyle(.borderedProminent)
       .tint(.mint)
@@ -911,6 +1247,13 @@ public struct VeilopolyGameView: View {
  }
  @ViewBuilder private var actionPanel: some View {
   if model.game.winner != nil { settlementPanel }
+  else if model.isMultiplayer && !model.networkReady {
+   VStack(alignment: .leading, spacing: 8) {
+    Text(model.networkStatus)
+    action("请求同步", symbol: "arrow.triangle.2.circlepath") { model.requestNetworkSync() }
+   }
+  }
+  else if model.awaitingHost { ProgressView("等待房主确认操作") }
   else if model.game.turn.phase == .manage && model.waitingForHuman {
    managePanel.disabled(model.pending)
     .overlay(alignment: .topTrailing) {
@@ -918,14 +1261,17 @@ public struct VeilopolyGameView: View {
     }
   }
   else if model.pending { ProgressView("动画播放中") }
-  else if !model.waitingForHuman { Text("AI 正在行动……").foregroundStyle(.secondary) }
+  else if !model.waitingForHuman {
+   Text(model.isMultiplayer && model.game.players[model.actor].kind == .human
+        ? "等待对方行动……" : "AI 正在行动……").foregroundStyle(.secondary)
+  }
   else {
    switch model.game.turn.phase {
    case .roll:
-    HStack {
+    VeilopolyDecisionActions {
      action("掷骰子", symbol: "die.face.5") { model.perform(.rollDice) }
      if model.game.players[model.actor].jailTurns > 0 {
-      action("支付 ¥50",symbol:"lock.open") { model.perform(.payBail) }
+      action("保释 ¥\(VeilopolyCityLongEconomy.bail(model.game))",symbol:"lock.open") { model.perform(.payBail) }
       if model.game.players[model.actor].chanceJailCards + model.game.players[model.actor].chestJailCards > 0 {
        action("出狱卡",symbol:"rectangle.on.rectangle") { model.perform(.useJailCard) }
       }
@@ -933,14 +1279,7 @@ public struct VeilopolyGameView: View {
     }
    case .tileResolve:
     if let i = model.game.turn.pendingPurchase {
-     VStack(alignment: .leading,spacing:10) {
-      astraBuyHero(model.game.board[i])
-      HStack {
-       action("购买",symbol:"house") { model.perform(.buyProperty,tile:i) }
-        .disabled(model.game.players[model.actor].cash < model.game.board[i].price)
-       action("送入拍卖",symbol:"gavel",secondary:true) { model.perform(.startAuction,tile:i) }
-      }
-     }
+     purchasePanel(tile: i)
     }
    case .auction: auctionPanel
    case .manage: managePanel
@@ -962,10 +1301,62 @@ public struct VeilopolyGameView: View {
  private func action(_ title: String, symbol: String,
                      secondary: Bool = false, pressed: @escaping () -> Void) -> some View {
   Button(action: pressed) {
-   Text(title).frame(maxWidth: .infinity, minHeight: 44)
+   Text(title).frame(maxWidth: .infinity)
   }
-  .buttonStyle(AstraB01ButtonStyle(secondary: secondary))
+  .buttonStyle(AstraB01ButtonStyle(secondary: secondary, symbol: symbol))
   .accessibilityLabel(title)
+ }
+
+ @ViewBuilder private func purchasePanel(tile: Int) -> some View {
+  if let review = VeilopolyPurchaseReview(game: model.game, player: model.actor, tile: tile) {
+   VStack(alignment: .leading, spacing: 9) {
+    VeilopolyDecisionHeading(title: review.name, subtitle: "无主地产 · 选择购买或公开拍卖", symbol: "house")
+    VeilopolyDecisionMetric(title: "购买价格", value: "¥\(review.price)", emphasized: true)
+    VeilopolyDecisionMetric(title: "购买后现金", value: review.cashAfterPurchase.map { "¥\($0)" } ?? "现金不足")
+    if let reason = review.rejection { Text(reason).font(.caption).foregroundStyle(.orange) }
+    Text("送入拍卖不等于跳过；按现有规则，玩家将轮流竞价或弃权。")
+     .font(.caption).foregroundStyle(.secondary)
+     .fixedSize(horizontal: false, vertical: true)
+    DisclosureGroup(isExpanded: $showDecisionDocument) {
+     VStack(spacing: 9) {
+      astraBuyHero(model.game.board[tile])
+      if let deed = VeilopolyCivicText.deed(model.game, tileIndex: tile) {
+       VeilopolyCivicDocumentPanel(document: deed)
+      }
+     }.padding(.top, 8)
+    } label: { Text("图文地契与租金资料").font(.caption.weight(.semibold)).frame(minHeight: 44) }
+   }
+  } else {
+   Text("地块资料暂不可用，请查看当前对局状态。").font(.caption)
+  }
+ }
+
+ /// Critical decisions stay reachable while scrolling art or a long contract.
+ /// This is the same action routing as before, never an implicit confirm.
+ @ViewBuilder private var decisionFooter: some View {
+  if model.game.turn.phase == .tileResolve,
+     let tile = model.game.turn.pendingPurchase,
+     let review = VeilopolyPurchaseReview(game: model.game, player: model.actor, tile: tile) {
+   VeilopolyDecisionActions {
+    action("购买地产", symbol: "house.fill") { model.perform(.buyProperty, tile: tile) }
+     .disabled(review.rejection != nil)
+    action("送入拍卖", symbol: "gavel", secondary: true) { model.perform(.startAuction, tile: tile) }
+   }
+  } else if model.game.turn.phase == .auction, model.game.auction != nil {
+   VeilopolyDecisionActions {
+    action("确认出价", symbol: "hand.raised") { model.perform(.bid, amount: Int(bidderCash) ?? 0) }
+     .disabled(VeilopolyAuctionReview.rejection(game: model.game, player: model.actor, draft: bidderCash) != nil)
+    action("弃权", symbol: "xmark.circle", secondary: true) { model.perform(.bid, amount: 0) }
+   }
+  } else if model.game.turn.phase == .trade,
+            VeilopolyTradeReview(game: model.game, viewer: model.actor) != nil {
+   VeilopolyDecisionActions {
+    action("接受交易", symbol: "checkmark") { model.perform(.acceptTrade) }
+     .disabled(VeilopolyGamePresentation.rejection(model.game,
+      move: Move(.acceptTrade, player: model.actor, seq: model.game.nextSeq)) != nil)
+    action("拒绝交易", symbol: "xmark", secondary: true) { model.perform(.rejectTrade) }
+   }
+  }
  }
  // Astra B01 runtime cards: backgrounds are decorative; all values below
  // come from the current authoritative GameState, never baked into PNGs.
@@ -1055,9 +1446,7 @@ public struct VeilopolyGameView: View {
               y: CGFloat(AstraB01AuctionHitZones.minus.centerY))
     .accessibilityLabel("降低竞价金额")
     .disabled(model.game.players[model.actor].cash <= auction.currentBid)
-    TextField("竞价金额", text: $bidderCash)
-     .keyboardType(.numberPad)
-     .textFieldStyle(.plain)
+    VeilopolyNumericInput(title: "竞价金额", text: $bidderCash, showsTitle: false)
      .font(.system(size: 15, weight: .semibold, design: .monospaced))
      .foregroundColor(Color(red: 0.19, green: 0.30, blue: 0.34))
      .multilineTextAlignment(.center)
@@ -1093,22 +1482,31 @@ public struct VeilopolyGameView: View {
  }
  private var auctionPanel: some View {
   VStack(alignment: .leading,spacing: 9) {
-   if let auction = model.game.auction {
-    Text("拍卖 · \(model.game.board[auction.tile].name)").font(.headline)
-    astraAuctionHero
-    if let notice = VeilopolyCivicText.auction(model.game) {
-     VeilopolyCivicDocumentPanel(document: notice)
+   if let review = VeilopolyAuctionReview(game: model.game, player: model.actor) {
+    let reason = VeilopolyAuctionReview.rejection(game: model.game, player: model.actor, draft: bidderCash)
+    VeilopolyDecisionHeading(title: review.name, subtitle: "公开拍卖 · 当前由你报价", symbol: "gavel")
+    VeilopolyDecisionMetric(title: "当前最高价", value: "¥\(review.currentBid)", emphasized: true)
+    VeilopolyDecisionMetric(title: "领先玩家", value: review.leader)
+    VeilopolyNumericInput(title: "你的竞价 · 最低 ¥\(review.minimumBid)", text: $bidderCash)
+    Button { bidderCash = String(review.minimumBid) } label: {
+     Text("填入最低价 ¥\(review.minimumBid) · 仅填写")
+      .font(.caption).frame(maxWidth: .infinity, minHeight: 44)
+      .contentShape(Rectangle())
     }
-    HStack {
-     action("出价",symbol:"hand.raised") {
-      model.perform(.bid, amount: Int(bidderCash) ?? 0)
-     }
-     .disabled((Int(bidderCash) ?? 0) <= auction.currentBid ||
-               (Int(bidderCash) ?? 0) > model.game.players[model.actor].cash)
-     action("弃权",symbol:"xmark.circle",secondary:true) {
-      model.perform(.bid, amount: 0)
-     }
-    }
+    .buttonStyle(.bordered)
+    .disabled(review.cash < review.minimumBid)
+    if let reason { Text(reason).font(.caption).foregroundStyle(.orange) }
+    Text("弃权会退出本次竞拍；挂起面板只收起界面，不会替你弃权。")
+     .font(.caption).foregroundStyle(.secondary)
+     .fixedSize(horizontal: false, vertical: true)
+    DisclosureGroup(isExpanded: $showDecisionDocument) {
+     VStack(spacing: 9) {
+      astraAuctionHero
+      if let notice = VeilopolyCivicText.auction(model.game) {
+       VeilopolyCivicDocumentPanel(document: notice)
+      }
+     }.padding(.top, 8)
+    } label: { Text("图文拍卖公告").font(.caption.weight(.semibold)).frame(minHeight: 44) }
    }
   }
  }
@@ -1171,15 +1569,46 @@ public struct VeilopolyGameView: View {
    request: TradeTransfer(cash: Int(requestCash) ?? -1, tiles: chosenRequest.sorted()))
   let rejection = VeilopolyGamePresentation.rejection(model.game, move: proposal)
   return VStack(alignment: .leading, spacing: 12) {
-   Text("交易提案").font(.subheadline.weight(.semibold))
+   Text("城市合同与玩家转账").font(.subheadline.weight(.semibold))
    Picker("交易对象", selection: $tradeTarget) {
     ForEach(model.game.players.filter { $0.id != model.actor && !$0.bankrupt }, id:\.id) { p in
      Text(p.name).tag(p.id)
     }
    }.pickerStyle(.menu)
+    .onAppear {
+     if tradeTarget == model.actor ||
+         !model.game.players.indices.contains(tradeTarget) ||
+         model.game.players[tradeTarget].bankrupt {
+      tradeTarget = model.game.players.first(where: {
+       $0.id != model.actor && !$0.bankrupt
+      })?.id ?? tradeTarget
+     }
+    }
+   if (model.game.banking?.financeRuleVersion ?? 0) >= VeilopolyCityLongEconomy.finiteVersion {
+    let transfer = Move(.transferCash, player: model.actor, seq: model.game.nextSeq,
+                        amount: Int(directTransferAmount), to: tradeTarget)
+    let transferError = VeilopolyGamePresentation.rejection(model.game, move: transfer)
+    VStack(alignment: .leading, spacing: 7) {
+     Label("直接转账 · 不需要对方确认", systemImage: "arrow.up.right.circle")
+      .font(.caption.weight(.semibold))
+     Text("向 \(model.game.players.indices.contains(tradeTarget) ? model.game.players[tradeTarget].name : "所选玩家") 赠送游戏币；确认后立即到账。仅转移双方现金，不会增加银行货币总量。")
+      .font(.caption2).foregroundStyle(.secondary)
+     VeilopolyNumericInput(title: "转账金额", text: $directTransferAmount)
+     action("立即转账", symbol: "paperplane.fill") {
+      model.perform(.transferCash, amount: Int(directTransferAmount), to: tradeTarget)
+     }
+     .disabled(transferError != nil)
+     if let transferError { Text(transferError).font(.caption2).foregroundStyle(.secondary) }
+    }
+    .padding(10)
+    .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+    Divider()
+   }
+   Text("交换合同 · 需要另一位玩家接受才能交割地产或现金")
+    .font(.caption.weight(.semibold))
    HStack {
-    TextField("我方现金",text:$offerCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-    TextField("对方现金",text:$requestCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+    VeilopolyNumericInput(title: "我方现金", text: $offerCash)
+    VeilopolyNumericInput(title: "对方现金", text: $requestCash)
    }
    HStack(alignment:.top) {
     VStack(alignment: .leading) {
@@ -1219,6 +1648,47 @@ public struct VeilopolyGameView: View {
   return VStack(alignment: .leading, spacing: 8) {
    Divider()
    Text("银行与金融").font(.subheadline.weight(.semibold))
+   if let claims = model.game.banking?.queuedClaims {
+    let mine = claims.filter { $0.player == model.actor }.reduce(0) { $0 + $1.amount }
+    if mine > 0 {
+     Text("我的待兑付银行债权 ¥\(mine) · 需等待银行回收资金后按顺序结清")
+      .font(.caption.weight(.semibold))
+      .fixedSize(horizontal: false, vertical: true)
+    }
+   }
+   if let available = model.game.banking?.reserveCash {
+    VStack(alignment: .leading, spacing: 4) {
+     if let report = VeilopolyFinancialStability.inspect(model.game) {
+      Text("银行风险 \(report.level.rawValue) · 存款及投资等潜在兑付 ¥\(report.futureObligations) · 受保护储备 ¥\(report.protectedReserve)")
+       .font(.caption.monospacedDigit())
+       .fixedSize(horizontal: false, vertical: true)
+      Text("待支付债权 ¥\(report.queuedClaims) · 可新增贷款 ¥\(report.safeNewCredit) · 估算覆盖率 \(report.coverageBasisPoints / 100)%")
+       .font(.caption2).foregroundStyle(.secondary)
+       .fixedSize(horizontal: false, vertical: true)
+     }
+     Label("城市中央银行 · 有限游戏币", systemImage: "building.columns.fill")
+      .font(.subheadline.weight(.semibold))
+     Text("银行储备 ¥\(available) · 玩家流通现金 ¥\(VeilopolyCityLongEconomy.circulatingCash(model.game)) · 全市货币总量 ¥\(VeilopolyCityLongEconomy.supplyCeiling(model.game) ?? 0)")
+      .font(.caption.monospacedDigit())
+     Text("购地、建造、税费和股票买入使银行回流资金；发薪、贷款、补助和股票卖出从银行支出。强制支付在银行不足时登记待兑付凭证，后续回款按顺序清偿，不会增发货币。")
+      .font(.caption2).foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+     if let claims = model.game.banking?.queuedClaims, !claims.isEmpty {
+      let outstanding = claims.reduce(0) { $0 + $1.amount }
+      Text("银行待兑付：\(claims.count) 笔，共 ¥\(outstanding)；当前玩家应收 ¥\(claims.filter { $0.player == model.actor }.reduce(0) { $0 + $1.amount })")
+       .font(.caption.monospacedDigit()).foregroundStyle(.orange)
+     }
+     Text("贷款和主动股票卖出仍须通过银行流动性检查。")
+      .font(.caption2).foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(10)
+    .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+   }
+   if VeilopolyCityLongEconomy.isActive(model.game) {
+    Text("城市长局 · 现金与地产规模已扩大；贷款采用整份合同固定利息；活期需经过一个账期才有收益。")
+     .font(.caption2).foregroundStyle(.secondary)
+   }
    astraBankHero
    if let receipt = VeilopolyCivicText.banking(model.game, player: model.actor) {
     VeilopolyCivicDocumentPanel(document: receipt)
@@ -1251,11 +1721,9 @@ public struct VeilopolyGameView: View {
     }
    }
    HStack(spacing: 8) {
-    TextField("金额", text: $bankAmount)
-     .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+    VeilopolyNumericInput(title: "金额", text: $bankAmount)
      .accessibilityLabel("银行操作金额")
-    TextField("期数", text: $bankPeriods)
-     .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+    VeilopolyNumericInput(title: "期数", text: $bankPeriods, bounds: 1...12)
      .accessibilityLabel("贷款期数")
    }
    HStack(spacing: 8) {
@@ -1267,6 +1735,46 @@ public struct VeilopolyGameView: View {
      model.perform(.bankBorrow, amount: Int(bankAmount), financePeriods: Int(bankPeriods))
     }
     .disabled(borrowReason != nil)
+   }
+   if VeilopolyCityLongEconomy.isActive(model.game) {
+    let terms = model.game.banking?.terms ?? VeilopolyCityLongEconomy.terms()
+    let fixed = Move(.bankDeposit, player: model.actor, seq: model.game.nextSeq,
+                     amount: Int(bankAmount), financeProduct: .fixedDeposit)
+    VStack(alignment: .leading, spacing: 6) {
+     Text(VeilopolyCityLongEconomy.isExpanded(model.game)
+      ? "收益与借贷 · 活期 1 期 +1.5%，定期 4 期 +8.5%；贷款按合同本金一次计息 6.5%～14.5%。"
+      : "收益与借贷 · 活期 1 期 +1.5%，定期 4 期 +8.5%；贷款按合同本金一次计息 8%～17%。")
+      .font(.caption2).foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+     if let amount = Int(bankAmount), (1...1_000_000).contains(amount),
+        (1...12).contains(Int(bankPeriods) ?? 0),
+        let bank = model.game.banking, bank.accounts.indices.contains(model.actor) {
+      let ordinal = bank.accounts[model.actor].borrowCount
+      if ordinal < terms.loanInterestBasisPoints.count {
+       let rate = terms.loanInterestBasisPoints[ordinal]
+       let interest = (amount * rate + 9_999) / 10_000
+       Text("本次借款 ¥\(amount) · 合同到期预计偿还 ¥\(amount + interest) · 当前期数 \(bankPeriods)")
+        .font(.caption.monospacedDigit())
+        .fixedSize(horizontal: false, vertical: true)
+      }
+     }
+     action("存入定期 · 四期", symbol: "lock.shield") {
+      model.perform(.bankDeposit, amount: Int(bankAmount), financeProduct: .fixedDeposit)
+     }
+     .disabled(VeilopolyGamePresentation.rejection(model.game, move: fixed) != nil)
+     Text("模拟投资（可能亏损）· 稳健基金 / 创业项目 / 三期指数")
+      .font(.caption2).foregroundStyle(.secondary)
+     ForEach([FinancialFeature.managedFund, .ventureSimulation, .stockSimulation], id: \.rawValue) { feature in
+      let move = Move(.bankInvest, player: model.actor, seq: model.game.nextSeq,
+                      amount: Int(bankAmount), financeProduct: feature)
+      action(feature == .managedFund ? "稳健基金 · 五期" :
+             feature == .ventureSimulation ? "创业项目 · 四期" : "模拟指数 · 三期",
+             symbol: "chart.bar.xaxis") {
+       model.perform(.bankInvest, amount: Int(bankAmount), financeProduct: feature)
+      }
+      .disabled(VeilopolyGamePresentation.rejection(model.game, move: move) != nil)
+     }
+    }
    }
    if let depositReason { Text("存款：" + depositReason).font(.caption2).foregroundStyle(.secondary) }
    if let borrowReason { Text("贷款：" + borrowReason).font(.caption2).foregroundStyle(.secondary) }
@@ -1303,7 +1811,24 @@ public struct VeilopolyGameView: View {
  private var stockMarketPanel: some View {
   let ledger = IntegratedBanking.ledger(model.game)
   let market = ledger.market ?? StockMarketEngine.initial(seed: model.game.seed)
-  return VeilopolyStockMarketPanel(
+  return VStack(alignment: .leading, spacing: 8) {
+   if let balance = ledger.reserveCash {
+    let impulse = VeilopolyCityLongEconomy.marketPressure(model.game)
+    Text("城市金融环境 · 银行可用 ¥\(balance) / 总量 ¥\(VeilopolyCityLongEconomy.supplyCeiling(model.game) ?? 0) · 下一 Tick 经济信号 \(impulse) bp")
+     .font(.caption2).foregroundStyle(.secondary)
+    Text(impulse < -30 ? "当前模拟金融环境：信用偏紧，股票可能受到下行压力。" :
+          impulse > 30 ? "当前模拟金融环境：流动性偏活跃，股票可能受到上行推动。" :
+          "当前模拟金融环境：资金供需相对平衡。")
+     .font(.caption2).foregroundStyle(.secondary)
+     .fixedSize(horizontal: false, vertical: true)
+    Text("步骤：选股票 → 买入或卖出 → 填股数 → 核对费用 → 确认交易。")
+     .font(.caption2.weight(.semibold))
+     .font(.caption2).foregroundStyle(.secondary)
+     .fixedSize(horizontal: false, vertical: true)
+    Text("地产购置、建造、贷款及直接转账造成的流动性与资金分布变化，会传导到下一次虚构股票报价；交易前请核对手续费与可用现金。")
+     .font(.caption2).foregroundStyle(.secondary)
+   }
+   VeilopolyStockMarketPanel(
    market: market, player: model.actor,
    cash: model.game.players[model.actor].cash,
    selectedSymbol: $stockSymbol, shareText: $stockShares,
@@ -1317,35 +1842,44 @@ public struct VeilopolyGameView: View {
    onSell: { symbol, shares in
     model.perform(.stockSell, stockSymbol: symbol, stockShares: shares)
    })
+  }
  }
  private var tradeResponsePanel: some View {
-  VStack(spacing: 12) {
-   Text("交易确认").font(.headline)
-   if let trade = model.game.trade {
-    astraTradeHero(trade)
-    if let contract = VeilopolyCivicText.trade(model.game) {
-     VeilopolyCivicDocumentPanel(document: contract)
-    }
-
-   }
-   HStack {
-    action("接受",symbol:"checkmark") { model.perform(.acceptTrade) }
-    action("拒绝",symbol:"xmark",secondary:true) { model.perform(.rejectTrade) }
-   }
-   if let trade = model.game.trade {
+  VStack(alignment: .leading, spacing: 9) {
+   if let trade = model.game.trade,
+      let review = VeilopolyTradeReview(game: model.game, viewer: model.actor) {
+    let acceptReason = VeilopolyGamePresentation.rejection(model.game,
+     move: Move(.acceptTrade, player: model.actor, seq: model.game.nextSeq))
+    VeilopolyDecisionHeading(title: "交易确认", subtitle: "与\(review.otherPlayer)交换 · 接受后一次性交割", symbol: "arrow.left.arrow.right")
+    VeilopolyTradeTransferCard(title: "你将交付", symbol: "arrow.up.right", transfer: review.giving)
+    VeilopolyTradeTransferCard(title: "你将收到", symbol: "arrow.down.left", transfer: review.receiving)
+    VeilopolyDecisionMetric(title: "成交后现金", value: "¥\(review.cashAfterTrade)")
+    if let acceptReason { Text(acceptReason).font(.caption).foregroundStyle(.orange) }
     let counter = VeilopolyGamePresentation.counterOffer(trade,
      offeredCash: Int(offerCash) ?? -1, requestedCash: Int(requestCash) ?? -1,
      sequence: model.game.nextSeq)
-    HStack {
-     TextField("我方出资", text: $offerCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-     TextField("对方出资", text: $requestCash).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-    }
-    Text("还价将保留当前地产与出狱卡条件，仅修改现金。")
-     .font(.caption2).foregroundStyle(.secondary)
-    action("提交还价", symbol: "arrow.triangle.2.circlepath") {
-     model.perform(.counterTrade, offer: counter.offer, request: counter.request)
-    }
-    .disabled(VeilopolyGamePresentation.rejection(model.game, move: counter) != nil)
+    DisclosureGroup(isExpanded: $showCounterOffer) {
+     VStack(alignment: .leading, spacing: 8) {
+      VeilopolyNumericInput(title: "你将交付的现金", text: $offerCash)
+      VeilopolyNumericInput(title: "你将收到的现金", text: $requestCash)
+      Text("仅修改现金；地产与出狱卡保留原条件，仍需对方接受。")
+       .font(.caption).foregroundStyle(.secondary)
+      action("提交还价", symbol: "arrow.triangle.2.circlepath") {
+       model.perform(.counterTrade, offer: counter.offer, request: counter.request)
+      }
+      .disabled(VeilopolyGamePresentation.rejection(model.game, move: counter) != nil)
+     }.padding(.top, 8)
+    } label: { Text("修改现金还价").font(.caption.weight(.semibold)).frame(minHeight: 44) }
+    DisclosureGroup(isExpanded: $showDecisionDocument) {
+     VStack(spacing: 9) {
+      astraTradeHero(trade)
+      if let contract = VeilopolyCivicText.trade(model.game) {
+       VeilopolyCivicDocumentPanel(document: contract)
+      }
+     }.padding(.top, 8)
+    } label: { Text("图文合同与完整条款").font(.caption.weight(.semibold)).frame(minHeight: 44) }
+   } else {
+    Text("交易资料已变化，请等待当前状态。").font(.caption)
    }
   }
   .onAppear { loadCounterCash() }

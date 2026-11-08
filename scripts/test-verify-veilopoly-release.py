@@ -22,7 +22,8 @@ class VeilopolyReleaseResourcesTests(unittest.TestCase):
 
     def test_complete_payload_has_all_hashes(self):
         report = release.verify_veilopoly_resources(self.app)
-        self.assertEqual(len(report["files"]), 113)
+        self.assertEqual(len(report["files"]), 114)
+        self.assertEqual(report["manuals"], 1)
         self.assertEqual(report["images"], 99)
         self.assertEqual(report["sounds"], 13)
 
@@ -38,6 +39,11 @@ class VeilopolyReleaseResourcesTests(unittest.TestCase):
 
     def test_duplicate_module_bundle_is_rejected(self):
         (self.app / "VeilopolyUI.bundle").mkdir()
+        with self.assertRaises(SystemExit):
+            release.verify_veilopoly_resources(self.app)
+
+    def test_missing_manual_fails_closed(self):
+        (self.bundle / "VeilopolyCompleteManual.md").unlink()
         with self.assertRaises(SystemExit):
             release.verify_veilopoly_resources(self.app)
 
