@@ -8,15 +8,32 @@ public struct VeilopolyRoomConfiguration: Codable, Equatable {
  public let seed: UInt64
  public let hostIdentityID: String
  public let guestIdentityID: String
- public init(roomID: String, seed: UInt64, hostIdentityID: String, guestIdentityID: String) {
+ /// Absent in existing room indexes/invites: preserve their classic rules.
+ public let rulesVersion: Int?
+ public var effectiveRulesVersion: Int { rulesVersion ?? 1 }
+ public var rulesTitle: String { effectiveRulesVersion == 5 ? "城市经济 V5" : "经典旧局" }
+ public init(roomID: String, seed: UInt64, hostIdentityID: String, guestIdentityID: String,
+             rulesVersion: Int? = nil) {
   self.roomID = roomID; self.seed = seed
   self.hostIdentityID = hostIdentityID; self.guestIdentityID = guestIdentityID
+  self.rulesVersion = rulesVersion
+ }
+ /// Product entry for NEW rooms. Never infer/migrate an existing room's rules.
+ public static func current(roomID: String, seed: UInt64, hostIdentityID: String,
+                            guestIdentityID: String) -> Self {
+  Self(roomID: roomID, seed: seed, hostIdentityID: hostIdentityID,
+       guestIdentityID: guestIdentityID, rulesVersion: VeilopolyCityLongEconomy.version)
+ }
+ public func initialGame() -> GameState {
+  effectiveRulesVersion == VeilopolyCityLongEconomy.version
+   ? VeilopolyCityLongEconomy.make(seed: seed, humanCount: 2)
+   : GameFactory.make(seed: seed, humanCount: 2)
  }
  public var isValid: Bool {
   UUID(uuidString: roomID)?.uuidString == roomID &&
   !hostIdentityID.isEmpty && !guestIdentityID.isEmpty &&
   hostIdentityID.utf8.count <= 128 && guestIdentityID.utf8.count <= 128 &&
-  hostIdentityID != guestIdentityID
+  hostIdentityID != guestIdentityID && [1, VeilopolyCityLongEconomy.version].contains(effectiveRulesVersion)
  }
  public func seat(for identity: String) -> Int? {
   identity == hostIdentityID ? 0 : (identity == guestIdentityID ? 1 : nil)
@@ -40,17 +57,24 @@ public struct VeilopolyRoomPacket: Codable {
              configuration: VeilopolyRoomConfiguration? = nil, proposal: Move? = nil,
              committed: AuthoritativeMove? = nil, snapshot: GameSnapshot? = nil,
              nextSeq: Int? = nil, stateHash: String? = nil) {
-  version = 1; self.roomID = roomID; self.kind = kind; self.configuration = configuration
+  // Only the new-profile INVITE uses application-packet v2. Old apps reject
+  // it instead of accepting and silently starting a classic game. Control
+  // fragments, encrypted VeilControlEvent and Wire v4 are unchanged.
+  version = kind == .invite && configuration?.effectiveRulesVersion == 5 ? 2 : 1
+  self.roomID = roomID; self.kind = kind; self.configuration = configuration
   self.proposal = proposal; self.committed = committed; self.snapshot = snapshot
   self.nextSeq = nextSeq; self.stateHash = stateHash
  }
  public var isValid: Bool {
-  guard version == 1, UUID(uuidString: roomID)?.uuidString == roomID else { return false }
+  guard (version == 1 || (version == 2 && kind == .invite)),
+        UUID(uuidString: roomID)?.uuidString == roomID else { return false }
   let fields = [configuration != nil, proposal != nil, committed != nil, snapshot != nil,
                 nextSeq != nil, stateHash != nil]
   switch kind {
   case .invite: return fields == [true,false,false,false,false,false] &&
-    configuration?.isValid == true && configuration?.roomID == roomID
+    configuration?.isValid == true && configuration?.roomID == roomID &&
+    ((version == 1 && configuration?.effectiveRulesVersion == 1) ||
+     (version == 2 && configuration?.effectiveRulesVersion == 5))
   case .proposal: return fields == [false,true,false,false,false,false]
   case .commit: return fields == [false,false,true,false,false,false]
   case .snapshot: return fields == [false,false,false,true,false,false]
@@ -82,7 +106,7 @@ public struct VeilopolyLiveRoom {
   guard configuration.isValid, configuration.seat(for: localIdentityID) != nil
    else { throw VeilopolyRoomError.invalidConfiguration }
   self.configuration = configuration; self.localIdentityID = localIdentityID
-  let initial = restoredGame ?? GameFactory.make(seed: configuration.seed, humanCount: 2)
+  let initial = restoredGame ?? configuration.initialGame()
   guard Self.validSnapshotState(initial, configuration: configuration) else {
    throw VeilopolyRoomError.invalidSnapshot
   }
@@ -157,13 +181,24 @@ public struct VeilopolyLiveRoom {
         (g.turn.pendingPurchase.map { (0..<40).contains($0) } ?? true),
         (0...32).contains(g.bank.houses), (0...12).contains(g.bank.hotels),
         (g.banking.map { IntegratedBanking.validate($0) } ?? true) else { return false }
-  let canonical = GameFactory.make(seed: configuration.seed, humanCount: 2)
+  let canonical = configuration.initialGame()
   guard g.cards == canonical.cards,
         zip(g.board, canonical.board).allSatisfy({ tile, original in
          tile.kind == original.kind && tile.name == original.name && tile.color == original.color &&
          tile.price == original.price && tile.rent == original.rent && tile.houseCost == original.houseCost
-        }), (g.banking.map { $0.terms == FinanceSandboxPolicy() } ?? true)
-   else { return false } // Live v1 supports the canonical rules, not peer-injected paytables.
+        }) else { return false }
+  if configuration.effectiveRulesVersion == 5 {
+   guard let ledger = g.banking, let expected = canonical.banking,
+         ledger.financeRuleVersion == 5, ledger.terms == expected.terms,
+         ledger.market?.algorithmVersion == expected.market?.algorithmVersion,
+         let reserve = ledger.reserveCash,
+         reserve + g.players.reduce(0, { $0 + $1.cash }) == VeilopolyCityLongEconomy.expandedTotalMoneySupply
+    else { return false }
+  } else {
+   guard g.banking.map({ $0.terms == FinanceSandboxPolicy() &&
+         (1...2).contains($0.financeRuleVersion) && $0.reserveCash == nil }) ?? true
+    else { return false }
+  } // Both profiles reject peer-injected paytables and silent rule downgrades.
   for (deck, original) in [(g.chanceDeck, canonical.chanceDeck), (g.chestDeck, canonical.chestDeck)] {
    guard !deck.order.isEmpty, deck.cursor >= 0, deck.cursor < Int.max - 16,
          Set(deck.order).count == deck.order.count,
