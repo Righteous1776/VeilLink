@@ -12,3 +12,8 @@
 - Repeatedly call unload twice or more while native generation is blocked in a token callback and while a prior shutdown awaits generation unwind. Confirm all older destructors finish **before** a later prepare() calls `llama_backend_init`.
 - Start prepare while waiting for the previous shutdown Task; call unload during the wait. Ensure the early `prepare()` receives cancelled and does not clear the newer shutdownTask (verify shutdownGeneration), nor mark state ready.
 - Stress alternating unload, cancel, prepare, unload with two independent local chat sessions (if supported by Coordinator); track process-global llama backend initialization/free order and guard against late completion resurrecting an old engine.
+
+## Native process-lease regression additions
+- Test `LlamaProcessLoadLeaseTests` for exclusive ownership, second acquire waiting until release, and cancelled waiter cleanup. With two independent `LlamaLocalTextModelRuntime` instances, cancel/unload the first while generating then attempt prepare on the second; the second must not call native backend init until first shutdown completes.
+- Repeat `LocalTextModelCoordinator.activateOverride()` and `restoreBaseRuntime()` during active decoding. Confirm no nested llama backend init/free, no double-free, and that cancellation of a waiting acquire eventually releases its entitlement without a leaked permit.
+- Explicit consequence: this implements one active native llama backend owner per process. Concurrent independent local models will serialize until an owner unloads; this is a stability tradeoff on 2GB RAM legacy hardware and must be reviewed with product requirements.
