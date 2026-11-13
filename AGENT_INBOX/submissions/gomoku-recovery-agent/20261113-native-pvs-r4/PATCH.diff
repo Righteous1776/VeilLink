@@ -1,0 +1,15 @@
+diff --git a/docs/GomokuNativeCutoverReview.md b/docs/GomokuNativeCutoverReview.md
+new file mode 100644
+--- /dev/null
++++ b/docs/GomokuNativeCutoverReview.md
+@@ -0,0 +1,9 @@
++# Native Gomoku search cutover — mandatory gates
++
++1. Review native Swift prototype and MIT license source provenance.
++2. Resolve tactical-gate overlap with PR #186 and telemetry overlap with PR #187.
++3. Integrate native PVS/VCF search under the authoritative GomokuBot safety arbiter.
++4. Preserve historical learned position/sequence/formation scoring.
++5. Verify 212 private fork tests, 848 rotated tests, iOS CI/XCTest and equal-budget match strength.
++6. Port VCT only with correct defender-response proof; never infer a proven win from a heuristic sequence.
++7. Only after verified parity remove JavaScriptCore Gomoku wrapper/engine.js and old UI toggle.
++8. Retain original MIT notice (workbuddy 2026) and user training data/backup compatibility.
