@@ -26,6 +26,16 @@ final class VeilInlineGlyphTextTests: XCTestCase {
         XCTAssertEqual(image.size.width / image.size.height, 1.5, accuracy: 0.0001)
     }
 
+    func testOutgoingArtworkUsesBoundedRasterSizeOnSmallDevices() {
+        let image = VeilInlineGlyphText.makeImage(
+            size: CGSize(width: 480, height: 320)
+        )
+        XCTAssertEqual(image.size.width, 480)
+        XCTAssertEqual(image.size.height, 320)
+        XCTAssertEqual(image.cgImage?.width, 480)
+        XCTAssertEqual(image.cgImage?.height, 320)
+    }
+
     func testAccessibilityReplacesOnlyTheFlagSequence() {
         let original = "晚安 \(VeilInlineGlyphText.emoji) ✨ \(VeilInlineGlyphText.emoji) 🇯🇵 🇺🇸"
         XCTAssertTrue(VeilInlineGlyphText.containsFlag(original))
