@@ -1,0 +1,330 @@
+diff --git a/VeilLink/UI/VeilROCFlagText.swift b/VeilLink/UI/VeilROCFlagText.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilROCFlagText.swift
+@@ -0,0 +1,123 @@
++import Foundation
++import SwiftUI
++import UIKit
++
++/// Platform-independent rendering of the Republic of China flag inside VeilLink.
++///
++/// Some iOS devices do not provide a glyph for the regional-indicator sequence
++/// U+1F1F9 U+1F1FC. All views using this adapter draw a local vector-backed
++/// image instead of consulting the platform's Emoji font or system region.
++///
++/// This is display-only. Do not rewrite message bodies, drafts, wire payloads,
++/// database rows, exports or clipboard text.
++@MainActor
++enum VeilROCFlagText {
++    static let emoji = "\u{1F1F9}\u{1F1FC}"
++    static let spokenName = "中华民国国旗"
++
++    /// Article 4: 3:2 red field, 1/4 blue canton (1/2 width × 1/2 height).
++    /// Article 3: 12 white rays, blue gap, and white disk.
++    static let horizontalUnits: CGFloat = 3
++    static let verticalUnits: CGFloat = 2
++    static let rayCount = 12
++
++    private static let flagImage: Image = Image(uiImage: makeImage())
++
++    static func containsFlag(_ value: String) -> Bool {
++        value.contains(emoji)
++    }
++
++    /// Preserves SwiftUI Text wrapping, selection semantics and surrounding
++    /// text styling; a collection of HStacks would break inline wrapping.
++    static func render(_ value: String) -> Text {
++        guard containsFlag(value) else { return Text(verbatim: value) }
++        let pieces = value.components(separatedBy: emoji)
++        var result = Text(verbatim: pieces[0])
++        for part in pieces.dropFirst() {
++            result = result + Text(flagImage) + Text(verbatim: part)
++        }
++        return result
++    }
++
++    /// Readable in VoiceOver even when the region has no emoji glyph.
++    static func accessibilityDescription(for text: String) -> String {
++        text.replacingOccurrences(of: emoji, with: spokenName)
++    }
++
++    /// Uses public drawing APIs, not an external image or a system emoji.
++    /// The same colors and geometry are rendered on iOS 15 and iOS 26.
++    static func makeImage(size: CGSize = CGSize(width: 24, height: 16)) -> UIImage {
++        let width = max(3, size.width)
++        let height = width * 2 / 3
++        let actual = CGSize(width: width, height: height)
++        let format = UIGraphicsImageRendererFormat()
++        format.scale = 3
++        format.opaque = true
++        let renderer = UIGraphicsImageRenderer(size: actual, format: format)
++        return renderer.image { context in
++            let cg = context.cgContext
++            let red = UIColor(red: 254 / 255, green: 0, blue: 0, alpha: 1)
++            let blue = UIColor(red: 0, green: 0, blue: 149 / 255, alpha: 1)
++            cg.setFillColor(red.cgColor)
++            cg.fill(CGRect(origin: .zero, size: actual))
++
++            let canton = CGRect(x: 0, y: 0, width: width / 2, height: height / 2)
++            cg.setFillColor(blue.cgColor)
++            cg.fill(canton)
++
++            let center = CGPoint(x: canton.midX, y: canton.midY)
++            let diskRadius = canton.width / 8
++            let gap = (2 * diskRadius) / 15 // Statutory blue ring.
++            let baseRadius = diskRadius + gap
++            let tipRadius = diskRadius * 2
++
++            // A 30-degree angle at each ray tip, with 12 tips at 30° intervals.
++            // Solve half base-angle once; no magic-size dependence.
++            let halfAngle = rayHalfBaseAngle(baseRadius: baseRadius, tipRadius: tipRadius)
++            cg.setFillColor(UIColor.white.cgColor)
++            for ray in 0..<rayCount {
++                let angle = CGFloat(ray) * CGFloat.pi / 6 - CGFloat.pi / 2
++                let path = UIBezierPath()
++                path.move(to: polar(center, distance: tipRadius, angle: angle))
++                path.addLine(to: polar(center, distance: baseRadius, angle: angle - halfAngle))
++                path.addLine(to: polar(center, distance: baseRadius, angle: angle + halfAngle))
++                path.close()
++                path.fill()
++            }
++
++            let disk = CGRect(x: center.x - diskRadius, y: center.y - diskRadius,
++                              width: diskRadius * 2, height: diskRadius * 2)
++            cg.fillEllipse(in: disk)
++        }
++    }
++
++    private static func polar(_ c: CGPoint, distance r: CGFloat, angle: CGFloat) -> CGPoint {
++        CGPoint(x: c.x + r * cos(angle), y: c.y + r * sin(angle))
++    }
++
++    private static func rayHalfBaseAngle(baseRadius: CGFloat, tipRadius: CGFloat) -> CGFloat {
++        let tangent = CGFloat(tan(Double.pi / 12)) // Half the 30-degree tip angle.
++        var low: CGFloat = 0
++        var high = CGFloat.pi / 6
++        for _ in 0..<25 {
++            let middle = (low + high) / 2
++            let ratio = baseRadius * sin(middle) /
++                (tipRadius - baseRadius * cos(middle))
++            if ratio < tangent { low = middle } else { high = middle }
++        }
++        return (low + high) / 2
++    }
++}
++
++/// Reusable explicit flag view for future country/region pickers or contact cards.
++@MainActor
++struct VeilROCFlagView: View {
++    var body: some View {
++        Image(uiImage: VeilROCFlagText.makeImage())
++            .interpolation(.high)
++            .resizable()
++            .aspectRatio(3 / 2, contentMode: .fit)
++            .frame(width: 24, height: 16)
++            .accessibilityLabel(VeilROCFlagText.spokenName)
++    }
++}
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -261,7 +261,7 @@
+ 
+             VStack(alignment: .leading, spacing: 7) {
+                 HStack(spacing: 8) {
++                    VeilROCFlagText.render(conversation.title)
+-                    Text(conversation.title)
+                         .font(.system(.body, design: .rounded).weight(.semibold))
+                         .foregroundColor(VeilTheme.text)
+                         .lineLimit(1)
+@@ -293,7 +293,7 @@
+                         .tracking(0.8)
+                         .foregroundColor(VeilTheme.mutedGold)
+                     VeilLinkTrace(active: isSelected, width: 28)
++                    VeilROCFlagText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
+-                    Text(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
+                         .font(.subheadline)
+                         .foregroundColor(VeilTheme.secondaryText)
+                         .lineLimit(1)
+@@ -613,7 +613,7 @@
+                             Text("引用回复")
+                                 .font(.caption2.weight(.semibold))
+                                 .foregroundColor(VeilTheme.gold)
++                            VeilROCFlagText.render(ReplyTextCodec.quoteSource(for: replyingTo))
+-                            Text(ReplyTextCodec.quoteSource(for: replyingTo))
+                                 .font(.caption)
+                                 .foregroundColor(VeilTheme.secondaryText)
+                                 .lineLimit(1)
+@@ -1268,7 +1268,7 @@
+                     TransferShardView(image: nil, progress: progress, mode: .receiving)
+                         .frame(width: 190)
+                 } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
++                    VeilROCFlagText.render(gamePreview)
+-                    Text(gamePreview)
+                         .font(.body.weight(.medium))
+                         .padding(.horizontal, 14)
+                         .padding(.vertical, 11)
+@@ -1300,12 +1300,12 @@
+                             RoundedRectangle(cornerRadius: 1)
+                                 .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
+                                 .frame(width: 3)
++                            VeilROCFlagText.render(reply.quote)
+-                            Text(reply.quote)
+                                 .font(.caption)
+                                 .foregroundColor(message.isOutgoing ? Color.black.opacity(0.66) : VeilTheme.secondaryText)
+                                 .lineLimit(2)
+                         }
++                        VeilROCFlagText.render(reply.reply)
+-                        Text(reply.reply)
+                             .frame(maxWidth: .infinity, alignment: .leading)
+                     }
+                     .padding(.horizontal, 14)
+@@ -1319,7 +1319,7 @@
+                     )
+                     .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
+                 } else {
++                    VeilROCFlagText.render(message.body)
+-                    Text(message.body)
+                         .font(.body)
+                         .padding(.horizontal, 14)
+                         .padding(.vertical, 11)
+@@ -1631,7 +1631,7 @@
+                             .font(VeilType.terminalLabel)
+                             .tracking(1.4)
+                             .foregroundColor(VeilTheme.mutedGold)
++                        VeilROCFlagText.render(conversation.title)
+-                        Text(conversation.title)
+                             .font(.system(.title3, design: .rounded).weight(.semibold))
+                         VeilLinkTrace(active: false, width: 86)
+                     }
+diff --git a/VeilLink/UI/AgentChatView.swift b/VeilLink/UI/AgentChatView.swift
+--- a/VeilLink/UI/AgentChatView.swift
++++ b/VeilLink/UI/AgentChatView.swift
+@@ -101,7 +101,7 @@
+     var body: some View {
+         HStack {
+             if message.role == .user { Spacer(minLength: 42) }
++            VeilROCFlagText.render(message.text.isEmpty ? "…" : message.text)
+-            Text(message.text.isEmpty ? "…" : message.text)
+                 .font(.system(size: 14.5, weight: .regular, design: .rounded))
+                 .foregroundColor(message.role == .user ? Color.black.opacity(0.88) : VeilTheme.text)
+                 .textSelection(.enabled)
+diff --git a/VeilLink/UI/LingCoreTinyChatView.swift b/VeilLink/UI/LingCoreTinyChatView.swift
+--- a/VeilLink/UI/LingCoreTinyChatView.swift
++++ b/VeilLink/UI/LingCoreTinyChatView.swift
+@@ -204,7 +204,7 @@
+                         ForEach(chat.messages) { message in
+                             HStack {
+                                 if message.role == .user { Spacer(minLength: 40) }
++                                VeilROCFlagText.render(message.text.isEmpty ? "…" : message.text)
+-                                Text(message.text.isEmpty ? "…" : message.text)
+                                     .font(.system(size: 14))
+                                     .foregroundColor(message.role == .user ? .black : VeilTheme.text)
+                                     .padding(12)
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -806,16 +806,19 @@
+         let ultraDecision = ultraSample?.ultraDecision
+         let ultraBudget = ultraSample?.ultraBudget
+         let engineName = usesUltra ? "A10 Ultra Ω" : "A9"
++        let a9Evaluated = a9Health.lastEvaluatedAt != nil
++        // Before the first sampling pass, the default A9 decision is green/100
++        // for initialization only. It is NOT a real measured health result.
++        let shownLevel = usesUltra ? (ultraDecision.map { "L\($0.level)" } ?? "--") : (a9Evaluated ? decision.level.shortTitle : "--")
++        let shownHealth = usesUltra ? (ultraDecision.map { String($0.healthScore) } ?? "--") : (a9Evaluated ? String(decision.healthScore) : "--")
++        let shownLight = usesUltra ? (ultraDecision?.light ?? "等待首个样本") : (a9Evaluated ? decision.light.title : "未评估")
++        let shownRisk = usesUltra ? (ultraDecision.map { String(format: "%.0f", Double($0.riskBasisPoints) / 100) } ?? "--") : (a9Evaluated ? String(format: "%.0f", decision.riskPoints) : "--")
++        let shownPersistence = usesUltra ? (ultraDecision.map { "\($0.persistenceSeconds)s" } ?? "--") : (a9Evaluated ? "\(decision.persistenceRuns)" : "--")
++        let shownCell = usesUltra ? (ultraDecision.map { "\($0.latticeCell)" } ?? "--") : (a9Evaluated ? "\(decision.latticeIndex)" : "--")
+-        let shownLevel = usesUltra ? (ultraDecision.map { "L\($0.level)" } ?? "--") : decision.level.shortTitle
+-        let shownHealth = usesUltra ? (ultraDecision.map { String($0.healthScore) } ?? "--") : String(decision.healthScore)
+-        let shownLight = usesUltra ? (ultraDecision?.light ?? "等待首个样本") : decision.light.title
+-        let shownRisk = usesUltra ? (ultraDecision.map { String(format: "%.0f", Double($0.riskBasisPoints) / 100) } ?? "--") : String(format: "%.0f", decision.riskPoints)
+-        let shownPersistence = usesUltra ? (ultraDecision.map { "\($0.persistenceSeconds)s" } ?? "--") : "\(decision.persistenceRuns)"
+-        let shownCell = usesUltra ? (ultraDecision.map { "\($0.latticeCell)" } ?? "--") : "\(decision.latticeIndex)"
+         return VStack(alignment: .leading, spacing: 12) {
+             HStack(spacing: 10) {
+                 Circle()
++                    .fill(usesUltra ? VeilTheme.goldBright : (a9Evaluated ? a9LightColor : VeilTheme.tertiaryText))
+-                    .fill(usesUltra ? VeilTheme.goldBright : a9LightColor)
+                     .frame(width: 9, height: 9)
+                 VStack(alignment: .leading, spacing: 2) {
+                     Text("\(engineName) 健康治理")
+@@ -828,7 +831,7 @@
+                 Spacer()
+                 Text("\(shownLevel) · H\(shownHealth)")
+                     .font(.system(size: 11, weight: .bold, design: .monospaced))
++                    .foregroundColor(usesUltra ? VeilTheme.goldBright : (a9Evaluated ? a9LightColor : VeilTheme.tertiaryText))
+-                    .foregroundColor(usesUltra ? VeilTheme.goldBright : a9LightColor)
+             }
+ 
+             HStack(spacing: 8) {
+@@ -870,6 +873,10 @@
+                         .font(.caption)
+                         .foregroundColor(VeilTheme.secondaryText)
+                 }
++            } else if !a9Evaluated {
++                Text("A9 本轮尚未完成健康评估。H-- 不代表连接、存储或系统健康。")
++                    .font(.caption)
++                    .foregroundColor(VeilTheme.secondaryText)
+             } else if decision.issues.isEmpty {
+                 Text("当前没有需要裁决的异常。A9 不会主动断链、删数据或修改游戏状态。")
+                     .font(.caption)
+diff --git a/VeilLinkTests/VeilROCFlagTextTests.swift b/VeilLinkTests/VeilROCFlagTextTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilROCFlagTextTests.swift
+@@ -0,0 +1,51 @@
++import XCTest
++import SwiftUI
++@testable import VeilLink
++
++@MainActor
++final class VeilROCFlagTextTests: XCTestCase {
++    func testRocFlagLiteralIsTheTwoRegionalIndicatorScalars() {
++        XCTAssertEqual(
++            VeilROCFlagText.emoji.unicodeScalars.map(\.value),
++            [0x1F1F9, 0x1F1FC]
++        )
++    }
++
++    func testFlagUsesThreeToTwoAspectAndTwelveRays() {
++        XCTAssertEqual(VeilROCFlagText.horizontalUnits, 3)
++        XCTAssertEqual(VeilROCFlagText.verticalUnits, 2)
++        XCTAssertEqual(VeilROCFlagText.rayCount, 12)
++        let image = VeilROCFlagText.makeImage()
++        XCTAssertEqual(image.size.width, 24, accuracy: 0.0001)
++        XCTAssertEqual(image.size.height, 16, accuracy: 0.0001)
++        XCTAssertNotNil(image.cgImage)
++    }
++
++    func testNonStandardInputStillRespectsAspectRatio() {
++        let image = VeilROCFlagText.makeImage(size: CGSize(width: 72, height: 1))
++        XCTAssertEqual(image.size.width / image.size.height, 1.5, accuracy: 0.0001)
++    }
++
++    func testAccessibilityReplacesOnlyTheFlagSequence() {
++        let original = "晚安 \(VeilROCFlagText.emoji) ✨ \(VeilROCFlagText.emoji) 🇯🇵 🇺🇸"
++        XCTAssertTrue(VeilROCFlagText.containsFlag(original))
++        XCTAssertEqual(
++            VeilROCFlagText.accessibilityDescription(for: original),
++            "晚安 中华民国国旗 ✨ 中华民国国旗 🇯🇵 🇺🇸"
++        )
++        XCTAssertFalse(VeilROCFlagText.containsFlag("🇯🇵 🇺🇸"))
++        XCTAssertEqual(
++            VeilROCFlagText.accessibilityDescription(for: "🇯🇵 🇺🇸"),
++            "🇯🇵 🇺🇸"
++        )
++    }
++
++    func testRichTextAdapterBuildsInlineTextWithoutMutatingStorage() {
++        let raw = "引用：\(VeilROCFlagText.emoji)\n详情：\(VeilROCFlagText.emoji)"
++        let unchanged = raw
++        _ = VeilROCFlagText.render(raw)
++        XCTAssertEqual(raw, unchanged)
++        // Persisted chat bodies must never be passed through accessibilityDescription.
++        XCTAssertEqual(raw.unicodeScalars.filter { $0.value == 0x1F1F9 }.count, 2)
++    }
++}
