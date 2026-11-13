@@ -73,7 +73,7 @@ struct VeilEclipseTraceSessionGate: Sendable {
 
     /// Return only genuine, coordinate-free metrics. Reject stale/late events,
     /// out-of-order totals, example traces, invalid counts, and updates above 8 Hz.
-    /// nowMilliseconds must come from a monotonic clock supplied by the caller.
+    /// `nowMilliseconds` must come from a monotonic clock supplied by the caller.
     mutating func accept(
         _ event: PrivateEvent,
         matchIsPlaying: Bool,
