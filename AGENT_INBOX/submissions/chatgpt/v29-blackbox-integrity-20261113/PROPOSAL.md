@@ -16,3 +16,6 @@ No `VeilLink/Transport`, `VeilLink/Security`, Core Wire4, peer identity/keys, DB
 
 ## Relation to other lanes
 PR #184/#188 stage Veilopoly interaction/layout fixes, do NOT integrate or overwrite them. PR #189 is separate financial autonomy feature. Integration Governor decides merge order after iOS15 build/tests; this candidate has NOT been built or shipped.
+
+## R3: write-first rotation to preserve forensic evidence
+Additional source review identified a dangerous retention-order bug even in the first advisory fix: `flushPendingBufferUnsafe` called `rotateIfNeeded(incomingBytes: data.count)` BEFORE `append(data)`. Under disk-full or file-protection failure, the retry could repeatedly shift/delete `runtime.N.jsonl`, permanently discarding old incident records while never persisting a new event. Candidate now calls `append(data)` first, retains pending bytes if that fails, and rotates only after a confirmed write using `rotateIfNeeded(incomingBytes: 0)`. Because rotation occurs after a successful append, a newly appended file may temporarily exceed the per-file threshold until it is moved into the rotation ring; that tradeoff preserves forensic evidence on failed storage operations. This repair does not eliminate I/O errors, partial-write rollback failures or disk exhaustion.
