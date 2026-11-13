@@ -7,7 +7,7 @@ One native Swift Gomoku decision engine. Incorporate known public-domain algorit
 ## Implemented (actual source delivered in FILES + PATCH.diff)
 
 - `VeilGomokuUnifiedSearch.swift` pure Foundation/Swift, explicit 15x15 board, deterministic hashing, bounded PVS search, exact geometric root fork checks, two independent five-completion forced wins, limited *sound* forcing-four proof with opponent immediate winning replies checked, static line-window evaluation, deterministic fallback, and genuine completed-depth/PV/node-count events.
-- `VeilGomokuUnifiedBridge.swift` converts immutable current `GomokuState` to search position and passes current learning/formation root biases. It never imports/mutates user training or writes storage. The caller must pass roots that survived incumbent native win/block/R4/R8 gates.
+- `VeilGomokuUnifiedBridge.swift` converts immutable current `GomokuState` to search position and receives the incumbent GomokuBot ranked-root scores (including learned sequence, R3/R6 defense, formation) and converts their order into bounded root preferences. It never imports/mutates user training or writes storage. The caller must pass roots that survived incumbent native win/block/R4/R8 gates.
 - Does NOT claim a proven general VCT solver. VCT and shared search tree can be added later only if every relevant opponent defense is verified. There is NO JS runtime/API/network dependency in these two new source files.
 - PVS/VCF are executable algorithms, not model weights; model files are unchanged. This is an independent rewrite, not a transliteration of existing engine.js.
 
