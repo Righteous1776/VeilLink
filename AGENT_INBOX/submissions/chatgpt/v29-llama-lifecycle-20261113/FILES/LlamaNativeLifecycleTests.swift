@@ -32,6 +32,16 @@ final class LlamaNativeLifecycleTests: XCTestCase {
         XCTAssertFalse(fence.trimPending)
     }
 
+    func testRepeatedShutdownDuringGenerationCannotReenter() {
+        var fence = LlamaNativeLifecycle()
+        XCTAssertTrue(fence.beginGeneration())
+        XCTAssertFalse(fence.requestShutdown())
+        XCTAssertFalse(fence.requestShutdown())
+        XCTAssertFalse(fence.beginGeneration())
+        XCTAssertEqual(fence.finishGeneration(), .shutdown)
+        XCTAssertFalse(fence.shutdownPending)
+    }
+
     func testIdleShutdownCanReleaseImmediately() {
         var fence = LlamaNativeLifecycle()
         XCTAssertTrue(fence.requestShutdown())
