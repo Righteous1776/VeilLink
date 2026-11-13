@@ -9,4 +9,4 @@ Targets:
 
 UI reads only safe `LiveMetrics?` type, with NO coordinate fields. Origin engine trace fields (PV, candidates, threats) must not reach the active SwiftUI widget.
 
-Owner ZIP `VeilLink_ECLIPSE_FairPlay_UI_R7_20261113.zip` SHA256 4d0f866299f86f09ba452a90e1904674453c65395561f93eb2da8f7af47b7554. Do not edit outside Inbox or merge without Governor review.
+Owner ZIP `VeilLink_ECLIPSE_FairPlay_UI_R7_20261113.zip` SHA256 3cdd877295b8ab3bfdd91506fc35db35b0a79b4acc48f6c03ee708dbc33a4369. Do not edit outside Inbox or merge without Governor review.
