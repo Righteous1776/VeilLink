@@ -36,9 +36,18 @@ struct VeilopolyPortraitWorkspace<BoardContent: View, DrawerContent: View>: View
  private let drawer: DrawerContent
  private let onOpenAssets: (VeilopolyManagementSection) -> Void
  private let onExit: () -> Void
- @State private var visibleWidgets: Set<VeilopolyPortraitWidget> = [
-  .cash, .market, .bank, .estate
- ]
+ @AppStorage("veilopoly.portrait.cards.v1") private var visibleWidgetCodes = "我的现金,模拟股票,银行利息,地产"
+ private var visibleWidgets: Set<VeilopolyPortraitWidget> {
+  Set(visibleWidgetCodes.split(separator: ",").compactMap {
+   VeilopolyPortraitWidget(rawValue: String($0))
+  })
+ }
+ private func toggleWidget(_ item: VeilopolyPortraitWidget) {
+  var next = visibleWidgets
+  if next.contains(item) { next.remove(item) } else { next.insert(item) }
+  visibleWidgetCodes = VeilopolyPortraitWidget.allCases
+   .filter { next.contains($0) }.map(\.rawValue).joined(separator: ",")
+ }
 
  init(model: GameSessionModel, workspace: Binding<VeilopolyPanelWorkspace>,
       reduceMotion: Bool, board: BoardContent, drawer: DrawerContent,
@@ -93,8 +102,7 @@ struct VeilopolyPortraitWorkspace<BoardContent: View, DrawerContent: View>: View
     Menu {
      ForEach(VeilopolyPortraitWidget.allCases) { item in
       Button {
-       if visibleWidgets.contains(item) { visibleWidgets.remove(item) }
-       else { visibleWidgets.insert(item) }
+       toggleWidget(item)
       } label: {
        Label(item.rawValue, systemImage: visibleWidgets.contains(item)
              ? "checkmark.circle.fill" : "circle")
