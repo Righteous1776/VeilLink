@@ -1,7 +1,7 @@
 diff --git a/VeilLink/Agent/Games/GomokuBot.swift b/VeilLink/Agent/Games/GomokuBot.swift
 --- a/VeilLink/Agent/Games/GomokuBot.swift
 +++ b/VeilLink/Agent/Games/GomokuBot.swift
-@@ -277,6 +277,44 @@
+@@ -277,6 +277,31 @@
          return result(index: bestIndex, score: resolvedScore, nodes: nodes, started: started)
      }
  
