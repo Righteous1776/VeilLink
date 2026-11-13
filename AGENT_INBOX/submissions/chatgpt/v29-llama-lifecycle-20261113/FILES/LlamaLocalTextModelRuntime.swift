@@ -12,6 +12,9 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
     private let cancellationGate = LlamaCancellationGate()
     private var cancellationEpoch: UInt64 = 0
     private var shutdownTask: Task<Void, Never>?
+    // Multiple unload calls may overlap on MainActor while native shutdown awaits.
+    // Retain and chain every older task, even if the current engine is nil.
+    private var shutdownGeneration: UInt64 = 0
     private var preparationInFlight = false
     private(set) var lastModelLoadMilliseconds: Int?
     private(set) var lastGenerationStats: LlamaGenerationStats?
@@ -32,8 +35,13 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
         defer { preparationInFlight = false }
         let preparationEpoch = cancellationEpoch
         if let pendingShutdown = shutdownTask {
+            let observedGeneration = shutdownGeneration
             await pendingShutdown.value
-            shutdownTask = nil
+            // A second unload may have installed another, still running task.
+            // Never erase that newer barrier when this earlier await resumes.
+            if observedGeneration == shutdownGeneration {
+                shutdownTask = nil
+            }
         }
         guard preparationEpoch == cancellationEpoch,
               state == .unloaded || state == .unavailable else {
@@ -226,8 +234,16 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
         engine = nil
         lastGenerationStats = nil
         state = .unloaded
-        shutdownTask?.cancel()
-        shutdownTask = Task { await old?.shutdown() }
+        // Do NOT cancel or overwrite an unfinished native destructor. A
+        // cancelled Task awaiting a continuation may still be running, and
+        // starting a new llama_backend_init before it finishes risks freeing
+        // process-global native state out from under the new model.
+        let precedingShutdown = shutdownTask
+        shutdownGeneration &+= 1
+        shutdownTask = Task {
+            if let precedingShutdown { await precedingShutdown.value }
+            await old?.shutdown()
+        }
         DiagnosticLogStore.shared.log(.info, .agent, event: "local_ai.model.unload")
     }
 }
