@@ -21,3 +21,7 @@
 - Access field is a plain secure numeric input, not `.oneTimeCode` (no irrelevant iOS SMS OTP AutoFill suggestion). Verify five invalid attempts remain session-bounded and lock on ChatView disappearance.
 - Accessibility titles for the active header, conversation list and inline bubbles should announce the flag's spoken name rather than regional-indicator fallback text. Text-draft insertion must never trigger an automatic send.
 - Run both low-memory iOS15 devices with VoiceOver and Dynamic Type; all Apple build/XCTest/device checks remain pending.
+
+- On iOS15 confirm that artwork-send sheet and the existing message-delete, clear-history and cancel-transfer alerts all remain individually reachable, including repeated open/cancel cycles.
+- `VeilInlineGlyphTextTests.testOutgoingArtworkUsesBoundedRasterSizeOnSmallDevices` must verify a 480x320-pixel attachment bitmap (not 1440x960) while inline glyph output retains 3x antialiasing.
+- While image confirmation is open, trigger no send, no file creation and no message database mutation. Cancel must dismiss without changing the draft.
