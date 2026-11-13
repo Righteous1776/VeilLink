@@ -21,3 +21,10 @@ Current main uses `LocalBoardMatchStore` to overwrite a single per-game JSON fil
 ## Subsystem boundaries
 
 The source code is a proposed 6-file addition + 3-file modification in `PATCH.diff`, not a permitted product edit in Inbox. The patch is advisory, based on source-confirmed main excerpts; Apple Xcode/XCTest validation and full `main` checkout apply check have NOT occurred. Storage is a protected integration surface; promotion requires Governor review.
+
+## R10 continuation revision — 2026-11-14
+
+- Board thinking animation is now enabled only after the controller records a real search-start timestamp, not during the existing 180 ms pre-search delay; no added artificial wait.
+- Archive JSON reads have a 128 KB cap before decoding, and oversize writes are rejected without overwriting records.
+- Device clock rollback cannot invalidate a persisted match's timestamp ordering; updatedAt/completedAt stay monotone.
+- Test inventory: 39 new archive/visual assertions, 18 fair-play and 35 telemetry = 92 passed.
