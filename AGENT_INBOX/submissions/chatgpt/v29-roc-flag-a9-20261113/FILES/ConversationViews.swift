@@ -357,6 +357,14 @@ struct ChatView: View {
     @State private var conversationWorkspaceSnapshot: ConversationWorkspaceSnapshot?
     @State private var pendingWorkspaceJumpID: String?
     @State private var showsMessageForge = false
+    // Session-only, explicit opt-in to an additional composer control.
+    @State private var showsComposerAccess = false
+    @State private var showsComposerOptions = false
+    @State private var confirmsComposerArtwork = false
+    @State private var composerAccessToken = ""
+    @State private var composerAccessDenied = false
+    @State private var composerAccessFailures = 0
+    @State private var composerOptionsEnabled = false
     @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
     @State private var hasOlderMessages = false
     @State private var messageReloadGeneration = 0
@@ -663,6 +671,15 @@ struct ChatView: View {
                                 Label("导入图片或文本", systemImage: "doc.badge.plus")
                             }
                             Divider()
+                            Button {
+                                if composerOptionsEnabled {
+                                    showsComposerOptions = true
+                                } else {
+                                    showsComposerAccess = true
+                                }
+                            } label: {
+                                Label("输入扩展", systemImage: "keyboard")
+                            }
                             Menu {
                                 Button {
                                     model.veilopolyMultiplayer.invite(conversation,
@@ -710,6 +727,18 @@ struct ChatView: View {
                     } else {
                         TextField("加密消息", text: $draft)
                             .textFieldStyle(VeilTextFieldStyle())
+                        if composerOptionsEnabled {
+                            Button {
+                                showsComposerOptions = true
+                            } label: {
+                                Image(systemName: "square.grid.2x2")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .frame(width: 36, height: 36)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(VeilPressStyle())
+                            .accessibilityLabel("扩展输入")
+                        }
                         Button(action: send) {
                             ZStack {
                                 if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Circle().fill(VeilTheme.subtleFillStrong) }
@@ -794,6 +823,13 @@ struct ChatView: View {
         }
         .onDisappear {
             model.setConversationVisible(conversation.id, visible: false)
+            composerOptionsEnabled = false
+            composerAccessToken = ""
+            composerAccessFailures = 0
+            composerAccessDenied = false
+            showsComposerAccess = false
+            showsComposerOptions = false
+            confirmsComposerArtwork = false
             didInitialBottomAnchor = false
             isNearBottom = true
         }
@@ -831,6 +867,56 @@ struct ChatView: View {
                     }
                 )
             }
+        }
+        .sheet(isPresented: $showsComposerAccess) {
+            NavigationView {
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("输入扩展")
+                        .font(.headline)
+                    Text("此功能默认关闭。输入访问码后，本次会话内可使用附加内容。")
+                        .font(.footnote)
+                        .foregroundColor(VeilTheme.secondaryText)
+                    SecureField("八位访问码", text: $composerAccessToken)
+                        .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                        .textFieldStyle(VeilTextFieldStyle())
+                        .accessibilityLabel("输入八位访问码")
+                    if composerAccessDenied {
+                        Text("访问码不正确")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.danger)
+                    }
+                    Button("开启本次会话") { unlockComposerOptions() }
+                        .disabled(composerAccessFailures >= 5 || composerAccessToken.utf8.count != 8)
+                        .frame(minHeight: 44)
+                    if composerAccessFailures >= 5 {
+                        Text("尝试次数已达本次会话上限")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                }
+                .padding(20)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") {
+                            composerAccessToken = ""
+                            showsComposerAccess = false
+                        }
+                    }
+                }
+            }
+        }
+        .confirmationDialog("输入选项", isPresented: $showsComposerOptions) {
+            Button("插入字符") { appendComposerSymbol() }
+            Button("发送图形…") { confirmsComposerArtwork = true }
+            Button("关闭扩展") { composerOptionsEnabled = false }
+        }
+        .confirmationDialog("发送图形消息？", isPresented: $confirmsComposerArtwork) {
+            Button("发送图片") { sendComposerArtwork() }
+        } message: {
+            Text("图片会按现有加密图片传输流程发送，收件人将收到普通图片附件。")
         }
         .sheet(isPresented: $showsMessageForge) {
             VeilMessageForgeView(
@@ -1085,6 +1171,47 @@ struct ChatView: View {
         } catch {
             model.alertMessage = error.localizedDescription
             model.haptics.error()
+        }
+    }
+
+    private func unlockComposerOptions() {
+        // Local only, never emit the entered token in logs or analytics.
+        let allowed = VeilComposerOptionGate.accepts(composerAccessToken)
+        composerAccessToken = ""
+        guard allowed else {
+            composerAccessFailures += 1
+            composerAccessDenied = true
+            return
+        }
+        composerAccessDenied = false
+        composerAccessFailures = 0
+        composerOptionsEnabled = true
+        showsComposerAccess = false
+    }
+
+    private func appendComposerSymbol() {
+        guard composerOptionsEnabled else { return }
+        draft.append(VeilROCFlagText.emoji)
+        composerMode = .text
+        // Sending remains a separate user-confirmed tap.
+    }
+
+    private func sendComposerArtwork() {
+        guard composerOptionsEnabled, !isPreparingImage else { return }
+        // Generate inside this app. Existing image transcode / encryption /
+        // media-transfer limits apply exactly as for an imported photo.
+        let image = VeilROCFlagText.makeImage(size: CGSize(width: 480, height: 320))
+        guard let bytes = image.pngData() else {
+            model.alertMessage = "无法生成图片"
+            return
+        }
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vl-artwork-\(UUID().uuidString).png")
+        do {
+            try bytes.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            prepareAndSendImage(ImportedImageFile(url: file, shouldDeleteAfterUse: true))
+        } catch {
+            model.alertMessage = "无法准备图片：\(error.localizedDescription)"
         }
     }
 
