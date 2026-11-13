@@ -920,11 +920,34 @@ struct ChatView: View {
             }
             Button("关闭扩展") { composerOptionsEnabled = false }
         }
-        .alert("发送图形消息？", isPresented: $confirmsComposerArtwork) {
-            Button("取消", role: .cancel) {}
-            Button("发送图片") { sendComposerArtwork() }
-        } message: {
-            Text("图片会按现有加密图片传输流程发送，收件人将收到普通图片附件。")
+        // iOS15 already has several message-delete/cancel alerts on ChatView.
+        // An independent confirmation sheet avoids SwiftUI alert override.
+        .sheet(isPresented: $confirmsComposerArtwork) {
+            NavigationView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("确认发送图形")
+                        .font(.headline)
+                    Text("这是一张应用内生成的图片；确认后将通过原有加密图片通道发送。")
+                        .font(.subheadline)
+                        .foregroundColor(VeilTheme.secondaryText)
+                    HStack(spacing: 12) {
+                        Button("取消") {
+                            confirmsComposerArtwork = false
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        Button("发送图片") {
+                            confirmsComposerArtwork = false
+                            sendComposerArtwork()
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .disabled(isPreparingImage)
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer(minLength: 0)
+                }
+                .padding(20)
+                .navigationBarTitleDisplayMode(.inline)
+            }
         }
         .sheet(isPresented: $showsMessageForge) {
             VeilMessageForgeView(
