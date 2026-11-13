@@ -1,0 +1,50 @@
+diff --git a/VeilLink/Agent/Games/GomokuBot.swift b/VeilLink/Agent/Games/GomokuBot.swift
+--- a/VeilLink/Agent/Games/GomokuBot.swift
++++ b/VeilLink/Agent/Games/GomokuBot.swift
+@@ -277,6 +277,44 @@
+         return result(index: bestIndex, score: resolvedScore, nodes: nodes, started: started)
+     }
+ 
++    /// External PVS/VCF output must meet the native tactical safety invariants.
++    static func externalMovePassesTacticalGate(
++        in state: GomokuState,
++        for player: MiniGamePlayer,
++        index: Int
++    ) -> Bool {
++        guard (0..<(size * size)).contains(index),
++              state.value(at: index) == 0 else { return false }
++        let candidates = candidateIndices(in: state, radius: 2)
++        let frontier = candidates.contains(index) ? candidates : (candidates + [index])
++        let own: Int8 = player == .host ? 1 : 2
++        let opponent: Int8 = player == .host ? 2 : 1
++        let winning = frontier.filter { completesFive(index: $0, in: state, stone: own) }
++        if !winning.isEmpty { return winning.contains(index) }
++        let opposingWins = frontier.filter {
++            completesFive(index: $0, in: state, stone: opponent)
++        }
++        if opposingWins.count == 1 { return index == opposingWins[0] }
++        if opposingWins.count > 1 { return true }
++        let defense = GomokuCounterForkR4.safeCandidates(
++            in: state, player: player, candidates: frontier
++        )
++        return !defense.underThreat || defense.moves.contains(index)
++    }
++
+     static func legalCandidateCount(in state: GomokuState, radius: Int = 2) -> Int {
+         candidateIndices(in: state, radius: radius).count
+     }
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -763,7 +763,10 @@
+                 )
+                 if let external {
+                     var trial = snapshot
+-                    if trial.apply(index: external.index, actor: computer) {
++                    if trial.apply(index: external.index, actor: computer),
++                       GomokuBot.externalMovePassesTacticalGate(
++                           in: snapshot, for: computer, index: external.index
++                       ) {
+                         chosen = external
+                         engineName = "PVS/VCF"
+                     }
