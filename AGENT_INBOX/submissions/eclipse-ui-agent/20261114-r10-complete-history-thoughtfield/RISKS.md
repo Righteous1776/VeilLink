@@ -10,3 +10,5 @@
 8. **Incomplete archive on kill:** per-move snapshots remain `playing` until a completion/interruption marker is saved. Restore should reconcile a final board to actual result, never overwrite conflicting finalized entries.
 9. **Visual style:** R10 must use `VeilAppearanceController`, `VeilTheme`, `.veilCard()`, original board geometry and theme-aware dark/light. Never revert to bespoke blue-cyan ECLIPSE branding.
 10. **Tests:** Linux Foundation compile and SwiftUI syntax parse do NOT establish Apple SDK typecheck or iOS build. Synthetic git preflight does NOT establish full-main applicability. No release or IPA authority.
+
+11. **Crash-window / continuity:** JSON bounds and clock rollback are now handled. A crash between deleting the latest-match journal and finalizing an interrupted historical entry can leave a saved historical match temporarily labeled playing; a future orphan-status reconciliation should be reviewed before shipping.
