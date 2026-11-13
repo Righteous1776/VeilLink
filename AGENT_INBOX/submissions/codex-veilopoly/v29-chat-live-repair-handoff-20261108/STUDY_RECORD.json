@@ -1,0 +1,34 @@
+{
+  "task_id": "VLP-P5-CHAT-PARITY-001-HANDOFF",
+  "agent_id": "codex-veilopoly",
+  "trusted_main_sha": "2c5b5161027edff097b27fe3323d30f6ca3e430e",
+  "governance_version": "INBOX_V1_1_ASSET_DROP",
+  "authority": "Repository Owner explicitly requested Inbox handoff and replacement of current executor",
+  "current_scope": "Own AGENT_INBOX submission only; no further product edits, merge or publication",
+  "read_from_trusted_main": [
+    "AGENTS.md",
+    "AGENT_INBOX/00_READ_ME_FIRST.md",
+    "AGENT_INBOX/01_GOVERNOR_IDENTITY.md",
+    "AGENT_INBOX/GOVERNOR_AUTHORITY.json",
+    "AGENT_INBOX/02_RULES.md",
+    "AGENT_INBOX/03_PROMPT_FOR_AGENTS.md",
+    "AGENT_INBOX/06_ASSET_DROP_POLICY.md",
+    "AGENT_INBOX/ASSET_GRANTS.json"
+  ],
+  "coordination_read": ["Issue #6", "Issue #168", "PR #181", "PR #182"],
+  "supplemental_skill_learning_state": "PARTIAL",
+  "c_study_gate": "UNAVAILABLE_NOT_RUN",
+  "b_mandatory_gate": "UNAVAILABLE_NOT_RUN",
+  "exchange": "UNAVAILABLE",
+  "missing_in_actual_repository": [
+    "governance/CONSTITUTION_SEAL.json",
+    "governance/MANDATORY_READ_SET.json",
+    "AGENT_INBOX/07_LEARNING_GATE.md",
+    "AGENT_INBOX/tools/study_gate.py",
+    "agent_sessions",
+    "AGENT_EXCHANGE"
+  ],
+  "fixed_questions_and_scenarios": "Not fabricated; authoritative 07 definition is absent",
+  "proposal_state": "DROPPED_NOT_ACCEPTED",
+  "physical_device_tests": "NOT_RUN"
+}

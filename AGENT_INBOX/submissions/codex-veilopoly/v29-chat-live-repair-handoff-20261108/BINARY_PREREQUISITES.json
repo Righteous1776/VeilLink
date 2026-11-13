@@ -1,0 +1,14 @@
+{
+  "status": "REFERENCE_ONLY_NOT_AN_INBOX_BINARY_DROP",
+  "complete_tested_source": "27c6801385409399bd0ffffa42a397b7222e8a3f",
+  "text_patch_base": "2c5b5161027edff097b27fe3323d30f6ca3e430e",
+  "files": [{
+    "path": "VeilLink/Resources/LocalAI/Vertex-0.6-35M-Instruct-Q4_K_M.gguf",
+    "source_commit": "cdd9faeaa58533be786acaa00bd89179157a7a60",
+    "git_blob_sha1": "7b0378682994e67bc762b5d325921e02b20c3d12",
+    "sha256": "c55c3c32740d5a283c505fc9f9b7313e4b3f0c98bb11efd21b651651d5cb36b5",
+    "bytes": 29203168,
+    "license": "Apache-2.0",
+    "disposition": "Already in existing authorized product source; not copied into Inbox. Check exact provenance/license before use."
+  }]
+}
