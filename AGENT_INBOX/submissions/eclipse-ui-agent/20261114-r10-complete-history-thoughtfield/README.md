@@ -39,3 +39,6 @@
 2. 引入归档与纯显示策略组件，单独测试旧续局文件、重开后未完成棋谱、历史记录恢复、容量和数据保护。
 3. 接入棋盘无提示装饰 Canvas 与真实计时，测试不同主题、低功耗、VoiceOver/Reduce Motion、热耗。
 4. 真机 iPhone/iPad、Xcode XCTest、CI 全绿后合并；不得为了特效故意增大计算预算。
+
+### 2026-11-14 continuation
+The archived source and complete advisory patch were updated and reverified. R10 now passes 39 native archive/animation checks plus 18 fair-play and 35 telemetry checks = **92**. Abstract board animation starts only after the controller records the search start. File sizes >128 KB are rejected before decoding; clock rollback is guarded. Source-only PR; Xcode/CI/IPA NOT RUN.
