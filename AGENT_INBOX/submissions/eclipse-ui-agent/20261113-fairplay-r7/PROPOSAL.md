@@ -18,7 +18,7 @@ The Owner refined ECLIPSE Thinking Studio: board-inference animation must be vis
 - Full offline HTML prototype and live/after toggle and two screenshots. No private raw training records or user secrets inside the public proposal.
 
 ## Verification
-- Swift 6.2.1: 13 native policy checks pass with `-swift-version 6 -warnings-as-errors -O`.
+- Swift 6.2.1: 15 native policy checks pass with `-swift-version 6 -warnings-as-errors -O`.
 - `swiftc -frontend -parse -swift-version 5`: SwiftUI source parses, but **NOT TYPE-CHECKED against iOS SDK**.
 - Chromium/Playwright 320x568, 390x844, 768x1024: live panel no hints, replay hidden until complete, postgame scrub/step works, no horizontal overflow or JS runtime errors.
 - `git apply --check` applies owner patch to **synthetic exact-context snippets captured from eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0**, not the complete repository checkout.
