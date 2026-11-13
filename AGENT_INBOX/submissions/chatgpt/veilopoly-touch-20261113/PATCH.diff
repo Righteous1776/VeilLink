@@ -70,7 +70,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
   @State private var bankAmount = "600"
   @State private var bankPeriods = "6"
   @State private var stockSymbol = "VTL"
-@@ -560,6 +574,7 @@
+@@ -560,12 +574,14 @@
     model.setNetworkForeground(phase == .active)
    }
    .onChange(of: reduceMotion) { model.scene.reduceMotion = $0 }
@@ -78,7 +78,15 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
    .onChange(of: model.pending) { pending in
     if !pending { revealDecisionIfNeeded() }
    }
-@@ -747,6 +762,16 @@
++  .onChange(of: model.game.turn.phase) { phase in
+-  .onChange(of: model.game.turn.phase) { _ in
+    showDecisionDocument = false
+    showCounterOffer = false
++   if phase != .auction { heldAuctionStep = nil; consumedAuctionLongPress = false }
+    revealDecisionIfNeeded()
+   }
+   .onChange(of: model.game.turn.pendingPurchase) { _ in revealDecisionIfNeeded() }
+@@ -747,6 +763,16 @@
    }
   }
  
@@ -95,7 +103,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
   private func resetTradeDraft() {
    chosenOffer = []; chosenRequest = []; offerCash = "0"; requestCash = "0"
    tradeTarget = model.game.players.first { $0.id != model.actor && !$0.bankrupt }?.id ?? model.actor
-@@ -1095,17 +1120,29 @@
+@@ -1095,17 +1121,29 @@
        .padding(8)
       }
      }
@@ -129,7 +137,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
      Image(systemName: "chevron.left").frame(width: 44, height: 44)
     }
     .buttonStyle(.plain)
-@@ -1128,7 +1165,7 @@
+@@ -1128,7 +1166,7 @@
      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -138,7 +146,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
      Image(systemName: "chevron.right").frame(width: 44, height: 44)
     }
     .buttonStyle(.plain)
-@@ -1137,6 +1174,9 @@
+@@ -1137,6 +1175,9 @@
    .padding(.horizontal, 5)
    .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
    .accessibilityElement(children: .contain)
@@ -148,7 +156,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
   }
  
   private var portraitFallback: some View {
-@@ -1292,22 +1332,28 @@
+@@ -1292,22 +1333,28 @@
       }
       Text("可用资产已按本局规则尝试处置，请确认剩余债务清算。")
        .font(.caption2).foregroundStyle(.secondary)
@@ -183,7 +191,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
    if let review = VeilopolyPurchaseReview(game: model.game, player: model.actor, tile: tile) {
     VStack(alignment: .leading, spacing: 9) {
      VeilopolyDecisionHeading(title: review.name, subtitle: "无主地产 · 选择购买或公开拍卖", symbol: "house")
-@@ -1346,7 +1392,7 @@
+@@ -1346,7 +1393,7 @@
     VeilopolyDecisionActions {
      action("确认出价", symbol: "hand.raised") { model.perform(.bid, amount: Int(bidderCash) ?? 0) }
       .disabled(VeilopolyAuctionReview.rejection(game: model.game, player: model.actor, draft: bidderCash) != nil)
@@ -192,7 +200,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
     }
    } else if model.game.turn.phase == .trade,
              VeilopolyTradeReview(game: model.game, viewer: model.actor) != nil {
-@@ -1354,7 +1400,7 @@
+@@ -1354,7 +1401,7 @@
      action("接受交易", symbol: "checkmark") { model.perform(.acceptTrade) }
       .disabled(VeilopolyGamePresentation.rejection(model.game,
        move: Move(.acceptTrade, player: model.actor, seq: model.game.nextSeq)) != nil)
@@ -201,7 +209,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
     }
    }
   }
-@@ -1419,14 +1465,44 @@
+@@ -1419,14 +1466,50 @@
  
   private func adjustAuctionBid(by delta: Int) {
    guard let auction = model.game.auction else { return }
@@ -209,10 +217,16 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
    let cash = model.game.players[model.actor].cash
 +  let price = max(1, model.game.board[auction.tile].price)
 +  let ceiling = max(1, min(cash, price > Int.max / 2 ? Int.max : price * 2))
-+  let starting = min(ceiling, max(1, Int(bidderCash) ?? auction.currentBid + 1))
-+  let requested = starting + delta
-+  bidderCash = String(min(ceiling, max(1, requested)))
-+  if requested > ceiling {
++  let minimum = auction.currentBid == Int.max ? Int.max : auction.currentBid + 1
++  let starting = min(ceiling, max(1, Int(bidderCash) ?? minimum))
++  // Avoid Int overflow even for corrupted/very large cash values.
++  let cappedHigh = delta > 0 && starting > ceiling - delta
++  let requested: Int
++  if cappedHigh { requested = ceiling }
++  else if delta < 0 && starting <= 1 - delta { requested = 1 }
++  else { requested = starting + delta }
++  bidderCash = String(requested)
++  if cappedHigh || (delta > 0 && starting == ceiling) {
 +   UINotificationFeedbackGenerator().notificationOccurred(.error)
 +  } else {
 +   UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -252,7 +266,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
    if let auction = model.game.auction {
     ZStack(alignment: .topLeading) {
      AstraB01Artwork.image(AstraB01AssetNames.auctionHero)
-@@ -1438,7 +1514,7 @@
+@@ -1438,7 +1521,7 @@
      astraHeroField(auction.bidder.map { model.game.players[$0].name } ?? "暂无",
                     x: 191, y: 99, width: 90)
      // B01 art draws +/- controls. Provide real 44-point touch targets.
@@ -261,7 +275,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
       Color.clear.frame(width: 44, height: 44).contentShape(Rectangle())
      }
      .buttonStyle(.plain)
-@@ -1454,7 +1530,7 @@
+@@ -1454,7 +1537,7 @@
       .position(x: CGFloat(AstraB01AuctionHitZones.input.centerX),
                 y: CGFloat(AstraB01AuctionHitZones.input.centerY))
       .accessibilityLabel("竞价金额")
@@ -270,7 +284,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
       Color.clear.frame(width: 44, height: 44).contentShape(Rectangle())
      }
      .buttonStyle(.plain)
-@@ -1487,6 +1563,26 @@
+@@ -1487,6 +1570,26 @@
      VeilopolyDecisionHeading(title: review.name, subtitle: "公开拍卖 · 当前由你报价", symbol: "gavel")
      VeilopolyDecisionMetric(title: "当前最高价", value: "¥\(review.currentBid)", emphasized: true)
      VeilopolyDecisionMetric(title: "领先玩家", value: review.leader)
@@ -297,7 +311,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
      VeilopolyNumericInput(title: "你的竞价 · 最低 ¥\(review.minimumBid)", text: $bidderCash)
      Button { bidderCash = String(review.minimumBid) } label: {
       Text("填入最低价 ¥\(review.minimumBid) · 仅填写")
-@@ -1509,8 +1605,11 @@
+@@ -1509,8 +1612,11 @@
      } label: { Text("图文拍卖公告").font(.caption.weight(.semibold)).frame(minHeight: 44) }
     }
    }
@@ -310,7 +324,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
    switch managementSection {
    case .property: propertyPanel
    case .bank: bankPanel
-@@ -1527,10 +1626,10 @@
+@@ -1527,10 +1633,10 @@
       Button("#\(t.i) \(t.name)") { model.selectedTile = t.i }
      }
     } label: {
@@ -323,7 +337,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
      VeilopolyCivicDocumentPanel(document: deed)
     }
     HStack {
-@@ -1551,19 +1650,22 @@
+@@ -1551,19 +1657,22 @@
   }
  
   private func propertyAction(_ title: String, symbol: String, kind: MoveKind) -> some View {
