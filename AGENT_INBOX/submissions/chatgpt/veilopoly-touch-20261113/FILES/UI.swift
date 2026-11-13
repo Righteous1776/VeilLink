@@ -1141,7 +1141,7 @@ public struct VeilopolyGameView: View {
   if let index = model.selectedTile {
   let tile = model.game.board[index]
   let ownerName = tile.owner.map { model.game.players[$0].name } ?? "尚未购买"
-  return HStack(spacing: 8) {
+  HStack(spacing: 8) {
    Button { model.selectedTile = (index + 39) % 40 } label: {
     Image(systemName: "chevron.left").frame(width: 44, height: 44)
    }
