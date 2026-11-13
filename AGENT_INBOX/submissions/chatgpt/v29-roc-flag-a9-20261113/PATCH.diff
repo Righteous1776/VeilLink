@@ -1,22 +1,22 @@
-diff --git a/VeilLink/UI/VeilROCFlagText.swift b/VeilLink/UI/VeilROCFlagText.swift
+diff --git a/VeilLink/UI/VeilInlineGlyphText.swift b/VeilLink/UI/VeilInlineGlyphText.swift
 new file mode 100644
 --- /dev/null
-+++ b/VeilLink/UI/VeilROCFlagText.swift
++++ b/VeilLink/UI/VeilInlineGlyphText.swift
 @@ -0,0 +1,124 @@
 +import Foundation
 +import SwiftUI
 +import UIKit
 +
-+/// Platform-independent rendering of the Republic of China flag inside VeilLink.
++/// Region-independent rendering for a legacy inline Unicode symbol.
 +///
-+/// Some iOS devices do not provide a glyph for the regional-indicator sequence
++/// Some iOS devices do not provide a glyph for this regional-indicator sequence
 +/// U+1F1F9 U+1F1FC. All views using this adapter draw a local vector-backed
 +/// image instead of consulting the platform's Emoji font or system region.
 +///
-+/// This is display-only. Do not rewrite message bodies, drafts, wire payloads,
++/// Display-only: never rewrite message bodies, drafts, wire payloads,
 +/// database rows, exports or clipboard text.
 +@MainActor
-+enum VeilROCFlagText {
++enum VeilInlineGlyphText {
 +    static let emoji = "\u{1F1F9}\u{1F1FC}"
 +    static let spokenName = "中华民国国旗"
 +
@@ -116,15 +116,15 @@ new file mode 100644
 +
 +/// Reusable explicit flag view for future country/region pickers or contact cards.
 +@MainActor
-+struct VeilROCFlagView: View {
++struct VeilInlineGlyphView: View {
 +    var body: some View {
-+        Image(uiImage: VeilROCFlagText.makeImage())
++        Image(uiImage: VeilInlineGlyphText.makeImage())
 +            .renderingMode(.original)
 +            .interpolation(.high)
 +            .resizable()
 +            .aspectRatio(1.5, contentMode: .fit)
 +            .frame(width: 24, height: 16)
-+            .accessibilityLabel(VeilROCFlagText.spokenName)
++            .accessibilityLabel(VeilInlineGlyphText.spokenName)
 +    }
 +}
 diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
@@ -134,8 +134,8 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
  
              VStack(alignment: .leading, spacing: 7) {
                  HStack(spacing: 8) {
-+                    VeilROCFlagText.render(conversation.title)
-+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.title))
++                    VeilInlineGlyphText.render(conversation.title)
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.title))
 -                    Text(conversation.title)
                          .font(.system(.body, design: .rounded).weight(.semibold))
                          .foregroundColor(VeilTheme.text)
@@ -144,9 +144,9 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .tracking(0.8)
                          .foregroundColor(VeilTheme.mutedGold)
                      VeilLinkTrace(active: isSelected, width: 28)
-+                    VeilROCFlagText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
-+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
-+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
++                    VeilInlineGlyphText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
 -                    Text(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
                          .font(.subheadline)
                          .foregroundColor(VeilTheme.secondaryText)
@@ -170,8 +170,8 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                              Text("引用回复")
                                  .font(.caption2.weight(.semibold))
                                  .foregroundColor(VeilTheme.gold)
-+                            VeilROCFlagText.render(ReplyTextCodec.quoteSource(for: replyingTo))
-+                            .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: ReplyTextCodec.quoteSource(for: replyingTo)))
++                            VeilInlineGlyphText.render(ReplyTextCodec.quoteSource(for: replyingTo))
++                            .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: ReplyTextCodec.quoteSource(for: replyingTo)))
 -                            Text(ReplyTextCodec.quoteSource(for: replyingTo))
                                  .font(.caption)
                                  .foregroundColor(VeilTheme.secondaryText)
@@ -303,7 +303,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
 +
 +    private func appendComposerSymbol() {
 +        guard composerOptionsEnabled else { return }
-+        draft.append(VeilROCFlagText.emoji)
++        draft.append(VeilInlineGlyphText.emoji)
 +        composerMode = .text
 +        // Sending remains a separate user-confirmed tap.
 +    }
@@ -312,7 +312,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
 +        guard composerOptionsEnabled, !isPreparingImage else { return }
 +        // Generate inside this app. Existing image transcode / encryption /
 +        // media-transfer limits apply exactly as for an imported photo.
-+        let image = VeilROCFlagText.makeImage(size: CGSize(width: 480, height: 320))
++        let image = VeilInlineGlyphText.makeImage(size: CGSize(width: 480, height: 320))
 +        guard let bytes = image.pngData() else {
 +            model.alertMessage = "无法生成图片"
 +            return
@@ -334,8 +334,8 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                      TransferShardView(image: nil, progress: progress, mode: .receiving)
                          .frame(width: 190)
                  } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
-+                    VeilROCFlagText.render(gamePreview)
-+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: gamePreview))
++                    VeilInlineGlyphText.render(gamePreview)
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: gamePreview))
 -                    Text(gamePreview)
                          .font(.body.weight(.medium))
                          .padding(.horizontal, 14)
@@ -344,15 +344,15 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                              RoundedRectangle(cornerRadius: 1)
                                  .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
                                  .frame(width: 3)
-+                            VeilROCFlagText.render(reply.quote)
-+                                .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: reply.quote))
++                            VeilInlineGlyphText.render(reply.quote)
++                                .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: reply.quote))
 -                            Text(reply.quote)
                                  .font(.caption)
                                  .foregroundColor(message.isOutgoing ? Color.black.opacity(0.66) : VeilTheme.secondaryText)
                                  .lineLimit(2)
                          }
-+                        VeilROCFlagText.render(reply.reply)
-+                            .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: reply.reply))
++                        VeilInlineGlyphText.render(reply.reply)
++                            .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: reply.reply))
 -                        Text(reply.reply)
                              .frame(maxWidth: .infinity, alignment: .leading)
                      }
@@ -361,8 +361,8 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                      )
                      .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                  } else {
-+                    VeilROCFlagText.render(message.body)
-+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: message.body))
++                    VeilInlineGlyphText.render(message.body)
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: message.body))
 -                    Text(message.body)
                          .font(.body)
                          .padding(.horizontal, 14)
@@ -371,8 +371,8 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                              .font(VeilType.terminalLabel)
                              .tracking(1.4)
                              .foregroundColor(VeilTheme.mutedGold)
-+                        VeilROCFlagText.render(conversation.title)
-+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.title))
++                        VeilInlineGlyphText.render(conversation.title)
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.title))
 -                        Text(conversation.title)
                              .font(.system(.title3, design: .rounded).weight(.semibold))
                          VeilLinkTrace(active: false, width: 86)
@@ -384,8 +384,8 @@ diff --git a/VeilLink/UI/AgentChatView.swift b/VeilLink/UI/AgentChatView.swift
      var body: some View {
          HStack {
              if message.role == .user { Spacer(minLength: 42) }
-+            VeilROCFlagText.render(message.text.isEmpty ? "…" : message.text)
-+                .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: message.text))
++            VeilInlineGlyphText.render(message.text.isEmpty ? "…" : message.text)
++                .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: message.text))
 -            Text(message.text.isEmpty ? "…" : message.text)
                  .font(.system(size: 14.5, weight: .regular, design: .rounded))
                  .foregroundColor(message.role == .user ? Color.black.opacity(0.88) : VeilTheme.text)
@@ -397,8 +397,8 @@ diff --git a/VeilLink/UI/LingCoreTinyChatView.swift b/VeilLink/UI/LingCoreTinyCh
                          ForEach(chat.messages) { message in
                              HStack {
                                  if message.role == .user { Spacer(minLength: 40) }
-+                                VeilROCFlagText.render(message.text.isEmpty ? "…" : message.text)
-+                                    .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: message.text))
++                                VeilInlineGlyphText.render(message.text.isEmpty ? "…" : message.text)
++                                    .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: message.text))
 -                                Text(message.text.isEmpty ? "…" : message.text)
                                      .font(.system(size: 14))
                                      .foregroundColor(message.role == .user ? .black : VeilTheme.text)
@@ -410,9 +410,9 @@ diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
                          .font(VeilType.terminalLabel)
                          .tracking(1.25)
                          .foregroundColor(VeilTheme.mutedGold)
-+                    VeilROCFlagText.render(identity.activeIdentity?.displayName ?? "未创建")
-+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
-+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
++                    VeilInlineGlyphText.render(identity.activeIdentity?.displayName ?? "未创建")
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
 -                    Text(identity.activeIdentity?.displayName ?? "未创建")
                          .font(.system(.title3, design: .rounded).weight(.semibold))
                      HStack(spacing: 7) {
@@ -488,57 +488,57 @@ new file mode 100644
 +        return actual == expectedDigest
 +    }
 +}
-diff --git a/VeilLinkTests/VeilROCFlagTextTests.swift b/VeilLinkTests/VeilROCFlagTextTests.swift
+diff --git a/VeilLinkTests/VeilInlineGlyphTextTests.swift b/VeilLinkTests/VeilInlineGlyphTextTests.swift
 new file mode 100644
 --- /dev/null
-+++ b/VeilLinkTests/VeilROCFlagTextTests.swift
++++ b/VeilLinkTests/VeilInlineGlyphTextTests.swift
 @@ -0,0 +1,51 @@
 +import XCTest
 +import SwiftUI
 +@testable import VeilLink
 +
 +@MainActor
-+final class VeilROCFlagTextTests: XCTestCase {
++final class VeilInlineGlyphTextTests: XCTestCase {
 +    func testRocFlagLiteralIsTheTwoRegionalIndicatorScalars() {
 +        XCTAssertEqual(
-+            VeilROCFlagText.emoji.unicodeScalars.map(\.value),
++            VeilInlineGlyphText.emoji.unicodeScalars.map(\.value),
 +            [0x1F1F9, 0x1F1FC]
 +        )
 +    }
 +
 +    func testFlagUsesThreeToTwoAspectAndTwelveRays() {
-+        XCTAssertEqual(VeilROCFlagText.horizontalUnits, 3)
-+        XCTAssertEqual(VeilROCFlagText.verticalUnits, 2)
-+        XCTAssertEqual(VeilROCFlagText.rayCount, 12)
-+        let image = VeilROCFlagText.makeImage()
++        XCTAssertEqual(VeilInlineGlyphText.horizontalUnits, 3)
++        XCTAssertEqual(VeilInlineGlyphText.verticalUnits, 2)
++        XCTAssertEqual(VeilInlineGlyphText.rayCount, 12)
++        let image = VeilInlineGlyphText.makeImage()
 +        XCTAssertEqual(image.size.width, 24, accuracy: 0.0001)
 +        XCTAssertEqual(image.size.height, 16, accuracy: 0.0001)
 +        XCTAssertNotNil(image.cgImage)
 +    }
 +
 +    func testNonStandardInputStillRespectsAspectRatio() {
-+        let image = VeilROCFlagText.makeImage(size: CGSize(width: 72, height: 1))
++        let image = VeilInlineGlyphText.makeImage(size: CGSize(width: 72, height: 1))
 +        XCTAssertEqual(image.size.width / image.size.height, 1.5, accuracy: 0.0001)
 +    }
 +
 +    func testAccessibilityReplacesOnlyTheFlagSequence() {
-+        let original = "晚安 \(VeilROCFlagText.emoji) ✨ \(VeilROCFlagText.emoji) 🇯🇵 🇺🇸"
-+        XCTAssertTrue(VeilROCFlagText.containsFlag(original))
++        let original = "晚安 \(VeilInlineGlyphText.emoji) ✨ \(VeilInlineGlyphText.emoji) 🇯🇵 🇺🇸"
++        XCTAssertTrue(VeilInlineGlyphText.containsFlag(original))
 +        XCTAssertEqual(
-+            VeilROCFlagText.accessibilityDescription(for: original),
++            VeilInlineGlyphText.accessibilityDescription(for: original),
 +            "晚安 中华民国国旗 ✨ 中华民国国旗 🇯🇵 🇺🇸"
 +        )
-+        XCTAssertFalse(VeilROCFlagText.containsFlag("🇯🇵 🇺🇸"))
++        XCTAssertFalse(VeilInlineGlyphText.containsFlag("🇯🇵 🇺🇸"))
 +        XCTAssertEqual(
-+            VeilROCFlagText.accessibilityDescription(for: "🇯🇵 🇺🇸"),
++            VeilInlineGlyphText.accessibilityDescription(for: "🇯🇵 🇺🇸"),
 +            "🇯🇵 🇺🇸"
 +        )
 +    }
 +
 +    func testRichTextAdapterBuildsInlineTextWithoutMutatingStorage() {
-+        let raw = "引用：\(VeilROCFlagText.emoji)\n详情：\(VeilROCFlagText.emoji)"
++        let raw = "引用：\(VeilInlineGlyphText.emoji)\n详情：\(VeilInlineGlyphText.emoji)"
 +        let unchanged = raw
-+        _ = VeilROCFlagText.render(raw)
++        _ = VeilInlineGlyphText.render(raw)
 +        XCTAssertEqual(raw, unchanged)
 +        // Persisted chat bodies must never be passed through accessibilityDescription.
 +        XCTAssertEqual(raw.unicodeScalars.filter { $0.value == 0x1F1F9 }.count, 2)
