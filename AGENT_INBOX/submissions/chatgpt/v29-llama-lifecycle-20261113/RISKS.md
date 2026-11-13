@@ -7,3 +7,6 @@
 - `llama_backend_init()/llama_backend_free()` are process-global in native llama and can be shared by multiple independent engine instances. This patch fences per-engine operations only. Governor should separately inspect whole-process reference counting if two instances can load concurrently.
 - PR #192 diagnostics fix is independently staged, does not overlap direct files. Issue #185 BLE remains open. Flag/UI change is separate; do not conflate root-cause claims.
 - Binary native model and dSYM artifacts must never be uploaded to public Inbox. No forced model access or private logs included.
+
+## Additional lifecycle review risk
+Swift Task cancellation does not necessarily stop a destructor already awaiting native generation. The second-pass patch now chains all `shutdownTask` values and uses a generation marker to prevent actor reentrancy from dropping a newer shutdown barrier. This deliberately prioritizes safe release ordering over immediate reloading; if a native generation hangs indefinitely, a subsequent model load may remain blocked. Profiling and a bounded, non-destructive failure UI are needed; never impose a timeout that frees live native pointers.
