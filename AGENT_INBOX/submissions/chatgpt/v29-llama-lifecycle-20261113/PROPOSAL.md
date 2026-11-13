@@ -21,3 +21,7 @@ No model weights, quantization, inference hyperparameters, prompt templates, Wir
 
 ## Evidentiary limits
 Real crash disappearance requires exact Build66 dSYM + new IPA UUID and repeated iPhone7/SE2 inference-cancel/unload tests. This patch is not evidence that every signal11 fault has been fixed.
+
+## Follow-up fix: repeated unload must not orphan an in-flight destructor
+The first P0 draft still called `shutdownTask?.cancel()` before replacing it in `LlamaLocalTextModelRuntime.unload()`. Cancelling a Swift Task waiting in `withCheckedContinuation` does not guarantee that the native destructor has finished. A later `prepare()` could await only the newest (possibly no-op) task and enter `llama_backend_init` while a preceding engine's `llama_backend_free` is still pending.
+The revised candidate *chains* preceding shutdown tasks before each new engine's `shutdown()`, never cancels the old destructor, and increments `shutdownGeneration` so a resumed `prepare()` cannot clear an intervening, newer shutdown barrier. This is a source-proven ordering hazard, not definitive proof of the Build66 signal11 fault.
