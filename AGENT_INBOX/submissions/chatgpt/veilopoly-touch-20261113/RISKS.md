@@ -1,0 +1,3 @@
+# Risk / overlap
+INBOX_ONLY proposal; not merged, not released, no source product edits. Apple compile and actual iOS15 touch tests NOT_RUN. Nullable selectedTile may require updating any external UI consumer; need exact code scan. SwiftUI Button+long press simultaneous behavior needs real testing. Popover in compact width may adapt to sheet on iOS15. Any camera gesture recognizer can collide with BoardScene touchesEnded and animation; P2 intentionally held.
+Target branch dev/veilopoly has divergent V29 main integration history; governor must resolve overlap. No changes to engine/AI/net/ACK/canonical art. Do not claim this fixes physical BLE or memory faults.
