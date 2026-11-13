@@ -209,7 +209,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 diff --git a/VeilLinkTests/GomokuBotTests.swift b/VeilLinkTests/GomokuBotTests.swift
 --- a/VeilLinkTests/GomokuBotTests.swift
 +++ b/VeilLinkTests/GomokuBotTests.swift
-@@ -548,5 +548,62 @@
+@@ -548,5 +548,101 @@
      }
  
  
@@ -268,6 +268,45 @@ diff --git a/VeilLinkTests/GomokuBotTests.swift b/VeilLinkTests/GomokuBotTests.s
 +            maxAttackerMoves: 4, nodeCap: 0,
 +            deadline: Date.timeIntervalSinceReferenceDate + 2
 +        ))
++    }
++
++    func testV9DoesNotClaimWinWhenForcedDefenderCanWinNow() {
++        var board = GomokuState()
++        let host = [109, 110, 111, 67, 82, 97]
++        let guest = [0, 1, 2, 3, 8, 10]
++        for i in host.indices {
++            XCTAssertTrue(board.apply(index: host[i], actor: .host))
++            XCTAssertTrue(board.apply(index: guest[i], actor: .guest))
++        }
++        XCTAssertEqual(board.currentPlayer, .host)
++        XCTAssertNil(GomokuForcingSearchV9.provenMove(
++            in: board, for: .host, candidates: [52],
++            maxAttackerMoves: 4, nodeCap: 500,
++            deadline: Date.timeIntervalSinceReferenceDate + 2
++        ))
++        // This is the real opponent reply the candidate must not ignore.
++        XCTAssertTrue(board.apply(index: 52, actor: .host))
++        XCTAssertTrue(board.apply(index: 4, actor: .guest))
++        XCTAssertEqual(board.winner, .guest)
++    }
++
++    func testV9QuarterTurnRotationPreservesProof() {
++        let rotate: (Int) -> Int = { index in
++            (index % 15) * 15 + (14 - index / 15)
++        }
++        var board = GomokuState()
++        let host = [109, 110, 111, 67, 82, 97]
++        let guest = [0, 2, 4, 6, 8, 10]
++        for i in host.indices {
++            XCTAssertTrue(board.apply(index: rotate(host[i]), actor: .host))
++            XCTAssertTrue(board.apply(index: rotate(guest[i]), actor: .guest))
++        }
++        let proof = GomokuForcingSearchV9.provenMove(
++            in: board, for: .host, candidates: [rotate(52)],
++            maxAttackerMoves: 4, nodeCap: 500,
++            deadline: Date.timeIntervalSinceReferenceDate + 2
++        )
++        XCTAssertEqual(proof?.index, rotate(52))
 +    }
 +
  }
