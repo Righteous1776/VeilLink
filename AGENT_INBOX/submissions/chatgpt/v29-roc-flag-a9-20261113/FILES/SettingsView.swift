@@ -234,9 +234,9 @@ struct SettingsView: View {
                         .font(VeilType.terminalLabel)
                         .tracking(1.25)
                         .foregroundColor(VeilTheme.mutedGold)
-                    VeilROCFlagText.render(identity.activeIdentity?.displayName ?? "未创建")
-                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
-                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
+                    VeilInlineGlyphText.render(identity.activeIdentity?.displayName ?? "未创建")
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
                         .font(.system(.title3, design: .rounded).weight(.semibold))
                     HStack(spacing: 7) {
                         Text(String((identity.activeIdentity?.id ?? "offline").prefix(12)).uppercased())
