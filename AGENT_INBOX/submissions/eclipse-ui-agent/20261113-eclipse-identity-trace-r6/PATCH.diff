@@ -1,0 +1,19 @@
+diff --git a/docs/ECLIPSE_UI_R6_Review_Checklist.md b/docs/ECLIPSE_UI_R6_Review_Checklist.md
+new file mode 100644
+--- /dev/null
++++ b/docs/ECLIPSE_UI_R6_Review_Checklist.md
+@@ -0,0 +1,12 @@
++# ECLIPSE UI R6 — future product integration checklist
++
++1. Replace Grok avatar card only inside the Gomoku LocalAIGameView.
++2. Do not duplicate statusCard or push the 15x15 board offscreen.
++3. Create an independent ECLIPSE visual/VoiceOver label, never rename Grok media.
++4. Connect accurate current-main thinking/elapsed state first, without fabricated search metrics.
++5. Stream depth/nodes/PV only after trusted native R5 search telemetry merges.
++6. Reject stale runID/positionHash and cancellation race events.
++7. Cap UI telemetry refresh and respect Reduce Motion.
++8. Label recorded historical chess proof separately from live search.
++9. Keep board gestures and all other Grok bot game views unchanged.
++10. Reconcile #186/#187/#190/#193/#196 before controller or Gomoku engine changes.
++11. Require actual Xcode build, XCTest, dark/light, accessibility and iPhone/iPad tests.
++12. No release, IPA, version or legacy resource deletion without formal Governor approval.
