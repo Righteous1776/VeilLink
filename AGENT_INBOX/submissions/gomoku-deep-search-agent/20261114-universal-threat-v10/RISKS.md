@@ -1,6 +1,6 @@
 # V10 risks and overlap
 
-- Draft PR #199 from fellow Agent already proposes V9. Must not rewrite, self-merge or silently cherry-pick overlapping GomokuBot changes. Only two additive new-file sources proposed.
+- Draft PR #199 from fellow Agent already proposes V9. Must not rewrite, self-merge or silently cherry-pick overlapping GomokuBot changes. Only two additive new-file sources staged in Inbox, not applied to the product tree.
 - V10 proves a restricted double-open-three -> all-defense -> double-five fork family; it is NOT full VCT and not a measured playing strength improvement.
 - Proof can be expensive if run on all roots; recommendation: only advanced extended tiers with bounded <=120ms proof slice and <=6000 checks, subject to real device benchmarks.
 - Current V10 code relies on existing native `GomokuCounterForkR4.createsForcedDoubleWin`; behavior depends on the unrestricted 15x15 Gomoku rules; not Renju forbidden-hand legality.
