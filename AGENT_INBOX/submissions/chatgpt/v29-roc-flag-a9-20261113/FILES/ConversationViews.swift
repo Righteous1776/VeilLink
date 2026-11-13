@@ -1355,7 +1355,8 @@ private struct VeilChatIdentityTitle: View {
         HStack(spacing: 9) {
             VeilIdentityGlyph(seed: peerIdentityID, size: 30, active: true)
             VStack(alignment: .leading, spacing: 1) {
-                Text(title)
+                VeilInlineGlyphText.render(title)
+                    .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: title))
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundColor(VeilTheme.text)
                     .lineLimit(1)
