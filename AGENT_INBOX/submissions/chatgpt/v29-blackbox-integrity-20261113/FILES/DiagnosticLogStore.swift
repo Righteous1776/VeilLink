@@ -154,6 +154,7 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
     private let maxPendingBufferBytes = 4 * 1_024 * 1_024
     private var logWriteFailureCount = 0
     private var droppedUnpersistedLineCount = 0
+    private var nextPersistRetryUptime: TimeInterval = 0
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private var nextSequence: UInt64 = 1
@@ -309,7 +310,7 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         // outside this barrier races the logger's append/rotation and can mix
         // different generations of runtime.N.jsonl in one archive.
         let logURLs = try logQueue.sync { () throws -> [URL] in
-            flushPendingBuffer()
+            flushPendingBuffer(force: true)
             let sources = orderedLogURLsForReading()
             for source in sources {
                 try fileManager.copyItem(
@@ -541,17 +542,23 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func flushPendingBuffer() {
+    private func flushPendingBuffer(force: Bool = false) {
         stateLock.lock()
-        flushPendingBufferUnsafe()
+        flushPendingBufferUnsafe(force: force)
         stateLock.unlock()
         notifyObservers()
     }
 
-    private func flushPendingBufferUnsafe() {
+    private func flushPendingBufferUnsafe(force: Bool = false) {
         flushTask?.cancel()
         flushTask = nil
         guard !pendingBuffer.isEmpty else { return }
+        // Repeated disk-protection or storage errors must not cause a new
+        // flush/rotation attempt on every UI event.
+        if !force && ProcessInfo.processInfo.systemUptime < nextPersistRetryUptime {
+            scheduleFlushUnsafe()
+            return
+        }
 
         let data = pendingBuffer
         let rotated = rotateIfNeeded(incomingBytes: data.count)
@@ -560,6 +567,7 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             // pending buffer, giving 2,000 cached entries but 72 on disk.
             // Preserve for a later retry, but limit it on low-memory devices.
             logWriteFailureCount += 1
+            nextPersistRetryUptime = ProcessInfo.processInfo.systemUptime + 5
             while pendingBuffer.count > maxPendingBufferBytes {
                 guard let newline = pendingBuffer.firstIndex(of: 0x0A) else {
                     pendingBuffer.removeAll(keepingCapacity: true)
@@ -574,6 +582,7 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             return
         }
         pendingBuffer.removeAll(keepingCapacity: true)
+        nextPersistRetryUptime = 0
         flushesSinceDiskUsageRefresh += 1
         if rotated || flushesSinceDiskUsageRefresh >= 8 {
             refreshDiskUsageUnsafe()
