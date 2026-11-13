@@ -3,6 +3,10 @@
     "sha256": "2c1274d235f266a3fe10b8aa84d73c9557f66bf56074a8346684874bb7fdfe51",
     "bytes": 2066
   },
+  "EVIDENCE/DELIVERY_RECEIPT.json": {
+    "sha256": "4f0a12a01d43fd9d88a8fb3c5f601b1cd18b947f28264339cdabc361d9b454fe",
+    "bytes": 535
+  },
   "EVIDENCE/INPUT_AUDIT.md": {
     "sha256": "674b2e5d1546138c92fc2d7d26d8d0d244ebc841728e378bfd665a397dc1fadc",
     "bytes": 5678
@@ -204,8 +208,8 @@
     "bytes": 1107
   },
   "MANIFEST.md": {
-    "sha256": "29c103ee39f433a962d19790723be8822bbb5ac807afb8ffc6435e994202026e",
-    "bytes": 1023
+    "sha256": "345bf3b007297ffe0ab1738f912ca293a1d5f7155d9168c19eb0e140fe0107ea",
+    "bytes": 1270
   },
   "PATCH.diff": {
     "sha256": "5d5bee7d041fed7145140a87bb24e978aaa603c0efc1f315c09cd1e07cd2afb1",
@@ -220,8 +224,8 @@
     "bytes": 1665
   },
   "SESSION_STATE.json": {
-    "sha256": "3c980917bee40f640396857ee65cf1721781ccb39e4c07170147c7d123e373b6",
-    "bytes": 754
+    "sha256": "7237f184ad00758ba2c29846da38fae970099de8a6d9c6c7961e52945191f5ab",
+    "bytes": 1012
   },
   "STUDY_RECORD.json": {
     "sha256": "594fd9d41585757a8110b7f7af7ec2b2b73900c261619fa3da28e6ff1eca3edd",
