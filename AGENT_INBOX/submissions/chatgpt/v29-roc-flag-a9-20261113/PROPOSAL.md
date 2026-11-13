@@ -23,3 +23,6 @@ Some iOS devices with mainland China region settings or hardware variants do not
 - The chosen historical mnemonic is documented privately to the Owner, NOT included verbatim in code or public-facing UI labels. The source identifies the optional action generically. **Do not promise source invisibility**: old PR history, graphic geometry and reachable strings remain inspectable in a public repository.
 - In regions where the OS fails to draw the Unicode flag, the existing `VeilInlineGlyphText.render()` displays it in an app-owned inline image after sending. The recipient outside VeilLink may still see a missing glyph, so the actual image-attachment mode is also available.
 - No private Apple keyboard extensions or system-level Emoji keyboard changes, no change to protected Wire or encryption.
+
+## Fourth-pass iOS15 modal/performance correction
+The chat root already owns several deletion and transfer-cancellation .alert modifiers. The proposed artwork-send confirmation was moved into an independent .sheet rather than adding another alert on the same ChatView root. A secondary confirmation remains mandatory before any image is generated or transmitted. The 480x320-point artwork image uses 1x output scale instead of 3x, avoiding a 1440x960 offscreen allocation; the 24x16-point inline glyph retains 3x scale for readability.
