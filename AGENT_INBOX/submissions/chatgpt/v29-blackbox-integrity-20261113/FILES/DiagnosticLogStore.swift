@@ -563,7 +563,9 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         }
 
         let data = pendingBuffer
-        let rotated = rotateIfNeeded(incomingBytes: data.count)
+        // NEVER rotate/delete retained evidence before the new write succeeds.
+        // On an iOS protected-storage/disk-full failure the retry must leave
+        // every previously persisted runtime.N.jsonl untouched.
         guard append(data) else {
             // A failed FileHandle write used to silently discard the ENTIRE
             // pending buffer, giving 2,000 cached entries but 72 on disk.
@@ -577,6 +579,10 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         }
         pendingBuffer.removeAll(keepingCapacity: true)
         nextPersistRetryUptime = 0
+        // Roll over only after a confirmed append. Even if the archival
+        // rename fails, the appended bytes remain in the active log and will
+        // be included by export, rather than having been lost beforehand.
+        let rotated = rotateIfNeeded(incomingBytes: 0)
         flushesSinceDiskUsageRefresh += 1
         if rotated || flushesSinceDiskUsageRefresh >= 8 {
             refreshDiskUsageUnsafe()
