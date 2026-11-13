@@ -13,3 +13,6 @@ proposed_files:
 - VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift
 - VeilLinkTests/LlamaNativeLifecycleTests.swift [NEW]
 code: PATCH.diff
+
+- VeilLink/Agent/Language/LlamaProcessLoadLease.swift [NEW]
+- VeilLinkTests/LlamaProcessLoadLeaseTests.swift [NEW]
