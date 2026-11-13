@@ -73,6 +73,33 @@ final class BlackBoxExportIntegrityTests: XCTestCase {
         XCTAssertEqual(row["eventCount"] as? Int, 8)
     }
 
+    func testFailedWriteNeverRotatesAwayPreviouslyRetainedLogs() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DiagnosticLogStore(rootDirectory: root)
+
+        let oldest = root.appendingPathComponent("runtime.7.jsonl")
+        let sentinel = Data("keep-existing-diagnostics".utf8)
+        try sentinel.write(to: oldest, options: .atomic)
+
+        // A directory at the active JSONL path deterministically prevents
+        // FileHandle(forWritingTo:) from appending; disk-full and protected
+        // storage errors use the same failed-append branch.
+        let blockedActive = root.appendingPathComponent("runtime.jsonl", isDirectory: true)
+        try FileManager.default.createDirectory(at: blockedActive, withIntermediateDirectories: true)
+
+        // Cross the 2 MB rotation threshold even though no append can succeed.
+        let largeMessage = String(repeating: "x", count: 2_048)
+        for i in 0..<1_500 {
+            store.log(.info, .app, event: "retry.\(i)", message: largeMessage)
+        }
+        // exportBundle provides a serial write barrier. Inventorying an active
+        // directory should throw; its failure must NOT delete rotated logs.
+        XCTAssertThrowsError(try store.exportBundle(context: "xctest.write-failure"))
+        XCTAssertEqual(try Data(contentsOf: oldest), sentinel)
+    }
+
     func testNonEvaluatedA9HealthNeverClaimsGreen100() {
         let monitor = VeilA9HealthMonitor()
         let before = monitor.report()
