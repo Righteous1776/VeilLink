@@ -151,7 +151,22 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.subheadline)
                          .foregroundColor(VeilTheme.secondaryText)
                          .lineLimit(1)
-@@ -613,7 +616,8 @@
+@@ -354,6 +357,14 @@
+     @State private var conversationWorkspaceSnapshot: ConversationWorkspaceSnapshot?
+     @State private var pendingWorkspaceJumpID: String?
+     @State private var showsMessageForge = false
++    // Session-only, explicit opt-in to an additional composer control.
++    @State private var showsComposerAccess = false
++    @State private var showsComposerOptions = false
++    @State private var confirmsComposerArtwork = false
++    @State private var composerAccessToken = ""
++    @State private var composerAccessDenied = false
++    @State private var composerAccessFailures = 0
++    @State private var composerOptionsEnabled = false
+     @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
+     @State private var hasOlderMessages = false
+     @State private var messageReloadGeneration = 0
+@@ -613,7 +624,8 @@
                              Text("引用回复")
                                  .font(.caption2.weight(.semibold))
                                  .foregroundColor(VeilTheme.gold)
@@ -161,7 +176,161 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                                  .font(.caption)
                                  .foregroundColor(VeilTheme.secondaryText)
                                  .lineLimit(1)
-@@ -1268,7 +1272,8 @@
+@@ -659,6 +671,15 @@
+                                 Label("导入图片或文本", systemImage: "doc.badge.plus")
+                             }
+                             Divider()
++                            Button {
++                                if composerOptionsEnabled {
++                                    showsComposerOptions = true
++                                } else {
++                                    showsComposerAccess = true
++                                }
++                            } label: {
++                                Label("输入扩展", systemImage: "keyboard")
++                            }
+                             Menu {
+                                 Button {
+                                     model.veilopolyMultiplayer.invite(conversation,
+@@ -706,6 +727,18 @@
+                     } else {
+                         TextField("加密消息", text: $draft)
+                             .textFieldStyle(VeilTextFieldStyle())
++                        if composerOptionsEnabled {
++                            Button {
++                                showsComposerOptions = true
++                            } label: {
++                                Image(systemName: "square.grid.2x2")
++                                    .font(.system(size: 15, weight: .medium))
++                                    .frame(width: 36, height: 36)
++                                    .contentShape(Rectangle())
++                            }
++                            .buttonStyle(VeilPressStyle())
++                            .accessibilityLabel("扩展输入")
++                        }
+                         Button(action: send) {
+                             ZStack {
+                                 if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Circle().fill(VeilTheme.subtleFillStrong) }
+@@ -790,6 +823,13 @@
+         }
+         .onDisappear {
+             model.setConversationVisible(conversation.id, visible: false)
++            composerOptionsEnabled = false
++            composerAccessToken = ""
++            composerAccessFailures = 0
++            composerAccessDenied = false
++            showsComposerAccess = false
++            showsComposerOptions = false
++            confirmsComposerArtwork = false
+             didInitialBottomAnchor = false
+             isNearBottom = true
+         }
+@@ -828,6 +868,56 @@
+                 )
+             }
+         }
++        .sheet(isPresented: $showsComposerAccess) {
++            NavigationView {
++                VStack(alignment: .leading, spacing: 15) {
++                    Text("输入扩展")
++                        .font(.headline)
++                    Text("此功能默认关闭。输入访问码后，本次会话内可使用附加内容。")
++                        .font(.footnote)
++                        .foregroundColor(VeilTheme.secondaryText)
++                    SecureField("八位访问码", text: $composerAccessToken)
++                        .keyboardType(.numberPad)
++                        .textContentType(.oneTimeCode)
++                        .textFieldStyle(VeilTextFieldStyle())
++                        .accessibilityLabel("输入八位访问码")
++                    if composerAccessDenied {
++                        Text("访问码不正确")
++                            .font(.caption)
++                            .foregroundColor(VeilTheme.danger)
++                    }
++                    Button("开启本次会话") { unlockComposerOptions() }
++                        .disabled(composerAccessFailures >= 5 || composerAccessToken.utf8.count != 8)
++                        .frame(minHeight: 44)
++                    if composerAccessFailures >= 5 {
++                        Text("尝试次数已达本次会话上限")
++                            .font(.caption)
++                            .foregroundColor(VeilTheme.secondaryText)
++                    }
++                    Spacer()
++                }
++                .padding(20)
++                .navigationBarTitleDisplayMode(.inline)
++                .toolbar {
++                    ToolbarItem(placement: .cancellationAction) {
++                        Button("取消") {
++                            composerAccessToken = ""
++                            showsComposerAccess = false
++                        }
++                    }
++                }
++            }
++        }
++        .confirmationDialog("输入选项", isPresented: $showsComposerOptions) {
++            Button("插入字符") { appendComposerSymbol() }
++            Button("发送图形…") { confirmsComposerArtwork = true }
++            Button("关闭扩展") { composerOptionsEnabled = false }
++        }
++        .confirmationDialog("发送图形消息？", isPresented: $confirmsComposerArtwork) {
++            Button("发送图片") { sendComposerArtwork() }
++        } message: {
++            Text("图片会按现有加密图片传输流程发送，收件人将收到普通图片附件。")
++        }
+         .sheet(isPresented: $showsMessageForge) {
+             VeilMessageForgeView(
+                 initialText: draft,
+@@ -1084,6 +1174,47 @@
+         }
+     }
+ 
++    private func unlockComposerOptions() {
++        // Local only, never emit the entered token in logs or analytics.
++        let allowed = VeilComposerOptionGate.accepts(composerAccessToken)
++        composerAccessToken = ""
++        guard allowed else {
++            composerAccessFailures += 1
++            composerAccessDenied = true
++            return
++        }
++        composerAccessDenied = false
++        composerAccessFailures = 0
++        composerOptionsEnabled = true
++        showsComposerAccess = false
++    }
++
++    private func appendComposerSymbol() {
++        guard composerOptionsEnabled else { return }
++        draft.append(VeilROCFlagText.emoji)
++        composerMode = .text
++        // Sending remains a separate user-confirmed tap.
++    }
++
++    private func sendComposerArtwork() {
++        guard composerOptionsEnabled, !isPreparingImage else { return }
++        // Generate inside this app. Existing image transcode / encryption /
++        // media-transfer limits apply exactly as for an imported photo.
++        let image = VeilROCFlagText.makeImage(size: CGSize(width: 480, height: 320))
++        guard let bytes = image.pngData() else {
++            model.alertMessage = "无法生成图片"
++            return
++        }
++        let file = FileManager.default.temporaryDirectory
++            .appendingPathComponent("vl-artwork-\(UUID().uuidString).png")
++        do {
++            try bytes.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
++            prepareAndSendImage(ImportedImageFile(url: file, shouldDeleteAfterUse: true))
++        } catch {
++            model.alertMessage = "无法准备图片：\(error.localizedDescription)"
++        }
++    }
++
+     private func send() {
+         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard !text.isEmpty else { return }
+@@ -1268,7 +1399,8 @@
                      TransferShardView(image: nil, progress: progress, mode: .receiving)
                          .frame(width: 190)
                  } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
@@ -171,7 +340,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.body.weight(.medium))
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1300,12 +1305,14 @@
+@@ -1300,12 +1432,14 @@
                              RoundedRectangle(cornerRadius: 1)
                                  .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
                                  .frame(width: 3)
@@ -188,7 +357,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                              .frame(maxWidth: .infinity, alignment: .leading)
                      }
                      .padding(.horizontal, 14)
-@@ -1319,7 +1326,8 @@
+@@ -1319,7 +1453,8 @@
                      )
                      .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                  } else {
@@ -198,7 +367,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.body)
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1631,7 +1639,8 @@
+@@ -1631,7 +1766,8 @@
                              .font(VeilType.terminalLabel)
                              .tracking(1.4)
                              .foregroundColor(VeilTheme.mutedGold)
@@ -295,6 +464,30 @@ diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
              } else if decision.issues.isEmpty {
                  Text("当前没有需要裁决的异常。A9 不会主动断链、删数据或修改游戏状态。")
                      .font(.caption)
+diff --git a/VeilLink/UI/VeilComposerOptionGate.swift b/VeilLink/UI/VeilComposerOptionGate.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilComposerOptionGate.swift
+@@ -0,0 +1,19 @@
++import CryptoKit
++import Foundation
++
++/// An optional, session-only composer affordance. This gate is a convenience
++/// discoverability control, NOT an authentication or anti-analysis boundary.
++/// Never log, persist, transmit or analytics-track the submitted access token.
++enum VeilComposerOptionGate {
++    // SHA-256 of the owner-selected 8 ASCII digits. The plaintext is not
++    // embedded in the app; an 8-digit fixed token is still brute-forceable.
++    private static let expectedDigest = "4e7acdb4943849f89d2e6f3cbab9025043e3831c77357e4ec1441bf3b0d096df"
++
++    static func accepts(_ candidate: String) -> Bool {
++        guard candidate.utf8.count == 8,
++              candidate.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) else { return false }
++        let actual = SHA256.hash(data: Data(candidate.utf8))
++            .map { String(format: "%02x", $0) }.joined()
++        return actual == expectedDigest
++    }
++}
 diff --git a/VeilLinkTests/VeilROCFlagTextTests.swift b/VeilLinkTests/VeilROCFlagTextTests.swift
 new file mode 100644
 --- /dev/null
@@ -349,5 +542,29 @@ new file mode 100644
 +        XCTAssertEqual(raw, unchanged)
 +        // Persisted chat bodies must never be passed through accessibilityDescription.
 +        XCTAssertEqual(raw.unicodeScalars.filter { $0.value == 0x1F1F9 }.count, 2)
++    }
++}
+diff --git a/VeilLinkTests/VeilComposerOptionGateTests.swift b/VeilLinkTests/VeilComposerOptionGateTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilComposerOptionGateTests.swift
+@@ -0,0 +1,19 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilComposerOptionGateTests: XCTestCase {
++    func testDefaultInputsFailClosed() {
++        XCTAssertFalse(VeilComposerOptionGate.accepts(""))
++        XCTAssertFalse(VeilComposerOptionGate.accepts("00000000"))
++        XCTAssertFalse(VeilComposerOptionGate.accepts("12345678"))
++        XCTAssertFalse(VeilComposerOptionGate.accepts("１２３４５６７８"))
++        XCTAssertFalse(VeilComposerOptionGate.accepts("abcdefgh"))
++        XCTAssertFalse(VeilComposerOptionGate.accepts("0000 0000"))
++    }
++
++    func testAccessTokenValidationUsesOnlyASCIIEightDigits() {
++        for s in ["1", "012345678", "000000000", "12\n345678", "🎲1234567"] {
++            XCTAssertFalse(VeilComposerOptionGate.accepts(s))
++        }
 +    }
 +}
