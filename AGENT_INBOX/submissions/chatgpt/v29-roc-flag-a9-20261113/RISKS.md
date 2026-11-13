@@ -12,3 +12,6 @@
 - The graphics attachment requires client authentication and a ready peer as usual. A recipient with another app may still not render native flag Unicode; an actual sent picture remains readable.
 - New composer UI changes the same `ConversationViews.swift` as the pre-existing PR #195 flag rendering proposal, by design. Owner requested this revision before product merge; update the one proposal rather than stacking another overlapping PR.
 - Popup presentation, confirmationDialog on iOS15, sheet lifecycle, cleanup and RAM usage require real iPhone 7 tests. No release or live integration authority.
+
+- An independent confirmation .sheet on iOS15 can be presented full screen on compact phones, but intentionally avoids multiple competing .alert modifiers. Governor should review UX height and UI accessibility with the native target's presentation capabilities rather than using iOS16-only detents.
+- Reduced outgoing artwork bitmap scale prioritizes memory use on iPhone7/SE2. Result remains 480x320 pixels, then passes unchanged through existing ImageTranscoder's supported pipeline; verify recipient clarity after lossy transcoding.
