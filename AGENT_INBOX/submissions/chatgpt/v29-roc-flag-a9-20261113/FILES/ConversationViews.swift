@@ -881,8 +881,11 @@ struct ChatView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .textFieldStyle(VeilTextFieldStyle())
-                        .onChange(of: composerAccessToken) { _ in
-                            composerAccessDenied = false
+                        .onChange(of: composerAccessToken) { next in
+                            // unlockComposerOptions() clears the SecureField
+                            // programmatically. That empty-string change must
+                            // not erase the just-presented invalid-code error.
+                            if !next.isEmpty { composerAccessDenied = false }
                         }
                         .accessibilityLabel("输入八位访问码")
                     if composerAccessDenied {
