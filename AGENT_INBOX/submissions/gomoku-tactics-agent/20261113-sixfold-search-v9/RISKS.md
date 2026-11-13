@@ -8,3 +8,5 @@
 - **External engine**: JS PVS/VCF is opt-in and does not ingest adaptive training/formation. Increased JS ceiling needs platform deadline test; V9 native forcing proof is not used when external engine succeeds.
 - **Compilation**: Swift host compiled with stub; full app requires actual Xcode/simulator CI. project.yml uses source glob? must verify before promotion. No CI green claim here.
 - **Scope**: No release, model files, protocol, databases, A9/A10, workflows, or protected surface modified.
+
+- **Attached NPZ inspection**: Owner-supplied `weights.npz.zip` contains CSR sparse matrix keys `indices`, `indptr`, `data`, `shape`, `format`; `brain.npz.zip` contains neuron/motor fields (`cell_type`, `azimuth`, `group_forward_L/R`, `group_kick_L/R`, etc.). No 15×15 policy/value head or compatible Gomoku metadata was established. They are not integrated, retrained, or committed, and must not be represented as Gomoku weights.
