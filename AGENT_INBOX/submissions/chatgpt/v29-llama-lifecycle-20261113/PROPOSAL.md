@@ -1,0 +1,32 @@
+# V29 P0 native llama lifecycle risk mitigation
+
+## Evidence
+The two Owner V29.0 Build66 black boxes were re-examined locally. All 9 MetricKit signal11 crash diagnostics (6 payloads on iPhone7, 3 on SE2; not necessarily 9 independent crashes) mark an attributed thread containing a call chain `llama -> VeilLink -> libswift_Concurrency.dylib`. The exact faulting function is NOT symbolicated. Do not expose original backtraces, binary UUIDs or device IDs publicly.
+
+## Verified source-level hazard
+`LlamaInferenceEngine` is a Swift actor, but `generate()` suspends repeatedly (`Task.yield()`, `onPiece`, `onProgress`) while retaining raw llama model/context/sampler and batch pointers. Swift actor reentrancy permits another `generate`, `trim` or `shutdown` call to access/free/reset the very same C pointers while the first generation is paused. This is a concrete potential use-after-free/invalid-state hazard; a plausible but NOT proven cause of the observed BadAccess.
+
+`LlamaLocalTextModelRuntime.cancel()` previously marked `.generating` as `.ready` before the cancelled native call unwound, allowing new requests. `prepare()` could resume after `unload()` and resurrect an already-cancelled engine.
+
+## Proposed fix (advisory patch only)
+1. Pure `LlamaNativeLifecycle` policy: only one native generation may begin; trim is deferred until generation exits; shutdown dominates trim.
+2. Engine `generate` acquires lifecycle in-flight guard BEFORE capturing raw pointers, releases it through a `defer` on success/error/cancellation. Shut down only after all raw-pointer work stops.
+3. Engine `shutdown() async` cancels via generation gate, queues checked continuations while generation runs, frees pointers once when generation unwinds, then resumes shutdown waiters. `prepare` cannot proceed with a new backend until the actual shutdown task finishes. No new lock held across llama decode.
+4. Engine `trim` never resets native KV cache/sampler midway through decode; postponed request applies upon generation completion.
+5. Runtime `cancel()` no longer falsely publishes `.ready` while decode is active. Runtime `prepare()` checks cancellation epochs across both await boundaries; if a newly loaded native engine is obsolete, unload it asynchronously before returning without overwriting the newer state. An in-progress preparation blocks duplicate native initialization.
+6. New isolated state-machine tests for no duplicate generation, deferred trim, shutdown priority, and idle release.
+
+## Not changed
+No model weights, quantization, inference hyperparameters, prompt templates, Wire4, BLE, secure session, game Engine/AI/Net, DB schema, signing, ACK gate, or Astra assets. No main source edits, merge, IPA, or CI dispatch.
+
+## Evidentiary limits
+Real crash disappearance requires exact Build66 dSYM + new IPA UUID and repeated iPhone7/SE2 inference-cancel/unload tests. This patch is not evidence that every signal11 fault has been fixed.
+
+## Follow-up fix: repeated unload must not orphan an in-flight destructor
+The first P0 draft still called `shutdownTask?.cancel()` before replacing it in `LlamaLocalTextModelRuntime.unload()`. Cancelling a Swift Task waiting in `withCheckedContinuation` does not guarantee that the native destructor has finished. A later `prepare()` could await only the newest (possibly no-op) task and enter `llama_backend_init` while a preceding engine's `llama_backend_free` is still pending.
+The revised candidate *chains* preceding shutdown tasks before each new engine's `shutdown()`, never cancels the old destructor, and increments `shutdownGeneration` so a resumed `prepare()` cannot clear an intervening, newer shutdown barrier. This is a source-proven ordering hazard, not definitive proof of the Build66 signal11 fault.
+
+## Cross-runtime native backend lease (third-pass hardening)
+`LocalTextModelCoordinator.activateOverride()` and `restoreBaseRuntime()` call a synchronous runtime `unload()` and immediately swap runtime implementations. The outgoing `LlamaLocalTextModelRuntime` may have deferred native llama cleanup, while the incoming, distinct runtime could call `llama_backend_init()` before the prior `llama_backend_free()` finishes. The previous per-instance `shutdownTask` chain does **not** cover two distinct runtime instances.
+
+New `LlamaProcessLoadLease` is a single @MainActor, FIFO, process-wide exclusive owner for native llama model/context lifecycle. `prepare()` obtains its lease after file validation but **before** native init, rechecks cancellation epoch immediately afterward, and releases on errors, obsolete loads, or cancellation. On successful load, ownership transfers to the runtime. `unload()` relinquishes the lease **only after** `await old.shutdown()` completes, including preceding queued shutdowns. This prevents overlapping backend init/free across different runtime objects. No secrets or model configuration changed.
