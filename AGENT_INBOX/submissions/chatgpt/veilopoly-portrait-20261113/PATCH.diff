@@ -1,0 +1,545 @@
+diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift
+--- a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift
++++ b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift
+@@ -128,6 +128,11 @@
+   game.players[actor].kind == .human && (liveRoom == nil || liveRoom?.localSeat == actor)
+  }
+  public var isMultiplayer: Bool { liveRoom != nil }
++ /// Local screen viewer is independent of the currently acting AI/guest.
++ public var viewingSeat: Int {
++  if let seat = liveRoom?.localSeat { return seat }
++  return game.players.first(where: { $0.kind == .human })?.id ?? actor
++ }
+  public var isHost: Bool { liveRoom?.isHost ?? false }
+  public var roomConfiguration: VeilopolyRoomConfiguration? { liveRoom?.configuration }
+  public var canSkipAnimation: Bool { animating && !cardGate.isPresented }
+@@ -508,6 +513,7 @@
+  @State private var showGameInfo = false
+  @State private var showGuide = false
+  @State private var showAssetBrowser = false
++ @State private var assetBrowserSection: VeilopolyManagementSection = .property
+  @State private var panelWorkspace = VeilopolyPanelWorkspace()
+  @GestureState private var panelTranslation = CGSize.zero
+  @GestureState private var chipTranslation = CGSize.zero
+@@ -541,7 +547,8 @@
+      landscapeContent(availableWidth: geometry.size.width,
+                       availableHeight: geometry.size.height)
+     } else {
++     portraitContent(availableWidth: geometry.size.width,
++                     availableHeight: geometry.size.height)
+-     portraitFallback
+     }
+    }
+    .frame(width: geometry.size.width, height: geometry.size.height)
+@@ -637,7 +644,8 @@
+                        saveSummary: model.saveSummary)
+   }
+   .sheet(isPresented: $showAssetBrowser) {
++   VeilopolyAssetBrowser(game: model.game, initialPlayer: model.viewingSeat,
++                         initialSection: assetBrowserSection)
+-   VeilopolyAssetBrowser(game: model.game, initialPlayer: model.actor)
+     .preferredColorScheme(interfaceTheme.colorScheme)
+   }
+   .alert("本局信息", isPresented: $showGameInfo) {
+@@ -789,7 +797,7 @@
+ 
+    // The top-right capsule is RESERVED for More / Exit only.
+    // Do not put gameplay toggles next to Exit: an accidental tap is costly.
++   compactLandscapeMenu
+-   capsuleControls
+     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+     .padding(.trailing, 6)
+     .padding(.top, 5)
+@@ -818,9 +826,9 @@
+  /// Keep Astra's real actions and HUD. Only the panel's placement changes:
+  /// on iPhone it floats over otherwise unused right-side space; on iPad it
+  /// may temporarily cover the board edge until collapsed.
++ private func controlsDrawer(in layout: VeilopolyPanelLayout, portrait: Bool = false) -> some View {
+- private func controlsDrawer(in layout: VeilopolyPanelLayout) -> some View {
+   VStack(alignment: .leading, spacing: 8) {
++   if portrait { portraitPanelToolbar } else { panelToolbar(in: layout) }
+-   panelToolbar(in: layout)
+    if model.game.turn.phase == .manage && model.waitingForHuman {
+     managementNavigation
+      .disabled(model.pending)
+@@ -1139,18 +1147,67 @@
+   .accessibilityElement(children: .contain)
+  }
+ 
++ private func openAssetBrowser(_ section: VeilopolyManagementSection) {
++  assetBrowserSection = section
++  showAssetBrowser = true
++ }
++ private func portraitContent(availableWidth: CGFloat, availableHeight: CGFloat) -> some View {
++  let split = VeilopolyPortraitLayout.allocate(
++   availableWidth: Double(availableWidth), availableHeight: Double(availableHeight))
++  let drawerLayout = VeilopolyPanelLayout(width: Double(availableWidth), height: split.workspaceHeight)
++  return VeilopolyPortraitWorkspace(model: model, workspace: $panelWorkspace,
++    reduceMotion: reduceMotion, board: boardViewport,
++    drawer: controlsDrawer(in: drawerLayout, portrait: true),
++    onOpenAssets: { openAssetBrowser($0) },
++    onExit: { showExitConfirmation = true })
++   .frame(width: availableWidth, height: availableHeight)
++ }
++ private var portraitPanelToolbar: some View {
++  HStack(spacing: 7) {
++   VStack(spacing: 3) {
++    Capsule().fill(Color.white.opacity(0.75)).frame(width: 38, height: 4)
++    Text("下滑收起").font(.system(size: 10, weight: .medium))
++   }
++   .frame(width: 76, height: 44)
++   .contentShape(Rectangle())
++   .gesture(DragGesture(minimumDistance: 12).onEnded { value in
++    if value.translation.height > 45 {
++     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) { panelWorkspace.suspend() }
++    }
++   })
++   .accessibilityLabel("面板标题栏，向下拖动收起")
++   Spacer(minLength: 0)
++   Text("操作中心").font(.subheadline.weight(.semibold))
++   Spacer(minLength: 0)
++   Button {
++    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) { panelWorkspace.suspend() }
++   } label: { Image(systemName: "arrow.down.to.line").frame(width: 44, height: 44) }
++   .buttonStyle(.plain).accessibilityLabel("收起操作面板至骰子")
++   Menu {
++    Button("查看股市") { openAssetBrowser(.market) }
++    Button("查看银行") { openAssetBrowser(.bank) }
++    Button("资产总览") { openAssetBrowser(.property) }
++    Button("退出游戏", role: .destructive) { showExitConfirmation = true }
++   } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
++    .accessibilityLabel("更多与退出")
++  }
++  .foregroundColor(.white)
++  .frame(minHeight: 44)
++  .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
++ }
++ private var compactLandscapeMenu: some View {
++  Menu {
++   Button("更多操作") { showMore = true }
++   Button("资产资料") { openAssetBrowser(.property) }
++   Button("退出游戏", role: .destructive) { showExitConfirmation = true }
++  } label: {
++   Image(systemName: "ellipsis")
++    .font(.system(size: 18, weight: .bold))
++    .foregroundColor(.white)
++    .frame(width: 44, height: 44)
++    .background(Color(red: 0.08, green: 0.23, blue: 0.23).opacity(0.92), in: Capsule())
+- private var portraitFallback: some View {
+-  VStack(spacing: 16) {
+-   Image(systemName: "iphone.gen3.radiowaves.left.and.right")
+-    .font(.system(size: 42)).symbolRenderingMode(.hierarchical)
+-   Text("请横向握持设备").font(.title3.bold())
+-   Text("Veilopoly 使用真正的横向全屏棋盘。若设备无法旋转，请确认 VeilLink 宿主已允许横屏方向。")
+-    .font(.caption).multilineTextAlignment(.center)
+-    .foregroundStyle(.secondary)
+-    .frame(maxWidth: 340)
+-   capsuleControls
+   }
++  .accessibilityLabel("更多操作")
+-  .padding(24)
+  }
+ 
+  // Two-part control matching WeChat mini-program's upper-right capsule:
+diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/PortraitWorkspace.swift b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/PortraitWorkspace.swift
+new file mode 100644
+--- /dev/null
++++ b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/PortraitWorkspace.swift
+@@ -0,0 +1,232 @@
++#if os(iOS) && canImport(SwiftUI)
++import Foundation
++import SwiftUI
++import VeilopolyEngine
++
++private enum VeilopolyPortraitWidget: String, CaseIterable, Identifiable {
++ case cash = "我的现金"
++ case market = "模拟股票"
++ case bank = "银行利息"
++ case estate = "地产"
++ case loan = "贷款"
++ case link = "连接状态"
++
++ var id: String { rawValue }
++ var symbol: String {
++  switch self {
++  case .cash: return "yensign.circle"
++  case .market: return "chart.xyaxis.line"
++  case .bank: return "building.columns"
++  case .estate: return "house"
++  case .loan: return "creditcard"
++  case .link: return "antenna.radiowaves.left.and.right"
++  }
++ }
++}
++
++/// Portrait's top half is the board. The lower half is either a scrolling
++/// control drawer or a configurable READ-ONLY dashboard plus a long-press die.
++/// The same GameSessionModel/GameBoardScene stays mounted in both layouts.
++@MainActor
++struct VeilopolyPortraitWorkspace<BoardContent: View, DrawerContent: View>: View {
++ @ObservedObject private var model: GameSessionModel
++ @Binding private var workspace: VeilopolyPanelWorkspace
++ private let reduceMotion: Bool
++ private let board: BoardContent
++ private let drawer: DrawerContent
++ private let onOpenAssets: (VeilopolyManagementSection) -> Void
++ private let onExit: () -> Void
++ @AppStorage("veilopoly.portrait.cards.v1") private var visibleWidgetCodes = "我的现金,模拟股票,银行利息,地产"
++ private var visibleWidgets: Set<VeilopolyPortraitWidget> {
++  Set(visibleWidgetCodes.split(separator: ",").compactMap {
++   VeilopolyPortraitWidget(rawValue: String($0))
++  })
++ }
++ private func toggleWidget(_ item: VeilopolyPortraitWidget) {
++  var next = visibleWidgets
++  if next.contains(item) { next.remove(item) } else { next.insert(item) }
++  visibleWidgetCodes = VeilopolyPortraitWidget.allCases
++   .filter { next.contains($0) }.map(\.rawValue).joined(separator: ",")
++ }
++
++ init(model: GameSessionModel, workspace: Binding<VeilopolyPanelWorkspace>,
++      reduceMotion: Bool, board: BoardContent, drawer: DrawerContent,
++      onOpenAssets: @escaping (VeilopolyManagementSection) -> Void,
++      onExit: @escaping () -> Void) {
++  _model = ObservedObject(wrappedValue: model)
++  _workspace = workspace
++  self.reduceMotion = reduceMotion
++  self.board = board
++  self.drawer = drawer
++  self.onOpenAssets = onOpenAssets
++  self.onExit = onExit
++ }
++
++ var body: some View {
++  GeometryReader { size in
++   let split = VeilopolyPortraitLayout.allocate(
++    availableWidth: Double(size.size.width), availableHeight: Double(size.size.height))
++   VStack(spacing: 0) {
++    board
++     .frame(width: size.size.width, height: CGFloat(split.boardHeight))
++    Rectangle()
++     .fill(Color(red: 0.73, green: 0.57, blue: 0.34))
++     .frame(height: 1).allowsHitTesting(false)
++    ZStack {
++     compactDashboard
++      .opacity(workspace.isExpanded ? 0 : 1)
++      .allowsHitTesting(!workspace.isExpanded)
++      .accessibilityHidden(workspace.isExpanded)
++     drawer
++      .opacity(workspace.isExpanded ? 1 : 0)
++      .allowsHitTesting(workspace.isExpanded)
++      .accessibilityHidden(!workspace.isExpanded)
++    }
++    .frame(width: size.size.width, height: max(0, CGFloat(split.workspaceHeight) - 1))
++   }
++   .frame(width: size.size.width, height: size.size.height)
++  }
++  .onAppear {
++   // Start expanded in portrait. Subsequent collapses don't reconstruct
++   // the drawer, so scrolling and draft input remain intact.
++   if !workspace.isExpanded { workspace.open() }
++  }
++ }
++
++ private var compactDashboard: some View {
++  VStack(spacing: 4) {
++   HStack(spacing: 8) {
++    Text("我的城市仪表盘")
++     .font(.subheadline.weight(.semibold))
++    Spacer(minLength: 1)
++    Menu {
++     ForEach(VeilopolyPortraitWidget.allCases) { item in
++      Button {
++       toggleWidget(item)
++      } label: {
++       Label(item.rawValue, systemImage: visibleWidgets.contains(item)
++             ? "checkmark.circle.fill" : "circle")
++      }
++     }
++    } label: {
++     Label("组件", systemImage: "slider.horizontal.3")
++      .font(.caption.weight(.medium)).frame(minWidth: 70, minHeight: 44)
++    }
++    .accessibilityLabel("选择仪表盘组件")
++    Menu {
++     Button("资产资料", action: { onOpenAssets(.property) })
++     Button("退出游戏", role: .destructive, action: onExit)
++    } label: {
++     Image(systemName: "ellipsis").frame(width: 44, height: 44)
++    }
++    .accessibilityLabel("更多与退出")
++   }
++   .padding(.horizontal, 10)
++   ScrollView {
++    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
++              spacing: 8) {
++     ForEach(VeilopolyPortraitWidget.allCases) { item in
++      if visibleWidgets.contains(item) {
++       widgetCard(item)
++      }
++     }
++    }
++    .padding(.horizontal, 10)
++    HStack(spacing: 8) {
++     Button { onOpenAssets(.market) } label: {
++      Label("股票行情", systemImage: "chart.line.uptrend.xyaxis")
++       .frame(maxWidth: .infinity, minHeight: 44)
++     }
++     Button { onOpenAssets(.bank) } label: {
++      Label("银行账户", systemImage: "building.columns")
++       .frame(maxWidth: .infinity, minHeight: 44)
++     }
++    }
++    .font(.caption.weight(.medium))
++    .buttonStyle(.bordered)
++    .padding(.horizontal, 10)
++    .padding(.top, 8)
++   }
++   .frame(maxHeight: .infinity)
++   // No roll-on-tap: a long press only expands the panel. This avoids
++   // accidental real financial or turn actions while inspecting widgets.
++   Image(systemName: "die.face.5.fill")
++    .font(.system(size: 34, weight: .semibold))
++    .foregroundColor(Color(red: 0.95, green: 0.82, blue: 0.58))
++    .frame(width: 64, height: 64)
++    .background(Color(red: 0.10, green: 0.30, blue: 0.30),
++                in: RoundedRectangle(cornerRadius: 18))
++    .contentShape(Rectangle())
++    .onLongPressGesture(minimumDuration: 0.55) {
++     withAnimation(reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.88)) {
++      workspace.open()
++     }
++    }
++    .accessibilityAddTraits(.isButton)
++    .accessibilityLabel("骰子入口，长按展开操作面板")
++    .accessibilityAction(named: Text("展开操作面板")) { workspace.open() }
++    .padding(.bottom, 4)
++  }
++  .foregroundColor(.white)
++  .background(Color(red: 0.10, green: 0.22, blue: 0.23))
++ }
++
++ private func widgetCard(_ widget: VeilopolyPortraitWidget) -> some View {
++  let viewer = model.viewingSeat
++  let summary = VeilopolyAssetSummary(game: model.game, player: viewer)
++  let bank = model.game.banking
++  let account = bank.flatMap { ledger in
++   ledger.accounts.indices.contains(viewer) ? ledger.accounts[viewer] : nil
++  }
++  let quote = bank?.market?.quotes.first
++
++  let value: String
++  let detail: String
++  switch widget {
++  case .cash:
++   value = "¥\(summary.cash)"
++   detail = "我的游戏现金 · 实时"
++  case .market:
++   value = quote.map {
++    String(format: "¥%.2f", Double($0.currentPriceCents) / 100.0)
++   } ?? "暂无报价"
++   detail = quote.map { "\($0.symbol) · T+\(bank?.market?.tick ?? 0)" } ?? "虚构行情 · 只读"
++  case .bank:
++   value = bank?.terms.demandYieldBasisPoints.map {
++    String(format: "%.2f%%", Double($0) / 100.0)
++   } ?? "未设定"
++   detail = "本局活期利率 · 存款 ¥\(summary.savings)"
++  case .estate:
++   value = "¥\(summary.property)"
++   detail = "名下 \(model.game.board.filter { $0.owner == viewer }.count) 个地块"
++  case .loan:
++   value = "¥\(summary.liabilities)"
++   detail = "未结清贷款 \(account?.loans.count ?? 0) 笔"
++  case .link:
++   value = model.isMultiplayer
++    ? (model.networkReady ? "已同步" : "等待恢复")
++    : "本地离线"
++   detail = model.isMultiplayer ? "查看对局面板了解详情" : "单机可用"
++  }
++  return VStack(alignment: .leading, spacing: 5) {
++   Label(widget.rawValue, systemImage: widget.symbol)
++    .font(.system(size: 11, weight: .semibold))
++    .foregroundColor(Color(red: 0.88, green: 0.73, blue: 0.50))
++   Text(value)
++    .font(.system(size: 16, weight: .bold, design: .rounded))
++    .monospacedDigit()
++    .lineLimit(1)
++    .minimumScaleFactor(0.72)
++   Text(detail)
++    .font(.system(size: 10))
++    .foregroundStyle(.white.opacity(0.78))
++    .lineLimit(2)
++    .fixedSize(horizontal: false, vertical: true)
++  }
++  .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
++  .padding(9)
++  .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 11))
++  .accessibilityElement(children: .combine)
++ }
++}
++#endif
+diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/LandscapePresentation.swift b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/LandscapePresentation.swift
+--- a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/LandscapePresentation.swift
++++ b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/LandscapePresentation.swift
+@@ -1,13 +1,10 @@
+ #if os(iOS) && canImport(SwiftUI)
+ import SwiftUI
+-import UIKit
+ 
++/// Orientation follows the host's currently allowed portrait or landscape mode.
++/// No geometry/rotation request is issued by the Veilopoly presentation.
+-/// The parent app target must opt in to landscape in UISupportedInterfaceOrientations.
+-/// `preferredInterfaceOrientations` of its root/container controller must not
+-/// suppress landscape; a scene request alone cannot override Info.plist.
+ /// Public presentation entry for Veilopoly. This uses a full-screen cover, not a
++/// game-card embedded in the VeilLink game hall. Host Info.plist remains authoritative.
+-/// game-card embedded in the VeilLink game hall. The orientation request requires
+-/// the host iOS target to declare landscape orientations in Info.plist.
+ @MainActor
+ public struct VeilopolyFullscreenModifier: ViewModifier {
+  @Binding private var isPresented: Bool
+@@ -23,7 +20,6 @@
+  public func body(content: Content) -> some View {
+   content.fullScreenCover(isPresented: $isPresented) {
+    VeilopolyGameView(seed: seed, humanCount: humanCount, onExit: { isPresented = false })
+-    .background(LandscapeSceneRequest())
+     .statusBarHidden(true)
+   }
+  }
+@@ -50,63 +46,9 @@
+  }
+  public var body: some View {
+   VeilopolyGameView(session: session, onExit: onExit)
+-   .background(LandscapeSceneRequest())
+    .statusBarHidden(true)
+  }
+ }
+ 
+-/// iOS 15 supports controller-declared orientations and the public
+-/// attemptRotationToDeviceOrientation() fallback. iOS 16+ additionally
+-/// supports an explicit UIWindowScene geometry preference request.
+-/// Both paths require landscape in the *host* UISupportedInterfaceOrientations;
+-/// a child package cannot override the host's Info.plist.
+-private struct LandscapeSceneRequest: UIViewControllerRepresentable {
+- func makeUIViewController(context: Context) -> OrientationProbe { OrientationProbe() }
+- func updateUIViewController(_ uiViewController: OrientationProbe, context: Context) {}
+-}
+-
+-private final class OrientationProbe: UIViewController {
+- private var requested = false
+- private weak var lastWindowScene: UIWindowScene?
+- private var restoreOrientation: UIInterfaceOrientationMask = .portrait
+- override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
+- override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeRight }
+- override var prefersStatusBarHidden: Bool { true }
+-
+- override func viewDidAppear(_ animated: Bool) {
+-  super.viewDidAppear(animated)
+-  guard !requested, let windowScene = view.window?.windowScene else { return }
+-  requested = true
+-  lastWindowScene = windowScene
+-  switch windowScene.interfaceOrientation {
+-  case .landscapeLeft: restoreOrientation = .landscapeLeft
+-  case .landscapeRight: restoreOrientation = .landscapeRight
+-  default: restoreOrientation = .portrait
+-  }
+-  if #available(iOS 16.0, *) {
+-   setNeedsUpdateOfSupportedInterfaceOrientations()
+-   windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { error in
+-    NSLog("Veilopoly landscape request denied by host: %@", String(describing: error))
+-   }
+-  } else {
+-   // Public iOS 15 API: system may rotate if the host explicitly allows it.
+-   UIViewController.attemptRotationToDeviceOrientation()
+-  }
+- }
+-
+- override func viewDidDisappear(_ animated: Bool) {
+-  super.viewDidDisappear(animated)
+-  guard requested, let windowScene = lastWindowScene else { return }
+-  requested = false
+-  lastWindowScene = nil
+-  if #available(iOS 16.0, *) {
+-   windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: restoreOrientation)) { error in
+-    NSLog("Veilopoly orientation restoration denied by host: %@", String(describing: error))
+-   }
+-  } else {
+-   UIViewController.attemptRotationToDeviceOrientation()
+-  }
+- }
+-}
+ #endif
+ 
+diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/LandscapeLayoutMetrics.swift b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/LandscapeLayoutMetrics.swift
+--- a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/LandscapeLayoutMetrics.swift
++++ b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/LandscapeLayoutMetrics.swift
+@@ -67,3 +67,17 @@
+ 
+ }
+ 
++ 
++/// Pure Swift portrait split: board uses at most the upper half of the
++/// available safe-area rectangle; controls/widgets own the lower remainder.
++public enum VeilopolyPortraitLayout {
++ public static func allocate(availableWidth: Double, availableHeight: Double)
++  -> (boardHeight: Double, workspaceHeight: Double) {
++  let width = availableWidth.isFinite ? max(0, availableWidth) : 0
++  let height = availableHeight.isFinite ? max(0, availableHeight) : 0
++  let aspectBound = max(0, width - 12) / VeilopolyLandscapeLayout.boardAspect + 8
++  let boardHeight = min(height * 0.5, aspectBound)
++  return (boardHeight, max(0, height - boardHeight))
++ }
++}
++
+diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/AssetBrowser.swift b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/AssetBrowser.swift
+--- a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/AssetBrowser.swift
++++ b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/AssetBrowser.swift
+@@ -8,15 +8,16 @@
+ struct VeilopolyAssetBrowser: View {
+  let game: GameState
+  @State private var selectedPlayer: Int
++ @State private var section: VeilopolyManagementSection
+- @State private var section: VeilopolyManagementSection = .property
+  @State private var showAllTiles = false
+  @State private var selectedSymbol = "VTL"
+  @State private var showAchievementJournal = false
+  @Environment(\.dismiss) private var dismiss
+ 
++ init(game: GameState, initialPlayer: Int, initialSection: VeilopolyManagementSection = .property) {
+- init(game: GameState, initialPlayer: Int) {
+   self.game = game
+   _selectedPlayer = State(initialValue: initialPlayer)
++  _section = State(initialValue: initialSection)
+  }
+ 
+  private var snapshot: VeilopolyAssetBrowserSnapshot? {
+diff --git a/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyUITests/PortraitLayoutTests.swift b/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyUITests/PortraitLayoutTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyUITests/PortraitLayoutTests.swift
+@@ -0,0 +1,25 @@
++import XCTest
++@testable import VeilopolyUI
++
++final class PortraitLayoutTests: XCTestCase {
++ func testIPhone7PortraitSplit() {
++  let split = VeilopolyPortraitLayout.allocate(availableWidth: 375, availableHeight: 667)
++  XCTAssertGreaterThan(split.boardHeight, 0)
++  XCTAssertLessThanOrEqual(split.boardHeight, 333.5)
++  XCTAssertGreaterThanOrEqual(split.workspaceHeight, 333.5)
++  XCTAssertEqual(split.boardHeight + split.workspaceHeight, 667, accuracy: 0.001)
++ }
++ func testPortraitSizesNeverCropAllocation() {
++  for (w, h) in [(375.0, 667.0), (390.0, 844.0), (820.0, 1180.0)] {
++   let split = VeilopolyPortraitLayout.allocate(availableWidth: w, availableHeight: h)
++   XCTAssertGreaterThan(split.boardHeight, 0)
++   XCTAssertLessThanOrEqual(split.boardHeight, h / 2)
++   XCTAssertEqual(split.boardHeight + split.workspaceHeight, h, accuracy: 0.001)
++  }
++ }
++ func testBadViewportIsHarmless() {
++  let split = VeilopolyPortraitLayout.allocate(availableWidth: -1, availableHeight: -2)
++  XCTAssertEqual(split.boardHeight, 0)
++  XCTAssertEqual(split.workspaceHeight, 0)
++ }
++}
