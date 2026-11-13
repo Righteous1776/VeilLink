@@ -9,9 +9,9 @@ submission_path: AGENT_INBOX/submissions/gomoku-recovery-agent/20261113-native-i
 scope: independent native Gomoku kernel + existing learning-model bridge + real telemetry API
 proposed_product_files: VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift, VeilGomokuUnifiedBridge.swift
 source_sha256_search: 1575425e4f395301a5a79c07811190fb057ef3663b3e7b4be3d13942a36c8410
-source_sha256_bridge: b5d47e47ecb5a561e5c53ee473da6e8ab1245774bde08140bcea5219ae50056a
+source_sha256_bridge: 59799006a4758e9ccbaadcc89b9df7671762244e78ceca17e1175af7078f1408
 source_lines_search: 526
-source_lines_bridge: 69
+source_lines_bridge: 62
 app_build_or_ipa: NOT RUN
 model_weights_or_private_data_committed: NONE
 previous_draft_prs: #186 (R2 safety), #187 (thinking), #190 (prototype migration)
