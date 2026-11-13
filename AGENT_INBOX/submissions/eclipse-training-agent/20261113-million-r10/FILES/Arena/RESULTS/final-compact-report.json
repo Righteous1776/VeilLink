@@ -1,0 +1,68 @@
+{
+  "files": {
+    "/workspace/scratch/eclipse-arena/final-compact-a.jsonl": {
+      "sha256": "c87542a5f049849c771104f11b861361f62ee4fd43c9f07c1ad224c97ee9293e",
+      "bytes": 433535
+    },
+    "/workspace/scratch/eclipse-arena/final-compact-b.jsonl": {
+      "sha256": "307d3c6b12d878df9cbb5505f84274eeb574266e59361b1387da398014525579",
+      "bytes": 403160
+    }
+  },
+  "games": 200,
+  "result": {
+    "baselineWon": 85,
+    "trainedWon": 114,
+    "draw": 1
+  },
+  "resultsByTrainedColor": {
+    "1": {
+      "baselineWon": 23,
+      "trainedWon": 77
+    },
+    "2": {
+      "baselineWon": 62,
+      "trainedWon": 37,
+      "draw": 1
+    }
+  },
+  "invalidReplayErrors": [],
+  "presets": 1200,
+  "actualNativeDecisions": 4942,
+  "nodes": 927590,
+  "exactFullSequences": 199,
+  "completeColorPairs": 100,
+  "trainedPointRateCompleteGames": 0.5725,
+  "perGameWilson95Descriptive": [
+    0.5032062334970411,
+    0.6390611941782554
+  ],
+  "pairedBootstrap95": [
+    0.5125,
+    0.63
+  ],
+  "completedDepthHistogram": {
+    "3": 3638,
+    "1": 1109,
+    "2": 195
+  },
+  "meanMillisecondsPerDecision": 19.407366509864033,
+  "p95MillisecondsPerDecision": 61.77651882171631,
+  "maxMillisecondsPerDecision": 112.9751205444336,
+  "decisionTimingByPolicy": {
+    "learned": {
+      "decisions": 2478,
+      "meanMilliseconds": 24.696131499185014,
+      "p95Milliseconds": 67.87514686584473,
+      "maxMilliseconds": 112.9751205444336
+    },
+    "original": {
+      "decisions": 2464,
+      "meanMilliseconds": 14.088551719467361,
+      "p95Milliseconds": 54.81672286987305,
+      "maxMilliseconds": 82.56804943084717
+    }
+  },
+  "strengthScope": "CPU Linux native kernel at the exact recorded budget; not full Master/Elo/device result",
+  "budgetCaveat": "Node cap applies to counted search-tree nodes; mandatory root safety scans are not included and may exceed the wall-time ceiling"
+}

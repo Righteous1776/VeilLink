@@ -1,0 +1,58 @@
+{
+  "files": {
+    "final-compact-b.jsonl": {
+      "games": 100,
+      "sha256": "307d3c6b12d878df9cbb5505f84274eeb574266e59361b1387da398014525579",
+      "bytes": 403160
+    },
+    "final-compact-a.jsonl": {
+      "games": 100,
+      "sha256": "c87542a5f049849c771104f11b861361f62ee4fd43c9f07c1ad224c97ee9293e",
+      "bytes": 433535
+    },
+    "final-strong-b.jsonl": {
+      "games": 100,
+      "sha256": "b05518cd366b9a947fd928e1775ee860f0e10d6cb54391f4e5590ddcd56a0895",
+      "bytes": 499502
+    },
+    "final-strong-a.jsonl": {
+      "games": 100,
+      "sha256": "fcf69104b104fa53be05ce90336c3b92dade5a1612e5869c32c2bb5e624abf4a",
+      "bytes": 461176
+    },
+    "final-time50.jsonl": {
+      "games": 100,
+      "sha256": "8e7354e13e8c435b293f6733f66d0fc2a609cca956574368b5bd8429ad89074b",
+      "bytes": 495125
+    },
+    "calibration-v1-advanced-vs-balanced.jsonl": {
+      "games": 60,
+      "sha256": "0d00553cec350b1c1820c425efee329e308711b287a8bcb8643c26d27b21aa8f",
+      "bytes": 316774
+    },
+    "calibration-v1-balanced-vs-relaxed.jsonl": {
+      "games": 60,
+      "sha256": "51e3b9968c668c6baa6181e8479d90ad778dcd0a33623e6f199ab2a51ad24b34",
+      "bytes": 374937
+    },
+    "calibration-v1-master-vs-advanced.jsonl": {
+      "games": 60,
+      "sha256": "2f2118a274d5fdc5f75e46d1c5202310cf2fb3fa35fa37a56ce48daa9a038e29",
+      "bytes": 341962
+    },
+    "confirmation-v1-balanced-vs-relaxed.jsonl": {
+      "games": 120,
+      "sha256": "d0e7d8f805c91308f630e12e28e0cbe2c2d768141bc37e28cff83cf639c2bc79",
+      "bytes": 743716
+    },
+    "confirmation-v1-master-vs-advanced.jsonl": {
+      "games": 120,
+      "sha256": "0aa4f33217edc5a6328cbaa228bf26e0fa482a1b43f405a122250d3d861764d3",
+      "bytes": 659294
+    }
+  },
+  "games": 920,
+  "distinct_seed_pair_keys": 460,
+  "preset_board_collisions_with_any_training_validation_test_source_board": [],
+  "method": "Reconstruct six presets; canonicalize all D4 transforms; compare exact side-relative source boards. Random central openings are not proof of human/master opening diversity."
+}

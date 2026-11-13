@@ -1,0 +1,11 @@
+{
+  "draft_pr": "https://github.com/Righteous1776/VeilLink/pull/209",
+  "verified_source_commit": "8c3394897404e506d746f748f9b41bd79715d487",
+  "source_commit_inbox_gate": "success",
+  "gate_url": "https://github.com/Righteous1776/VeilLink/actions/runs/43471226017/job/132043342397",
+  "main_product_unchanged": true,
+  "governor_accepted": false,
+  "applied_to_product": false,
+  "released": false,
+  "this_followup_changes": "delivery metadata only; frozen model, native kernel, production proposal, patch and all tests unchanged"
+}

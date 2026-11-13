@@ -1,0 +1,175 @@
+{
+  "sources": [
+    {
+      "name": "1-VeilLink-GomokuLearning-20261113-172016-404-27774F62.vltrain.json",
+      "sha256": "d5cf13940bbb84dc937783700aa129303c4ec1d54a781992099675c3e6325d8b",
+      "counts": {
+        "nonterminal_excluded_from_owner_supervision": 55,
+        "verified_terminal": 48,
+        "partial_restore_fragment_excluded": 4
+      },
+      "payload_fnv_verified": true,
+      "payload_fnv": "93dcccb56c4ec952"
+    },
+    {
+      "name": "2-VeilLink-GomokuLearning-20261113-181938-942-EB7990D0.vltrain.json",
+      "sha256": "050f5abbac2c3f7991db5dbcad4b4d1bd33f49eb1aeeacb5025b17d0696ce325",
+      "counts": {
+        "verified_terminal": 57,
+        "nonterminal_excluded_from_owner_supervision": 18,
+        "partial_restore_fragment_excluded": 3
+      },
+      "payload_fnv_verified": true,
+      "payload_fnv": "a9737700c7cd421f"
+    },
+    {
+      "name": "GomokuNativeTrainingSeed.json",
+      "sha256": "9f7ddf5c847d6beb972c5a98ad83daa66df189f82171988ac1da68d6142188e0",
+      "verified_terminal": 2000,
+      "engine_revision": "bc919b454379841180fb8698a9e0addec87e7af0",
+      "fnv_verified": true
+    }
+  ],
+  "actual_replayed_games": 2105,
+  "unique_d4_game_families": 317,
+  "game_family_split": {
+    "2": 37,
+    "0": 261,
+    "1": 19
+  },
+  "unique_d4_boards_split": [
+    10730,
+    587,
+    1231
+  ],
+  "eval_shared_boards_removed": {
+    "1_vs_0": 44,
+    "2_vs_0": 485,
+    "2_vs_1": 21
+  },
+  "feature_names": [
+    "own_window1",
+    "own_window2",
+    "own_window3",
+    "own_window4",
+    "enemy_window1",
+    "enemy_window2",
+    "enemy_window3",
+    "enemy_window4",
+    "own_run",
+    "enemy_run",
+    "own_open3",
+    "enemy_open3",
+    "own_four",
+    "enemy_four",
+    "own_near1",
+    "enemy_near1",
+    "own_near2",
+    "enemy_near2",
+    "center",
+    "edge",
+    "occupied",
+    "own_axes3",
+    "enemy_axes3",
+    "own_cross",
+    "enemy_cross",
+    "bias"
+  ],
+  "raw_privacy": "Raw games/boards/candidates exist only in external work directory, not Inbox.",
+  "pre_dedup_candidate_rows": 2195214,
+  "d4_equivalent_action_rows_removed_before_fit": [
+    5204,
+    0,
+    519
+  ],
+  "training_rows_are_unique_full_d4_board_action_orbits": true,
+  "candidate_rows_split": [
+    1848616,
+    120343,
+    220532
+  ],
+  "training_rows_are_unique_canonical_board_action_pairs": true,
+  "validation_sweep": [
+    {
+      "iterations": 24,
+      "validation": {
+        "nonforced_boards": 430,
+        "baseline_teacher_utility": -12.358511586244717,
+        "baseline_regret": 54.76358174224232,
+        "baseline_safe": 319,
+        "baseline_fork_risk": 0.5023255944252014,
+        "baseline_optimal": 55,
+        "trained_teacher_utility": 30.70990759527614,
+        "trained_regret": 11.695162560721469,
+        "trained_safe": 357,
+        "trained_fork_risk": 0.2930232584476471,
+        "trained_optimal": 185,
+        "teacher_teacher_utility": 42.405070155997606,
+        "teacher_regret": 0.0,
+        "teacher_safe": 413,
+        "teacher_fork_risk": 0.03953488543629646,
+        "teacher_optimal": 430,
+        "changed_decision": 377,
+        "any_safe_candidate": 417
+      }
+    },
+    {
+      "iterations": 48,
+      "validation": {
+        "nonforced_boards": 430,
+        "baseline_teacher_utility": -12.358511586244717,
+        "baseline_regret": 54.76358174224232,
+        "baseline_safe": 319,
+        "baseline_fork_risk": 0.5023255944252014,
+        "baseline_optimal": 55,
+        "trained_teacher_utility": 33.13855870781943,
+        "trained_regret": 9.26651144817818,
+        "trained_safe": 369,
+        "trained_fork_risk": 0.24186046421527863,
+        "trained_optimal": 175,
+        "teacher_teacher_utility": 42.405070155997606,
+        "teacher_regret": 0.0,
+        "teacher_safe": 413,
+        "teacher_fork_risk": 0.03953488543629646,
+        "teacher_optimal": 430,
+        "changed_decision": 389,
+        "any_safe_candidate": 417
+      }
+    }
+  ],
+  "selected_iterations": 48,
+  "heldout_test": {
+    "nonforced_boards": 943,
+    "baseline_teacher_utility": -14.275885183850061,
+    "baseline_regret": 48.26672342806375,
+    "baseline_safe": 736,
+    "baseline_fork_risk": 0.40615057945251465,
+    "baseline_optimal": 90,
+    "trained_teacher_utility": 28.00345754113013,
+    "trained_regret": 5.987380703083563,
+    "trained_safe": 839,
+    "trained_fork_risk": 0.19300106167793274,
+    "trained_optimal": 402,
+    "teacher_teacher_utility": 33.99083824421369,
+    "teacher_regret": 0.0,
+    "teacher_safe": 907,
+    "teacher_fork_risk": 0.05514315888285637,
+    "teacher_optimal": 943,
+    "changed_decision": 873,
+    "any_safe_candidate": 914
+  },
+  "exported_tree_nodes": 1348,
+  "teacher": "Exact counterfactual remaining enemy fork cells, own new fork multiplicity and immediate completion count plus local potential. Labels are independently computed rules, not actual moves or native search wins.",
+  "deployment": "26 integer-valued local features; up to48 depth4 trees; score=clamp(prediction*12,+-20000), identical relative-side model both colors; search candidate ordering only; guards unchanged.",
+  "limits": "No claim of million games, master labels or measured Elo. This is a bounded geometric heuristic teacher, NOT a minimax engine or proof of winning utility. Exact full-trace D4 families and exact board exclusions are disjoint, but shared initial openings or diverging trajectories are not graph-component isolated. End-to-end ECLIPSE arena required before promotion.",
+  "wall_seconds": 31.36396551132202,
+  "hashes": {
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Training/candidate_teacher.cpp": "fb8d65e171753843e78a712c29704de77d154bb62aa3a4e15972af94146caf1d",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Training/train_ordering.py": "4b33370f66812fed067bacb32649906950ac0aaf1483868ce00d2810e03d41e8",
+    "/workspace/scratch/eclipse-training/boards.txt": "426a0ea0d7ad23be23d70b871c8364f62c3a207f4213506b613bb0731dad81f5",
+    "/workspace/scratch/eclipse-training/candidates.f32": "d9128e2fe6de7ab6a1fa2fbe05d04399da971f01e751db687a15ef7e2a609870",
+    "/workspace/scratch/eclipse-training/candidates_d4_unique.f32": "0ef44d28831e91cbb8fbd7fe15adfce1a999d7984d931f0835391a89618ea113",
+    "/workspace/scratch/eclipse-training/parity.jsonl": "21cf390a5f83de1d8f71977d6f6dc4272293df3d6f7a4d31f38ccc5b6d17a386",
+    "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Training/EclipseTrainedOrdering.swift": "f89f234fcf2db59c52db70f1d2352576e727fd3c070fbb055ae59e10c391abfe"
+  }
+}
