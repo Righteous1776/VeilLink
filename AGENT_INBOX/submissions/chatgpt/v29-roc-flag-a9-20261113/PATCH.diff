@@ -2,7 +2,7 @@ diff --git a/VeilLink/UI/VeilROCFlagText.swift b/VeilLink/UI/VeilROCFlagText.swi
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/VeilROCFlagText.swift
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,124 @@
 +import Foundation
 +import SwiftUI
 +import UIKit
@@ -26,7 +26,7 @@ new file mode 100644
 +    static let verticalUnits: CGFloat = 2
 +    static let rayCount = 12
 +
-+    private static let flagImage: Image = Image(uiImage: makeImage())
++    private static let flagImage: Image = Image(uiImage: makeImage()).renderingMode(.original)
 +
 +    static func containsFlag(_ value: String) -> Bool {
 +        value.contains(emoji)
@@ -119,9 +119,10 @@ new file mode 100644
 +struct VeilROCFlagView: View {
 +    var body: some View {
 +        Image(uiImage: VeilROCFlagText.makeImage())
++            .renderingMode(.original)
 +            .interpolation(.high)
 +            .resizable()
-+            .aspectRatio(3 / 2, contentMode: .fit)
++            .aspectRatio(1.5, contentMode: .fit)
 +            .frame(width: 24, height: 16)
 +            .accessibilityLabel(VeilROCFlagText.spokenName)
 +    }
@@ -139,16 +140,17 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.system(.body, design: .rounded).weight(.semibold))
                          .foregroundColor(VeilTheme.text)
                          .lineLimit(1)
-@@ -293,7 +294,7 @@
+@@ -293,7 +294,8 @@
                          .tracking(0.8)
                          .foregroundColor(VeilTheme.mutedGold)
                      VeilLinkTrace(active: isSelected, width: 28)
 +                    VeilROCFlagText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
++                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
 -                    Text(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
                          .font(.subheadline)
                          .foregroundColor(VeilTheme.secondaryText)
                          .lineLimit(1)
-@@ -613,7 +614,7 @@
+@@ -613,7 +615,7 @@
                              Text("引用回复")
                                  .font(.caption2.weight(.semibold))
                                  .foregroundColor(VeilTheme.gold)
@@ -157,7 +159,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                                  .font(.caption)
                                  .foregroundColor(VeilTheme.secondaryText)
                                  .lineLimit(1)
-@@ -1268,7 +1269,8 @@
+@@ -1268,7 +1270,8 @@
                      TransferShardView(image: nil, progress: progress, mode: .receiving)
                          .frame(width: 190)
                  } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
@@ -167,7 +169,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.body.weight(.medium))
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1300,12 +1302,14 @@
+@@ -1300,12 +1303,14 @@
                              RoundedRectangle(cornerRadius: 1)
                                  .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
                                  .frame(width: 3)
@@ -184,7 +186,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                              .frame(maxWidth: .infinity, alignment: .leading)
                      }
                      .padding(.horizontal, 14)
-@@ -1319,7 +1323,8 @@
+@@ -1319,7 +1324,8 @@
                      )
                      .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                  } else {
@@ -194,7 +196,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.body)
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1631,7 +1636,8 @@
+@@ -1631,7 +1637,8 @@
                              .font(VeilType.terminalLabel)
                              .tracking(1.4)
                              .foregroundColor(VeilTheme.mutedGold)
@@ -233,16 +235,17 @@ diff --git a/VeilLink/UI/LingCoreTinyChatView.swift b/VeilLink/UI/LingCoreTinyCh
 diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
 --- a/VeilLink/UI/SettingsView.swift
 +++ b/VeilLink/UI/SettingsView.swift
-@@ -234,7 +234,7 @@
+@@ -234,7 +234,8 @@
                          .font(VeilType.terminalLabel)
                          .tracking(1.25)
                          .foregroundColor(VeilTheme.mutedGold)
 +                    VeilROCFlagText.render(identity.activeIdentity?.displayName ?? "未创建")
++                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
 -                    Text(identity.activeIdentity?.displayName ?? "未创建")
                          .font(.system(.title3, design: .rounded).weight(.semibold))
                      HStack(spacing: 7) {
                          Text(String((identity.activeIdentity?.id ?? "offline").prefix(12)).uppercased())
-@@ -806,16 +806,19 @@
+@@ -806,16 +807,19 @@
          let ultraDecision = ultraSample?.ultraDecision
          let ultraBudget = ultraSample?.ultraBudget
          let engineName = usesUltra ? "A10 Ultra Ω" : "A9"
@@ -269,7 +272,7 @@ diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
                      .frame(width: 9, height: 9)
                  VStack(alignment: .leading, spacing: 2) {
                      Text("\(engineName) 健康治理")
-@@ -828,7 +831,7 @@
+@@ -828,7 +832,7 @@
                  Spacer()
                  Text("\(shownLevel) · H\(shownHealth)")
                      .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -278,7 +281,7 @@ diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
              }
  
              HStack(spacing: 8) {
-@@ -870,6 +873,10 @@
+@@ -870,6 +874,10 @@
                          .font(.caption)
                          .foregroundColor(VeilTheme.secondaryText)
                  }
