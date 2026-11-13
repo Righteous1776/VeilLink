@@ -1,0 +1,342 @@
+diff --git a/VeilLink/Agent/Games/VeilEclipseTacticalOracleR11.swift b/VeilLink/Agent/Games/VeilEclipseTacticalOracleR11.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Agent/Games/VeilEclipseTacticalOracleR11.swift
+@@ -0,0 +1,179 @@
++import Foundation
++
++/// ECLIPSE R11 threat oracle for freestyle 15×15 Gomoku.
++///
++/// Complements R10 / R5 / V9, rather than replacing the incumbent rule gates.
++/// Its certificates are narrowly scoped to immediate wins, independent next-turn
++/// five-completions and opponent forcing forks. A candidate's ordinary positional
++/// value or broader game-theoretic outcome is NOT proved by this module.
++/// All returned coordinates remain engine-private throughout an active match.
++enum VeilEclipseTacticalOracleR11 {
++    static let width = 15
++    static let size = 225
++    private static let axes: [(Int, Int)] = [(0, 1), (1, 0), (1, 1), (1, -1)]
++
++    enum Classification: String, Sendable {
++        case immediateWin
++        case forcedTwoTurnWin
++        case opponentImmediateWin
++        case opponentForkTrap
++        case unresolved
++    }
++
++    struct RootReport: Sendable {
++        let index: Int
++        let classification: Classification
++        /// A verified tactical counter, not a player-facing hint.
++        let privateCounter: Int?
++        var isTacticallyLosing: Bool {
++            classification == .opponentImmediateWin || classification == .opponentForkTrap
++        }
++        var isProvenWinning: Bool {
++            classification == .immediateWin || classification == .forcedTwoTurnWin
++        }
++    }
++
++    struct Audit: Sendable {
++        let reports: [RootReport]
++        let examinedWindows: Int
++        /// If at least one non-losing root exists, exclude only roots with
++        /// a verifiable short tactical loss. Otherwise leave incumbent roots
++        /// unchanged: the oracle cannot fabricate a saving move.
++        var filteredRoots: [Int] {
++            let retained = reports.filter { !$0.isTacticallyLosing }.map(\.index)
++            return retained.isEmpty ? reports.map(\.index) : retained
++        }
++        var certifiedWins: [Int] {
++            reports.filter(\.isProvenWinning).map(\.index)
++        }
++    }
++
++    /// Returns nil on partial examination. The caller must then keep the
++    /// original vetted roots and incumbent R10/R5/V9 decision.
++    static func audit(
++        position: VeilEclipseStrategicPlannerR10.Position,
++        vettedRoots: [Int],
++        deadline: TimeInterval,
++        windowCap: Int = 240_000
++    ) -> Audit? {
++        guard windowCap > 0, Date.timeIntervalSinceReferenceDate < deadline else { return nil }
++        let player = position.toMove
++        let opponent: UInt8 = player == 1 ? 2 : 1
++        let board = position.cells
++        let roots = Array(Set(vettedRoots.filter {
++            (0..<size).contains($0) && board[$0] == 0
++        })).sorted()
++        guard !roots.isEmpty else { return nil }
++        var windows = 0
++        var reports: [RootReport] = []
++        reports.reserveCapacity(roots.count)
++        for root in roots {
++            guard windows < windowCap, Date.timeIntervalSinceReferenceDate < deadline else { return nil }
++            var after = board
++            after[root] = player
++            windows += 1
++
++            if createsFive(after, index: root, player: player) {
++                reports.append(.init(index: root, classification: .immediateWin, privateCounter: nil))
++                continue
++            }
++
++            let enemyFives = winningCells(after, player: opponent)
++            windows += size
++            if let winningCounter = enemyFives.first {
++                reports.append(.init(index: root, classification: .opponentImmediateWin,
++                                     privateCounter: winningCounter))
++                continue
++            }
++
++            let ownFives = winningCells(after, player: player)
++            windows += size
++            if ownFives.count >= 2 {
++                reports.append(.init(index: root, classification: .forcedTwoTurnWin,
++                                     privateCounter: nil))
++                continue
++            }
++
++            // Count all distinct winning completions resulting from a possible
++            // opponent next move. This scans every five-cell window. No width
++            // truncation of defender replies, so the certificate is not a beam
++            // heuristic. A reply forming two distinct five completions wins on
++            // the following turn UNLESS our side can win immediately first.
++            let (forks, inspected) = forkCells(after, player: opponent)
++            windows += inspected
++            var counter: Int?
++            for fork in forks {
++                windows += 1
++                // The opponent fills one empty square; every other existing
++                // immediate win for us stays available. If we can win, the
++                // fork is not a valid opponent win-in-two certificate.
++                guard !ownFives.contains(where: { $0 != fork }) else { continue }
++                counter = fork
++                break
++            }
++            reports.append(.init(index: root,
++                                 classification: counter == nil ? .unresolved : .opponentForkTrap,
++                                 privateCounter: counter))
++            // Never return a partial set of classifications after budget ends.
++            guard windows <= windowCap, Date.timeIntervalSinceReferenceDate < deadline else { return nil }
++        }
++        return Audit(reports: reports, examinedWindows: windows)
++    }
++
++    private static func createsFive(_ board: [UInt8], index: Int, player: UInt8) -> Bool {
++        let row = index / width, col = index % width
++        for (dr, dc) in axes {
++            var n = 1
++            for sign in [-1, 1] {
++                var r = row + dr * sign, c = col + dc * sign
++                while (0..<width).contains(r), (0..<width).contains(c),
++                      board[r * width + c] == player {
++                    n += 1
++                    r += dr * sign
++                    c += dc * sign
++                }
++            }
++            if n >= 5 { return true }
++        }
++        return false
++    }
++
++    private static func winningCells(_ board: [UInt8], player: UInt8) -> [Int] {
++        var scratch = board
++        var wins: [Int] = []
++        for index in 0..<size where board[index] == 0 {
++            scratch[index] = player
++            if createsFive(scratch, index: index, player: player) { wins.append(index) }
++            scratch[index] = 0
++        }
++        return wins
++    }
++
++    /// A next-turn fork cell is proved only by TWO DIFFERENT five-completion
++    /// endpoints, never by two overlapping windows mentioning the same endpoint.
++    private static func forkCells(_ board: [UInt8], player: UInt8) -> ([Int], Int) {
++        var endpoints: [Int: Set<Int>] = [:]
++        var inspected = 0
++        for (dr, dc) in axes {
++            for row in 0..<width {
++                for col in 0..<width {
++                    let rEnd = row + dr * 4, cEnd = col + dc * 4
++                    guard (0..<width).contains(rEnd), (0..<width).contains(cEnd) else { continue }
++                    inspected += 1
++                    var count = 0, holes: [Int] = [], blocked = false
++                    for delta in 0..<5 {
++                        let index = (row + dr * delta) * width + col + dc * delta
++                        let stone = board[index]
++                        if stone == player { count += 1 }
++                        else if stone == 0 { holes.append(index) }
++                        else { blocked = true; break }
++                    }
++                    guard !blocked && count == 3 && holes.count == 2 else { continue }
++                    endpoints[holes[0], default: []].insert(holes[1])
++                    endpoints[holes[1], default: []].insert(holes[0])
++                }
++            }
++        }
++        return (endpoints.filter { $0.value.count >= 2 }.map(\.key).sorted(), inspected)
++    }
++}
+diff --git a/VeilLink/Agent/Games/VeilEclipseR11DecisionBridge.swift b/VeilLink/Agent/Games/VeilEclipseR11DecisionBridge.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Agent/Games/VeilEclipseR11DecisionBridge.swift
+@@ -0,0 +1,83 @@
++import Foundation
++
++/// Optional bridge: routes R11's exhaustive short-tactic audit into R10.
++/// Mandatory R4/R8/V9 source gates must run BEFORE this bridge. When an audit
++/// is incomplete or not yet promotion-authorized, it cannot veto any move.
++/// ECLIPSE R9 live UI may only consume vetted coordinate-free counters; never
++/// expose private variations, tactical roots or counterpart replies.
++enum VeilEclipseR11DecisionBridge {
++    enum Mode: Sendable {
++        case shadow
++        case enforceAfterGovernorApproval
++    }
++
++    struct Outcome: Sendable {
++        let decision: VeilEclipseStrategicPlannerR10.Decision?
++        let auditComplete: Bool
++        let rejectedUnsafeRoots: Int
++        let examinedWindows: Int
++    }
++
++    static func choose(
++        position: VeilEclipseStrategicPlannerR10.Position,
++        vettedRoots: [Int],
++        recentOpponentMoves: [Int] = [],
++        predictedReplyIndices: [Int] = [],
++        rootPreferences: [Int: Int] = [:],
++        limits: VeilEclipseStrategicPlannerR10.Limits,
++        mode: Mode = .shadow
++    ) -> Outcome {
++        // One source of time truth; do not multiply R10's allocation on top
++        // of the shared V9/R5/R10 envelope.
++        let started = Date.timeIntervalSinceReferenceDate
++        let budgetMilliseconds = max(1, limits.maxMilliseconds)
++        let absoluteDeadline = started + Double(budgetMilliseconds) / 1_000
++
++        // Shadow path is decision-identical to incumbent R10. Do not run
++        // speculative R11 work before the selected published move.
++        if case .shadow = mode {
++            let picked = VeilEclipseStrategicPlannerR10.choose(
++                position: position, vettedRoots: vettedRoots,
++                opponentRecentMoves: recentOpponentMoves,
++                predictedReplyIndices: predictedReplyIndices,
++                rootPreferences: rootPreferences, limits: limits
++            )
++            let remaining = absoluteDeadline - Date.timeIntervalSinceReferenceDate
++            let audit = remaining > 0.005 ? VeilEclipseTacticalOracleR11.audit(
++                position: position, vettedRoots: vettedRoots,
++                deadline: absoluteDeadline
++            ) : nil
++            return Outcome(decision: picked, auditComplete: audit != nil,
++                           rejectedUnsafeRoots: 0,
++                           examinedWindows: audit?.examinedWindows ?? 0)
++        }
++
++        // Governor-authorized enforcement only: audit takes at most 35% of
++        // R10's time slice, never a second independent time allowance.
++        let oracleDeadline = min(
++            absoluteDeadline,
++            started + Double(max(1, budgetMilliseconds * 35 / 100)) / 1_000
++        )
++        let audit = VeilEclipseTacticalOracleR11.audit(
++            position: position, vettedRoots: vettedRoots,
++            deadline: oracleDeadline
++        )
++        let roots = audit?.certifiedWins.isEmpty == false
++            ? audit!.certifiedWins
++            : (audit?.filteredRoots ?? vettedRoots)
++        let remainingMs = max(1, Int((absoluteDeadline - Date.timeIntervalSinceReferenceDate) * 1_000))
++        var effective = limits
++        effective.maxMilliseconds = min(budgetMilliseconds, remainingMs)
++        let picked = VeilEclipseStrategicPlannerR10.choose(
++            position: position, vettedRoots: roots,
++            opponentRecentMoves: recentOpponentMoves,
++            predictedReplyIndices: predictedReplyIndices,
++            rootPreferences: rootPreferences,
++            limits: effective
++        )
++        let rejected = audit == nil ? 0 : max(0, Set(vettedRoots).count - roots.count)
++        return Outcome(decision: picked, auditComplete: audit != nil,
++                       rejectedUnsafeRoots: rejected,
++                       examinedWindows: audit?.examinedWindows ?? 0)
++    }
++}
+diff --git a/VeilLinkTests/VeilEclipseR11Tests.swift b/VeilLinkTests/VeilEclipseR11Tests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilEclipseR11Tests.swift
+@@ -0,0 +1,65 @@
++import XCTest
++@testable import VeilLink
++
++/// Proposed native-target tests; execute only after Governor integrates the
++/// R10 + R11 source files onto an iOS integration branch.
++final class VeilEclipseR11Tests: XCTestCase {
++    private func position(black: [Int], white: [Int]) -> VeilEclipseStrategicPlannerR10.Position {
++        var board = [UInt8](repeating: 0, count: 225)
++        for at in black { board[at] = 1 }
++        for at in white { board[at] = 2 }
++        return VeilEclipseStrategicPlannerR10.Position(cells: board, toMove: 1)!
++    }
++
++    func testR11PrefersProvablySafeRootOverOpponentForkTrap() throws {
++        let state = position(black: [0,2,4,6,8,10], white: [109,110,111,67,82,97])
++        let result = try XCTUnwrap(VeilEclipseTacticalOracleR11.audit(
++            position: state, vettedRoots: [52,108,112,140],
++            deadline: Date.timeIntervalSinceReferenceDate + 2
++        ))
++        XCTAssertEqual(result.filteredRoots, [112])
++        XCTAssertEqual(result.reports.filter(\.isTacticallyLosing).count, 3)
++        XCTAssertFalse(result.reports.first(where: { $0.index == 112 })!.isProvenWinning)
++    }
++
++    func testR11PreservesSelfWinningForkCertificate() throws {
++        let state = position(black: [109,110,111,67,82,97], white: [0,2,4,6,8,10])
++        let result = try XCTUnwrap(VeilEclipseTacticalOracleR11.audit(
++            position: state, vettedRoots: [52,140,150],
++            deadline: Date.timeIntervalSinceReferenceDate + 2
++        ))
++        XCTAssertEqual(result.certifiedWins, [52])
++        XCTAssertEqual(result.reports.first?.classification, .forcedTwoTurnWin)
++    }
++
++    func testR11TimeoutAndShortWorkloadCannotFilterRoots() {
++        let state = position(black: [0,2,4,6,8,10], white: [109,110,111,67,82,97])
++        XCTAssertNil(VeilEclipseTacticalOracleR11.audit(
++            position: state, vettedRoots: [52,112],
++            deadline: Date.timeIntervalSinceReferenceDate - 1
++        ))
++        XCTAssertNil(VeilEclipseTacticalOracleR11.audit(
++            position: state, vettedRoots: [52,112],
++            deadline: Date.timeIntervalSinceReferenceDate + 2,
++            windowCap: 1
++        ))
++    }
++
++    func testR11BridgeDefaultShadowCannotReplaceR10Move() {
++        let state = position(black: [0,2,4,6,8,10], white: [109,110,111,67,82,97])
++        let limits = VeilEclipseStrategicPlannerR10.Limits(
++            depth: 2, rootWidth: 4, replyWidth: 4, maxNodes: 1,
++            maxMilliseconds: 1, tableCap: 0
++        )
++        let incumbent = VeilEclipseStrategicPlannerR10.choose(
++            position: state, vettedRoots: [52,108,112,140],
++            rootPreferences: [52:100_000], limits: limits
++        )
++        let bridge = VeilEclipseR11DecisionBridge.choose(
++            position: state, vettedRoots: [52,108,112,140],
++            rootPreferences: [52:100_000], limits: limits
++        )
++        XCTAssertEqual(incumbent?.index, bridge.decision?.index)
++        XCTAssertEqual(bridge.rejectedUnsafeRoots, 0)
++    }
++}
