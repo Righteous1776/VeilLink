@@ -51,7 +51,10 @@ enum VeilInlineGlyphText {
         let height = width * 2 / 3
         let actual = CGSize(width: width, height: height)
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 3
+        // Inline text glyphs benefit from 3x antialiasing, but a 480pt-wide
+        // outgoing attachment must not allocate a 1440x960 offscreen bitmap
+        // on memory-constrained iOS15 devices.
+        format.scale = width >= 300 ? 1 : 3
         format.opaque = true
         let renderer = UIGraphicsImageRenderer(size: actual, format: format)
         return renderer.image { context in
