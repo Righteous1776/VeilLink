@@ -12,7 +12,7 @@ owner_swift_source_sha256: 1753770927ceaad9509acd6b40b45fe255f044547cb865467a216
 owner_xctest_source_sha256: f6af4a442adc4807047d28090dc3d114aed835b9b30de4fd6c732acff3c684c5
 owner_additive_patch_sha256: 03f497b74aa0eb1b35c4a487ef0957be00bf727d09c834ca39cf231650412676
 owner_added_paths: VeilLink/Agent/Games/GomokuUniversalThreatV10.swift; VeilLinkTests/GomokuUniversalThreatV10Tests.swift
-scope_in_repo: governed handoff docs only; source / real additive 2-file patch delivered separately to Owner in ZIP
+scope_in_repo: two byte-identical Swift source/test files included under FILES/, and full two-file product PATCH.diff included; no product tree modifications
 validation: Swift 5 mode and Swift 6 strict compile; 48 tactical checks, 3448 independently replayed defender replies, 120 random boards (zero claims); isolated additive git apply check
 not_run: actual full checkout; Xcode/iOS XCTest; 212 original private fork cases; paired winrate; physical device benchmarks
 overlap: draft #199 V9, #193/#196 native PVS, #186 safety, #187 traces, #203 ECLIPSE theme/fair-play
