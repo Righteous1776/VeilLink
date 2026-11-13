@@ -14,8 +14,7 @@ proposed_files:
 - VeilLink/UI/LingCoreTinyChatView.swift
 - VeilLink/UI/SettingsView.swift
 - VeilLinkTests/VeilInlineGlyphTextTests.swift [NEW]
-source_patch: PATCH.diff
-
 - VeilLink/UI/VeilComposerOptionGate.swift [NEW]
 - VeilLinkTests/VeilComposerOptionGateTests.swift [NEW]
+source_patch: PATCH.diff
 additional_scope: explicit chat composer input accessory; session-only opt-in, original Unicode send and existing encrypted image path
