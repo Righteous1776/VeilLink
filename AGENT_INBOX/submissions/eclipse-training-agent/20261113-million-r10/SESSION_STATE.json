@@ -1,0 +1,15 @@
+{
+  "task_id": "20261113-million-r10",
+  "session_id": "eclipse-r10-20261113-local",
+  "base_main_sha": "eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0",
+  "branch": "agent-drop/eclipse-training-agent/20261113-million-r10",
+  "proposal_state": "VALIDATED_LOCAL",
+  "product_applied": false,
+  "model_sha256": "f89f234fcf2db59c52db70f1d2352576e727fd3c070fbb055ae59e10c391abfe",
+  "final_fit_unique_d4_board_action_rows": 1848616,
+  "final_native_strength_games": 500,
+  "final_native_difficulty_games": 420,
+  "owner_raw_data_path": "/workspace/scratch/eclipse-training",
+  "next_action": "Create/read back Inbox Draft PR; Governor review and explicit scoped product integration followed by real iOS gates",
+  "updated_at": "2026-11-13T17:15:51.102827+00:00"
+}

@@ -1,0 +1,33 @@
+{
+  "status": "FINAL_STRICT_D4_ACTION_DEDUP",
+  "compiler": "Swift version 6.2.1 (swift-6.2.1-RELEASE)\nTarget: x86_64-unknown-linux-gnu\n",
+  "baseMain": "eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0",
+  "kernelOriginPR193": "98ac62b1d24fd66bdf242606cc7c666afb1e575b",
+  "sha256": {
+    "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Native/VeilGomokuUnifiedSearch.swift": "8dc3a0a51e578dbef73da595c6183b19464d127002a78c61174b6a5d36b091e9",
+    "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Training/EclipseTrainedOrdering.swift": "f89f234fcf2db59c52db70f1d2352576e727fd3c070fbb055ae59e10c391abfe",
+    "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Arena/NativeGomokuRules.swift": "988a2e9be5503ed0720291e35e690a2fba54e5a4640e012557827acce091b1f4",
+    "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Arena/EclipseArena.swift": "c5cdb3ce4aaea2e59306009e07d41bed431b53919fb14954ac85442414f37005",
+    "/workspace/scratch/eclipse-arena/arena_final": "12a8724f2de80488c0df316a07b12eb7bf35e70085ee4a72b89344a1c87d9407",
+    "/workspace/scratch/eclipse-arena/tactics_final": "c672eca34b6cc23b41c05c17bbb67e0b174332527c6979a579156cc5ff32c081",
+    "/workspace/scratch/eclipse-arena/baseline_parity_strict": "9c2a01ffc285d4276f0afb71646c6d5345c27b1854c1949629b37b115d37d43a",
+    "/workspace/scratch/eclipse-arena/heldout-probes.jsonl": "a2942579c009b302e0d3ad068a4a510187e710e9ccce8435ff3822fa5e593fd6",
+    "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Arena/audit_arena.py": "e5f098e8718be97295aeccf806932c3ef6f5fdccea6add009f0047bdbe291727",
+    "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Arena/EclipseTactics.swift": "01ee62837b1c49a0ae246654da756040f2c2a039b83e4b43ecb8a130d00dba19",
+    "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Arena/EclipseBaselineParity.swift": "42d07b939b819b02f9079f3f8cf42871c82654a00ba53e5a17b4ddfb84903b56"
+  },
+  "finalTests": {
+    "tacticsAndDecisionProbes": "ECLIPSE_TACTICS_PASS checks=82\nECLIPSE_DECISION_AB total=100 changed=55 baselineDepthTotal=198 trainedDepthTotal=198\n",
+    "baselineParity": "ECLIPSE_BASELINE_PARITY_PASS positions=50 move+score+nodes+depth+rule+variation\n",
+    "sameWall50msParameters": {
+      "seed": 937551947,
+      "games": 100,
+      "depth": 6,
+      "width": 12,
+      "nodes": 1000000,
+      "milliseconds": 50,
+      "forcingDepth": 3,
+      "cpuCondition": "single arena process after all difficulty arenas completed"
+    }
+  }
+}
