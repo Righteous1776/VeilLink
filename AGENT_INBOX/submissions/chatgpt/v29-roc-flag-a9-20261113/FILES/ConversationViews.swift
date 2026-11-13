@@ -878,8 +878,12 @@ struct ChatView: View {
                         .foregroundColor(VeilTheme.secondaryText)
                     SecureField("八位访问码", text: $composerAccessToken)
                         .keyboardType(.numberPad)
-                        .textContentType(.oneTimeCode)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                         .textFieldStyle(VeilTextFieldStyle())
+                        .onChange(of: composerAccessToken) { _ in
+                            composerAccessDenied = false
+                        }
                         .accessibilityLabel("输入八位访问码")
                     if composerAccessDenied {
                         Text("访问码不正确")
@@ -910,10 +914,14 @@ struct ChatView: View {
         }
         .confirmationDialog("输入选项", isPresented: $showsComposerOptions) {
             Button("插入字符") { appendComposerSymbol() }
-            Button("发送图形…") { confirmsComposerArtwork = true }
+            Button("发送图形…") {
+                // Let the first confirmation sheet dismiss before the alert.
+                DispatchQueue.main.async { confirmsComposerArtwork = true }
+            }
             Button("关闭扩展") { composerOptionsEnabled = false }
         }
-        .confirmationDialog("发送图形消息？", isPresented: $confirmsComposerArtwork) {
+        .alert("发送图形消息？", isPresented: $confirmsComposerArtwork) {
+            Button("取消", role: .cancel) {}
             Button("发送图片") { sendComposerArtwork() }
         } message: {
             Text("图片会按现有加密图片传输流程发送，收件人将收到普通图片附件。")
