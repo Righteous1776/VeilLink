@@ -240,7 +240,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
              categoryCounts: categoryCounts,
              levelCounts: levelCounts,
              currentScreen: DeepTelemetry.shared.currentScreen
-@@ -422,22 +544,39 @@
+@@ -422,22 +544,45 @@
          }
      }
  
@@ -266,7 +266,9 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
 +        }
  
          let data = pendingBuffer
-+        let rotated = rotateIfNeeded(incomingBytes: data.count)
++        // NEVER rotate/delete retained evidence before the new write succeeds.
++        // On an iOS protected-storage/disk-full failure the retry must leave
++        // every previously persisted runtime.N.jsonl untouched.
 +        guard append(data) else {
 +            // A failed FileHandle write used to silently discard the ENTIRE
 +            // pending buffer, giving 2,000 cached entries but 72 on disk.
@@ -280,12 +282,16 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
 +        }
          pendingBuffer.removeAll(keepingCapacity: true)
 +        nextPersistRetryUptime = 0
++        // Roll over only after a confirmed append. Even if the archival
++        // rename fails, the appended bytes remain in the active log and will
++        // be included by export, rather than having been lost beforehand.
++        let rotated = rotateIfNeeded(incomingBytes: 0)
 -        let rotated = rotateIfNeeded(incomingBytes: data.count)
 -        append(data)
          flushesSinceDiskUsageRefresh += 1
          if rotated || flushesSinceDiskUsageRefresh >= 8 {
              refreshDiskUsageUnsafe()
-@@ -448,6 +587,20 @@
+@@ -448,6 +593,20 @@
          }
      }
  
@@ -306,7 +312,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
      private func loadRecentEntriesFromDisk() {
          stateLock.lock()
          loadRecentEntriesFromDiskUnsafe()
-@@ -482,22 +635,36 @@
+@@ -482,22 +641,36 @@
          )
      }
  
@@ -471,7 +477,7 @@ diff --git a/VeilLinkTests/BlackBoxExportIntegrityTests.swift b/VeilLinkTests/Bl
 new file mode 100644
 --- /dev/null
 +++ b/VeilLinkTests/BlackBoxExportIntegrityTests.swift
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,123 @@
 +import XCTest
 +import CryptoKit
 +import ZIPFoundation
@@ -545,6 +551,33 @@ new file mode 100644
 +        XCTAssertEqual(row["sha256"] as? String, digest)
 +        XCTAssertEqual(row["byteCount"] as? Int, bytes.count)
 +        XCTAssertEqual(row["eventCount"] as? Int, 8)
++    }
++
++    func testFailedWriteNeverRotatesAwayPreviouslyRetainedLogs() throws {
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent(UUID().uuidString, isDirectory: true)
++        defer { try? FileManager.default.removeItem(at: root) }
++        let store = DiagnosticLogStore(rootDirectory: root)
++
++        let oldest = root.appendingPathComponent("runtime.7.jsonl")
++        let sentinel = Data("keep-existing-diagnostics".utf8)
++        try sentinel.write(to: oldest, options: .atomic)
++
++        // A directory at the active JSONL path deterministically prevents
++        // FileHandle(forWritingTo:) from appending; disk-full and protected
++        // storage errors use the same failed-append branch.
++        let blockedActive = root.appendingPathComponent("runtime.jsonl", isDirectory: true)
++        try FileManager.default.createDirectory(at: blockedActive, withIntermediateDirectories: true)
++
++        // Cross the 2 MB rotation threshold even though no append can succeed.
++        let largeMessage = String(repeating: "x", count: 2_048)
++        for i in 0..<1_500 {
++            store.log(.info, .app, event: "retry.\(i)", message: largeMessage)
++        }
++        // exportBundle provides a serial write barrier. Inventorying an active
++        // directory should throw; its failure must NOT delete rotated logs.
++        XCTAssertThrowsError(try store.exportBundle(context: "xctest.write-failure"))
++        XCTAssertEqual(try Data(contentsOf: oldest), sentinel)
 +    }
 +
 +    func testNonEvaluatedA9HealthNeverClaimsGreen100() {
