@@ -1,0 +1,19 @@
+diff --git a/docs/ECLIPSE_FairPlay_R7_IntegrationGate.md b/docs/ECLIPSE_FairPlay_R7_IntegrationGate.md
+new file mode 100644
+--- /dev/null
++++ b/docs/ECLIPSE_FairPlay_R7_IntegrationGate.md
+@@ -0,0 +1,13 @@
++# ECLIPSE R7 FAIR-PLAY INTEGRATION GATE
++
++1. During an unfinished Gomoku game, ECLIPSE must NEVER suggest or highlight any next move.
++2. No live-board heat maps, danger points, candidate rings, arrows or PV lines.
++3. The thought graph is decorative and independent of real chess coordinates.
++4. Searcher raw PV/candidates stay private; UI receives only sanitized depth/node metrics.
++5. Actual replay unlocks only after the match has finished, in a separate read-only board.
++6. Replay must use validated saved moves, black/white alternation and matching final board.
++7. Do not rename or affect Grok avatars outside Gomoku.
++8. Hide unknown search metrics instead of manufacturing progress.
++9. Verify no stale trace survives match restart or seat changes.
++10. Resolve R5 search (#193/#196) and R6 UI (#197) overlaps before applying.
++11. Test full main patch/Xcode/XCTest/VoiceOver/mobile viewports and device touch handling.
++12. Do not delete old engines, alter release/version or merge without Governor permission.
