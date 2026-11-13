@@ -137,15 +137,18 @@ diff --git a/VeilLink/Agent/Language/LlamaInferenceEngine.swift b/VeilLink/Agent
 diff --git a/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift b/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift
 --- a/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift
 +++ b/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift
-@@ -12,6 +12,7 @@
+@@ -12,6 +12,10 @@
      private let cancellationGate = LlamaCancellationGate()
      private var cancellationEpoch: UInt64 = 0
      private var shutdownTask: Task<Void, Never>?
++    // Multiple unload calls may overlap on MainActor while native shutdown awaits.
++    // Retain and chain every older task, even if the current engine is nil.
++    private var shutdownGeneration: UInt64 = 0
 +    private var preparationInFlight = false
      private(set) var lastModelLoadMilliseconds: Int?
      private(set) var lastGenerationStats: LlamaGenerationStats?
  
-@@ -22,10 +23,22 @@
+@@ -22,9 +26,26 @@
  
      func prepare() async throws {
          guard state == .unloaded || state == .unavailable else { return }
@@ -158,17 +161,22 @@ diff --git a/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift b/VeilLink
 +        defer { preparationInFlight = false }
 +        let preparationEpoch = cancellationEpoch
          if let pendingShutdown = shutdownTask {
++            let observedGeneration = shutdownGeneration
              await pendingShutdown.value
-             shutdownTask = nil
-         }
++            // A second unload may have installed another, still running task.
++            // Never erase that newer barrier when this earlier await resumes.
++            if observedGeneration == shutdownGeneration {
++                shutdownTask = nil
++            }
++        }
 +        guard preparationEpoch == cancellationEpoch,
 +              state == .unloaded || state == .unavailable else {
 +            throw AgentRuntimeError.cancelled
-+        }
+-            shutdownTask = nil
+         }
          state = .loading
          DiagnosticLogStore.shared.log(
-             .info,
-@@ -41,6 +54,9 @@
+@@ -41,6 +62,9 @@
  
          do {
              let validation = try await LocalModelManager.validate(descriptor: LocalModelCatalog.primary)
@@ -178,7 +186,7 @@ diff --git a/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift b/VeilLink
              DiagnosticLogStore.shared.log(
                  .info,
                  .agent,
-@@ -58,6 +74,12 @@
+@@ -58,6 +82,12 @@
              )
              let started = Date()
              try await newEngine.load(modelURL: validation.url)
@@ -191,7 +199,7 @@ diff --git a/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift b/VeilLink
              lastModelLoadMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
              engine = newEngine
              state = .ready
-@@ -74,6 +96,11 @@
+@@ -74,6 +104,11 @@
                  ]
              )
          } catch {
@@ -203,7 +211,7 @@ diff --git a/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift b/VeilLink
              engine = nil
              state = .unavailable
              DiagnosticLogStore.shared.log(
-@@ -179,7 +206,10 @@
+@@ -179,7 +214,10 @@
      func cancel() {
          cancellationEpoch &+= 1
          cancellationGate.cancel()
@@ -215,11 +223,30 @@ diff --git a/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift b/VeilLink
          DiagnosticLogStore.shared.log(.info, .agent, event: "local_ai.generate.cancel")
      }
  
+@@ -196,8 +234,16 @@
+         engine = nil
+         lastGenerationStats = nil
+         state = .unloaded
++        // Do NOT cancel or overwrite an unfinished native destructor. A
++        // cancelled Task awaiting a continuation may still be running, and
++        // starting a new llama_backend_init before it finishes risks freeing
++        // process-global native state out from under the new model.
++        let precedingShutdown = shutdownTask
++        shutdownGeneration &+= 1
++        shutdownTask = Task {
++            if let precedingShutdown { await precedingShutdown.value }
++            await old?.shutdown()
++        }
+-        shutdownTask?.cancel()
+-        shutdownTask = Task { await old?.shutdown() }
+         DiagnosticLogStore.shared.log(.info, .agent, event: "local_ai.model.unload")
+     }
+ }
 diff --git a/VeilLinkTests/LlamaNativeLifecycleTests.swift b/VeilLinkTests/LlamaNativeLifecycleTests.swift
 new file mode 100644
 --- /dev/null
 +++ b/VeilLinkTests/LlamaNativeLifecycleTests.swift
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,51 @@
 +import XCTest
 +@testable import VeilLink
 +
@@ -252,6 +279,16 @@ new file mode 100644
 +        XCTAssertEqual(fence.finishGeneration(), .shutdown)
 +        XCTAssertFalse(fence.shutdownPending)
 +        XCTAssertFalse(fence.trimPending)
++    }
++
++    func testRepeatedShutdownDuringGenerationCannotReenter() {
++        var fence = LlamaNativeLifecycle()
++        XCTAssertTrue(fence.beginGeneration())
++        XCTAssertFalse(fence.requestShutdown())
++        XCTAssertFalse(fence.requestShutdown())
++        XCTAssertFalse(fence.beginGeneration())
++        XCTAssertEqual(fence.finishGeneration(), .shutdown)
++        XCTAssertFalse(fence.shutdownPending)
 +    }
 +
 +    func testIdleShutdownCanReleaseImmediately() {
