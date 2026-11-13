@@ -14,3 +14,10 @@
 10. After unlock choose `发送图形…`, require explicit `发送图片` confirmation. Check image is local 3:2 red/blue/white PNG and goes through existing ImageTranscoder, SessionCoordinator and encrypted image chunk handling. Drop/reconnect uses existing resend path. Verify temporary PNG is deleted on completion/failure.
 11. On same device close ChatView/restart app; entry hidden, never retained in persisted user settings or drafts. Test failed image preparation error, large text, voice-mode toggle, system number keypad, VoiceOver; protected chat session/ACL unchanged.
 12. Test input mode with iPhone SE2 and iOS26. iOS CI/XCTest and physical device acceptance remain NOT_RUN.
+
+## Follow-up UX fixes and added audit (same Inbox revision)
+- The active conversation navigation title now uses the same inline glyph renderer; previously only the list preview and bubble had been converted, so a contact title could still display an unsupported glyph.
+- On iOS15 confirm the first composer confirmationDialog dismisses, then a separate `.alert` is presented for an image attachment; cancelling the alert MUST NOT send a picture. Retest rapidly opening/reopening the palette.
+- Access field is a plain secure numeric input, not `.oneTimeCode` (no irrelevant iOS SMS OTP AutoFill suggestion). Verify five invalid attempts remain session-bounded and lock on ChatView disappearance.
+- Accessibility titles for the active header, conversation list and inline bubbles should announce the flag's spoken name rather than regional-indicator fallback text. Text-draft insertion must never trigger an automatic send.
+- Run both low-memory iOS15 devices with VoiceOver and Dynamic Type; all Apple build/XCTest/device checks remain pending.
