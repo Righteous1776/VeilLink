@@ -1,0 +1,123 @@
+diff --git a/VeilLink/UI/VeilEclipseTraceSessionGate.swift b/VeilLink/UI/VeilEclipseTraceSessionGate.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseTraceSessionGate.swift
+@@ -0,0 +1,118 @@
++import Foundation
++
++/// UI-only privacy boundary for future native Gomoku R5/V9 search events.
++/// It cannot receive or expose a proposed move through PublicMetrics.
++/// Not wired to a search producer until the Integration Governor promotes one.
++struct VeilEclipseTraceSessionGate: Sendable {
++    struct Ticket: Hashable, Sendable {
++        let sessionID: String
++        let turn: Int
++        let generation: UInt64
++        let boardFingerprint: UInt64
++
++        init(sessionID: String, turn: Int, generation: UInt64, boardFingerprint: UInt64) {
++            self.sessionID = sessionID
++            self.turn = turn
++            self.generation = generation
++            self.boardFingerprint = boardFingerprint
++        }
++    }
++
++    enum Origin: Sendable {
++        case measuredNative
++        case recorded
++        case demonstration
++    }
++
++    /// Private to the search/telemetry layer. Never bind this type to SwiftUI.
++    struct PrivateEvent: Sendable {
++        let ticket: Ticket
++        let origin: Origin
++        let completedDepth: Int?
++        let visitedNodes: Int?
++        let principalVariation: [Int]
++        let candidateIndices: [Int]
++        let analysisText: String?
++        let isFinal: Bool
++
++        init(ticket: Ticket, origin: Origin, completedDepth: Int?, visitedNodes: Int?,
++             principalVariation: [Int] = [], candidateIndices: [Int] = [],
++             analysisText: String? = nil, isFinal: Bool = false) {
++            self.ticket = ticket
++            self.origin = origin
++            self.completedDepth = completedDepth
++            self.visitedNodes = visitedNodes
++            self.principalVariation = principalVariation
++            self.candidateIndices = candidateIndices
++            self.analysisText = analysisText
++            self.isFinal = isFinal
++        }
++    }
++
++    private(set) var ticket: Ticket?
++    private var acceptedDepth: Int?
++    private var acceptedNodes: Int?
++    private var lastEmittedAtMilliseconds: UInt64?
++    private var finalEventReceived = false
++
++    mutating func begin(_ newTicket: Ticket) {
++        ticket = newTicket.sessionID.isEmpty || newTicket.turn < 0 ? nil : newTicket
++        acceptedDepth = nil
++        acceptedNodes = nil
++        lastEmittedAtMilliseconds = nil
++        finalEventReceived = false
++    }
++
++    mutating func end() {
++        ticket = nil
++        acceptedDepth = nil
++        acceptedNodes = nil
++        lastEmittedAtMilliseconds = nil
++        finalEventReceived = false
++    }
++
++    /// Return only genuine, coordinate-free metrics. Reject stale/late events,
++    /// out-of-order totals, example traces, invalid counts, and updates above 8 Hz.
++    /// nowMilliseconds must come from a monotonic clock supplied by the caller.
++    mutating func accept(
++        _ event: PrivateEvent,
++        matchIsPlaying: Bool,
++        nowMilliseconds: UInt64
++    ) -> VeilEclipseTracePolicy.LiveMetrics? {
++        guard matchIsPlaying, let ticket, event.ticket == ticket,
++              event.origin == .measuredNative, !finalEventReceived else { return nil }
++        guard event.completedDepth != nil || event.visitedNodes != nil else { return nil }
++        if let depth = event.completedDepth {
++            guard (1...64).contains(depth), depth >= (acceptedDepth ?? 0) else { return nil }
++        }
++        if let nodes = event.visitedNodes {
++            guard (0...500_000_000).contains(nodes), nodes >= (acceptedNodes ?? 0) else { return nil }
++        }
++        if let last = lastEmittedAtMilliseconds, nowMilliseconds < last { return nil }
++        if let depth = event.completedDepth { acceptedDepth = depth }
++        if let nodes = event.visitedNodes { acceptedNodes = nodes }
++        if event.isFinal { finalEventReceived = true }
++        if !event.isFinal, let last = lastEmittedAtMilliseconds,
++           nowMilliseconds - last < 125 { return nil }
++        lastEmittedAtMilliseconds = nowMilliseconds
++        return VeilEclipseTracePolicy.LiveMetrics(
++            completedDepth: acceptedDepth, visitedNodes: acceptedNodes
++        )
++    }
++}
++
++/// UI labels follow the actual BoardBotDifficulty and BoardSearchMode strings.
++/// V9's 2×/4×/6× are compute-budget factors, not proven playing-strength gains.
++enum VeilEclipseTierPresentation {
++    static func shortName(_ fullTitle: String) -> String {
++        let first = fullTitle.split(separator: "·", maxSplits: 1).first
++            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
++        return first.isEmpty ? "未设置" : first
++    }
++
++    static func hasSearchBudgetMultiplier(_ fullTitle: String) -> Bool {
++        fullTitle.contains("×")
++    }
++
++    static let multiplierDisclosure = "档位倍率表示搜索时间预算，并非已验证的棋力或胜率倍数。"
++}
