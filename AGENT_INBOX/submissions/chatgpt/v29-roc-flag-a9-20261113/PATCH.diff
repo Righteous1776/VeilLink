@@ -2,7 +2,7 @@ diff --git a/VeilLink/UI/VeilInlineGlyphText.swift b/VeilLink/UI/VeilInlineGlyph
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/VeilInlineGlyphText.swift
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,127 @@
 +import Foundation
 +import SwiftUI
 +import UIKit
@@ -56,7 +56,10 @@ new file mode 100644
 +        let height = width * 2 / 3
 +        let actual = CGSize(width: width, height: height)
 +        let format = UIGraphicsImageRendererFormat()
-+        format.scale = 3
++        // Inline text glyphs benefit from 3x antialiasing, but a 480pt-wide
++        // outgoing attachment must not allocate a 1440x960 offscreen bitmap
++        // on memory-constrained iOS15 devices.
++        format.scale = width >= 300 ? 1 : 3
 +        format.opaque = true
 +        let renderer = UIGraphicsImageRenderer(size: actual, format: format)
 +        return renderer.image { context in
@@ -225,7 +228,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
              didInitialBottomAnchor = false
              isNearBottom = true
          }
-@@ -828,6 +868,64 @@
+@@ -828,6 +868,90 @@
                  )
              }
          }
@@ -242,8 +245,11 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
 +                        .textInputAutocapitalization(.never)
 +                        .autocorrectionDisabled()
 +                        .textFieldStyle(VeilTextFieldStyle())
-+                        .onChange(of: composerAccessToken) { _ in
-+                            composerAccessDenied = false
++                        .onChange(of: composerAccessToken) { next in
++                            // unlockComposerOptions() clears the SecureField
++                            // programmatically. That empty-string change must
++                            // not erase the just-presented invalid-code error.
++                            if !next.isEmpty { composerAccessDenied = false }
 +                        }
 +                        .accessibilityLabel("输入八位访问码")
 +                    if composerAccessDenied {
@@ -281,16 +287,39 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
 +            }
 +            Button("关闭扩展") { composerOptionsEnabled = false }
 +        }
-+        .alert("发送图形消息？", isPresented: $confirmsComposerArtwork) {
-+            Button("取消", role: .cancel) {}
-+            Button("发送图片") { sendComposerArtwork() }
-+        } message: {
-+            Text("图片会按现有加密图片传输流程发送，收件人将收到普通图片附件。")
++        // iOS15 already has several message-delete/cancel alerts on ChatView.
++        // An independent confirmation sheet avoids SwiftUI alert override.
++        .sheet(isPresented: $confirmsComposerArtwork) {
++            NavigationView {
++                VStack(alignment: .leading, spacing: 16) {
++                    Text("确认发送图形")
++                        .font(.headline)
++                    Text("这是一张应用内生成的图片；确认后将通过原有加密图片通道发送。")
++                        .font(.subheadline)
++                        .foregroundColor(VeilTheme.secondaryText)
++                    HStack(spacing: 12) {
++                        Button("取消") {
++                            confirmsComposerArtwork = false
++                        }
++                        .frame(maxWidth: .infinity, minHeight: 44)
++                        Button("发送图片") {
++                            confirmsComposerArtwork = false
++                            sendComposerArtwork()
++                        }
++                        .frame(maxWidth: .infinity, minHeight: 44)
++                        .disabled(isPreparingImage)
++                    }
++                    .buttonStyle(.bordered)
++                    Spacer(minLength: 0)
++                }
++                .padding(20)
++                .navigationBarTitleDisplayMode(.inline)
++            }
 +        }
          .sheet(isPresented: $showsMessageForge) {
              VeilMessageForgeView(
                  initialText: draft,
-@@ -1084,6 +1182,47 @@
+@@ -1084,6 +1208,47 @@
          }
      }
  
@@ -338,7 +367,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
      private func send() {
          let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
          guard !text.isEmpty else { return }
-@@ -1216,7 +1355,8 @@
+@@ -1216,7 +1381,8 @@
          HStack(spacing: 9) {
              VeilIdentityGlyph(seed: peerIdentityID, size: 30, active: true)
              VStack(alignment: .leading, spacing: 1) {
@@ -348,7 +377,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                      .font(.system(size: 14, weight: .semibold, design: .rounded))
                      .foregroundColor(VeilTheme.text)
                      .lineLimit(1)
-@@ -1268,7 +1408,8 @@
+@@ -1268,7 +1434,8 @@
                      TransferShardView(image: nil, progress: progress, mode: .receiving)
                          .frame(width: 190)
                  } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
@@ -358,7 +387,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.body.weight(.medium))
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1300,12 +1441,14 @@
+@@ -1300,12 +1467,14 @@
                              RoundedRectangle(cornerRadius: 1)
                                  .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
                                  .frame(width: 3)
@@ -375,7 +404,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                              .frame(maxWidth: .infinity, alignment: .leading)
                      }
                      .padding(.horizontal, 14)
-@@ -1319,7 +1462,8 @@
+@@ -1319,7 +1488,8 @@
                      )
                      .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                  } else {
@@ -385,7 +414,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.body)
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1631,7 +1775,8 @@
+@@ -1631,7 +1801,8 @@
                              .font(VeilType.terminalLabel)
                              .tracking(1.4)
                              .foregroundColor(VeilTheme.mutedGold)
@@ -510,7 +539,7 @@ diff --git a/VeilLinkTests/VeilInlineGlyphTextTests.swift b/VeilLinkTests/VeilIn
 new file mode 100644
 --- /dev/null
 +++ b/VeilLinkTests/VeilInlineGlyphTextTests.swift
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,61 @@
 +import XCTest
 +import SwiftUI
 +@testable import VeilLink
@@ -537,6 +566,16 @@ new file mode 100644
 +    func testNonStandardInputStillRespectsAspectRatio() {
 +        let image = VeilInlineGlyphText.makeImage(size: CGSize(width: 72, height: 1))
 +        XCTAssertEqual(image.size.width / image.size.height, 1.5, accuracy: 0.0001)
++    }
++
++    func testOutgoingArtworkUsesBoundedRasterSizeOnSmallDevices() {
++        let image = VeilInlineGlyphText.makeImage(
++            size: CGSize(width: 480, height: 320)
++        )
++        XCTAssertEqual(image.size.width, 480)
++        XCTAssertEqual(image.size.height, 320)
++        XCTAssertEqual(image.cgImage?.width, 480)
++        XCTAssertEqual(image.cgImage?.height, 320)
 +    }
 +
 +    func testAccessibilityReplacesOnlyTheFlagSequence() {
