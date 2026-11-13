@@ -1,0 +1,12 @@
+diff --git a/docs/engineering/ECLIPSE_R10_INTEGRATION_REVIEW.md b/docs/engineering/ECLIPSE_R10_INTEGRATION_REVIEW.md
+new file mode 100644
+--- /dev/null
++++ b/docs/engineering/ECLIPSE_R10_INTEGRATION_REVIEW.md
+@@ -0,0 +1,7 @@
++# ECLIPSE R10 review receipt (advisory; not production)
++Base main: eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0
++Dependencies: PR #193 R5 search, PR #199 V9 tactics/tiers, PR #204 ECLIPSE R9 telemetry.
++Complete 2-source implementation and product-source patch: owner-delivered VeilLink_ECLIPSE_R10_Adversarial_Planner_20261114.zip.
++Archive SHA256: aae8c88de7a04cb88ae08c0ee62db94d197b6b55fb78ae0ee6f4f8391a594125.
++Governor applies nothing from this review receipt without separately auditing the complete owner ZIP source, real XCTest and paired gameplay.
++No merge/release/IPA or claimed >human chess strength.
