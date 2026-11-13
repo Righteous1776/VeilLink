@@ -1,0 +1,21 @@
+diff --git a/docs/ECLIPSE_R8_THEME_INTEGRATION_GATES.md b/docs/ECLIPSE_R8_THEME_INTEGRATION_GATES.md
+new file mode 100644
+--- /dev/null
++++ b/docs/ECLIPSE_R8_THEME_INTEGRATION_GATES.md
+@@ -0,0 +1,14 @@
++# ECLIPSE R8 — only VeilLink-native appearance
++
++1. Theme owner is VeilAppearanceController.shared; no ECLIPSE theme preference.
++2. Five current themes are Veil Original, Apple Soft, Instrument, Islet, gated Plainline.
++3. Honor automatic/day/night using palette, not direct hardcoded white/blue materials.
++4. ECLIPSE Gomoku identity card reuses GameLobbyView's existing Grok slot.
++5. Existing .veilCard() must govern panel shape, material, stroke and shadow.
++6. Theme tokens are VeilTheme, VeilSpacing, VeilPanelShape and native instrument lamp.
++7. Match the read-only replay board to the existing GomokuBoardView board palette.
++8. Do not alter existing interactive GomokuBoardView or other-game Grok cards.
++9. No active-game hint dots, candidate paths, heatmaps, threat coordinates or PV.
++10. True depth/nodes may appear only if a verified sanitized R5 event is connected.
++11. Complete read-only replay only after finished and validated match journal.
++12. Check all theme/color combinations on real iOS SDK and small-device layouts.
++13. Resolve PR #197 and #198 UI overlap; review R5 controller overlap.
++14. No main merge, version bump, CI dispatch or IPA from INBOX_ONLY.
