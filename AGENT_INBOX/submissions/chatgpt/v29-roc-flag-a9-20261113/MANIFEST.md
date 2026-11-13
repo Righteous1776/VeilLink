@@ -8,12 +8,12 @@ mode: INBOX_ONLY
 status: DROPPED
 scope: user-facing visual presentation only (no transport, storage, model or encryption edits)
 proposed_files:
-- VeilLink/UI/VeilROCFlagText.swift [NEW]
+- VeilLink/UI/VeilInlineGlyphText.swift [NEW]
 - VeilLink/UI/ConversationViews.swift
 - VeilLink/UI/AgentChatView.swift
 - VeilLink/UI/LingCoreTinyChatView.swift
 - VeilLink/UI/SettingsView.swift
-- VeilLinkTests/VeilROCFlagTextTests.swift [NEW]
+- VeilLinkTests/VeilInlineGlyphTextTests.swift [NEW]
 source_patch: PATCH.diff
 
 - VeilLink/UI/VeilComposerOptionGate.swift [NEW]
