@@ -4,7 +4,7 @@
 - Existing native: `VeilLink/Agent/Games/GomokuBot.swift` and `GomokuCounterForkR4.swift`; state: `VeilLink/Core/MiniGames.swift`.
 - Legacy third party: `VeilLink/Agent/Games/VeilOfflineGomokuEngine.swift` and `VeilLink/Resources/GomokuEngineV2/PROVENANCE.md` (MIT, still present).
 - Standalone independent Swift source sha256: `1575425e4f395301a5a79c07811190fb057ef3663b3e7b4be3d13942a36c8410`.
-- Swift/VeilLink bridge source sha256: `b5d47e47ecb5a561e5c53ee473da6e8ab1245774bde08140bcea5219ae50056a`.
+- Swift/VeilLink bridge source sha256: `59799006a4758e9ccbaadcc89b9df7671762244e78ceca17e1175af7078f1408`.
 - Local proof summary: `evidence/fork_matrix_8_symmetry.txt`: 1696/1696; see private owner ZIP for R2 input fixture.
 - Local benchmark summary: `evidence/benchmark.txt`: 30 positions, mean 82ms, mean completed depth 3.47; Linux only.
 - No iOS build or win-rate evidence is claimed.
