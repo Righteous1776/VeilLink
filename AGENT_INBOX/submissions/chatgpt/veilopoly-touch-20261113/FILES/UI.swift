@@ -1,5 +1,6 @@
 #if os(iOS) && canImport(SwiftUI) && canImport(SpriteKit)
 import Foundation
+import Combine
 import SwiftUI
 import SpriteKit
 import UIKit
@@ -504,6 +505,8 @@ public struct VeilopolyGameView: View {
  @State private var requestCash = "0"
  @State private var directTransferAmount = "200"
  @State private var bidderCash = "10"
+ @State private var heldAuctionStep: Int?
+ @State private var consumedAuctionLongPress = false
  @State private var showSkipToast = false
  @State private var skipToastEpoch = 0
  @State private var bankAmount = "600"
@@ -1329,22 +1332,28 @@ public struct VeilopolyGameView: View {
      }
      Text("可用资产已按本局规则尝试处置，请确认剩余债务清算。")
       .font(.caption2).foregroundStyle(.secondary)
-     action("确认破产", symbol: "exclamationmark.triangle") { model.perform(.declareBankruptcy) }
+     action("确认破产", symbol: "exclamationmark.triangle", destructive: true) { model.perform(.declareBankruptcy) }
     }
    default: EmptyView()
    }
   }
  }
  private func action(_ title: String, symbol: String,
-                     secondary: Bool = false, pressed: @escaping () -> Void) -> some View {
-  Button(action: pressed) {
+                     secondary: Bool = false, destructive: Bool = false,
+                     pressed: @escaping () -> Void) -> some View {
+  Button(role: destructive ? .destructive : nil, action: pressed) {
    Text(title).frame(maxWidth: .infinity)
   }
-  .buttonStyle(AstraB01ButtonStyle(secondary: secondary, symbol: symbol))
+  .buttonStyle(AstraB01ButtonStyle(secondary: secondary || destructive, symbol: symbol))
+  .overlay {
+   if destructive {
+    RoundedRectangle(cornerRadius: 12)
+     .stroke(Color.red.opacity(0.9), lineWidth: 2).allowsHitTesting(false)
+   }
+  }
   .accessibilityLabel(title)
  }
-
- @ViewBuilder private func purchasePanel(tile: Int) -> some View {
+  @ViewBuilder private func purchasePanel(tile: Int) -> some View {
   if let review = VeilopolyPurchaseReview(game: model.game, player: model.actor, tile: tile) {
    VStack(alignment: .leading, spacing: 9) {
     VeilopolyDecisionHeading(title: review.name, subtitle: "无主地产 · 选择购买或公开拍卖", symbol: "house")
@@ -1383,7 +1392,7 @@ public struct VeilopolyGameView: View {
    VeilopolyDecisionActions {
     action("确认出价", symbol: "hand.raised") { model.perform(.bid, amount: Int(bidderCash) ?? 0) }
      .disabled(VeilopolyAuctionReview.rejection(game: model.game, player: model.actor, draft: bidderCash) != nil)
-    action("弃权", symbol: "xmark.circle", secondary: true) { model.perform(.bid, amount: 0) }
+    action("弃权", symbol: "xmark.circle", destructive: true) { model.perform(.bid, amount: 0) }
    }
   } else if model.game.turn.phase == .trade,
             VeilopolyTradeReview(game: model.game, viewer: model.actor) != nil {
@@ -1391,7 +1400,7 @@ public struct VeilopolyGameView: View {
     action("接受交易", symbol: "checkmark") { model.perform(.acceptTrade) }
      .disabled(VeilopolyGamePresentation.rejection(model.game,
       move: Move(.acceptTrade, player: model.actor, seq: model.game.nextSeq)) != nil)
-    action("拒绝交易", symbol: "xmark", secondary: true) { model.perform(.rejectTrade) }
+    action("拒绝交易", symbol: "xmark", destructive: true) { model.perform(.rejectTrade) }
    }
   }
  }
@@ -1456,14 +1465,44 @@ public struct VeilopolyGameView: View {
 
  private func adjustAuctionBid(by delta: Int) {
   guard let auction = model.game.auction else { return }
-  let minimum = auction.currentBid + 1
   let cash = model.game.players[model.actor].cash
-  guard cash >= minimum else { return }
-  let bounded = max(minimum, min(cash, Int(bidderCash) ?? minimum))
-  bidderCash = String(delta > 0 ? min(cash, bounded + 1)
-                           : max(minimum, bounded - 1))
+  let price = max(1, model.game.board[auction.tile].price)
+  let ceiling = max(1, min(cash, price > Int.max / 2 ? Int.max : price * 2))
+  let starting = min(ceiling, max(1, Int(bidderCash) ?? auction.currentBid + 1))
+  let requested = starting + delta
+  bidderCash = String(min(ceiling, max(1, requested)))
+  if requested > ceiling {
+   UINotificationFeedbackGenerator().notificationOccurred(.error)
+  } else {
+   UIImpactFeedbackGenerator(style: .light).impactOccurred()
+  }
  }
- @ViewBuilder private var astraAuctionHero: some View {
+ private func auctionStepButton(_ delta: Int) -> some View {
+  Button {
+   if consumedAuctionLongPress { consumedAuctionLongPress = false; return }
+   adjustAuctionBid(by: delta)
+  } label: {
+   Text(delta > 0 ? "+\(delta)" : "\(delta)")
+    .font(.subheadline.weight(.semibold)).monospacedDigit()
+    .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+  }
+  .buttonStyle(.bordered)
+  .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
+   if !pressing {
+    heldAuctionStep = nil
+    Task { @MainActor in
+     try? await Task.sleep(nanoseconds: 150_000_000)
+     consumedAuctionLongPress = false
+    }
+   }
+  }, perform: {
+   consumedAuctionLongPress = true
+   heldAuctionStep = delta
+   adjustAuctionBid(by: delta)
+  })
+  .accessibilityLabel("竞价\(delta > 0 ? "增加" : "减少")\(abs(delta))元")
+ }
+  @ViewBuilder private var astraAuctionHero: some View {
   if let auction = model.game.auction {
    ZStack(alignment: .topLeading) {
     AstraB01Artwork.image(AstraB01AssetNames.auctionHero)
@@ -1475,7 +1514,7 @@ public struct VeilopolyGameView: View {
     astraHeroField(auction.bidder.map { model.game.players[$0].name } ?? "暂无",
                    x: 191, y: 99, width: 90)
     // B01 art draws +/- controls. Provide real 44-point touch targets.
-    Button { adjustAuctionBid(by: -1) } label: {
+    Button { adjustAuctionBid(by: -10) } label: {
      Color.clear.frame(width: 44, height: 44).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -1491,7 +1530,7 @@ public struct VeilopolyGameView: View {
      .position(x: CGFloat(AstraB01AuctionHitZones.input.centerX),
                y: CGFloat(AstraB01AuctionHitZones.input.centerY))
      .accessibilityLabel("竞价金额")
-    Button { adjustAuctionBid(by: 1) } label: {
+    Button { adjustAuctionBid(by: 10) } label: {
      Color.clear.frame(width: 44, height: 44).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -1524,6 +1563,26 @@ public struct VeilopolyGameView: View {
     VeilopolyDecisionHeading(title: review.name, subtitle: "公开拍卖 · 当前由你报价", symbol: "gavel")
     VeilopolyDecisionMetric(title: "当前最高价", value: "¥\(review.currentBid)", emphasized: true)
     VeilopolyDecisionMetric(title: "领先玩家", value: review.leader)
+    let auctionPrice = model.game.auction.map { max(1, model.game.board[$0.tile].price) } ?? 1
+    let ceiling = max(1, min(review.cash, auctionPrice > Int.max / 2 ? Int.max : auctionPrice * 2))
+    Text("¥\(bidderCash)")
+     .font(.system(size: 22, weight: .bold, design: .rounded))
+     .monospacedDigit().frame(maxWidth: .infinity, minHeight: 44)
+    HStack(spacing: 7) {
+     auctionStepButton(-50)
+     auctionStepButton(-10)
+     auctionStepButton(10)
+     auctionStepButton(50)
+    }
+    .disabled(review.cash <= 0)
+    Slider(value: Binding(
+     get: { Double(min(ceiling, max(1, Int(bidderCash) ?? 1))) },
+     set: { bidderCash = String(Int($0.rounded())) }
+    ), in: 1...Double(ceiling), step: 1)
+    .disabled(ceiling <= 1)
+    .accessibilityLabel("竞价金额滑块")
+    Text("可调整 ¥1—¥\(ceiling)；提交仍受原始拍卖规则约束")
+     .font(.caption2).foregroundStyle(.secondary)
     VeilopolyNumericInput(title: "你的竞价 · 最低 ¥\(review.minimumBid)", text: $bidderCash)
     Button { bidderCash = String(review.minimumBid) } label: {
      Text("填入最低价 ¥\(review.minimumBid) · 仅填写")
@@ -1546,8 +1605,11 @@ public struct VeilopolyGameView: View {
     } label: { Text("图文拍卖公告").font(.caption.weight(.semibold)).frame(minHeight: 44) }
    }
   }
+  .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
+   if let step = heldAuctionStep { adjustAuctionBid(by: step) }
+  }
  }
- @ViewBuilder private var managePanel: some View {
+  @ViewBuilder private var managePanel: some View {
   switch managementSection {
   case .property: propertyPanel
   case .bank: bankPanel
