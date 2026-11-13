@@ -16,6 +16,7 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
     // Retain and chain every older task, even if the current engine is nil.
     private var shutdownGeneration: UInt64 = 0
     private var preparationInFlight = false
+    private var nativeLeaseHeld = false
     private(set) var lastModelLoadMilliseconds: Int?
     private(set) var lastGenerationStats: LlamaGenerationStats?
 
@@ -76,6 +77,18 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
                 ]
             )
 
+            // Other runtime instances (e.g. coordinator override) may be
+            // unloading a different engine. One engine per process may own
+            // llama_backend_init/backend_free until its shutdown completes.
+            let nativeLease = LlamaProcessLoadLease.shared
+            await nativeLease.acquire()
+            var leaseTransferred = false
+            defer {
+                if !leaseTransferred { nativeLease.release() }
+            }
+            guard preparationEpoch == cancellationEpoch, state == .loading else {
+                throw AgentRuntimeError.cancelled
+            }
             let newEngine = LlamaInferenceEngine(
                 configuration: configuration,
                 cancellationGate: cancellationGate
@@ -90,6 +103,8 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
             }
             lastModelLoadMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
             engine = newEngine
+            nativeLeaseHeld = true
+            leaseTransferred = true
             state = .ready
             DiagnosticLogStore.shared.log(
                 .info,
@@ -231,6 +246,8 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
         cancellationEpoch &+= 1
         cancellationGate.cancel()
         let old = engine
+        let releasesNativeLease = nativeLeaseHeld
+        nativeLeaseHeld = false
         engine = nil
         lastGenerationStats = nil
         state = .unloaded
@@ -243,6 +260,11 @@ final class LlamaLocalTextModelRuntime: LocalTextModelRuntime {
         shutdownTask = Task {
             if let precedingShutdown { await precedingShutdown.value }
             await old?.shutdown()
+            // This is the only point when a new runtime may initialize the
+            // process-global native backend. Never release on mere cancel().
+            if releasesNativeLease {
+                LlamaProcessLoadLease.shared.release()
+            }
         }
         DiagnosticLogStore.shared.log(.info, .agent, event: "local_ai.model.unload")
     }
