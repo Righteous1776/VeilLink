@@ -61,7 +61,16 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
      private let encoder: JSONEncoder
      private let decoder: JSONDecoder
      private var nextSequence: UInt64 = 1
-@@ -275,19 +301,24 @@
+@@ -233,6 +259,8 @@
+             if let encoded = try? self.encoder.encode(entry) {
+                 self.pendingBuffer.append(encoded)
+                 self.pendingBuffer.append(0x0A)
++                // Bound RAM during a five-second disk retry backoff as well.
++                self.trimPendingBufferUnsafe()
+                 if self.pendingBuffer.count >= self.flushThresholdBytes {
+                     self.flushPendingBufferUnsafe()
+                 } else {
+@@ -275,19 +303,24 @@
  
      @MainActor
      func exportBundle(context: String, extraFiles: [String: Data] = [:]) throws -> URL {
@@ -94,7 +103,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          }
  
          let auxiliary = auxiliaryURLs()
-@@ -299,7 +330,10 @@
+@@ -299,7 +332,10 @@
              }
          }
  
@@ -106,7 +115,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          let manifest = DiagnosticExportManifest(
              format: "VeilLinkDiagnostics",
              version: 2,
-@@ -307,8 +341,14 @@
+@@ -307,8 +343,14 @@
              appVersion: VeilBuildInfo.shortVersion,
              build: VeilBuildInfo.build,
              runtimeSessionID: runtimeSessionID,
@@ -122,7 +131,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
              retentionBytes: retentionBytes,
              privacy: "No message plaintext, media payload, password/PIN, private/session key, pairing code or AI prompt is intentionally recorded. Technical identifiers may be included for correlation."
          )
-@@ -393,20 +433,100 @@
+@@ -393,20 +435,100 @@
          return result
      }
  
@@ -231,7 +240,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
              categoryCounts: categoryCounts,
              levelCounts: levelCounts,
              currentScreen: DeepTelemetry.shared.currentScreen
-@@ -422,22 +542,47 @@
+@@ -422,22 +544,39 @@
          }
      }
  
@@ -264,15 +273,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
 +            // Preserve for a later retry, but limit it on low-memory devices.
 +            logWriteFailureCount += 1
 +            nextPersistRetryUptime = ProcessInfo.processInfo.systemUptime + 5
-+            while pendingBuffer.count > maxPendingBufferBytes {
-+                guard let newline = pendingBuffer.firstIndex(of: 0x0A) else {
-+                    pendingBuffer.removeAll(keepingCapacity: true)
-+                    droppedUnpersistedLineCount += 1
-+                    break
-+                }
-+                pendingBuffer.removeSubrange(pendingBuffer.startIndex...newline)
-+                droppedUnpersistedLineCount += 1
-+            }
++            trimPendingBufferUnsafe()
 +            // Retry asynchronously; don't block the main UI on unavailable disk.
 +            scheduleFlushUnsafe()
 +            return
@@ -284,7 +285,28 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          flushesSinceDiskUsageRefresh += 1
          if rotated || flushesSinceDiskUsageRefresh >= 8 {
              refreshDiskUsageUnsafe()
-@@ -482,22 +627,36 @@
+@@ -448,6 +587,20 @@
+         }
+     }
+ 
++    /// Preserve complete JSONL records at the tail of the retry buffer.
++    /// This is called under stateLock on the serial logging queue.
++    private func trimPendingBufferUnsafe() {
++        while pendingBuffer.count > maxPendingBufferBytes {
++            guard let newline = pendingBuffer.firstIndex(of: 0x0A) else {
++                pendingBuffer.removeAll(keepingCapacity: true)
++                droppedUnpersistedLineCount += 1
++                break
++            }
++            pendingBuffer.removeSubrange(pendingBuffer.startIndex...newline)
++            droppedUnpersistedLineCount += 1
++        }
++    }
++
+     private func loadRecentEntriesFromDisk() {
+         stateLock.lock()
+         loadRecentEntriesFromDiskUnsafe()
+@@ -482,22 +635,36 @@
          )
      }
  
