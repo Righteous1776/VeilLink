@@ -1,6 +1,6 @@
 # Verification matrix
 
-Local executed: Swift 6.2.1 Linux typecheck of extracted V9 forcing-search source against minimal faithful GomokuState stub PASS. Deterministic native-rule-shape probes: synthetic fork -> 52, opening no false proof -> nil, synthetic counterattack -> 101 PASS. This is NOT a full app or XCTest run.
+Local executed: Swift 6.2.1 Linux -O standalone compilation and 34 deterministic checks PASS: 8 rotated/mirrored double-win fixtures + 8 counterattack fixtures + 8 responder-immediate-win negatives + 8 single-stone negatives + 2 budget exhaustion negatives. See REPRODUCIBILITY.md for source-faithful simulator and command. These are NOT actual app XCTest runs.
 
 New proposed XCTest: seven Gomoku cases/four Xiangqi cases and 2x/4x/6x time allocations; V9 exact-double-win certificate; bounded no-false-opening-win.
 
