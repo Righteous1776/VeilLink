@@ -225,7 +225,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
              didInitialBottomAnchor = false
              isNearBottom = true
          }
-@@ -828,6 +868,56 @@
+@@ -828,6 +868,64 @@
                  )
              }
          }
@@ -239,8 +239,12 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
 +                        .foregroundColor(VeilTheme.secondaryText)
 +                    SecureField("八位访问码", text: $composerAccessToken)
 +                        .keyboardType(.numberPad)
-+                        .textContentType(.oneTimeCode)
++                        .textInputAutocapitalization(.never)
++                        .autocorrectionDisabled()
 +                        .textFieldStyle(VeilTextFieldStyle())
++                        .onChange(of: composerAccessToken) { _ in
++                            composerAccessDenied = false
++                        }
 +                        .accessibilityLabel("输入八位访问码")
 +                    if composerAccessDenied {
 +                        Text("访问码不正确")
@@ -271,10 +275,14 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
 +        }
 +        .confirmationDialog("输入选项", isPresented: $showsComposerOptions) {
 +            Button("插入字符") { appendComposerSymbol() }
-+            Button("发送图形…") { confirmsComposerArtwork = true }
++            Button("发送图形…") {
++                // Let the first confirmation sheet dismiss before the alert.
++                DispatchQueue.main.async { confirmsComposerArtwork = true }
++            }
 +            Button("关闭扩展") { composerOptionsEnabled = false }
 +        }
-+        .confirmationDialog("发送图形消息？", isPresented: $confirmsComposerArtwork) {
++        .alert("发送图形消息？", isPresented: $confirmsComposerArtwork) {
++            Button("取消", role: .cancel) {}
 +            Button("发送图片") { sendComposerArtwork() }
 +        } message: {
 +            Text("图片会按现有加密图片传输流程发送，收件人将收到普通图片附件。")
@@ -282,7 +290,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
          .sheet(isPresented: $showsMessageForge) {
              VeilMessageForgeView(
                  initialText: draft,
-@@ -1084,6 +1174,47 @@
+@@ -1084,6 +1182,47 @@
          }
      }
  
@@ -330,7 +338,17 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
      private func send() {
          let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
          guard !text.isEmpty else { return }
-@@ -1268,7 +1399,8 @@
+@@ -1216,7 +1355,8 @@
+         HStack(spacing: 9) {
+             VeilIdentityGlyph(seed: peerIdentityID, size: 30, active: true)
+             VStack(alignment: .leading, spacing: 1) {
++                VeilInlineGlyphText.render(title)
++                    .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: title))
+-                Text(title)
+                     .font(.system(size: 14, weight: .semibold, design: .rounded))
+                     .foregroundColor(VeilTheme.text)
+                     .lineLimit(1)
+@@ -1268,7 +1408,8 @@
                      TransferShardView(image: nil, progress: progress, mode: .receiving)
                          .frame(width: 190)
                  } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
@@ -340,7 +358,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.body.weight(.medium))
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1300,12 +1432,14 @@
+@@ -1300,12 +1441,14 @@
                              RoundedRectangle(cornerRadius: 1)
                                  .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
                                  .frame(width: 3)
@@ -357,7 +375,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                              .frame(maxWidth: .infinity, alignment: .leading)
                      }
                      .padding(.horizontal, 14)
-@@ -1319,7 +1453,8 @@
+@@ -1319,7 +1462,8 @@
                      )
                      .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                  } else {
@@ -367,7 +385,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.body)
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1631,7 +1766,8 @@
+@@ -1631,7 +1775,8 @@
                              .font(VeilType.terminalLabel)
                              .tracking(1.4)
                              .foregroundColor(VeilTheme.mutedGold)
