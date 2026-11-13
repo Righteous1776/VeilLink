@@ -21,7 +21,7 @@ enum VeilROCFlagText {
     static let verticalUnits: CGFloat = 2
     static let rayCount = 12
 
-    private static let flagImage: Image = Image(uiImage: makeImage())
+    private static let flagImage: Image = Image(uiImage: makeImage()).renderingMode(.original)
 
     static func containsFlag(_ value: String) -> Bool {
         value.contains(emoji)
@@ -114,9 +114,10 @@ enum VeilROCFlagText {
 struct VeilROCFlagView: View {
     var body: some View {
         Image(uiImage: VeilROCFlagText.makeImage())
+            .renderingMode(.original)
             .interpolation(.high)
             .resizable()
-            .aspectRatio(3 / 2, contentMode: .fit)
+            .aspectRatio(1.5, contentMode: .fit)
             .frame(width: 24, height: 16)
             .accessibilityLabel(VeilROCFlagText.spokenName)
     }
