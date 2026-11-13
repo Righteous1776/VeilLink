@@ -10,3 +10,8 @@
 
 ## Additional lifecycle review risk
 Swift Task cancellation does not necessarily stop a destructor already awaiting native generation. The second-pass patch now chains all `shutdownTask` values and uses a generation marker to prevent actor reentrancy from dropping a newer shutdown barrier. This deliberately prioritizes safe release ordering over immediate reloading; if a native generation hangs indefinitely, a subsequent model load may remain blocked. Profiling and a bounded, non-destructive failure UI are needed; never impose a timeout that frees live native pointers.
+
+## Native global lease limitations
+- The new process-wide FIFO lease intentionally serializes **distinct** native model runtimes and can delay model switching if an old runtime never unloads. This reduces use-after-free risk but needs iPhone 7 / SE2 stress tests; do not use a timeout that forcibly frees live native context.
+- Lease only coordinates VeilLink's `LlamaLocalTextModelRuntime` instances. Third-party direct llama_backend_init/free consumers or unexpected process-exit cleanup are not covered; check native integration boundaries.
+- Backend lease waiting is actor-suspended rather than blocking a thread. A cancelled waiter still must resume and release its acquired lease; the proposed tests exercise that path.
