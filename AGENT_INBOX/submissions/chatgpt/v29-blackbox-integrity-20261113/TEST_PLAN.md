@@ -17,3 +17,8 @@
 
 ## Success bar
 No iOS compatibility regression; crash/hang profile does not worsen; manifest/index equal actual archived valid lines, and per-file digest correct. All tests and real devices documented with build SHA. No IPA dispatch at this Inbox stage.
+
+## Write-first retention regression
+- `testFailedWriteNeverRotatesAwayPreviouslyRetainedLogs`: create a pre-existing oldest `runtime.7.jsonl` sentinel, block appending via an active path that is a directory, queue >2MB of event lines, then force export's serial flush; despite expected ZIP export failure, old rotated file bytes must remain identical.
+- On iOS15 force a repeated write failure using protected file access, exhausted test volume or controlled FileManager error injection. Assert rotation filenames and checksums are unchanged until an append succeeds; when the storage resumes, pending buffer eventually flushes and retained older logs rotate according to quota.
+- Measure RAM and file-size overshoot for up to a 4MB pending buffer; verify ZIP snapshot/hash/index still accounts for every *included* JSONL and does not count inaccessible records as exported.
