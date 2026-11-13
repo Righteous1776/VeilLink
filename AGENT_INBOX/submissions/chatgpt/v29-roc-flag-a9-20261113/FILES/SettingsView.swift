@@ -236,6 +236,7 @@ struct SettingsView: View {
                         .foregroundColor(VeilTheme.mutedGold)
                     VeilROCFlagText.render(identity.activeIdentity?.displayName ?? "未创建")
                         .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
                         .font(.system(.title3, design: .rounded).weight(.semibold))
                     HStack(spacing: 7) {
                         Text(String((identity.activeIdentity?.id ?? "offline").prefix(12)).uppercased())
