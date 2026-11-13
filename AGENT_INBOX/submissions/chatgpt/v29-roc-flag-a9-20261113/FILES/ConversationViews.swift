@@ -261,8 +261,8 @@ private struct ConversationRow: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 8) {
-                    VeilROCFlagText.render(conversation.title)
-                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.title))
+                    VeilInlineGlyphText.render(conversation.title)
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.title))
                         .font(.system(.body, design: .rounded).weight(.semibold))
                         .foregroundColor(VeilTheme.text)
                         .lineLimit(1)
@@ -294,9 +294,9 @@ private struct ConversationRow: View {
                         .tracking(0.8)
                         .foregroundColor(VeilTheme.mutedGold)
                     VeilLinkTrace(active: isSelected, width: 28)
-                    VeilROCFlagText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
-                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
-                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
+                    VeilInlineGlyphText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
                         .font(.subheadline)
                         .foregroundColor(VeilTheme.secondaryText)
                         .lineLimit(1)
@@ -624,8 +624,8 @@ struct ChatView: View {
                             Text("引用回复")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundColor(VeilTheme.gold)
-                            VeilROCFlagText.render(ReplyTextCodec.quoteSource(for: replyingTo))
-                            .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: ReplyTextCodec.quoteSource(for: replyingTo)))
+                            VeilInlineGlyphText.render(ReplyTextCodec.quoteSource(for: replyingTo))
+                            .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: ReplyTextCodec.quoteSource(for: replyingTo)))
                                 .font(.caption)
                                 .foregroundColor(VeilTheme.secondaryText)
                                 .lineLimit(1)
@@ -1191,7 +1191,7 @@ struct ChatView: View {
 
     private func appendComposerSymbol() {
         guard composerOptionsEnabled else { return }
-        draft.append(VeilROCFlagText.emoji)
+        draft.append(VeilInlineGlyphText.emoji)
         composerMode = .text
         // Sending remains a separate user-confirmed tap.
     }
@@ -1200,7 +1200,7 @@ struct ChatView: View {
         guard composerOptionsEnabled, !isPreparingImage else { return }
         // Generate inside this app. Existing image transcode / encryption /
         // media-transfer limits apply exactly as for an imported photo.
-        let image = VeilROCFlagText.makeImage(size: CGSize(width: 480, height: 320))
+        let image = VeilInlineGlyphText.makeImage(size: CGSize(width: 480, height: 320))
         guard let bytes = image.pngData() else {
             model.alertMessage = "无法生成图片"
             return
@@ -1399,8 +1399,8 @@ private struct MessageBubble: View {
                     TransferShardView(image: nil, progress: progress, mode: .receiving)
                         .frame(width: 190)
                 } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
-                    VeilROCFlagText.render(gamePreview)
-                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: gamePreview))
+                    VeilInlineGlyphText.render(gamePreview)
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: gamePreview))
                         .font(.body.weight(.medium))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
@@ -1432,14 +1432,14 @@ private struct MessageBubble: View {
                             RoundedRectangle(cornerRadius: 1)
                                 .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
                                 .frame(width: 3)
-                            VeilROCFlagText.render(reply.quote)
-                                .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: reply.quote))
+                            VeilInlineGlyphText.render(reply.quote)
+                                .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: reply.quote))
                                 .font(.caption)
                                 .foregroundColor(message.isOutgoing ? Color.black.opacity(0.66) : VeilTheme.secondaryText)
                                 .lineLimit(2)
                         }
-                        VeilROCFlagText.render(reply.reply)
-                            .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: reply.reply))
+                        VeilInlineGlyphText.render(reply.reply)
+                            .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: reply.reply))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.horizontal, 14)
@@ -1453,8 +1453,8 @@ private struct MessageBubble: View {
                     )
                     .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                 } else {
-                    VeilROCFlagText.render(message.body)
-                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: message.body))
+                    VeilInlineGlyphText.render(message.body)
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: message.body))
                         .font(.body)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
@@ -1766,8 +1766,8 @@ private struct ContactDetailsSheet: View {
                             .font(VeilType.terminalLabel)
                             .tracking(1.4)
                             .foregroundColor(VeilTheme.mutedGold)
-                        VeilROCFlagText.render(conversation.title)
-                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.title))
+                        VeilInlineGlyphText.render(conversation.title)
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.title))
                             .font(.system(.title3, design: .rounded).weight(.semibold))
                         VeilLinkTrace(active: false, width: 86)
                     }
