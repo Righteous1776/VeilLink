@@ -102,6 +102,7 @@ private struct AgentMessageBubble: View {
         HStack {
             if message.role == .user { Spacer(minLength: 42) }
             VeilROCFlagText.render(message.text.isEmpty ? "…" : message.text)
+                .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: message.text))
                 .font(.system(size: 14.5, weight: .regular, design: .rounded))
                 .foregroundColor(message.role == .user ? Color.black.opacity(0.88) : VeilTheme.text)
                 .textSelection(.enabled)
