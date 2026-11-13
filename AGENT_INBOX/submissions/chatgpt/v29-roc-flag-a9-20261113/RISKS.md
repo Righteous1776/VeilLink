@@ -1,0 +1,7 @@
+# Risks and overlaps
+- INBOX_ONLY staged source patch. New SwiftUI Text(Image) uses available inline-image initializer for iOS 15; Image rendering must be original-color. SwiftUI Text concatenation is supported on iOS15 but deprecated in newer SDKs, so future modernized design may use interpolation after dedicated localization tests.
+- Emoji supported within app only where a user-visible Text field is explicitly passed through the adapter. Native UIKit text editors/keyboard and OS-level Text rendering outside VeilLink's own views are NOT controlled.
+- SVG/PNG binary assets are forbidden by governance; custom drawing uses UIKit Graphics and SwiftUI, no external copyright or asset override. Official geometry is based on Article 4 of ROC law; in-app 24×16pt raster may antialias fine rays on older small screens. Need actual visual screenshot check.
+- Previous PR #192 edits `VeilA9HealthMonitor.swift` and runtime diagnostics for not-evaluated states. This patch edits `SettingsView.swift` only, complementary to PR192; Governor decides integration order and tests overlapping user-visible health behavior.
+- Current PR #184/#188 touch Veilopoly UI, not this conversation UI; still inspect current main before integration. No merges, workflow_dispatch, build/release or IPA in this task.
+- Unexpected platform color-tint propagation, VoiceOver grouping and iOS15 CoreGraphics behavior need device testing. No statement that the system globally supports the flag.
