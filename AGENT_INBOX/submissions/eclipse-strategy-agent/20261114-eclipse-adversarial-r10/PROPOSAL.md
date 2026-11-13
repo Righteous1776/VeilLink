@@ -11,7 +11,7 @@ V29 main (eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0) has only incumbent Gomoku R4
 - No-live-hints: R10 private variations, candidate rankings, opponent predictions and coordinates must not reach a live match UI. R9 accepts only verified native depth/node aggregates, session/turn fingerprint and 8Hz throttle. Postgame replay is actual committed moves only.
 
 ## Evidence
-Swift 6.2.1 Linux `-swift-version 6 -warnings-as-errors -O` PASS; 59 local planner checks + 18 compute-allocation checks PASS, including 16 board symmetries, 32 seeded legal-root midgames, response-to-bait fixture, bounded-budget fallback, hard-block and self-win. These are *not* win-rate/Elo tests. No 6x skill or superhuman strength claim.
+Swift 6.2.1 Linux `-swift-version 6 -warnings-as-errors -O` PASS; 60 local planner checks + 18 compute-allocation checks PASS, including 16 board symmetries, 32 seeded legal-root midgames, response-to-bait fixture, bounded-budget fallback, hard-block and self-win. These are *not* win-rate/Elo tests. No 6x skill or superhuman strength claim.
 
 ## Formal decision
 Integration Governor must reconcile #193/#196 R5 alternatives and #199/#204 overlaps, compile full source with actual iOS SDK, run safety properties, then test equal-time color-swapped head-to-head and physical devices before allowing R10 to override the R5 choice. Until then it is shadow-only.
