@@ -1,0 +1,19 @@
+diff --git a/docs/Gomoku_V10_Review_Gate.md b/docs/Gomoku_V10_Review_Gate.md
+new file mode 100644
+--- /dev/null
++++ b/docs/Gomoku_V10_Review_Gate.md
+@@ -0,0 +1,13 @@
++# Gomoku V10 Universal Threat — governor review gate
++
++1. Obtain owner V10 ZIP and verify SHA256 hashes from MANIFEST.
++2. Check two-file additive PATCH.diff against complete latest main checkout.
++3. Resolve overlap with PR #199 before GomokuBot decision-path modification.
++4. Preserve native immediate own-win, mandatory opponent block and R8/R4 safety.
++5. V10 may return a win only when every legal defender reply is verified.
++6. Timeout, incomplete defense enumeration and cancellation mean unknown.
++7. Run actual Apple Xcode XCTest, Swift 5.9/6 compile and release-profile tests.
++8. Replay 212 private fork-risk fixtures and any new tactical regression cases.
++9. Benchmark real iPhone/iPad thermal, CPU, cancellation and time slice.
++10. Compare paired matches with V9 frozen baseline; no 6x Elo claims from budgets.
++11. Keep ECLIPSE active-match display free of coordinates, PV and hints.
++12. No old engine removal, version or release action without Governor approval.
