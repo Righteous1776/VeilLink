@@ -7,3 +7,8 @@
 5. iPhone7 iOS15.8.3 and iPhoneSE2 iOS15.6.1 physical reproducibility: 50 cycles each of generate, cancel, background, foreground, unload and reload; watch for signal11 and peak memory/hangs. Preserve the original data and full diagnostic archives.
 6. Symbolicate all nine attributed MetricKit stacks using matching Build66 binaries/dSYM; compare actual crashing function to newly protected callsites. Track any remaining independent crash sites under Issue #191. Long-run stock/game/BLE unaffected.
 7. No release or main merge without Governor gates. Device/Apple CI state: NOT_RUN by this submission.
+
+## Additional shutdown-order regression
+- Repeatedly call unload twice or more while native generation is blocked in a token callback and while a prior shutdown awaits generation unwind. Confirm all older destructors finish **before** a later prepare() calls `llama_backend_init`.
+- Start prepare while waiting for the previous shutdown Task; call unload during the wait. Ensure the early `prepare()` receives cancelled and does not clear the newer shutdownTask (verify shutdownGeneration), nor mark state ready.
+- Stress alternating unload, cancel, prepare, unload with two independent local chat sessions (if supported by Coordinator); track process-global llama backend initialization/free order and guard against late completion resurrecting an old engine.
