@@ -1,0 +1,548 @@
+diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostics/DiagnosticLogStore.swift
+--- a/VeilLink/Diagnostics/DiagnosticLogStore.swift
++++ b/VeilLink/Diagnostics/DiagnosticLogStore.swift
+@@ -1,4 +1,5 @@
+ import Combine
++import CryptoKit
+ import Foundation
+ import ZIPFoundation
+ 
+@@ -85,6 +86,16 @@
+     let metadata: [String: String]
+ }
+ 
++private struct DiagnosticExportFileSummary: Codable {
++    let name: String
++    let byteCount: Int
++    let eventCount: Int
++    let invalidLineCount: Int
++    let firstSequence: UInt64?
++    let lastSequence: UInt64?
++    let sha256: String
++}
++
+ private struct DiagnosticExportManifest: Codable {
+     let format: String
+     let version: Int
+@@ -93,7 +104,15 @@
+     let build: String
+     let runtimeSessionID: String
+     let eventCount: Int
++    /// Diagnostic store's in-memory window can be larger than what disk retained.
++    /// Never present this as the number of records actually included in the ZIP.
++    let inMemoryEventCount: Int
++    let invalidLineCount: Int
++    let logWriteFailureCount: Int
++    let droppedUnpersistedLineCount: Int
++    let unpersistedBytes: Int
+     let logFileCount: Int
++    let files: [DiagnosticExportFileSummary]
+     let retentionBytes: Int
+     let privacy: String
+ }
+@@ -103,6 +122,8 @@
+     let firstTimestamp: Date?
+     let lastTimestamp: Date?
+     let eventCount: Int
++    let invalidLineCount: Int
++    let files: [DiagnosticExportFileSummary]
+     let categoryCounts: [String: Int]
+     let levelCounts: [String: Int]
+     let currentScreen: String
+@@ -129,6 +150,11 @@
+     private let maxRecentEntries = 2_000
+     private let maxAuxiliaryBytes = 24 * 1_024 * 1_024
+     private let flushThresholdBytes = 256 * 1_024
++    // Keep diagnostics failures from turning into an unbounded RAM leak.
++    private let maxPendingBufferBytes = 4 * 1_024 * 1_024
++    private var logWriteFailureCount = 0
++    private var droppedUnpersistedLineCount = 0
++    private var nextPersistRetryUptime: TimeInterval = 0
+     private let encoder: JSONEncoder
+     private let decoder: JSONDecoder
+     private var nextSequence: UInt64 = 1
+@@ -275,19 +301,24 @@
+ 
+     @MainActor
+     func exportBundle(context: String, extraFiles: [String: Data] = [:]) throws -> URL {
+-        logQueue.sync { flushPendingBuffer() }
+-
+         let staging = fileManager.temporaryDirectory
+             .appendingPathComponent("VeilLink-Diagnostics-\(UUID().uuidString)", isDirectory: true)
+         try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+         defer { try? fileManager.removeItem(at: staging) }
+ 
++        // Take the exact log-file snapshot on the serial writer queue. Copying
++        // outside this barrier races the logger's append/rotation and can mix
++        // different generations of runtime.N.jsonl in one archive.
++        let logURLs = try logQueue.sync { () throws -> [URL] in
++            flushPendingBuffer(force: true)
++            let sources = orderedLogURLsForReading()
++            for source in sources {
++                try fileManager.copyItem(
++                    at: source,
++                    to: staging.appendingPathComponent(source.lastPathComponent)
++                )
++            }
++            return sources.map { staging.appendingPathComponent($0.lastPathComponent) }
+-        let logURLs = existingLogURLs()
+-        for source in logURLs {
+-            try fileManager.copyItem(
+-                at: source,
+-                to: staging.appendingPathComponent(source.lastPathComponent)
+-            )
+         }
+ 
+         let auxiliary = auxiliaryURLs()
+@@ -299,7 +330,10 @@
+             }
+         }
+ 
++        // Index and manifest derive from copied files only, never recentEntries.
++        // In particular, 2,000 entries in memory do not imply 2,000 records
++        // survived file rotation or failed writes on an iOS 15 device.
++        let index = try makeExportIndex(from: logURLs)
+-        let index = makeExportIndex()
+         let manifest = DiagnosticExportManifest(
+             format: "VeilLinkDiagnostics",
+             version: 2,
+@@ -307,8 +341,14 @@
+             appVersion: VeilBuildInfo.shortVersion,
+             build: VeilBuildInfo.build,
+             runtimeSessionID: runtimeSessionID,
++            eventCount: index.eventCount,
++            inMemoryEventCount: recentEntries.count,
++            invalidLineCount: index.invalidLineCount,
++            logWriteFailureCount: withStateLock { logWriteFailureCount },
++            droppedUnpersistedLineCount: withStateLock { droppedUnpersistedLineCount },
++            unpersistedBytes: withStateLock { pendingBuffer.count },
+-            eventCount: recentEntries.count,
+             logFileCount: logURLs.count,
++            files: index.files,
+             retentionBytes: retentionBytes,
+             privacy: "No message plaintext, media payload, password/PIN, private/session key, pairing code or AI prompt is intentionally recorded. Technical identifiers may be included for correlation."
+         )
+@@ -393,20 +433,100 @@
+         return result
+     }
+ 
++    /// Read exactly what was staged for the ZIP, not the in-memory cache.
++    /// Streaming 64 KiB chunks avoids allocating a second ~16 MB log image
++    /// while an older 2 GB RAM device is preparing its crash report.
+     @MainActor
++    private func makeExportIndex(from stagedLogURLs: [URL]) throws -> DiagnosticExportIndex {
+-    private func makeExportIndex() -> DiagnosticExportIndex {
+-        let entries = recentEntries
+         var categoryCounts: [String: Int] = [:]
+         var levelCounts: [String: Int] = [:]
++        var firstTimestamp: Date?
++        var lastTimestamp: Date?
++        var totalEvents = 0
++        var totalInvalidLines = 0
++        var files: [DiagnosticExportFileSummary] = []
++
++        for url in stagedLogURLs {
++            let handle = try FileHandle(forReadingFrom: url)
++            defer { try? handle.close() }
++            var hasher = SHA256()
++            var pendingLine = Data()
++            var droppingOversizedLine = false
++            var fileEvents = 0
++            var invalidLines = 0
++            var fileFirstSequence: UInt64?
++            var fileLastSequence: UInt64?
++            var byteCount = 0
++
++            func consumeLine(_ bytes: Data) {
++                guard !bytes.isEmpty else { return }
++                guard let entry = try? decoder.decode(DiagnosticLogEntry.self, from: bytes) else {
++                    invalidLines += 1
++                    return
++                }
++                fileEvents += 1
++                totalEvents += 1
++                categoryCounts[entry.category.rawValue, default: 0] += 1
++                levelCounts[entry.level.rawValue, default: 0] += 1
++                if let old = firstTimestamp {
++                    firstTimestamp = min(old, entry.timestamp)
++                } else {
++                    firstTimestamp = entry.timestamp
++                }
++                if let old = lastTimestamp {
++                    lastTimestamp = max(old, entry.timestamp)
++                } else {
++                    lastTimestamp = entry.timestamp
++                }
++                if fileFirstSequence == nil { fileFirstSequence = entry.sequence }
++                fileLastSequence = entry.sequence
++            }
++
++            while let chunk = try handle.read(upToCount: 65_536), !chunk.isEmpty {
++                byteCount += chunk.count
++                hasher.update(data: chunk)
++                var segmentStart = chunk.startIndex
++                for index in chunk.indices where chunk[index] == 0x0A {
++                    if !droppingOversizedLine {
++                        pendingLine.append(contentsOf: chunk[segmentStart..<index])
++                        if pendingLine.count > 65_536 { invalidLines += 1 }
++                        else { consumeLine(pendingLine) }
++                    }
++                    pendingLine.removeAll(keepingCapacity: true)
++                    droppingOversizedLine = false
++                    segmentStart = chunk.index(after: index)
++                }
++                if !droppingOversizedLine && segmentStart < chunk.endIndex {
++                    pendingLine.append(contentsOf: chunk[segmentStart..<chunk.endIndex])
++                    if pendingLine.count > 65_536 {
++                        // A corrupt line must not become unbounded export RAM.
++                        invalidLines += 1
++                        pendingLine.removeAll(keepingCapacity: true)
++                        droppingOversizedLine = true
++                    }
++                }
++            }
++            if !pendingLine.isEmpty && !droppingOversizedLine {
++                // The writer always terminates JSONL with \n. An incomplete
++                // last record is diagnostically useful but never counted valid.
++                invalidLines += 1
++            }
++            totalInvalidLines += invalidLines
++            let sha256 = hasher.finalize().map { String(format: "%02x", Int($0)) }.joined()
++            files.append(DiagnosticExportFileSummary(
++                name: url.lastPathComponent, byteCount: byteCount,
++                eventCount: fileEvents, invalidLineCount: invalidLines,
++                firstSequence: fileFirstSequence, lastSequence: fileLastSequence,
++                sha256: sha256
++            ))
+-        for entry in entries {
+-            categoryCounts[entry.category.rawValue, default: 0] += 1
+-            levelCounts[entry.level.rawValue, default: 0] += 1
+         }
+         return DiagnosticExportIndex(
+             generatedAt: Date(),
++            firstTimestamp: firstTimestamp,
++            lastTimestamp: lastTimestamp,
++            eventCount: totalEvents,
++            invalidLineCount: totalInvalidLines,
++            files: files,
+-            firstTimestamp: entries.first?.timestamp,
+-            lastTimestamp: entries.last?.timestamp,
+-            eventCount: entries.count,
+             categoryCounts: categoryCounts,
+             levelCounts: levelCounts,
+             currentScreen: DeepTelemetry.shared.currentScreen
+@@ -422,22 +542,47 @@
+         }
+     }
+ 
++    private func flushPendingBuffer(force: Bool = false) {
+-    private func flushPendingBuffer() {
+         stateLock.lock()
++        flushPendingBufferUnsafe(force: force)
+-        flushPendingBufferUnsafe()
+         stateLock.unlock()
+         notifyObservers()
+     }
+ 
++    private func flushPendingBufferUnsafe(force: Bool = false) {
+-    private func flushPendingBufferUnsafe() {
+         flushTask?.cancel()
+         flushTask = nil
+         guard !pendingBuffer.isEmpty else { return }
++        // Repeated disk-protection or storage errors must not cause a new
++        // flush/rotation attempt on every UI event.
++        if !force && ProcessInfo.processInfo.systemUptime < nextPersistRetryUptime {
++            scheduleFlushUnsafe()
++            return
++        }
+ 
+         let data = pendingBuffer
++        let rotated = rotateIfNeeded(incomingBytes: data.count)
++        guard append(data) else {
++            // A failed FileHandle write used to silently discard the ENTIRE
++            // pending buffer, giving 2,000 cached entries but 72 on disk.
++            // Preserve for a later retry, but limit it on low-memory devices.
++            logWriteFailureCount += 1
++            nextPersistRetryUptime = ProcessInfo.processInfo.systemUptime + 5
++            while pendingBuffer.count > maxPendingBufferBytes {
++                guard let newline = pendingBuffer.firstIndex(of: 0x0A) else {
++                    pendingBuffer.removeAll(keepingCapacity: true)
++                    droppedUnpersistedLineCount += 1
++                    break
++                }
++                pendingBuffer.removeSubrange(pendingBuffer.startIndex...newline)
++                droppedUnpersistedLineCount += 1
++            }
++            // Retry asynchronously; don't block the main UI on unavailable disk.
++            scheduleFlushUnsafe()
++            return
++        }
+         pendingBuffer.removeAll(keepingCapacity: true)
++        nextPersistRetryUptime = 0
+-        let rotated = rotateIfNeeded(incomingBytes: data.count)
+-        append(data)
+         flushesSinceDiskUsageRefresh += 1
+         if rotated || flushesSinceDiskUsageRefresh >= 8 {
+             refreshDiskUsageUnsafe()
+@@ -482,22 +627,36 @@
+         )
+     }
+ 
++    @discardableResult
++    private func append(_ data: Data) -> Bool {
+-    private func append(_ data: Data) {
+         if !fileManager.fileExists(atPath: currentLogURL.path) {
++            do {
++                try data.write(
++                    to: currentLogURL,
++                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
++                )
++                return true
++            } catch {
++                return false
++            }
+-            try? data.write(
+-                to: currentLogURL,
+-                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+-            )
+-            return
+         }
+ 
+         do {
+             let handle = try FileHandle(forWritingTo: currentLogURL)
+             defer { try? handle.close() }
++            let originalLength = try handle.seekToEnd()
++            do {
++                try handle.write(contentsOf: data)
++                return true
++            } catch {
++                // An interrupted append can leave partial JSONL. Best effort
++                // rollback prevents duplicate sequence numbers on the retry.
++                try? handle.truncate(atOffset: originalLength)
++                return false
++            }
+-            try handle.seekToEnd()
+-            try handle.write(contentsOf: data)
+         } catch {
++            // Keep failed data in RAM, never pretend persistence succeeded.
++            return false
+-            // Diagnostics must never become a new source of runtime failure.
+         }
+     }
+ 
+diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/DeepTelemetry.swift
+--- a/VeilLink/Diagnostics/DeepTelemetry.swift
++++ b/VeilLink/Diagnostics/DeepTelemetry.swift
+@@ -3,6 +3,18 @@
+ import UIKit
+ import ObjectiveC.runtime
+ 
++/// UIDevice.orientationDidChange does not guarantee a UI interface rotation.
++/// Treat repeated portrait callbacks as observations, not 19 actual rotations.
++enum DeepTelemetryOrientationPolicy {
++    static func event(previous: String?, current: String) -> String {
++        guard let previous, previous != "unknown",
++              current != "unknown", current != previous else {
++            return "ui.orientation_observed"
++        }
++        return "ui.orientation_change"
++    }
++}
++
+ enum DeepTelemetryStallPolicy {
+     static func shouldReport(
+         delta: TimeInterval,
+@@ -54,6 +66,7 @@
+     private var lastBrightnessSnapshotUptime: TimeInterval?
+     private var lastCapturedBrightness: Double?
+     private var postInteractionSnapshotTask: Task<Void, Never>?
++    private var lastObservedInterfaceOrientation: String?
+ 
+     private init() {
+         let defaults = UserDefaults.standard
+@@ -76,6 +89,7 @@
+         UIActionDispatcherProbe.install()
+         UIViewControllerLifecycleProbe.install()
+         MetricKitTelemetryReceiver.shared.start()
++        lastObservedInterfaceOrientation = SystemDiagnosticsSnapshot.orientationMetadata()["interface_orientation"]
+         installNotificationObservers()
+         startHeartbeat()
+         captureSystemSnapshot(reason: "telemetry.install")
+@@ -307,8 +321,18 @@
+         })
+         observers.append(center.addObserver(forName: UIDevice.orientationDidChangeNotification, object: nil, queue: .main) { _ in
+             Task { @MainActor in
++                let telemetry = DeepTelemetry.shared
++                var metadata = SystemDiagnosticsSnapshot.orientationMetadata()
++                let observed = metadata["interface_orientation"] ?? "unknown"
++                let previous = telemetry.lastObservedInterfaceOrientation
++                let event = DeepTelemetryOrientationPolicy.event(previous: previous, current: observed)
++                metadata["previous_interface_orientation"] = previous ?? "unknown"
++                telemetry.store.log(.debug, .ui, event: event,
++                                    screen: telemetry.currentScreen, metadata: metadata)
++                if observed != "unknown" { telemetry.lastObservedInterfaceOrientation = observed }
++                if event == "ui.orientation_change" {
++                    telemetry.captureUIHierarchy(reason: "orientation", force: true)
++                }
+-                DeepTelemetry.shared.store.log(.debug, .ui, event: "ui.orientation_change", screen: DeepTelemetry.shared.currentScreen, metadata: SystemDiagnosticsSnapshot.orientationMetadata())
+-                DeepTelemetry.shared.captureUIHierarchy(reason: "orientation", force: true)
+             }
+         })
+         observers.append(center.addObserver(forName: UIDevice.batteryLevelDidChangeNotification, object: nil, queue: .main) { _ in
+diff --git a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift b/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+--- a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
++++ b/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+@@ -134,6 +134,17 @@
+ 
+         model.a9Health.$decision
+             .sink { decision in
++                // Combine publishes the initial .green/100 placeholder before
++                // any health evaluation. Label it honestly rather than
++                // inventing a healthy, connected/validated link.
++                guard model.a9Health.lastEvaluatedAt != nil else {
++                    self.store.log(
++                        .debug, .a9, event: "a9.not_evaluated",
++                        screen: DeepTelemetry.shared.currentScreen,
++                        metadata: ["evaluation": "not-evaluated"]
++                    )
++                    return
++                }
+                 self.store.log(
+                     decision.light == .red ? .warning : .debug,
+                     .a9,
+diff --git a/VeilLink/Health/VeilA9HealthMonitor.swift b/VeilLink/Health/VeilA9HealthMonitor.swift
+--- a/VeilLink/Health/VeilA9HealthMonitor.swift
++++ b/VeilLink/Health/VeilA9HealthMonitor.swift
+@@ -42,8 +42,10 @@
+         }
+ 
+         let packet = VeilA9Classifier.makePacket(input: input, persistenceRuns: persistenceRuns)
++        // Publish the timestamp first. Sinks observing the new decision must
++        // never see the evaluated score with a stale "not-evaluated" marker.
++        lastEvaluatedAt = now
+         decision = VeilA9Lattice.decide(packet)
+-        lastEvaluatedAt = now
+     }
+ 
+     func reevaluate(
+@@ -54,6 +56,19 @@
+     }
+ 
+     func report() -> String {
++        guard lastEvaluatedAt != nil else {
++            return [
++                "VeilLink A9 Health Lattice",
++                "Generated: not-evaluated",
++                "Evaluation: 未评估",
++                "Light: 未评估",
++                "Health: 未评估（不应解释为 100/100）",
++                "Issues: 未评估；不能宣称无问题",
++                "Transport coverage: 未评估（未完成链路质量检查）",
++                "Database check: \(databaseIntegrity.title)",
++                "Mode: advisory only; no transport/storage/game/agent mutation authority."
++            ].joined(separator: "\n")
++        }
+         let timestamp = lastEvaluatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "not-evaluated"
+         var lines = [
+             "VeilLink A9 Health Lattice",
+diff --git a/VeilLinkTests/BlackBoxExportIntegrityTests.swift b/VeilLinkTests/BlackBoxExportIntegrityTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/BlackBoxExportIntegrityTests.swift
+@@ -0,0 +1,96 @@
++import XCTest
++import CryptoKit
++import ZIPFoundation
++@testable import VeilLink
++
++@MainActor
++final class BlackBoxExportIntegrityTests: XCTestCase {
++    private func unpack(_ archiveURL: URL, to output: URL) throws {
++        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
++        try FileManager.default.unzipItem(at: archiveURL, to: output)
++    }
++
++    private func readJSON(_ name: String, in root: URL) throws -> [String: Any] {
++        let data = try Data(contentsOf: root.appendingPathComponent(name))
++        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
++    }
++
++    func testManifestCountsExactlyTheRetainedZIPEventsNotTheMemoryWindow() throws {
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent(UUID().uuidString, isDirectory: true)
++        defer { try? FileManager.default.removeItem(at: root) }
++        let store = DiagnosticLogStore(rootDirectory: root)
++        for i in 0..<120 {
++            store.log(.info, .ui, event: "test.record.\(i)")
++        }
++        // First export is the same completion barrier used by existing tests.
++        let first = try store.exportBundle(context: "xctest.flush")
++        try? FileManager.default.removeItem(at: first)
++        XCTAssertEqual(store.recentEntries.count, 120)
++
++        // Simulate disk retention/recovery loss: the in-memory cache remains
++        // 120 while the only physically included runtime file is empty.
++        let logURL = root.appendingPathComponent("runtime.jsonl")
++        try Data().write(to: logURL, options: .atomic)
++
++        let zipped = try store.exportBundle(context: "xctest.memory-disk-mismatch")
++        defer { try? FileManager.default.removeItem(at: zipped) }
++        let output = root.appendingPathComponent("unzipped")
++        try unpack(zipped, to: output)
++        let manifest = try readJSON("manifest.json", in: output)
++        let index = try readJSON("event-index.json", in: output)
++
++        XCTAssertEqual(manifest["eventCount"] as? Int, 0)
++        XCTAssertEqual(index["eventCount"] as? Int, 0)
++        XCTAssertEqual(manifest["inMemoryEventCount"] as? Int, 120)
++        XCTAssertEqual(manifest["invalidLineCount"] as? Int, 0)
++        XCTAssertEqual(manifest["logFileCount"] as? Int, 1)
++        let files = try XCTUnwrap(index["files"] as? [[String: Any]])
++        XCTAssertEqual(files.count, 1)
++        XCTAssertEqual(files[0]["eventCount"] as? Int, 0)
++        XCTAssertEqual(files[0]["name"] as? String, "runtime.jsonl")
++    }
++
++    func testIncludedFileSHA256MatchesTheActualStagedPayload() throws {
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent(UUID().uuidString, isDirectory: true)
++        defer { try? FileManager.default.removeItem(at: root) }
++        let store = DiagnosticLogStore(rootDirectory: root)
++        for i in 0..<8 { store.log(.debug, .app, event: "sha.record.\(i)") }
++        let zipURL = try store.exportBundle(context: "xctest.sha256")
++        defer { try? FileManager.default.removeItem(at: zipURL) }
++        let output = root.appendingPathComponent("contents")
++        try unpack(zipURL, to: output)
++        let manifest = try readJSON("manifest.json", in: output)
++        XCTAssertEqual(manifest["eventCount"] as? Int, 8)
++        let files = try XCTUnwrap(manifest["files"] as? [[String: Any]])
++        let row = try XCTUnwrap(files.first)
++        let name = try XCTUnwrap(row["name"] as? String)
++        let bytes = try Data(contentsOf: output.appendingPathComponent(name))
++        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", Int($0)) }.joined()
++        XCTAssertEqual(row["sha256"] as? String, digest)
++        XCTAssertEqual(row["byteCount"] as? Int, bytes.count)
++        XCTAssertEqual(row["eventCount"] as? Int, 8)
++    }
++
++    func testNonEvaluatedA9HealthNeverClaimsGreen100() {
++        let monitor = VeilA9HealthMonitor()
++        let before = monitor.report()
++        XCTAssertTrue(before.contains("未评估"))
++        XCTAssertFalse(before.contains("Health: 100/100"))
++        XCTAssertFalse(before.contains("Light: 绿色"))
++        monitor.evaluate(VeilA9Input(), now: Date(), uptime: 1234)
++        XCTAssertFalse(monitor.report().contains("Generated: not-evaluated"))
++    }
++
++    func testRotationObserverSeparatesNoiseFromActualChange() {
++        XCTAssertEqual(DeepTelemetryOrientationPolicy.event(previous: nil, current: "portrait"),
++                       "ui.orientation_observed")
++        XCTAssertEqual(DeepTelemetryOrientationPolicy.event(previous: "portrait", current: "portrait"),
++                       "ui.orientation_observed")
++        XCTAssertEqual(DeepTelemetryOrientationPolicy.event(previous: "portrait", current: "landscapeLeft"),
++                       "ui.orientation_change")
++        XCTAssertEqual(DeepTelemetryOrientationPolicy.event(previous: "portrait", current: "unknown"),
++                       "ui.orientation_observed")
++    }
++}
