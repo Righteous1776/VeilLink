@@ -1,6 +1,6 @@
 # Acceptance checklist
 
-1. On Governor integration branch with Xcode/iOS 15 target: apply PATCH.diff to V29 main@eb487a1. Compile `VeilROCFlagText.swift` and run new `VeilROCFlagTextTests`, all messaging/local model UI tests and A9 health tests. NOT_RUN in Inbox.
+1. On Governor integration branch with Xcode/iOS 15 target: apply PATCH.diff to V29 main@eb487a1. Compile `VeilInlineGlyphText.swift` and run new `VeilInlineGlyphTextTests`, all messaging/local model UI tests and A9 health tests. NOT_RUN in Inbox.
 2. iPhone 7 iOS 15.8.3 with region China mainland: in-app display of one or multiple Taiwan flag emoji in chat messages, names, quoted replies, conversation list previews, chat search and AI responses. Confirm correct 3:2 red-blue-white appearance with no missing-symbol box. Repeat in a non-China region, iPhone SE2 iOS 15.6.1, iPhone13 iOS26.
 3. Check national flag design: blue canton exactly half width and half height; white sun/ring/twelve rays, rays correctly positioned and readable at 24×16pt, red and blue colors not overridden by sender/receiver message bubble foreground.
 4. Copy, resend, quote, persistence and backup the same text; inspect raw Unicode scalars and byte hashes to confirm there is no mutation or appended image file on the wire.
