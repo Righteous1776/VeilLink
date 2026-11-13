@@ -1,0 +1,263 @@
+diff --git a/VeilLink/Agent/Language/LlamaNativeLifecycle.swift b/VeilLink/Agent/Language/LlamaNativeLifecycle.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Agent/Language/LlamaNativeLifecycle.swift
+@@ -0,0 +1,51 @@
++import Foundation
++
++/// Models native llama pointer ownership across actor suspension points.
++/// Actor isolation alone does NOT prevent reentry after await.
++struct LlamaNativeLifecycle {
++    enum Completion: Equatable {
++        case noChange
++        case trim
++        case shutdown
++    }
++
++    private(set) var generating = false
++    private(set) var trimPending = false
++    private(set) var shutdownPending = false
++
++    mutating func beginGeneration() -> Bool {
++        guard !generating, !shutdownPending else { return false }
++        generating = true
++        return true
++    }
++
++    /// Returning false means the native operation must be deferred.
++    mutating func requestTrim() -> Bool {
++        guard !shutdownPending else { return false }
++        guard generating else { return true }
++        trimPending = true
++        return false
++    }
++
++    /// Returning false means the caller must wait for generation to unwind.
++    mutating func requestShutdown() -> Bool {
++        guard generating else { return true }
++        shutdownPending = true
++        trimPending = false
++        return false
++    }
++
++    mutating func finishGeneration() -> Completion {
++        generating = false
++        if shutdownPending {
++            shutdownPending = false
++            trimPending = false
++            return .shutdown
++        }
++        if trimPending {
++            trimPending = false
++            return .trim
++        }
++        return .noChange
++    }
++}
+diff --git a/VeilLink/Agent/Language/LlamaInferenceEngine.swift b/VeilLink/Agent/Language/LlamaInferenceEngine.swift
+--- a/VeilLink/Agent/Language/LlamaInferenceEngine.swift
++++ b/VeilLink/Agent/Language/LlamaInferenceEngine.swift
+@@ -52,6 +52,8 @@
+     private var backendInitialized = false
+     private var invalidUTF8: [CChar] = []
+     private let cancellationGate: LlamaCancellationGate
++    private var lifetime = LlamaNativeLifecycle()
++    private var pendingShutdownWaiters: [CheckedContinuation<Void, Never>] = []
+ 
+     init(
+         configuration: LlamaRuntimeConfiguration,
+@@ -62,6 +64,9 @@
+     }
+ 
+     func load(modelURL: URL) throws {
++        guard !lifetime.generating, !lifetime.shutdownPending else {
++            throw LlamaEngineError.unavailable
++        }
+         guard model == nil, context == nil else { return }
+         llama_backend_init()
+         backendInitialized = true
+@@ -116,6 +121,23 @@
+         onProgress: (@MainActor @Sendable (LlamaTokenProgress) -> Void)? = nil,
+         onPiece: @escaping @MainActor @Sendable (String) -> Void
+     ) async throws -> LlamaGenerationStats {
++        // Even actor-isolated methods can interleave after await Task.yield,
++        // token callbacks or progress callbacks. Native llama pointers must
++        // have one owner until this generation has fully unwound.
++        guard lifetime.beginGeneration() else { throw LlamaEngineError.unavailable }
++        defer {
++            switch lifetime.finishGeneration() {
++            case .noChange:
++                break
++            case .trim:
++                trimInternal()
++            case .shutdown:
++                shutdownInternal()
++                let waiters = pendingShutdownWaiters
++                pendingShutdownWaiters.removeAll()
++                for waiter in waiters { waiter.resume() }
++            }
++        }
+         guard let model, let context, let vocab, let sampler, var workingBatch = batch else {
+             throw LlamaEngineError.unavailable
+         }
+@@ -251,14 +273,31 @@
+     }
+ 
+     func trim() {
++        // Trimming between decode calls is not safe; wait for the current
++        // generation to finish instead of clearing its live KV cache.
++        guard lifetime.requestTrim() else { return }
++        trimInternal()
++    }
++
++    private func trimInternal() {
+         guard let context else { return }
+         llama_memory_clear(llama_get_memory(context), true)
+         llama_sampler_reset(sampler)
+         invalidUTF8.removeAll(keepingCapacity: false)
+     }
+ 
++    func shutdown() async {
++        // Stop generation at its next cooperative cancellation check.
++        cancellationGate.cancel()
++        if lifetime.requestShutdown() {
++            shutdownInternal()
++            return
++        }
++        // Do not report shutdown completion until the generating call's defer
++        // has actually freed the native model/context/sampler/batch.
++        await withCheckedContinuation { continuation in
++            pendingShutdownWaiters.append(continuation)
++        }
+-    func shutdown() {
+-        shutdownInternal()
+     }
+ 
+     private func shutdownInternal() {
+diff --git a/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift b/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift
+--- a/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift
++++ b/VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift
+@@ -12,6 +12,7 @@
+     private let cancellationGate = LlamaCancellationGate()
+     private var cancellationEpoch: UInt64 = 0
+     private var shutdownTask: Task<Void, Never>?
++    private var preparationInFlight = false
+     private(set) var lastModelLoadMilliseconds: Int?
+     private(set) var lastGenerationStats: LlamaGenerationStats?
+ 
+@@ -22,10 +23,22 @@
+ 
+     func prepare() async throws {
+         guard state == .unloaded || state == .unavailable else { return }
++        // Do not start a second backend_init while an abandoned load is still
++        // unwinding; this is independent of Swift MainActor reentrancy.
++        guard !preparationInFlight else {
++            throw AgentRuntimeError.unavailable("本地模型仍在完成上一次初始化。")
++        }
++        preparationInFlight = true
++        defer { preparationInFlight = false }
++        let preparationEpoch = cancellationEpoch
+         if let pendingShutdown = shutdownTask {
+             await pendingShutdown.value
+             shutdownTask = nil
+         }
++        guard preparationEpoch == cancellationEpoch,
++              state == .unloaded || state == .unavailable else {
++            throw AgentRuntimeError.cancelled
++        }
+         state = .loading
+         DiagnosticLogStore.shared.log(
+             .info,
+@@ -41,6 +54,9 @@
+ 
+         do {
+             let validation = try await LocalModelManager.validate(descriptor: LocalModelCatalog.primary)
++            guard preparationEpoch == cancellationEpoch, state == .loading else {
++                throw AgentRuntimeError.cancelled
++            }
+             DiagnosticLogStore.shared.log(
+                 .info,
+                 .agent,
+@@ -58,6 +74,12 @@
+             )
+             let started = Date()
+             try await newEngine.load(modelURL: validation.url)
++            guard preparationEpoch == cancellationEpoch, state == .loading else {
++                // Cancel/unload may occur while llama_model_load_from_file blocks.
++                // Free this newly created engine instead of resurrecting it.
++                await newEngine.shutdown()
++                throw AgentRuntimeError.cancelled
++            }
+             lastModelLoadMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
+             engine = newEngine
+             state = .ready
+@@ -74,6 +96,11 @@
+                 ]
+             )
+         } catch {
++            // An in-flight load cancelled by the owner must not overwrite a
++            // newer .unloaded state with .unavailable after it resumes.
++            guard preparationEpoch == cancellationEpoch, state == .loading else {
++                throw AgentRuntimeError.cancelled
++            }
+             engine = nil
+             state = .unavailable
+             DiagnosticLogStore.shared.log(
+@@ -179,7 +206,10 @@
+     func cancel() {
+         cancellationEpoch &+= 1
+         cancellationGate.cancel()
++        // A cancelled native decode is STILL in-flight until its actor
++        // method unwinds. Marking .ready early allowed overlapping calls.
++        // During a load, invalidate the readiness state; prepare() checks epoch.
++        if state == .loading { state = .unloaded }
+-        if state == .generating || state == .loading { state = .ready }
+         DiagnosticLogStore.shared.log(.info, .agent, event: "local_ai.generate.cancel")
+     }
+ 
+diff --git a/VeilLinkTests/LlamaNativeLifecycleTests.swift b/VeilLinkTests/LlamaNativeLifecycleTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/LlamaNativeLifecycleTests.swift
+@@ -0,0 +1,41 @@
++import XCTest
++@testable import VeilLink
++
++final class LlamaNativeLifecycleTests: XCTestCase {
++    func testCannotEnterSecondGenerationAcrossActorSuspension() {
++        var fence = LlamaNativeLifecycle()
++        XCTAssertTrue(fence.beginGeneration())
++        XCTAssertFalse(fence.beginGeneration())
++        XCTAssertEqual(fence.finishGeneration(), .noChange)
++        XCTAssertTrue(fence.beginGeneration())
++    }
++
++    func testTrimRequestedDuringGenerationIsDeferred() {
++        var fence = LlamaNativeLifecycle()
++        XCTAssertTrue(fence.beginGeneration())
++        XCTAssertFalse(fence.requestTrim())
++        XCTAssertTrue(fence.trimPending)
++        XCTAssertEqual(fence.finishGeneration(), .trim)
++        XCTAssertFalse(fence.generating)
++        XCTAssertFalse(fence.trimPending)
++    }
++
++    func testShutdownWinsOverPendingTrimAndPreventsNewEntry() {
++        var fence = LlamaNativeLifecycle()
++        XCTAssertTrue(fence.beginGeneration())
++        XCTAssertFalse(fence.requestTrim())
++        XCTAssertFalse(fence.requestShutdown())
++        XCTAssertTrue(fence.shutdownPending)
++        XCTAssertFalse(fence.beginGeneration())
++        XCTAssertEqual(fence.finishGeneration(), .shutdown)
++        XCTAssertFalse(fence.shutdownPending)
++        XCTAssertFalse(fence.trimPending)
++    }
++
++    func testIdleShutdownCanReleaseImmediately() {
++        var fence = LlamaNativeLifecycle()
++        XCTAssertTrue(fence.requestShutdown())
++        XCTAssertFalse(fence.generating)
++        XCTAssertTrue(fence.requestTrim())
++    }
++}
