@@ -129,16 +129,17 @@ new file mode 100644
 diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
 --- a/VeilLink/UI/ConversationViews.swift
 +++ b/VeilLink/UI/ConversationViews.swift
-@@ -261,7 +261,7 @@
+@@ -261,7 +261,8 @@
  
              VStack(alignment: .leading, spacing: 7) {
                  HStack(spacing: 8) {
 +                    VeilROCFlagText.render(conversation.title)
++                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.title))
 -                    Text(conversation.title)
                          .font(.system(.body, design: .rounded).weight(.semibold))
                          .foregroundColor(VeilTheme.text)
                          .lineLimit(1)
-@@ -293,7 +293,7 @@
+@@ -293,7 +294,7 @@
                          .tracking(0.8)
                          .foregroundColor(VeilTheme.mutedGold)
                      VeilLinkTrace(active: isSelected, width: 28)
@@ -147,7 +148,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.subheadline)
                          .foregroundColor(VeilTheme.secondaryText)
                          .lineLimit(1)
-@@ -613,7 +613,7 @@
+@@ -613,7 +614,7 @@
                              Text("引用回复")
                                  .font(.caption2.weight(.semibold))
                                  .foregroundColor(VeilTheme.gold)
@@ -156,44 +157,49 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                                  .font(.caption)
                                  .foregroundColor(VeilTheme.secondaryText)
                                  .lineLimit(1)
-@@ -1268,7 +1268,7 @@
+@@ -1268,7 +1269,8 @@
                      TransferShardView(image: nil, progress: progress, mode: .receiving)
                          .frame(width: 190)
                  } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
 +                    VeilROCFlagText.render(gamePreview)
++                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: gamePreview))
 -                    Text(gamePreview)
                          .font(.body.weight(.medium))
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1300,12 +1300,12 @@
+@@ -1300,12 +1302,14 @@
                              RoundedRectangle(cornerRadius: 1)
                                  .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
                                  .frame(width: 3)
 +                            VeilROCFlagText.render(reply.quote)
++                                .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: reply.quote))
 -                            Text(reply.quote)
                                  .font(.caption)
                                  .foregroundColor(message.isOutgoing ? Color.black.opacity(0.66) : VeilTheme.secondaryText)
                                  .lineLimit(2)
                          }
 +                        VeilROCFlagText.render(reply.reply)
++                            .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: reply.reply))
 -                        Text(reply.reply)
                              .frame(maxWidth: .infinity, alignment: .leading)
                      }
                      .padding(.horizontal, 14)
-@@ -1319,7 +1319,7 @@
+@@ -1319,7 +1323,8 @@
                      )
                      .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                  } else {
 +                    VeilROCFlagText.render(message.body)
++                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: message.body))
 -                    Text(message.body)
                          .font(.body)
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1631,7 +1631,7 @@
+@@ -1631,7 +1636,8 @@
                              .font(VeilType.terminalLabel)
                              .tracking(1.4)
                              .foregroundColor(VeilTheme.mutedGold)
 +                        VeilROCFlagText.render(conversation.title)
++                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.title))
 -                        Text(conversation.title)
                              .font(.system(.title3, design: .rounded).weight(.semibold))
                          VeilLinkTrace(active: false, width: 86)
@@ -201,11 +207,12 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
 diff --git a/VeilLink/UI/AgentChatView.swift b/VeilLink/UI/AgentChatView.swift
 --- a/VeilLink/UI/AgentChatView.swift
 +++ b/VeilLink/UI/AgentChatView.swift
-@@ -101,7 +101,7 @@
+@@ -101,7 +101,8 @@
      var body: some View {
          HStack {
              if message.role == .user { Spacer(minLength: 42) }
 +            VeilROCFlagText.render(message.text.isEmpty ? "…" : message.text)
++                .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: message.text))
 -            Text(message.text.isEmpty ? "…" : message.text)
                  .font(.system(size: 14.5, weight: .regular, design: .rounded))
                  .foregroundColor(message.role == .user ? Color.black.opacity(0.88) : VeilTheme.text)
@@ -213,11 +220,12 @@ diff --git a/VeilLink/UI/AgentChatView.swift b/VeilLink/UI/AgentChatView.swift
 diff --git a/VeilLink/UI/LingCoreTinyChatView.swift b/VeilLink/UI/LingCoreTinyChatView.swift
 --- a/VeilLink/UI/LingCoreTinyChatView.swift
 +++ b/VeilLink/UI/LingCoreTinyChatView.swift
-@@ -204,7 +204,7 @@
+@@ -204,7 +204,8 @@
                          ForEach(chat.messages) { message in
                              HStack {
                                  if message.role == .user { Spacer(minLength: 40) }
 +                                VeilROCFlagText.render(message.text.isEmpty ? "…" : message.text)
++                                    .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: message.text))
 -                                Text(message.text.isEmpty ? "…" : message.text)
                                      .font(.system(size: 14))
                                      .foregroundColor(message.role == .user ? .black : VeilTheme.text)
@@ -225,6 +233,15 @@ diff --git a/VeilLink/UI/LingCoreTinyChatView.swift b/VeilLink/UI/LingCoreTinyCh
 diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
 --- a/VeilLink/UI/SettingsView.swift
 +++ b/VeilLink/UI/SettingsView.swift
+@@ -234,7 +234,7 @@
+                         .font(VeilType.terminalLabel)
+                         .tracking(1.25)
+                         .foregroundColor(VeilTheme.mutedGold)
++                    VeilROCFlagText.render(identity.activeIdentity?.displayName ?? "未创建")
+-                    Text(identity.activeIdentity?.displayName ?? "未创建")
+                         .font(.system(.title3, design: .rounded).weight(.semibold))
+                     HStack(spacing: 7) {
+                         Text(String((identity.activeIdentity?.id ?? "offline").prefix(12)).uppercased())
 @@ -806,16 +806,19 @@
          let ultraDecision = ultraSample?.ultraDecision
          let ultraBudget = ultraSample?.ultraBudget
