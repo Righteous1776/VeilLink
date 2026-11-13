@@ -77,6 +77,20 @@ private func fails(_ body: () throws -> Void) -> Bool {
         check(FileManager.default.fileExists(atPath: poisoned.path), "Corrupt archive retained")
         let later = try archive.page(offset: 100, limit: 100)
         check(failedPage.invalidFiles + later.invalidFiles == 1, "Damaged file is reported during pagination")
+        // Oversized recovered files must not allocate unbounded JSON memory.
+        let hugeID = UUID().uuidString
+        let hugeFile = root.appendingPathComponent("History").appendingPathComponent(hugeID + ".json")
+        try Data(repeating: 65, count: 128_001).write(to: hugeFile)
+        check(fails { _ = try archive.read(sessionID: hugeID) }, "Oversized archive rejected before decode")
+        check(FileManager.default.fileExists(atPath: hugeFile.path), "Oversized evidence not deleted")
+        // Clock rollback must not corrupt archive timestamp invariants.
+        let clockID = UUID().uuidString
+        _ = try archive.save(sessionID: clockID, moves: m1, difficulty: "宗师", humanStone: 1,
+                             status: .playing, now: t2)
+        let rollback = try archive.save(sessionID: clockID, moves: m2, difficulty: "宗师", humanStone: 1,
+                                        status: .interrupted, now: t0)!
+        check(rollback.updatedAt >= rollback.startedAt && rollback.completedAt == rollback.updatedAt,
+              "Clock rollback preserves valid archive timestamps")
 
         let a = VeilEclipseThoughtPattern.frame(frame: 30, count: 140)
         check(a.count == 140 && a == VeilEclipseThoughtPattern.frame(frame: 30, count: 140), "Deterministic abstract animation")
