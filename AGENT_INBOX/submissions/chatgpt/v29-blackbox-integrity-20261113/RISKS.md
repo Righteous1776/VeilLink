@@ -10,3 +10,7 @@
 - Orientation callback suppression changes diagnostics only. Touch handling and gesture recognizers are untouched; no claim about physical swipe responsiveness.
 - Signal11, 880MB peak, 7.849s hang, and 8 BLE retries require exact reproduction/dSYM. Do not claim the diagnostic fix closes Issues #185 or #191.
 - External black-box ZIPs have sensitive content and were not uploaded into GitHub.
+
+## Write-first rotation tradeoff
+- Successful large buffered append can produce a >2MB active log before post-write rotation. With a 4MB emergency buffer this can transiently exceed the preferred single-file size; the rotation ring remains bounded in number of files, but actual bytes must be profiled during disk recovery.
+- If rename/rotation fails AFTER append, the newly written record remains in the active file. This version still inherits legacy best-effort filesystem rotation and cannot guarantee atomicity across all eight files; a future governor-authorized transaction journal may be warranted. Never delete previously persisted forensic records merely to retry a failed append.
