@@ -1,0 +1,10 @@
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -646,7 +646,7 @@
+                         Text("离线强力引擎 · PVS/VCF")
+                             .font(.caption.weight(.semibold))
+-                        Text("独立离线引擎；异常自动回退，不改写棋谱。")
++                        Text("独立离线搜索器；目前不共享原生战术安全门与学习权重。")
+                             .font(.caption2)
+                             .foregroundColor(VeilTheme.secondaryText)
