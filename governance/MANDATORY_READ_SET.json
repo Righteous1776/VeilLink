@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "governance_epoch": 1,
+  "constitution_version": "VEILLINK-ZEO-ADDITIVE-V1",
+  "common": [
+    "AGENTS.md",
+    "governance/ZEO_ADDITIVE_BINDING.md",
+    "governance/CONSTITUTION_SEAL.json",
+    "governance/SUPREME_CONSTITUTION.md",
+    "governance/BASIC_LAW_FRAMEWORK.md",
+    "governance/AGENT_AUTONOMY_BASIC_LAW.md",
+    "governance/GOVERNANCE_ORGANIC_BASIC_LAW.md",
+    "governance/DATA_AND_DELIVERY_BASIC_LAW.md",
+    "governance/INCIDENT_CONSTITUTION.md",
+    "governance/SESSION_CONTINUITY_PROTOCOL.md",
+    "governance/AGENT_BOOTSTRAP_PROTOCOL.md",
+    "governance/PR_AND_ACTION_PROTOCOL.md",
+    "governance/UNIFIED_OUTPUT_CONTRACT.md",
+    "AGENT_INBOX/07_LEARNING_GATE.md",
+    "AGENT_INBOX/GOVERNOR_AUTHORITY.json",
+    "governance/GOVERNOR_REGISTRY.json"
+  ],
+  "role_sets": {
+    "GOVERNOR": [
+      "governance/GOVERNOR_REGISTRY.json",
+      "governance/ACTIVE_TASK_INDEX.json",
+      "governance/TASK_MARKET.json"
+    ],
+    "SYSTEM_GOVERNOR": [
+      "governance/GOVERNOR_REGISTRY.json",
+      "governance/ACTIVE_TASK_INDEX.json",
+      "governance/TASK_MARKET.json"
+    ],
+    "SUPREME_GOVERNOR": [
+      "governance/GOVERNOR_REGISTRY.json",
+      "governance/ACTIVE_TASK_INDEX.json",
+      "governance/TASK_MARKET.json"
+    ],
+    "INTEGRATION_GOVERNOR": [
+      "governance/GOVERNOR_REGISTRY.json",
+      "governance/ACTIVE_TASK_INDEX.json"
+    ],
+    "WORKFORCE_COORDINATOR": [
+      "governance/ACTIVE_TASK_INDEX.json",
+      "governance/TASK_MARKET.json"
+    ]
+  },
+  "optional_if_exchange_installed": [
+    "AGENT_EXCHANGE/README.md",
+    "AGENT_EXCHANGE/MESSAGE_SCHEMA.json",
+    "AGENT_EXCHANGE/RECEIPT_SCHEMA.json",
+    "governance/EXCHANGE_AND_ARCHIVE_BASIC_LAW.md",
+    ".agents/skills/zeo-agent-exchange-inbox/references/AGENT_EXCHANGE_PROTOCOL.md"
+  ],
+  "acknowledgement_rule": "Agent must actually read all effective files; helper initializes PENDING only."
+}
