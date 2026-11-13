@@ -259,6 +259,8 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             if let encoded = try? self.encoder.encode(entry) {
                 self.pendingBuffer.append(encoded)
                 self.pendingBuffer.append(0x0A)
+                // Bound RAM during a five-second disk retry backoff as well.
+                self.trimPendingBufferUnsafe()
                 if self.pendingBuffer.count >= self.flushThresholdBytes {
                     self.flushPendingBufferUnsafe()
                 } else {
@@ -568,15 +570,7 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             // Preserve for a later retry, but limit it on low-memory devices.
             logWriteFailureCount += 1
             nextPersistRetryUptime = ProcessInfo.processInfo.systemUptime + 5
-            while pendingBuffer.count > maxPendingBufferBytes {
-                guard let newline = pendingBuffer.firstIndex(of: 0x0A) else {
-                    pendingBuffer.removeAll(keepingCapacity: true)
-                    droppedUnpersistedLineCount += 1
-                    break
-                }
-                pendingBuffer.removeSubrange(pendingBuffer.startIndex...newline)
-                droppedUnpersistedLineCount += 1
-            }
+            trimPendingBufferUnsafe()
             // Retry asynchronously; don't block the main UI on unavailable disk.
             scheduleFlushUnsafe()
             return
@@ -590,6 +584,20 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         } else {
             diskUsageBytesStorage = min(retentionBytes, max(0, diskUsageBytesStorage + data.count))
             lastRefreshAtStorage = Date()
+        }
+    }
+
+    /// Preserve complete JSONL records at the tail of the retry buffer.
+    /// This is called under stateLock on the serial logging queue.
+    private func trimPendingBufferUnsafe() {
+        while pendingBuffer.count > maxPendingBufferBytes {
+            guard let newline = pendingBuffer.firstIndex(of: 0x0A) else {
+                pendingBuffer.removeAll(keepingCapacity: true)
+                droppedUnpersistedLineCount += 1
+                break
+            }
+            pendingBuffer.removeSubrange(pendingBuffer.startIndex...newline)
+            droppedUnpersistedLineCount += 1
         }
     }
 
