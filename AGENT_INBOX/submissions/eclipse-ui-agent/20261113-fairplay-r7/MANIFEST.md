@@ -7,7 +7,7 @@ mode: INBOX_ONLY
 status: DROPPED; no product source applied, no iOS build, no release
 scope: ECLIPSE identity card + independently rendered abstract thought animation + strict no-player-hints gate + real postgame-only replay.
 owner_source_archive: VeilLink_ECLIPSE_FairPlay_UI_R7_20261113.zip
-archive_sha256: 4d0f866299f86f09ba452a90e1904674453c65395561f93eb2da8f7af47b7554
+archive_sha256: 3cdd877295b8ab3bfdd91506fc35db35b0a79b4acc48f6c03ee708dbc33a4369
 product_patch_sha256: b698b69cc8619be625f494ffa7afbb3c50d6385dabb53cb33a92f3b6c04f69d4
 policy_swift_sha256: 39ce72b13233f8c5a85dd8af157c2809ea946a3e8c7826b88d26f429ca26adbf
 swiftui_swift_sha256: ba187ced54a8e246eaf4e1a3909f630580477b38bb573a4cce43ce380d0a6d5c
