@@ -1,0 +1,180 @@
+diff --git a/VeilLink/Agent/Language/LocalTextModelRuntimeFactory.swift b/VeilLink/Agent/Language/LocalTextModelRuntimeFactory.swift
+--- a/VeilLink/Agent/Language/LocalTextModelRuntimeFactory.swift
++++ b/VeilLink/Agent/Language/LocalTextModelRuntimeFactory.swift
+@@ -1,39 +1,16 @@
+ import Foundation
+ 
++/// Shipping language backend is intentionally model-free. No GGUF model is
++/// loaded, hashed, downloaded, or instantiated, even when a third-party
++/// dependency accidentally exports a module named "llama".
+-#if REAL_LOCAL_AI_REQUIRED && !canImport(llama)
+-#error("REAL_LOCAL_AI_REQUIRED build cannot import the pinned llama.cpp module")
+-#endif
+-
+ @MainActor
+ enum LocalTextModelRuntimeFactory {
+     static func make(profile: AgentCapabilityProfile) -> LocalTextModelRuntime {
++        VeilTalkLiteRuntime()
+-        #if VERTEX_CHAT_ONLY
+-        return VeilTalkLiteRuntime()
+-        #elseif canImport(llama)
+-        return LlamaLocalTextModelRuntime(profile: profile)
+-        #else
+-        return VeilTalkLiteRuntime()
+-        #endif
+     }
+ 
++    nonisolated static var backendName: String { "VeilTalk Lite" }
+-    nonisolated static var backendName: String {
+-        #if VERTEX_CHAT_ONLY
+-        return "VeilTalk Lite"
+-        #elseif canImport(llama)
+-        return "llama.cpp"
+-        #else
+-        return "VeilTalk Lite"
+-        #endif
+-    }
+ 
++    nonisolated static var isRealLocalInferenceCompiled: Bool { false }
+-    nonisolated static var isRealLocalInferenceCompiled: Bool {
+-        #if VERTEX_CHAT_ONLY
+-        return false
+-        #elseif canImport(llama)
+-        return true
+-        #else
+-        return false
+-        #endif
+-    }
+ }
+ 
+diff --git a/VeilLink/UI/AgentHomeView.swift b/VeilLink/UI/AgentHomeView.swift
+--- a/VeilLink/UI/AgentHomeView.swift
++++ b/VeilLink/UI/AgentHomeView.swift
+@@ -34,13 +34,6 @@
+                 }
+                 .accessibilityLabel("打开 AI 控制中心")
+ 
+-                #if VERTEX_CHAT_ONLY && canImport(llama)
+-                NavigationLink(destination: LingCoreTinyChatView(computeGovernor: model.computeGovernor)) {
+-                    Image(systemName: "text.bubble")
+-                }
+-                .accessibilityLabel("进入 Vertex 35M 离线微型聊天")
+-                #endif
+-
+                 NavigationLink(destination: AgentVideoChatView(coordinator: model.agent)) {
+                     Image(systemName: "video")
+                 }
+diff --git a/VeilLink/Agent/Core/AgentCoordinator.swift b/VeilLink/Agent/Core/AgentCoordinator.swift
+--- a/VeilLink/Agent/Core/AgentCoordinator.swift
++++ b/VeilLink/Agent/Core/AgentCoordinator.swift
+@@ -444,7 +444,7 @@
+         AgentSession(messages: [
+             AgentMessage(
+                 role: .assistant,
++                text: "灵核在本机待命。当前运行时：\(LocalTextModelRuntimeFactory.backendName)。当前版本使用零模型本地对话规则，无需加载 GGUF 或原生语言模型。"
+-                text: "灵核在本机待命。当前运行时：\(LocalTextModelRuntimeFactory.backendName)。Core 版使用零模型本地对话规则；实验 AI 版可单独启用 llama/Qwen。"
+             )
+         ])
+     }
+diff --git a/VeilLink/Agent/Language/VeilTalkLiteRuntime.swift b/VeilLink/Agent/Language/VeilTalkLiteRuntime.swift
+--- a/VeilLink/Agent/Language/VeilTalkLiteRuntime.swift
++++ b/VeilLink/Agent/Language/VeilTalkLiteRuntime.swift
+@@ -112,7 +112,7 @@
+         if let context = localContext, context.bluetooth.connectedPeers > 0 {
+             return "我收到「\(clipped)」。VeilTalk Lite 不是大模型，所以复杂开放式问答能力有限；当前本机有 \(context.bluetooth.connectedPeers) 个 BLE 连接，我更适合处理 VeilLink 状态、对局和简单聊天。"
+         }
++        return "我收到「\(clipped)」。VeilTalk Lite 是零模型本地运行时，适合简单聊天和 VeilLink 本机状态问答；复杂开放式知识问答不属于本地规则助手的能力范围。"
+-        return "我收到「\(clipped)」。VeilTalk Lite 是零模型本地运行时，适合简单聊天和 VeilLink 本机状态问答；复杂知识问答需要实验 AI 版。"
+     }
+ 
+     nonisolated private static func containsAny(_ text: String, _ needles: [String]) -> Bool {
+diff --git a/project.yml b/project.yml
+--- a/project.yml
++++ b/project.yml
+@@ -36,12 +36,6 @@
+           - Agent/MaleCNS
+           - Agent/Games/TrainedGamePolicyRuntime.swift
+           - Agent/Games/MaleCNSGameDecisionEncoder.swift
+-          - Agent/Language/LlamaInferenceEngine.swift
+-          - Agent/Language/LlamaLocalTextModelRuntime.swift
+-          - Agent/Language/LlamaRuntimeConfiguration.swift
+-          - Agent/Language/LlamaCancellationGate.swift
+-          - Agent/Language/LocalModelCatalog.swift
+-          - Agent/Language/LocalModelManager.swift
+           - Resources/VeilFlyCore.vfly
+           - Resources/VeilFlyLite.vfly
+           - Resources/VeilFlyAssets.json
+@@ -56,8 +50,6 @@
+           - Resources/MaleCNSReadoutLiteV1.manifest.json
+           - Resources/AgentModels/game_policy_ranker_v4.vlpol
+           - Resources/AgentModels/game_policy_ranker_v4.manifest.json
+-          - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
+-          - Resources/LocalAI/Vertex-0.6-35M-Instruct-Q4_K_M.gguf
+           - Resources/MonogatariHost
+           - Resources/VisualNovelBundle
+           - Resources/GomokuEngineV2
+@@ -119,8 +111,6 @@
+           - MaleCNSNativeKernelTests.swift
+           - MaleCNSNativeRolloutPoolTests.swift
+           - MaleCNSVFLY1Tests.swift
+-          - LocalModelCatalogTests.swift
+-          - RealLocalInferenceSmokeTests.swift
+           - Fixtures/MaleCNSFixture.vfly
+           - Fixtures/MaleCNSFixture.vfly.manifest.json
+       # These session/animation/lifecycle tests are conditionally excluded by
+diff --git a/VeilLinkTests/LocalLanguageModelRemovalTests.swift b/VeilLinkTests/LocalLanguageModelRemovalTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/LocalLanguageModelRemovalTests.swift
+@@ -0,0 +1,51 @@
++import XCTest
++@testable import VeilLink
++
++@MainActor
++final class LocalLanguageModelRemovalTests: XCTestCase {
++    func testProductionRuntimeIsAlwaysModelFree() {
++        let runtime = LocalTextModelRuntimeFactory.make(
++            profile: AgentCapabilityProfile.profile(devicePerformanceLabel: "LEGACY-COMPACT")
++        )
++        XCTAssertTrue(runtime is VeilTalkLiteRuntime)
++        XCTAssertEqual(LocalTextModelRuntimeFactory.backendName, "VeilTalk Lite")
++        XCTAssertFalse(LocalTextModelRuntimeFactory.isRealLocalInferenceCompiled)
++    }
++
++    func testNoLegacyLanguageGGUFIsShipped() {
++        XCTAssertNil(Bundle.main.url(
++            forResource: "Vertex-0.6-35M-Instruct-Q4_K_M",
++            withExtension: "gguf",
++            subdirectory: "LocalAI"
++        ))
++        XCTAssertNil(Bundle.main.url(
++            forResource: "Vertex-0.6-35M-Instruct-Q4_K_M",
++            withExtension: "gguf"
++        ))
++        XCTAssertNil(Bundle.main.url(
++            forResource: "Qwen3-0.6B-Q4_0",
++            withExtension: "gguf"
++        ))
++    }
++
++    func testCoreChatRetainsModelFreeBackend() async throws {
++        let runtime = LocalTextModelRuntimeFactory.make(
++            profile: AgentCapabilityProfile.profile(devicePerformanceLabel: "LEGACY-COMPACT")
++        )
++        try await runtime.prepare()
++        let request = AgentTextRequest(
++            sessionID: "model-free-regression",
++            messages: [AgentMessage(role: .user, text: "你好")],
++            userText: "你好",
++            maxNewTokens: 64,
++            visualContext: nil
++        )
++        var streamed = ""
++        let response = try await runtime.generate(request: request) { piece in
++            streamed += piece
++        }
++        XCTAssertFalse(response.text.isEmpty)
++        XCTAssertEqual(streamed, response.text)
++        runtime.unload()
++    }
++}
