@@ -295,6 +295,7 @@ private struct ConversationRow: View {
                         .foregroundColor(VeilTheme.mutedGold)
                     VeilLinkTrace(active: isSelected, width: 28)
                     VeilROCFlagText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
                         .font(.subheadline)
                         .foregroundColor(VeilTheme.secondaryText)
                         .lineLimit(1)
