@@ -578,9 +578,10 @@ public struct VeilopolyGameView: View {
   .onChange(of: model.pending) { pending in
    if !pending { revealDecisionIfNeeded() }
   }
-  .onChange(of: model.game.turn.phase) { _ in
+  .onChange(of: model.game.turn.phase) { phase in
    showDecisionDocument = false
    showCounterOffer = false
+   if phase != .auction { heldAuctionStep = nil; consumedAuctionLongPress = false }
    revealDecisionIfNeeded()
   }
   .onChange(of: model.game.turn.pendingPurchase) { _ in revealDecisionIfNeeded() }
@@ -1468,10 +1469,16 @@ public struct VeilopolyGameView: View {
   let cash = model.game.players[model.actor].cash
   let price = max(1, model.game.board[auction.tile].price)
   let ceiling = max(1, min(cash, price > Int.max / 2 ? Int.max : price * 2))
-  let starting = min(ceiling, max(1, Int(bidderCash) ?? auction.currentBid + 1))
-  let requested = starting + delta
-  bidderCash = String(min(ceiling, max(1, requested)))
-  if requested > ceiling {
+  let minimum = auction.currentBid == Int.max ? Int.max : auction.currentBid + 1
+  let starting = min(ceiling, max(1, Int(bidderCash) ?? minimum))
+  // Avoid Int overflow even for corrupted/very large cash values.
+  let cappedHigh = delta > 0 && starting > ceiling - delta
+  let requested: Int
+  if cappedHigh { requested = ceiling }
+  else if delta < 0 && starting <= 1 - delta { requested = 1 }
+  else { requested = starting + delta }
+  bidderCash = String(requested)
+  if cappedHigh || (delta > 0 && starting == ceiling) {
    UINotificationFeedbackGenerator().notificationOccurred(.error)
   } else {
    UIImpactFeedbackGenerator(style: .light).impactOccurred()
