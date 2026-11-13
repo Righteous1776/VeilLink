@@ -1,0 +1,26 @@
+{
+  "schema": "veillink.gomoku.replay-fixture.v1",
+  "occurrences": 5,
+  "opening": [
+    "h112",
+    "a96",
+    "h81",
+    "a82",
+    "h110",
+    "a98",
+    "h111",
+    "a113",
+    "h109",
+    "a108",
+    "h95"
+  ],
+  "unsafe": 83,
+  "ruleSafe": [
+    67,
+    123
+  ],
+  "opponentForkMoves": [
+    67,
+    123
+  ]
+}
