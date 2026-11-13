@@ -4,7 +4,7 @@
 
 | Test scope | Result |
 |---|---|
-| Swift 6.2.1 optimized, warnings-as-errors — archive + decorative pattern | 36 PASS |
+| Swift 6.2.1 optimized, warnings-as-errors — archive + decorative pattern | 39 PASS |
 | Swift 6.2.1 — R9 fair-play and committed-only replay | 18 PASS |
 | Swift 6.2.1 — R9 session gate / true vs recorded telemetry / tier label | 35 PASS |
 | SwiftUI files syntax (`swiftc -frontend -parse -swift-version 5`) | PASS (parse only) |
@@ -26,3 +26,7 @@
 ## Nonclaims
 
 - No equal-budget ELO / win rate, no confirmation that V9 was merged, no iOS runtime verification, no IPA, no source change to `main`.
+
+## Continuation additions
+- Three new native checks: oversized JSON rejected before decode, oversized evidence preserved, clock rollback maintains a valid record.
+- Search-start visual gating is checked in the proposed GameLobbyView patch; NOT Apple iOS runtime-tested.
