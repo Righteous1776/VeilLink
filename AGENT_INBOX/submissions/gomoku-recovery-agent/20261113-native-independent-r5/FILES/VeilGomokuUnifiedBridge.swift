@@ -1,16 +1,15 @@
 import Foundation
 
-/// Bridge into the existing VeilLink board and learning contracts.
-/// The caller MUST first run GomokuBot's own win / forced block / R8 / R4
-/// tactical gates and pass only the resulting root candidate set here.
+/// The native search is subordinate to GomokuBot's mandatory tactical rules.
+/// Pass exactly the R4-vetted root candidates and the incumbent root scores.
+/// This bridge never touches the old JavaScriptCore engine or user archives.
 enum VeilGomokuUnifiedBridge {
     static func chooseMove(
         in state: GomokuState,
         for player: MiniGamePlayer,
         budget: GomokuBotBudget,
         permittedRoots: [Int],
-        learning: AdaptiveBoardLearningSnapshot,
-        formation: GomokuFormationPreference,
+        rootScores: [Int: Int],
         onTrace: (@Sendable (VeilGomokuUnifiedSearch.Trace) -> Void)? = nil
     ) -> GomokuBotMove? {
         guard state.winner == nil,
@@ -25,24 +24,20 @@ enum VeilGomokuUnifiedBridge {
             cells: cells, toMove: player == .host ? 1 : 2
         ) else { return nil }
 
-        // The new kernel receives only native scale root preferences. It never
-        // reads, modifies, or replaces saved training database files.
-        let trainingPosition = AdaptiveBoardPosition.gomoku(state)
-        let opponentEmergency = GomokuFormationPreference.opponentHasImmediateWin(
-            in: state, player: player
-        )
-        var bonuses: [Int: Int] = [:]
-        for index in permittedRoots {
-            let action = String(index)
-            let learned = learning.bonus(position: trainingPosition, action: action)
-                + learning.rootAdjustment(action: action)
-            let formationBonus = formation.bonus(
-                index: index, state: state, player: player,
-                urgentDefense: opponentEmergency
-            )
-            bonuses[index] = max(-2_000, min(2_000, learned + formationBonus))
+        // Original ranking incorporates R3/R6 threat models, sequence learning
+        // and formation guidance. All become bounded tie-breaker preferences,
+        // never permissions to ignore a proven tactical loss.
+        // GomokuBot priorities span multiple tactical/learning scales.
+        // Preserve their exact ordering, then normalize to a bounded preference
+        // so the new search cannot drown out a verified win or forced block.
+        let ranked = rootScores.sorted {
+            $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value
         }
-
+        var bonuses: [Int: Int] = [:]
+        for (rank, entry) in ranked.enumerated() {
+            let offset = rank * 4_000 / max(1, ranked.count - 1)
+            bonuses[entry.key] = 2_000 - offset
+        }
         var limits = VeilGomokuUnifiedSearch.Limits()
         limits.maxMilliseconds = max(30, budget.timeLimitMilliseconds)
         limits.maxNodes = max(2_000, min(180_000, budget.timeLimitMilliseconds * 125))
@@ -58,9 +53,7 @@ enum VeilGomokuUnifiedBridge {
         var legal = state
         guard legal.apply(index: decision.index, actor: player) else { return nil }
         return GomokuBotMove(
-            index: decision.index,
-            score: decision.score,
-            nodes: decision.nodes,
+            index: decision.index, score: decision.score, nodes: decision.nodes,
             elapsedMilliseconds: max(0, Int(
                 (Date.timeIntervalSinceReferenceDate - started) * 1000
             ))
