@@ -1,7 +1,7 @@
 # ECLIPSE R10 verification
 ## Executed
 - Swift 6.2.1 Linux, strict swift-version6/warnings-as-errors/-O compilation, PASS.
-- ECLIPSE strategy 59 deterministic checks PASS: immediate win, unique mandatory block, legal-root containment, forced double-win whitelist, opponent reply bait counter, bad position and budget fallback, 16 symmetries, 32 seeded midgame legal moves (7264 examined search nodes).
+- ECLIPSE strategy 60 deterministic checks PASS: immediate win, unique mandatory block, legal-root containment, forced double-win whitelist, opponent reply bait counter, bad position and budget fallback, 16 symmetries, 32 seeded midgame legal moves (7264 examined search nodes).
 - Compute contract 18 budget asserts PASS: 1/2/4/6x total invariant, sum of optional stage budgets equals total, deadline math, invalid parameters rejected. Owner ZIP includes replayable `FILES/TESTS` sources.
 - Package integrity: complete source and diff are in SHA256-pinned owner ZIP; no binaries or neural weights.
 
