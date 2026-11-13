@@ -9,7 +9,7 @@
 - proposed_files: VeilLink/Agent/Games/LocalAIGameController.swift, VeilLink/Agent/Games/GomokuBot.swift, VeilLink/Agent/Games/XiangqiBot.swift, VeilLink/Agent/Games/VeilOfflineGomokuEngine.swift, VeilLink/UI/GameLobbyView.swift, VeilLinkTests/GomokuBotTests.swift, VeilLink/Agent/Games/GomokuForcingSearchV9.swift
 - asset_grant: none; zero binary/model uploads
 - excluded: Xiangqi difficulty change, storage/schema, protocol, A9/A10, signing, workflows, main, IPA
-- verification: Swift 6.2.1 Linux stand-alone typecheck and three tactical probes PASS; full application build/iOS XCTest/physical devices NOT_RUN
+- verification: Swift 6.2.1 Linux stand-alone typecheck plus 34 symmetry/budget tactical checks PASS; reproducible harness in FILES/STANDALONE/; app Xcode build NOT_RUN; full application build/iOS XCTest/physical devices NOT_RUN
 - overlap: existing R4/R6/R8 native Gomoku and 20261031 training Inbox proposals; see RISKS.md
 
 The five required files plus FILES/GomokuForcingSearchV9.swift form one auditable drop.
