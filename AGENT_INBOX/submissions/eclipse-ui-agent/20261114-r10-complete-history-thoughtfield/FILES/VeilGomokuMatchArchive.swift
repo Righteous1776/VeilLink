@@ -96,6 +96,10 @@ final class VeilGomokuMatchArchive {
     func read(sessionID: String) throws -> Match? {
         let path = try url(for: sessionID)
         guard manager.fileExists(atPath: path.path) else { return nil }
+        // Bound untrusted/recovered archive bytes BEFORE decoding to prevent
+        // oversized or malformed JSON from exhausting memory during pagination.
+        let bytes = try path.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard (1...128_000).contains(bytes) else { throw ArchiveError.corrupted }
         let data = try Data(contentsOf: path)
         guard let match = try? JSONDecoder().decode(Match.self, from: data),
               match.id == (try? canonicalID(sessionID)), validate(match) else {
@@ -130,11 +134,13 @@ final class VeilGomokuMatchArchive {
                 return prior
             }
         }
+        // The device clock may move backwards; retain monotone archive dates.
+        let effectiveNow = max(now, prior?.updatedAt ?? now)
         let match = Match(
             version: Match.version, id: id,
             startedAt: prior?.startedAt ?? now,
-            updatedAt: now,
-            completedAt: status.isFinal ? now : nil,
+            updatedAt: effectiveNow,
+            completedAt: status.isFinal ? effectiveNow : nil,
             status: status,
             difficulty: prior?.difficulty ?? difficulty,
             humanStone: humanStone, moves: moves
@@ -142,6 +148,7 @@ final class VeilGomokuMatchArchive {
         guard validate(match) else { throw ArchiveError.invalidMoves }
         try manager.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(match)
+        guard data.count <= 128_000 else { throw ArchiveError.invalidMoves }
         var options: Data.WritingOptions = [.atomic]
         #if canImport(UIKit)
         options.insert(.completeFileProtectionUntilFirstUserAuthentication)
