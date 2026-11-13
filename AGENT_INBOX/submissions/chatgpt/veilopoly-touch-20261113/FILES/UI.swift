@@ -24,12 +24,15 @@ public final class GameSessionModel: ObservableObject {
  @Published public private(set) var bulletinFeed = VeilopolyBulletinFeed()
  @Published public var newsEnabled = true
  private var cardGate = CardRevealGate()
- @Published public var selectedTile: Int = 1 {
+ @Published public var selectedTile: Int? = 1 {
   didSet { scene.highlightTile(selectedTile) }
  }
  let scene: GameBoardScene
  private var queue: [ViewCommand] = []
  @Published private var animating = false
+ @Published public private(set) var skipFeedbackSerial = 0
+ private var lastSkipAt = -Double.infinity
+ private var lastToastAt = -Double.infinity
  private var driving = false
  private let configuredHumanCount: Int
  private let saveStore: VeilopolySaveStore?
@@ -102,11 +105,10 @@ public final class GameSessionModel: ObservableObject {
   scene.highlightTile(selectedTile)
   scene.onBoardTap = { [weak self] tile in
    guard let self else { return }
-   if self.animating { self.fastForward() }
-   else if let tile {
-    self.selectedTile = tile
-    self.boardSelectionRevision += 1
-   }
+   if self.animating { self.fastForward(); return }
+   // Blank board or repeated selection toggles inspection off.
+   self.selectedTile = tile == self.selectedTile ? nil : tile
+   if self.selectedTile != nil { self.boardSelectionRevision += 1 }
   }
   if unreadable {
    saveWarning = "本地存档无法读取，已保留原文件。可从「重新开局」明确重置。"
@@ -290,8 +292,15 @@ public final class GameSessionModel: ObservableObject {
   }
  }
  public func fastForward() {
-  // Card reading is a deliberate decision, not a skippable scene effect.
-  if animating && !cardGate.isPresented { scene.fastForward() }
+  guard canSkipAnimation else { return }
+  let now = ProcessInfo.processInfo.systemUptime
+  guard now - lastSkipAt >= 0.4 else { return }
+  lastSkipAt = now
+  scene.fastForward() // Existing ACK-once semantics untouched.
+  if now - lastToastAt >= 1.0 {
+   lastToastAt = now
+   skipFeedbackSerial &+= 1
+  }
  }
  public func dismissCard() {
   guard shownCard != nil else { return }
@@ -495,6 +504,8 @@ public struct VeilopolyGameView: View {
  @State private var requestCash = "0"
  @State private var directTransferAmount = "200"
  @State private var bidderCash = "10"
+ @State private var showSkipToast = false
+ @State private var skipToastEpoch = 0
  @State private var bankAmount = "600"
  @State private var bankPeriods = "6"
  @State private var stockSymbol = "VTL"
@@ -560,6 +571,7 @@ public struct VeilopolyGameView: View {
    model.setNetworkForeground(phase == .active)
   }
   .onChange(of: reduceMotion) { model.scene.reduceMotion = $0 }
+  .onChange(of: model.skipFeedbackSerial) { _ in displaySkipToast() }
   .onChange(of: model.pending) { pending in
    if !pending { revealDecisionIfNeeded() }
   }
@@ -747,6 +759,16 @@ public struct VeilopolyGameView: View {
   }
  }
 
+ private func displaySkipToast() {
+  skipToastEpoch += 1
+  let epoch = skipToastEpoch
+  withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) { showSkipToast = true }
+  Task { @MainActor in
+   try? await Task.sleep(nanoseconds: 600_000_000)
+   guard epoch == skipToastEpoch else { return }
+   withAnimation(reduceMotion ? nil : .easeIn(duration: 0.16)) { showSkipToast = false }
+  }
+ }
  private func resetTradeDraft() {
   chosenOffer = []; chosenRequest = []; offerCash = "0"; requestCash = "0"
   tradeTarget = model.game.players.first { $0.id != model.actor && !$0.bankrupt }?.id ?? model.actor
@@ -1095,17 +1117,29 @@ public struct VeilopolyGameView: View {
       .padding(8)
      }
     }
+    .overlay(alignment: .trailing) {
+     if showSkipToast {
+      Text("已快进").font(.caption.bold())
+       .foregroundColor(.white)
+       .padding(.horizontal, 12).padding(.vertical, 8)
+       .background(Color(red: 0.1, green: 0.22, blue: 0.23), in: Capsule())
+       .padding(.trailing, 8)
+       .transition(reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity))
+       .allowsHitTesting(false)
+     }
+    }
     .contentShape(Rectangle())
     .position(x: box.size.width / 2, y: box.size.height / 2)
   }
   .accessibilityLabel("大富翁棋盘，40 格")
  }
 
- private var tileInspector: some View {
-  let tile = model.game.board[model.selectedTile]
+ @ViewBuilder private var tileInspector: some View {
+  if let index = model.selectedTile {
+  let tile = model.game.board[index]
   let ownerName = tile.owner.map { model.game.players[$0].name } ?? "尚未购买"
   return HStack(spacing: 8) {
-   Button { model.selectedTile = (model.selectedTile + 39) % 40 } label: {
+   Button { model.selectedTile = (index + 39) % 40 } label: {
     Image(systemName: "chevron.left").frame(width: 44, height: 44)
    }
    .buttonStyle(.plain)
@@ -1128,7 +1162,7 @@ public struct VeilopolyGameView: View {
     }
    }
    .frame(maxWidth: .infinity, alignment: .leading)
-   Button { model.selectedTile = (model.selectedTile + 1) % 40 } label: {
+   Button { model.selectedTile = (index + 1) % 40 } label: {
     Image(systemName: "chevron.right").frame(width: 44, height: 44)
    }
    .buttonStyle(.plain)
@@ -1137,6 +1171,9 @@ public struct VeilopolyGameView: View {
   .padding(.horizontal, 5)
   .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
   .accessibilityElement(children: .contain)
+  } else {
+   Text("未选择地块 · 点击棋盘查看").font(.caption).foregroundStyle(.secondary)
+  }
  }
 
  private var portraitFallback: some View {
@@ -1527,10 +1564,10 @@ public struct VeilopolyGameView: View {
      Button("#\(t.i) \(t.name)") { model.selectedTile = t.i }
     }
    } label: {
-    Label("地块 #\(model.selectedTile) · \(model.game.board[model.selectedTile].name)",systemImage:"square.grid.3x3")
+     Label(model.selectedTile.map { "地块 #\($0) · \(model.game.board[$0].name)" } ?? "未选择地块", systemImage:"square.grid.3x3")
      .frame(maxWidth:.infinity,alignment:.leading)
    }
-   if let deed = VeilopolyCivicText.deed(model.game, tileIndex: model.selectedTile) {
+   if let index = model.selectedTile, let deed = VeilopolyCivicText.deed(model.game, tileIndex: index) {
     VeilopolyCivicDocumentPanel(document: deed)
    }
    HStack {
@@ -1551,19 +1588,22 @@ public struct VeilopolyGameView: View {
  }
 
  private func propertyAction(_ title: String, symbol: String, kind: MoveKind) -> some View {
-  let move = Move(kind, player: model.actor, seq: model.game.nextSeq, tile: model.selectedTile)
-  let reason = VeilopolyGamePresentation.rejection(model.game, move: move)
+  let tile = model.selectedTile
+  let reason = tile.flatMap { index in
+   VeilopolyGamePresentation.rejection(model.game,
+    move: Move(kind, player: model.actor, seq: model.game.nextSeq, tile: index))
+  }
   return VStack(alignment: .leading, spacing: 3) {
    action(title, symbol: symbol, secondary: kind == .sellHouse || kind == .redeem) {
-    model.perform(kind, tile: model.selectedTile)
+    guard let tile else { return }
+    model.perform(kind, tile: tile)
    }
-   .disabled(reason != nil)
+   .disabled(tile == nil || reason != nil)
    if let reason { Text(reason).font(.caption2).foregroundStyle(.secondary) }
   }
   .frame(maxWidth: .infinity, alignment: .topLeading)
  }
-
- private var tradeProposalPanel: some View {
+  private var tradeProposalPanel: some View {
   let proposal = Move(.proposeTrade, player: model.actor, seq: model.game.nextSeq, to: tradeTarget,
    offer: TradeTransfer(cash: Int(offerCash) ?? -1, tiles: chosenOffer.sorted()),
    request: TradeTransfer(cash: Int(requestCash) ?? -1, tiles: chosenRequest.sorted()))
