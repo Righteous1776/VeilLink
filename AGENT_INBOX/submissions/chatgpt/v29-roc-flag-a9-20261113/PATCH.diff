@@ -140,26 +140,28 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.system(.body, design: .rounded).weight(.semibold))
                          .foregroundColor(VeilTheme.text)
                          .lineLimit(1)
-@@ -293,7 +294,8 @@
+@@ -293,7 +294,9 @@
                          .tracking(0.8)
                          .foregroundColor(VeilTheme.mutedGold)
                      VeilLinkTrace(active: isSelected, width: 28)
 +                    VeilROCFlagText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
 +                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
++                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
 -                    Text(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
                          .font(.subheadline)
                          .foregroundColor(VeilTheme.secondaryText)
                          .lineLimit(1)
-@@ -613,7 +615,7 @@
+@@ -613,7 +616,8 @@
                              Text("引用回复")
                                  .font(.caption2.weight(.semibold))
                                  .foregroundColor(VeilTheme.gold)
 +                            VeilROCFlagText.render(ReplyTextCodec.quoteSource(for: replyingTo))
++                            .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: ReplyTextCodec.quoteSource(for: replyingTo)))
 -                            Text(ReplyTextCodec.quoteSource(for: replyingTo))
                                  .font(.caption)
                                  .foregroundColor(VeilTheme.secondaryText)
                                  .lineLimit(1)
-@@ -1268,7 +1270,8 @@
+@@ -1268,7 +1272,8 @@
                      TransferShardView(image: nil, progress: progress, mode: .receiving)
                          .frame(width: 190)
                  } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
@@ -169,7 +171,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.body.weight(.medium))
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1300,12 +1303,14 @@
+@@ -1300,12 +1305,14 @@
                              RoundedRectangle(cornerRadius: 1)
                                  .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
                                  .frame(width: 3)
@@ -186,7 +188,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                              .frame(maxWidth: .infinity, alignment: .leading)
                      }
                      .padding(.horizontal, 14)
-@@ -1319,7 +1324,8 @@
+@@ -1319,7 +1326,8 @@
                      )
                      .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                  } else {
@@ -196,7 +198,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          .font(.body)
                          .padding(.horizontal, 14)
                          .padding(.vertical, 11)
-@@ -1631,7 +1637,8 @@
+@@ -1631,7 +1639,8 @@
                              .font(VeilType.terminalLabel)
                              .tracking(1.4)
                              .foregroundColor(VeilTheme.mutedGold)
@@ -235,17 +237,18 @@ diff --git a/VeilLink/UI/LingCoreTinyChatView.swift b/VeilLink/UI/LingCoreTinyCh
 diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
 --- a/VeilLink/UI/SettingsView.swift
 +++ b/VeilLink/UI/SettingsView.swift
-@@ -234,7 +234,8 @@
+@@ -234,7 +234,9 @@
                          .font(VeilType.terminalLabel)
                          .tracking(1.25)
                          .foregroundColor(VeilTheme.mutedGold)
 +                    VeilROCFlagText.render(identity.activeIdentity?.displayName ?? "未创建")
 +                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
++                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
 -                    Text(identity.activeIdentity?.displayName ?? "未创建")
                          .font(.system(.title3, design: .rounded).weight(.semibold))
                      HStack(spacing: 7) {
                          Text(String((identity.activeIdentity?.id ?? "offline").prefix(12)).uppercased())
-@@ -806,16 +807,19 @@
+@@ -806,16 +808,19 @@
          let ultraDecision = ultraSample?.ultraDecision
          let ultraBudget = ultraSample?.ultraBudget
          let engineName = usesUltra ? "A10 Ultra Ω" : "A9"
@@ -272,7 +275,7 @@ diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
                      .frame(width: 9, height: 9)
                  VStack(alignment: .leading, spacing: 2) {
                      Text("\(engineName) 健康治理")
-@@ -828,7 +832,7 @@
+@@ -828,7 +833,7 @@
                  Spacer()
                  Text("\(shownLevel) · H\(shownHealth)")
                      .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -281,7 +284,7 @@ diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
              }
  
              HStack(spacing: 8) {
-@@ -870,6 +874,10 @@
+@@ -870,6 +875,10 @@
                          .font(.caption)
                          .foregroundColor(VeilTheme.secondaryText)
                  }
