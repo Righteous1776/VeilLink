@@ -1,0 +1,235 @@
+import SwiftUI
+
+struct AgentHomeView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var controls: AgentControlCenterSettings
+    @State private var showDiagnostics = false
+
+    init(model: AppModel) {
+        self.model = model
+        controls = model.agentControls
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            AgentStatusView(model: model)
+                .veilStaggeredEntrance(index: 0)
+            AgentControlSummaryView(model: model, controls: controls)
+                .veilStaggeredEntrance(index: 1)
+            AgentQuickToolsView(model: model)
+                .veilStaggeredEntrance(index: 2)
+            AgentChatView(coordinator: model.agent)
+                .veilStaggeredEntrance(index: 3)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background(VeilAmbientBackground())
+        .navigationTitle("灵核")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                NavigationLink(destination: AgentControlCenterView(model: model)) {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .accessibilityLabel("打开 AI 控制中心")
+
+                NavigationLink(destination: AgentVideoChatView(coordinator: model.agent)) {
+                    Image(systemName: "video")
+                }
+                .accessibilityLabel("进入本地视频对话")
+
+                Button {
+                    model.agent.newSession()
+                } label: {
+                    Image(systemName: "plus.bubble")
+                }
+                .accessibilityLabel("新建本地会话")
+
+                Menu {
+                    Button("运行诊断") { showDiagnostics = true }
+                    Button("刷新蓝牙链路") { model.agent.send("/ble refresh") }
+                        .disabled(!controls.localToolMutationsEnabled)
+                    Button("查看治理状态") { model.agent.send("/governance status") }
+                    Button("查看灵核运行状态") { model.agent.send("/agent status") }
+                    if model.agent.isGenerating {
+                        Button("停止生成", role: .destructive) { model.agent.stopGeneration() }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("灵核更多选项")
+            }
+        }
+        .sheet(isPresented: $showDiagnostics) {
+            AgentDiagnosticsView(coordinator: model.agent)
+        }
+        .sheet(isPresented: Binding(
+            get: { model.exportedDiagnosticsURL != nil },
+            set: { if !$0 { model.exportedDiagnosticsURL = nil } }
+        )) {
+            if let url = model.exportedDiagnosticsURL {
+                ShareSheet(items: [url])
+            }
+        }
+        .onAppear {
+            model.agent.setComputeFocus(.languageChat)
+            if controls.autoLoadLanguageModel { model.agent.activate() }
+        }
+        .onDisappear { model.agent.setComputeFocus(.idle) }
+        .onReceive(NotificationCenter.default.publisher(for: .veilLinkStressUICommand)) { notification in
+            guard let request = DeviceStressCommandBus.request(from: notification) else { return }
+            switch request.command {
+            case .agentOpenDiagnostics:
+                showDiagnostics = true
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    disposition: showDiagnostics ? .applied : .ignored,
+                    detail: "agent diagnostics presentation state enabled"
+                )
+            case .agentCloseDiagnostics:
+                showDiagnostics = false
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    detail: "agent diagnostics presentation state cleared"
+                )
+            default:
+                break
+            }
+        }
+    }
+}
+
+private struct AgentControlSummaryView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var controls: AgentControlCenterSettings
+
+    var body: some View {
+        NavigationLink(destination: AgentControlCenterView(model: model)) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(VeilTheme.gold.opacity(0.09))
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(VeilTheme.gold)
+                }
+                .frame(width: 34, height: 34)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 7) {
+                        Text("AI CONTROL")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundColor(VeilTheme.mutedGold)
+                        if controls.gameDecisionMode.isExperimental {
+                            Text("EXPERIMENTAL")
+                                .font(.system(size: 7, weight: .heavy, design: .monospaced))
+                                .foregroundColor(VeilTheme.gold)
+                        }
+                    }
+                    Text("Native Bot · \(controls.autoLoadLanguageModel ? "VeilTalk 自动" : "VeilTalk 手动")")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(VeilTheme.text)
+                    Text("Core 零模型 · 工具\(controls.localToolMutationsEnabled ? "允许" : "只读")")
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+            .padding(10)
+            .background(VeilTheme.panel.opacity(0.72))
+            .clipShape(VeilPanelShape(cut: 10, radius: 7))
+            .overlay(VeilPanelShape(cut: 10, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .veilSpatialPress(maximumTilt: 3.8, cornerRadius: 10, highlightColor: VeilTheme.goldBright)
+    }
+}
+
+private struct AgentQuickToolsView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var controls: AgentControlCenterSettings
+
+    init(model: AppModel) {
+        self.model = model
+        controls = model.agentControls
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                quickButton("链路", icon: "antenna.radiowaves.left.and.right") {
+                    model.agent.send("请根据当前本机上下文概括蓝牙链路状态、积压和健康度。")
+                }
+                quickButton("数据库", icon: "externaldrive.badge.checkmark") {
+                    model.agent.send("/db check")
+                }
+                .opacity(controls.localToolMutationsEnabled ? 1 : 0.45)
+                .disabled(!controls.localToolMutationsEnabled)
+                quickButton(model.activeGovernanceEngineName, icon: "gauge.with.dots.needle.50percent") {
+                    model.agent.send("/governance status")
+                }
+                quickButton("对局", icon: "gamecontroller") {
+                    model.agent.send("请分析当前对局。只基于本机提供的合法候选动作给建议；如果没有当前对局就直接说明。")
+                }
+                .opacity(model.gameIntelligence.hasCurrentGame ? 1 : 0.55)
+            }
+            .padding(.horizontal, 1)
+        }
+        .frame(height: 30)
+    }
+
+    private func quickButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                Text(title)
+            }
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundColor(VeilTheme.secondaryText)
+            .padding(.horizontal, 9)
+            .frame(height: 28)
+            .background(VeilTheme.subtleFill)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(VeilTheme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .veilSpatialPress(maximumTilt: 3.0, cornerRadius: 15, highlightColor: VeilTheme.goldBright)
+    }
+}
+
+private struct AgentDiagnosticsView: View {
+    @ObservedObject var coordinator: AgentCoordinator
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("只包含本地运行时状态、工具执行计数与性能计数；不包含聊天正文、附件、密钥、配对六码或数据库路径。")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                    Text(coordinator.diagnosticsReport())
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundColor(VeilTheme.text)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(18)
+            }
+            .background(VeilAmbientBackground())
+            .navigationTitle("灵核诊断")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+    }
+}
