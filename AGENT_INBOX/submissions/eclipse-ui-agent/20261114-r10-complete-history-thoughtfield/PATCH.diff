@@ -4,12 +4,14 @@
      @State private var showsLearningShare = false
 +    @State private var showsEclipseTrace = false
      @State private var learningExportURL: URL?
-@@ -41,3 +42,13 @@
+@@ -41,3 +42,15 @@
                  statusCard
 -                if VeilOpponentAvatarPolicy.shouldRender(
 +                if game == .gomoku {
 +                    VeilEclipseIdentityCard(
-+                        isThinking: controller.isAIThinking,
++                        // The controller starts a 180ms pre-search pause;
++                        // show actual computation effects only after its timestamp exists.
++                        isThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
 +                        matchFinished: controller.outcome != .playing,
 +                        lastCompletedMilliseconds: controller.lastDecisionMilliseconds,
 +                        actualSearchStartedAt: controller.eclipseSearchStartedAt,
@@ -19,12 +21,12 @@
 +                    .veilCard()
 +                } else if VeilOpponentAvatarPolicy.shouldRender(
                      enabled: grokBotEnabled, hasComputerOpponent: true
-@@ -93,2 +104,18 @@
+@@ -93,2 +106,18 @@
          }
 +        .sheet(isPresented: $showsEclipseTrace) {
 +            if game == .gomoku {
 +                VeilEclipseTraceSheet(
-+                    isThinking: controller.isAIThinking,
++                    isThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
 +                    matchFinished: controller.outcome != .playing,
 +                    lastCompletedMilliseconds: controller.lastDecisionMilliseconds,
 +                    committedMoves: controller.eclipseCompletedMoveHistory,
@@ -38,7 +40,7 @@
 +            }
 +        }
          .sheet(isPresented: $showsLearningShare, onDismiss: {
-@@ -120,2 +147,7 @@
+@@ -120,2 +149,7 @@
                      }
 +                    if let warning = controller.eclipseArchiveWarning, game == .gomoku {
 +                        Text(warning)
@@ -46,11 +48,11 @@
 +                            .foregroundColor(VeilTheme.danger)
 +                    }
                  }
-@@ -142,3 +174,5 @@
+@@ -142,3 +176,5 @@
                          && developerLearningGate.canImportTraining()
 -                )
 +                ),
-+                eclipseThinking: controller.isAIThinking,
++                eclipseThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
 +                actualSearchStartedAt: controller.eclipseSearchStartedAt
              ) { index in
 --- a/VeilLink/Agent/Games/LocalAIGameController.swift
@@ -1010,7 +1012,7 @@
 +}
 --- /dev/null
 +++ b/VeilLink/Agent/Games/VeilGomokuMatchArchive.swift
-@@ -0,0 +1,226 @@
+@@ -0,0 +1,233 @@
 +import Foundation
 +
 +/// Separate, append-only *per-match* history. Does not replace the existing
@@ -1109,6 +1111,10 @@
 +    func read(sessionID: String) throws -> Match? {
 +        let path = try url(for: sessionID)
 +        guard manager.fileExists(atPath: path.path) else { return nil }
++        // Bound untrusted/recovered archive bytes BEFORE decoding to prevent
++        // oversized or malformed JSON from exhausting memory during pagination.
++        let bytes = try path.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
++        guard (1...128_000).contains(bytes) else { throw ArchiveError.corrupted }
 +        let data = try Data(contentsOf: path)
 +        guard let match = try? JSONDecoder().decode(Match.self, from: data),
 +              match.id == (try? canonicalID(sessionID)), validate(match) else {
@@ -1143,11 +1149,13 @@
 +                return prior
 +            }
 +        }
++        // The device clock may move backwards; retain monotone archive dates.
++        let effectiveNow = max(now, prior?.updatedAt ?? now)
 +        let match = Match(
 +            version: Match.version, id: id,
 +            startedAt: prior?.startedAt ?? now,
-+            updatedAt: now,
-+            completedAt: status.isFinal ? now : nil,
++            updatedAt: effectiveNow,
++            completedAt: status.isFinal ? effectiveNow : nil,
 +            status: status,
 +            difficulty: prior?.difficulty ?? difficulty,
 +            humanStone: humanStone, moves: moves
@@ -1155,6 +1163,7 @@
 +        guard validate(match) else { throw ArchiveError.invalidMoves }
 +        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
 +        let data = try JSONEncoder().encode(match)
++        guard data.count <= 128_000 else { throw ArchiveError.invalidMoves }
 +        var options: Data.WritingOptions = [.atomic]
 +        #if canImport(UIKit)
 +        options.insert(.completeFileProtectionUntilFirstUserAuthentication)
