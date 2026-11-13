@@ -205,6 +205,7 @@ struct LingCoreTinyChatView: View {
                             HStack {
                                 if message.role == .user { Spacer(minLength: 40) }
                                 VeilROCFlagText.render(message.text.isEmpty ? "…" : message.text)
+                                    .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: message.text))
                                     .font(.system(size: 14))
                                     .foregroundColor(message.role == .user ? .black : VeilTheme.text)
                                     .padding(12)
