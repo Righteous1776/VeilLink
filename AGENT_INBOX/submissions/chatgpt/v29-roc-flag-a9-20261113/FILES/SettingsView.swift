@@ -1,0 +1,1352 @@
+import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
+
+struct SettingsView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var ownerMode: OwnerModeController
+    @ObservedObject var identity: IdentityManager
+    @ObservedObject var haptics: HapticEngine
+    @ObservedObject var bluetooth: BLETransport
+    @ObservedObject var a9Health: VeilA9HealthMonitor
+    @ObservedObject var computeGovernor: VeilA9ComputeGovernor
+    @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
+    @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
+    @ObservedObject var agentControls: AgentControlCenterSettings
+    @ObservedObject var internetRelay: InternetRelayTransport
+    @ObservedObject var legalConsent: VeilLegalConsentController
+    @State private var versionTapCount = 0
+    @State private var showsLockSheet = false
+    @State private var showsPlainlineUnlock = false
+    @State private var showsIdentityManager = false
+    @State private var showsBackupSheet = false
+    @State private var showsImporter = false
+    @State private var restoreURL: URL?
+    @State private var showsRestorePassword = false
+    @State private var showsOwnerUnlock = false
+    @State private var showsOwnerConsole = false
+    @ObservedObject private var appearance = VeilAppearanceController.shared
+    @ObservedObject private var backgroundContinuity = VeilBackgroundContinuityCenter.shared
+    @AppStorage("settings.section.appearanceAndData.expanded") private var appearanceAndDataExpanded = false
+    @AppStorage("settings.section.connectivity.expanded") private var connectivityExpanded = false
+    @AppStorage("settings.section.intelligence.expanded") private var intelligenceExpanded = false
+    @State private var diagnosticsCopied = false
+    @State private var requestedKernelMode: VeilKernelRuntimeMode?
+    @State private var showsA10OnlyLabWarning = false
+
+    init(model: AppModel) {
+        self.model = model
+        ownerMode = model.ownerMode
+        identity = model.identity
+        haptics = model.haptics
+        bluetooth = model.bluetooth
+        a9Health = model.a9Health
+        computeGovernor = model.computeGovernor
+        kernelRuntime = model.kernelRuntime
+        a10Ultra = model.a10Ultra
+        agentControls = model.agentControls
+        internetRelay = model.internetRelay
+        legalConsent = model.legalConsent
+    }
+
+    var body: some View {
+        VeilStableScrollView {
+            VStack(spacing: 16) {
+                profileCard.veilStaggeredEntrance(index: 0)
+                securityCard.veilStaggeredEntrance(index: 1)
+                VeilSettingsDisclosureSection(section: .appearanceAndData, isExpanded: $appearanceAndDataExpanded) {
+                    VStack(spacing: 12) {
+                        appearanceCard
+                        legalCard
+                        storageCard
+                        mediaCard
+                        feedbackCard
+                    }
+                }
+                VeilSettingsDisclosureSection(section: .connectivity, isExpanded: $connectivityExpanded) {
+                    VStack(spacing: 12) {
+                        bluetoothCard
+                        backgroundContinuityCard
+                        runtimeEnvironmentCard
+                        internetRelayCard
+                    }
+                }
+                VeilSettingsDisclosureSection(section: .intelligence, isExpanded: $intelligenceExpanded) {
+                    VStack(spacing: 12) {
+                        agentCard
+                        a9HealthCard
+                        kernelRuntimeCard
+                    }
+                }
+                versionFooter.veilStaggeredEntrance(index: 5)
+            }
+        }
+        .background(VeilAmbientBackground())
+        .navigationTitle("设置")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                VeilToolCenterToolbarLink(model: model)
+            }
+        }
+        .alert("进入 A10 Ultra Ω 单轨实验？", isPresented: $showsA10OnlyLabWarning) {
+            Button("取消", role: .cancel) { requestedKernelMode = nil }
+            Button("进入实验", role: .destructive) {
+                model.setKernelRuntimeMode(.a10OnlyLab)
+                requestedKernelMode = nil
+            }
+        } message: {
+            Text("A9 将停止本轮健康裁决，A10 Ultra Ω 独立运行；宿主冻结进入实验前最后一份安全预算。A10 仍无 mutation authority，失败或重启会自动回 A9。这不是生产 Cutover。")
+        }
+        .sheet(isPresented: $showsLockSheet) {
+            LockConfigurationSheet(controller: model.appLock)
+        }
+        .sheet(isPresented: $showsPlainlineUnlock) {
+            PlainlineUnlockSheet(
+                controller: model.appLock,
+                onAuthorized: {
+                    appearance.selection = .plainline
+                    appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
+                    VeilChrome.configure()
+                    haptics.selection()
+                },
+                onConfigureLock: { showsLockSheet = true }
+            )
+        }
+        .sheet(isPresented: $showsIdentityManager) {
+            IdentityManagementSheet(model: model)
+        }
+        .sheet(isPresented: $showsBackupSheet) {
+            BackupPasswordSheet { password in
+                model.exportBackup(password: password)
+            }
+        }
+        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.item]) { result in
+            guard case .success(let selectedURL) = result else { return }
+            Task {
+                do {
+                    let staged = try await VeilImportedFileAccess.materializeInBackground(
+                        selectedURL,
+                        acceptedExtensions: ["zip"]
+                    )
+                    discardRestoreSnapshot()
+                    restoreURL = staged
+                    showsRestorePassword = true
+                } catch {
+                    model.alertMessage = error.localizedDescription
+                }
+            }
+        }
+        .sheet(isPresented: $showsRestorePassword, onDismiss: discardRestoreSnapshot) {
+            BackupPasswordSheet(title: "恢复加密备份", actionTitle: "验证并恢复") { password in
+                if let restoreURL { model.restoreBackup(url: restoreURL, password: password) }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { model.exportedBackupURL != nil },
+            set: { if !$0 { model.exportedBackupURL = nil } }
+        )) {
+            if let url = model.exportedBackupURL {
+                ShareSheet(items: [url])
+            }
+        }
+        .sheet(isPresented: $showsOwnerUnlock) {
+            OwnerUnlockSheet(model: model) {
+                showsOwnerConsole = true
+            }
+        }
+        .sheet(isPresented: $showsOwnerConsole) {
+            OwnerConsoleView(model: model)
+        }
+        .onChange(of: showsLockSheet) { presented in
+            DeepTelemetry.shared.presentation("settings.app_lock", presented: presented)
+        }
+        .onChange(of: showsIdentityManager) { presented in
+            DeepTelemetry.shared.presentation("settings.identity_manager", presented: presented)
+        }
+        .onChange(of: showsBackupSheet) { presented in
+            DeepTelemetry.shared.presentation("settings.backup_export", presented: presented)
+        }
+        .onChange(of: showsImporter) { presented in
+            DeepTelemetry.shared.presentation("settings.backup_importer", presented: presented)
+        }
+        .onChange(of: showsRestorePassword) { presented in
+            DeepTelemetry.shared.presentation("settings.restore_password", presented: presented)
+        }
+        .onChange(of: showsOwnerUnlock) { presented in
+            DeepTelemetry.shared.presentation("owner.unlock", presented: presented)
+        }
+        .onChange(of: showsOwnerConsole) { presented in
+            DeepTelemetry.shared.presentation("owner.console", presented: presented)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .veilLinkStressUICommand)) { notification in
+            guard let request = DeviceStressCommandBus.request(from: notification) else { return }
+            switch request.command {
+            case .settingsOpenIdentity:
+                showsIdentityManager = true
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    disposition: showsIdentityManager ? .applied : .ignored,
+                    detail: "identity manager presentation state enabled"
+                )
+            case .settingsOpenAppLock:
+                showsLockSheet = true
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    disposition: showsLockSheet ? .applied : .ignored,
+                    detail: "app lock presentation state enabled"
+                )
+            case .settingsOpenBackup:
+                showsBackupSheet = true
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    disposition: showsBackupSheet ? .applied : .ignored,
+                    detail: "backup presentation state enabled"
+                )
+            case .settingsClosePresentations:
+                showsLockSheet = false
+                showsIdentityManager = false
+                showsBackupSheet = false
+                showsRestorePassword = false
+                showsImporter = false
+                discardRestoreSnapshot()
+                DeviceStressCommandBus.acknowledge(
+                    request,
+                    detail: "settings presentation state cleared"
+                )
+            default:
+                break
+            }
+        }
+    }
+
+    private func discardRestoreSnapshot() {
+        guard let restoreURL else { return }
+        VeilImportedFileAccess.removeStagedCopy(restoreURL)
+        self.restoreURL = nil
+    }
+
+    private var profileCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 13) {
+                VeilIdentityGlyph(seed: identity.activeIdentity?.id ?? "veillink-unset", size: 54, active: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LOCAL IDENTITY")
+                        .font(VeilType.terminalLabel)
+                        .tracking(1.25)
+                        .foregroundColor(VeilTheme.mutedGold)
+                    VeilInlineGlyphText.render(identity.activeIdentity?.displayName ?? "未创建")
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
+                        .font(.system(.title3, design: .rounded).weight(.semibold))
+                    HStack(spacing: 7) {
+                        Text(String((identity.activeIdentity?.id ?? "offline").prefix(12)).uppercased())
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundColor(VeilTheme.secondaryText)
+                        VeilLinkTrace(active: false, width: 34)
+                    }
+                }
+                Spacer()
+            }
+
+            Text(identity.activeIdentity?.id ?? "")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(VeilTheme.tertiaryText)
+                .textSelection(.enabled)
+                .lineLimit(1)
+
+            HStack {
+                Text("设备ID")
+                Spacer()
+                Text(String(identity.deviceID.prefix(8)).uppercased())
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(VeilTheme.secondaryText)
+            }
+            Divider().background(VeilTheme.hairline)
+            settingButton(
+                title: "管理本地身份",
+                detail: "\(identity.profiles.count)/\(IdentityManager.profileLimit) · 创建或安全切换",
+                icon: "person.2"
+            ) { showsIdentityManager = true }
+        }
+        .veilCard(emphasized: true)
+    }
+
+    private var appearanceCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("外观主题", systemImage: "circle.lefthalf.filled")
+                .font(VeilType.cardTitle)
+                .foregroundColor(VeilTheme.goldBright)
+            ForEach(VeilAppearanceSelection.switchableCases) { choice in
+                Button {
+                    appearance.selection = choice
+                    appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
+                    haptics.selection()
+                } label: {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(choice.previewSurfaceColor)
+                            Image(systemName: choice.previewSystemImage)
+                                .foregroundColor(choice == appearance.selection ? VeilTheme.goldBright : VeilTheme.secondaryText)
+                        }
+                        .frame(width: 42, height: 42)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(choice.title).fontWeight(.semibold).foregroundColor(VeilTheme.text)
+                            Text(choice.subtitle).font(.caption).foregroundColor(VeilTheme.secondaryText)
+                        }
+                        Spacer()
+                        if choice == appearance.selection {
+                            Image(systemName: "checkmark.circle.fill").foregroundColor(VeilTheme.gold)
+                        }
+                    }
+                    .padding(.vertical, 3)
+                }
+                .buttonStyle(VeilPressStyle())
+                .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 14, highlightColor: VeilTheme.goldBright)
+                if choice != VeilAppearanceSelection.switchableCases.last {
+                    Divider().background(VeilTheme.hairline)
+                }
+            }
+            Divider().background(VeilTheme.hairline)
+            Button {
+                if appearance.isPlainline {
+                    appearance.selection = .veilOriginal
+                    appearance.update(colorScheme: UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light)
+                    VeilChrome.configure()
+                    haptics.selection()
+                } else {
+                    showsPlainlineUnlock = true
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(VeilAppearanceSelection.plainline.previewSurfaceColor)
+                        Image(systemName: appearance.isPlainline ? "arrow.uturn.left" : VeilAppearanceSelection.plainline.previewSystemImage)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    .frame(width: 42, height: 42)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(appearance.isPlainline ? "退出白描" : "白描 · 实验风格")
+                            .fontWeight(.semibold)
+                            .foregroundColor(VeilTheme.text)
+                        Text(appearance.isPlainline ? "切回默认风格，无需再次验证" : "输入应用锁密码后启用极简字排版面")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                    Image(systemName: appearance.isPlainline ? "checkmark.circle.fill" : "lock.fill")
+                        .foregroundColor(appearance.isPlainline ? VeilTheme.gold : VeilTheme.secondaryText)
+                }
+                .padding(.vertical, 3)
+            }
+            .buttonStyle(VeilPressStyle())
+            Divider().background(VeilTheme.hairline)
+            VStack(alignment: .leading, spacing: 9) {
+                Text("显示模式")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.secondaryText)
+                Picker("显示模式", selection: Binding(
+                    get: { appearance.colorMode },
+                    set: { mode in
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            appearance.setColorMode(mode)
+                        }
+                        VeilChrome.configure()
+                        haptics.selection()
+                    }
+                )) {
+                    ForEach(VeilColorMode.allCases) { mode in
+                        Label(mode.title, systemImage: mode.systemImage).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .tint(VeilTheme.gold)
+                .accessibilityHint("切换后立即应用到全部应用界面")
+                Text(appearance.colorMode.subtitle)
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+
+            if appearance.selection != .veilOriginal {
+                HStack(spacing: 7) {
+                    if appearance.selection == .instrumentAuto {
+                        VeilIndicatorLamp(active: true)
+                    } else {
+                        Image(systemName: "circle.grid.2x2.fill")
+                            .foregroundColor(VeilTheme.goldBright)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("当前：\(appearance.appearanceLabel)")
+                        if appearance.selection == .appleSoft {
+                            Text(VeilPlatformMaterialEngine.diagnosticLabel)
+                                .font(.system(size: 7.5, weight: .medium, design: .monospaced))
+                        }
+                    }
+                }
+                .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                .foregroundColor(VeilTheme.secondaryText)
+            }
+        }
+        .veilCard(emphasized: appearance.selection != .veilOriginal)
+        .veilDynamicGlow(active: appearance.selection == .instrumentAuto, emphasized: true)
+    }
+
+    private var securityCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("安全", systemImage: "lock.shield")
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
+            settingButton(
+                title: "应用锁",
+                detail: model.appLock.isEnabled ? "六位密码与生物识别已启用" : "尚未启用",
+                icon: "lock.fill"
+            ) { showsLockSheet = true }
+            Divider().background(VeilTheme.hairline)
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("内容加密").fontWeight(.medium)
+                    Text("ChaCha20-Poly1305 · Curve25519")
+                        .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer()
+                Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
+            }
+        }
+        .veilCard()
+    }
+
+    private var legalCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("协议与授权", systemImage: "signature")
+                .font(VeilType.cardTitle)
+                .foregroundColor(VeilTheme.goldBright)
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(legalConsent.isSatisfied ? "当前版本已签署" : "需要重新签署")
+                        .fontWeight(.semibold)
+                    Text("\(legalConsent.currentReleaseID) · \(VeilLegalConsentController.documentVersion)")
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer()
+                Image(systemName: legalConsent.isSatisfied ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                    .foregroundColor(legalConsent.isSatisfied ? VeilTheme.success : VeilTheme.gold)
+            }
+            NavigationLink(destination: LegalAgreementReviewView(model: model)) {
+                HStack {
+                    Text("查看协议、签署凭据与撤回授权")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+            }
+            .buttonStyle(VeilPressStyle())
+            Text("签署记录绑定 App 版本、Build 与协议全文 SHA-256；任一变化都会要求重新确认。系统权限仍以 iOS 设置为准。")
+                .font(.caption2)
+                .foregroundColor(VeilTheme.tertiaryText)
+        }
+        .veilCard()
+    }
+
+    private var storageCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("数据与备份", systemImage: "externaldrive")
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
+            NavigationLink(destination: StorageManagementView(model: model)) {
+                HStack {
+                    Image(systemName: "internaldrive")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("存储管理").fontWeight(.medium)
+                        Text("清理缓存、下载与过期导出；查看空间雷达")
+                            .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+            }.buttonStyle(VeilPressStyle())
+            Divider().background(VeilTheme.hairline)
+            settingButton(title: "导出加密ZIP", detail: "保存到文件或分享", icon: "square.and.arrow.up") {
+                showsBackupSheet = true
+            }
+            Divider().background(VeilTheme.hairline)
+            settingButton(title: "恢复备份", detail: "导入身份、对话与附件", icon: "arrow.counterclockwise") {
+                showsImporter = true
+            }
+            HStack {
+                Text("SQLite完整性")
+                Spacer()
+                Text(a9Health.databaseIntegrity.title)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(a9DatabaseColor)
+            }
+            Label(
+                "由 \(model.activeGovernanceEngineName) 自动巡检；失败时写入黑匣子并提示",
+                systemImage: "checkmark.shield"
+            )
+            .font(.caption)
+            .foregroundColor(VeilTheme.secondaryText)
+        }
+        .veilCard()
+    }
+
+    private var mediaCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("图片", systemImage: "photo.on.rectangle")
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("自动保存收到的图片").fontWeight(.medium)
+                    Text("完整性校验通过后自动加入系统照片；默认关闭。")
+                        .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer(minLength: 10)
+                VeilRockerSwitch(isOn: $model.autoSaveReceivedImages, onLabel: "存", offLabel: "停")
+            }
+            .onChange(of: model.autoSaveReceivedImages) { value in
+                DeepTelemetry.shared.valueChange(
+                    "settings.auto_save_images",
+                    from: String(!value),
+                    to: String(value)
+                )
+            }
+        }
+        .veilCard()
+    }
+
+    private var agentCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("AI 与灵核", systemImage: "sparkles")
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
+
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("语言模型")
+                        .font(.caption2).foregroundColor(VeilTheme.tertiaryText)
+                    Text(model.agent.runtimeState.displayName)
+                        .font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("MaleCNS")
+                        .font(.caption2).foregroundColor(VeilTheme.tertiaryText)
+                    Text("历史隔离")
+                        .font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("游戏策略")
+                        .font(.caption2).foregroundColor(VeilTheme.tertiaryText)
+                    Text(agentControls.gameDecisionMode.title)
+                        .font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(VeilSpacing.xs)
+            .background(VeilTheme.subtleFill)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            NavigationLink(destination: AgentControlCenterView(model: model)) {
+                HStack {
+                    Image(systemName: "slider.horizontal.3")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("AI 控制中心").fontWeight(.medium)
+                        Text("模型加载、VFLY 模式、实验 Core、上下文权限与资源控制")
+                            .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(VeilTheme.tertiaryText)
+                }
+            }
+            .buttonStyle(VeilPressStyle())
+        }
+        .veilCard()
+    }
+
+    private var feedbackCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("触感反馈", systemImage: "waveform.path")
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
+            Toggle(isOn: $haptics.isEnabled) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("震动反馈").fontWeight(.medium)
+                    Text("用于发送、送达、配对、置顶与传输控制；不会在后台主动震动。")
+                        .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                }
+            }
+            .tint(VeilTheme.gold)
+            .onChange(of: haptics.isEnabled) { value in
+                DeepTelemetry.shared.valueChange(
+                    "settings.haptics_enabled",
+                    from: String(!value),
+                    to: String(value)
+                )
+            }
+            if haptics.isEnabled {
+                Divider().background(VeilTheme.hairline)
+                HStack {
+                    Text("反馈强度")
+                    Spacer()
+                    Picker("反馈强度", selection: $haptics.strength) {
+                        ForEach(HapticEngine.Strength.allCases) { strength in
+                            Text(strength.title).tag(strength)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 250)
+                    .onChange(of: haptics.strength) { value in
+                        RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                            "settings.haptics_strength",
+                            metadata: ["value": String(describing: value)]
+                        )
+                        haptics.impact()
+                    }
+                }
+                Button {
+                    haptics.resolved()
+                } label: {
+                    HStack {
+                        Image(systemName: "hand.tap")
+                        Text("测试一次触感")
+                        Spacer()
+                        Text("RESOLVE")
+                            .font(VeilType.terminalLabel)
+                            .tracking(0.8)
+                            .foregroundColor(VeilTheme.mutedGold)
+                    }
+                }
+                .buttonStyle(VeilPressStyle())
+            }
+        }
+        .veilCard()
+    }
+
+    private var bluetoothCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("蓝牙与链路", systemImage: "antenna.radiowaves.left.and.right")
+                .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(bluetooth.statusText).fontWeight(.medium)
+                    Text("已连接 \(bluetooth.connectedPeerCount) · 已追踪 \(bluetooth.linkSnapshots.count)")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer()
+                Button {
+                    bluetooth.refreshLinks()
+                    haptics.selection()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.bordered)
+                .tint(VeilTheme.gold)
+                .accessibilityLabel("重新检查蓝牙链路")
+            }
+
+            Text("Central / Peripheral 状态恢复、控制快车道与有限自动重连均保持启用。iOS仍可能降低后台扫描频率；重新打开应用后会继续处理加密发送队列。")
+                .font(.caption)
+                .foregroundColor(VeilTheme.secondaryText)
+
+            let activeSnapshots = bluetooth.linkSnapshots.values
+                .sorted { lhs, rhs in
+                    if lhs.isConnected != rhs.isConnected { return lhs.isConnected && !rhs.isConnected }
+                    return lhs.healthScore > rhs.healthScore
+                }
+                .prefix(3)
+            if !activeSnapshots.isEmpty {
+                Divider().background(VeilTheme.hairline)
+                ForEach(Array(activeSnapshots)) { snapshot in
+                    HStack(spacing: 9) {
+                        Circle()
+                            .fill(snapshot.isConnected ? VeilTheme.success : (snapshot.isRecovering ? VeilTheme.gold : VeilTheme.tertiaryText))
+                            .frame(width: 7, height: 7)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(String(snapshot.id.uuidString.prefix(8))) · \(snapshot.statusTitle)")
+                                .font(.caption.weight(.semibold))
+                            Text(snapshot.compactDetail.isEmpty ? snapshot.queueSummary : snapshot.compactDetail)
+                                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                .foregroundColor(VeilTheme.tertiaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                        }
+                        Spacer()
+                        Text("H\(snapshot.healthScore)")
+                            .font(VeilType.terminalLabel)
+                            .foregroundColor(VeilTheme.gold)
+                    }
+                }
+            }
+
+            Divider().background(VeilTheme.hairline)
+            HStack {
+                Text("待发送")
+                Spacer()
+                Text("\(identity.activeIdentity.map { model.database.pendingOutboundCount(localIdentityID: $0.id) } ?? 0)")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(VeilTheme.secondaryText)
+            }
+
+            Button {
+                UIPasteboard.general.string = bluetooth.diagnosticsReport()
+                diagnosticsCopied = true
+                haptics.resolved()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { diagnosticsCopied = false }
+            } label: {
+                HStack {
+                    Image(systemName: diagnosticsCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                    Text(diagnosticsCopied ? "已复制连接诊断" : "复制连接诊断")
+                    Spacer()
+                    Text("不含消息/密钥")
+                        .font(VeilType.terminalLabel)
+                        .foregroundColor(VeilTheme.mutedGold)
+                }
+            }
+            .buttonStyle(VeilPressStyle())
+        }
+        .veilCard()
+    }
+
+    private var backgroundContinuityCard: some View {
+        NavigationLink(destination: VeilBackgroundContinuitySettingsView(model: model)) {
+            HStack(spacing: 12) {
+                Image(systemName: "wave.3.right.circle.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("后台连续性")
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.text)
+                    Text(backgroundContinuity.statusText)
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(2)
+                }
+                Spacer()
+                if backgroundContinuity.liveActivityActive {
+                    Text("LIVE")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                        .foregroundColor(VeilTheme.goldBright)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+        }
+        .buttonStyle(VeilPressStyle())
+        .veilCard(emphasized: backgroundContinuity.continuityEnabled)
+    }
+
+    private var runtimeEnvironmentCard: some View {
+        let snapshot = VeilRuntimeEnvironment.current
+        return NavigationLink(destination: VeilRuntimeCapabilityView(snapshot: snapshot)) {
+            HStack(spacing: 12) {
+                Image(systemName: snapshot.isTrollStore ? "bolt.shield.fill" : "checkmark.shield.fill")
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundColor(snapshot.isTrollStore ? VeilTheme.goldBright : VeilTheme.success)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("运行环境与能力")
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.text)
+                    Text("\(snapshot.channel.title) · \(snapshot.profile.title)")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(2)
+                }
+                Spacer()
+                if snapshot.isTrollStore {
+                    Text("TS")
+                        .font(VeilType.terminalLabel)
+                        .foregroundColor(VeilTheme.goldBright)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+        }
+        .buttonStyle(VeilPressStyle())
+        .veilCard(emphasized: snapshot.isTrollStore)
+    }
+
+    private var internetRelayCard: some View {
+        NavigationLink(destination: VeilInternetRelaySettingsView(relay: internetRelay, model: model)) {
+            HStack(spacing: 12) {
+                Image(systemName: "network.badge.shield.half.filled")
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("国内 / 国际远程中继")
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.text)
+                    Text(internetRelay.statusText)
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                        .lineLimit(2)
+                }
+                Spacer()
+                if internetRelay.connectedPeerCount > 0 {
+                    Text("\(internetRelay.connectedPeerCount) LINK")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                        .foregroundColor(VeilTheme.success)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+        }
+        .buttonStyle(VeilPressStyle())
+        .veilCard(emphasized: internetRelay.connectedPeerCount > 0)
+    }
+
+    private var a9HealthCard: some View {
+        let decision = a9Health.decision
+        let usesUltra = kernelRuntime.mode == .a10Independent || kernelRuntime.mode == .a10OnlyLab
+        let ultraSample = kernelRuntime.currentUltraSample(a10Ultra.lastRuntimeSample)
+        let ultraDecision = ultraSample?.ultraDecision
+        let ultraBudget = ultraSample?.ultraBudget
+        let engineName = usesUltra ? "A10 Ultra Ω" : "A9"
+        let a9Evaluated = a9Health.lastEvaluatedAt != nil
+        // Before the first sampling pass, the default A9 decision is green/100
+        // for initialization only. It is NOT a real measured health result.
+        let shownLevel = usesUltra ? (ultraDecision.map { "L\($0.level)" } ?? "--") : (a9Evaluated ? decision.level.shortTitle : "--")
+        let shownHealth = usesUltra ? (ultraDecision.map { String($0.healthScore) } ?? "--") : (a9Evaluated ? String(decision.healthScore) : "--")
+        let shownLight = usesUltra ? (ultraDecision?.light ?? "等待首个样本") : (a9Evaluated ? decision.light.title : "未评估")
+        let shownRisk = usesUltra ? (ultraDecision.map { String(format: "%.0f", Double($0.riskBasisPoints) / 100) } ?? "--") : (a9Evaluated ? String(format: "%.0f", decision.riskPoints) : "--")
+        let shownPersistence = usesUltra ? (ultraDecision.map { "\($0.persistenceSeconds)s" } ?? "--") : (a9Evaluated ? "\(decision.persistenceRuns)" : "--")
+        let shownCell = usesUltra ? (ultraDecision.map { "\($0.latticeCell)" } ?? "--") : (a9Evaluated ? "\(decision.latticeIndex)" : "--")
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(usesUltra ? VeilTheme.goldBright : (a9Evaluated ? a9LightColor : VeilTheme.tertiaryText))
+                    .frame(width: 9, height: 9)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(engineName) 健康治理")
+                        .font(VeilType.cardTitle)
+                        .foregroundColor(VeilTheme.goldBright)
+                    Text(usesUltra ? "独立采样 · 实时裁决 · A9 本轮不参与" : "本地采集 · 144 状态裁决 · Advisory Only")
+                        .font(.caption2)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer()
+                Text("\(shownLevel) · H\(shownHealth)")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(usesUltra ? VeilTheme.goldBright : (a9Evaluated ? a9LightColor : VeilTheme.tertiaryText))
+            }
+
+            HStack(spacing: 8) {
+                a9Metric(title: "状态", value: shownLight)
+                a9Metric(title: "风险", value: shownRisk)
+                a9Metric(title: "持续", value: shownPersistence)
+                a9Metric(title: "CELL", value: shownCell)
+            }
+
+
+            if usesUltra {
+                HStack(spacing: 8) {
+                    a9Metric(title: "算力", value: ultraBudget?.mode ?? "采样中")
+                    a9Metric(title: "CPU", value: ultraBudget.map { "\($0.cpuPct)%" } ?? "--")
+                    a9Metric(title: "传输保留", value: ultraBudget.map { "\($0.transportReservePct)%" } ?? "--")
+                    a9Metric(title: "视觉", value: ultraBudget.map { "\($0.visionPct)%" } ?? "--")
+                }
+            } else {
+                let compute = computeGovernor.plan
+                HStack(spacing: 8) {
+                    a9Metric(title: "算力", value: compute.mode.title)
+                    a9Metric(title: "FLY预算", value: compute.maleCNS.tier.rawValue.uppercased())
+                    a9Metric(title: "BLE保留", value: "\(compute.transportReserveUnits)")
+                    a9Metric(title: "视觉", value: "\(compute.vision.sampleIntervalMilliseconds)ms")
+                }
+            }
+
+            if usesUltra {
+                if let ultraDecision, !ultraDecision.issues.isEmpty {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(Array(ultraDecision.issues.prefix(4)), id: \.code) { issue in
+                            Text("\(issue.severity) · \(issue.source) · \(issue.code)")
+                                .font(.caption.monospaced())
+                                .foregroundColor(VeilTheme.secondaryText)
+                        }
+                    }
+                } else {
+                    Text(ultraDecision == nil ? "A10 Ultra Ω 正在生成首个独立样本…" : "A10 Ultra Ω 当前没有需要裁决的异常。")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+            } else if !a9Evaluated {
+                Text("A9 本轮尚未完成健康评估。H-- 不代表连接、存储或系统健康。")
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
+            } else if decision.issues.isEmpty {
+                Text("当前没有需要裁决的异常。A9 不会主动断链、删数据或修改游戏状态。")
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
+            } else {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(Array(decision.issues.prefix(4))) { issue in
+                        HStack(alignment: .top, spacing: 7) {
+                            Text(issue.severity.rawValue)
+                                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                                .foregroundColor(issue.severity == .p0 || issue.severity == .p1 ? .red : VeilTheme.gold)
+                            Text(issue.detail)
+                                .font(.caption)
+                                .foregroundColor(VeilTheme.secondaryText)
+                        }
+                    }
+                    if decision.issues.count > 4 {
+                        Text("另有 \(decision.issues.count - 4) 项 · 复制诊断可查看完整原因码")
+                            .font(.caption2)
+                            .foregroundColor(VeilTheme.tertiaryText)
+                    }
+                }
+            }
+
+            HStack(spacing: 10) {
+                Label("后台自动采样", systemImage: "waveform.path.ecg")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(VeilTheme.secondaryText)
+
+                Button {
+                    UIPasteboard.general.string = model.a9DiagnosticsReport()
+                    diagnosticsCopied = true
+                    haptics.selection()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { diagnosticsCopied = false }
+                } label: {
+                    Label(diagnosticsCopied ? "已复制" : "复制 \(engineName) 诊断", systemImage: diagnosticsCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+                .tint(VeilTheme.gold)
+            }
+
+            Text(usesUltra
+                ? "当前卡片直接读取 A10 Ultra Ω 的实时决策与预算；A9 冻结值不会冒充当前数据。"
+                : "当前卡片读取 A9 的实时决策与预算；切换 A10 后会自动改用 A10 数据源。")
+                .font(.caption2)
+                .foregroundColor(VeilTheme.tertiaryText)
+        }
+        .veilCard()
+        .onAppear { model.refreshA9Health() }
+    }
+
+    private func a9Metric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(VeilType.terminalLabel)
+                .foregroundColor(VeilTheme.tertiaryText)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(VeilTheme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .background(VeilTheme.subtleFill)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var a9LightColor: Color {
+        switch a9Health.decision.light {
+        case .green: return VeilTheme.success
+        case .yellow: return VeilTheme.gold
+        case .red: return .red
+        }
+    }
+
+    private var a9DatabaseColor: Color {
+        switch a9Health.databaseIntegrity {
+        case .unchecked: return VeilTheme.secondaryText
+        case .ok: return VeilTheme.success
+        case .failed: return .red
+        }
+    }
+
+
+    private var kernelRuntimeCard: some View {
+        let runtime = model.kernelRuntime
+        let environment = runtime.snapshot()
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("内核运行模式", systemImage: "cpu")
+                    .font(VeilType.cardTitle)
+                    .foregroundColor(VeilTheme.goldBright)
+                Spacer()
+                Text(environment.mode.isExperimental ? "LAB" : "CONTROLLED")
+                    .font(.caption.weight(.bold).monospaced())
+                    .foregroundColor(environment.mode.isExperimental ? VeilTheme.gold : VeilTheme.secondaryText)
+            }
+
+            Picker("内核运行模式", selection: Binding(
+                get: { runtime.mode },
+                set: { requested in
+                    if requested == .a10OnlyLab, runtime.mode != .a10OnlyLab {
+                        requestedKernelMode = requested
+                        showsA10OnlyLabWarning = true
+                    } else {
+                        model.setKernelRuntimeMode(requested)
+                    }
+                }
+            )) {
+                ForEach(VeilKernelRuntimeMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(VeilTheme.gold)
+
+            Text(runtime.mode.detail)
+                .font(.caption)
+                .foregroundColor(VeilTheme.secondaryText)
+
+            VStack(spacing: 7) {
+                HStack {
+                    Text("生产裁决")
+                    Spacer()
+                    Text(environment.productionAuthority)
+                        .font(.caption.monospaced())
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                HStack {
+                    Text("A9 / A10 Ultra Ω")
+                    Spacer()
+                    Text("\(environment.a9EvaluationEnabled ? "ON" : "OFF") / \(environment.ultraEvaluationEnabled ? "ON" : "OFF")")
+                        .font(.caption.monospaced())
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                HStack {
+                    Text("本模式样本")
+                    Spacer()
+                    Text("\(runtime.currentModeSampleCount)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                HStack {
+                    Text("环境 ID")
+                    Spacer()
+                    Text(String(environment.modeSessionID.prefix(8)).uppercased())
+                        .font(.caption.monospaced())
+                        .foregroundColor(VeilTheme.tertiaryText)
+                }
+            }
+            .font(.subheadline)
+
+            Text(runtime.mode == .a10Independent
+                ? "A10 Ultra Ω 已作为独立治理核生成正式算力预算；权限仅限治理合同，传输、存储、密钥、消息、游戏与工具执行仍由宿主持有。运行失败自动回退 A9。"
+                : "黑匣子会记录 kernel_mode、环境 ID、两路启用状态、延迟/CPU/RSS/温控/电量代理与 fallback。M5 推理核仍未获得生产切换或 mutation authority。")
+                .font(.caption)
+                .foregroundColor(VeilTheme.tertiaryText)
+
+            if runtime.mode == .a10OnlyLab {
+                Button {
+                    model.exitA10OnlyLabToA9()
+                    haptics.resolved()
+                } label: {
+                    Label("立即退出实验并回到 A9", systemImage: "arrow.uturn.backward.circle")
+                }
+                .buttonStyle(.bordered)
+                .tint(VeilTheme.gold)
+            }
+
+            if let reason = runtime.lastFallbackReason {
+                Text("最近自动回退：\(reason)")
+                    .font(.caption2)
+                    .foregroundColor(VeilTheme.gold)
+            }
+        }
+        .veilCard()
+    }
+
+    private var versionFooter: some View {
+        VStack(spacing: 5) {
+            Text(VeilBuildInfo.display)
+                .font(.caption)
+                .foregroundColor(VeilTheme.secondaryText)
+            if VeilRenderProfile.usesStableScrollLayout {
+                Text(VeilRenderProfile.diagnosticLabel)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            } else {
+                Text(VeilDevicePerformance.diagnosticLabel)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+            Text("ZeoStudio")
+                .font(.caption2)
+                .foregroundColor(VeilTheme.mutedGold)
+        }
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            versionTapCount += 1
+            if versionTapCount >= 7 {
+                versionTapCount = 0
+                ownerMode.refreshExpiration()
+                if ownerMode.isUnlocked {
+                    showsOwnerConsole = true
+                } else {
+                    showsOwnerUnlock = true
+                }
+            }
+        }
+    }
+
+    private func settingButton(title: String, detail: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon).frame(width: 24).foregroundColor(VeilTheme.gold)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).fontWeight(.medium).foregroundColor(VeilTheme.text)
+                    Text(detail).font(.caption).foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundColor(VeilTheme.secondaryText)
+            }
+        }
+    }
+}
+
+private struct LockConfigurationSheet: View {
+    @ObservedObject var controller: AppLockController
+    @Environment(\.dismiss) private var dismiss
+    @State private var current = ""
+    @State private var newPIN = ""
+
+    var body: some View {
+        NavigationView {
+            Form {
+                if controller.isEnabled {
+                    SecureField("当前六位密码", text: $current).keyboardType(.numberPad)
+                }
+                SecureField("新的六位密码", text: $newPIN).keyboardType(.numberPad)
+                if let error = controller.errorMessage {
+                    Text(error).foregroundColor(.red)
+                }
+            }
+            .navigationTitle("应用锁")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        let success = controller.isEnabled
+                            ? controller.changePIN(current: current, new: newPIN)
+                            : controller.configure(pin: newPIN)
+                        if success { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct BackupPasswordSheet: View {
+    let title: String
+    let actionTitle: String
+    let action: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var password = ""
+
+    init(title: String = "导出加密备份", actionTitle: String = "生成ZIP", action: @escaping (String) -> Void) {
+        self.title = title
+        self.actionTitle = actionTitle
+        self.action = action
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                SecureField("备份密码", text: $password)
+                Text("该密码独立用于加密完整备份（全部本地身份、对话与附件），不是身份账户密码或六位应用锁密码。")
+                    .font(.footnote).foregroundColor(.secondary)
+            }
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(actionTitle) {
+                        action(password)
+                        dismiss()
+                    }
+                    .disabled(password.count < 8)
+                }
+            }
+        }
+    }
+}
+
+
+private struct IdentityManagementSheet: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var identity: IdentityManager
+    @ObservedObject var haptics: HapticEngine
+    @ObservedObject var bluetooth: BLETransport
+    @ObservedObject var a9Health: VeilA9HealthMonitor
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedProfile: LocalIdentity?
+    @State private var showsCreate = false
+    @State private var profileToDelete: LocalIdentity?
+
+    init(model: AppModel) {
+        self.model = model
+        identity = model.identity
+        haptics = model.haptics
+        bluetooth = model.bluetooth
+        a9Health = model.a9Health
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section("本机身份") {
+                    ForEach(identity.profiles) { profile in
+                        Button {
+                            if profile.id != identity.activeIdentity?.id { selectedProfile = profile }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: profile.id == identity.activeIdentity?.id ? "person.crop.circle.fill.badge.checkmark" : "person.crop.circle")
+                                    .foregroundColor(VeilTheme.gold)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(profile.displayName).foregroundColor(.primary)
+                                    Text(profile.id).font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                if profile.id == identity.activeIdentity?.id {
+                                    Text("当前").font(.caption.weight(.semibold)).foregroundColor(.green)
+                                }
+                            }
+                        }
+                        .disabled(profile.id == identity.activeIdentity?.id)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if profile.id != identity.activeIdentity?.id {
+                                Button(role: .destructive) { profileToDelete = profile } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                }
+                Section {
+                    Button {
+                        showsCreate = true
+                    } label: {
+                        Label("创建新身份", systemImage: "person.badge.plus")
+                    }
+                    .disabled(identity.profiles.count >= IdentityManager.profileLimit)
+                } footer: {
+                    Text("切换身份会立即销毁当前临时会话密钥并重新握手；不同身份不会共享会话密钥。")
+                }
+            }
+            .navigationTitle("身份管理")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } } }
+        }
+        .sheet(item: $selectedProfile) { profile in
+            ProfilePasswordSheet(profile: profile) { password in
+                _ = model.switchIdentity(to: profile.id, password: password)
+            }
+        }
+        .sheet(isPresented: $showsCreate) {
+            NewIdentitySheet { name, password in
+                _ = model.createAdditionalProfile(name: name, password: password)
+            }
+        }
+        .sheet(item: $profileToDelete) { profile in
+            DeleteIdentitySheet(profile: profile) { password in
+                model.deleteIdentity(id: profile.id, password: password)
+            }
+        }
+    }
+}
+
+private struct DeleteIdentitySheet: View {
+    let profile: LocalIdentity
+    let onConfirm: (String) -> Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var password = ""
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    Text("删除「\(profile.displayName)」")
+                        .font(.headline)
+                    Text("将删除这个身份的本机私钥、联系人、对话、消息和附件。此操作不能撤销；如需保留，请先创建加密备份。")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+                SecureField("输入该身份密码确认", text: $password)
+            }
+            .navigationTitle("删除身份")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("删除", role: .destructive) {
+                        if onConfirm(password) { dismiss() }
+                    }
+                    .disabled(password.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+private struct ProfilePasswordSheet: View {
+    let profile: LocalIdentity
+    let onConfirm: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var password = ""
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Text("切换到「\(profile.displayName)」")
+                SecureField("身份密码", text: $password)
+            }
+            .navigationTitle("验证身份")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("切换") { onConfirm(password); dismiss() }.disabled(password.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+private struct NewIdentitySheet: View {
+    let onCreate: (String, String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var password = ""
+
+    var body: some View {
+        NavigationView {
+            Form {
+                TextField("身份名称", text: $name)
+                SecureField("身份密码（至少 8 个字符）", text: $password)
+                Text("每个身份都有独立的长期签名密钥。创建后会自动切换到新身份，并销毁旧会话。")
+                    .font(.footnote).foregroundColor(.secondary)
+            }
+            .navigationTitle("新建身份")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("创建") { onCreate(name, password); dismiss() }
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.count < 8)
+                }
+            }
+        }
+    }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
