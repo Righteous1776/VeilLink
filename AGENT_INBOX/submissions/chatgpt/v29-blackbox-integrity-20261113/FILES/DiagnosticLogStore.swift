@@ -108,6 +108,9 @@ private struct DiagnosticExportManifest: Codable {
     /// Never present this as the number of records actually included in the ZIP.
     let inMemoryEventCount: Int
     let invalidLineCount: Int
+    let logWriteFailureCount: Int
+    let droppedUnpersistedLineCount: Int
+    let unpersistedBytes: Int
     let logFileCount: Int
     let files: [DiagnosticExportFileSummary]
     let retentionBytes: Int
@@ -147,6 +150,10 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
     private let maxRecentEntries = 2_000
     private let maxAuxiliaryBytes = 24 * 1_024 * 1_024
     private let flushThresholdBytes = 256 * 1_024
+    // Keep diagnostics failures from turning into an unbounded RAM leak.
+    private let maxPendingBufferBytes = 4 * 1_024 * 1_024
+    private var logWriteFailureCount = 0
+    private var droppedUnpersistedLineCount = 0
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private var nextSequence: UInt64 = 1
@@ -336,6 +343,9 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             eventCount: index.eventCount,
             inMemoryEventCount: recentEntries.count,
             invalidLineCount: index.invalidLineCount,
+            logWriteFailureCount: withStateLock { logWriteFailureCount },
+            droppedUnpersistedLineCount: withStateLock { droppedUnpersistedLineCount },
+            unpersistedBytes: withStateLock { pendingBuffer.count },
             logFileCount: logURLs.count,
             files: index.files,
             retentionBytes: retentionBytes,
@@ -544,9 +554,26 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         guard !pendingBuffer.isEmpty else { return }
 
         let data = pendingBuffer
-        pendingBuffer.removeAll(keepingCapacity: true)
         let rotated = rotateIfNeeded(incomingBytes: data.count)
-        append(data)
+        guard append(data) else {
+            // A failed FileHandle write used to silently discard the ENTIRE
+            // pending buffer, giving 2,000 cached entries but 72 on disk.
+            // Preserve for a later retry, but limit it on low-memory devices.
+            logWriteFailureCount += 1
+            while pendingBuffer.count > maxPendingBufferBytes {
+                guard let newline = pendingBuffer.firstIndex(of: 0x0A) else {
+                    pendingBuffer.removeAll(keepingCapacity: true)
+                    droppedUnpersistedLineCount += 1
+                    break
+                }
+                pendingBuffer.removeSubrange(pendingBuffer.startIndex...newline)
+                droppedUnpersistedLineCount += 1
+            }
+            // Retry asynchronously; don't block the main UI on unavailable disk.
+            scheduleFlushUnsafe()
+            return
+        }
+        pendingBuffer.removeAll(keepingCapacity: true)
         flushesSinceDiskUsageRefresh += 1
         if rotated || flushesSinceDiskUsageRefresh >= 8 {
             refreshDiskUsageUnsafe()
@@ -591,22 +618,36 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         )
     }
 
-    private func append(_ data: Data) {
+    @discardableResult
+    private func append(_ data: Data) -> Bool {
         if !fileManager.fileExists(atPath: currentLogURL.path) {
-            try? data.write(
-                to: currentLogURL,
-                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
-            )
-            return
+            do {
+                try data.write(
+                    to: currentLogURL,
+                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+                )
+                return true
+            } catch {
+                return false
+            }
         }
 
         do {
             let handle = try FileHandle(forWritingTo: currentLogURL)
             defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data)
+            let originalLength = try handle.seekToEnd()
+            do {
+                try handle.write(contentsOf: data)
+                return true
+            } catch {
+                // An interrupted append can leave partial JSONL. Best effort
+                // rollback prevents duplicate sequence numbers on the retry.
+                try? handle.truncate(atOffset: originalLength)
+                return false
+            }
         } catch {
-            // Diagnostics must never become a new source of runtime failure.
+            // Keep failed data in RAM, never pretend persistence succeeded.
+            return false
         }
     }
 
