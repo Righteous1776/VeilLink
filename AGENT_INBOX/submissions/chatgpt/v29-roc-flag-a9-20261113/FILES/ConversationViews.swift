@@ -262,6 +262,7 @@ private struct ConversationRow: View {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 8) {
                     VeilROCFlagText.render(conversation.title)
+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.title))
                         .font(.system(.body, design: .rounded).weight(.semibold))
                         .foregroundColor(VeilTheme.text)
                         .lineLimit(1)
@@ -1269,6 +1270,7 @@ private struct MessageBubble: View {
                         .frame(width: 190)
                 } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
                     VeilROCFlagText.render(gamePreview)
+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: gamePreview))
                         .font(.body.weight(.medium))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
@@ -1301,11 +1303,13 @@ private struct MessageBubble: View {
                                 .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
                                 .frame(width: 3)
                             VeilROCFlagText.render(reply.quote)
+                                .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: reply.quote))
                                 .font(.caption)
                                 .foregroundColor(message.isOutgoing ? Color.black.opacity(0.66) : VeilTheme.secondaryText)
                                 .lineLimit(2)
                         }
                         VeilROCFlagText.render(reply.reply)
+                            .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: reply.reply))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.horizontal, 14)
@@ -1320,6 +1324,7 @@ private struct MessageBubble: View {
                     .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                 } else {
                     VeilROCFlagText.render(message.body)
+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: message.body))
                         .font(.body)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
@@ -1632,6 +1637,7 @@ private struct ContactDetailsSheet: View {
                             .tracking(1.4)
                             .foregroundColor(VeilTheme.mutedGold)
                         VeilROCFlagText.render(conversation.title)
+                        .accessibilityLabel(VeilROCFlagText.accessibilityDescription(for: conversation.title))
                             .font(.system(.title3, design: .rounded).weight(.semibold))
                         VeilLinkTrace(active: false, width: 86)
                     }
