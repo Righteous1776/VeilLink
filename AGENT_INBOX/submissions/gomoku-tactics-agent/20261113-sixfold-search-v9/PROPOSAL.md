@@ -16,3 +16,7 @@ Current main eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0 already includes GomokuBot
 ## Gates before claiming 6x chess strength
 
 Measure tactical suite solve rates, illegal move count=0, missed mandatory defense=0, scored paired head-to-head against frozen V29 baseline, opposite seat per opening, same hardware and equal compute budget (plus separate unconstrained product mode), 95% confidence interval, ≥5,000 completed valid games, no counting move-capped games as draws. Use a rating estimate and identify exact metric for 6x; do not call compute multiplier Elo multiplier. iPhone13 and iPad long-session thermal/memory and both iOS mode tests required. Keep behind Governor review until validated.
+
+## Continuation verification 2026-11-13
+
+The standalone search implementation compiled with Linux Swift 6.2.1 and passed a 34-case deterministic symmetry/tactical/budget harness, including the crucial negative case where the defender wins immediately. Source plus harness are staged in FILES/. This establishes basic tactical soundness on the mirrored rules stub, not 6× playing strength, real-engine equivalence, or iOS app build readiness.
