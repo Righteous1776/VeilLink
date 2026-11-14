@@ -5,6 +5,7 @@ struct GomokuBotMove: Equatable, Sendable {
     let score: Int
     let nodes: Int
     let elapsedMilliseconds: Int
+    var engineLabel: String? = nil
 }
 
 struct GomokuBotBudget: Equatable, Sendable {
@@ -77,7 +78,11 @@ enum GomokuBot {
         formationPreference: GomokuFormationPreference = .disabled,
         diagnosticCounterForkR4: Bool = true,
         diagnosticUseR6Defense: Bool = true,
-        diagnosticR8ForcedWin: Bool = true
+        diagnosticR8ForcedWin: Bool = true,
+        diagnosticEclipseUnified: Bool = true,
+        difficultyRawValue: String? = nil,
+        onExploredLine: (@Sendable ([Int], Int) -> Void)? = nil,
+        onSearchTrace: (@Sendable (VeilGomokuUnifiedSearch.Trace) -> Void)? = nil
     ) -> GomokuBotMove? {
         guard state.winner == nil,
               !state.isDraw,
@@ -173,6 +178,29 @@ enum GomokuBot {
             }
             .prefix(max(1, budget.rootCandidateLimit))
 
+        // ECLIPSE R10: preserve all incumbent mandatory rules and learned
+        // root scores, then search with the trained entire-tree ordering.
+        // The real rules below the bridge remain the final legality gate.
+        let remainingMilliseconds = Int(max(0, (deadline - Date.timeIntervalSinceReferenceDate) * 1_000))
+        let unifiedBudget = GomokuBotBudget(
+            candidateRadius: budget.candidateRadius,
+            rootCandidateLimit: budget.rootCandidateLimit,
+            replyCandidateLimit: budget.replyCandidateLimit,
+            continuationCandidateLimit: budget.continuationCandidateLimit,
+            timeLimitMilliseconds: remainingMilliseconds
+        )
+        if diagnosticEclipseUnified, remainingMilliseconds >= 30,
+           let unified = VeilGomokuUnifiedBridge.chooseMove(
+                in: state, for: player, budget: unifiedBudget,
+                permittedRoots: rankedRoots.map { $0.0 },
+                rootScores: Dictionary(uniqueKeysWithValues: rankedRoots.map { ($0.0, $0.1) }),
+                difficultyRawValue: difficultyRawValue,
+                onTrace: onSearchTrace,
+                onExploredLine: onExploredLine
+           ) {
+            return unified
+        }
+
         // A time budget is a *search-quality* bound, not permission to return
         // no move in an otherwise legal position. A delayed worker can enter
         // the root loop after its deadline, so retain the best ranked legal
@@ -186,6 +214,7 @@ enum GomokuBot {
             nodes += 1
             var next = state
             guard next.apply(index: index, actor: player) else { continue }
+            onExploredLine?([index], nodes)
 
             var score = priority + staticEvaluation(next, root: player)
             if next.winner == player {
@@ -214,6 +243,7 @@ enum GomokuBot {
                     nodes += 1
                     var afterReply = next
                     guard afterReply.apply(index: reply, actor: opponent) else { continue }
+                    onExploredLine?([index, reply], nodes)
                     var replyScore: Int
                     if afterReply.winner == opponent {
                         replyScore = lossScore
@@ -250,6 +280,7 @@ enum GomokuBot {
                                 nodes += 1
                                 var afterContinuation = afterReply
                                 guard afterContinuation.apply(index: continuation, actor: player) else { continue }
+                                onExploredLine?([index, reply, continuation], nodes)
                                 let continuationScore = afterContinuation.winner == player
                                     ? winScore
                                     : staticEvaluation(afterContinuation, root: player)

@@ -1454,6 +1454,13 @@ struct GomokuBoardView: View {
     let state: GomokuState
     let localPlayer: MiniGamePlayer
     let enabled: Bool
+    var eclipseThinking = false
+    var actualSearchStartedAt: Date? = nil
+    var eclipseVisualizationEnabled = false
+    var eclipseTraceStore: VeilEclipseSearchTraceStore? = nil
+    var eclipseSessionID = ""
+    var eclipseBoardTurn = 0
+    var eclipseMatchPlaying = true
     let onMove: (Int) -> Void
 
     private let starPoints = [48, 56, 112, 168, 176]
@@ -1476,6 +1483,23 @@ struct GomokuBoardView: View {
                     ForEach(starPoints, id: \.self) { index in
                         let point = gomokuPoint(index: index, margin: margin, step: step)
                         Circle().fill(Color.white.opacity(0.42)).frame(width: 4.2, height: 4.2).position(point)
+                    }
+
+                    // Purely decorative; has NO board data/search scores and
+                    // cannot intercept touches or provide a move recommendation.
+                    if eclipseThinking && eclipseVisualizationEnabled,
+                       let eclipseTraceStore {
+                        VeilEclipseBoardThoughtField(
+                            isThinking: eclipseThinking,
+                            actualSearchStartedAt: actualSearchStartedAt,
+                            enabled: eclipseVisualizationEnabled,
+                            searchTrace: eclipseTraceStore,
+                            sessionID: eclipseSessionID,
+                            turn: eclipseBoardTurn,
+                            matchPlaying: eclipseMatchPlaying
+                        )
+                        .frame(width: side, height: side)
+                        .allowsHitTesting(false)
                     }
 
                     if state.winningLine.count >= 5,
