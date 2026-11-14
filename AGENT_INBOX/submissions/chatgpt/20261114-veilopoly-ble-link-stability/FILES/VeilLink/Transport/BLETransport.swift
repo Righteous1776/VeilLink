@@ -976,7 +976,7 @@ final class BLETransport: NSObject, ObservableObject {
                 channelReady: peripheral?.state == .connected && characteristic?.isNotifying == true,
                 pendingPackets: queue.pendingCount,
                 stalledFor: stalled,
-                secondsSinceLastProbe: now - (centralStallProbeAt[id] ?? -.infinity),
+                secondsSinceLastProbe: centralStallProbeAt[id].map { now - $0 } ?? 2,
                 stallThreshold: timeout
             ), let peripheral, let characteristic else { continue }
             centralStallProbeAt[id] = now
@@ -993,7 +993,7 @@ final class BLETransport: NSObject, ObservableObject {
                 channelReady: subscribedCentrals[id] != nil && localCharacteristic != nil,
                 pendingPackets: queue.pendingCount,
                 stalledFor: stalled,
-                secondsSinceLastProbe: now - (peripheralStallProbeAt[id] ?? -.infinity),
+                secondsSinceLastProbe: peripheralStallProbeAt[id].map { now - $0 } ?? 2,
                 stallThreshold: timeout
             ), let localCharacteristic else { continue }
             peripheralStallProbeAt[id] = now
