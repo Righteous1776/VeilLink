@@ -1,0 +1,298 @@
+diff --git a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+--- a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
++++ b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+@@ -30,7 +30,7 @@
+         var width: Int = 14
+         var forcedLineDepth: Int = 5
+         var candidateRadius: Int = 2
+-        // R13: opt-in exact incremental threat window index, disabled until A/B.
++        // R13 exact threat-index acceleration, disabled before iOS and arena gates.
+         var r13IncrementalThreatIndexEnabled: Bool = false
+         /// R12 is explicitly opt-in until full iOS/arena promotion.
+         var r12HorizonQuiescence: Bool = false
+@@ -121,7 +121,11 @@
+         let trainedPolicy: Bool
+         let trace: ((Trace) -> Void)?
+         let onExploredLine: (@Sendable ([Int], Int) -> Void)?
+-        var tracedRoot: Int? = nil
++        var exploredPath: [Int] = []
++        private var lastExploredSampleNodes = 0
++        private var lastExploredSampleDepth = 0
++        private var lastExploredSampleRoot = -1
++        private var lastExploredSampleUptime = -1.0
+         var hash: UInt64 = 0
+         var nodes = 0
+         var table: [UInt64: Entry] = [:]
+@@ -130,8 +134,7 @@
+         var r13Index: EclipseIncrementalThreatIndexR13?
+ 
+         init(position: Position, limits: Limits, allowedRoot: [Int]?,
+-             rootBonuses: [Int: Int], trainedPolicy: Bool,
+-             trace: ((Trace) -> Void)?,
++             rootBonuses: [Int: Int], trainedPolicy: Bool, trace: ((Trace) -> Void)?,
+              onExploredLine: (@Sendable ([Int], Int) -> Void)?) {
+             self.board = position.cells
+             self.player = position.toMove
+@@ -148,6 +151,27 @@
+             }
+         }
+ 
++        /// Do not lock/dispatch for every internal PVS node.
++        /// Real branches are emitted at most ~20/s. Immediate 2nd/3rd ply
++        /// progression of the same root is allowed for a visible thin line.
++        private mutating func emitExaminedBranch() {
++            guard let onExploredLine, !exploredPath.isEmpty else { return }
++            let root = exploredPath[0]
++            let depth = min(3, exploredPath.count)
++            let expandsSameRoot = root == lastExploredSampleRoot
++                && depth > lastExploredSampleDepth
++            if !expandsSameRoot && lastExploredSampleNodes > 0
++                && nodes - lastExploredSampleNodes < 128 { return }
++            let now = ProcessInfo.processInfo.systemUptime
++            if !expandsSameRoot && lastExploredSampleUptime >= 0
++                && now - lastExploredSampleUptime < 0.05 { return }
++            lastExploredSampleNodes = nodes
++            lastExploredSampleDepth = depth
++            lastExploredSampleRoot = root
++            lastExploredSampleUptime = now
++            onExploredLine(Array(exploredPath.prefix(3)), nodes)
++        }
++
+         private func opponent(_ side: UInt8) -> UInt8 { side == 1 ? 2 : 1 }
+         private func valid(_ r: Int, _ c: Int) -> Bool { (0..<boardSize).contains(r) && (0..<boardSize).contains(c) }
+ 
+@@ -464,10 +488,8 @@
+             var first = true
+             for i in moves {
+                 place(i, side)
+-                if let root = tracedRoot {
+-                    if ply == 1 { onExploredLine?([root, i], nodes) }
+-                    else if ply == 2 { onExploredLine?([root, last, i], nodes) }
+-                }
++                exploredPath.append(i)
++                emitExaminedBranch()
+                 var child: [Int] = []
+                 var score: Int
+                 if first {
+@@ -486,6 +508,7 @@
+                     }
+                 }
+                 unplace(i, side)
++                exploredPath.removeLast()
+                 if interrupted { return 0 }
+                 if score > best {
+                     best = score
+@@ -585,15 +608,15 @@
+                     nodes += 1
+                     if overBudget() { break }
+                     place(move, player)
+-                    tracedRoot = move
+-                    onExploredLine?([move], nodes)
++                    exploredPath = [move]
++                    emitExaminedBranch()
+                     var childPV: [Int] = []
+                     let value = -negamax(depth: depth - 1, alpha: -infinity,
+                                           beta: infinity,
+                                           toMove: opponent(player), last: move,
+                                           ply: 1, variation: &childPV)
+                     unplace(move, player)
+-                    tracedRoot = nil
++                    exploredPath.removeAll(keepingCapacity: true)
+                     if interrupted { break }
+                     let preference = min(2_000, max(-2_000, bonuses[move] ?? 0))
+                     let adjusted = abs(value) >= mate / 2 ? value : value + preference
+
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -73,6 +73,8 @@
+     @Published private(set) var lastDecisionMode = "基础策略"
+     @Published private(set) var lastDecisionMilliseconds: Int?
+     @Published private(set) var eclipseSearchStartedAt: Date?
++    /// Real engine measurements only; never board candidates or hidden PV.
++    @Published private(set) var eclipseLiveMetrics: VeilEclipseTracePolicy.LiveMetrics?
+     @Published private(set) var eclipseVisualizationEnabled = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
+     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
+     @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
+@@ -118,6 +120,9 @@
+     private let boardMatchStore: LocalBoardMatchStore?
+     private let eclipseArchive: VeilGomokuMatchArchive?
+     let eclipseTraceStore = VeilEclipseSearchTraceStore()
++    /// MainActor owns the live metric gate. Every worker gets a fresh ticket.
++    private var eclipseMetricGate = VeilEclipseTraceSessionGate()
++    private var eclipseMetricGeneration: UInt64 = 0
+     private var boardMatchMoves: [LocalBoardMatchMove] = []
+     private var boardMatchRecoveryBlocked = false
+     private var inSeparateTeachingSession = false
+@@ -233,6 +238,16 @@
+ 
+     var learningStoreAvailable: Bool { learningStore.lastSaveSucceeded }
+ 
++    /// One-way hash for session binding, not a source of playable coordinates.
++    private static func eclipseBoardFingerprint(_ board: GomokuState) -> UInt64 {
++        var hash: UInt64 = 0xcbf29ce484222325
++        for index in 0..<225 {
++            hash = (hash ^ UInt64(UInt8(truncatingIfNeeded: board.value(at: index))))
++                &* 0x100000001b3
++        }
++        return (hash ^ UInt64(board.moveCount)) &* 0x100000001b3
++    }
++
+     func setEclipseVisualizationEnabled(_ enabled: Bool) {
+         guard game == .gomoku else { return }
+         eclipseVisualizationEnabled = enabled
+@@ -314,7 +329,12 @@
+     }
+ 
+     func restart(startAI: Bool = true) {
+-        if game == .gomoku { eclipseTraceStore.clear() }
++        if game == .gomoku {
++            eclipseTraceStore.clear()
++            eclipseMetricGate.end()
++            eclipseMetricGeneration &+= 1
++            eclipseLiveMetrics = nil
++        }
+         // Keep every move before the legacy latest-match file is discarded.
+         // Failure blocks restart rather than silently sacrificing the match.
+         if game == .gomoku, outcome == .playing, !boardMatchMoves.isEmpty,
+@@ -381,7 +401,12 @@
+             return
+         }
+         developerTeachingMode = enabled
+-        if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false; eclipseSearchStartedAt = nil }
++        if enabled {
++            aiTask?.cancel(); aiTask = nil
++            isAIThinking = false; eclipseSearchStartedAt = nil
++            eclipseTraceStore.clear(); eclipseMetricGate.end()
++            eclipseMetricGeneration &+= 1; eclipseLiveMetrics = nil
++        }
+         if !enabled && inSeparateTeachingSession {
+             restoreAfterTeaching()
+         }
+@@ -413,6 +438,8 @@
+         outcome = .playing
+         isAIThinking = false
+         eclipseSearchStartedAt = nil
++        eclipseTraceStore.clear(); eclipseMetricGate.end()
++        eclipseMetricGeneration &+= 1; eclipseLiveMetrics = nil
+         sessionID = UUID().uuidString
+         developerFormationPlies.removeAll(keepingCapacity: true)
+         developerTeachingMode = true
+@@ -685,7 +712,10 @@
+     }
+ 
+     func cancelAI() {
+-        if game == .gomoku { eclipseTraceStore.clear() }
++        if game == .gomoku {
++            eclipseTraceStore.clear(); eclipseMetricGate.end()
++            eclipseMetricGeneration &+= 1; eclipseLiveMetrics = nil
++        }
+         stopNativeTraining()
+         aiTask?.cancel(); aiTask = nil
+         isAIThinking = false
+@@ -810,10 +840,18 @@
+             guard !Task.isCancelled else { return }
+             let started = Date()
+             self.eclipseSearchStartedAt = self.game == .gomoku ? started : nil
++            if self.game == .gomoku {
++                self.eclipseMetricGate.end()
++                self.eclipseLiveMetrics = nil
++            }
+             let selected = await self.selectAIMove()
+             guard !Task.isCancelled else { return }
+             if let selected { self.applyAI(selected) }
+-            if self.game == .gomoku { self.eclipseTraceStore.clear() }
++            if self.game == .gomoku {
++                self.eclipseTraceStore.clear()
++                self.eclipseMetricGate.end()
++                // Keep last genuine metrics for post-move review, until restart.
++            }
+             self.lastDecisionMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
+             self.eclipseSearchStartedAt = nil
+             self.isAIThinking = false
+@@ -861,13 +899,44 @@
+             } else {
+                 observer = nil
+             }
++            // Fresh authenticated event ticket: no previous turn or search may
++            // update this current published result, even if detached work exits late.
++            eclipseMetricGeneration &+= 1
++            let ticket = VeilEclipseTraceSessionGate.Ticket(
++                sessionID: sessionID, turn: snapshot.moveCount,
++                generation: eclipseMetricGeneration,
++                boardFingerprint: Self.eclipseBoardFingerprint(snapshot)
++            )
++            eclipseMetricGate.begin(ticket)
++            let nativeMetrics: @Sendable (VeilGomokuUnifiedSearch.Trace) -> Void = { [weak self] event in
++                // Move only sanitized coordinate-free telemetry onto MainActor.
++                Task { @MainActor [weak self] in
++                    guard let self, self.isAIThinking, self.outcome == .playing,
++                          self.sessionID == ticket.sessionID,
++                          self.gomoku.moveCount == ticket.turn,
++                          Self.eclipseBoardFingerprint(self.gomoku) == ticket.boardFingerprint else { return }
++                    let sample = VeilEclipseTraceSessionGate.PrivateEvent(
++                        ticket: ticket, origin: .measuredNative,
++                        completedDepth: event.completedDepth > 0 ? event.completedDepth : nil,
++                        visitedNodes: event.nodes >= 0 ? event.nodes : nil,
++                        isFinal: event.phase == .complete
++                    )
++                    let monotonicMS = UInt64(max(0, ProcessInfo.processInfo.systemUptime * 1000))
++                    if let safe = self.eclipseMetricGate.accept(
++                        sample, matchIsPlaying: true, nowMilliseconds: monotonicMS
++                    ) {
++                        self.eclipseLiveMetrics = safe
++                    }
++                }
++            }
+             let rawDifficulty = boardDifficulty.rawValue
+             let chosen = await Task.detached(priority: .userInitiated) {
+                 GomokuBot.chooseMove(
+                     in: snapshot, for: computer, budget: budget,
+                     learning: learning, formationPreference: preference,
+                     difficultyRawValue: rawDifficulty,
+-                    onExploredLine: observer
++                    onExploredLine: observer,
++                    onSearchTrace: nativeMetrics
+                 )
+             }.value
+             guard let result = chosen else { return nil }
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -370,6 +370,7 @@
+                         lastCompletedMilliseconds: controller.lastDecisionMilliseconds,
+                         actualSearchStartedAt: controller.eclipseSearchStartedAt,
+                         difficultyTitle: controller.boardDifficulty.title,
++                        liveMetrics: controller.eclipseLiveMetrics,
+                         openTrace: { showsEclipseTrace = true }
+                     )
+                     .veilCard()
+@@ -448,7 +449,7 @@
+                     committedMoves: controller.eclipseCompletedMoveHistory,
+                     difficultyTitle: controller.boardDifficulty.title,
+                     searchModeTitle: controller.boardSearchMode.title,
+-                    liveMetrics: nil, // No genuine R5/V9 streaming telemetry in main.
++                    liveMetrics: controller.eclipseLiveMetrics, // Genuine session-gated native events only.
+                     archivedMatchPage: { offset, limit in
+                         controller.eclipseHistoryPage(offset: offset, limit: limit)
+                     }
+diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
+--- a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
++++ b/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
+@@ -12,6 +12,7 @@
+     let actualSearchStartedAt: Date?
+     /// The current controller's actual tier, not an independently configured UI tier.
+     let difficultyTitle: String
++    let liveMetrics: VeilEclipseTracePolicy.LiveMetrics?
+     let openTrace: () -> Void
+ 
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+@@ -61,7 +62,7 @@
+                 VeilEclipseComputeConsole(
+                     isComputing: isThinking,
+                     actualSearchStartedAt: actualSearchStartedAt,
+-                    liveMetrics: nil,
++                    liveMetrics: liveMetrics,
+                     compact: true
+                 )
+             }
