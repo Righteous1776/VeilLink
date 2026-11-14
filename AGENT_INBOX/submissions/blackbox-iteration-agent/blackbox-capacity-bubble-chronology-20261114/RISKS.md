@@ -1,23 +1,13 @@
-# Risks, overlap, and required arbitration
+# Risk register / R2
 
-## Known overlaps / governance
-- `AGENT_INBOX/submissions/diagnostics-agent/preconsent-blackbox-ios15-20261024` changes pre-consent diagnostics and requires semantic collision review.
-- PR #64 and PR #66 concern diagnostic/touch recorders and may intersect UI event collection. Do not merge automatically.
-- Current V29.1 Build 67 main is released; changes must not cause version rollback, hidden behavioral mutation or accidental duplicate release.
-- All files under this submission are staging artifacts; no active live lane was granted. Product sources and tests remain untouched on main.
-
-## Risks
-- **Storage pressure:** 192 MiB is a configured retention *budget*, not a guarantee of available space or a hard upper bound on temporary ZIP staging. Large ZIP export may require additional free storage for snapshots and output. Add disk-availability UI/quality-of-service gates if hardware testing demands it.
-- **Telemetry volume:** first observation of 2,048 rows emits many short events. Large history reload or reordering can cause additional writes; delta filtering reduces but does not eliminate this. Benchmark power and main-thread latency.
-- **Metadata privacy:** direction and timestamps can reveal communication patterns even without text. An exported bundle is sensitive; remain local by default, share manually and redact unneeded identifiers. Search query/body remain excluded.
-- **Token churn:** session-local tokens reset after 20,000 mappings; `token_epoch` separates generations. Events `no_longer_visible` indicate only row absence from the observed window, not deletion or remote unsend.
-- **Memory:** loading newer 8 MiB segment as Data/String still consumes temporary RAM; test with constrained memory and older hardware. Do not raise pending RAM backpressure.
-- **SwiftUI compile:** ConversationViews.swift is large and previously hit expression type-check timeouts. Patch adds ordinary statements inside existing closures only, but exact Apple build is required.
-- **Test fixture assumptions:** legacy seven-rotation sentinel updated for 15 rotated files; regression suite must confirm no other source/tests assume a 2 MB/128/2,000 limit.
-- **Permission boundary:** owner request to extend lower-level inspection must not be construed as permission to breach iOS sandbox, access other apps, scrape unconsented logs or recover plaintext.
-
-## Status
-- Static diff replay: PASS
-- iOS compile / XCTest / device runtime / IPA: NOT_RUN
-- Security and privacy integration review: REQUIRED
-- Product integration: NOT_APPLIED
+1. **Cannot guarantee five nights**: 512 MiB is a raw budget, not a time retention policy. High-frequency UI/render/transport activity can overwrite oldest segments. Persisted evictions + earliest/latest record times increase honesty but don't prevent loss.
+2. **Temp ZIP capacity**: a full 512 MiB dataset can temporarily use much more than 512 MiB during snapshot staging and compression. Export may fail or be difficult to share from an iPhone. Segmented compressed export remains a follow-on milestone.
+3. **Incomplete global instrumentation**: a feature registry audit only covers feature-library entries. Other legacy modules, model engines, transports, background workers and future features still require typed, reviewable hooks. Unobserved packs are not proof of absence of telemetry or incorrect functionality.
+4. **Data privacy**: even message order/timestamps/direction can reveal communication patterns. No text, content hashes, remote app data, private keys or unconsented audio should be captured. User must explicitly export sensitive local files.
+5. **Permissions:** owner diagnostics controls do not grant system-wide access, root, sandbox escape or entitlements. TrollStore marker alone is not proof of elevated privileges; each capability needs verified authorized support.
+6. **I/O wear, thermals and battery**: larger multi-day log volume and 16 MiB segment reads may affect low-storage or constrained devices. Optimize/benchmark before rollout.
+7. **Runtime correctness**: SwiftUI compiler has previously timed out on ConversationViews, and owner UI changes require exact macOS Xcode/XCTest. Unified diff replay is NOT compiler or runtime validation.
+8. **Rotation counter crash window**: a crash between oldest-file deletion and best-effort JSON counter write may undercount one eviction; durability tests and transactional state improvements are needed before calling it loss-proof.
+9. **Governance overlap**: earlier diagnostics-agent preconsent-blackbox-ios15-20261024 plus #64/#66 instrumentation may overlap. Avoid self-merge or silent arbitration.
+10. **Public repo**: Do not include actual diagnostic logs, private user messages, credentials, key material, IPA or exported runtime artifacts in the Inbox.
+Status: DRAFT proposal; product not applied; CI/physical-device testing NOT_RUN.
