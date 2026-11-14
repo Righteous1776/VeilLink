@@ -296,7 +296,6 @@ private struct ConversationRow: View {
                     VeilLinkTrace(active: isSelected, width: 28)
                     VeilInlineGlyphText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
                         .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
-                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
                         .font(.subheadline)
                         .foregroundColor(VeilTheme.secondaryText)
                         .lineLimit(1)
@@ -884,90 +883,7 @@ struct ChatView: View {
                 )
             }
         }
-        .sheet(isPresented: $showsComposerAccess) {
-            NavigationView {
-                VStack(alignment: .leading, spacing: 15) {
-                    Text("输入扩展")
-                        .font(.headline)
-                    Text("此功能默认关闭。输入访问码后，本次会话内可使用附加内容。")
-                        .font(.footnote)
-                        .foregroundColor(VeilTheme.secondaryText)
-                    SecureField("八位访问码", text: $composerAccessToken)
-                        .keyboardType(.numberPad)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .textFieldStyle(VeilTextFieldStyle())
-                        .onChange(of: composerAccessToken) { next in
-                            // unlockComposerOptions() clears the SecureField
-                            // programmatically. That empty-string change must
-                            // not erase the just-presented invalid-code error.
-                            if !next.isEmpty { composerAccessDenied = false }
-                        }
-                        .accessibilityLabel("输入八位访问码")
-                    if composerAccessDenied {
-                        Text("访问码不正确")
-                            .font(.caption)
-                            .foregroundColor(VeilTheme.danger)
-                    }
-                    Button("开启本次会话") { unlockComposerOptions() }
-                        .disabled(composerAccessFailures >= 5 || composerAccessToken.utf8.count != 8)
-                        .frame(minHeight: 44)
-                    if composerAccessFailures >= 5 {
-                        Text("尝试次数已达本次会话上限")
-                            .font(.caption)
-                            .foregroundColor(VeilTheme.secondaryText)
-                    }
-                    Spacer()
-                }
-                .padding(20)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("取消") {
-                            composerAccessToken = ""
-                            showsComposerAccess = false
-                        }
-                    }
-                }
-            }
-        }
-        .confirmationDialog("输入选项", isPresented: $showsComposerOptions) {
-            Button("插入字符") { appendComposerSymbol() }
-            Button("发送图形…") {
-                // Let the first confirmation sheet dismiss before the alert.
-                DispatchQueue.main.async { confirmsComposerArtwork = true }
-            }
-            Button("关闭扩展") { composerOptionsEnabled = false }
-        }
-        // iOS15 already has several message-delete/cancel alerts on ChatView.
-        // An independent confirmation sheet avoids SwiftUI alert override.
-        .sheet(isPresented: $confirmsComposerArtwork) {
-            NavigationView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("确认发送图形")
-                        .font(.headline)
-                    Text("这是一张应用内生成的图片；确认后将通过原有加密图片通道发送。")
-                        .font(.subheadline)
-                        .foregroundColor(VeilTheme.secondaryText)
-                    HStack(spacing: 12) {
-                        Button("取消") {
-                            confirmsComposerArtwork = false
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        Button("发送图片") {
-                            confirmsComposerArtwork = false
-                            sendComposerArtwork()
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .disabled(isPreparingImage)
-                    }
-                    .buttonStyle(.bordered)
-                    Spacer(minLength: 0)
-                }
-                .padding(20)
-                .navigationBarTitleDisplayMode(.inline)
-            }
-        }
+        .background(composerPresentation)
         .sheet(isPresented: $showsMessageForge) {
             VeilMessageForgeView(
                 initialText: draft,
@@ -1221,6 +1137,98 @@ struct ChatView: View {
         } catch {
             model.alertMessage = error.localizedDescription
             model.haptics.error()
+        }
+    }
+
+    // Keep optional composer presentations on their own SwiftUI type-checking
+    // boundary. ChatView's main body already contains a large message list,
+    // native game cards, and media inputs: adding several sheet builders to
+    // that one expression exceeds the Xcode16 Swift type-checker budget.
+    private var composerPresentation: some View {
+        Color.clear
+        .sheet(isPresented: $showsComposerAccess) {
+            NavigationView {
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("输入扩展")
+                        .font(.headline)
+                    Text("此功能默认关闭。输入访问码后，本次会话内可使用附加内容。")
+                        .font(.footnote)
+                        .foregroundColor(VeilTheme.secondaryText)
+                    SecureField("八位访问码", text: $composerAccessToken)
+                        .keyboardType(.numberPad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(VeilTextFieldStyle())
+                        .onChange(of: composerAccessToken) { next in
+                            // unlockComposerOptions() clears the SecureField
+                            // programmatically. That empty-string change must
+                            // not erase the just-presented invalid-code error.
+                            if !next.isEmpty { composerAccessDenied = false }
+                        }
+                        .accessibilityLabel("输入八位访问码")
+                    if composerAccessDenied {
+                        Text("访问码不正确")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.danger)
+                    }
+                    Button("开启本次会话") { unlockComposerOptions() }
+                        .disabled(composerAccessFailures >= 5 || composerAccessToken.utf8.count != 8)
+                        .frame(minHeight: 44)
+                    if composerAccessFailures >= 5 {
+                        Text("尝试次数已达本次会话上限")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                }
+                .padding(20)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") {
+                            composerAccessToken = ""
+                            showsComposerAccess = false
+                        }
+                    }
+                }
+            }
+        }
+        .confirmationDialog("输入选项", isPresented: $showsComposerOptions) {
+            Button("插入字符") { appendComposerSymbol() }
+            Button("发送图形…") {
+                // Let the first confirmation sheet dismiss before the alert.
+                DispatchQueue.main.async { confirmsComposerArtwork = true }
+            }
+            Button("关闭扩展") { composerOptionsEnabled = false }
+        }
+        // iOS15 already has several message-delete/cancel alerts on ChatView.
+        // An independent confirmation sheet avoids SwiftUI alert override.
+        .sheet(isPresented: $confirmsComposerArtwork) {
+            NavigationView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("确认发送图形")
+                        .font(.headline)
+                    Text("这是一张应用内生成的图片；确认后将通过原有加密图片通道发送。")
+                        .font(.subheadline)
+                        .foregroundColor(VeilTheme.secondaryText)
+                    HStack(spacing: 12) {
+                        Button("取消") {
+                            confirmsComposerArtwork = false
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        Button("发送图片") {
+                            confirmsComposerArtwork = false
+                            sendComposerArtwork()
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .disabled(isPreparingImage)
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer(minLength: 0)
+                }
+                .padding(20)
+                .navigationBarTitleDisplayMode(.inline)
+            }
         }
     }
 
