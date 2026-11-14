@@ -1,25 +1,27 @@
 diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 --- a/VeilLink/UI/GameLobbyView.swift
 +++ b/VeilLink/UI/GameLobbyView.swift
-@@ -2,6 +2,66 @@
+@@ -2,6 +2,68 @@
  import UniformTypeIdentifiers
  import VeilopolyUI
  
 +
-+// ECLIPSE R17: purposely restricted to charcoal, white/silver, green, amber and red.
-+// This palette is scoped to the Gomoku experience, never the other game lobbies.
++// ECLIPSE R17.1: restore the original VeilLink INSTRUMENT orange identity.
++// Use the EXISTING theme to preserve ambient particles, grey material cards,
++// warm Gomoku board, orange highlight, and accessibility color adaptation.
++// This cockpit remains Gomoku-only; never recolor other games or global UI.
 +enum VeilEclipseChrome {
-+    static let black = Color(red: 0.032, green: 0.037, blue: 0.044)
-+    static let canvas = Color(red: 0.052, green: 0.058, blue: 0.065)
-+    static let panel = Color(red: 0.085, green: 0.094, blue: 0.105)
-+    static let raised = Color(red: 0.12, green: 0.13, blue: 0.14)
-+    static let silver = Color(red: 0.78, green: 0.81, blue: 0.82)
-+    static let white = Color(red: 0.95, green: 0.96, blue: 0.96)
-+    static let muted = Color(red: 0.53, green: 0.56, blue: 0.57)
-+    static let line = Color(red: 0.24, green: 0.28, blue: 0.28)
-+    static let green = Color(red: 0.19, green: 0.86, blue: 0.54)
-+    static let amber = Color(red: 0.96, green: 0.59, blue: 0.19)
-+    static let red = Color(red: 0.95, green: 0.27, blue: 0.27)
++    static var black: Color { .black }
++    static var canvas: Color { VeilTheme.obsidian }
++    static var panel: Color { VeilTheme.elevated }
++    static var raised: Color { VeilTheme.subtleFillStrong }
++    static var silver: Color { VeilTheme.secondaryText }
++    static var white: Color { VeilTheme.text }
++    static var muted: Color { VeilTheme.tertiaryText }
++    static var line: Color { VeilTheme.hairline }
++    static var accent: Color { VeilTheme.gold }          // original orange
++    static var amber: Color { VeilTheme.mutedGold }      // caution only
++    static var red: Color { VeilTheme.danger }           // fault/error only
 +}
 +
 +private struct VeilEclipseDeckSurface<Content: View>: View {
@@ -68,7 +70,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
  
  struct GameLobbyView: View {
      @ObservedObject var model: AppModel
-@@ -106,10 +166,10 @@
+@@ -106,10 +168,10 @@
              .buttonStyle(VeilPressStyle())
              .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
              NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
@@ -77,11 +79,11 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
              }
              .buttonStyle(VeilPressStyle())
 -            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
-+            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilEclipseChrome.green)
++            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilEclipseChrome.accent)
              NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
                  gameRow(.xiangqi, detail: "可选红黑与先后手 · 四档棋力 · 自学习阵法预判", enabled: true)
              }
-@@ -291,6 +351,43 @@
+@@ -291,6 +353,43 @@
      }
  
  
@@ -94,7 +96,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                    .strokeBorder(VeilEclipseChrome.line, lineWidth: 0.9)
 +                Image(systemName: "cpu")
 +                    .font(.system(size: 21, weight: .medium, design: .monospaced))
-+                    .foregroundColor(VeilEclipseChrome.green)
++                    .foregroundColor(VeilEclipseChrome.accent)
 +            }
 +            .frame(width: 49, height: 49)
 +            VStack(alignment: .leading, spacing: 4) {
@@ -109,7 +111,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +            Spacer(minLength: 3)
 +            Text("LOCAL")
 +                .font(.system(size: 9, weight: .bold, design: .monospaced))
-+                .foregroundColor(VeilEclipseChrome.green)
++                .foregroundColor(VeilEclipseChrome.accent)
 +            Image(systemName: "chevron.right")
 +                .font(.caption.bold())
 +                .foregroundColor(VeilEclipseChrome.silver)
@@ -125,7 +127,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
      private func gameRow(_ game: MiniGameKind, detail: String, enabled: Bool) -> some View {
          HStack(spacing: 12) {
              ZStack {
-@@ -352,6 +449,9 @@
+@@ -352,6 +451,9 @@
      @State private var showsLearningImporter = false
      @State private var showsLearningShare = false
      @State private var showsEclipseTrace = false
@@ -135,7 +137,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
      @State private var learningExportURL: URL?
      @State private var learningExchangeMessage: String?
      @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
-@@ -376,6 +476,9 @@
+@@ -376,6 +478,9 @@
      var body: some View {
          ScrollView {
              VStack(spacing: 14) {
@@ -145,7 +147,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                  statusCard
                  if game == .gomoku {
                      VeilEclipseIdentityCard(
-@@ -411,11 +514,15 @@
+@@ -411,11 +516,12 @@
                  board
                  if controller.outcome != .playing { resultCard }
                  if game == .gomoku || game == .xiangqi { boardAdvancedPanel }
@@ -153,17 +155,13 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
              }
              .padding(14)
          }
--        .background(VeilAmbientBackground())
+         .background(VeilAmbientBackground())
 -        .navigationTitle(game.title + " · 人机")
-+        .background {
-+            if game == .gomoku { VeilEclipseChrome.canvas.ignoresSafeArea() }
-+            else { VeilAmbientBackground() }
-+        }
 +        .navigationTitle(game == .gomoku ? "ECLIPSE · 五子棋" : game.title + " · 人机")
          .navigationBarTitleDisplayMode(.inline)
          .toolbar {
              ToolbarItemGroup(placement: .navigationBarTrailing) {
-@@ -470,6 +577,38 @@
+@@ -470,6 +576,38 @@
                      }
                  )
              }
@@ -186,13 +184,13 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                    }
 +                    .padding(.bottom, 24)
 +                }
-+                .background(VeilEclipseChrome.canvas.ignoresSafeArea())
++                .background(VeilAmbientBackground())
 +                .navigationTitle("ECLIPSE / CONTROL")
 +                .navigationBarTitleDisplayMode(.inline)
 +                .toolbar {
 +                    ToolbarItem(placement: .topBarTrailing) {
 +                        Button("完成") { showsBoardAdvanced = false }
-+                            .foregroundColor(VeilEclipseChrome.green)
++                            .foregroundColor(VeilEclipseChrome.accent)
 +                    }
 +                }
 +            }
@@ -202,7 +200,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
          }
          .sheet(isPresented: $showsLearningShare, onDismiss: {
              if let learningExportURL {
-@@ -531,6 +670,296 @@
+@@ -531,6 +669,296 @@
      }
  
  
@@ -213,7 +211,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                VStack(alignment: .leading, spacing: 9) {
 +                    HStack(spacing: 8) {
 +                        Image(systemName: "cpu.fill")
-+                            .foregroundColor(VeilEclipseChrome.green)
++                            .foregroundColor(VeilEclipseChrome.accent)
 +                        Text("ECLIPSE  /  NATIVE INTELLIGENCE")
 +                            .font(.system(size: 11, weight: .bold, design: .monospaced))
 +                            .tracking(0.7)
@@ -222,13 +220,13 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                            .minimumScaleFactor(0.8)
 +                        Spacer(minLength: 0)
 +                        Circle()
-+                            .fill(controller.isAIThinking ? VeilEclipseChrome.green : VeilEclipseChrome.muted)
++                            .fill(controller.isAIThinking ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
 +                            .frame(width: 7, height: 7)
 +                    }
 +                    HStack(alignment: .firstTextBaseline) {
 +                        Text(controller.statusText)
 +                            .font(.system(size: 19, weight: .semibold, design: .rounded))
-+                            .foregroundColor(controller.canHumanAct ? VeilEclipseChrome.green : VeilEclipseChrome.white)
++                            .foregroundColor(controller.canHumanAct ? VeilEclipseChrome.accent : VeilEclipseChrome.white)
 +                        Spacer()
 +                        Text("OFFLINE  ·  15×15")
 +                            .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -283,7 +281,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                        Text("BLACK  /  WHITE")
 +                        Spacer()
 +                        Text(controller.canHumanAct ? "YOUR TURN" : controller.isAIThinking ? "SEARCHING" : "LOCKED")
-+                            .foregroundColor(controller.canHumanAct ? VeilEclipseChrome.green : VeilEclipseChrome.silver)
++                            .foregroundColor(controller.canHumanAct ? VeilEclipseChrome.accent : VeilEclipseChrome.silver)
 +                    }
 +                    .font(.system(size: 10, weight: .medium, design: .monospaced))
 +                    .foregroundColor(VeilEclipseChrome.muted)
@@ -351,10 +349,10 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                    Spacer()
 +                    Text("RULE VERIFIED")
 +                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-+                        .foregroundColor(VeilEclipseChrome.green)
++                        .foregroundColor(VeilEclipseChrome.accent)
 +                }
 +                HStack(spacing: 8) {
-+                    eclipseThreatBox("ECLIPSE 即时成五点", count: ai, accent: VeilEclipseChrome.green)
++                    eclipseThreatBox("ECLIPSE 即时成五点", count: ai, accent: VeilEclipseChrome.accent)
 +                    eclipseThreatBox("我方即时成五点", count: human, accent: human > 0 ? VeilEclipseChrome.amber : VeilEclipseChrome.silver)
 +                }
 +                Text("仅统计当前棋盘一步成五的空点数量，不展示坐标，不是模型置信度。")
@@ -395,7 +393,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                    Spacer()
 +                    Text("USER OVERRIDE")
 +                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-+                        .foregroundColor(VeilEclipseChrome.green)
++                        .foregroundColor(VeilEclipseChrome.accent)
 +                }
 +                HStack(spacing: 8) {
 +                    Menu {
@@ -418,7 +416,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                        }
 +                        .frame(maxWidth: .infinity)
 +                    }
-+                    .foregroundColor(VeilEclipseChrome.green)
++                    .foregroundColor(VeilEclipseChrome.accent)
 +                    .accessibilityIdentifier("board.difficulty.menu")
 +                    Toggle("深度搜索", isOn: Binding(
 +                        get: { controller.boardSearchMode == .full },
@@ -426,7 +424,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                    ))
 +                    .font(.caption.weight(.semibold))
 +                    .foregroundColor(VeilEclipseChrome.silver)
-+                    .tint(VeilEclipseChrome.green)
++                    .tint(VeilEclipseChrome.accent)
 +                    .fixedSize(horizontal: true, vertical: false)
 +                    .accessibilityIdentifier("board.deepSearch.toggle")
 +                }
@@ -481,7 +479,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +        VeilEclipseDeckSurface {
 +            VStack(spacing: 8) {
 +                Image(systemName: controller.outcome == .humanWon ? "trophy.fill" : "checkmark.shield")
-+                    .foregroundColor(controller.outcome == .humanWon ? VeilEclipseChrome.green : VeilEclipseChrome.silver)
++                    .foregroundColor(controller.outcome == .humanWon ? VeilEclipseChrome.accent : VeilEclipseChrome.silver)
 +                Text(controller.statusText)
 +                    .font(.headline)
 +                    .foregroundColor(VeilEclipseChrome.white)
@@ -490,7 +488,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                    model.haptics.selection()
 +                }
 +                .font(.subheadline.weight(.semibold))
-+                .foregroundColor(VeilEclipseChrome.green)
++                .foregroundColor(VeilEclipseChrome.accent)
 +            }
 +            .frame(maxWidth: .infinity)
 +        }
@@ -499,7 +497,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
      private var grokBotMood: VeilOpponentAvatarMood {
          if controller.isAIThinking { return .thinking }
          switch controller.outcome {
-@@ -678,142 +1107,170 @@
+@@ -678,142 +1106,170 @@
      }
  
  
@@ -636,7 +634,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                        Spacer()
 +                        Text("LIVE CONFIG")
 +                            .font(.system(size: 9, weight: .medium, design: .monospaced))
-+                            .foregroundColor(VeilEclipseChrome.green)
++                            .foregroundColor(VeilEclipseChrome.accent)
 +                    }
 +                    Picker("思考时长", selection: Binding(
 +                        get: { options.thinkingMode },
@@ -657,7 +655,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                            Text("TIME LIMIT")
 +                            Spacer()
 +                            Text("\(options.seconds) s")
-+                                .foregroundColor(VeilEclipseChrome.green)
++                                .foregroundColor(VeilEclipseChrome.accent)
 +                        }
 +                        .font(.system(size: 12, weight: .medium, design: .monospaced))
 +                        .foregroundColor(VeilEclipseChrome.silver)
@@ -669,14 +667,14 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                                controller.setEclipseAdvancedOptions(next)
 +                            }
 +                        ), in: 5...300, step: 5)
-+                        .tint(VeilEclipseChrome.green)
++                        .tint(VeilEclipseChrome.accent)
 +                        .accessibilityIdentifier("gomoku.eclipse.thinking.seconds.slider")
 +                    } else {
 +                        Text(options.thinkingMode == .untimed
 +                             ? "NO HARD TIMER · 由搜索节点与深度保护结束计算"
 +                             : "AUTO BUDGET · 当前难度自动决定每步搜索上限")
 +                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-+                            .foregroundColor(options.thinkingMode == .untimed ? VeilEclipseChrome.green : VeilEclipseChrome.muted)
++                            .foregroundColor(options.thinkingMode == .untimed ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
 +                    }
 +                    if options.thinkingMode != .automatic {
 +                        Divider().overlay(VeilEclipseChrome.line)
@@ -684,7 +682,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                            Text("NODE BUDGET")
 +                            Spacer()
 +                            Text("\(options.maxNodes / 1_000) K")
-+                                .foregroundColor(VeilEclipseChrome.green)
++                                .foregroundColor(VeilEclipseChrome.accent)
 +                        }
 +                        .font(.system(size: 12, weight: .medium, design: .monospaced))
 +                        .foregroundColor(VeilEclipseChrome.silver)
@@ -696,13 +694,13 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                                controller.setEclipseAdvancedOptions(next)
 +                            }
 +                        ), in: 50_000...2_000_000, step: 50_000)
-+                        .tint(VeilEclipseChrome.green)
++                        .tint(VeilEclipseChrome.accent)
 +                        .accessibilityIdentifier("gomoku.eclipse.thinking.nodes.slider")
 +                        HStack {
 +                            Text("DEPTH CEILING")
 +                            Spacer()
 +                            Text("D\(options.maxDepth)")
-+                                .foregroundColor(VeilEclipseChrome.green)
++                                .foregroundColor(VeilEclipseChrome.accent)
 +                        }
 +                        .font(.system(size: 12, weight: .medium, design: .monospaced))
 +                        .foregroundColor(VeilEclipseChrome.silver)
@@ -714,7 +712,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                                controller.setEclipseAdvancedOptions(next)
 +                            }
 +                        ), in: 3...12, step: 1)
-+                        .tint(VeilEclipseChrome.green)
++                        .tint(VeilEclipseChrome.accent)
 +                        .accessibilityIdentifier("gomoku.eclipse.thinking.depth.slider")
 +                    }
 +                }
@@ -738,7 +736,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                                .font(.caption2).foregroundColor(VeilEclipseChrome.muted)
 +                        }
 +                    }
-+                    .tint(VeilEclipseChrome.green)
++                    .tint(VeilEclipseChrome.accent)
 +                    .accessibilityIdentifier("gomoku.eclipse.r12.toggle")
 +                    Divider().overlay(VeilEclipseChrome.line)
 +                    Toggle(isOn: Binding(
@@ -755,7 +753,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                                .font(.caption2).foregroundColor(VeilEclipseChrome.muted)
 +                        }
 +                    }
-+                    .tint(VeilEclipseChrome.green)
++                    .tint(VeilEclipseChrome.accent)
 +                    .accessibilityIdentifier("gomoku.eclipse.r13.toggle")
 +                }
 +            }
@@ -780,7 +778,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
              HStack(alignment: .top) {
                  Image(systemName: "brain.head.profile")
 -                    .foregroundColor(VeilTheme.gold)
-+                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.gold)
++                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.gold)
                  VStack(alignment: .leading, spacing: 3) {
                      Text("本地自学习棋手")
                          .font(.subheadline.weight(.bold))
@@ -788,11 +786,11 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                      Text(controller.learningSummary.compactText)
                          .font(.caption.monospacedDigit())
 -                        .foregroundColor(VeilTheme.goldBright)
-+                        .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
++                        .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                  }
                  Spacer()
                  Button("清空") { showsLearningResetConfirmation = true }
-@@ -825,7 +1282,6 @@
+@@ -825,7 +1281,6 @@
                  .foregroundColor(VeilTheme.secondaryText)
                  .fixedSize(horizontal: false, vertical: true)
              if game == .gomoku {
@@ -800,77 +798,77 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                  Toggle(isOn: Binding(
                      get: { controller.eclipseVisualizationEnabled },
                      set: { controller.setEclipseVisualizationEnabled($0) }
-@@ -836,10 +1292,10 @@
+@@ -836,10 +1291,10 @@
                              .font(.caption2).foregroundColor(VeilTheme.secondaryText)
                      }
                  }
 -                .tint(VeilTheme.gold)
-+                .tint(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.gold)
++                .tint(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.gold)
                  .accessibilityIdentifier("gomoku.eclipse.live-trace.toggle")
                  HStack(spacing: 8) {
 -                    Image(systemName: "cpu").foregroundColor(VeilTheme.goldBright)
-+                    Image(systemName: "cpu").foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
++                    Image(systemName: "cpu").foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                      VStack(alignment: .leading, spacing: 2) {
                          Text("ECLIPSE 原生搜索")
                              .font(.caption.weight(.semibold))
-@@ -872,7 +1328,7 @@
+@@ -872,7 +1327,7 @@
                              .font(.caption2)
                          Image(systemName: "chevron.up.chevron.down")
                      }
 -                    .foregroundColor(VeilTheme.goldBright)
-+                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
++                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                      .padding(10)
                      .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                  }
-@@ -884,13 +1340,13 @@
+@@ -884,13 +1339,13 @@
                  VStack(alignment: .leading, spacing: 8) {
                      HStack {
                          Image(systemName: "repeat.circle")
 -                            .foregroundColor(VeilTheme.gold)
-+                            .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.gold)
++                            .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.gold)
                          Text("原生 Bot 自对弈训练")
                              .font(.caption.weight(.bold))
                          Spacer()
                          Text("已实战 \(controller.trainedNativeGames) 局")
                              .font(.caption.monospacedDigit())
 -                            .foregroundColor(VeilTheme.goldBright)
-+                            .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
++                            .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                      }
                      Text("原生 Bot 离线自对弈，仅完整胜负局计数；使用训练经验时会切到原生搜索。")
                          .font(.caption2)
-@@ -900,7 +1356,7 @@
+@@ -900,7 +1355,7 @@
                          set: { controller.setUseNativeTrainingEvidence($0) }
                      ))
                      .font(.caption2)
 -                    .tint(VeilTheme.gold)
-+                    .tint(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.gold)
++                    .tint(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.gold)
                      if controller.isNativeTraining {
                          ProgressView(
                              value: Double(controller.nativeTrainingCompleted),
-@@ -923,7 +1379,7 @@
+@@ -923,7 +1378,7 @@
                          } label: {
                              Label("开始真正的 Bot 自对弈", systemImage: "play.circle.fill")
                                  .font(.caption.weight(.semibold))
 -                                .foregroundColor(VeilTheme.goldBright)
-+                                .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
++                                .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                          }
                      }
                      Text(controller.nativeTrainingMessage)
-@@ -960,11 +1416,11 @@
+@@ -960,11 +1415,11 @@
                      .fixedSize(horizontal: false, vertical: true)
                  Text(controller.coachTip)
                      .font(.caption2)
 -                    .foregroundColor(VeilTheme.goldBright)
-+                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
++                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                      .fixedSize(horizontal: false, vertical: true)
              }
              .padding(9)
 -            .background(VeilTheme.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-+            .background((game == .gomoku ? VeilEclipseChrome.green : VeilTheme.gold).opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
++            .background((game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.gold).opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
              HStack(spacing: 10) {
                  Button {
                      do {
-@@ -1017,7 +1473,7 @@
+@@ -1017,7 +1472,7 @@
          case .gomoku:
              GomokuBoardView(
                  state: controller.gomoku,
@@ -879,13 +877,13 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                  enabled: controller.canHumanAct || (
                      controller.developerTeachingMode
                          && ownerMode.isAuthorized(for: .developerTraining)
-@@ -1031,7 +1487,8 @@
+@@ -1031,7 +1486,8 @@
                  eclipseTraceStore: controller.eclipseTraceStore,
                  eclipseSessionID: controller.sessionID,
                  eclipseBoardTurn: controller.gomoku.moveCount,
 -                eclipseMatchPlaying: controller.outcome == .playing
 +                eclipseMatchPlaying: controller.outcome == .playing,
-+                eclipseConsoleStyle: true
++                eclipseConsoleStyle: false
              ) { index in
                  if controller.developerTeachingMode,
                     ownerMode.isAuthorized(for: .developerTraining),
@@ -952,7 +950,7 @@ diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
                      ForEach(starPoints, id: \.self) { index in
                          let point = gomokuPoint(index: index, margin: margin, step: step)
 -                        Circle().fill(Color.white.opacity(0.42)).frame(width: 4.2, height: 4.2).position(point)
-+                        Circle().fill(eclipseConsoleStyle ? VeilEclipseChrome.green.opacity(0.72) : Color.white.opacity(0.42)).frame(width: 4.2, height: 4.2).position(point)
++                        Circle().fill(eclipseConsoleStyle ? VeilEclipseChrome.accent.opacity(0.72) : Color.white.opacity(0.42)).frame(width: 4.2, height: 4.2).position(point)
                      }
  
  
@@ -961,7 +959,7 @@ diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
                              path.addLine(to: gomokuPoint(index: last, margin: margin, step: step))
                          }
 -                        .stroke(VeilTheme.gold.opacity(0.9), style: StrokeStyle(lineWidth: max(2, step * 0.12), lineCap: .round))
-+                        .stroke((eclipseConsoleStyle ? VeilEclipseChrome.green : VeilTheme.gold).opacity(0.9), style: StrokeStyle(lineWidth: max(2, step * 0.12), lineCap: .round))
++                        .stroke((eclipseConsoleStyle ? VeilEclipseChrome.accent : VeilTheme.gold).opacity(0.9), style: StrokeStyle(lineWidth: max(2, step * 0.12), lineCap: .round))
                      }
  
  
@@ -975,7 +973,7 @@ diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
                                  .overlay(
 -                                    Circle().stroke(state.lastMove == index ? VeilTheme.gold : (value == 1 ? Color.white.opacity(0.16) : Color.black.opacity(0.24)), lineWidth: state.lastMove == index ? 2 : 0.7)
 +                                    Circle().stroke(state.lastMove == index
-+                                        ? (eclipseConsoleStyle ? VeilEclipseChrome.green : VeilTheme.gold)
++                                        ? (eclipseConsoleStyle ? VeilEclipseChrome.accent : VeilTheme.gold)
 +                                        : (value == 1 ? Color.white.opacity(eclipseConsoleStyle ? 0.68 : 0.16) : Color.black.opacity(0.24)),
 +                                        lineWidth: state.lastMove == index ? 2 : (eclipseConsoleStyle ? 1 : 0.7))
                                  )
@@ -987,7 +985,7 @@ diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
              .font(.caption)
 -            .foregroundColor(enabled ? VeilTheme.gold : VeilTheme.secondaryText)
 +            .foregroundColor(eclipseConsoleStyle
-+                ? (enabled ? VeilEclipseChrome.green : VeilEclipseChrome.muted)
++                ? (enabled ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
 +                : (enabled ? VeilTheme.gold : VeilTheme.secondaryText))
          }
          .accessibilityElement(children: .ignore)
@@ -1005,7 +1003,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                          .font(.caption)
 -                        .foregroundColor(isThinking ? VeilTheme.goldBright : VeilTheme.secondaryText)
 -                    Text("VeilLink Native Intelligence")
-+                        .foregroundColor(isThinking ? VeilEclipseChrome.green : VeilEclipseChrome.silver)
++                        .foregroundColor(isThinking ? VeilEclipseChrome.accent : VeilEclipseChrome.silver)
 +                    Text("VeilLink / LOCAL REASONING SYSTEM")
                          .font(.caption2)
 -                        .foregroundColor(VeilTheme.tertiaryText)
@@ -1031,7 +1029,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
              Circle()
                  .trim(from: 0.05, to: 0.79)
 -                .stroke(VeilTheme.gold.opacity(appearance.isPlainline ? 0.42 : 0.68),
-+                .stroke(VeilEclipseChrome.green.opacity(appearance.isPlainline ? 0.42 : 0.68),
++                .stroke(VeilEclipseChrome.accent.opacity(appearance.isPlainline ? 0.42 : 0.68),
                          style: StrokeStyle(lineWidth: appearance.isPlainline ? 1 : 1.7,
                                             lineCap: .round))
                  .padding(7)
@@ -1048,12 +1046,12 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
              .offset(y: -1)
              if appearance.isInstrument {
 -                VeilIndicatorLamp(active: isThinking, color: VeilTheme.gold)
-+                VeilIndicatorLamp(active: isThinking, color: VeilEclipseChrome.green)
++                VeilIndicatorLamp(active: isThinking, color: VeilEclipseChrome.accent)
                      .offset(x: 21, y: 24)
              }
          }
 -        .shadow(color: appearance.isPlainline ? .clear : VeilTheme.gold.opacity(0.07),
-+        .shadow(color: appearance.isPlainline ? .clear : VeilEclipseChrome.green.opacity(0.07),
++        .shadow(color: appearance.isPlainline ? .clear : VeilEclipseChrome.accent.opacity(0.07),
                  radius: 6, y: 2)
          .accessibilityHidden(true)
          .allowsHitTesting(false)
@@ -1062,7 +1060,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                          Label(matchFinished ? "赛后只读回放" : "对局中 · 无落点提示",
                                systemImage: matchFinished ? "lock.shield" : "eye.slash")
 -                            .foregroundColor(VeilTheme.goldBright)
-+                            .foregroundColor(VeilEclipseChrome.green)
++                            .foregroundColor(VeilEclipseChrome.accent)
                              .font(.caption.weight(.semibold))
                          Spacer()
                      }
@@ -1112,7 +1110,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                                      }
                                      .font(.caption.weight(.semibold))
 -                                    .foregroundColor(VeilTheme.goldBright)
-+                                    .foregroundColor(VeilEclipseChrome.green)
++                                    .foregroundColor(VeilEclipseChrome.accent)
                                  }
                              }
                              ForEach(savedMatches) { saved in
@@ -1121,7 +1119,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                                      HStack(spacing: 8) {
                                          Image(systemName: "clock.arrow.circlepath")
 -                                            .foregroundColor(VeilTheme.gold)
-+                                            .foregroundColor(VeilEclipseChrome.green)
++                                            .foregroundColor(VeilEclipseChrome.accent)
                                          VStack(alignment: .leading, spacing: 2) {
                                              Text(saved.status.title + " · \(saved.moves.count) 手")
                                                  .font(.caption.weight(.semibold))
@@ -1133,7 +1131,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                                          Spacer()
                                          Image(systemName: selectedMatchID == saved.id ? "checkmark.circle.fill" : "chevron.right")
 -                                            .foregroundColor(VeilTheme.goldBright)
-+                                            .foregroundColor(VeilEclipseChrome.green)
++                                            .foregroundColor(VeilEclipseChrome.accent)
                                      }
 -                                    .foregroundColor(VeilTheme.text)
 +                                    .foregroundColor(VeilEclipseChrome.white)
@@ -1145,7 +1143,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                                  Button("加载更多历史对局") { loadArchivePage() }
                                      .font(.caption.weight(.semibold))
 -                                    .foregroundColor(VeilTheme.goldBright)
-+                                    .foregroundColor(VeilEclipseChrome.green)
++                                    .foregroundColor(VeilEclipseChrome.accent)
                              }
                              if unreadableCount > 0 {
                                  Text("另有 \(unreadableCount) 份棋谱校验失败，原始文件已保留。")
@@ -1184,7 +1182,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                      let ring = Path(ellipseIn: CGRect(x: x-diameter*0.37, y: y-diameter*0.37,
                                                       width: diameter*0.74, height: diameter*0.74))
 -                    ctx.stroke(ring, with: .color(VeilTheme.gold), lineWidth: 1.7)
-+                    ctx.stroke(ring, with: .color(VeilEclipseChrome.green), lineWidth: 1.7)
++                    ctx.stroke(ring, with: .color(VeilEclipseChrome.accent), lineWidth: 1.7)
                  }
              }
          }
@@ -1196,7 +1194,7 @@ diff --git a/VeilLink/UI/VeilEclipseComputeConsole.swift b/VeilLink/UI/VeilEclip
              HStack(spacing: 6) {
                  Circle()
 -                    .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
-+                    .fill(active ? VeilEclipseChrome.green : VeilEclipseChrome.muted)
++                    .fill(active ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
                      .frame(width: 5, height: 5)
                  Text("ECLIPSE // VISUAL STREAM")
                      .font(.system(size: compact ? 8 : 10, weight: .bold, design: .monospaced))
@@ -1205,7 +1203,7 @@ diff --git a/VeilLink/UI/VeilEclipseComputeConsole.swift b/VeilLink/UI/VeilEclip
                  Spacer(minLength: 0)
                  Text(active ? "RUN" : "IDLE")
 -                    .foregroundColor(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
-+                    .foregroundColor(active ? VeilEclipseChrome.green : VeilEclipseChrome.muted)
++                    .foregroundColor(active ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
                      .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
              }
              if active, let startedAt = actualSearchStartedAt {
@@ -1223,7 +1221,7 @@ diff --git a/VeilLink/UI/VeilEclipseComputeConsole.swift b/VeilLink/UI/VeilEclip
                      Text("MEASURED · DEPTH \(depth) / NODES \(nodes)")
                          .font(.system(size: 9, weight: .medium, design: .monospaced))
 -                        .foregroundColor(VeilTheme.goldBright)
-+                        .foregroundColor(VeilEclipseChrome.green)
++                        .foregroundColor(VeilEclipseChrome.accent)
                  } else {
                      Text("MEASURED · 暂无实时深度/节点数据")
                          .font(.caption2)
@@ -1242,7 +1240,7 @@ diff --git a/VeilLink/UI/VeilEclipseComputeConsole.swift b/VeilLink/UI/VeilEclip
          .overlay(
              RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
 -                .stroke(VeilTheme.gold.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
-+                .stroke(VeilEclipseChrome.green.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
++                .stroke(VeilEclipseChrome.accent.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
          )
          .allowsHitTesting(false)
          .accessibilityElement(children: .combine)
@@ -1251,10 +1249,11 @@ diff --git a/VeilLink/UI/VeilEclipseComputeConsole.swift b/VeilLink/UI/VeilEclip
      private func tone(_ index: Int) -> Color {
          switch index {
 -        case 0: return VeilTheme.goldBright
-+        case 0: return VeilEclipseChrome.green
++        case 0: return VeilEclipseChrome.accent
          case 1: return VeilTheme.paleMetal
-         case 2: return VeilTheme.success
+-        case 2: return VeilTheme.success
 -        default: return VeilTheme.secondaryText
++        case 2: return VeilEclipseChrome.amber
 +        default: return VeilEclipseChrome.silver
          }
      }
@@ -1268,8 +1267,8 @@ diff --git a/VeilLink/UI/VeilEclipseBoardThoughtField.swift b/VeilLink/UI/VeilEc
                          let step = (min(area.width, area.height) - margin * 2) / 14
 -                        let tones = [VeilTheme.goldBright, VeilTheme.paleMetal,
 -                                     VeilTheme.success, VeilTheme.mutedGold]
-+                        let tones = [VeilEclipseChrome.green, VeilTheme.paleMetal,
-+                                     VeilEclipseChrome.green, VeilEclipseChrome.amber]
++                        let tones = [VeilEclipseChrome.accent, VeilTheme.paleMetal,
++                                     VeilEclipseChrome.accent, VeilEclipseChrome.amber]
                          for (rank, branch) in branches.enumerated() {
                              let age = max(0, now - branch.emittedAtUptime)
                              let fading = max(0, 1.0 - age / 1.35)
