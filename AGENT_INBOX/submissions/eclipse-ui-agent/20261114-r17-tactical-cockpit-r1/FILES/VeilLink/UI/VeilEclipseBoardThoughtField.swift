@@ -33,8 +33,8 @@ struct VeilEclipseBoardThoughtField: View {
                     Canvas(opaque: false, rendersAsynchronously: false) { context, area in
                         let margin = min(area.width, area.height) * 0.055
                         let step = (min(area.width, area.height) - margin * 2) / 14
-                        let tones = [VeilEclipseChrome.green, VeilTheme.paleMetal,
-                                     VeilEclipseChrome.green, VeilEclipseChrome.amber]
+                        let tones = [VeilEclipseChrome.accent, VeilTheme.paleMetal,
+                                     VeilEclipseChrome.accent, VeilEclipseChrome.amber]
                         for (rank, branch) in branches.enumerated() {
                             let age = max(0, now - branch.emittedAtUptime)
                             let fading = max(0, 1.0 - age / 1.35)
