@@ -197,10 +197,19 @@ struct VeilFileInboxView: View {
     }
 
     private func share(_ record: VeilFileInboxRecord) {
-        do {
-            sharedURL = try VeilFileInbox.fileURL(for: record)
-        } catch {
-            resultMessage = error.localizedDescription
+        Task { @MainActor in
+            do {
+                // Do not expose a corrupted local copy even through ShareSheet.
+                let url = try await Task.detached(priority: .userInitiated) {
+                    guard try VeilFileInbox.verify(record) else {
+                        throw VeilFileInboxError.corruptedCopy
+                    }
+                    return try VeilFileInbox.fileURL(for: record)
+                }.value
+                sharedURL = url
+            } catch {
+                resultMessage = error.localizedDescription
+            }
         }
     }
 }
