@@ -23,3 +23,7 @@
 Release only from this exact Git commit after full macOS SwiftPM tests, iOS simulator build, XCTest/UI smoke, unsigned device Release build, IPA integrity, payload size and content/asset provenance verification complete successfully.
 
 Dual-phone BLE/Veilopoly recovery, iOS15 ReplayKit compatibility, actual RF throughput, keyboard/scroller gestures, 512 MiB recorder retention and touch privacy must still be verified on physical devices. Simulator/CI success is not a real-device claim. Existing user data must be backed up and preserved. The IPA is **unsigned**, requires user-owned signing for installation and must not be confused with a signed production build.
+
+## Machine-checkable release acceptance
+
+The unified `ios-ci.yml` workflow runs `scripts/verify-inbox-integration.py` before compilation and against the compiled iPhoneOS `.app`. Its `INBOX_INTEGRATION_AUDIT.json` source/executable receipt ships alongside the IPA, allowing users to distinguish accepted changes from unmerged Inbox-only proposals. The source gate checks 8 accepted functional areas, not the entire historical AGENT_INBOX backlog. This is not a physical-device behavior attestation.
