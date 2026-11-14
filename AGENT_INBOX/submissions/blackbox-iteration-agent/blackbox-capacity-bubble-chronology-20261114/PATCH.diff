@@ -1435,7 +1435,7 @@ diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/Dee
 +    static func acceptsWindow(typeName: String, level: Double,
 +                              hasRoot: Bool, hidden: Bool) -> Bool {
 +        let type = typeName.lowercased()
-+        return hasRoot && !hidden && abs(level) < 0.001
++        return hasRoot && !hidden && level >= -1 && level <= 2100
 +            && !type.contains("keyboard") && !type.contains("texteffects")
 +            && !type.contains("inputwindow") && !type.contains("remote")
 +    }
@@ -2093,7 +2093,7 @@ new file mode 100644
 +            typeName: "UIRemoteKeyboardWindow", level: 0, hasRoot: true, hidden: false))
 +        XCTAssertFalse(DeepTelemetryTouchPolicy.acceptsWindow(
 +            typeName: "UITextEffectsWindow", level: 0, hasRoot: true, hidden: false))
-+        XCTAssertFalse(DeepTelemetryTouchPolicy.acceptsWindow(
++        XCTAssertTrue(DeepTelemetryTouchPolicy.acceptsWindow(
 +            typeName: "_UIHostingWindow", level: 5, hasRoot: true, hidden: false))
 +        XCTAssertFalse(DeepTelemetryTouchPolicy.acceptsWindow(
 +            typeName: "_UIHostingWindow", level: 0, hasRoot: false, hidden: false))
