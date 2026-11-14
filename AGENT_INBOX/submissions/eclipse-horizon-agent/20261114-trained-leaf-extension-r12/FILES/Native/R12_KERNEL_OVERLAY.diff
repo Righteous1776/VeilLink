@@ -1,0 +1,82 @@
+diff --git a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+--- a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
++++ b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+@@ -30,6 +30,10 @@
+         var width: Int = 14
+         var forcedLineDepth: Int = 5
+         var candidateRadius: Int = 2
++        /// R12 is explicitly opt-in until full iOS/arena promotion.
++        var r12HorizonQuiescence: Bool = false
++        /// At most three forced defensive plies at depth-zero.
++        var r12MaxForcedBlocks: Int = 2
+     }
+ 
+     enum Phase: String, Sendable {
+@@ -345,13 +349,66 @@
+             return false
+         }
+ 
++        /// Bounded leaf threat extension. A quiet/static leaf is not called a
++        /// win. Every forced defense updates the board and search ply, then
++        /// restores it. The same global node and time ceilings still apply.
++        private mutating func r12TacticalLeaf(
++            toMove side: UInt8, ply: Int, remainingForcedBlocks: Int,
++            variation: inout [Int]
++        ) -> Int {
++            nodes += 1
++            if overBudget() { return 0 }
++            guard let probe = EclipseHorizonQuiescenceR12.inspect(board, toMove: side) else {
++                return staticValue(toMove: side)
++            }
++            if overBudget() { return 0 }
++            switch probe {
++            case .ownImmediateWin(let finish):
++                variation = [finish]
++                return mate - ply - 1
++            case .opponentDoubleFive:
++                // Two DISTINCT immediate completions cannot both be blocked.
++                return -mate + ply + 2
++            case .forcedBlock(let required):
++                place(required, side)
++                var continuation: [Int] = []
++                let score: Int
++                if remainingForcedBlocks > 1 {
++                    score = -r12TacticalLeaf(
++                        toMove: opponent(side), ply: ply + 1,
++                        remainingForcedBlocks: remainingForcedBlocks - 1,
++                        variation: &continuation
++                    )
++                } else {
++                    // Evaluation after, never before, the only legal block.
++                    score = -staticValue(toMove: opponent(side))
++                }
++                unplace(required, side)
++                if interrupted || overBudget() { return 0 }
++                variation = [required] + continuation
++                return score
++            case .quiet:
++                return staticValue(toMove: side)
++            }
++        }
++
+         private mutating func negamax(depth: Int, alpha: Int, beta: Int,
+                                        toMove side: UInt8, last: Int, ply: Int,
+                                        variation: inout [Int]) -> Int {
+             nodes += 1
+             if overBudget() { return 0 }
+             if last >= 0 && winningStone(at: last, side: opponent(side)) { return -mate + ply }
++            if !board.contains(0) { return staticValue(toMove: side) }
++            if depth == 0 {
++                guard limits.r12HorizonQuiescence else {
++                    return staticValue(toMove: side)
++                }
++                return r12TacticalLeaf(
++                    toMove: side, ply: ply,
++                    remainingForcedBlocks: min(3, max(1, limits.r12MaxForcedBlocks)),
++                    variation: &variation
++                )
++            }
+-            if depth == 0 || !board.contains(0) { return staticValue(toMove: side) }
+             let tableKey = hash ^ VeilGomokuUnifiedSearch.sideHash[Int(side)]
+             let oldAlpha = alpha
+             if let hit = table[tableKey], hit.depth >= depth {

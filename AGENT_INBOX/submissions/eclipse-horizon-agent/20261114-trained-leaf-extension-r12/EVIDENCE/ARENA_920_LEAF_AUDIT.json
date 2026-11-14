@@ -1,0 +1,122 @@
+{
+  "games": 920,
+  "postPresetDecisions": 28737,
+  "invalidReplay": 0,
+  "classified": {
+    "ownImmediateWin": 915,
+    "opponentDoubleFive": 915,
+    "forcedBlock": 4534,
+    "quiet": 22373
+  },
+  "byFile": {
+    "final-compact-a": {
+      "games": 100,
+      "positions": 2573,
+      "counts": {
+        "ownImmediateWin": 99,
+        "opponentDoubleFive": 99,
+        "forcedBlock": 372,
+        "quiet": 2003
+      }
+    },
+    "final-compact-b": {
+      "games": 100,
+      "positions": 2369,
+      "counts": {
+        "ownImmediateWin": 100,
+        "opponentDoubleFive": 100,
+        "forcedBlock": 339,
+        "quiet": 1830
+      }
+    },
+    "final-strong-a": {
+      "games": 100,
+      "positions": 2744,
+      "counts": {
+        "ownImmediateWin": 99,
+        "opponentDoubleFive": 99,
+        "forcedBlock": 369,
+        "quiet": 2177
+      }
+    },
+    "final-strong-b": {
+      "games": 100,
+      "positions": 3001,
+      "counts": {
+        "ownImmediateWin": 100,
+        "opponentDoubleFive": 100,
+        "forcedBlock": 477,
+        "quiet": 2324
+      }
+    },
+    "final-time50": {
+      "games": 100,
+      "positions": 2967,
+      "counts": {
+        "ownImmediateWin": 99,
+        "opponentDoubleFive": 99,
+        "forcedBlock": 471,
+        "quiet": 2298
+      }
+    },
+    "calibration-v1-balanced-vs-relaxed": {
+      "games": 60,
+      "positions": 2349,
+      "counts": {
+        "ownImmediateWin": 59,
+        "opponentDoubleFive": 59,
+        "forcedBlock": 394,
+        "quiet": 1837
+      }
+    },
+    "calibration-v1-advanced-vs-balanced": {
+      "games": 60,
+      "positions": 1940,
+      "counts": {
+        "ownImmediateWin": 60,
+        "opponentDoubleFive": 60,
+        "forcedBlock": 323,
+        "quiet": 1497
+      }
+    },
+    "calibration-v1-master-vs-advanced": {
+      "games": 60,
+      "positions": 2099,
+      "counts": {
+        "ownImmediateWin": 60,
+        "opponentDoubleFive": 60,
+        "forcedBlock": 354,
+        "quiet": 1625
+      }
+    },
+    "confirmation-v1-balanced-vs-relaxed": {
+      "games": 120,
+      "positions": 4662,
+      "counts": {
+        "ownImmediateWin": 120,
+        "opponentDoubleFive": 120,
+        "forcedBlock": 806,
+        "quiet": 3616
+      }
+    },
+    "confirmation-v1-master-vs-advanced": {
+      "games": 120,
+      "positions": 4033,
+      "counts": {
+        "ownImmediateWin": 119,
+        "opponentDoubleFive": 119,
+        "forcedBlock": 629,
+        "quiet": 3166
+      }
+    }
+  },
+  "independentClassifier": "exact distinct five-completion windows on 15x15 freestyle, 572 windows, no legal move beyond end",
+  "fix": "Use integer indices for 15x15 rows/cols; reject fractional JS row coordinates",
+  "suiteFixtureCounts": {
+    "ownImmediateWin": 48,
+    "opponentDoubleFive": 48,
+    "forcedBlock": 48,
+    "quiet": 48
+  },
+  "warning": "Counts are tactical board labels, not errors or engine blunders; only pre-decision nonterminal snapshots; do not re-train on these evaluation snapshots."
+}
