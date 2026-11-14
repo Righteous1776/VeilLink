@@ -122,6 +122,10 @@ enum VeilGomokuUnifiedSearch {
         let trace: ((Trace) -> Void)?
         let onExploredLine: (@Sendable ([Int], Int) -> Void)?
         var exploredPath: [Int] = []
+        private var lastExploredSampleNodes = 0
+        private var lastExploredSampleDepth = 0
+        private var lastExploredSampleRoot = -1
+        private var lastExploredSampleUptime = -1.0
         var hash: UInt64 = 0
         var nodes = 0
         var table: [UInt64: Entry] = [:]
@@ -145,6 +149,27 @@ enum VeilGomokuUnifiedSearch {
             for i in 0..<capacity where board[i] != 0 {
                 hash ^= VeilGomokuUnifiedSearch.zobrist[i][Int(board[i])]
             }
+        }
+
+        /// Do not lock/dispatch for every internal PVS node.
+        /// Real branches are emitted at most ~20/s. Immediate 2nd/3rd ply
+        /// progression of the same root is allowed for a visible thin line.
+        private mutating func emitExaminedBranch() {
+            guard let onExploredLine, !exploredPath.isEmpty else { return }
+            let root = exploredPath[0]
+            let depth = min(3, exploredPath.count)
+            let expandsSameRoot = root == lastExploredSampleRoot
+                && depth > lastExploredSampleDepth
+            if !expandsSameRoot && lastExploredSampleNodes > 0
+                && nodes - lastExploredSampleNodes < 128 { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            if !expandsSameRoot && lastExploredSampleUptime >= 0
+                && now - lastExploredSampleUptime < 0.05 { return }
+            lastExploredSampleNodes = nodes
+            lastExploredSampleDepth = depth
+            lastExploredSampleRoot = root
+            lastExploredSampleUptime = now
+            onExploredLine(Array(exploredPath.prefix(3)), nodes)
         }
 
         private func opponent(_ side: UInt8) -> UInt8 { side == 1 ? 2 : 1 }
@@ -464,7 +489,7 @@ enum VeilGomokuUnifiedSearch {
             for i in moves {
                 place(i, side)
                 exploredPath.append(i)
-                if exploredPath.count <= 3 { onExploredLine?(exploredPath, nodes) }
+                emitExaminedBranch()
                 var child: [Int] = []
                 var score: Int
                 if first {
@@ -584,7 +609,7 @@ enum VeilGomokuUnifiedSearch {
                     if overBudget() { break }
                     place(move, player)
                     exploredPath = [move]
-                    onExploredLine?(exploredPath, nodes)
+                    emitExaminedBranch()
                     var childPV: [Int] = []
                     let value = -negamax(depth: depth - 1, alpha: -infinity,
                                           beta: infinity,
