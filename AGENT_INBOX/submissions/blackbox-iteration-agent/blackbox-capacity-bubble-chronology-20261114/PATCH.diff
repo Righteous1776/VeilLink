@@ -10,7 +10,20 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
      let droppedUnpersistedLineCount: Int
      let unpersistedBytes: Int
      let logFileCount: Int
-@@ -145,14 +147,21 @@
+@@ -126,6 +128,12 @@
+     let files: [DiagnosticExportFileSummary]
+     let categoryCounts: [String: Int]
+     let levelCounts: [String: Int]
++    /// An observed module checkpoint means an in-app hook actually ran.
++    let moduleCheckpointCounts: [String: Int]
++    /// A registered feature pack without a checkpoint is unobserved, NOT
++    /// necessarily broken. Future versions automatically appear here.
++    let registeredFeaturePacks: [String]
++    let unobservedRegisteredPacks: [String]
+     let currentScreen: String
+ }
+ 
+@@ -145,14 +153,21 @@
      private let rootDirectory: URL
      private let auxiliaryDirectory: URL
      private let currentLogURL: URL
@@ -36,7 +49,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
      private var droppedUnpersistedLineCount = 0
      private var nextPersistRetryUptime: TimeInterval = 0
      private let encoder: JSONEncoder
-@@ -205,6 +214,10 @@
+@@ -205,6 +220,10 @@
          try? fileManager.createDirectory(at: resolvedRoot, withIntermediateDirectories: true)
          try? fileManager.createDirectory(at: auxiliaryDirectory, withIntermediateDirectories: true)
          protectDirectory()
@@ -47,7 +60,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          loadRecentEntriesFromDisk()
      }
  
-@@ -224,6 +237,15 @@
+@@ -224,6 +243,15 @@
          existingLogURLs().count
      }
  
@@ -63,7 +76,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
      func log(
          _ level: DiagnosticLogLevel,
          _ category: DiagnosticLogCategory,
-@@ -295,6 +317,8 @@
+@@ -295,6 +323,8 @@
              recentEntriesStorage.removeAll(keepingCapacity: false)
              diskUsageBytesStorage = 0
              nextSequence = 1
@@ -72,7 +85,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
              lastRefreshAtStorage = Date()
              stateLock.unlock()
          }
-@@ -333,7 +357,7 @@
+@@ -333,7 +363,7 @@
          }
  
          // Index and manifest derive from copied files only, never recentEntries.
@@ -81,7 +94,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          // survived file rotation or failed writes on an iOS 15 device.
          let index = try makeExportIndex(from: logURLs)
          let manifest = DiagnosticExportManifest(
-@@ -347,12 +371,17 @@
+@@ -347,12 +377,17 @@
              inMemoryEventCount: recentEntries.count,
              invalidLineCount: index.invalidLineCount,
              logWriteFailureCount: withStateLock { logWriteFailureCount },
@@ -100,7 +113,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          )
  
          let prettyEncoder = JSONEncoder()
-@@ -393,6 +422,8 @@
+@@ -393,6 +428,8 @@
          passwords, app-lock PINs, identity private keys, session keys, pairing codes and AI prompts.
  
          Text input telemetry records field type/state and character length only, never the content.
@@ -109,7 +122,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          Generic UI touch telemetry records coordinates, view classes and accessibility identifiers,
          but does not scrape arbitrary accessibility labels or rendered text.
  
-@@ -413,7 +444,7 @@
+@@ -413,7 +450,7 @@
  
      @discardableResult
      func storeAuxiliaryArtifact(prefix: String, fileExtension: String, data: Data) -> String? {
@@ -118,7 +131,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          let result: String? = logQueue.sync {
              let formatter = DateFormatter()
              formatter.locale = Locale(identifier: "en_US_POSIX")
-@@ -424,7 +455,7 @@
+@@ -424,7 +461,7 @@
              let url = auxiliaryDirectory.appendingPathComponent(name)
              do {
                  try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -127,7 +140,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
                  refreshDiskUsage()
                  return name
              } catch {
-@@ -436,7 +467,7 @@
+@@ -436,12 +473,14 @@
      }
  
      /// Read exactly what was staged for the ZIP, not the in-memory cache.
@@ -136,7 +149,39 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
      /// while an older 2 GB RAM device is preparing its crash report.
      @MainActor
      private func makeExportIndex(from stagedLogURLs: [URL]) throws -> DiagnosticExportIndex {
-@@ -615,21 +646,22 @@
+         var categoryCounts: [String: Int] = [:]
+         var levelCounts: [String: Int] = [:]
++        var moduleCheckpointCounts: [String: Int] = [:]
++        var registeredFeaturePacks = Set<String>()
+         var firstTimestamp: Date?
+         var lastTimestamp: Date?
+         var totalEvents = 0
+@@ -470,6 +509,14 @@
+                 totalEvents += 1
+                 categoryCounts[entry.category.rawValue, default: 0] += 1
+                 levelCounts[entry.level.rawValue, default: 0] += 1
++                if entry.event == "diagnostics.module.checkpoint",
++                   let module = entry.metadata["module"] {
++                    moduleCheckpointCounts[module, default: 0] += 1
++                }
++                if entry.event == "diagnostics.feature_registry.inventory",
++                   let packIDs = entry.metadata["pack_ids"] {
++                    registeredFeaturePacks.formUnion(packIDs.split(separator: ",").map(String.init))
++                }
+                 if let old = firstTimestamp {
+                     firstTimestamp = min(old, entry.timestamp)
+                 } else {
+@@ -531,6 +578,9 @@
+             files: files,
+             categoryCounts: categoryCounts,
+             levelCounts: levelCounts,
++            moduleCheckpointCounts: moduleCheckpointCounts,
++            registeredFeaturePacks: registeredFeaturePacks.sorted(),
++            unobservedRegisteredPacks: registeredFeaturePacks.subtracting(Set(moduleCheckpointCounts.keys)).sorted(),
+             currentScreen: DeepTelemetry.shared.currentScreen
+         )
+     }
+@@ -615,21 +665,22 @@
      }
  
      private func loadRecentEntriesFromDiskUnsafe() {
@@ -169,7 +214,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          lastRefreshAtStorage = Date()
          refreshDiskUsageUnsafe()
      }
-@@ -680,7 +712,20 @@
+@@ -680,7 +731,20 @@
          guard currentBytes + incomingBytes > maxFileBytes else { return false }
  
          let oldest = rotatedURL(rotatedFileCount)
@@ -191,7 +236,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
  
          if rotatedFileCount > 1 {
              for index in stride(from: rotatedFileCount - 1, through: 1, by: -1) {
-@@ -795,7 +840,8 @@
+@@ -795,7 +859,8 @@
          "access_token", "refresh_token", "pairing_code", "pairingcode",
          "message_body", "message_text", "plaintext", "typed_text", "prompt",
          "media_payload", "image_payload", "attachment_payload", "raw_audio",
@@ -541,7 +586,34 @@ diff --git a/VeilLinkTests/DiagnosticLogStoreTests.swift b/VeilLinkTests/Diagnos
 diff --git a/VeilLinkTests/BlackBoxExportIntegrityTests.swift b/VeilLinkTests/BlackBoxExportIntegrityTests.swift
 --- a/VeilLinkTests/BlackBoxExportIntegrityTests.swift
 +++ b/VeilLinkTests/BlackBoxExportIntegrityTests.swift
-@@ -79,7 +79,7 @@
+@@ -51,6 +51,26 @@
+         XCTAssertEqual(files[0]["name"] as? String, "runtime.jsonl")
+     }
+ 
++    func testFeatureRegistryInventoryMarksUnobservedPacksWithoutClaimingCoverage() throws {
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent(UUID().uuidString, isDirectory: true)
++        defer { try? FileManager.default.removeItem(at: root) }
++        let store = DiagnosticLogStore(rootDirectory: root)
++        store.log(.info, .app, event: "diagnostics.feature_registry.inventory",
++                  metadata: ["pack_ids": "v27.alpha,v27.beta", "coverage_status": "inventory_only"])
++        store.log(.info, .app, event: "diagnostics.module.checkpoint",
++                  metadata: ["module": "v27.alpha", "phase": "feature.open"])
++        let archive = try store.exportBundle(context: "test.module-coverage")
++        defer { try? FileManager.default.removeItem(at: archive) }
++        let output = root.appendingPathComponent("coverage-output")
++        try unpack(archive, to: output)
++        let index = try readJSON("event-index.json", in: output)
++        XCTAssertEqual(index["registeredFeaturePacks"] as? [String], ["v27.alpha", "v27.beta"])
++        XCTAssertEqual(index["unobservedRegisteredPacks"] as? [String], ["v27.beta"])
++        let counts = try XCTUnwrap(index["moduleCheckpointCounts"] as? [String: Int])
++        XCTAssertEqual(counts["v27.alpha"], 1)
++    }
++
+     func testIncludedFileSHA256MatchesTheActualStagedPayload() throws {
+         let root = FileManager.default.temporaryDirectory
+             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+@@ -79,7 +99,7 @@
          defer { try? FileManager.default.removeItem(at: root) }
          let store = DiagnosticLogStore(rootDirectory: root)
  
@@ -550,7 +622,7 @@ diff --git a/VeilLinkTests/BlackBoxExportIntegrityTests.swift b/VeilLinkTests/Bl
          let sentinel = Data("keep-existing-diagnostics".utf8)
          try sentinel.write(to: oldest, options: .atomic)
  
-@@ -89,7 +89,7 @@
+@@ -89,7 +109,7 @@
          let blockedActive = root.appendingPathComponent("runtime.jsonl", isDirectory: true)
          try FileManager.default.createDirectory(at: blockedActive, withIntermediateDirectories: true)
  
