@@ -251,25 +251,21 @@ diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
                      }
                      Spacer(minLength: 0)
                  }
-@@ -66,6 +82,17 @@
+@@ -54,6 +70,13 @@
+                         Text(lanTurbo.dataPlaneSummary)
+                             .font(.caption2.monospaced())
+                             .foregroundColor((lanTurbo.totalPayloadBytesSent + lanTurbo.totalPayloadBytesReceived) > 0 ? VeilTheme.success : VeilTheme.secondaryText)
++                        if appearance.isForge {
++                            VeilForgeDataRail(
++                                label: "DATA PLANE",
++                                value: "\(lanTurbo.connectedPeerCount) TCP / \(sessions.secureLANPeerCount()) SECURE",
++                                active: sessions.secureLANPeerCount() > 0
++                            )
++                        }
                      }
-                 }
-                 .veilCard(emphasized: sessions.secureLANPeerCount() > 0)
-+                .overlay(alignment: .bottomLeading) {
-+                    if appearance.isForge {
-+                        VeilForgeDataRail(
-+                            label: "DATA PLANE",
-+                            value: "\(lanTurbo.connectedPeerCount) TCP / \(sessions.secureLANPeerCount()) SECURE",
-+                            active: sessions.secureLANPeerCount() > 0
-+                        )
-+                        .padding(.leading, 16)
-+                        .padding(.bottom, 1)
-+                    }
-+                }
-                 .veilSpatialPress(maximumTilt: 2.4, cornerRadius: 18, highlightColor: VeilTheme.goldBright)
-                 .veilStaggeredEntrance(index: 1)
- 
-@@ -203,6 +230,7 @@
+                     Spacer()
+                     VStack(alignment: .trailing, spacing: 3) {
+@@ -203,6 +226,7 @@
  }
  
  private struct NearbyPeerCard: View {
@@ -277,7 +273,7 @@ diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
      @ObservedObject var model: AppModel
      @ObservedObject var bluetooth: BLETransport
      @ObservedObject var lanTurbo: LANTransport
-@@ -291,9 +319,14 @@
+@@ -291,9 +315,14 @@
                              .minimumScaleFactor(0.72)
                      }
                      Spacer(minLength: 6)
@@ -404,14 +400,12 @@ diff --git a/VeilLink/UI/VeilForgeVisualSystem.swift b/VeilLink/UI/VeilForgeVisu
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/VeilForgeVisualSystem.swift
-@@ -0,0 +1,255 @@
+@@ -0,0 +1,254 @@
 +import SwiftUI
 +import Foundation
 +
 +/// Industrial atmosphere is static, bounded and input-transparent.
 +struct VeilForgeBackground: View {
-+    @ObservedObject private var appearance = VeilAppearanceController.shared
-+
 +    var body: some View {
 +        ZStack {
 +            LinearGradient(
@@ -526,6 +520,7 @@ new file mode 100644
 +        }
 +        .font(.system(size: 8, weight: .semibold, design: .monospaced))
 +        .frame(maxWidth: .infinity, alignment: .leading)
++        .allowsHitTesting(false)
 +        .accessibilityElement(children: .combine)
 +    }
 +}
