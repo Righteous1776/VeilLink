@@ -1,0 +1,11 @@
+# ECLIPSE R14 — integration risk register
+
+1. **Uncompiled combined source:** #209, #213, #214 components compiled in their own Agent environments. The novel *combined* native kernel and new controller integration have NOT passed strict Apple Swift/iOS typechecking or run-time tests. Default-OFF experiments preserve baseline behavior conceptually, not verified Apple CI parity.
+2. **Overlapping search designs:** #211 and #212 modify the same PVS leaf as chosen #213; do NOT blindly merge all three. #206 VCT, #210 R11 rule oracle and #207 strategy planner are separate search/trap candidates and would double spend node budgets or duplicate already-enforced tactical gates unless a Governor schedules them.
+3. **True board lines can reveal strategy:** R12 real candidate trajectories are opt-in OFF. They can teach a human even if short-lived and have no score labels. Don't enable in competitive play or falsely claim zero hints.
+4. **Subtle performance cost of observation:** New observer adds optional closure calls to PVS traversal; if enabled, its work can consume a portion of wall-clock budget. Equal-budget game, thermal/energy test and drop/cancel stress needed. No fake time waits.
+5. **Frozen model calibration:** Only 4 difficulty levels empirically calibrated by #209; proposed 7 levels #199 cannot be called 2×/4×/6× stronger. Unknown future setting values fall back to the tested master budget pending migration.
+6. **Rollback and IP obligations:** Existing JSCore source and notices remain in repo but cold. Removing or renaming code does not erase an applicable MIT attribution requirement. Review provenance and run rollback/data migration before deleting old resources.
+7. **Session races:** R12 trace token, turn and board checks are designed to drop late events; Apple actor isolation and lifecycle/cancel tests remain missing.
+8. **Match archive semantics:** LocalBoardMatchStore stays authoritative for resumable match; R10 archive is append/replace-one-session JSON. Must verify corrupted files, restarted unfinished games, training-account separation and no old match data loss on real device.
+9. **Governance:** All changes to this PR remain under own Inbox folder. Never merge draft product source to main without explicit Integration Governor arbitration, full iOS CI/XCTest and Owner approval. No automatic workflow, signing or release.
