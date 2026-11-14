@@ -25,3 +25,11 @@ Build 68 `0e4b51e` integrated and published the ten approved Build68 source gate
 Branch is derived from exact Build68 main `0e4b51e`, includes narrowly scoped PR #243 changes through `e4dbda4`, then a single version-and-instrumentation commit. Reuse Build68 and PR #243 CI evidence for unchanged areas, but **do not bypass exact-head final iOS compile, XCTest, unsigned IPA verification, provenance or main release gate**. Avoid manually re-running the same workflow; let one candidate PR and the required main publishing run complete.
 
 Build identity: marketing 29.2, monotonically increased build 69. No database migration, wire protocol, security entitlement, signing or background-mode change. Preserve existing local user data and back up before installation.
+
+## Owner's 2026-11-15 Gomoku correction
+- Hide the redundant "ECLIPSE / 实测仪表" card without deleting the robot identity/console.
+- Remove the single-move expanding ring/ripple.
+- Restore a persisted 1–10 thinking slider controlling real native depth, node and width limits.
+- Add a default-enabled "取消单步搜索时间截止" toggle. Time cutoff is disabled only when selected; finite node/depth limits and cancellation remain.
+- Propagate cancellation from the parent task to the detached native search task.
+- VeilScreen R1/R2.1 remains explicitly unshipped: no authenticated BLE screen media, signed ReplayKit upload extension or real two-device validation. Do not advertise a fake feature.

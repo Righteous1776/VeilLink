@@ -425,14 +425,6 @@ struct LocalAIGameView: View {
                         openTrace: { showsEclipseTrace = true }
                     )
                     .veilCard()
-                    VeilEclipseRuntimeInstruments(
-                        running: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
-                        start: controller.eclipseSearchStartedAt,
-                        lastNodes: controller.lastDecisionNodes,
-                        lastMilliseconds: controller.lastDecisionMilliseconds,
-                        trainedGames: controller.trainedNativeGames
-                    )
-                    .veilCard()
                 } else if VeilOpponentAvatarPolicy.shouldRender(
                     enabled: grokBotEnabled, hasComputerOpponent: true
                 ) {
@@ -451,6 +443,7 @@ struct LocalAIGameView: View {
                     .accessibilityIdentifier("game.grok_bot.avatar")
                 }
                 if game == .gomoku || game == .xiangqi { boardQuickControls }
+                if game == .gomoku { gomokuThinkingControls }
                 if game == .tactical { tacticalControlCard }
                 board
                 if controller.outcome != .playing { resultCard }
@@ -680,6 +673,45 @@ struct LocalAIGameView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .background(VeilTheme.elevated.opacity(0.82), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var gomokuThinkingControls: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Label("思考强度", systemImage: "brain.head.profile")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+                Spacer()
+                Text("\(controller.gomokuThinkingStrength) / 10")
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundColor(VeilTheme.secondaryText)
+            }
+            Slider(
+                value: Binding(
+                    get: { Double(controller.gomokuThinkingStrength) },
+                    set: { controller.setGomokuThinkingStrength(Int($0.rounded())) }
+                ),
+                in: 1...10, step: 1
+            )
+            .tint(VeilTheme.gold)
+            .accessibilityIdentifier("gomoku.thinking.strength.slider")
+            Toggle(isOn: Binding(
+                get: { controller.gomokuUnlimitedThinking },
+                set: { controller.setGomokuUnlimitedThinking($0) }
+            )) {
+                Text("取消单步搜索时间截止")
+                    .font(.caption.weight(.medium))
+                    .foregroundColor(VeilTheme.text)
+            }
+            .tint(VeilTheme.gold)
+            .accessibilityIdentifier("gomoku.thinking.no-time-limit.toggle")
+            Text("滑块改变真实深度、宽度与节点预算，下一手生效。取消时间截止后仍受节点上限及取消控制约束。")
+                .font(.caption2)
+                .foregroundColor(VeilTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
         .background(VeilTheme.elevated.opacity(0.82), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
