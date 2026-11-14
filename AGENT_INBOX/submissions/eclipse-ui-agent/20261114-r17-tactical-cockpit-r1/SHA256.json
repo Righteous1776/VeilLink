@@ -1,0 +1,16 @@
+{
+  "version": "R17.2",
+  "baseline": "R16 local + PR220 hybrid",
+  "files": {
+    "VeilLink/Agent/Games/EclipseDifficultyPolicy.swift": "f7584efe4150084f6fddf4322c1544f9cd71f69e0256a9a6be50eee30ba2c7dc",
+    "VeilLink/Agent/Games/GomokuBot.swift": "d0273e37fca729b2b680db9587ffd0dbdc8ef1d72bbd5a19982260f6ab13c632",
+    "VeilLink/Agent/Games/LocalAIGameController.swift": "7966d7d10d58b1bdcec03cb2583cff0c3ede250c22bcc5b8557243edb57ad690",
+    "VeilLink/Agent/Games/VeilGomokuUnifiedBridge.swift": "15e83857e716b2d8d34b303178d8e92351c21808d89094c8c8af0b3318027547",
+    "VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift": "71d70477c14540ff3de7141828b8aa381db0b2761000ea7a3db18759b151aaf9",
+    "VeilLink/UI/GameLobbyView.swift": "f54806d4294dabd9a3a2fe72d4d75f396276209bbac4fbdcae4e0374930a4203",
+    "VeilLink/UI/MiniGameViews.swift": "19773772dc0a573e1535ca07b8fbba6398ee3f62e1f99469a6fc23d8b914526f",
+    "VeilLink/UI/VeilEclipseBoardThoughtField.swift": "b1b020f636d5db45a58bfdc9c0d2f662074500f120e65435d759b3aff33837e7",
+    "VeilLink/UI/VeilEclipseComputeConsole.swift": "130173fb4836707467dd98b7836f1819e3de4e71b45ccc0312fca1024c7d0553",
+    "VeilLink/UI/VeilEclipseIdentityAndTrace.swift": "c38efdac158a1ee9ad36d00c94dc9d32fba9bb02cdd1f19f436c44cb16915959"
+  }
+}
