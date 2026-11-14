@@ -52,3 +52,20 @@ Still required on macOS/Xcode and physical devices:
 - Theme regression: five old choices unchanged and FORGE selected-only conditional instrumentation.
 - Touch: chat keyboard, message list, pairing, back swipe, scrolling, game board, training lists unaffected; FPS/thermal/energy audit at idle vs scan.
 - Apple simulator compile, full XCTest, screenshots, actual BLE and IPA: NOT_RUN.
+
+
+## R4 — Chat instrumentation and regression gates
+
+Static diff: 12 paths / 56 hunks exact frozen-main context replay PASS. R4 specifically includes ConversationViews.swift, VeilForgeChatInstrumentation.swift and VeilForgeChatMotionTests.swift. No production/main code changed; PR file listing only own five Inbox documents.
+
+Xcode iOS compile/XCTest and real devices still NOT_RUN. Required:
+1. Conversation list: selected vs nonselected, no unread vs 1 vs 9 vs 99 vs >99; pin, swipe left/right, destructive clear and VoiceOver labels preserved.
+2. Message text/quotes/attachments/game invites: dark incoming and orange outgoing backgrounds; file transfer progress controls not obscured; message IDs, timestamp order and bubble contents unchanged.
+3. Delivery state transitions queued→sending→delivered, and paused/cancelled/failed/retry: only the real detent and label change, no fictional percent; red error state, no loss of retry button.
+4. Composer: text empty→nonempty→sent, quote/reply, voice/text switch, attachment processing, menu, send; plunger remains a 36x36 interactive Button label; system keyboard should retain normal focus.
+5. Scroll preservation: user reading near top, receiving messages, keyboard appear/dismiss, sending and returning, rapid 20+ message burst, hundreds of bubbles, Search and jump; no FORGE global list spring or scale transition, no extra layout height. This does not prove the separate historical keyboard/scroll bug is fixed.
+6. Cross-theme: switching out of FORGE preserves original chat row, bubble gradients, status icons, animated insertion, composer and layout.
+7. Reduced Motion, low power, thermal and iPhone/iPad sizes: bounded transitions; no continuous timers, scroll-blocking gestures, layout jumps or accessibility loss.
+8. Performance: compare CPU/memory, SwiftUI body invalidation and frame time before/after in a long chat, specifically verifying there is no per-bubble VeilAppearanceController observer.
+
+Chat delivery policy's 12 proposed XCTest assertions have been staged; XCTest NOT_RUN. No real device test or IPA generated.
