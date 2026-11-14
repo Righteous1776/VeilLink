@@ -970,9 +970,14 @@ diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETrans
 diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/VeilopolyMultiplayerBridge.swift
 --- a/VeilLink/App/VeilopolyMultiplayerBridge.swift
 +++ b/VeilLink/App/VeilopolyMultiplayerBridge.swift
-@@ -51,6 +51,14 @@
+@@ -50,7 +50,19 @@
+     private var waitingForHostAcceptance = false
      private var peerLeft = false
      private var foreground = true
++    // Observe committed game reducer state, never cards, finance details, IDs,
++    // display text or complete board snapshots.
++    private var gameObservation: AnyCancellable?
++    private var lastCommittedSignature: String?
  
 +    private func flight(_ phase: String, values: [String: Int] = [:],
 +                        flags: [String: Bool] = [:], level: DiagnosticLogLevel = .debug) {
@@ -985,7 +990,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
      init(sessions: any VeilopolyControlChannel, localIdentity: @escaping @MainActor () -> String?,
           resumeURL: URL? = nil, gameSaveDirectory: URL? = nil) {
          self.sessions = sessions
-@@ -72,6 +80,7 @@
+@@ -72,6 +84,7 @@
          presentationContext = context; isGamePresented = true
      }
      func invite(_ conversation: ConversationSummary, presentationContext: String = "game-lobby") {
@@ -993,7 +998,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
          lastActionPeer = conversation.peerIdentityID
          guard let local = localIdentity(), local != conversation.peerIdentityID else {
              lastError = "请先启用本机身份，再邀请其他联系人。"
-@@ -87,6 +96,7 @@
+@@ -87,6 +100,7 @@
              lastError = "当前联系人身份无效，未创建或发送联机邀请。"
              return
          }
@@ -1001,7 +1006,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
          outgoingInvitation = config; boundLocalIdentity = local
          self.presentationContext = presentationContext
          lastError = nil
-@@ -105,6 +115,7 @@
+@@ -105,6 +119,7 @@
      }
  
      func acceptInvitation(presentationContext: String = "game-lobby") {
@@ -1009,7 +1014,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
          guard let config = incomingInvitation, config.guestIdentityID == localIdentity(),
                Date().timeIntervalSince(invitationBegan) <= 120 else { return }
          do {
-@@ -116,6 +127,7 @@
+@@ -116,6 +131,7 @@
      }
  
      func declineInvitation() {
@@ -1017,7 +1022,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
          if let config = incomingInvitation {
              enqueue(.init(roomID: config.roomID, kind: .decline), to: config.hostIdentityID)
          }
-@@ -140,6 +152,8 @@
+@@ -140,6 +156,8 @@
              }
              guard let packet = try assembler.ingest(fragment, from: authenticatedPeer,
                  now: Date().timeIntervalSince1970) else { return }
@@ -1026,7 +1031,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
              switch packet.kind {
              case .invite:
                  guard let config = packet.configuration, config.hostIdentityID == authenticatedPeer,
-@@ -185,7 +199,10 @@
+@@ -185,7 +203,10 @@
                  if gameModel?.networkReady == true { lastError = nil }
                  status = gameModel?.networkStatus ?? ""
              }
@@ -1038,15 +1043,28 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
      }
  
      private func createGame(_ config: VeilopolyRoomConfiguration, restoring: Bool = false) throws {
-@@ -199,6 +216,7 @@
+@@ -199,6 +220,20 @@
              self?.enqueue(packet, to: peer)
          }
          configuration = config; boundLocalIdentity = local; peerLeft = false; gameModel = game
++        gameObservation?.cancel()
++        lastCommittedSignature = nil
++        gameObservation = game.$game.sink { [weak self] snapshot in
++            guard let self else { return }
++            let signature = "\(snapshot.nextSeq)|\(snapshot.turn.player)|\(snapshot.turn.phase)|\(snapshot.winner != nil)"
++            guard lastCommittedSignature != signature else { return }
++            lastCommittedSignature = signature
++            flight("reducer.state_committed",
++                   values: ["sequence": snapshot.nextSeq,
++                            "turn_player": snapshot.turn.player,
++                            "players": snapshot.players.count],
++                   flags: ["finished": snapshot.winner != nil], level: .info)
++        }
 +        flight(restoring ? "game.restored" : "game.created", level: .info)
          // The lobby can be backgrounded while constructing/restoring a room.
          // Keep the game reducer's lifecycle gate aligned with the bridge gate.
          game.setNetworkForeground(foreground)
-@@ -220,7 +238,10 @@
+@@ -220,7 +255,10 @@
              waitingForHostAcceptance = local == record.configuration.guestIdentityID
              status = "已恢复本地联机断点，等待同一对手上线核对；不会自行变成房主"
              gameModel?.requestNetworkSync()
@@ -1058,7 +1076,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
      }
  
      private func persistResumeRecord(_ config: VeilopolyRoomConfiguration, local: String) {
-@@ -234,6 +255,7 @@
+@@ -234,6 +272,7 @@
      }
  
      func leaveRoom() {
@@ -1066,7 +1084,15 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
          lastError = nil; lastActionPeer = nil
          let active = configuration ?? outgoingInvitation
          let removeResumeIndex = configuration != nil
-@@ -265,6 +287,7 @@
+@@ -242,6 +281,7 @@
+             enqueue(.init(roomID: active.roomID, kind: .leave), to: peer(for: active, local: local))
+         }
+         gameModel?.flushSave()
++        gameObservation?.cancel(); gameObservation = nil; lastCommittedSignature = nil
+         gameModel = nil; configuration = nil; incomingInvitation = nil; outgoingInvitation = nil
+         isGamePresented = false; waitingForHostAcceptance = false
+         monitorTask?.cancel(); monitorTask = nil
+@@ -265,6 +305,7 @@
      }
  
      func reconnectAndSync() {
@@ -1074,7 +1100,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
          guard let config = configuration, let local = localIdentity() else { return }
          let peer = peer(for: config, local: local)
          if VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(
-@@ -287,10 +310,12 @@
+@@ -287,10 +328,12 @@
          if [.status, .snapshot, .resync].contains(packet.kind),
             outgoing.contains(where: { $0.peer == peer && $0.packet.kind == packet.kind }) { return }
          guard outgoing.count < 128 else {
@@ -1087,7 +1113,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
          guard senderTask == nil else { return }
          let generation = senderGeneration
          senderTask = Task { @MainActor [weak self] in await self?.drain(generation: generation) }
-@@ -328,6 +353,7 @@
+@@ -328,6 +371,7 @@
                      guard sent else { throw VeilopolyRoomError.sequenceGap }
                      try await Task.sleep(nanoseconds: 20_000_000)
                  }
@@ -1095,7 +1121,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
                  if item.packet.kind == .invite, outgoingInvitation?.roomID == item.packet.roomID {
                      status = "城市经济 V5 邀请已提交加密通道，等待对方接受（120 秒有效）"
                  }
-@@ -340,6 +366,7 @@
+@@ -340,6 +384,7 @@
                  } else {
                      status = "加密控制通道暂不可用，已暂停；请重连后重试或取消邀请。"
                  }
@@ -1103,7 +1129,7 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
                  lastError = status
                  gameModel?.setNetworkAvailability(false, message: status)
                  return
-@@ -389,6 +416,7 @@
+@@ -389,11 +434,13 @@
          if gameModel?.networkReady == false || gameModel?.awaitingHost == true { gameModel?.requestNetworkSync() }
      }
      private func suspendForIdentityChange() {
@@ -1111,6 +1137,12 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
          gameModel?.flushSave()
          gameModel?.setNetworkAvailability(false, message: "本机身份已切换，原联机房间暂停")
          senderTask?.cancel(); senderTask = nil; senderGeneration = UUID(); outgoing = []
+         monitorTask?.cancel(); monitorTask = nil
+         isGamePresented = false
++        gameObservation?.cancel(); gameObservation = nil; lastCommittedSignature = nil
+         gameModel = nil; configuration = nil; incomingInvitation = nil; outgoingInvitation = nil
+         boundLocalIdentity = nil
+     }
 diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 --- a/VeilLink/UI/GameLobbyView.swift
 +++ b/VeilLink/UI/GameLobbyView.swift
