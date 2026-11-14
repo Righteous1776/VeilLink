@@ -24,7 +24,7 @@ struct VeilEclipseRuntimeInstruments: View {
                     .foregroundColor(VeilTheme.secondaryText)
             }
             TimelineView(.periodic(from: .now,
-                by: scenePhase != .active ? 5.0 : (reduceMotion ? 0.5 :
+                by: !(running && start != nil) || scenePhase != .active ? 5.0 : (reduceMotion ? 0.5 :
                     (ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.25 : 0.1)))) { timeline in
                 let elapsed = running && start != nil
                     ? max(0, timeline.date.timeIntervalSince(start!)) : 0
@@ -64,14 +64,24 @@ struct VeilEclipseRuntimeInstruments: View {
                     Spacer(minLength: 0)
                 }
             }
-            HStack(spacing: 6) {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
                 cell("LAST NODES", lastNodes.map(String.init) ?? "—")
                 cell("LAST MS", lastMilliseconds.map(String.init) ?? "—")
+                cell("NODES / SEC", measuredNodesPerSecond)
                 cell("TRAINED", String(max(0, trainedGames)))
             }
         }
         .padding(.vertical, 2)
         .accessibilityIdentifier("game.eclipse.measured-instruments")
+    }
+
+    /// Derived exclusively from the last completed native search, never live guessed nodes.
+    private var measuredNodesPerSecond: String {
+        guard let lastNodes, lastNodes >= 0,
+              let lastMilliseconds, lastMilliseconds > 0 else { return "—" }
+        let measured = (Double(lastNodes) * 1000.0 / Double(lastMilliseconds)).rounded()
+        guard measured.isFinite, measured <= Double(Int.max) else { return "—" }
+        return Int(measured).formatted()
     }
 
     private func cell(_ title: String, _ value: String) -> some View {
