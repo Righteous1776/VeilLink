@@ -36,3 +36,13 @@ owner_zip_sha256: 03a76de45aeeb539fa0893c814bdaf530923f639e8991459f8e2cc04e81641
 - Setting `VeilLink.Gomoku.EclipseTraceEnabled.v1`, default false, inside Gomoku Training/Advanced UI.
 - R12 detailed behavior, conflicts and CI gates: `R12_ACTUAL_SEARCH_VISUALIZATION.md`.
 - Other agent strength proposals not merged; Apple iOS build/IPA not done.
+
+## R12: actual native Gomoku search traces (2026-11-14)
+- Same canonical draft PR #208; this supersedes R10 random board streaks but keeps R10 per-match archives + R11 black console.
+- New file: `FILES/VeilEclipseSearchTraceStore.swift` (real branch-event replay validation + session token + 20Hz budget).
+- Existing new-file replacement: `FILES/VeilEclipseBoardThoughtField.swift` now Canvas draws 1–3 ply real examined paths with dashed ghost stones, no arbitrary position generation.
+- New test: `TESTS/R12SearchTraceTests.swift`: **33 strict Swift6 assertions PASS**.
+- `PATCH.diff`: single current-main based 12-target proposed product patch (4 current files + 8 new source files). All hunk old/new counts and exact main source contexts matched **in-memory**; new file outputs identical to staged sources. No full live checkout/Xcode build performed.
+- 505 previous tests + 33 R12 = **538** local assertions, not 538 independent played games.
+- Board visual toggle in existing Five-in-a-row advanced settings, persisted default OFF. UI display cleared immediately when AI stops or switches turn. Existing third-party JSCore engine has no real move-branch stream and shows no fabricated paths.
+- Source-of-truth details: `R12_SEARCH_TRACE_AND_INTEGRATION.md`.
