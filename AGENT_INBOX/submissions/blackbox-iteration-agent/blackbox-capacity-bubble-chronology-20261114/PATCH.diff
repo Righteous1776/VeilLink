@@ -966,7 +966,6 @@ diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETrans
 +               values: ["error_code": (error as NSError?)?.code ?? 0], level: .warning)
          scheduleReconnect(peripheral)
      }
- 
 diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/VeilopolyMultiplayerBridge.swift
 --- a/VeilLink/App/VeilopolyMultiplayerBridge.swift
 +++ b/VeilLink/App/VeilopolyMultiplayerBridge.swift
@@ -1394,7 +1393,7 @@ diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DE
 diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/DeepTelemetry.swift
 --- a/VeilLink/Diagnostics/DeepTelemetry.swift
 +++ b/VeilLink/Diagnostics/DeepTelemetry.swift
-@@ -289,6 +289,33 @@
+@@ -289,6 +289,37 @@
  
      private func installNotificationObservers() {
          let center = NotificationCenter.default
@@ -1416,10 +1415,14 @@ diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/Dee
 +                                 "match.restored", "match.new"])
 +                let phases = Set(["roll", "moveAnim", "tileResolve", "auction",
 +                                  "manage", "trade", "debt", "finished"])
-+                guard known.contains(phase), phases.contains(turnPhase) else { return }
++                guard known.contains(phase), let phaseIndex = [
++                    "roll", "moveAnim", "tileResolve", "auction", "manage",
++                    "trade", "debt", "finished"
++                ].firstIndex(of: turnPhase), phases.contains(turnPhase) else { return }
 +                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
 +                    module: "game.veilopoly.engine", phase: phase,
-+                    counters: ["sequence": step, "player": player],
++                    counters: ["sequence": step, "player": player,
++                               "turn_phase_code": phaseIndex],
 +                    flags: ["multiplayer": multiplayer],
 +                    level: phase.contains("failed") || phase == "reducer.rejected" ? .warning : .info
 +                )
@@ -1442,7 +1445,7 @@ diff --git a/VeilLink/UI/RainlineLastTrainLabView.swift b/VeilLink/UI/RainlineLa
      private var seed: UInt64
  
      init() {
-@@ -19,6 +23,23 @@
+@@ -19,6 +23,25 @@
              Task { @MainActor [weak self] in
                  guard let self else { return }
                  snapshot = value
@@ -1452,7 +1455,9 @@ diff --git a/VeilLink/UI/RainlineLastTrainLabView.swift b/VeilLink/UI/RainlineLa
 +                   value.outcome != lastFlightOutcome || window != lastFlightWindow {
 +                    let terminal = value.outcome != .running
 +                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
-+                        module: "game.rainline", phase: terminal ? "outcome" : "runtime.milestone",
++                        module: "game.rainline", phase: terminal
++                            ? "outcome." + String(describing: value.outcome)
++                            : "runtime.milestone",
 +                        counters: ["tick": value.tick, "faults": value.activeFaults,
 +                                   "repairs": value.repairedFaults,
 +                                   "lit_cars": value.litCars, "power_percent": Int(value.trainPower)],
@@ -1466,7 +1471,7 @@ diff --git a/VeilLink/UI/RainlineLastTrainLabView.swift b/VeilLink/UI/RainlineLa
                  if let active = value.activeLine, active != line {
                      line = active
                  }
-@@ -32,6 +53,11 @@
+@@ -32,6 +55,11 @@
      func setReduceMotion(_ enabled: Bool) { scene.setReduceMotion(enabled) }
  
      func restart() {
@@ -1490,7 +1495,7 @@ diff --git a/VeilLink/UI/AfterglowConvoyLabView.swift b/VeilLink/UI/AfterglowCon
      private var seed: UInt64
  
      init() {
-@@ -24,6 +26,21 @@
+@@ -24,6 +26,23 @@
              Task { @MainActor [weak self] in
                  guard let self else { return }
                  self.snapshot = snapshot
@@ -1499,7 +1504,9 @@ diff --git a/VeilLink/UI/AfterglowConvoyLabView.swift b/VeilLink/UI/AfterglowCon
 +                    let terminal = snapshot.outcome != .running
 +                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
 +                        module: "game.afterglow-convoy",
-+                        phase: terminal ? "outcome" : "runtime.milestone",
++                        phase: terminal
++                            ? "outcome." + String(describing: snapshot.outcome)
++                            : "runtime.milestone",
 +                        counters: ["tick": snapshot.tick,
 +                                   "hull_percent": Int(snapshot.hull),
 +                                   "beacon_percent": Int(snapshot.beacon),
@@ -1512,7 +1519,7 @@ diff --git a/VeilLink/UI/AfterglowConvoyLabView.swift b/VeilLink/UI/AfterglowCon
                  if let line = snapshot.storyLine, line != self.storyLine {
                      self.storyLine = line
                  }
-@@ -41,6 +58,10 @@
+@@ -41,6 +60,10 @@
      func setPaused(_ paused: Bool) { scene.isPaused = paused }
  
      func restart() {
@@ -1536,7 +1543,7 @@ diff --git a/VeilLink/UI/SignalDiveLabView.swift b/VeilLink/UI/SignalDiveLabView
      private var seed: UInt64
  
      init() {
-@@ -35,6 +38,21 @@
+@@ -35,6 +38,23 @@
                  }
  
                  snapshot = value
@@ -1546,7 +1553,9 @@ diff --git a/VeilLink/UI/SignalDiveLabView.swift b/VeilLink/UI/SignalDiveLabView
 +                    let terminal = value.outcome != .running
 +                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
 +                        module: "game.signal-dive",
-+                        phase: terminal ? "outcome" : "runtime.milestone",
++                        phase: terminal
++                            ? "outcome." + String(describing: value.outcome)
++                            : "runtime.milestone",
 +                        counters: ["tick": value.tick, "beacons": value.recovered,
 +                                   "hull_percent": Int(value.hull), "power_percent": Int(value.power)],
 +                        flags: ["terminal": terminal], level: terminal ? .info : .debug
@@ -1558,7 +1567,7 @@ diff --git a/VeilLink/UI/SignalDiveLabView.swift b/VeilLink/UI/SignalDiveLabView
  
                  if let active =
                          value.lastLine,
-@@ -102,6 +120,10 @@
+@@ -102,6 +122,10 @@
      }
  
      func restart() {
@@ -1568,7 +1577,6 @@ diff --git a/VeilLink/UI/SignalDiveLabView.swift b/VeilLink/UI/SignalDiveLabView
 +        )
          seed &+=
              0x9E3779B97F4A7C15
- 
 diff --git a/VeilLink/UI/BlackoutDistrictLabView.swift b/VeilLink/UI/BlackoutDistrictLabView.swift
 --- a/VeilLink/UI/BlackoutDistrictLabView.swift
 +++ b/VeilLink/UI/BlackoutDistrictLabView.swift
@@ -1583,7 +1591,7 @@ diff --git a/VeilLink/UI/BlackoutDistrictLabView.swift b/VeilLink/UI/BlackoutDis
      private var seed: UInt64
  
      init() {
-@@ -30,7 +34,26 @@
+@@ -30,7 +34,28 @@
                  @MainActor
                  [weak self] in
  
@@ -1596,7 +1604,9 @@ diff --git a/VeilLink/UI/BlackoutDistrictLabView.swift b/VeilLink/UI/BlackoutDis
 +                    let terminal = value.outcome != .running
 +                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
 +                        module: "game.blackout-district",
-+                        phase: terminal ? "outcome" : "runtime.milestone",
++                        phase: terminal
++                            ? "outcome." + String(describing: value.outcome)
++                            : "runtime.milestone",
 +                        counters: ["tick": value.tick, "faults": value.activeFaults,
 +                                   "powered_nodes": value.poweredNodes,
 +                                   "stability_percent": Int(value.gridStability)],
@@ -1611,7 +1621,7 @@ diff --git a/VeilLink/UI/BlackoutDistrictLabView.swift b/VeilLink/UI/BlackoutDis
              }
          }
  
-@@ -85,6 +108,11 @@
+@@ -85,6 +110,11 @@
      }
  
      func restart() {
@@ -1622,7 +1632,6 @@ diff --git a/VeilLink/UI/BlackoutDistrictLabView.swift b/VeilLink/UI/BlackoutDis
 +        )
          seed &+=
              0x9E3779B97F4A7C15
- 
 diff --git a/VeilLink/UI/LatticeClashLabView.swift b/VeilLink/UI/LatticeClashLabView.swift
 --- a/VeilLink/UI/LatticeClashLabView.swift
 +++ b/VeilLink/UI/LatticeClashLabView.swift
