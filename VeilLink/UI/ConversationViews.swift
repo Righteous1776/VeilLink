@@ -1352,7 +1352,7 @@ struct ChatView: View {
     private func prepareAndSendImage(_ imported: ImportedImageFile) {
         guard !isPreparingImage else { return }
         isPreparingImage = true
-        withAnimation(.easeOut(duration: 0.18)) { mediaStatus = "正在高质量解析与压缩图片…" }
+        withAnimation(.easeOut(duration: 0.18)) { mediaStatus = "正在极限压缩图片（保留可读细节）…" }
 
         Task { @MainActor in
             let accessed = imported.shouldDeleteAfterUse ? false : imported.url.startAccessingSecurityScopedResource()
