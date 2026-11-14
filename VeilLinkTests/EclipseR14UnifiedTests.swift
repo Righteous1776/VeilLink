@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import VeilLink
 
 /// Integration-level guards. These MUST be executed by Apple CI before promotion.
 final class EclipseR14UnifiedTests: XCTestCase {
