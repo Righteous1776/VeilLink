@@ -1,0 +1,21 @@
+diff --git a/docs/ECLIPSE_R8_Theme_Integration_Gates.md b/docs/ECLIPSE_R8_Theme_Integration_Gates.md
+new file mode 100644
+--- /dev/null
++++ b/docs/ECLIPSE_R8_Theme_Integration_Gates.md
+@@ -0,0 +1,15 @@
++# ECLIPSE R8 — VeilLink native theme integration gates
++
++1. Use the source-accurate 4-target Swift patch in the owner-delivered R8 ZIP (SHA in MANIFEST); this GitHub Inbox diff is only a review gate document.
++2. ECLIPSE cards use existing .veilCard() and VeilTheme. Never introduce separate skin controls.
++3. React to VeilAppearanceController.selection and colorMode.
++4. Test Veil Original, Apple Soft, Instrument, Islet and gated Plainline.
++5. Instrument Dark must match actual App metal plates and orange indicator accents.
++6. No chess-board hint overlays on live Gomoku games.
++7. Show only genuinely measured coordinate-free depth/nodes after R5 telemetry integration.
++8. Only postgame show verified actual committed move replay in a read-only board.
++9. Keep all other games' Grok bot unchanged, preserve the GomokuBoardView input hitboxes.
++10. Preserve old learning files, DB, history and game rules.
++11. Resolve overlaps with #197/#198 and search/control proposals before applying changes.
++12. Require full-main git apply --check, iOS Xcode compilation, XCTest and real-device visual QA.
++13. Release/IPA, version numbers, third-party rights and legacy JS retirement are separate governed operations.
++14. Do not self-merge this proposal.
