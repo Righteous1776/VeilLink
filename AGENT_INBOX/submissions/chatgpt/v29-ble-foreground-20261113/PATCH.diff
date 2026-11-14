@@ -1,0 +1,116 @@
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -332,6 +332,16 @@
+         }
+         beginScanningIfPossible()
+         beginAdvertisingIfPossible()
++        if BLELinkReliabilityPolicy.shouldForegroundRestore(
++            isRunning: isRunning,
++            foreground: foregroundActive,
++            wantedCount: wantedConnections.count
++        ) {
++            // A background/foreground transition does not necessarily cause
++            // a new CBCentralManager state update. Rehydrate only disconnected
++            // wanted peers; don't reissue discoverServices on a live GATT link.
++            restoreWantedPeripheralsIfPossible(reconnectDisconnectedOnly: true)
++        }
+         recoverStalledTransportQueuesIfNeeded()
+         if foregroundActive && !bluetoothAudioActive {
+             for peripheral in remotePeripherals.values where peripheral.state == .connected {
+@@ -816,7 +826,9 @@
+ 
+     /// Rehydrates the persisted "I want to stay connected to this peripheral" state.
+     /// Explicit disconnect/pause clears the store; process relaunch and diagnostic churn do not.
++    private func restoreWantedPeripheralsIfPossible(
++        reconnectDisconnectedOnly: Bool = false
++    ) {
+-    private func restoreWantedPeripheralsIfPossible() {
+         guard isRunning,
+               centralManager.state == .poweredOn,
+               !wantedConnections.isEmpty else { return }
+@@ -827,8 +839,16 @@
+             peripheral.delegate = self
+             switch peripheral.state {
+             case .disconnected:
++                // A restored scan result can arrive while an existing retry
++                // timer is waiting. Never cancel/reset its exponential backoff.
++                if BLELinkReliabilityPolicy.shouldScheduleRestoredReconnect(
++                    isDisconnected: true,
++                    hasPendingRetry: reconnectWorkItems[id] != nil
++                ) {
++                    scheduleReconnect(peripheral, immediate: true)
++                }
+-                scheduleReconnect(peripheral, immediate: true)
+             case .connected:
++                if reconnectDisconnectedOnly { break }
+                 if remoteCharacteristics[id]?.isNotifying != true {
+                     gattHandshakeWatchdog.physicalLinkConnected(
+                         id, uptime: ProcessInfo.processInfo.systemUptime
+diff --git a/VeilLink/Transport/BLELinkReliabilityPolicy.swift b/VeilLink/Transport/BLELinkReliabilityPolicy.swift
+--- a/VeilLink/Transport/BLELinkReliabilityPolicy.swift
++++ b/VeilLink/Transport/BLELinkReliabilityPolicy.swift
+@@ -27,6 +27,26 @@
+ enum BLELinkReliabilityPolicy {
+     static let reconnectStabilityResetInterval: TimeInterval = 30
+ 
++    /// Reconcile persisted connection intent when the app becomes foreground
++    /// even when CBCentralManager never emitted a new poweredOn callback.
++    static func shouldForegroundRestore(
++        isRunning: Bool,
++        foreground: Bool,
++        wantedCount: Int
++    ) -> Bool {
++        isRunning && foreground && wantedCount > 0
++    }
++
++    /// Retrying a recovered peripheral must not cancel and replace a pending
++    /// exponential-backoff timer. The CoreBluetooth state itself remains the
++    /// authoritative source of whether it is disconnected.
++    static func shouldScheduleRestoredReconnect(
++        isDisconnected: Bool,
++        hasPendingRetry: Bool
++    ) -> Bool {
++        isDisconnected && !hasPendingRetry
++    }
++
+     static func normalizedRSSI(_ sample: Int) -> Int? {
+         guard sample != 127, sample < 0, sample >= -110 else { return nil }
+         return min(-20, sample)
+diff --git a/VeilLinkTests/BLELinkReliabilityPolicyTests.swift b/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
+--- a/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
++++ b/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
+@@ -2,6 +2,33 @@
+ @testable import VeilLink
+ 
+ final class BLELinkReliabilityPolicyTests: XCTestCase {
++    func testForegroundRestoreRequiresRunningForegroundAndPersistedIntent() {
++        XCTAssertTrue(BLELinkReliabilityPolicy.shouldForegroundRestore(
++            isRunning: true, foreground: true, wantedCount: 1
++        ))
++        XCTAssertFalse(BLELinkReliabilityPolicy.shouldForegroundRestore(
++            isRunning: false, foreground: true, wantedCount: 1
++        ))
++        XCTAssertFalse(BLELinkReliabilityPolicy.shouldForegroundRestore(
++            isRunning: true, foreground: false, wantedCount: 1
++        ))
++        XCTAssertFalse(BLELinkReliabilityPolicy.shouldForegroundRestore(
++            isRunning: true, foreground: true, wantedCount: 0
++        ))
++    }
++
++    func testRestoredPeripheralDoesNotResetPendingReconnectBackoff() {
++        XCTAssertTrue(BLELinkReliabilityPolicy.shouldScheduleRestoredReconnect(
++            isDisconnected: true, hasPendingRetry: false
++        ))
++        XCTAssertFalse(BLELinkReliabilityPolicy.shouldScheduleRestoredReconnect(
++            isDisconnected: true, hasPendingRetry: true
++        ))
++        XCTAssertFalse(BLELinkReliabilityPolicy.shouldScheduleRestoredReconnect(
++            isDisconnected: false, hasPendingRetry: false
++        ))
++    }
++
+     func testRSSIQualityBands() {
+         XCTAssertEqual(BLELinkReliabilityPolicy.quality(rssi: -55), .strong)
+         XCTAssertEqual(BLELinkReliabilityPolicy.quality(rssi: -62), .strong)

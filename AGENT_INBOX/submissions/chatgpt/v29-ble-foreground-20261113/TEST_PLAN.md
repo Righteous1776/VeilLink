@@ -1,0 +1,9 @@
+# BLE foreground reconnect acceptance — NOT_RUN in Inbox
+
+1. On integration branch based on main@eb487a1, apply PATCH.diff. Compile iOS15 and run all BLELinkReliabilityPolicyTests, BLETransportSafetyTests, BLEConnectionIntentStoreTests, BLEGattHandshakeWatchdogTests and security/Veilopoly invite tests. No app/IPA build was performed at Inbox stage.
+2. Unit: running + foreground + wantedCount>0 permits retrieval; background, paused or empty intent does not. Restored disconnected peer with an existing retry WorkItem must not cause another schedule or increment attempt; without pending timer it can schedule exactly once.
+3. iPhone 7/iOS15.8.3 and iPhone SE2/iOS15.6.1: pair once, send control and chat messages, background either device 30 times (short, mid and longer durations), foreground repeatedly. Without a Bluetooth power-state callback ensure persisted wanted peer can be rehydrated; no repeated GATT rediscovery or RSSI flooding from UI refresh.
+4. On weak signal simulate multiple `didFailToConnect`; record monotonic attempt number, existing reconnect deadlines and CoreBluetooth state. Verify 0.75/1.5/3/6/12/20/30s schedule is preserved, not repeatedly reset on refresh. Don't equate physical BLE connected with security-ready.
+5. Host+guest Veilopoly invitation must pass authenticated secure session and negotiated control feature bit through actual invitation send/receive/accept; no unencrypted fallback or optimistic client state. Save synchronized sanitized stage markers in temporary blackbox.
+6. Regression: explicit user disconnect/pause must clear intent and no auto-restoration; Bluetooth off/denied must not reconnect; audio active and background must retain duplicate-scan limits.
+7. Record failures with exact build SHA. Device testing and Xcode XCTest currently NOT_RUN.
