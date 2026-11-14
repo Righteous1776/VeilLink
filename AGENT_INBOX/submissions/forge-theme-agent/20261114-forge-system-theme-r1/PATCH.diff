@@ -1232,7 +1232,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
  
      private var usesReducedInteractionMotion: Bool {
          VeilMotionPolicy.quality(reduceMotionRequested: reduceMotion) != .high
-@@ -490,10 +506,10 @@
+@@ -490,14 +506,15 @@
                                          retry(message)
                                      } : nil
                                  )
@@ -1245,7 +1245,12 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                                  .id(message.id)
                              } else {
                                  MessageBubble(
-@@ -531,10 +547,10 @@
+                                     message: message,
++                                    forgeStyle: appearance.isForge,
+                                     database: model.database,
+                                     onRetry: message.isOutgoing && message.deliveryState == .failed ? { retry(message) } : nil,
+                                     onPause: canPauseImage(message) ? { pauseImage(message) } : nil,
+@@ -531,10 +548,10 @@
                                          Label("本地删除", systemImage: "trash")
                                      }
                                  }
@@ -1258,7 +1263,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                                  .id(message.id)
                              }
                          }
-@@ -562,7 +578,10 @@
+@@ -562,7 +579,10 @@
                      }
                      .padding(.horizontal, 12)
                      .padding(.vertical, 14)
@@ -1270,7 +1275,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                  }
                  .coordinateSpace(name: "chatScroll")
                  .onAppear {
-@@ -748,15 +767,23 @@
+@@ -748,15 +768,23 @@
                              .accessibilityLabel("扩展输入")
                          }
                          Button(action: send) {
@@ -1302,7 +1307,7 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                          }
                          .buttonStyle(VeilPressStyle())
                          .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-@@ -767,12 +794,22 @@
+@@ -767,12 +795,22 @@
              }
              .background(VeilTheme.elevated.opacity(0.95))
              .overlay(alignment: .top) {
@@ -1329,19 +1334,55 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
              }
      }
  
-@@ -1424,6 +1461,7 @@
- }
+@@ -1425,6 +1463,7 @@
  
  private struct MessageBubble: View {
-+    @ObservedObject private var appearance = VeilAppearanceController.shared
      let message: ChatMessage
++    let forgeStyle: Bool
      let database: DatabaseStore
      let onRetry: (() -> Void)?
-@@ -1564,7 +1602,10 @@
+     let onPause: (() -> Void)?
+@@ -1463,7 +1502,7 @@
+                         .font(.body.weight(.medium))
+                         .padding(.horizontal, 14)
+                         .padding(.vertical, 11)
++                        .background(MessageBubbleSurface(outgoing: message.isOutgoing, forgeStyle: forgeStyle))
+-                        .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                         .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
+                         .clipShape(VeilPanelShape(cut: 11, radius: 7))
+                 } else if let voiceMetadata = VoiceMessageCodec.decode(message.body) {
+@@ -1482,7 +1521,7 @@
+                     }
+                     .padding(.horizontal, 14)
+                     .padding(.vertical, 11)
++                    .background(MessageBubbleSurface(outgoing: message.isOutgoing, forgeStyle: forgeStyle))
+-                    .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                     .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
+                     .clipShape(VeilPanelShape(cut: 11, radius: 7))
+                 } else if let reply = ReplyTextCodec.decode(message.body) {
+@@ -1503,7 +1542,7 @@
+                     }
+                     .padding(.horizontal, 14)
+                     .padding(.vertical, 11)
++                    .background(MessageBubbleSurface(outgoing: message.isOutgoing, forgeStyle: forgeStyle))
+-                    .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                     .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
+                     .clipShape(VeilPanelShape(cut: 11, radius: 7))
+                     .overlay(
+@@ -1517,7 +1556,7 @@
+                         .font(.body)
+                         .padding(.horizontal, 14)
+                         .padding(.vertical, 11)
++                        .background(MessageBubbleSurface(outgoing: message.isOutgoing, forgeStyle: forgeStyle))
+-                        .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                         .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
+                         .clipShape(VeilPanelShape(cut: 11, radius: 7))
+                         .overlay(
+@@ -1564,7 +1603,10 @@
                  HStack(spacing: 4) {
                      Text(message.sentAt, style: .time)
                      if message.isOutgoing {
-+                        if appearance.isForge {
++                        if forgeStyle {
 +                            VeilForgeDeliveryRail(state: message.deliveryState)
 +                                .accessibilityLabel(deliveryLabel)
 +                        } else if message.deliveryState == .delivered {
@@ -1349,15 +1390,15 @@ diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews
                              VeilResolveMark(resolved: true)
                                  .accessibilityLabel(deliveryLabel)
                          } else {
-@@ -1594,10 +1635,13 @@
+@@ -1594,10 +1636,13 @@
  
  private struct MessageBubbleSurface: View {
      let outgoing: Bool
-+    @ObservedObject private var appearance = VeilAppearanceController.shared
++    let forgeStyle: Bool
  
      var body: some View {
          Group {
-+            if appearance.isForge {
++            if forgeStyle {
 +                VeilForgeBubbleSurface(outgoing: outgoing)
 +            } else if outgoing {
 -            if outgoing {
@@ -1536,8 +1577,8 @@ new file mode 100644
 +            VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion),
 +            value: armed
 +        )
-+        .allowsHitTesting(false)
-+        .accessibilityHidden(true)
++        .contentShape(Rectangle())
++        .accessibilityLabel(armed ? "发送加密消息" : "没有可发送的内容")
 +    }
 +}
 +
