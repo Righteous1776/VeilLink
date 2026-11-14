@@ -1,0 +1,184 @@
+diff --git a/VeilLink/Media/ImageTranscoder.swift b/VeilLink/Media/ImageTranscoder.swift
+--- a/VeilLink/Media/ImageTranscoder.swift
++++ b/VeilLink/Media/ImageTranscoder.swift
+@@ -38,9 +38,36 @@
+     }
+ }
+ 
++/// Adaptive, capped rate control. One encode is the common path; never run an
++/// unbounded quality search on a large source photo.
++enum ImageCompressionSearchPolicy {
++    static let initialQuality: CGFloat = 0.86
++    static let minimumQuality: CGFloat = 0.62
++    static let maximumAttemptsPerDimension = 3
++
++    /// Estimate the next quality from the *actual encoded byte count*. This
++    /// intentionally avoids a binary search that would spend more CPU encoding
++    /// the same giant bitmap just to gain a few percentage points of quality.
++    static func nextQuality(
++        after quality: CGFloat,
++        encodedBytes: Int,
++        targetBytes: Int
++    ) -> CGFloat? {
++        guard encodedBytes > targetBytes, targetBytes > 0,
++              quality > minimumQuality + 0.025 else { return nil }
++        let ratio = max(0.05, min(1.0, Double(targetBytes) / Double(encodedBytes)))
++        let next = max(
++            Double(minimumQuality),
++            min(Double(quality) - 0.06, Double(quality) * sqrt(ratio))
++        )
++        guard next < Double(quality) - 0.025 else { return nil }
++        return CGFloat(next)
++    }
++}
++
+ enum ImageTranscoder {
+-    private static let qualitySteps: [CGFloat] = [0.94, 0.90, 0.86, 0.82, 0.78, 0.72, 0.66]
+-    private static let dimensionSteps = [4_096, 3_584, 3_072, 2_560, 2_048, 1_600]
++    // Skip near-duplicate 3584px re-encodes on the way from 4096px to 3072px.
++    private static let dimensionSteps = [4_096, 3_072, 2_560, 2_048, 1_600]
+ 
+     static func prepare(at url: URL) async throws -> PreparedImage {
+         try await Task.detached(priority: .userInitiated) {
+@@ -77,58 +104,61 @@
+         }
+ 
+         let preferredEncoding = preferredOutputEncoding()
+-        var bestUnderHardLimit: PreparedImage?
++        let encodings: [(type: CFString, mimeType: String, label: String)] =
++            preferredEncoding.mimeType == "image/jpeg"
++            ? [preferredEncoding]
++            : [preferredEncoding, (UTType.jpeg.identifier as CFString, "image/jpeg", "JPEG")]
+ 
+-        for dimension in effectiveDimensions(original: sourceInfo) {
+-            guard let cgImage = decodeImage(url: url, source: source, maximumDimension: dimension) else { continue }
+-            for quality in qualitySteps {
+-                guard let encoded = encode(cgImage, as: preferredEncoding.type, quality: quality) else { continue }
+-                let prepared = PreparedImage(
+-                    data: encoded,
+-                    mimeType: preferredEncoding.mimeType,
+-                    sourceFormat: sourceFormat,
+-                    outputFormat: preferredEncoding.label,
+-                    originalByteCount: originalByteCount,
+-                    pixelWidth: cgImage.width,
+-                    pixelHeight: cgImage.height,
+-                    wasTranscoded: true
+-                )
+-                if encoded.count <= MediaTransferPolicy.targetImageBytes { return prepared }
+-                if bestUnderHardLimit == nil, encoded.count <= MediaTransferPolicy.maximumImageBytes {
+-                    bestUnderHardLimit = prepared
+-                }
+-            }
+-        }
++        // The source image is downsampled only once per dimension, then encoded
++        // at most three times. The byte target is soft; the 3 MB wire limit is hard.
++        // No new format, capability bit, envelope or recipient change is needed.
++        for encoding in encodings {
++            var bestUnderHardLimit: PreparedImage?
++            for dimension in effectiveDimensions(original: sourceInfo) {
++                try Task.checkCancellation()
++                guard let cgImage = decodeImage(
++                    url: url, source: source, maximumDimension: dimension
++                ) else { continue }
+ 
+-        // Quality wins over hitting the soft target. If HEIC produced a high-quality image
+-        // under the hard protocol limit, keep it instead of needlessly switching codecs.
+-        if let bestUnderHardLimit { return bestUnderHardLimit }
++                var quality = ImageCompressionSearchPolicy.initialQuality
++                for _ in 0..<ImageCompressionSearchPolicy.maximumAttemptsPerDimension {
++                    try Task.checkCancellation()
++                    guard let encoded = encode(
++                        cgImage, as: encoding.type, quality: quality
++                    ) else { break }
+ 
+-        // HEIC encoding can be unavailable on unusual devices/OS builds. JPEG is the fallback.
+-        if preferredEncoding.mimeType != "image/jpeg" {
+-            for dimension in effectiveDimensions(original: sourceInfo) {
+-                guard let cgImage = decodeImage(url: url, source: source, maximumDimension: dimension) else { continue }
+-                for quality in qualitySteps {
+-                    guard let encoded = encode(cgImage, as: UTType.jpeg.identifier as CFString, quality: quality) else { continue }
+                     let prepared = PreparedImage(
+                         data: encoded,
+-                        mimeType: "image/jpeg",
++                        mimeType: encoding.mimeType,
+                         sourceFormat: sourceFormat,
+-                        outputFormat: "JPEG",
++                        outputFormat: encoding.label,
+                         originalByteCount: originalByteCount,
+                         pixelWidth: cgImage.width,
+                         pixelHeight: cgImage.height,
+                         wasTranscoded: true
+                     )
+-                    if encoded.count <= MediaTransferPolicy.targetImageBytes { return prepared }
+-                    if bestUnderHardLimit == nil, encoded.count <= MediaTransferPolicy.maximumImageBytes {
++                    if encoded.count <= MediaTransferPolicy.targetImageBytes {
++                        return prepared
++                    }
++                    if bestUnderHardLimit == nil,
++                       encoded.count <= MediaTransferPolicy.maximumImageBytes {
+                         bestUnderHardLimit = prepared
+                     }
++
++                    guard let nextQuality = ImageCompressionSearchPolicy.nextQuality(
++                        after: quality,
++                        encodedBytes: encoded.count,
++                        targetBytes: MediaTransferPolicy.targetImageBytes
++                    ) else { break }
++                    quality = nextQuality
+                 }
+             }
++
++            // A high-resolution HEIC under the protocol limit beats an extra
++            // JPEG fallback pass. Fall back to JPEG only if HEIC cannot fit.
++            if let bestUnderHardLimit { return bestUnderHardLimit }
+         }
+ 
+-        if let bestUnderHardLimit { return bestUnderHardLimit }
+         throw sourceType?.conforms(to: .image) == true ? ImagePreparationError.stillTooLarge : ImagePreparationError.unsupported
+     }
+ 
+diff --git a/VeilLinkTests/MediaTransferPolicyTests.swift b/VeilLinkTests/MediaTransferPolicyTests.swift
+--- a/VeilLinkTests/MediaTransferPolicyTests.swift
++++ b/VeilLinkTests/MediaTransferPolicyTests.swift
+@@ -2,6 +2,41 @@
+ @testable import VeilLink
+ 
+ final class MediaTransferPolicyTests: XCTestCase {
++
++    func testAdaptiveCompressionQualityDropsOnlyWhenOverTarget() {
++        let original = ImageCompressionSearchPolicy.initialQuality
++        XCTAssertNil(ImageCompressionSearchPolicy.nextQuality(
++            after: original, encodedBytes: 1_700_000, targetBytes: 1_800_000
++        ))
++        let next = ImageCompressionSearchPolicy.nextQuality(
++            after: original, encodedBytes: 3_600_000, targetBytes: 1_800_000
++        )
++        XCTAssertNotNil(next)
++        XCTAssertGreaterThanOrEqual(next ?? 0, ImageCompressionSearchPolicy.minimumQuality)
++        XCTAssertLessThan(next ?? 1, original)
++        XCTAssertLessThanOrEqual(ImageCompressionSearchPolicy.maximumAttemptsPerDimension, 3)
++    }
++
++    func testAdaptiveCompressionSearchStopsAtQualityFloorAndInvalidBudgets() {
++        XCTAssertNil(ImageCompressionSearchPolicy.nextQuality(
++            after: ImageCompressionSearchPolicy.minimumQuality,
++            encodedBytes: 4_000_000, targetBytes: 1_800_000
++        ))
++        XCTAssertNil(ImageCompressionSearchPolicy.nextQuality(
++            after: ImageCompressionSearchPolicy.initialQuality,
++            encodedBytes: 4_000_000, targetBytes: 0
++        ))
++    }
++
++    func testAdaptiveCompressionDoesNotIncreaseQualityForSmallOvershoot() {
++        let next = ImageCompressionSearchPolicy.nextQuality(
++            after: 0.86, encodedBytes: 1_820_000, targetBytes: 1_800_000
++        )
++        XCTAssertNotNil(next)
++        XCTAssertLessThan(next ?? 1, 0.86)
++        XCTAssertGreaterThanOrEqual(next ?? 0, ImageCompressionSearchPolicy.minimumQuality)
++    }
++
+     func testTransferLayerAcceptsSafeOutputFormats() {
+         XCTAssertTrue(MediaTransferPolicy.supportsImageMIMEType("image/jpeg"))
+         XCTAssertTrue(MediaTransferPolicy.supportsImageMIMEType("image/heic"))
