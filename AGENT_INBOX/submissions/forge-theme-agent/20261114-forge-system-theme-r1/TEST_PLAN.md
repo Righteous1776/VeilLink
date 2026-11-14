@@ -26,3 +26,12 @@
 - Isolated Foundation-only `VeilForgeMotionCore.swift` compiled with Swift on Linux: **PASS**; **17 deterministic value checks PASS** for detent stepping, parked motor, invalid time values, BLE health clamping. This is NOT an iOS application build or XCTest run.
 - Added a new **proposed iOS XCTest** asserting `.forge` appears as a sixth switchable theme, retains the raw-value storage identity, and preserves existing Veil Original/Instrument themes; **NOT_RUN**.
 - Apple's Xcode, simulator, end-to-end theme picker, real BLE/CPU/gesture checks, full XCTest and IPA: **NOT_RUN** (Linux environment cannot provide them).
+
+## R2 checks (screenshot iteration)
+- Proposed patch: **9 product paths / 38 hunks / all exact-source context replay PASS** against recorded base commit; changes in actual PR remain only the five FORGE Inbox documents.
+- Probe selection: FORGE's theme chooser preview and theme specification appear only for `.forge`; all original themes and experimental Plainline remain available.
+- Gesture regression required on real devices: enter FORGE, swipe up/down over Nearby panel, Game Lobby card, Gomoku board, chat bubble and composer; no `VeilSpatialPress` zero-distance drag handler should run. Recheck clickable buttons for native touch response.
+- Decorative idle motion: FORGE dynamic glow must not rotate; its stepper RF and CPU rotors only update while their actual subsystem is working, in foreground, and motion policy permits. Switch from legacy theme while a glow is active and check reset.
+- Compare supplied screenshot composition to FORGE: orange emphasis, ECLIPSE dark console contrast, graphite panel hierarchy, nested training control readability, 42pt theme specimen.
+- Test small iPhone portrait, dark mode, light mode, Dynamic Type and VoiceOver so extra module headers do not overlap buttons or keyboard.
+- Xcode full iOS compile, simulator XCTest, BLE test, physical device FPS and screenshots: **NOT_RUN**. Static patch replay does not prove SwiftUI compilation or frame-time improvement.
