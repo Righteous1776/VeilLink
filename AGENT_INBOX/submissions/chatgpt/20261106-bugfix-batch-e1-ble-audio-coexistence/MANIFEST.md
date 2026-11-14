@@ -1,0 +1,12 @@
+# [AGENT-DROP] E1 — Bluetooth headset coexistence + battery
+- agent_id: chatgpt
+- task_id: 20261106-bugfix-batch-e1-ble-audio-coexistence
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- submission_path: AGENT_INBOX/submissions/chatgpt/20261106-bugfix-batch-e1-ble-audio-coexistence/
+- scope: headset coexistence and battery, user bug #5 and #8 (mitigation)
+- mode: INBOX_ONLY
+- proposed_files:
+  - VeilLink/Transport/BLETransport.swift
+  - VeilLinkTests/BLETransportSafetyTests.swift
+- asset_grant: none
+- status: DROPPED
