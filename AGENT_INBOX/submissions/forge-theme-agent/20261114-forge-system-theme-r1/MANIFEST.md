@@ -47,3 +47,16 @@ The repository product tree, main, version, workflows, signing, protocol and rel
 - new source helper: VeilForgeMotionCore.routeStage; Xcode XCTest cases staged
 - Swift Linux core compile with 21 determinism assertions PASS; Apple Xcode, XCTest, BLE, device and IPA NOT_RUN
 - no product/main mutation, no IPA and no additional PR
+
+
+## R4 checkpoint / 2026-11-15
+
+- owner scope: FORGE theme instrumentation now also covers real chat surfaces
+- product diff paths: 12; hunks: 56; exact-base replay PASS
+- added product files: VeilLink/UI/VeilForgeChatInstrumentation.swift; VeilLinkTests/VeilForgeChatMotionTests.swift
+- existing edited product file: VeilLink/UI/ConversationViews.swift
+- mechanisms: selection/unread latch, per-message delivery status rail, distinct incoming/outgoing metal bubble, armed send plunger, no-layout composer rail
+- performance: no per-bubble global theme observer; FORGE disables whole-timeline spring/scale transitions
+- transport, persistence, conversation sort, keyboard focus/scroll implementation: intentionally unchanged
+- Apple Xcode simulator build, iOS XCTest, BLE, device screenshots/FPS, IPA: NOT_RUN
+- still INBOX_ONLY / DRAFT; main unchanged
