@@ -1,0 +1,272 @@
+diff --git a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+--- a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
++++ b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+@@ -30,6 +30,8 @@
+         var width: Int = 14
+         var forcedLineDepth: Int = 5
+         var candidateRadius: Int = 2
++        // R13: opt-in exact incremental threat window index, disabled until A/B.
++        var r13IncrementalThreatIndexEnabled: Bool = false
+     }
+ 
+     enum Phase: String, Sendable {
+@@ -117,6 +119,7 @@
+         var table: [UInt64: Entry] = [:]
+         let started = Date.timeIntervalSinceReferenceDate
+         var interrupted = false
++        var r13Index: EclipseIncrementalThreatIndexR13?
+ 
+         init(position: Position, limits: Limits, allowedRoot: [Int]?,
+              rootBonuses: [Int: Int], trainedPolicy: Bool, trace: ((Trace) -> Void)?) {
+@@ -127,6 +130,8 @@
+             self.bonuses = rootBonuses
+             self.trainedPolicy = trainedPolicy
+             self.trace = trace
++            self.r13Index = limits.r13IncrementalThreatIndexEnabled
++                ? EclipseIncrementalThreatIndexR13(cells: position.cells) : nil
+             for i in 0..<capacity where board[i] != 0 {
+                 hash ^= VeilGomokuUnifiedSearch.zobrist[i][Int(board[i])]
+             }
+@@ -154,10 +159,17 @@
+         }
+ 
+         private mutating func place(_ index: Int, _ side: UInt8) {
++            if r13Index != nil && !r13Index!.place(index, stone: side) {
++                // Fail back to the incumbent exact scans on cache divergence.
++                r13Index = nil
++            }
+             board[index] = side
+             hash ^= VeilGomokuUnifiedSearch.zobrist[index][Int(side)]
+         }
+         private mutating func unplace(_ index: Int, _ side: UInt8) {
++            if r13Index != nil && !r13Index!.undo(index, stone: side) {
++                r13Index = nil
++            }
+             board[index] = 0
+             hash ^= VeilGomokuUnifiedSearch.zobrist[index][Int(side)]
+         }
+@@ -184,6 +196,13 @@
+         }
+ 
+         private mutating func immediateWins(side: UInt8, among positions: [Int]) -> [Int] {
++            // Exact same five-completion semantics; use O(1) per candidate.
++            if let r13Index {
++                return positions.filter { index in
++                    (0..<capacity).contains(index) && board[index] == 0 &&
++                    r13Index.winsImmediately(stone: side, at: index)
++                }
++            }
+             var out: [Int] = []
+             for i in positions where board[i] == 0 {
+                 place(i, side)
+@@ -197,6 +216,8 @@
+         /// Finds opponent fork cells by collecting two DISTINCT five-completion
+         /// points after a hypothetical opponent move. Exact for freestyle rules.
+         private func forkCells(for side: UInt8) -> [Int] {
++            // Exact cached counts plus existing completions, not a heuristic.
++            if let r13Index { return r13Index.forkSquares(stone: side) }
+             var replies = [Int: Set<Int>]()
+             for (dr, dc) in directions {
+                 for r in 0..<boardSize {
+diff --git a/VeilLink/Agent/Games/EclipseIncrementalThreatIndexR13.swift b/VeilLink/Agent/Games/EclipseIncrementalThreatIndexR13.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Agent/Games/EclipseIncrementalThreatIndexR13.swift
+@@ -0,0 +1,155 @@
++import Foundation
++
++/// Exact and incremental threat windows for unrestricted 15x15 Gomoku.
++/// Mutable instances must be owned by a single search; never share across turns.
++/// It is a search optimization, NOT a neural network or a new win certificate.
++struct EclipseIncrementalThreatIndexR13: Sendable {
++    static let size = 15
++    static let count = 225
++
++    private struct Window: Sendable {
++        let cells: [Int]
++    }
++
++    private static let windows: [Window] = {
++        var output: [Window] = []
++        for (dr, dc) in [(0, 1), (1, 0), (1, 1), (1, -1)] {
++            for r in 0..<size {
++                for c in 0..<size {
++                    guard (0..<size).contains(r + dr * 4),
++                          (0..<size).contains(c + dc * 4) else { continue }
++                    output.append(Window(cells: (0..<5).map { (r + dr * $0) * size + c + dc * $0 }))
++                }
++            }
++        }
++        return output
++    }()
++
++    private static let windowsBySquare: [[Int]] = {
++        var result = [[Int]](repeating: [], count: count)
++        for (id, window) in windows.enumerated() {
++            for index in window.cells { result[index].append(id) }
++        }
++        return result
++    }()
++
++    private(set) var cells: [UInt8]
++    private var black: [UInt8]
++    private var white: [UInt8]
++    private var blackCompletions: [Int16]
++    private var whiteCompletions: [Int16]
++
++    init?(cells: [UInt8]) {
++        guard cells.count == Self.count, cells.allSatisfy({ $0 <= 2 }) else { return nil }
++        self.cells = cells
++        self.black = [UInt8](repeating: 0, count: Self.windows.count)
++        self.white = [UInt8](repeating: 0, count: Self.windows.count)
++        self.blackCompletions = [Int16](repeating: 0, count: Self.count)
++        self.whiteCompletions = [Int16](repeating: 0, count: Self.count)
++        for (id, window) in Self.windows.enumerated() {
++            for at in window.cells {
++                if cells[at] == 1 { black[id] += 1 }
++                if cells[at] == 2 { white[id] += 1 }
++            }
++            adjustContribution(id, sign: 1)
++        }
++    }
++
++    /// A move or exact undo is O(number of 5-cell windows crossing one square).
++    /// No memory allocation and no full-board scan occurs in the hot path.
++    @discardableResult
++    mutating func place(_ index: Int, stone: UInt8) -> Bool {
++        guard (0..<Self.count).contains(index),
++              (stone == 1 || stone == 2), cells[index] == 0 else { return false }
++        set(index: index, from: 0, to: stone)
++        return true
++    }
++
++    @discardableResult
++    mutating func undo(_ index: Int, stone: UInt8) -> Bool {
++        guard (0..<Self.count).contains(index),
++              (stone == 1 || stone == 2), cells[index] == stone else { return false }
++        set(index: index, from: stone, to: 0)
++        return true
++    }
++
++    func winsImmediately(stone: UInt8, at index: Int) -> Bool {
++        guard (0..<Self.count).contains(index), cells[index] == 0 else { return false }
++        switch stone {
++        case 1: return blackCompletions[index] > 0
++        case 2: return whiteCompletions[index] > 0
++        default: return false
++        }
++    }
++
++    func winningSquares(stone: UInt8) -> [Int] {
++        let counts: [Int16]
++        if stone == 1 { counts = blackCompletions }
++        else if stone == 2 { counts = whiteCompletions }
++        else { return [] }
++        return (0..<Self.count).filter { cells[$0] == 0 && counts[$0] > 0 }
++    }
++
++    /// Enumerates every next-move fork cell with TWO DISTINCT immediate-five
++    /// completions; duplicate geometric windows are not double-counted.
++    /// Uses cached window stone counts and only inspects two-hole windows.
++    func forkSquares(stone: UInt8) -> [Int] {
++        guard stone == 1 || stone == 2 else { return [] }
++        var endings: [Int: Set<Int>] = [:]
++        for (id, window) in Self.windows.enumerated() {
++            let own = stone == 1 ? black[id] : white[id]
++            let enemy = stone == 1 ? white[id] : black[id]
++            guard own == 3, enemy == 0 else { continue }
++            var first = -1, second = -1
++            for index in window.cells where cells[index] == 0 {
++                if first == -1 { first = index } else { second = index; break }
++            }
++            guard first >= 0, second >= 0 else { continue }
++            endings[first, default: []].insert(second)
++            endings[second, default: []].insert(first)
++        }
++        // Existing immediate-five completions remain available after a move
++        // except when the move occupies that exact completion square. A fork
++        // may combine one preexisting completion and one newly created one.
++        // This case is missed by a 3-stones/2-holes-only detector.
++        let preexisting = winningSquares(stone: stone)
++        // The common case has no existing immediate five. Avoid iterating all
++        // 225 candidate squares or materializing redundant Sets in that case.
++        if preexisting.isEmpty {
++            return endings.filter { $0.value.count >= 2 }.map(\.key).sorted()
++        }
++        var forkMoves: [Int] = []
++        for move in 0..<Self.count where cells[move] == 0 {
++            var finishes = endings[move] ?? []
++            for index in preexisting where index != move { finishes.insert(index) }
++            if finishes.count >= 2 { forkMoves.append(move) }
++        }
++        return forkMoves
++    }
++
++    private mutating func set(index: Int, from: UInt8, to: UInt8) {
++        for w in Self.windowsBySquare[index] {
++            adjustContribution(w, sign: -1)
++            if from == 1 { black[w] -= 1 }
++            if from == 2 { white[w] -= 1 }
++        }
++        cells[index] = to
++        for w in Self.windowsBySquare[index] {
++            if to == 1 { black[w] += 1 }
++            if to == 2 { white[w] += 1 }
++            adjustContribution(w, sign: 1)
++        }
++    }
++
++    private mutating func adjustContribution(_ id: Int, sign: Int16) {
++        let side: UInt8
++        if black[id] == 4 && white[id] == 0 { side = 1 }
++        else if white[id] == 4 && black[id] == 0 { side = 2 }
++        else { return }
++        for index in Self.windows[id].cells where cells[index] == 0 {
++            if side == 1 { blackCompletions[index] += sign }
++            else { whiteCompletions[index] += sign }
++            break
++        }
++    }
++}
+diff --git a/VeilLinkTests/EclipseIncrementalThreatIndexR13Tests.swift b/VeilLinkTests/EclipseIncrementalThreatIndexR13Tests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/EclipseIncrementalThreatIndexR13Tests.swift
+@@ -0,0 +1,37 @@
++import XCTest
++@testable import VeilLink
++
++final class EclipseIncrementalThreatIndexR13Tests: XCTestCase {
++    func testImmediateFivesAndUndo() throws {
++        var board = [UInt8](repeating: 0, count: 225)
++        for i in [108, 109, 110, 111] { board[i] = 1 }
++        var index = try XCTUnwrap(EclipseIncrementalThreatIndexR13(cells: board))
++        XCTAssertEqual(index.winningSquares(stone: 1), [107, 112])
++        XCTAssertTrue(index.place(107, stone: 1))
++        XCTAssertFalse(index.winsImmediately(stone: 1, at: 107))
++        XCTAssertTrue(index.undo(107, stone: 1))
++        XCTAssertEqual(index.winningSquares(stone: 1), [107, 112])
++    }
++
++    func testForkDeduplicatesCompletionEndpoints() throws {
++        var board = [UInt8](repeating: 0, count: 225)
++        for i in [109, 110, 111] { board[i] = 1 }
++        let index = try XCTUnwrap(EclipseIncrementalThreatIndexR13(cells: board))
++        XCTAssertTrue(index.forkSquares(stone: 1).contains(108))
++        XCTAssertTrue(index.forkSquares(stone: 1).contains(112))
++    }
++
++    func testIllegalMoveCannotCorruptIndex() throws {
++        let empty = [UInt8](repeating: 0, count: 225)
++        var index = try XCTUnwrap(EclipseIncrementalThreatIndexR13(cells: empty))
++        XCTAssertTrue(index.place(100, stone: 1))
++        XCTAssertFalse(index.place(100, stone: 2))
++        XCTAssertFalse(index.undo(100, stone: 2))
++        XCTAssertTrue(index.undo(100, stone: 1))
++        XCTAssertEqual(index.cells, empty)
++    }
++
++    func testFrozenCodexDefaultIsOffUntilGovernorEnables() {
++        XCTAssertFalse(VeilGomokuUnifiedSearch.Limits().r13IncrementalThreatIndexEnabled)
++    }
++}
