@@ -249,6 +249,24 @@ final class BLETransport: NSObject, ObservableObject {
     private var audioRouteSubscription: AnyCancellable?
     private var linkSnapshotRefreshWorkItem: DispatchWorkItem?
     private var lastLinkSnapshotPublishAt: TimeInterval = 0
+    private var lastQueuePressureUptime: TimeInterval = -100
+
+    private func flight(_ phase: String, id: UUID? = nil,
+                        values: [String: Int] = [:], level: DiagnosticLogLevel = .debug) {
+        var fields: [String: String] = ["payload_recorded": "false"]
+        if let id { fields["transport_id"] = id.uuidString }
+        for (key, value) in values { fields[key] = String(value) }
+        DiagnosticLogStore.shared.log(level, .bluetooth, event: "ble.flight." + phase, metadata: fields)
+    }
+
+    private func reportQueuePressure(id: UUID, bytes: Int, packets: Int, pending: Int) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastQueuePressureUptime >= 5 else { return }
+        lastQueuePressureUptime = now
+        flight("queue_pressure", id: id,
+               values: ["payload_bytes": bytes, "pending_packets": packets, "pending_bytes": pending],
+               level: .warning)
+    }
 
     private let maxFragmentsPerMessage = 16_384
     private let passiveDiscoveryRetention: TimeInterval = 15
@@ -309,6 +327,7 @@ final class BLETransport: NSObject, ObservableObject {
     }
 
     func start() {
+        flight("start", level: .info)
         isRunning = true
         refreshBluetoothAudioRoute()
         startRSSIPolling()
@@ -397,6 +416,7 @@ final class BLETransport: NSObject, ObservableObject {
     }
 
     func disconnect(_ id: UUID) {
+        flight("disconnect_requested", id: id, level: .info)
         if wantedConnections.remove(id) != nil {
             connectionIntentStore.save(wantedConnections)
         }
@@ -412,6 +432,7 @@ final class BLETransport: NSObject, ObservableObject {
     /// Drops the current link while preserving the user's intent to stay connected.
     /// Used by the security/session watchdog when a connection becomes stale.
     func recover(_ id: UUID) {
+        flight("recover_requested", id: id, level: .warning)
         if wantedConnections.insert(id).inserted {
             connectionIntentStore.save(wantedConnections)
         }
@@ -445,6 +466,7 @@ final class BLETransport: NSObject, ObservableObject {
     }
 
     func connect(to id: UUID) {
+        flight("connect_requested", id: id, level: .info)
         if wantedConnections.insert(id).inserted {
             connectionIntentStore.save(wantedConnections)
         }
@@ -499,6 +521,9 @@ final class BLETransport: NSObject, ObservableObject {
                 maximumPackets: maxQueuedPacketsPerPeer,
                 maximumBytes: maxQueuedBytesPerPeer
             ) else {
+                reportQueuePressure(id: transportID, bytes: data.count,
+                                    packets: existing?.pendingCount ?? 0,
+                                    pending: existing?.pendingBytes ?? 0)
                 return .temporarilyUnavailable
             }
             guard centralOutboundQueues[transportID, default: PeerOutboundQueue()].appendEncodedPayload(
@@ -530,6 +555,9 @@ final class BLETransport: NSObject, ObservableObject {
             maximumPackets: maxQueuedPacketsPerPeer,
             maximumBytes: maxQueuedBytesPerPeer
         ) else {
+            reportQueuePressure(id: transportID, bytes: data.count,
+                                packets: existing?.pendingCount ?? 0,
+                                pending: existing?.pendingBytes ?? 0)
             return .temporarilyUnavailable
         }
         guard peripheralOutboundQueues[transportID, default: PeerOutboundQueue()].appendEncodedPayload(
@@ -788,14 +816,20 @@ final class BLETransport: NSObject, ObservableObject {
         connectedPeerCount = connectionEvents.count
         statusText = "蓝牙数据通道已就绪"
         publishLinkSnapshots(force: true)
-        if firstConnectionEvent { onConnected?(id) }
+        if firstConnectionEvent {
+            flight("data_ready", id: id, level: .info)
+            onConnected?(id)
+        }
     }
 
     private func publishDisconnected(_ id: UUID) {
         let didDisconnect = connectionEvents.markDisconnected(id)
         connectedPeerCount = connectionEvents.count
         publishLinkSnapshots(force: true)
-        if didDisconnect { onDisconnected?(id) }
+        if didDisconnect {
+            flight("data_disconnected", id: id, level: .warning)
+            onDisconnected?(id)
+        }
     }
 
     private func scheduleReconnect(_ peripheral: CBPeripheral, immediate: Bool = false) {
@@ -812,6 +846,8 @@ final class BLETransport: NSObject, ObservableObject {
         let baseDelay = immediate ? 0 : BLELinkReliabilityPolicy.reconnectDelay(attempt: attempt)
         let jitter = immediate ? 0 : Double.random(in: 0...min(1.0, baseDelay * 0.12))
         let delay = baseDelay + jitter
+        flight("reconnect_scheduled", id: id,
+               values: ["attempt": attempt, "delay_ms": Int(delay * 1_000)], level: .warning)
         statusText = attempt <= 2 ? "蓝牙链路恢复中" : "蓝牙链路较弱，持续重连中"
         publishLinkSnapshots()
 
@@ -1117,6 +1153,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
         peripheral.discoverServices([Self.serviceUUID])
         peripheral.readRSSI()
         statusText = "蓝牙物理链路已连接，正在发现数据通道"
+        flight("physical_connected", id: peripheral.identifier, level: .info)
         publishLinkSnapshots(force: true)
     }
 
@@ -1135,6 +1172,8 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
         } else {
             statusText = "中央角色连接失败，备用数据通道仍可用"
         }
+        flight("connect_failed", id: id,
+               values: ["error_code": (error as NSError?)?.code ?? 0], level: .warning)
         scheduleReconnect(peripheral)
     }
 
@@ -1153,6 +1192,8 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
         } else {
             statusText = "中央角色已断开，备用数据通道仍可用"
         }
+        flight("physical_disconnected", id: id,
+               values: ["error_code": (error as NSError?)?.code ?? 0], level: .warning)
         scheduleReconnect(peripheral)
     }
 
