@@ -1,0 +1,11 @@
+{
+  "schema": "zeo-unified-study-record.v1",
+  "task_id": "20261031-temp-export-cleanup-r1",
+  "trusted_base_sha": "ccafebab147e069fbabfff579dbf323b0d54f191",
+  "source": "live_repo",
+  "authority": "lane / INBOX_ONLY",
+  "governance_epoch": "repository current main; machine study gate not run",
+  "state": "PARTIAL",
+  "missing": ["B mandatory-read machine ACK", "C 11-file study-gate record"],
+  "allowed_mode": "INBOX_ONLY"
+}
