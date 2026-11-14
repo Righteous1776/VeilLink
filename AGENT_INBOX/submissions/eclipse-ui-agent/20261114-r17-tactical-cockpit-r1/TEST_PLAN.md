@@ -1,5 +1,16 @@
-## Reproduction
-`swiftc -frontend -parse FILES/VeilLink/UI/*.swift FILES/VeilLink/Agent/Games/*.swift`
-`swiftc -swift-version 6 -warnings-as-errors -O TESTS/MiniGameTypes.swift TESTS/VeilEclipseThreatReadout.swift TESTS/main.swift -o /tmp/r17-check && /tmp/r17-check`
-`git apply --check R17_ADVISORY.patch` from the documented hybrid baseline.
-No project-level iOS compile in the current environment.
+# R17.2 QA checklist / Integration Governor
+- [x] 10/10 Swift source frontend parses (Linux Swift 6.2.1)
+- [x] 7/7 independent Gomoku one-move-win regressions
+- [x] Motion/privacy/scroll safety source contract assertions
+- [x] Hybrid-baseline patch apply check + byte-for-byte reproduction
+- [ ] Xcode 26 full typecheck on approved VeilLink integration base (R16 + PR #220)
+- [ ] iPhone 13 portrait, iPad split-screen: width/spacing/keyboard/safe area
+- [ ] Start thinking and abort: clock stops; avatar ring stops; no late AI move
+- [ ] Complete move: orange ring appears once for 0.65s; no scroll hijack
+- [ ] Toggle Reduce Motion and Low Power, background app, scroll off-screen
+- [ ] Timed custom mode: dial measures elapsed time, not estimated search progress
+- [ ] Untimed mode: rotating indicator has no % or fake expected completion
+- [ ] Change limit during search: last-move gauge uses snapshotted limit
+- [ ] Training counts are actual, missing nodes = dash, no fabricated stats
+- [ ] Legacy multiplayer Gomoku/Xiangqi boards unchanged, original orange theme kept
+- [ ] Xcode build/IPA only after Governor explicitly authorizes
