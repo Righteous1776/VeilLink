@@ -1,0 +1,166 @@
+diff --git a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+--- a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
++++ b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+@@ -30,6 +30,9 @@
+         var width: Int = 14
+         var forcedLineDepth: Int = 5
+         var candidateRadius: Int = 2
++        // R12 experiments only; default preserves all Codex R10 frozen matches.
++        var r12OrderingMemoEnabled: Bool = false
++        var r12LeafThreatExtension: Int = 0
+     }
+ 
+     enum Phase: String, Sendable {
+@@ -117,6 +120,7 @@
+         var table: [UInt64: Entry] = [:]
+         let started = Date.timeIntervalSinceReferenceDate
+         var interrupted = false
++        var r12Memo: EclipseR12OrderingMemo?
+ 
+         init(position: Position, limits: Limits, allowedRoot: [Int]?,
+              rootBonuses: [Int: Int], trainedPolicy: Bool, trace: ((Trace) -> Void)?) {
+@@ -127,6 +131,7 @@
+             self.bonuses = rootBonuses
+             self.trainedPolicy = trainedPolicy
+             self.trace = trace
++            self.r12Memo = limits.r12OrderingMemoEnabled ? EclipseR12OrderingMemo() : nil
+             for i in 0..<capacity where board[i] != 0 {
+                 hash ^= VeilGomokuUnifiedSearch.zobrist[i][Int(board[i])]
+             }
+@@ -245,13 +250,19 @@
+         /// Score once per legal candidate, outside the sort comparator.
+         /// The learned policy orders the SAME bounded search and never votes
+         /// on legality, proof certificates or compulsory win/block gates.
++        private mutating func orderingScore(_ index: Int, _ side: UInt8) -> Int {
++            guard trainedPolicy else { return patternPriority(index, side) }
++            if let cached = r12Memo?.get(hash: hash, side: side, index: index) {
++                return cached
++            }
++            // The fitted 48-tree model is unmodified. Cache only its exact
++            // deterministic ordering output, never a PVS score or proof.
++            let value = EclipseTrainedOrdering.score(cells: board, index: index, side: side)
++            r12Memo?.put(hash: hash, side: side, index: index, value: value)
++            return value
+-        private func orderingScore(_ index: Int, _ side: UInt8) -> Int {
+-            trainedPolicy
+-                ? EclipseTrainedOrdering.score(cells: board, index: index, side: side)
+-                : patternPriority(index, side)
+         }
+ 
++        private mutating func ordered(_ candidates: [Int], side: UInt8, previousBest: Int? = nil, top: Int) -> [Int] {
+-        private func ordered(_ candidates: [Int], side: UInt8, previousBest: Int? = nil, top: Int) -> [Int] {
+             let scored = candidates.map { ($0, orderingScore($0, side)) }
+             return scored.sorted { a, b in
+                 if a.0 == b.0 { return false }
+@@ -347,11 +358,40 @@
+ 
+         private mutating func negamax(depth: Int, alpha: Int, beta: Int,
+                                        toMove side: UInt8, last: Int, ply: Int,
++                                       variation: inout [Int], threatTail: Int) -> Int {
+-                                       variation: inout [Int]) -> Int {
+             nodes += 1
+             if overBudget() { return 0 }
+             if last >= 0 && winningStone(at: last, side: opponent(side)) { return -mate + ply }
++            if !board.contains(0) { return staticValue(toMove: side) }
++            if depth == 0 {
++                // R12 leaf check: exact immediate wins / multiple threat
++                // completions. Forced blocking is expanded only within a
++                // small extra ply budget; unknown outcomes remain heuristic.
++                if threatTail > 0 {
++                    switch EclipseR12LeafThreats.inspect(cells: board, side: side) {
++                    case .ownImmediateWin(let win):
++                        variation = [win]
++                        return mate - ply - 1
++                    case .unavoidableImmediateLoss:
++                        return -mate + ply + 2
++                    case .forcedBlock(let block):
++                        place(block, side)
++                        var child: [Int] = []
++                        let reply = -negamax(
++                            depth: 0, alpha: -beta, beta: -alpha,
++                            toMove: opponent(side), last: block, ply: ply + 1,
++                            variation: &child, threatTail: threatTail - 1
++                        )
++                        unplace(block, side)
++                        if interrupted { return 0 }
++                        variation = [block] + child
++                        return reply
++                    case .quiet:
++                        break
++                    }
++                }
++                return staticValue(toMove: side)
++            }
+-            if depth == 0 || !board.contains(0) { return staticValue(toMove: side) }
+             let tableKey = hash ^ VeilGomokuUnifiedSearch.sideHash[Int(side)]
+             let oldAlpha = alpha
+             if let hit = table[tableKey], hit.depth >= depth {
+@@ -384,16 +424,16 @@
+                 if first {
+                     score = -negamax(depth: depth - 1, alpha: -beta, beta: -lower,
+                                      toMove: opponent(side), last: i, ply: ply + 1,
++                                     variation: &child, threatTail: threatTail)
+-                                     variation: &child)
+                 } else {
+                     score = -negamax(depth: depth - 1, alpha: -lower - 1, beta: -lower,
+                                      toMove: opponent(side), last: i, ply: ply + 1,
++                                     variation: &child, threatTail: threatTail)
+-                                     variation: &child)
+                     if !interrupted && score > lower && score < beta {
+                         child.removeAll()
+                         score = -negamax(depth: depth - 1, alpha: -beta, beta: -lower,
+                                          toMove: opponent(side), last: i, ply: ply + 1,
++                                         variation: &child, threatTail: threatTail)
+-                                         variation: &child)
+                     }
+                 }
+                 unplace(i, side)
+@@ -477,8 +517,12 @@
+             }
+             // A proof search that ran out of time must not be labeled a win.
+             interrupted = false
++            var rootOrdering: [(Int, Int)] = []
++            rootOrdering.reserveCapacity(eligible.count)
++            for root in eligible {
++                let modelScore = orderingScore(root, player)
++                let preference = min(2000, max(-2000, bonuses[root] ?? 0))
++                rootOrdering.append((root, modelScore + preference))
+-            let rootOrdering = eligible.map {
+-                ($0, orderingScore($0, player) + min(2000, max(-2000, bonuses[$0] ?? 0)))
+             }
+             let sorted = rootOrdering.sorted { a, b in
+                 a.1 == b.1 ? a.0 < b.0 : a.1 > b.1
+@@ -500,7 +544,7 @@
+                     let value = -negamax(depth: depth - 1, alpha: -infinity,
+                                           beta: infinity,
+                                           toMove: opponent(player), last: move,
++                                          ply: 1, variation: &childPV, threatTail: limits.r12LeafThreatExtension)
+-                                          ply: 1, variation: &childPV)
+                     unplace(move, player)
+                     if interrupted { break }
+                     let preference = min(2_000, max(-2_000, bonuses[move] ?? 0))
+diff --git a/VeilLink/Agent/Games/VeilGomokuUnifiedBridge.swift b/VeilLink/Agent/Games/VeilGomokuUnifiedBridge.swift
+--- a/VeilLink/Agent/Games/VeilGomokuUnifiedBridge.swift
++++ b/VeilLink/Agent/Games/VeilGomokuUnifiedBridge.swift
+@@ -11,6 +11,7 @@
+         permittedRoots: [Int],
+         rootScores: [Int: Int],
+         difficultyRawValue: String? = nil,
++        experimentalR12: Bool = false,
+         onTrace: (@Sendable (VeilGomokuUnifiedSearch.Trace) -> Void)? = nil
+     ) -> GomokuBotMove? {
+         guard state.winner == nil,
+@@ -55,6 +56,13 @@
+             limits.candidateRadius = budget.candidateRadius
+         }
+ 
++        if experimentalR12 {
++            // Governor may enable this in an isolated equal-time arena ONLY.
++            // The model weights, four persisted tiers and safety gates stay fixed.
++            limits.r12OrderingMemoEnabled = true
++            limits.r12LeafThreatExtension = 2
++        }
++
+         guard let decision = VeilGomokuUnifiedSearch.decide(
+             position, limits: limits,
+             allowedRoot: permittedRoots, rootBonuses: bonuses, trace: onTrace
