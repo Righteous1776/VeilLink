@@ -405,8 +405,10 @@ struct ChatView: View {
         }
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
+    // Split the previous giant ChatView ViewBuilder so Swift can type-check each
+    // live segment independently; scrolling, user actions and modifiers unchanged.
+    private var chatSearchHeader: some View {
+        Group {
             if showsSearchBar {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -443,6 +445,10 @@ struct ChatView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
+        }
+    }
+
+    private var chatMessageTimeline: some View {
             ScrollViewReader { proxy in
                 GeometryReader { viewport in
                 ScrollView {
@@ -596,6 +602,9 @@ struct ChatView: View {
                 }
             }
 
+    }
+
+    private var chatComposerFooter: some View {
             VStack(spacing: 0) {
                 VeilopolyConversationInvitationView(bridge: model.veilopolyMultiplayer,
                     peerIdentityID: conversation.peerIdentityID, presentationID: "chat-" + conversation.id)
@@ -766,6 +775,13 @@ struct ChatView: View {
                 }
                 .offset(y: -1)
             }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            chatSearchHeader
+            chatMessageTimeline
+            chatComposerFooter
         }
         .background(VeilAmbientBackground())
         .navigationTitle("")
