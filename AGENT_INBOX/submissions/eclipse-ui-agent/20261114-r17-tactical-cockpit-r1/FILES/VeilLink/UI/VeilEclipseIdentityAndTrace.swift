@@ -32,7 +32,7 @@ struct VeilEclipseIdentityCard: View {
                         .foregroundColor(VeilEclipseChrome.white)
                     Text(isThinking ? "正在思考" : matchFinished ? "本局结束 · 可查看回放" : "等待落子")
                         .font(.caption)
-                        .foregroundColor(isThinking ? VeilEclipseChrome.green : VeilEclipseChrome.silver)
+                        .foregroundColor(isThinking ? VeilEclipseChrome.accent : VeilEclipseChrome.silver)
                     Text("VeilLink / LOCAL REASONING SYSTEM")
                         .font(.caption2)
                         .foregroundColor(VeilEclipseChrome.muted)
@@ -98,7 +98,7 @@ private struct VeilEclipseAvatar: View {
                 .strokeBorder(VeilEclipseChrome.line, lineWidth: 1)
             Circle()
                 .trim(from: 0.05, to: 0.79)
-                .stroke(VeilEclipseChrome.green.opacity(appearance.isPlainline ? 0.42 : 0.68),
+                .stroke(VeilEclipseChrome.accent.opacity(appearance.isPlainline ? 0.42 : 0.68),
                         style: StrokeStyle(lineWidth: appearance.isPlainline ? 1 : 1.7,
                                            lineCap: .round))
                 .padding(7)
@@ -112,11 +112,11 @@ private struct VeilEclipseAvatar: View {
             .frame(width: 34, height: isThinking ? 6 : 10)
             .offset(y: -1)
             if appearance.isInstrument {
-                VeilIndicatorLamp(active: isThinking, color: VeilEclipseChrome.green)
+                VeilIndicatorLamp(active: isThinking, color: VeilEclipseChrome.accent)
                     .offset(x: 21, y: 24)
             }
         }
-        .shadow(color: appearance.isPlainline ? .clear : VeilEclipseChrome.green.opacity(0.07),
+        .shadow(color: appearance.isPlainline ? .clear : VeilEclipseChrome.accent.opacity(0.07),
                 radius: 6, y: 2)
         .accessibilityHidden(true)
         .allowsHitTesting(false)
@@ -182,7 +182,7 @@ struct VeilEclipseTraceSheet: View {
                     HStack {
                         Label(matchFinished ? "赛后只读回放" : "对局中 · 无落点提示",
                               systemImage: matchFinished ? "lock.shield" : "eye.slash")
-                            .foregroundColor(VeilEclipseChrome.green)
+                            .foregroundColor(VeilEclipseChrome.accent)
                             .font(.caption.weight(.semibold))
                         Spacer()
                     }
@@ -237,7 +237,7 @@ struct VeilEclipseTraceSheet: View {
                                         playing = false
                                     }
                                     .font(.caption.weight(.semibold))
-                                    .foregroundColor(VeilEclipseChrome.green)
+                                    .foregroundColor(VeilEclipseChrome.accent)
                                 }
                             }
                             ForEach(savedMatches) { saved in
@@ -249,7 +249,7 @@ struct VeilEclipseTraceSheet: View {
                                 } label: {
                                     HStack(spacing: 8) {
                                         Image(systemName: "clock.arrow.circlepath")
-                                            .foregroundColor(VeilEclipseChrome.green)
+                                            .foregroundColor(VeilEclipseChrome.accent)
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(saved.status.title + " · \(saved.moves.count) 手")
                                                 .font(.caption.weight(.semibold))
@@ -259,7 +259,7 @@ struct VeilEclipseTraceSheet: View {
                                         }
                                         Spacer()
                                         Image(systemName: selectedMatchID == saved.id ? "checkmark.circle.fill" : "chevron.right")
-                                            .foregroundColor(VeilEclipseChrome.green)
+                                            .foregroundColor(VeilEclipseChrome.accent)
                                     }
                                     .foregroundColor(VeilEclipseChrome.white)
                                     .padding(8)
@@ -271,7 +271,7 @@ struct VeilEclipseTraceSheet: View {
                             if nextOffset != nil {
                                 Button("加载更多历史对局") { loadArchivePage() }
                                     .font(.caption.weight(.semibold))
-                                    .foregroundColor(VeilEclipseChrome.green)
+                                    .foregroundColor(VeilEclipseChrome.accent)
                             }
                             if unreadableCount > 0 {
                                 Text("另有 \(unreadableCount) 份棋谱校验失败，原始文件已保留。")
@@ -406,7 +406,7 @@ private struct EclipseCommittedBoard: View {
                 if frame.lastCommittedIndex == i {
                     let ring = Path(ellipseIn: CGRect(x: x-diameter*0.37, y: y-diameter*0.37,
                                                      width: diameter*0.74, height: diameter*0.74))
-                    ctx.stroke(ring, with: .color(VeilEclipseChrome.green), lineWidth: 1.7)
+                    ctx.stroke(ring, with: .color(VeilEclipseChrome.accent), lineWidth: 1.7)
                 }
             }
         }
