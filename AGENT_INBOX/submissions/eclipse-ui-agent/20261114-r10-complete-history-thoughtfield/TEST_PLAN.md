@@ -40,8 +40,8 @@
 - Xcode/iPhone/iPad/XCTest/thermal/VoiceOver checks NOT EXECUTED.
 
 ## R12 new regression results / gates
-- Standalone Foundation + exact 15x15 turn/legality stub: `swiftc -swift-version 6 -warnings-as-errors -O GomokuStub.swift VeilEclipseSearchTraceStore.swift R12SearchTraceTests.swift` => 27/27 PASS.
-- Re-ran four R10/R11 pure-Swift suites: 39 archive + 18 policy + 35 session + 413 console = 505/505; total 532 checks.
+- Standalone Foundation + exact 15x15 turn/legality stub: `swiftc -swift-version 6 -warnings-as-errors -O GomokuStub.swift VeilEclipseSearchTraceStore.swift R12SearchTraceTests.swift` => 33/33 PASS.
+- Re-ran four R10/R11 pure-Swift suites: 39 archive + 18 policy + 35 session + 413 console = 505/505; total 538 checks.
 - Renderer SwiftUI parse-only under Swift 5 frontend => PASS; not actual Apple typecheck.
 - Rebuilt unified PATCH.diff from exact current-main text, checked 35 hunks on 12 paths: preimage and source-text match. This is an in-memory exact-main preflight, not a full Apple CI/Xcode run.
 - REQUIRED: iOS build/XCTest, 3ply native signal from actual iPhone/iPad with Swift actor isolation, cancellation/new-match stress, high-tier search temperature and performance, VoiceOver/Reduce Motion.
