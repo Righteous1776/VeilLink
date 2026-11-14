@@ -1,0 +1,545 @@
+diff --git a/VeilLink/Agent/Games/GomokuBot.swift b/VeilLink/Agent/Games/GomokuBot.swift
+--- a/VeilLink/Agent/Games/GomokuBot.swift
++++ b/VeilLink/Agent/Games/GomokuBot.swift
+@@ -5,6 +5,7 @@
+     let score: Int
+     let nodes: Int
+     let elapsedMilliseconds: Int
++    var engineLabel: String? = nil
+ }
+ 
+ struct GomokuBotBudget: Equatable, Sendable {
+@@ -77,7 +78,11 @@
+         formationPreference: GomokuFormationPreference = .disabled,
+         diagnosticCounterForkR4: Bool = true,
+         diagnosticUseR6Defense: Bool = true,
+-        diagnosticR8ForcedWin: Bool = true
++        diagnosticR8ForcedWin: Bool = true,
++        diagnosticEclipseUnified: Bool = true,
++        difficultyRawValue: String? = nil,
++        onExploredLine: (@Sendable ([Int], Int) -> Void)? = nil,
++        onNativeTrace: (@Sendable (VeilGomokuUnifiedSearch.Trace) -> Void)? = nil
+     ) -> GomokuBotMove? {
+         guard state.winner == nil,
+               !state.isDraw,
+@@ -173,6 +178,29 @@
+             }
+             .prefix(max(1, budget.rootCandidateLimit))
+ 
++        // ECLIPSE R10: preserve all incumbent mandatory rules and learned
++        // root scores, then search with the trained entire-tree ordering.
++        // The real rules below the bridge remain the final legality gate.
++        let remainingMilliseconds = Int(max(0, (deadline - Date.timeIntervalSinceReferenceDate) * 1_000))
++        let unifiedBudget = GomokuBotBudget(
++            candidateRadius: budget.candidateRadius,
++            rootCandidateLimit: budget.rootCandidateLimit,
++            replyCandidateLimit: budget.replyCandidateLimit,
++            continuationCandidateLimit: budget.continuationCandidateLimit,
++            timeLimitMilliseconds: remainingMilliseconds
++        )
++        if diagnosticEclipseUnified, remainingMilliseconds >= 30,
++           let unified = VeilGomokuUnifiedBridge.chooseMove(
++                in: state, for: player, budget: unifiedBudget,
++                permittedRoots: rankedRoots.map { $0.0 },
++                rootScores: Dictionary(uniqueKeysWithValues: rankedRoots.map { ($0.0, $0.1) }),
++                difficultyRawValue: difficultyRawValue,
++                onExploredLine: onExploredLine,
++                onTrace: onNativeTrace
++           ) {
++            return unified
++        }
++
+         // A time budget is a *search-quality* bound, not permission to return
+         // no move in an otherwise legal position. A delayed worker can enter
+         // the root loop after its deadline, so retain the best ranked legal
+@@ -186,6 +214,7 @@
+             nodes += 1
+             var next = state
+             guard next.apply(index: index, actor: player) else { continue }
++            onExploredLine?([index], nodes)
+ 
+             var score = priority + staticEvaluation(next, root: player)
+             if next.winner == player {
+@@ -214,6 +243,7 @@
+                     nodes += 1
+                     var afterReply = next
+                     guard afterReply.apply(index: reply, actor: opponent) else { continue }
++                    onExploredLine?([index, reply], nodes)
+                     var replyScore: Int
+                     if afterReply.winner == opponent {
+                         replyScore = lossScore
+@@ -250,6 +280,7 @@
+                                 nodes += 1
+                                 var afterContinuation = afterReply
+                                 guard afterContinuation.apply(index: continuation, actor: player) else { continue }
++                                onExploredLine?([index, reply, continuation], nodes)
+                                 let continuationScore = afterContinuation.winner == player
+                                     ? winScore
+                                     : staticEvaluation(afterContinuation, root: player)
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -72,6 +72,9 @@
+     @Published private(set) var isAIThinking = false
+     @Published private(set) var lastDecisionMode = "基础策略"
+     @Published private(set) var lastDecisionMilliseconds: Int?
++    @Published private(set) var eclipseSearchStartedAt: Date?
++    @Published private(set) var eclipseLiveMetrics: VeilEclipseTracePolicy.LiveMetrics?
++    @Published private(set) var eclipseVisualizationEnabled = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
+     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
+     @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
+     @Published private(set) var boardSearchMode = BoardSearchMode.restore(
+@@ -96,6 +99,7 @@
+     @Published private(set) var developerFormationCount = 0
+     @Published private(set) var didRestoreBoardMatch = false
+     @Published private(set) var boardMatchSaveWarning: String?
++    @Published private(set) var eclipseArchiveWarning: String?
+ 
+     let game: MiniGameKind
+     @Published private(set) var humanPlayer: MiniGamePlayer = .host
+@@ -113,6 +117,8 @@
+ 
+     private var aiTask: Task<Void, Never>?
+     private let boardMatchStore: LocalBoardMatchStore?
++    private let eclipseArchive: VeilGomokuMatchArchive?
++    let eclipseTraceStore = VeilEclipseSearchTraceStore()
+     private var boardMatchMoves: [LocalBoardMatchMove] = []
+     private var boardMatchRecoveryBlocked = false
+     private var inSeparateTeachingSession = false
+@@ -137,6 +143,7 @@
+         // The real hall injects durable storage. Standalone controllers/tests
+         // remain fresh and do not contaminate each other's default directory.
+         self.boardMatchStore = game == .gomoku || game == .xiangqi ? matchStore : nil
++        self.eclipseArchive = game == .gomoku ? VeilGomokuMatchArchive() : nil
+         let resolvedLearningStore = learningStore ?? AdaptiveBoardLearningStore.store(for: game)
+         self.learningStore = resolvedLearningStore
+         self.formationLibrary = formationLibrary
+@@ -180,6 +187,9 @@
+             if outcome != .playing { learningPlies.removeAll() }
+             didRestoreBoardMatch = true
+             boardMatchSaveWarning = nil
++            if game == .gomoku {
++                _ = persistEclipseArchive(status: eclipseArchiveStatus)
++            }
+         } catch {
+             boardMatchRecoveryBlocked = true
+             boardMatchSaveWarning = "存档校验失败：旧文件保留；可以导出黑匣子或明确点击“重开”。"
+@@ -190,6 +200,7 @@
+         guard let disk = boardMatchStore, !inSeparateTeachingSession else { return }
+         boardMatchMoves.append(.init(actor: actor, move: move))
+         guard !boardMatchRecoveryBlocked else { return }
++        if game == .gomoku { _ = persistEclipseArchive(status: .playing) }
+         do {
+             try disk.save(.init(
+                 version: LocalBoardMatchRecord.version, game: game,
+@@ -223,6 +234,75 @@
+ 
+     var learningStoreAvailable: Bool { learningStore.lastSaveSucceeded }
+ 
++    func setEclipseVisualizationEnabled(_ enabled: Bool) {
++        guard game == .gomoku else { return }
++        eclipseVisualizationEnabled = enabled
++        UserDefaults.standard.set(enabled, forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
++        if !enabled { eclipseTraceStore.clear() }
++    }
++
++    private var eclipseArchiveStatus: VeilGomokuMatchArchive.Status {
++        switch outcome {
++        case .playing: return .playing
++        case .humanWon: return .humanWon
++        case .aiWon: return .aiWon
++        case .draw: return .draw
++        }
++    }
++
++    @discardableResult
++    private func persistEclipseArchive(status: VeilGomokuMatchArchive.Status) -> Bool {
++        guard game == .gomoku, let archive = eclipseArchive, !inSeparateTeachingSession,
++              !boardMatchMoves.isEmpty else { return true }
++        var records: [VeilGomokuMatchArchive.Move] = []
++        records.reserveCapacity(boardMatchMoves.count)
++        for item in boardMatchMoves {
++            guard item.move.from == nil, item.move.piece == nil, let index = item.move.to else {
++                eclipseArchiveWarning = "历史棋谱校验失败，当前对局未覆盖。"
++                return false
++            }
++            records.append(.init(index: index, stone: item.actor == .host ? 1 : 2))
++        }
++        do {
++            try archive.save(sessionID: sessionID, moves: records,
++                             difficulty: boardDifficulty.rawValue,
++                             humanStone: humanPlayer == .host ? 1 : 2,
++                             status: status)
++            eclipseArchiveWarning = nil
++            return true
++        } catch {
++            eclipseArchiveWarning = "历史对局归档失败：\(error.localizedDescription)"
++            return false
++        }
++    }
++
++    func eclipseHistoryPage(offset: Int, limit: Int) -> VeilGomokuMatchArchive.Page? {
++        guard game == .gomoku, outcome != .playing, let archive = eclipseArchive else {
++            return nil // Never expose spatial history while user match is ongoing.
++        }
++        do { return try archive.page(offset: offset, limit: limit) }
++        catch {
++            eclipseArchiveWarning = "读取历史对局失败：\(error.localizedDescription)"
++            return nil
++        }
++    }
++
++    var eclipseCompletedMoveHistory: [VeilEclipseTracePolicy.PlacedMove] {
++        guard game == .gomoku, outcome != .playing,
++              !inSeparateTeachingSession, !developerTeachingMode else { return [] }
++        let moves = boardMatchMoves.compactMap { record -> VeilEclipseTracePolicy.PlacedMove? in
++            guard record.move.from == nil, record.move.piece == nil,
++                  let index = record.move.to else { return nil }
++            return .init(index: index, stone: record.actor == .host ? 1 : 2)
++        }
++        guard moves.count == boardMatchMoves.count else { return [] }
++        let frames = VeilEclipseTracePolicy.replayFrames(
++            moves, matchFinished: true, separateReadOnlyPanel: true,
++            expectedFinalBoard: gomoku.board.map { UInt8($0) }
++        )
++        return frames.isEmpty ? [] : moves
++    }
++
+     var statusText: String {
+         switch outcome {
+         case .humanWon: return "你赢了"
+@@ -235,9 +315,18 @@
+     }
+ 
+     func restart(startAI: Bool = true) {
++        if game == .gomoku { eclipseTraceStore.clear(); eclipseLiveMetrics = nil }
++        // Keep every move before the legacy latest-match file is discarded.
++        // Failure blocks restart rather than silently sacrificing the match.
++        if game == .gomoku, outcome == .playing, !boardMatchMoves.isEmpty,
++           !persistEclipseArchive(status: .playing) { return }
+         if let disk = boardMatchStore {
+             do {
+                 try disk.discardOnExplicitRestart()
++                if game == .gomoku, !boardMatchMoves.isEmpty {
++                    // The playing snapshot already exists if this step fails.
++                    _ = persistEclipseArchive(status: outcome == .playing ? .interrupted : eclipseArchiveStatus)
++                }
+                 boardMatchMoves.removeAll()
+                 boardMatchRecoveryBlocked = false
+                 boardMatchSaveWarning = nil
+@@ -270,6 +359,7 @@
+         developerTeachingMode = false
+         lastDecisionMode = "规则 Bot"
+         lastDecisionMilliseconds = nil
++        eclipseSearchStartedAt = nil
+         if startAI { scheduleAIIfNeeded() }
+     }
+ 
+@@ -292,7 +382,7 @@
+             return
+         }
+         developerTeachingMode = enabled
+-        if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false }
++        if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false; eclipseSearchStartedAt = nil; eclipseTraceStore.clear(); eclipseLiveMetrics = nil }
+         if !enabled && inSeparateTeachingSession {
+             restoreAfterTeaching()
+         }
+@@ -323,6 +413,9 @@
+         gomoku = GomokuState()
+         outcome = .playing
+         isAIThinking = false
++        eclipseSearchStartedAt = nil
++        eclipseTraceStore.clear()
++        eclipseLiveMetrics = nil
+         sessionID = UUID().uuidString
+         developerFormationPlies.removeAll(keepingCapacity: true)
+         developerTeachingMode = true
+@@ -595,9 +688,11 @@
+     }
+ 
+     func cancelAI() {
++        if game == .gomoku { eclipseTraceStore.clear(); eclipseLiveMetrics = nil }
+         stopNativeTraining()
+         aiTask?.cancel(); aiTask = nil
+         isAIThinking = false
++        eclipseSearchStartedAt = nil
+         // Navigation is not a resignation; leave unsaved learning plies intact.
+     }
+ 
+@@ -686,6 +781,9 @@
+             else if magneticHockey.isDraw { outcome = .draw }
+         }
+         guard !developerTeachingMode else { return }
++        if game == .gomoku, outcome != .playing {
++            _ = persistEclipseArchive(status: eclipseArchiveStatus)
++        }
+         switch outcome {
+         case .humanWon: finalizeLearning(as: .humanWon)
+         case .aiWon: finalizeLearning(as: .aiWon)
+@@ -714,10 +812,14 @@
+             try? await Task.sleep(nanoseconds: 180_000_000)
+             guard !Task.isCancelled else { return }
+             let started = Date()
++            self.eclipseSearchStartedAt = self.game == .gomoku ? started : nil
++            self.eclipseLiveMetrics = nil
+             let selected = await self.selectAIMove()
+             guard !Task.isCancelled else { return }
+             if let selected { self.applyAI(selected) }
++            if self.game == .gomoku { self.eclipseTraceStore.clear() }
+             self.lastDecisionMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
++            self.eclipseSearchStartedAt = nil
+             self.isAIThinking = false
+             self.aiTask = nil
+             self.updateOutcome()
+@@ -748,37 +850,44 @@
+                 opponentHistory: learningPlies.filter { $0.actor == .host }.compactMap { Int($0.action) },
+                 discovered: formationDiscovery.eligibleSignatures
+             )
+-            var chosen: GomokuBotMove?
+-            var engineName = "原生"
+-            // Native tactics are the only engine that currently consumes these
+-            // formation preferences. Do not claim PVS/VCF uses them.
+-            if useExternalGomokuEngine && !preference.enabled && !nativeActive {
+-                // A standalone JavaScriptCore actor; the external engine never
+-                // touches gameplay/DB and is validated by our own rule gate.
+-                let external = await VeilOfflineGomokuEngine.shared.chooseMove(
+-                    in: snapshot,
+-                    for: computer,
+-                    timeLimitMilliseconds: budget.timeLimitMilliseconds,
+-                    maxDepth: boardDifficulty == .master ? 7 : boardDifficulty == .advanced ? 5 : 3
+-                )
+-                if let external {
+-                    var trial = snapshot
+-                    if trial.apply(index: external.index, actor: computer) {
+-                        chosen = external
+-                        engineName = "PVS/VCF"
++            // Single native decision entry. Legacy JSCore preference is
++            // intentionally ignored for compatibility; no two-engine branch.
++            let traceStore = eclipseTraceStore
++            let traceToken = (eclipseVisualizationEnabled && !inSeparateTeachingSession)
++                ? traceStore.begin(sessionID: sessionID, board: snapshot) : nil
++            let branchObserver: (@Sendable ([Int], Int) -> Void)?
++            if let traceToken {
++                branchObserver = { indices, nodes in
++                    _ = traceStore.record(indices, nodes: nodes, token: traceToken)
++                }
++            } else { branchObserver = nil }
++            let observedSessionID = sessionID
++            let observedTurn = snapshot.moveCount
++            let nativeTrace: @Sendable (VeilGomokuUnifiedSearch.Trace) -> Void = { [weak self] event in
++                Task { @MainActor [weak self] in
++                    guard let self,
++                          self.sessionID == observedSessionID,
++                          self.gomoku.moveCount == observedTurn,
++                          self.isAIThinking, self.outcome == .playing else { return }
++                    if event.completedDepth > 0 || event.nodes > 0 {
++                        self.eclipseLiveMetrics = VeilEclipseTracePolicy.LiveMetrics(
++                            completedDepth: event.completedDepth > 0 ? event.completedDepth : nil,
++                            visitedNodes: max(0, event.nodes)
++                        )
+                     }
+                 }
+             }
+-            if chosen == nil {
+-                chosen = await Task.detached(priority: .userInitiated) {
+-                    GomokuBot.chooseMove(
+-                        in: snapshot, for: computer, budget: budget,
+-                        learning: learning, formationPreference: preference
+-                    )
+-                }.value
+-            }
++            let difficultyValue = boardDifficulty.rawValue
++            let chosen = await Task.detached(priority: .userInitiated) {
++                GomokuBot.chooseMove(
++                    in: snapshot, for: computer, budget: budget,
++                    learning: learning, formationPreference: preference,
++                    difficultyRawValue: difficultyValue,
++                    onExploredLine: branchObserver,
++                    onNativeTrace: nativeTrace
++                )
++            }.value
+             guard let result = chosen else { return nil }
+-
+             var ruleGate = gomoku
+             guard ruleGate.apply(index: result.index, actor: computer) else { return nil }
+             let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
+@@ -787,13 +896,10 @@
+             // External PVS/VCF does NOT consume AdaptiveBoardLearningSnapshot:
+             // reporting its training level or Owner formation as applied would
+             // misrepresent actual search inputs.
+-            if engineName == "原生" {
+-                lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)\(formationLabel)"
+-                    + (preference.enabled ? " · \(preference.mode.title)" : "")
+-                    + (nativeActive ? " · 原生实战训练 \(trainedNativeGames) 局" : "")
+-            } else {
+-                lastDecisionMode = "五子棋 · PVS/VCF · \(boardDifficulty.title)"
+-            }
++            let title = result.engineLabel.map { "五子棋 · \($0)" } ?? "五子棋"
++            lastDecisionMode = "\(title) · \(boardDifficulty.title)\(learned)\(formationLabel)"
++                + (preference.enabled ? " · \(preference.mode.title)" : "")
++                + (nativeActive ? " · 原生实战训练 \(trainedNativeGames) 局" : "")
+             return AgentActionCandidate(
+                 actionID: "gomoku:\(result.index)",
+                 encodedAction: AgentGameEncoding.encodeInts([result.index]),
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -337,6 +337,7 @@
+     @State private var showsBoardAdvanced = false
+     @State private var showsLearningImporter = false
+     @State private var showsLearningShare = false
++    @State private var showsEclipseTrace = false
+     @State private var learningExportURL: URL?
+     @State private var learningExchangeMessage: String?
+     @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
+@@ -360,7 +361,19 @@
+         ScrollView {
+             VStack(spacing: 14) {
+                 statusCard
+-                if VeilOpponentAvatarPolicy.shouldRender(
++                if game == .gomoku {
++                    VeilEclipseIdentityCard(
++                        // The controller starts a 180ms pre-search pause;
++                        // show actual computation effects only after its timestamp exists.
++                        isThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
++                        matchFinished: controller.outcome != .playing,
++                        lastCompletedMilliseconds: controller.lastDecisionMilliseconds,
++                        actualSearchStartedAt: controller.eclipseSearchStartedAt,
++                        difficultyTitle: controller.boardDifficulty.title,
++                        openTrace: { showsEclipseTrace = true }
++                    )
++                    .veilCard()
++                } else if VeilOpponentAvatarPolicy.shouldRender(
+                     enabled: grokBotEnabled, hasComputerOpponent: true
+                 ) {
+                     HStack(spacing: 12) {
+@@ -425,6 +438,23 @@
+         .sheet(isPresented: $showsTacticalGuide) {
+             TacticalSoloGuideView()
+         }
++        .sheet(isPresented: $showsEclipseTrace) {
++            if game == .gomoku {
++                VeilEclipseTraceSheet(
++                    isThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
++                    matchFinished: controller.outcome != .playing,
++                    lastCompletedMilliseconds: controller.lastDecisionMilliseconds,
++                    actualSearchStartedAt: controller.eclipseSearchStartedAt,
++                    committedMoves: controller.eclipseCompletedMoveHistory,
++                    difficultyTitle: controller.boardDifficulty.title,
++                    searchModeTitle: controller.boardSearchMode.title,
++                    liveMetrics: controller.eclipseLiveMetrics, // Sanitized measured native events only.
++                    archivedMatchPage: { offset, limit in
++                        controller.eclipseHistoryPage(offset: offset, limit: limit)
++                    }
++                )
++            }
++        }
+         .sheet(isPresented: $showsLearningShare, onDismiss: {
+             if let learningExportURL {
+                 try? FileManager.default.removeItem(at: learningExportURL)
+@@ -524,6 +554,11 @@
+                             .font(.caption2)
+                             .foregroundColor(.orange)
+                     }
++                    if let warning = controller.eclipseArchiveWarning, game == .gomoku {
++                        Text(warning)
++                            .font(.caption2)
++                            .foregroundColor(VeilTheme.danger)
++                    }
+                 }
+                 Spacer()
+                 if controller.isAIThinking {
+@@ -643,18 +678,31 @@
+                 .fixedSize(horizontal: false, vertical: true)
+             if game == .gomoku {
+                 Toggle(isOn: Binding(
+-                    get: { controller.useExternalGomokuEngine },
+-                    set: { controller.setExternalGomokuEngineEnabled($0) }
++                    get: { controller.eclipseVisualizationEnabled },
++                    set: { controller.setEclipseVisualizationEnabled($0) }
+                 )) {
+                     VStack(alignment: .leading, spacing: 2) {
+-                        Text("离线强力引擎 · PVS/VCF")
++                        Text("棋盘思考可视化").font(.caption.weight(.semibold))
++                        Text("仅原生搜索显示真实分支；可能透露策略，默认关闭。")
++                            .font(.caption2).foregroundColor(VeilTheme.secondaryText)
++                    }
++                }
++                .tint(VeilTheme.gold)
++                .accessibilityIdentifier("gomoku.eclipse.live-trace.toggle")
++                HStack(spacing: 8) {
++                    Image(systemName: "cpu")
++                        .foregroundColor(VeilTheme.gold)
++                    VStack(alignment: .leading, spacing: 2) {
++                        Text("ECLIPSE · 原生训练引擎")
+                             .font(.caption.weight(.semibold))
+-                        Text("独立离线引擎；异常自动回退，不改写棋谱。")
++                        Text("统一战术安全门 · 训练排序 · 原生 PVS 搜索")
+                             .font(.caption2)
+                             .foregroundColor(VeilTheme.secondaryText)
+                     }
++                    Spacer(minLength: 0)
+                 }
+-                .tint(VeilTheme.gold)
++                .padding(9)
++                .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                 Menu {
+                     ForEach(GomokuFormationMode.allCases) { mode in
+                         Button {
+@@ -828,7 +876,14 @@
+                         && model.appLock.isEnabled
+                         && !model.appLock.isLocked
+                         && developerLearningGate.canImportTraining()
+-                )
++                ),
++                eclipseThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
++                actualSearchStartedAt: controller.eclipseSearchStartedAt,
++                eclipseVisualizationEnabled: controller.eclipseVisualizationEnabled,
++                eclipseTraceStore: controller.eclipseTraceStore,
++                eclipseSessionID: controller.sessionID,
++                eclipseBoardTurn: controller.gomoku.moveCount,
++                eclipseMatchPlaying: controller.outcome == .playing
+             ) { index in
+                 if controller.developerTeachingMode,
+                    ownerMode.isAuthorized(for: .developerTraining),
+diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
+--- a/VeilLink/UI/MiniGameViews.swift
++++ b/VeilLink/UI/MiniGameViews.swift
+@@ -1454,6 +1454,13 @@
+     let state: GomokuState
+     let localPlayer: MiniGamePlayer
+     let enabled: Bool
++    var eclipseThinking = false
++    var actualSearchStartedAt: Date? = nil
++    var eclipseVisualizationEnabled = false
++    var eclipseTraceStore: VeilEclipseSearchTraceStore? = nil
++    var eclipseSessionID = ""
++    var eclipseBoardTurn = 0
++    var eclipseMatchPlaying = true
+     let onMove: (Int) -> Void
+ 
+     private let starPoints = [48, 56, 112, 168, 176]
+@@ -1478,6 +1485,23 @@
+                         Circle().fill(Color.white.opacity(0.42)).frame(width: 4.2, height: 4.2).position(point)
+                     }
+ 
++                    // Purely decorative; has NO board data/search scores and
++                    // cannot intercept touches or provide a move recommendation.
++                    if eclipseThinking && eclipseVisualizationEnabled,
++                       let eclipseTraceStore {
++                        VeilEclipseBoardThoughtField(
++                            isThinking: eclipseThinking,
++                            actualSearchStartedAt: actualSearchStartedAt,
++                            enabled: eclipseVisualizationEnabled,
++                            searchTrace: eclipseTraceStore,
++                            sessionID: eclipseSessionID,
++                            turn: eclipseBoardTurn,
++                            matchPlaying: eclipseMatchPlaying
++                        )
++                        .frame(width: side, height: side)
++                        .allowsHitTesting(false)
++                    }
++
+                     if state.winningLine.count >= 5,
+                        let first = state.winningLine.first,
+                        let last = state.winningLine.last {
