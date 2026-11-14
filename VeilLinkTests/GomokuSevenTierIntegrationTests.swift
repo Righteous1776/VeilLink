@@ -1,4 +1,5 @@
 import XCTest
+@testable import VeilLink
 
 /// Regression of V9 seven-tier budget plan atop the R14 native search.
 final class GomokuSevenTierIntegrationTests: XCTestCase {
