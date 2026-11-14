@@ -204,7 +204,8 @@ struct LingCoreTinyChatView: View {
                         ForEach(chat.messages) { message in
                             HStack {
                                 if message.role == .user { Spacer(minLength: 40) }
-                                Text(message.text.isEmpty ? "…" : message.text)
+                                VeilInlineGlyphText.render(message.text.isEmpty ? "…" : message.text)
+                                    .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: message.text))
                                     .font(.system(size: 14))
                                     .foregroundColor(message.role == .user ? .black : VeilTheme.text)
                                     .padding(12)
