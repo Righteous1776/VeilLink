@@ -6,4 +6,5 @@
 4. **Theme scope**: current hard-coded surface colors in nested game/third-party screens may not fully inherit FORGE palette. This R1 installs the shell and selected system panels, not a claim that every hard-coded UI has been redesigned. Audit remaining screens after actual iOS visual review.
 5. **Legacy device/SwiftUI**: TimelineView, gradient layers and stator ticks require iOS simulator and physical-device validation. Existing VeilMotionPolicy and app lifecycle gates minimize but do not prove zero performance impact.
 6. **Data truthfulness**: RF/CPU rotor only reflects state; cannot infer clock rates/search depth; actual BLE health score is a diagnostic scalar, not signal strength or throughput.
-7. **No release authority**: Inbox-only five-document submission; no product files, main, version, signing, workflows or IPA changed.
+7. **Theme token integration (corrected 2026-11-14)**: R1 initially referred to unavailable `VeilTheme.metalTop` and `VeilTheme.metalBottom` accessors. The Inbox patch has been corrected to use the existing appearance palette's metal fields. Still requires a full Xcode compile before promotion.
+8. **No release authority**: Inbox-only five-document submission; no product files, main, version, signing, workflows or IPA changed.
