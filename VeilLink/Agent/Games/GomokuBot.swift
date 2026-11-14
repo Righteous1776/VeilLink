@@ -39,6 +39,15 @@ struct GomokuBotBudget: Equatable, Sendable {
             return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: legacy ? 22 : 36, replyCandidateLimit: legacy ? 14 : 22, continuationCandidateLimit: legacy ? 6 : 14, timeLimitMilliseconds: legacy ? 240 : 520)
         case .master:
             return GomokuBotBudget(candidateRadius: legacy ? 2 : 3, rootCandidateLimit: legacy ? 28 : 48, replyCandidateLimit: legacy ? 16 : 30, continuationCandidateLimit: legacy ? 8 : 20, timeLimitMilliseconds: legacy ? 420 : 950)
+        case .grandmaster, .legendary, .zenith:
+            let master = forDifficulty(.master, profileLabel: profileLabel)
+            return GomokuBotBudget(
+                candidateRadius: master.candidateRadius,
+                rootCandidateLimit: master.rootCandidateLimit,
+                replyCandidateLimit: master.replyCandidateLimit,
+                continuationCandidateLimit: master.continuationCandidateLimit,
+                timeLimitMilliseconds: master.timeLimitMilliseconds * difficulty.searchBudgetMultiplier
+            )
         }
     }
 
@@ -52,7 +61,8 @@ struct GomokuBotBudget: Equatable, Sendable {
             continuationCandidateLimit: continuationCandidateLimit == 0
                 ? 0
                 : min(22, continuationCandidateLimit + reinforcement),
-            timeLimitMilliseconds: min(1_100, timeLimitMilliseconds + reinforcement * 45)
+            // Never shrink or clip an explicitly selected 2×/4×/6× tier.
+            timeLimitMilliseconds: min(max(1_100, timeLimitMilliseconds), timeLimitMilliseconds + reinforcement * 45)
         )
     }
 

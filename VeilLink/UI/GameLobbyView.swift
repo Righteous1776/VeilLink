@@ -581,7 +581,7 @@ struct LocalAIGameView: View {
     private var boardQuickControls: some View {
         HStack(spacing: 12) {
             Menu {
-                ForEach(BoardBotDifficulty.allCases) { difficulty in
+                ForEach(game == .gomoku ? BoardBotDifficulty.allCases : BoardBotDifficulty.xiangqiCases) { difficulty in
                     Button {
                         controller.setBoardDifficulty(difficulty)
                         model.haptics.selection()

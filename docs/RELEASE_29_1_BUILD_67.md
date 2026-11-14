@@ -18,3 +18,7 @@ Incremental ECLIPSE R14 integration on top of V29.0 Build 66; all existing commu
 Publication is gated on the exact integration head passing full macOS Xcode/iOS CI and XCTest, unsigned iPhoneOS compilation, IPA integrity and resource exclusion checks. Prior isolated Linux source assertions do NOT establish shipped-product acceptance. New equal-budget, color-swapped independent Gomoku matches, iPhone/iPad thermal testing, long-run search cancellation/archive migration and real two-phone communication acceptance remain NOT_RUN unless evidenced elsewhere.
 
 IPA is unsigned; owner-side compatible signing/installation is required. Do not describe a PR candidate as a released artifact.
+
+## Gomoku seven-tier acceptance scope
+
+ECLIPSE retains the four existing Gomoku levels and adds 棋圣 (2×), 传奇 (4×), and 天元 (6×) **search-compute budgets** above 宗师. These factors refer to the maximum root/search budget, not measured playing strength or Elo. Xiangqi retains four levels. Existing saved game difficulty values continue to deserialize, with Gomoku-only values guarded on Xiangqi restore. Advanced tiers have not passed independent equal-time game tournaments or device thermal acceptance.
