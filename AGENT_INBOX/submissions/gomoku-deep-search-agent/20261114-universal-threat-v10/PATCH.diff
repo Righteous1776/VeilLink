@@ -1,0 +1,288 @@
+diff --git a/VeilLink/Agent/Games/GomokuUniversalThreatV10.swift b/VeilLink/Agent/Games/GomokuUniversalThreatV10.swift
+new file mode 100644
+index 0000000..f4cb171
+--- /dev/null
++++ b/VeilLink/Agent/Games/GomokuUniversalThreatV10.swift
+@@ -0,0 +1,171 @@
++import Foundation
++
++/// VeilLink V10: a conservative, full-defense proof of a three-attack-turn win.
++///
++/// V9 proves forcing-four chains where one immediate-five completion forces a
++/// unique block. V10 additionally covers selected open-three attacks where the
++/// defender may choose ANY legal square. It claims a win only after verifying
++/// that every one of those replies still allows a safe double-five fork.
++///
++/// This module NEVER labels an unexamined candidate "safe" or "winning".
++/// A timeout, cancellation, or node-cap exhaustion yields nil (unknown).
++/// In an active match, this proof is private engine data: do not expose its
++/// coordinates or response lines to ECLIPSE's human-facing UI.
++enum GomokuUniversalThreatV10 {
++    struct Certificate: Equatable, Sendable {
++        let firstMove: Int
++        let defenderRepliesChecked: Int
++        let workUnitsChecked: Int
++        let verifiedBy: String
++    }
++
++    private static let cells = GomokuState.size * GomokuState.size
++    private static let directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
++
++    /// A sufficient, not necessary, VCT proof under unrestricted Gomoku rules.
++    /// The returned root has no immediate five threat; after any opponent move,
++    /// the attacker can produce two distinct immediate-five completions while
++    /// ensuring the opponent cannot win before either completion is played.
++    static func provenThreeTurnOpener(
++        in state: GomokuState,
++        for attacker: MiniGamePlayer,
++        roots: [Int],
++        deadline: TimeInterval,
++        nodeCap: Int = 10_000
++    ) -> Certificate? {
++        guard state.currentPlayer == attacker,
++              state.winner == nil, !state.isDraw,
++              nodeCap > 0, !roots.isEmpty else { return nil }
++        var verifier = Verifier(deadline: deadline, cap: nodeCap)
++        for root in roots {
++            guard verifier.available else { return nil }
++            guard (0..<cells).contains(root), state.value(at: root) == 0 else { continue }
++            var afterRoot = state
++            guard afterRoot.apply(index: root, actor: attacker) else { continue }
++            verifier.used += 1
++            // Already solved by mandatory own-win and R8/V9 four-threat gates.
++            guard afterRoot.winner == nil, !afterRoot.isDraw,
++                  !hasImmediateFive(afterRoot, stone: attacker == .host ? 1 : 2)
++            else { continue }
++
++            // If the opponent can win right now, its winning move is a legal
++            // answer that refutes this opener. There is nothing to enumerate.
++            let defender = attacker.opponent
++            let enemyStone: Int8 = defender == .host ? 1 : 2
++            guard !hasImmediateFive(afterRoot, stone: enemyStone) else { continue }
++
++            // An opponent's added stone can only REMOVE our potential forks,
++            // never create one. Therefore it is safe to precompute the full
++            // fork-producing root list once and revalidate after each reply.
++            var possibleForks: [Int] = []
++            for index in 0..<cells where afterRoot.value(at: index) == 0 {
++                guard verifier.available else { return nil }
++                verifier.used += 1
++                if GomokuCounterForkR4.createsForcedDoubleWin(
++                    in: afterRoot, player: attacker, virtualPlacement: index
++                ) { possibleForks.append(index) }
++            }
++            guard !possibleForks.isEmpty else { continue }
++
++            var allDefensesCovered = true
++            var defenderCount = 0
++            for defense in 0..<cells where afterRoot.value(at: defense) == 0 {
++                guard verifier.available else { return nil }
++                var afterDefense = afterRoot
++                guard afterDefense.apply(index: defense, actor: defender) else {
++                    allDefensesCovered = false
++                    break
++                }
++                verifier.used += 1
++                defenderCount += 1
++                if afterDefense.winner == defender || afterDefense.isDraw {
++                    allDefensesCovered = false
++                    break
++                }
++
++                // The defender just played. Its next possible move comes
++                // after our fork-producing move. Any existing immediate five
++                // must be occupied by our reply; otherwise it beats the fork.
++                let defenderWins = winningCells(afterDefense, stone: enemyStone)
++                if defenderWins.count > 1 {
++                    allDefensesCovered = false
++                    break
++                }
++                var responseWorks = false
++                for reply in possibleForks where afterDefense.value(at: reply) == 0 {
++                    guard verifier.available else { return nil }
++                    verifier.used += 1
++                    // A defender immediate five is blocked only when our new
++                    // stone occupies its unique winning square.
++                    if let mustBlock = defenderWins.first, reply != mustBlock { continue }
++                    if GomokuCounterForkR4.createsForcedDoubleWin(
++                        in: afterDefense, player: attacker, virtualPlacement: reply
++                    ) {
++                        responseWorks = true
++                        break
++                    }
++                }
++                if !responseWorks {
++                    allDefensesCovered = false
++                    break
++                }
++            }
++            if allDefensesCovered, defenderCount > 0 {
++                guard verifier.available else { return nil }
++                return Certificate(
++                    firstMove: root,
++                    defenderRepliesChecked: defenderCount,
++                    workUnitsChecked: verifier.used,
++                    verifiedBy: "exhaustive-defender-double-fork"
++                )
++            }
++        }
++        return nil
++    }
++
++    private struct Verifier {
++        let deadline: TimeInterval
++        let cap: Int
++        var used = 0
++        var available: Bool {
++            used < cap && Date.timeIntervalSinceReferenceDate < deadline
++                && !Task<Never, Never>.isCancelled
++        }
++    }
++
++    /// Geometry-only hypothetical immediate wins; it does not change turn.
++    private static func winningCells(_ board: GomokuState, stone: Int8) -> [Int] {
++        var out: [Int] = []
++        for index in 0..<cells where board.value(at: index) == 0 {
++            if makesFive(board, index: index, stone: stone) { out.append(index) }
++        }
++        return out
++    }
++
++    private static func hasImmediateFive(_ board: GomokuState, stone: Int8) -> Bool {
++        for index in 0..<cells where board.value(at: index) == 0 {
++            if makesFive(board, index: index, stone: stone) { return true }
++        }
++        return false
++    }
++
++    private static func makesFive(_ board: GomokuState, index: Int, stone: Int8) -> Bool {
++        let row = index / GomokuState.size
++        let column = index % GomokuState.size
++        for (dr, dc) in directions {
++            var count = 1
++            for sign in [-1, 1] {
++                var r = row + dr * sign, c = column + dc * sign
++                while (0..<GomokuState.size).contains(r),
++                      (0..<GomokuState.size).contains(c),
++                      board.value(at: r * GomokuState.size + c) == stone {
++                    count += 1
++                    r += dr * sign
++                    c += dc * sign
++                }
++            }
++            if count >= 5 { return true }
++        }
++        return false
++    }
++}
+diff --git a/VeilLinkTests/GomokuUniversalThreatV10Tests.swift b/VeilLinkTests/GomokuUniversalThreatV10Tests.swift
+new file mode 100644
+index 0000000..c66e5fe
+--- /dev/null
++++ b/VeilLinkTests/GomokuUniversalThreatV10Tests.swift
+@@ -0,0 +1,105 @@
++import XCTest
++@testable import VeilLink
++
++final class GomokuUniversalThreatV10Tests: XCTestCase {
++    private func makeBoard(host: [Int], guest: [Int]) -> GomokuState {
++        XCTAssertTrue(host.count == guest.count || host.count == guest.count + 1)
++        var state = GomokuState()
++        for k in host.indices {
++            XCTAssertTrue(state.apply(index: host[k], actor: .host))
++            if k < guest.count {
++                XCTAssertTrue(state.apply(index: guest[k], actor: .guest))
++            }
++        }
++        return state
++    }
++
++    private func transform(_ index: Int, symmetry: Int) -> Int {
++        var row = index / 15
++        var column = index % 15
++        for _ in 0..<(symmetry % 4) {
++            (row, column) = (column, 14 - row)
++        }
++        if symmetry >= 4 { column = 14 - column }
++        return row * 15 + column
++    }
++
++    func testCrossingOpenThreesProveAllDefenderRepliesForBlack() {
++        let host = [111, 113, 97, 127]
++        let guest = [0, 14, 210, 224]
++        for symmetry in 0..<8 {
++            let board = makeBoard(
++                host: host.map { transform($0, symmetry: symmetry) },
++                guest: guest.map { transform($0, symmetry: symmetry) }
++            )
++            let move = transform(112, symmetry: symmetry)
++            let certificate = GomokuUniversalThreatV10.provenThreeTurnOpener(
++                in: board, for: .host, roots: [move],
++                deadline: Date.timeIntervalSinceReferenceDate + 2,
++                nodeCap: 10_000
++            )
++            XCTAssertEqual(certificate?.firstMove, move)
++            XCTAssertEqual(certificate?.defenderRepliesChecked, 216)
++        }
++    }
++
++    func testCrossingOpenThreesProveAllDefenderRepliesForWhite() {
++        let host = [0, 14, 210, 224, 56]
++        let guest = [111, 113, 97, 127]
++        for symmetry in 0..<8 {
++            let board = makeBoard(
++                host: host.map { transform($0, symmetry: symmetry) },
++                guest: guest.map { transform($0, symmetry: symmetry) }
++            )
++            let move = transform(112, symmetry: symmetry)
++            let certificate = GomokuUniversalThreatV10.provenThreeTurnOpener(
++                in: board, for: .guest, roots: [move],
++                deadline: Date.timeIntervalSinceReferenceDate + 2,
++                nodeCap: 10_000
++            )
++            XCTAssertEqual(certificate?.firstMove, move)
++            XCTAssertEqual(certificate?.defenderRepliesChecked, 215)
++        }
++    }
++
++    func testNeverProvesWhenOpponentHasImmediateFive() {
++        let board = makeBoard(host: [111, 113, 97, 127], guest: [0, 1, 2, 3])
++        XCTAssertNil(GomokuUniversalThreatV10.provenThreeTurnOpener(
++            in: board, for: .host, roots: [112],
++            deadline: Date.timeIntervalSinceReferenceDate + 2,
++            nodeCap: 10_000
++        ))
++    }
++
++    func testDoesNotConfuseOrdinaryThreeWithCertifiedWin() {
++        let board = makeBoard(host: [110, 111, 20, 25], guest: [0, 14, 210, 224])
++        XCTAssertNil(GomokuUniversalThreatV10.provenThreeTurnOpener(
++            in: board, for: .host, roots: [112],
++            deadline: Date.timeIntervalSinceReferenceDate + 2,
++            nodeCap: 10_000
++        ))
++    }
++
++    func testExpiredBudgetAndExhaustedNodeCapNeverClaimAWin() {
++        let board = makeBoard(host: [111, 113, 97, 127], guest: [0, 14, 210, 224])
++        XCTAssertNil(GomokuUniversalThreatV10.provenThreeTurnOpener(
++            in: board, for: .host, roots: [112],
++            deadline: Date.timeIntervalSinceReferenceDate - 1,
++            nodeCap: 10_000
++        ))
++        XCTAssertNil(GomokuUniversalThreatV10.provenThreeTurnOpener(
++            in: board, for: .host, roots: [112],
++            deadline: Date.timeIntervalSinceReferenceDate + 2,
++            nodeCap: 1
++        ))
++    }
++
++    func testPreexistingImmediateWinIsReservedForMandatoryWinGate() {
++        let board = makeBoard(host: [109, 110, 111, 112], guest: [0, 14, 210, 224])
++        XCTAssertNil(GomokuUniversalThreatV10.provenThreeTurnOpener(
++            in: board, for: .host, roots: [113],
++            deadline: Date.timeIntervalSinceReferenceDate + 2,
++            nodeCap: 10_000
++        ))
++    }
++}
