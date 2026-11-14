@@ -55,3 +55,10 @@ The archived source and complete advisory patch were updated and reverified. R10
 **本地测试：** R11 413 条、R10 39 条、Policy 18 条、SessionGate 35 条，共 **505 条 Swift 断言**通过；移动端浏览器 320/390/768px 无异常。SwiftUI 通过 Swift 5 语法解析，但 **未完成 Xcode 类型检查、XCTest、真实 iPhone/iPad 验收或 IPA 构建**。
 
 其他并行 Agent 的 V9/V10、R10 训练、R10 策略和 R11 战术成果**没有在此 PR 里被私自合并**，详情见 `R11_REFERENCE_AND_DEDUP.md`，交由 Integration Governor 根据测试证据仲裁。
+
+## R12 · 真实搜索分支，不再随机撒粒子
+已将 R10 随机棋盘粒子替换为实际原生 `GomokuBot` 的根候选—防守回应—继续落子的 1～3 手搜索分支：细线沿真实探索次序延伸，末端显示虚线圈出的半透明**假设棋子**。只在 AI 搜索期间临时展示，结束立即清空。高档长搜索时，会随着实际新事件持续更新，不为了动画延时。
+
+用户开关在「五子棋 → 训练与高级设置 → 棋盘思考可视化」，默认关闭，独立于棋力设置。旧 JS 引擎没有回调时，不得制造假线路。
+
+本 PR #208 现在包含全部 R10/R11/R12 的 8 份新 Swift 产品源码、一份以当前 main 全文重新构建的 `PATCH.diff`（4 个已有文件 + 8 个新增文件）、存档、仪表盘与 27 项搜索轨迹回归测试。R10/R11 既有 505 项断言亦通过。未来需 Governor 解决其他 Agent 棋力改动冲突，Xcode/XCTest/IPA 均未运行。详见 `R12_ACTUAL_SEARCH_VISUALIZATION.md`。
