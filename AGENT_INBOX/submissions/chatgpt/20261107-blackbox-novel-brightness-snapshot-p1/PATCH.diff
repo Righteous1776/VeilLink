@@ -1,0 +1,136 @@
+diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/DeepTelemetry.swift
+--- a/VeilLink/Diagnostics/DeepTelemetry.swift
++++ b/VeilLink/Diagnostics/DeepTelemetry.swift
+@@ -51,6 +51,8 @@
+     private var applicationActive = UIApplication.shared.applicationState == .active
+     private var heartbeatCounter = 0
+     private var lastSnapshotUptime: TimeInterval = 0
++    private var lastBrightnessSnapshotUptime: TimeInterval?
++    private var lastCapturedBrightness: Double?
+     private var postInteractionSnapshotTask: Task<Void, Never>?
+ 
+     private init() {
+@@ -223,6 +225,24 @@
+         store.log(.debug, .ui, event: "ui.snapshot", screen: currentScreen, metadata: metadata)
+     }
+ 
++    /// Coalesce noisy auto-brightness changes before doing the expensive
++    /// complete system snapshot (including filesystem free-space lookup).
++    /// Periodic and incident-triggered snapshots remain entirely unchanged.
++    private func captureBrightnessSnapshotIfNeeded() {
++        guard installed, applicationActive else { return }
++        let brightness = Double(UIScreen.main.brightness)
++        let uptime = ProcessInfo.processInfo.systemUptime
++        guard DeepTelemetryBrightnessSnapshotPolicy.shouldCapture(
++            brightness: brightness,
++            previousBrightness: lastCapturedBrightness,
++            nowUptime: uptime,
++            previousUptime: lastBrightnessSnapshotUptime
++        ) else { return }
++        lastCapturedBrightness = brightness
++        lastBrightnessSnapshotUptime = uptime
++        captureSystemSnapshot(reason: "brightness-change")
++    }
++
+     func captureSystemSnapshot(reason: String, extra: [String: String] = [:]) {
+         var metadata = SystemDiagnosticsSnapshot.capture()
+         metadata["reason"] = reason
+@@ -298,7 +318,7 @@
+             Task { @MainActor in DeepTelemetry.shared.captureSystemSnapshot(reason: "battery-state-change") }
+         })
+         observers.append(center.addObserver(forName: UIScreen.brightnessDidChangeNotification, object: nil, queue: .main) { _ in
+-            Task { @MainActor in DeepTelemetry.shared.captureSystemSnapshot(reason: "brightness-change") }
++            Task { @MainActor in DeepTelemetry.shared.captureBrightnessSnapshotIfNeeded() }
+         })
+         observers.append(center.addObserver(forName: UIContentSizeCategory.didChangeNotification, object: nil, queue: .main) { _ in
+             Task { @MainActor in DeepTelemetry.shared.captureSystemSnapshot(reason: "content-size-category-change") }
+diff --git a/VeilLink/Diagnostics/DeepTelemetryBrightnessSnapshotPolicy.swift b/VeilLink/Diagnostics/DeepTelemetryBrightnessSnapshotPolicy.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Diagnostics/DeepTelemetryBrightnessSnapshotPolicy.swift
+@@ -0,0 +1,30 @@
++import Foundation
++
++/// Log a *full* system snapshot only for meaningful brightness changes.
++/// Main goal: avoid reading filesystem space and serializing diagnostic
++/// metadata once per tiny automatic-brightness step on older devices.
++enum DeepTelemetryBrightnessSnapshotPolicy {
++    static let minimumInterval: TimeInterval = 2.0
++    static let minimumBrightnessDelta: Double = 0.02
++
++    static func shouldCapture(
++        brightness: Double,
++        previousBrightness: Double?,
++        nowUptime: TimeInterval,
++        previousUptime: TimeInterval?
++    ) -> Bool {
++        guard brightness.isFinite, (0.0...1.0).contains(brightness),
++              nowUptime.isFinite else { return false }
++        if let previousUptime {
++            guard previousUptime.isFinite,
++                  nowUptime >= previousUptime,
++                  nowUptime - previousUptime >= minimumInterval else { return false }
++        }
++        if let previousBrightness {
++            guard previousBrightness.isFinite,
++                  (0.0...1.0).contains(previousBrightness),
++                  abs(brightness - previousBrightness) >= minimumBrightnessDelta else { return false }
++        }
++        return true
++    }
++}
+diff --git a/VeilLinkTests/DeepTelemetryBrightnessSnapshotPolicyTests.swift b/VeilLinkTests/DeepTelemetryBrightnessSnapshotPolicyTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/DeepTelemetryBrightnessSnapshotPolicyTests.swift
+@@ -0,0 +1,50 @@
++import XCTest
++@testable import VeilLink
++
++final class DeepTelemetryBrightnessSnapshotPolicyTests: XCTestCase {
++    func testFirstValidReadingIsRecorded() {
++        XCTAssertTrue(DeepTelemetryBrightnessSnapshotPolicy.shouldCapture(
++            brightness: 0.70, previousBrightness: nil,
++            nowUptime: 100, previousUptime: nil
++        ))
++    }
++
++    func testAutoBrightnessMicroChangesAreCoalesced() {
++        XCTAssertFalse(DeepTelemetryBrightnessSnapshotPolicy.shouldCapture(
++            brightness: 0.71, previousBrightness: 0.70,
++            nowUptime: 102.1, previousUptime: 100
++        ))
++        XCTAssertFalse(DeepTelemetryBrightnessSnapshotPolicy.shouldCapture(
++            brightness: 0.75, previousBrightness: 0.70,
++            nowUptime: 101.5, previousUptime: 100
++        ))
++        XCTAssertTrue(DeepTelemetryBrightnessSnapshotPolicy.shouldCapture(
++            brightness: 0.75, previousBrightness: 0.70,
++            nowUptime: 102.1, previousUptime: 100
++        ))
++    }
++
++    func testPolicyRejectsInvalidAndReorderedSamples() {
++        XCTAssertFalse(DeepTelemetryBrightnessSnapshotPolicy.shouldCapture(
++            brightness: -0.1, previousBrightness: nil,
++            nowUptime: 100, previousUptime: nil
++        ))
++        XCTAssertFalse(DeepTelemetryBrightnessSnapshotPolicy.shouldCapture(
++            brightness: 0.9, previousBrightness: 0.1,
++            nowUptime: 99, previousUptime: 100
++        ))
++        XCTAssertFalse(DeepTelemetryBrightnessSnapshotPolicy.shouldCapture(
++            brightness: .infinity, previousBrightness: nil,
++            nowUptime: 100, previousUptime: nil
++        ))
++    }
++
++    func testThresholdAndBoundaryAreInclusive() {
++        XCTAssertEqual(DeepTelemetryBrightnessSnapshotPolicy.minimumInterval, 2.0)
++        XCTAssertEqual(DeepTelemetryBrightnessSnapshotPolicy.minimumBrightnessDelta, 0.02)
++        XCTAssertTrue(DeepTelemetryBrightnessSnapshotPolicy.shouldCapture(
++            brightness: 0.52, previousBrightness: 0.50,
++            nowUptime: 102, previousUptime: 100
++        ))
++    }
++}
