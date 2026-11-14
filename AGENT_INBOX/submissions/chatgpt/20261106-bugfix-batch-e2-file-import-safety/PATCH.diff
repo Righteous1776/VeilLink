@@ -1,0 +1,198 @@
+diff --git a/VeilLink/Core/MediaTransferPolicy.swift b/VeilLink/Core/MediaTransferPolicy.swift
+--- a/VeilLink/Core/MediaTransferPolicy.swift
++++ b/VeilLink/Core/MediaTransferPolicy.swift
+@@ -12,7 +12,35 @@
+         "image/png"
+     ]
+ 
+-    static func supportsImageMIMEType(_ mimeType: String) -> Bool {
+-        supportedImageMIMETypes.contains(mimeType.lowercased())
+-    }
+-}
++    static func supportsImageMIMEType(_ mimeType: String) -> Bool {
++        supportedImageMIMETypes.contains(mimeType.lowercased())
++    }
++
++    /// A future authenticated generic-file lane must enforce this before staging.
++    /// This policy alone does not add an on-wire content kind or transmit files.
++    static let maximumGenericFileBytes = 2_000_000
++    static let genericFileCapabilityBit = 1 << 3
++
++    static func safeGenericFilename(_ name: String) -> String? {
++        let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
++        guard !value.isEmpty, value != ".", value != "..",
++              value.lengthOfBytes(using: .utf8) <= 180,
++              !value.contains("/"), !value.contains("\\"),
++              !value.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) else {
++            return nil
++        }
++        return value
++    }
++
++    static func genericFileMIMEType(for filename: String) -> String {
++        switch URL(fileURLWithPath: filename).pathExtension.lowercased() {
++        case "pdf": return "application/pdf"
++        case "zip": return "application/zip"
++        case "json": return "application/json"
++        case "txt", "log": return "text/plain"
++        case "md", "markdown": return "text/markdown"
++        case "csv": return "text/csv"
++        default: return "application/octet-stream"
++        }
++    }
++}
+diff --git a/VeilLink/Core/VeilImportedFileAccess.swift b/VeilLink/Core/VeilImportedFileAccess.swift
+--- a/VeilLink/Core/VeilImportedFileAccess.swift
++++ b/VeilLink/Core/VeilImportedFileAccess.swift
+@@ -4,7 +4,8 @@
+     case unsupportedExtension(expected: [String])
+     case inaccessible
+     case coordinationFailed(String)
+-    case cancelled
++    case cancelled
++    case tooLarge(maximumBytes: Int)
+ 
+     var errorDescription: String? {
+         switch self {
+@@ -14,8 +15,10 @@
+             return "无法读取所选文件。请确认文件已从 iCloud 或第三方文件提供商下载完成。"
+         case .coordinationFailed(let detail):
+             return "文件提供商没有完成导入：\(detail)"
+-        case .cancelled:
+-            return "已取消文件导入。"
++        case .cancelled:
++            return "已取消文件导入。"
++        case .tooLarge(let maximumBytes):
++            return "文件超过此项导入大小上限（\(maximumBytes) 字节）。"
+         }
+     }
+ }
+@@ -32,10 +35,11 @@
+     /// backup or a large image does not monopolise the main thread.
+     static func materializeInBackground(
+         _ sourceURL: URL,
+-        acceptedExtensions: Set<String> = []
+-    ) async throws -> URL {
+-        let worker = Task.detached(priority: .userInitiated) {
+-            try materialize(sourceURL, acceptedExtensions: acceptedExtensions)
++        acceptedExtensions: Set<String> = [],
++        maximumBytes: Int? = nil
++    ) async throws -> URL {
++        let worker = Task.detached(priority: .userInitiated) {
++            try materialize(sourceURL, acceptedExtensions: acceptedExtensions, maximumBytes: maximumBytes)
+         }
+         return try await withTaskCancellationHandler(
+             operation: { try await worker.value },
+@@ -45,9 +49,10 @@
+ 
+     static func materialize(
+         _ sourceURL: URL,
+-        acceptedExtensions: Set<String> = []
+-    ) throws -> URL {
+-        let normalizedExtensions = Set(acceptedExtensions.map { $0.lowercased() })
++        acceptedExtensions: Set<String> = [],
++        maximumBytes: Int? = nil
++    ) throws -> URL {
++        let normalizedExtensions = Set(acceptedExtensions.map { $0.lowercased() })
+         if !normalizedExtensions.isEmpty,
+            !normalizedExtensions.contains(sourceURL.pathExtension.lowercased()) {
+             throw VeilImportedFileAccessError.unsupportedExtension(
+@@ -76,7 +81,7 @@
+             error: &coordinationError
+         ) { readableURL in
+             do {
+-                try copyCancellableFile(from: readableURL, to: destination)
++                try copyCancellableFile(from: readableURL, to: destination, maximumBytes: maximumBytes)
+                 copied = true
+             } catch is CancellationError {
+                 copyError = VeilImportedFileAccessError.cancelled
+@@ -107,8 +112,8 @@
+         try? VeilImportStagingLeasePolicy.removeOwnedCopy(url)
+     }
+ 
+-    private static func copyCancellableFile(from source: URL, to destination: URL) throws {
+-        if Task.isCancelled { throw CancellationError() }
++    private static func copyCancellableFile(from source: URL, to destination: URL, maximumBytes: Int?) throws {
++        if Task.isCancelled { throw CancellationError() }
+         guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
+             throw VeilImportedFileAccessError.inaccessible
+         }
+@@ -119,11 +124,16 @@
+             try? output.close()
+         }
+ 
+-        while true {
+-            if Task.isCancelled { throw CancellationError() }
+-            let chunk = try input.read(upToCount: copyChunkBytes) ?? Data()
+-            if chunk.isEmpty { return }
+-            try output.write(contentsOf: chunk)
+-        }
++        var copiedBytes = 0
++        while true {
++            if Task.isCancelled { throw CancellationError() }
++            let chunk = try input.read(upToCount: copyChunkBytes) ?? Data()
++            if chunk.isEmpty { return }
++            if let maximumBytes, chunk.count > maximumBytes - copiedBytes {
++                throw VeilImportedFileAccessError.tooLarge(maximumBytes: maximumBytes)
++            }
++            copiedBytes += chunk.count
++            try output.write(contentsOf: chunk)
++        }
+     }
+ }
+diff --git a/VeilLinkTests/MediaTransferPolicyTests.swift b/VeilLinkTests/MediaTransferPolicyTests.swift
+--- a/VeilLinkTests/MediaTransferPolicyTests.swift
++++ b/VeilLinkTests/MediaTransferPolicyTests.swift
+@@ -1,7 +1,21 @@
+ import XCTest
+ @testable import VeilLink
+ 
+-final class MediaTransferPolicyTests: XCTestCase {
++final class MediaTransferPolicyTests: XCTestCase {
++    func testGenericFilePolicyIsBoundedAndRejectsPathTraversal() {
++        XCTAssertEqual(MediaTransferPolicy.maximumGenericFileBytes, 2_000_000)
++        XCTAssertEqual(MediaTransferPolicy.genericFileCapabilityBit, 8)
++        XCTAssertEqual(MediaTransferPolicy.genericFileMIMEType(for: "note.txt"), "text/plain")
++        XCTAssertEqual(MediaTransferPolicy.genericFileMIMEType(for: "scan.pdf"), "application/pdf")
++        XCTAssertEqual(MediaTransferPolicy.genericFileMIMEType(for: "backup.zip"), "application/zip")
++        XCTAssertEqual(MediaTransferPolicy.genericFileMIMEType(for: "data.random"), "application/octet-stream")
++        XCTAssertEqual(MediaTransferPolicy.safeGenericFilename("note.txt"), "note.txt")
++        XCTAssertNil(MediaTransferPolicy.safeGenericFilename("../secrets.json"))
++        XCTAssertNil(MediaTransferPolicy.safeGenericFilename("nested/note.txt"))
++        XCTAssertNil(MediaTransferPolicy.safeGenericFilename("nested\\note.txt"))
++        XCTAssertNil(MediaTransferPolicy.safeGenericFilename("bad\u{0000}file"))
++    }
++
+     func testTransferLayerAcceptsSafeOutputFormats() {
+         XCTAssertTrue(MediaTransferPolicy.supportsImageMIMEType("image/jpeg"))
+         XCTAssertTrue(MediaTransferPolicy.supportsImageMIMEType("image/heic"))
+diff --git a/VeilLinkTests/VeilImportedFileAccessTests.swift b/VeilLinkTests/VeilImportedFileAccessTests.swift
+--- a/VeilLinkTests/VeilImportedFileAccessTests.swift
++++ b/VeilLinkTests/VeilImportedFileAccessTests.swift
+@@ -35,7 +35,25 @@
+         )
+     }
+ 
+-    func testBackgroundMaterializationCopiesLargeFile() async throws {
++    func testBoundedMaterializationRejectsLargeInputWithoutLeavingStagingLease() throws {
++        let source = FileManager.default.temporaryDirectory
++            .appendingPathComponent("bounded-import-\(UUID().uuidString).zip")
++        try Data(repeating: 0x42, count: 2_100_000).write(to: source, options: .atomic)
++        defer { try? FileManager.default.removeItem(at: source) }
++        XCTAssertThrowsError(
++            try VeilImportedFileAccess.materialize(
++                source, maximumBytes: MediaTransferPolicy.maximumGenericFileBytes
++            )
++        ) { error in
++            guard case VeilImportedFileAccessError.tooLarge = error else {
++                XCTFail("Expected bounded provider copy failure: \(error)")
++                return
++            }
++        }
++        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
++    }
++
++    func testBackgroundMaterializationCopiesLargeFile() async throws {
+         let source = FileManager.default.temporaryDirectory
+             .appendingPathComponent("import-source-\(UUID().uuidString).zip")
+         let expected = Data(repeating: 0x5A, count: 3 * 1_024 * 1_024)
