@@ -1,0 +1,433 @@
+diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyNet/RoomLinkPolicy.swift b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyNet/RoomLinkPolicy.swift
+--- a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyNet/RoomLinkPolicy.swift
++++ b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyNet/RoomLinkPolicy.swift
+@@ -1,10 +1,15 @@
+-/// Game liveness is NOT transport/cryptographic liveness. Missing game
+-/// heartbeats must never tear down a healthy shared E2EE chat session.
+-public enum VeilopolyRoomLinkPolicy {
+- public static func shouldPauseGame(secureSessionReady: Bool, secondsSincePeer: Double) -> Bool {
+-  !secureSessionReady || !secondsSincePeer.isFinite || secondsSincePeer > 15
+- }
+- public static func shouldRequestSecureRecovery(secureSessionReady: Bool, userInitiated: Bool) -> Bool {
+-  userInitiated && !secureSessionReady
+- }
+-}
++/// Game liveness is NOT transport/cryptographic liveness. A quiet peer
++/// is not proof of a disconnected Bluetooth or E2EE session.
++public enum VeilopolyRoomLinkPolicy {
++ public static func shouldPauseGame(secureSessionReady: Bool, secondsSincePeer: Double) -> Bool {
++  // Retain the existing API for callers. A missing heartbeat is advisory;
++  // only loss of the authenticated session pauses authoritative moves.
++  !secureSessionReady
++ }
++ public static func shouldProbeGameSync(secureSessionReady: Bool, secondsSincePeer: Double) -> Bool {
++  secureSessionReady && (!secondsSincePeer.isFinite || secondsSincePeer > 15)
++ }
++ public static func shouldRequestSecureRecovery(secureSessionReady: Bool, userInitiated: Bool) -> Bool {
++  userInitiated && !secureSessionReady
++ }
++}
+diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/VeilopolyMultiplayerBridge.swift
+--- a/VeilLink/App/VeilopolyMultiplayerBridge.swift
++++ b/VeilLink/App/VeilopolyMultiplayerBridge.swift
+@@ -333,16 +333,23 @@
+                 }
+             } catch {
+                 if Task.isCancelled || generation != senderGeneration { return }
+-                outgoing = [] // Authoritative state is saved; recovery sends a NEW snapshot, not stale moves.
+-                if error is SendFailure {
+-                    status = "对方链路未声明支持联机控制消息，请确认两端均已升级并重新连接。"
+-                    if item.packet.kind == .invite { outgoingInvitation = nil }
+-                } else {
+-                    status = "加密控制通道暂不可用，已暂停；请重连后重试或取消邀请。"
+-                }
+-                lastError = status
+-                gameModel?.setNetworkAvailability(false, message: status)
+-                return
++                // A failed status/resync probe does not prove a dead data channel.
++                // A failed commit/proposal/snapshot is different: preserve reducer
++                // consistency by pausing until a fresh authenticated resync.
++                let probeOnly = [.status, .resync].contains(item.packet.kind)
++                    && outgoing.allSatisfy { [.status, .resync].contains($0.packet.kind) }
++                outgoing = [] // Never replay a partially accepted authoritative move.
++                if error is SendFailure {
++                    status = "对方链路未声明支持联机控制消息，请确认两端均已升级并重新连接。"
++                    if item.packet.kind == .invite { outgoingInvitation = nil }
++                } else {
++                    status = probeOnly
++                        ? "同步探测暂时拥塞；未因此判定蓝牙断开，稍后继续探测。"
++                        : "重要对局数据未成功提交，已保留进度并等待核对；不代表蓝牙物理断开。"
++                }
++                lastError = status
++                if !probeOnly { gameModel?.setNetworkAvailability(false, message: status) }
++                return
+             }
+         }
+     }
+@@ -357,37 +364,47 @@
+             }
+         }
+     }
+-    func tick() {
+-        guard boundLocalIdentity == localIdentity() else { suspendForIdentityChange(); return }
+-        guard foreground else { return }
+-        if (incomingInvitation != nil || outgoingInvitation != nil), Date().timeIntervalSince(invitationBegan) > 120 {
+-            incomingInvitation = nil; outgoingInvitation = nil; status = "邀请已过期，请重新邀请"
+-        }
+-        if let invite = outgoingInvitation, sessions.hasSecureSession(for: invite.guestIdentityID),
+-           Date().timeIntervalSince(lastInviteSent) >= 10 {
+-            lastInviteSent = Date()
+-            enqueue(.init(roomID: invite.roomID, kind: .invite, configuration: invite), to: invite.guestIdentityID)
+-        }
+-        if gameModel == nil && incomingInvitation == nil && outgoingInvitation == nil {
+-            monitorTask?.cancel(); monitorTask = nil
+-            return
+-        }
+-        guard let config = configuration, let local = localIdentity(), !peerLeft else { return }
+-        let peer = peer(for: config, local: local)
+-        if VeilopolyRoomLinkPolicy.shouldPauseGame(secureSessionReady: sessions.hasSecureSession(for: peer),
+-            secondsSincePeer: Date().timeIntervalSince(lastHeard)) {
+-            gameModel?.setNetworkAvailability(false, message: "等待对方重连／同步；不会代替真人操作")
+-            // recoverSecureSession removes/reseeds the shared security context.
+-            // Do NOT call it from a game timer: chat may still be healthy.
+-        }
+-        if waitingForHostAcceptance {
+-            enqueue(.init(roomID: config.roomID, kind: .accept), to: config.hostIdentityID)
+-        }
+-        gameModel?.sendNetworkStatus()
+-        // A lost proposal leaves equal hashes but an outstanding client request.
+-        // Request a definitive snapshot even then; never infer execution from a heartbeat.
+-        if gameModel?.networkReady == false || gameModel?.awaitingHost == true { gameModel?.requestNetworkSync() }
+-    }
++    func tick(now: Date = Date()) {
++        guard boundLocalIdentity == localIdentity() else { suspendForIdentityChange(); return }
++        guard foreground else { return }
++        if (incomingInvitation != nil || outgoingInvitation != nil), now.timeIntervalSince(invitationBegan) > 120 {
++            incomingInvitation = nil; outgoingInvitation = nil; status = "邀请已过期，请重新邀请"
++        }
++        if let invite = outgoingInvitation, sessions.hasSecureSession(for: invite.guestIdentityID),
++           now.timeIntervalSince(lastInviteSent) >= 10 {
++            lastInviteSent = now
++            enqueue(.init(roomID: invite.roomID, kind: .invite, configuration: invite), to: invite.guestIdentityID)
++        }
++        if gameModel == nil && incomingInvitation == nil && outgoingInvitation == nil {
++            monitorTask?.cancel(); monitorTask = nil
++            return
++        }
++        guard let config = configuration, let local = localIdentity(), !peerLeft else { return }
++        let peer = peer(for: config, local: local)
++        let secureReady = sessions.hasSecureSession(for: peer)
++        let silentFor = now.timeIntervalSince(lastHeard)
++        if VeilopolyRoomLinkPolicy.shouldPauseGame(secureSessionReady: secureReady,
++            secondsSincePeer: silentFor) {
++            gameModel?.setNetworkAvailability(false, message: "加密会话暂不可用，保留进度并等待恢复")
++            status = "加密链路未就绪，等待恢复；没有主动断开蓝牙"
++            // Never reset shared chat encryption from a game timer.
++            return
++        }
++        if VeilopolyRoomLinkPolicy.shouldProbeGameSync(secureSessionReady: secureReady,
++            secondsSincePeer: silentFor) {
++            // The tiny status packet below is a probe, not evidence of disconnection.
++            // Preserve game readiness until an authenticated session is actually lost
++            // or a state-integrity check explicitly requires a pause.
++            status = "加密链路仍在，游戏暂未收到回应；正在轻量核对同步"
++        }
++        if waitingForHostAcceptance {
++            enqueue(.init(roomID: config.roomID, kind: .accept), to: config.hostIdentityID)
++        }
++        gameModel?.sendNetworkStatus()
++        // A lost proposal leaves equal hashes but an outstanding client request.
++        // Request a definitive snapshot even then; never infer execution from silence.
++        if gameModel?.networkReady == false || gameModel?.awaitingHost == true { gameModel?.requestNetworkSync() }
++    }
+     private func suspendForIdentityChange() {
+         gameModel?.flushSave()
+         gameModel?.setNetworkAvailability(false, message: "本机身份已切换，原联机房间暂停")
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -583,10 +583,14 @@
+         )
+         var sent = 0
+         while sent < burstLimit, let packet = queue.first {
+-            guard peripheralManager.updateValue(packet, for: characteristic, onSubscribedCentrals: [central]) else {
+-                peripheralOutboundQueues[centralID] = queue
+-                return
+-            }
++            guard peripheralManager.updateValue(packet, for: characteristic, onSubscribedCentrals: [central]) else {
++                peripheralOutboundQueues[centralID] = queue
++                // CoreBluetooth normally invokes peripheralManagerIsReady, but a
++                // bounded fallback probe also rescues missed callbacks/background stalls.
++                // Backpressure is never a reason to declare the peer disconnected.
++                schedulePeripheralDrain(for: centralID, after: 0.25)
++                return
++            }
+             _ = queue.removeFirst()
+             sent += 1
+             queueProgress.recordProgress(.peripheral, peerID: centralID, at: Date().timeIntervalSinceReferenceDate)
+@@ -947,37 +951,53 @@
+         )
+     }
+ 
+-    private func recoverStalledTransportQueuesIfNeeded() {
+-        recoverStalledGATTHandshakesIfNeeded()
+-        let uptime = ProcessInfo.processInfo.systemUptime
+-        for id in Array(reconnectStableSinceUptime.keys) {
+-            resetReconnectAttemptIfStable(id, nowUptime: uptime)
+-        }
+-        let now = Date().timeIntervalSinceReferenceDate
+-        for id in Array(centralOutboundQueues.keys) {
+-            guard let queue = centralOutboundQueues[id], !queue.isEmpty else { continue }
+-            let tuning = linkTuning(for: id)
+-            let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
+-            guard now - (queueProgress.lastProgress(.central, peerID: id) ?? now) >= timeout else { continue }
+-            centralOutboundQueues.removeValue(forKey: id)
+-            queueProgress.clear(.central, peerID: id)
+-            statusText = "检测到蓝牙发送停滞，正在自动恢复链路"
+-            if wantedConnections.contains(id) { recover(id) }
+-        }
+-        for id in Array(peripheralOutboundQueues.keys) {
+-            guard let queue = peripheralOutboundQueues[id], !queue.isEmpty else { continue }
+-            let tuning = linkTuning(for: id)
+-            let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
+-            guard now - (queueProgress.lastProgress(.peripheral, peerID: id) ?? now) >= timeout else { continue }
+-            // A peripheral cannot force-disconnect one subscribed central. Drop only the stale
+-            // transport frame; the persistent application outbox/checkpoint logic will resend it.
+-            peripheralOutboundQueues.removeValue(forKey: id)
+-            peripheralDrainWorkItems.removeValue(forKey: id)?.cancel()
+-            queueProgress.clear(.peripheral, peerID: id)
+-            statusText = "检测到蓝牙发送停滞，已切换到应用层重传"
+-        }
+-        publishLinkSnapshots()
+-    }
++    private func recoverStalledTransportQueuesIfNeeded() {
++        recoverStalledGATTHandshakesIfNeeded()
++        let uptime = ProcessInfo.processInfo.systemUptime
++        for id in Array(reconnectStableSinceUptime.keys) {
++            resetReconnectAttemptIfStable(id, nowUptime: uptime)
++        }
++        let now = Date().timeIntervalSinceReferenceDate
++        for id in Array(centralOutboundQueues.keys) {
++            guard let queue = centralOutboundQueues[id], !queue.isEmpty else { continue }
++            let tuning = linkTuning(for: id)
++            let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
++            guard now - (queueProgress.lastProgress(.central, peerID: id) ?? now) >= timeout else { continue }
++            if let peripheral = remotePeripherals[id], peripheral.state == .connected,
++               let characteristic = remoteCharacteristics[id], characteristic.isNotifying {
++                // The BLE link and GATT notify channel are still live. Do not
++                // manufacture a disconnect from missing TX progress or weak RSSI.
++                statusText = "蓝牙发送拥塞，保持连接并继续尝试发送"
++                scheduleCentralDrain(for: id, after: 0)
++            } else {
++                // Orphaned queue after a real channel loss. Application outbox
++                // will resync once CoreBluetooth reconnects.
++                centralOutboundQueues.removeValue(forKey: id)
++                centralDrainWorkItems.removeValue(forKey: id)?.cancel()
++                queueProgress.clear(.central, peerID: id)
++                reconcileConnectionEvent(id)
++                if let peripheral = remotePeripherals[id], peripheral.state == .disconnected {
++                    scheduleReconnect(peripheral)
++                }
++            }
++        }
++        for id in Array(peripheralOutboundQueues.keys) {
++            guard let queue = peripheralOutboundQueues[id], !queue.isEmpty else { continue }
++            let tuning = linkTuning(for: id)
++            let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
++            guard now - (queueProgress.lastProgress(.peripheral, peerID: id) ?? now) >= timeout else { continue }
++            if subscribedCentrals[id] != nil, localCharacteristic != nil {
++                statusText = "蓝牙通知缓冲区拥塞，保留队列并重试"
++                schedulePeripheralDrain(for: id, after: 0)
++            } else {
++                peripheralOutboundQueues.removeValue(forKey: id)
++                peripheralDrainWorkItems.removeValue(forKey: id)?.cancel()
++                queueProgress.clear(.peripheral, peerID: id)
++                reconcileConnectionEvent(id)
++            }
++        }
++        publishLinkSnapshots()
++    }
+ 
+     private func markDataChannelReady(_ id: UUID) {
+         guard (reconnectAttempts[id] ?? 0) > 0 else {
+@@ -1007,21 +1027,33 @@
+         let expired = gattHandshakeWatchdog.timedOutPeerIDs(
+             uptime: ProcessInfo.processInfo.systemUptime
+         )
+-        for id in expired {
+-            gattHandshakeWatchdog.disconnected(id)
+-            guard isRunning,
+-                  wantedConnections.contains(id),
+-                  let peripheral = remotePeripherals[id],
+-                  peripheral.state == .connected,
+-                  remoteCharacteristics[id]?.isNotifying != true else { continue }
+-            statusText = "蓝牙数据通道握手超时，正在重新建立连接"
+-            DiagnosticLogStore.shared.log(
+-                .warning, .bluetooth,
+-                event: "ble.gatt_handshake_timeout",
+-                metadata: ["phase": "notification_wait", "attempt": String(reconnectAttempts[id] ?? 0)]
+-            )
+-            centralManager.cancelPeripheralConnection(peripheral)
+-        }
++        for id in expired {
++            guard isRunning,
++                  wantedConnections.contains(id),
++                  let peripheral = remotePeripherals[id],
++                  peripheral.state == .connected,
++                  remoteCharacteristics[id]?.isNotifying != true else { continue }
++            // PHY is still connected: retry the incomplete GATT negotiation
++            // in place instead of forcibly disconnecting on a timer.
++            gattHandshakeWatchdog.physicalLinkConnected(
++                id, uptime: ProcessInfo.processInfo.systemUptime
++            )
++            statusText = "蓝牙物理连接仍在，正在重试数据通道协商"
++            DiagnosticLogStore.shared.log(
++                .warning, .bluetooth,
++                event: "ble.gatt_handshake_retry",
++                metadata: ["phase": "notification_wait", "attempt": String(reconnectAttempts[id] ?? 0)]
++            )
++            if let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) {
++                if let characteristic = service.characteristics?.first(where: { $0.uuid == Self.dataUUID }) {
++                    peripheral.setNotifyValue(true, for: characteristic)
++                } else {
++                    peripheral.discoverCharacteristics([Self.dataUUID], for: service)
++                }
++            } else {
++                peripheral.discoverServices([Self.serviceUUID])
++            }
++        }
+     }
+ 
+     private func failGATTHandshake(_ peripheral: CBPeripheral, phase: String) {
+diff --git a/VeilLinkTests/BLELinkReliabilityPolicyTests.swift b/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
+--- a/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
++++ b/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
+@@ -90,10 +90,18 @@
+         XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 100), 30)
+     }
+ 
+-    func testReconnectAttemptResetsOnlyAfterStableWindow() {
+-        XCTAssertFalse(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: nil, now: 100))
+-        XCTAssertFalse(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 70.001, now: 100))
+-        XCTAssertTrue(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 70, now: 100))
+-        XCTAssertTrue(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 1, now: 100))
+-    }
+-}
++    func testReconnectAttemptResetsOnlyAfterStableWindow() {
++        XCTAssertFalse(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: nil, now: 100))
++        XCTAssertFalse(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 70.001, now: 100))
++        XCTAssertTrue(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 70, now: 100))
++        XCTAssertTrue(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 1, now: 100))
++    }
++
++    func testLinkQualityIsNotPhysicalDisconnectEvidence() {
++        // RSSI is only pacing telemetry: -100 dBm must never imply a CoreBluetooth disconnect.
++        XCTAssertEqual(BLELinkReliabilityPolicy.quality(rssi: -100), .weak)
++        XCTAssertGreaterThan(BLELinkReliabilityPolicy.tuning(
++            rssi: -100, machineIdentifier: "iPhone14,2"
++        ).packetBurstLimit, 0)
++    }
++}
+diff --git a/VeilLinkTests/VeilopolyInvitationBridgeTests.swift b/VeilLinkTests/VeilopolyInvitationBridgeTests.swift
+--- a/VeilLinkTests/VeilopolyInvitationBridgeTests.swift
++++ b/VeilLinkTests/VeilopolyInvitationBridgeTests.swift
+@@ -107,17 +107,38 @@
+         XCTAssertTrue(bridge.lastError?.contains("未声明支持") == true)
+         XCTAssertEqual(bridge.lastActionPeer, "guest")
+     }
+-    func testInvitationCannotBeRelabelledAsADifferentAuthenticatedPeer() throws {
+-        let (bridge, directory) = makeBridge(InvitationChannel(), local: "guest")
+-        defer { bridge.leaveRoom(); try? FileManager.default.removeItem(at: directory) }
+-        let config = VeilopolyRoomConfiguration.current(roomID: UUID().uuidString, seed: 1,
+-            hostIdentityID: "host", guestIdentityID: "guest")
+-        for fragment in try VeilopolyControlCodec.fragments(.init(roomID: config.roomID,
+-            kind: .invite, configuration: config)) {
+-            bridge.receive(.init(topic: VeilopolyControlCodec.topic,
+-                payload: try JSONEncoder().encode(fragment)), from: "stranger")
+-        }
+-        XCTAssertNil(bridge.incomingInvitation)
+-        XCTAssertNil(bridge.gameModel)
+-    }
+-}
++    func testInvitationCannotBeRelabelledAsADifferentAuthenticatedPeer() throws {
++        let (bridge, directory) = makeBridge(InvitationChannel(), local: "guest")
++        defer { bridge.leaveRoom(); try? FileManager.default.removeItem(at: directory) }
++        let config = VeilopolyRoomConfiguration.current(roomID: UUID().uuidString, seed: 1,
++            hostIdentityID: "host", guestIdentityID: "guest")
++        for fragment in try VeilopolyControlCodec.fragments(.init(roomID: config.roomID,
++            kind: .invite, configuration: config)) {
++            bridge.receive(.init(topic: VeilopolyControlCodec.topic,
++                payload: try JSONEncoder().encode(fragment)), from: "stranger")
++        }
++        XCTAssertNil(bridge.incomingInvitation)
++        XCTAssertNil(bridge.gameModel)
++    }
++
++    func testQuietButAuthenticatedPeerDoesNotForceGameOffline() throws {
++        let channel = InvitationChannel()
++        let (bridge, directory) = makeBridge(channel)
++        defer { bridge.leaveRoom(); try? FileManager.default.removeItem(at: directory) }
++        bridge.invite(conversation())
++        let config = try XCTUnwrap(bridge.outgoingInvitation)
++        for fragment in try VeilopolyControlCodec.fragments(.init(roomID: config.roomID, kind: .accept)) {
++            bridge.receive(.init(topic: VeilopolyControlCodec.topic,
++                payload: try JSONEncoder().encode(fragment)), from: "guest")
++        }
++        let game = try XCTUnwrap(bridge.gameModel)
++        game.setNetworkAvailability(true, message: "已完成两端进度核对")
++        XCTAssertTrue(game.networkReady)
++        bridge.tick(now: Date().addingTimeInterval(30))
++        XCTAssertTrue(game.networkReady, "Game silence is not an OS disconnect event")
++        XCTAssertTrue(bridge.status.contains("仍在"))
++        channel.ready = false
++        bridge.tick(now: Date().addingTimeInterval(31))
++        XCTAssertFalse(game.networkReady, "Actual secure session loss must still pause the match")
++    }
++}
+diff --git a/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyNetTests/RoomLinkPolicyTests.swift b/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyNetTests/RoomLinkPolicyTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyNetTests/RoomLinkPolicyTests.swift
+@@ -0,0 +1,42 @@
++import XCTest
++@testable import VeilopolyNet
++
++final class RoomLinkPolicyTests: XCTestCase {
++    func testHealthySecureSessionNeverPausesOnlyForSilentGameHeartbeats() {
++        XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldPauseGame(
++            secureSessionReady: true, secondsSincePeer: 0))
++        XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldPauseGame(
++            secureSessionReady: true, secondsSincePeer: 16))
++        XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldPauseGame(
++            secureSessionReady: true, secondsSincePeer: 300))
++        XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldPauseGame(
++            secureSessionReady: true, secondsSincePeer: .infinity))
++    }
++
++    func testActualSecureSessionLossPausesGameRegardlessOfHeartbeat() {
++        XCTAssertTrue(VeilopolyRoomLinkPolicy.shouldPauseGame(
++            secureSessionReady: false, secondsSincePeer: 0))
++        XCTAssertTrue(VeilopolyRoomLinkPolicy.shouldPauseGame(
++            secureSessionReady: false, secondsSincePeer: 300))
++    }
++
++    func testSilentButSecureLinkOnlyRequestsStatusProbe() {
++        XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldProbeGameSync(
++            secureSessionReady: true, secondsSincePeer: 15))
++        XCTAssertTrue(VeilopolyRoomLinkPolicy.shouldProbeGameSync(
++            secureSessionReady: true, secondsSincePeer: 15.001))
++        XCTAssertTrue(VeilopolyRoomLinkPolicy.shouldProbeGameSync(
++            secureSessionReady: true, secondsSincePeer: .nan))
++        XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldProbeGameSync(
++            secureSessionReady: false, secondsSincePeer: 20))
++    }
++
++    func testGameMonitorNeverResetsSharedSecurityWithoutUserAction() {
++        XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(
++            secureSessionReady: false, userInitiated: false))
++        XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(
++            secureSessionReady: true, userInitiated: true))
++        XCTAssertTrue(VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(
++            secureSessionReady: false, userInitiated: true))
++    }
++}
