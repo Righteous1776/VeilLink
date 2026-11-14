@@ -689,19 +689,17 @@ struct LocalAIGameView: View {
                 }
                 .tint(VeilTheme.gold)
                 .accessibilityIdentifier("gomoku.eclipse.live-trace.toggle")
-                Toggle(isOn: Binding(
-                    get: { controller.useExternalGomokuEngine },
-                    set: { controller.setExternalGomokuEngineEnabled($0) }
-                )) {
+                HStack(spacing: 8) {
+                    Image(systemName: "cpu").foregroundColor(VeilTheme.goldBright)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("离线强力引擎 · PVS/VCF")
+                        Text("ECLIPSE 原生搜索")
                             .font(.caption.weight(.semibold))
-                        Text("独立离线引擎；异常自动回退，不改写棋谱。")
+                            .foregroundColor(VeilTheme.text)
+                        Text("统一原生战术安全门、训练排序与深度搜索")
                             .font(.caption2)
                             .foregroundColor(VeilTheme.secondaryText)
                     }
                 }
-                .tint(VeilTheme.gold)
                 Menu {
                     ForEach(GomokuFormationMode.allCases) { mode in
                         Button {
