@@ -131,6 +131,11 @@ public final class GameSessionModel: ObservableObject {
   game.players[actor].kind == .human && (liveRoom == nil || liveRoom?.localSeat == actor)
  }
  public var isMultiplayer: Bool { liveRoom != nil }
+ /// Local screen viewer is independent of the currently acting AI/guest.
+ public var viewingSeat: Int {
+  if let seat = liveRoom?.localSeat { return seat }
+  return game.players.first(where: { $0.kind == .human })?.id ?? actor
+ }
  public var isHost: Bool { liveRoom?.isHost ?? false }
  public var roomConfiguration: VeilopolyRoomConfiguration? { liveRoom?.configuration }
  public var canSkipAnimation: Bool { animating && !cardGate.isPresented }
@@ -522,6 +527,7 @@ public struct VeilopolyGameView: View {
  @State private var showGameInfo = false
  @State private var showGuide = false
  @State private var showAssetBrowser = false
+ @State private var assetBrowserSection: VeilopolyManagementSection = .property
  @State private var panelWorkspace = VeilopolyPanelWorkspace()
  @GestureState private var panelTranslation = CGSize.zero
  @GestureState private var chipTranslation = CGSize.zero
@@ -555,7 +561,8 @@ public struct VeilopolyGameView: View {
      landscapeContent(availableWidth: geometry.size.width,
                       availableHeight: geometry.size.height)
     } else {
-     portraitFallback
+     portraitContent(availableWidth: geometry.size.width,
+                     availableHeight: geometry.size.height)
     }
    }
    .frame(width: geometry.size.width, height: geometry.size.height)
@@ -653,7 +660,8 @@ public struct VeilopolyGameView: View {
                        saveSummary: model.saveSummary)
   }
   .sheet(isPresented: $showAssetBrowser) {
-   VeilopolyAssetBrowser(game: model.game, initialPlayer: model.actor)
+   VeilopolyAssetBrowser(game: model.game, initialPlayer: model.viewingSeat,
+                         initialSection: assetBrowserSection)
     .preferredColorScheme(interfaceTheme.colorScheme)
   }
   .alert("本局信息", isPresented: $showGameInfo) {
@@ -815,7 +823,7 @@ public struct VeilopolyGameView: View {
 
    // The top-right capsule is RESERVED for More / Exit only.
    // Do not put gameplay toggles next to Exit: an accidental tap is costly.
-   capsuleControls
+   compactLandscapeMenu
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
     .padding(.trailing, 6)
     .padding(.top, 5)
@@ -844,9 +852,9 @@ public struct VeilopolyGameView: View {
  /// Keep Astra's real actions and HUD. Only the panel's placement changes:
  /// on iPhone it floats over otherwise unused right-side space; on iPad it
  /// may temporarily cover the board edge until collapsed.
- private func controlsDrawer(in layout: VeilopolyPanelLayout) -> some View {
+ private func controlsDrawer(in layout: VeilopolyPanelLayout, portrait: Bool = false) -> some View {
   VStack(alignment: .leading, spacing: 8) {
-   panelToolbar(in: layout)
+   if portrait { portraitPanelToolbar } else { panelToolbar(in: layout) }
    if model.game.turn.phase == .manage && model.waitingForHuman {
     managementNavigation
      .disabled(model.pending)
@@ -1180,18 +1188,67 @@ public struct VeilopolyGameView: View {
   }
  }
 
- private var portraitFallback: some View {
-  VStack(spacing: 16) {
-   Image(systemName: "iphone.gen3.radiowaves.left.and.right")
-    .font(.system(size: 42)).symbolRenderingMode(.hierarchical)
-   Text("请横向握持设备").font(.title3.bold())
-   Text("Veilopoly 使用真正的横向全屏棋盘。若设备无法旋转，请确认 VeilLink 宿主已允许横屏方向。")
-    .font(.caption).multilineTextAlignment(.center)
-    .foregroundStyle(.secondary)
-    .frame(maxWidth: 340)
-   capsuleControls
+ private func openAssetBrowser(_ section: VeilopolyManagementSection) {
+  assetBrowserSection = section
+  showAssetBrowser = true
+ }
+ private func portraitContent(availableWidth: CGFloat, availableHeight: CGFloat) -> some View {
+  let split = VeilopolyPortraitLayout.allocate(
+   availableWidth: Double(availableWidth), availableHeight: Double(availableHeight))
+  let drawerLayout = VeilopolyPanelLayout(width: Double(availableWidth), height: split.workspaceHeight)
+  return VeilopolyPortraitWorkspace(model: model, workspace: $panelWorkspace,
+    reduceMotion: reduceMotion, board: boardViewport,
+    drawer: controlsDrawer(in: drawerLayout, portrait: true),
+    onOpenAssets: { openAssetBrowser($0) },
+    onExit: { showExitConfirmation = true })
+   .frame(width: availableWidth, height: availableHeight)
+ }
+ private var portraitPanelToolbar: some View {
+  HStack(spacing: 7) {
+   VStack(spacing: 3) {
+    Capsule().fill(Color.white.opacity(0.75)).frame(width: 38, height: 4)
+    Text("下滑收起").font(.system(size: 10, weight: .medium))
+   }
+   .frame(width: 76, height: 44)
+   .contentShape(Rectangle())
+   .gesture(DragGesture(minimumDistance: 12).onEnded { value in
+    if value.translation.height > 45 {
+     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) { panelWorkspace.suspend() }
+    }
+   })
+   .accessibilityLabel("面板标题栏，向下拖动收起")
+   Spacer(minLength: 0)
+   Text("操作中心").font(.subheadline.weight(.semibold))
+   Spacer(minLength: 0)
+   Button {
+    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) { panelWorkspace.suspend() }
+   } label: { Image(systemName: "arrow.down.to.line").frame(width: 44, height: 44) }
+   .buttonStyle(.plain).accessibilityLabel("收起操作面板至骰子")
+   Menu {
+    Button("查看股市") { openAssetBrowser(.market) }
+    Button("查看银行") { openAssetBrowser(.bank) }
+    Button("资产总览") { openAssetBrowser(.property) }
+    Button("退出游戏", role: .destructive) { showExitConfirmation = true }
+   } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+    .accessibilityLabel("更多与退出")
   }
-  .padding(24)
+  .foregroundColor(.white)
+  .frame(minHeight: 44)
+  .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+ }
+ private var compactLandscapeMenu: some View {
+  Menu {
+   Button("更多操作") { showMore = true }
+   Button("资产资料") { openAssetBrowser(.property) }
+   Button("退出游戏", role: .destructive) { showExitConfirmation = true }
+  } label: {
+   Image(systemName: "ellipsis")
+    .font(.system(size: 18, weight: .bold))
+    .foregroundColor(.white)
+    .frame(width: 44, height: 44)
+    .background(Color(red: 0.08, green: 0.23, blue: 0.23).opacity(0.92), in: Capsule())
+  }
+  .accessibilityLabel("更多操作")
  }
 
  // Two-part control matching WeChat mini-program's upper-right capsule:
