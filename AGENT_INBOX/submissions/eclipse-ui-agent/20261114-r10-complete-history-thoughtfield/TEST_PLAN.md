@@ -48,7 +48,7 @@
 - Integration Governor must reconcile GomokuBot signature with PR #199 forced-search and #193/#196/#207/#209/#210 competing search proposals.
 
 ## R12 tests added
-- `swiftc -swift-version 6 -warnings-as-errors -O TESTS/GomokuStub.swift FILES/VeilEclipseSearchTraceStore.swift TESTS/R12SearchTraceTests.swift -o /tmp/veil-r12-trace && /tmp/veil-r12-trace` (where `GomokuStub.swift` is an external test fixture, NOT in public PR): **33/33 PASS**, validating 1/2/3-ply real path gate, stale/cancelled sessions, illegal/occupied stones, invalid/negative/empty coordinates, 20Hz throttle, fail-closed begin/reset.
+- `swiftc -swift-version 6 -warnings-as-errors -O TESTS/GomokuStub.swift FILES/VeilEclipseSearchTraceStore.swift TESTS/R12SearchTraceTests.swift -o /tmp/veil-r12-trace && /tmp/veil-r12-trace` (the standalone `GomokuStub.swift` is included in this Inbox PR for Linux reproducibility and must NOT be compiled into the app): **33/33 PASS**, validating 1/2/3-ply real path gate, stale/cancelled sessions, illegal/occupied stones, invalid/negative/empty coordinates, 20Hz throttle, fail-closed begin/reset.
 - `swiftc -frontend -parse -swift-version 5 FILES/VeilEclipseBoardThoughtField.swift`: PASS; this is syntax parsing, **not SwiftUI iOS SDK compilation**.
 - 505 preceding assertions in previously reported R10/R11 suites; 538 total local assertions currently.
 - Full R12 `PATCH.diff` structurally valid with 35 hunks and 12 targets: exact main in-memory application, context and line counts 12/12 PASS, all 8 add-file contents equal staged source.
