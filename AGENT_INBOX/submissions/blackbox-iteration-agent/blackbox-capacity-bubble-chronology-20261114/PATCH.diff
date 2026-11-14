@@ -1,0 +1,2124 @@
+diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostics/DiagnosticLogStore.swift
+--- a/VeilLink/Diagnostics/DiagnosticLogStore.swift
++++ b/VeilLink/Diagnostics/DiagnosticLogStore.swift
+@@ -109,6 +109,8 @@
+     let inMemoryEventCount: Int
+     let invalidLineCount: Int
+     let logWriteFailureCount: Int
++    let rotationEvictionCount: Int
++    let retainedTimeSpanHours: Double?
+     let droppedUnpersistedLineCount: Int
+     let unpersistedBytes: Int
+     let logFileCount: Int
+@@ -126,6 +128,12 @@
+     let files: [DiagnosticExportFileSummary]
+     let categoryCounts: [String: Int]
+     let levelCounts: [String: Int]
++    /// An observed module checkpoint means an in-app hook actually ran.
++    let moduleCheckpointCounts: [String: Int]
++    /// A registered feature pack without a checkpoint is unobserved, NOT
++    /// necessarily broken. Future versions automatically appear here.
++    let registeredFeaturePacks: [String]
++    let unobservedRegisteredPacks: [String]
+     let currentScreen: String
+ }
+ 
+@@ -145,14 +153,21 @@
+     private let rootDirectory: URL
+     private let auxiliaryDirectory: URL
+     private let currentLogURL: URL
++    // Five-night diagnostic baseline: 24 bounded JSONL files (384 MiB)
++    // and 128 MiB of auxiliary evidence. This is a byte budget, NOT a
++    // guaranteed five-day window: rotation/loss must be auditable.
++    private let maxFileBytes = 16 * 1_024 * 1_024
++    private let rotatedFileCount = 23
++    private let maxRecentEntries = 6_000
++    private let maxAuxiliaryBytes = 128 * 1_024 * 1_024
+-    private let maxFileBytes = 2_000_000
+-    private let rotatedFileCount = 7
+-    private let maxRecentEntries = 2_000
+-    private let maxAuxiliaryBytes = 24 * 1_024 * 1_024
+     private let flushThresholdBytes = 256 * 1_024
+     // Keep diagnostics failures from turning into an unbounded RAM leak.
+     private let maxPendingBufferBytes = 4 * 1_024 * 1_024
+     private var logWriteFailureCount = 0
++    private var rotationEvictionCount = 0
++    private var retentionCounterURL: URL {
++        rootDirectory.appendingPathComponent("retention-evictions.json")
++    }
+     private var droppedUnpersistedLineCount = 0
+     private var nextPersistRetryUptime: TimeInterval = 0
+     private let encoder: JSONEncoder
+@@ -205,6 +220,10 @@
+         try? fileManager.createDirectory(at: resolvedRoot, withIntermediateDirectories: true)
+         try? fileManager.createDirectory(at: auxiliaryDirectory, withIntermediateDirectories: true)
+         protectDirectory()
++        if let payload = try? Data(contentsOf: retentionCounterURL),
++           let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Int] {
++            rotationEvictionCount = object["rotated_file_evictions"] ?? 0
++        }
+         loadRecentEntriesFromDisk()
+     }
+ 
+@@ -224,6 +243,15 @@
+         existingLogURLs().count
+     }
+ 
++    var rotationEvictions: Int {
++        withStateLock { rotationEvictionCount }
++    }
++
++    var retentionPressurePercent: Int {
++        guard retentionBytes > 0 else { return 0 }
++        return min(100, Int(Double(diskUsageBytes) / Double(retentionBytes) * 100))
++    }
++
+     func log(
+         _ level: DiagnosticLogLevel,
+         _ category: DiagnosticLogCategory,
+@@ -295,6 +323,8 @@
+             recentEntriesStorage.removeAll(keepingCapacity: false)
+             diskUsageBytesStorage = 0
+             nextSequence = 1
++            rotationEvictionCount = 0
++            try? fileManager.removeItem(at: retentionCounterURL)
+             lastRefreshAtStorage = Date()
+             stateLock.unlock()
+         }
+@@ -333,7 +363,7 @@
+         }
+ 
+         // Index and manifest derive from copied files only, never recentEntries.
++        // In particular, 6,000 entries in memory do not imply 6,000 records
+-        // In particular, 2,000 entries in memory do not imply 2,000 records
+         // survived file rotation or failed writes on an iOS 15 device.
+         let index = try makeExportIndex(from: logURLs)
+         let manifest = DiagnosticExportManifest(
+@@ -347,12 +377,17 @@
+             inMemoryEventCount: recentEntries.count,
+             invalidLineCount: index.invalidLineCount,
+             logWriteFailureCount: withStateLock { logWriteFailureCount },
++            rotationEvictionCount: rotationEvictions,
++            retainedTimeSpanHours: {
++                guard let first = index.firstTimestamp, let last = index.lastTimestamp else { return nil }
++                return max(0, last.timeIntervalSince(first) / 3_600)
++            }(),
+             droppedUnpersistedLineCount: withStateLock { droppedUnpersistedLineCount },
+             unpersistedBytes: withStateLock { pendingBuffer.count },
+             logFileCount: logURLs.count,
+             files: index.files,
+             retentionBytes: retentionBytes,
++            privacy: "No chat-bubble plaintext, typed text, media payload, password/PIN, private/session key, pairing code or AI prompt is intentionally recorded. Bubble order uses session-local ephemeral tokens, positions, direction, timestamps and delivery status only. Technical identifiers may be included in other diagnostic categories."
+-            privacy: "No message plaintext, media payload, password/PIN, private/session key, pairing code or AI prompt is intentionally recorded. Technical identifiers may be included for correlation."
+         )
+ 
+         let prettyEncoder = JSONEncoder()
+@@ -393,6 +428,8 @@
+         passwords, app-lock PINs, identity private keys, session keys, pairing codes and AI prompts.
+ 
+         Text input telemetry records field type/state and character length only, never the content.
++        Chat bubble telemetry records only ephemeral identifiers, visible order, direction,
++        delivery status, timestamp and attachment presence; never message text or message IDs.
+         Generic UI touch telemetry records coordinates, view classes and accessibility identifiers,
+         but does not scrape arbitrary accessibility labels or rendered text.
+ 
+@@ -413,7 +450,7 @@
+ 
+     @discardableResult
+     func storeAuxiliaryArtifact(prefix: String, fileExtension: String, data: Data) -> String? {
++        guard !data.isEmpty, data.count <= 32 * 1_024 * 1_024 else { return nil }
+-        guard !data.isEmpty, data.count <= 8 * 1_024 * 1_024 else { return nil }
+         let result: String? = logQueue.sync {
+             let formatter = DateFormatter()
+             formatter.locale = Locale(identifier: "en_US_POSIX")
+@@ -424,7 +461,7 @@
+             let url = auxiliaryDirectory.appendingPathComponent(name)
+             do {
+                 try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
++                trimAuxiliaryArtifacts(maxFiles: 96, maxBytes: maxAuxiliaryBytes)
+-                trimAuxiliaryArtifacts(maxFiles: 24, maxBytes: maxAuxiliaryBytes)
+                 refreshDiskUsage()
+                 return name
+             } catch {
+@@ -436,12 +473,14 @@
+     }
+ 
+     /// Read exactly what was staged for the ZIP, not the in-memory cache.
++    /// Streaming 64 KiB chunks avoids allocating a second large log image
+-    /// Streaming 64 KiB chunks avoids allocating a second ~16 MB log image
+     /// while an older 2 GB RAM device is preparing its crash report.
+     @MainActor
+     private func makeExportIndex(from stagedLogURLs: [URL]) throws -> DiagnosticExportIndex {
+         var categoryCounts: [String: Int] = [:]
+         var levelCounts: [String: Int] = [:]
++        var moduleCheckpointCounts: [String: Int] = [:]
++        var registeredFeaturePacks = Set<String>()
+         var firstTimestamp: Date?
+         var lastTimestamp: Date?
+         var totalEvents = 0
+@@ -470,6 +509,14 @@
+                 totalEvents += 1
+                 categoryCounts[entry.category.rawValue, default: 0] += 1
+                 levelCounts[entry.level.rawValue, default: 0] += 1
++                if entry.event == "diagnostics.module.checkpoint",
++                   let module = entry.metadata["module"] {
++                    moduleCheckpointCounts[module, default: 0] += 1
++                }
++                if entry.event == "diagnostics.feature_registry.inventory",
++                   let packIDs = entry.metadata["pack_ids"] {
++                    registeredFeaturePacks.formUnion(packIDs.split(separator: ",").map(String.init))
++                }
+                 if let old = firstTimestamp {
+                     firstTimestamp = min(old, entry.timestamp)
+                 } else {
+@@ -531,6 +578,9 @@
+             files: files,
+             categoryCounts: categoryCounts,
+             levelCounts: levelCounts,
++            moduleCheckpointCounts: moduleCheckpointCounts,
++            registeredFeaturePacks: registeredFeaturePacks.sorted(),
++            unobservedRegisteredPacks: registeredFeaturePacks.subtracting(Set(moduleCheckpointCounts.keys)).sorted(),
+             currentScreen: DeepTelemetry.shared.currentScreen
+         )
+     }
+@@ -615,21 +665,22 @@
+     }
+ 
+     private func loadRecentEntriesFromDiskUnsafe() {
++        // Visit newest segments and lines first. A 192-MiB retention budget
++        // must not require decoding every historic record during UI refresh.
++        var newestFirst: [DiagnosticLogEntry] = []
++        for url in orderedLogURLsForReading().reversed() {
++            guard newestFirst.count < maxRecentEntries,
++                  let data = try? Data(contentsOf: url),
+-        var loaded: [DiagnosticLogEntry] = []
+-        for url in orderedLogURLsForReading() {
+-            guard let data = try? Data(contentsOf: url),
+                   let string = String(data: data, encoding: .utf8) else { continue }
++            for rawLine in string.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
++                guard newestFirst.count < maxRecentEntries else { break }
+-            for rawLine in string.split(separator: "\n", omittingEmptySubsequences: true) {
+                 guard let lineData = String(rawLine).data(using: .utf8),
+                       let entry = try? decoder.decode(DiagnosticLogEntry.self, from: lineData) else { continue }
++                newestFirst.append(entry)
+-                loaded.append(entry)
+             }
+         }
++        recentEntriesStorage = Array(newestFirst.reversed())
++        nextSequence = (newestFirst.first?.sequence ?? 0) &+ 1
+-        if loaded.count > maxRecentEntries {
+-            loaded = Array(loaded.suffix(maxRecentEntries))
+-        }
+-        recentEntriesStorage = loaded
+-        nextSequence = (loaded.last?.sequence ?? 0) &+ 1
+         lastRefreshAtStorage = Date()
+         refreshDiskUsageUnsafe()
+     }
+@@ -680,7 +731,20 @@
+         guard currentBytes + incomingBytes > maxFileBytes else { return false }
+ 
+         let oldest = rotatedURL(rotatedFileCount)
++        if fileManager.fileExists(atPath: oldest.path) {
++            do {
++                try fileManager.removeItem(at: oldest)
++                rotationEvictionCount += 1
++                let value = ["rotated_file_evictions": rotationEvictionCount]
++                if let data = try? JSONSerialization.data(withJSONObject: value) {
++                    try? data.write(to: retentionCounterURL,
++                                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
++                }
++            } catch {
++                // Never pretend that a full retention archive can be deleted.
++                return false
++            }
++        }
+-        try? fileManager.removeItem(at: oldest)
+ 
+         if rotatedFileCount > 1 {
+             for index in stride(from: rotatedFileCount - 1, through: 1, by: -1) {
+@@ -795,7 +859,8 @@
+         "access_token", "refresh_token", "pairing_code", "pairingcode",
+         "message_body", "message_text", "plaintext", "typed_text", "prompt",
+         "media_payload", "image_payload", "attachment_payload", "raw_audio",
++        "raw_video", "bubble_body", "bubble_text", "chat_body", "chat_text",
++        "message_content", "reply_body", "attachment_name"
+-        "raw_video"
+     ]
+ 
+     static func sanitizeMetadata(_ metadata: [String: String]) -> [String: String] {
+diff --git a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift b/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
+--- a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
++++ b/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
+@@ -69,7 +69,7 @@
+     private let directory: URL
+     private let eventURL: URL
+     private let session = String(UUID().uuidString.prefix(8))
++    private let limit = 512
+-    private let limit = 128
+     private(set) var entries: [Entry]
+ 
+     init(rootDirectory: URL? = nil) {
+@@ -81,7 +81,7 @@
+         eventURL = directory.appendingPathComponent("events.json")
+         if let data = try? Data(contentsOf: eventURL),
+            let saved = try? JSONDecoder().decode([Entry].self, from: data) {
++            entries = Array(saved.suffix(512))
+-            entries = Array(saved.suffix(128))
+         } else {
+             entries = []
+         }
+diff --git a/VeilLink/UI/DiagnosticsLogView.swift b/VeilLink/UI/DiagnosticsLogView.swift
+--- a/VeilLink/UI/DiagnosticsLogView.swift
++++ b/VeilLink/UI/DiagnosticsLogView.swift
+@@ -65,7 +65,7 @@
+ 
+                 Toggle("仅当前界面", isOn: $onlyCurrentScreen)
+             } footer: {
++                Text("内存显示最近 6,000 条；磁盘预算 \(store.retentionText)，已使用约 \(store.retentionPressurePercent)%。已淘汰日志段：\(store.rotationEvictions)。记录气泡顺序和状态但不含文字。容量不足可能无法保留五个夜晚。")
+-                Text("内存显示最近 2,000 条；磁盘约 \(store.retentionText) 环形保留。UI 点击、手势、页面、输入生命周期、BLE、A9、Agent 与系统快照统一按时间序列记录。")
+             }
+ 
+             Section("时间线") {
+diff --git a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift b/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+--- a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
++++ b/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+@@ -14,6 +14,12 @@
+     private var lastSnapshotLoggedAt: [String: Date] = [:]
+     private var snapshotSuppressed: [String: Int] = [:]
+     private let snapshotMinInterval: TimeInterval = 30
++    // Tokens are intentionally random-session-local ordinals, never persisted
++    // message identifiers, hashes of plaintext, or peer identity IDs.
++    private var bubbleTokenLookup: [String: Int] = [:]
++    private var bubbleWindowSignatures: [Int: [Int: String]] = [:]
++    private var nextBubbleToken = 1
++    private var bubbleTokenEpoch = 0
+ 
+     private init() {}
+ 
+@@ -410,6 +416,144 @@
+             .store(in: &cancellables)
+     }
+ 
++    /// Observe only the actual rows rendered by ChatView. No body/text/ID
++    /// leaves this process via the diagnostic writer.
++    func recordVisibleBubbleOrder(
++        conversationID: String,
++        messages: [ChatMessage],
++        reason: String,
++        hasOlder: Bool
++    ) {
++        guard applicationActive else { return }
++        if bubbleTokenLookup.count >= 20_000 {
++            bubbleTokenLookup.removeAll(keepingCapacity: true)
++            bubbleWindowSignatures.removeAll(keepingCapacity: true)
++            nextBubbleToken = 1
++            bubbleTokenEpoch &+= 1
++        }
++
++        let conversationToken = bubbleToken(for: "conversation:\(conversationID)")
++        let window = messages.suffix(2_048)
++        let startIndex = messages.count - window.count
++        let previous = bubbleWindowSignatures[conversationToken] ?? [:]
++        var nextSignatures: [Int: String] = [:]
++        var changes: [(ordinal: Int, token: Int, message: ChatMessage)] = []
++
++        for (offset, message) in window.enumerated() {
++            let token = bubbleToken(for: "bubble:\(message.id)")
++            let ordinal = startIndex + offset
++            let signature = "\(ordinal)|\(message.isOutgoing)|\(message.deliveryState.rawValue)|\(message.sentAt.timeIntervalSince1970)|\(message.attachment != nil)"
++            nextSignatures[token] = signature
++            if previous[token] != signature {
++                changes.append((ordinal, token, message))
++            }
++        }
++        let noLongerVisible = previous.keys.filter { nextSignatures[$0] == nil }
++        guard !changes.isEmpty || !noLongerVisible.isEmpty else { return }
++
++        if bubbleWindowSignatures[conversationToken] == nil,
++           bubbleWindowSignatures.count >= 8,
++           let first = bubbleWindowSignatures.keys.sorted().first {
++            bubbleWindowSignatures.removeValue(forKey: first)
++        }
++        bubbleWindowSignatures[conversationToken] = nextSignatures
++        let common: [String: String] = [
++            "conversation_token": String(conversationToken),
++            "token_epoch": String(bubbleTokenEpoch),
++            "plaintext_recorded": "false"
++        ]
++        store.log(.info, .ui, event: "chat.bubbles.window", screen: "chats.detail", metadata: common.merging([
++            "reason": reason,
++            "total_visible": String(messages.count),
++            "window_start": String(startIndex),
++            "window_count": String(window.count),
++            "changed_count": String(changes.count),
++            "no_longer_visible_count": String(noLongerVisible.count),
++            "has_older": String(hasOlder)
++        ]) { _, new in new })
++
++        for change in changes {
++            store.log(.debug, .ui, event: "chat.bubble.order", screen: "chats.detail",
++                      metadata: DiagnosticBubbleTracePolicy.metadata(
++                        conversationToken: conversationToken,
++                        bubbleToken: change.token,
++                        tokenEpoch: bubbleTokenEpoch,
++                        ordinal: change.ordinal,
++                        outgoing: change.message.isOutgoing,
++                        delivery: change.message.deliveryState,
++                        sentAt: change.message.sentAt,
++                        hasAttachment: change.message.attachment != nil
++                      ))
++        }
++        for token in noLongerVisible {
++            store.log(.debug, .ui, event: "chat.bubble.no_longer_visible", screen: "chats.detail",
++                      metadata: common.merging(["bubble_token": String(token)]) { _, new in new })
++        }
++    }
++
++    private func bubbleToken(for key: String) -> Int {
++        if let existing = bubbleTokenLookup[key] { return existing }
++        let value = nextBubbleToken
++        nextBubbleToken &+= 1
++        bubbleTokenLookup[key] = value
++        return value
++    }
++
++
++    /// Source-of-truth feature inventory; being registered is NOT equivalent
++    /// to having deep diagnostic coverage. No titles or free-text are emitted.
++    func recordFeatureInventory(_ registry: VeilFeatureRegistry) {
++        let audit = registry.audit()
++        store.log(.info, .app, event: "diagnostics.feature_registry.inventory",
++                  metadata: [
++                    "feature_count": String(audit.featureCount),
++                    "pack_count": String(audit.packCounts.count),
++                    "pack_ids": audit.packCounts.keys.sorted().joined(separator: ","),
++                    "coverage_status": "inventory_only",
++                    "deep_hooks_verified": "false"
++                  ])
++    }
++
++    /// An app-owned module may report structured numeric state without granting
++    /// access to other apps, raw text, keys, or OS-private telemetry.
++    func recordModuleCheckpoint(
++        module: String,
++        phase: String,
++        counters: [String: Int] = [:],
++        flags: [String: Bool] = [:],
++        level: DiagnosticLogLevel = .debug
++    ) {
++        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-")
++        let safeModule = String(module.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(64))
++        let safePhase = String(phase.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(48))
++        guard !safeModule.isEmpty, !safePhase.isEmpty else { return }
++        var metadata: [String: String] = [
++            "module": safeModule,
++            "phase": safePhase,
++            "schema": "module-checkpoint.v1",
++            "plaintext_recorded": "false"
++        ]
++        for (key, number) in counters.prefix(12) {
++            let safe = String(key.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(40))
++            if !safe.isEmpty { metadata["counter." + safe] = String(number) }
++        }
++        for (key, flag) in flags.prefix(12) {
++            let safe = String(key.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(40))
++            if !safe.isEmpty { metadata["flag." + safe] = flag ? "true" : "false" }
++        }
++        store.log(level, .app, event: "diagnostics.module.checkpoint", metadata: metadata)
++    }
++
++    func recordFeatureOpening(_ feature: VeilFeatureDescriptor) {
++        recordModuleCheckpoint(
++            module: feature.packID,
++            phase: "feature.open",
++            counters: ["feature_count": 1],
++            flags: ["experimental": feature.isExperimental],
++            level: .info
++        )
++    }
++
+     func recordStartupBegin() {
+         store.log(.info, .app, event: "startup.begin", metadata: ["build": VeilBuildInfo.display])
+     }
+@@ -680,3 +824,31 @@
+     }
+ }
+ 
++
++/// A content-free output boundary: this function never accepts ChatMessage,
++/// its body, a plaintext fingerprint, or a persistent conversation/message ID.
++enum DiagnosticBubbleTracePolicy {
++    static func metadata(
++        conversationToken: Int,
++        bubbleToken: Int,
++        tokenEpoch: Int,
++        ordinal: Int,
++        outgoing: Bool,
++        delivery: ChatMessage.DeliveryState,
++        sentAt: Date,
++        hasAttachment: Bool
++    ) -> [String: String] {
++        [
++            "conversation_token": String(conversationToken),
++            "bubble_token": String(bubbleToken),
++            "token_epoch": String(tokenEpoch),
++            "ordinal": String(ordinal),
++            "direction": outgoing ? "outbound" : "inbound",
++            "delivery": delivery.rawValue,
++            "sent_at_ms": String(Int64(sentAt.timeIntervalSince1970 * 1_000)),
++            "has_attachment": String(hasAttachment),
++            "plaintext_recorded": "false"
++        ]
++    }
++}
++
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -858,6 +858,12 @@
+                 loadedFullHistoryForSearch = true
+                 reload(loadAll: true)
+             }
++            RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
++                conversationID: conversation.id,
++                messages: visibleMessages,
++                reason: "search.filter",
++                hasOlder: hasOlderMessages
++            )
+         }
+         .sheet(isPresented: $showsPhotoPicker) {
+             PhotoPicker(
+@@ -1009,6 +1015,12 @@
+                     }
+                 }
+                 if presentWhenReady { showsConversationWorkspace = true }
++                RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
++                    conversationID: conversationID,
++                    messages: visibleMessages,
++                    reason: "workspace.load",
++                    hasOlder: hasOlderMessages
++                )
+                 RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                     "chat.workspace.ready",
+                     metadata: [
+@@ -1069,6 +1081,12 @@
+                     loadAll: loadAll
+                 )
+                 if isReloadingMessages { isReloadingMessages = false }
++                RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
++                    conversationID: conversationID,
++                    messages: visibleMessages,
++                    reason: loadAll ? "reload.full" : "reload.recent",
++                    hasOlder: hasOlderMessages
++                )
+             }
+         }
+     }
+diff --git a/VeilLinkTests/PreConsentBlackBoxTests.swift b/VeilLinkTests/PreConsentBlackBoxTests.swift
+--- a/VeilLinkTests/PreConsentBlackBoxTests.swift
++++ b/VeilLinkTests/PreConsentBlackBoxTests.swift
+@@ -29,14 +29,14 @@
+             .appendingPathComponent("preconsent-test-\(UUID().uuidString)")
+         defer { try? FileManager.default.removeItem(at: directory) }
+         let first = VeilPreConsentBlackBox(rootDirectory: directory)
++        for _ in 0..<520 { first.record(.confirmationChanged, stage: .consent) }
++        XCTAssertEqual(first.entries.count, 512)
+-        for _ in 0..<160 { first.record(.confirmationChanged, stage: .consent) }
+-        XCTAssertEqual(first.entries.count, 128)
+         let subsequent = VeilPreConsentBlackBox(rootDirectory: directory)
++        XCTAssertEqual(subsequent.entries.count, 512)
++        XCTAssertEqual(subsequent.entries.last?.sequence, 520)
+-        XCTAssertEqual(subsequent.entries.count, 128)
+-        XCTAssertEqual(subsequent.entries.last?.sequence, 160)
+         subsequent.record(.appLaunched, stage: .launch)
++        XCTAssertEqual(subsequent.entries.last?.sequence, 521)
++        XCTAssertEqual(subsequent.entries.count, 512)
+-        XCTAssertEqual(subsequent.entries.last?.sequence, 161)
+-        XCTAssertEqual(subsequent.entries.count, 128)
+     }
+ 
+     func testNoLegalOrRuntimeInitializationNeededForExport() throws {
+diff --git a/VeilLinkTests/DiagnosticLogStoreTests.swift b/VeilLinkTests/DiagnosticLogStoreTests.swift
+--- a/VeilLinkTests/DiagnosticLogStoreTests.swift
++++ b/VeilLinkTests/DiagnosticLogStoreTests.swift
+@@ -71,6 +71,41 @@
+         XCTAssertEqual(sequences, sequences.sorted())
+     }
+ 
++    func testExpandedRetentionAndColdReloadOrdering() throws {
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent(UUID().uuidString, isDirectory: true)
++        defer { try? FileManager.default.removeItem(at: root) }
++        let store = DiagnosticLogStore(rootDirectory: root)
++        XCTAssertEqual(store.retentionBytes, 512 * 1_024 * 1_024)
++        for index in 0..<12 { store.log(.debug, .ui, event: "order.\(index)") }
++        let snapshot = try store.exportBundle(context: "test.cold-reload")
++        defer { try? FileManager.default.removeItem(at: snapshot) }
++        let reloaded = DiagnosticLogStore(rootDirectory: root)
++        XCTAssertEqual(reloaded.recentEntries.count, 12)
++        XCTAssertEqual(reloaded.rotationEvictions, 0)
++        XCTAssertEqual(reloaded.retentionPressurePercent >= 0, true)
++        XCTAssertEqual(reloaded.recentEntries.map(\.sequence), Array(1...12).map(UInt64.init))
++        XCTAssertEqual(reloaded.recentEntries.last?.event, "order.11")
++    }
++
++    func testBubbleTraceMetadataContainsNoTextOrPersistentIdentifiers() {
++        let fields = DiagnosticBubbleTracePolicy.metadata(
++            conversationToken: 7, bubbleToken: 11, tokenEpoch: 0,
++            ordinal: 2, outgoing: true, delivery: .delivered,
++            sentAt: Date(timeIntervalSince1970: 1_700_000_000),
++            hasAttachment: false
++        )
++        XCTAssertEqual(fields["ordinal"], "2")
++        XCTAssertEqual(fields["direction"], "outbound")
++        XCTAssertEqual(fields["delivery"], "delivered")
++        XCTAssertEqual(fields["plaintext_recorded"], "false")
++        XCTAssertEqual(Set(fields.keys), Set([
++            "conversation_token", "bubble_token", "token_epoch", "ordinal",
++            "direction", "delivery", "sent_at_ms", "has_attachment", "plaintext_recorded"
++        ]))
++        XCTAssertFalse(fields.values.joined(separator: "|").contains("private"))
++    }
++
+     private func waitForEntries(_ count: Int, in store: DiagnosticLogStore) async {
+         // The existing export API synchronizes the serial log queue before
+         // reading it. Use that real completion barrier instead of assuming
+diff --git a/VeilLinkTests/BlackBoxExportIntegrityTests.swift b/VeilLinkTests/BlackBoxExportIntegrityTests.swift
+--- a/VeilLinkTests/BlackBoxExportIntegrityTests.swift
++++ b/VeilLinkTests/BlackBoxExportIntegrityTests.swift
+@@ -51,6 +51,26 @@
+         XCTAssertEqual(files[0]["name"] as? String, "runtime.jsonl")
+     }
+ 
++    func testFeatureRegistryInventoryMarksUnobservedPacksWithoutClaimingCoverage() throws {
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent(UUID().uuidString, isDirectory: true)
++        defer { try? FileManager.default.removeItem(at: root) }
++        let store = DiagnosticLogStore(rootDirectory: root)
++        store.log(.info, .app, event: "diagnostics.feature_registry.inventory",
++                  metadata: ["pack_ids": "v27.alpha,v27.beta", "coverage_status": "inventory_only"])
++        store.log(.info, .app, event: "diagnostics.module.checkpoint",
++                  metadata: ["module": "v27.alpha", "phase": "feature.open"])
++        let archive = try store.exportBundle(context: "test.module-coverage")
++        defer { try? FileManager.default.removeItem(at: archive) }
++        let output = root.appendingPathComponent("coverage-output")
++        try unpack(archive, to: output)
++        let index = try readJSON("event-index.json", in: output)
++        XCTAssertEqual(index["registeredFeaturePacks"] as? [String], ["v27.alpha", "v27.beta"])
++        XCTAssertEqual(index["unobservedRegisteredPacks"] as? [String], ["v27.beta"])
++        let counts = try XCTUnwrap(index["moduleCheckpointCounts"] as? [String: Int])
++        XCTAssertEqual(counts["v27.alpha"], 1)
++    }
++
+     func testIncludedFileSHA256MatchesTheActualStagedPayload() throws {
+         let root = FileManager.default.temporaryDirectory
+             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+@@ -79,7 +99,7 @@
+         defer { try? FileManager.default.removeItem(at: root) }
+         let store = DiagnosticLogStore(rootDirectory: root)
+ 
++        let oldest = root.appendingPathComponent("runtime.23.jsonl")
+-        let oldest = root.appendingPathComponent("runtime.7.jsonl")
+         let sentinel = Data("keep-existing-diagnostics".utf8)
+         try sentinel.write(to: oldest, options: .atomic)
+ 
+@@ -89,7 +109,7 @@
+         let blockedActive = root.appendingPathComponent("runtime.jsonl", isDirectory: true)
+         try FileManager.default.createDirectory(at: blockedActive, withIntermediateDirectories: true)
+ 
++        // Exercise the failed-append path independently of the larger retention budget.
+-        // Cross the 2 MB rotation threshold even though no append can succeed.
+         let largeMessage = String(repeating: "x", count: 2_048)
+         for i in 0..<1_500 {
+             store.log(.info, .app, event: "retry.\(i)", message: largeMessage)
+diff --git a/VeilLink/UI/VeilFeatureLibraryView.swift b/VeilLink/UI/VeilFeatureLibraryView.swift
+--- a/VeilLink/UI/VeilFeatureLibraryView.swift
++++ b/VeilLink/UI/VeilFeatureLibraryView.swift
+@@ -47,6 +47,9 @@
+         .navigationBarTitleDisplayMode(.inline)
+         .onChange(of: query) { _ in offset = 0 }
+         .onChange(of: domain) { _ in offset = 0 }
++        .onAppear {
++            RuntimeDiagnosticsBridge.shared.recordFeatureInventory(registry)
++        }
+     }
+ 
+     private var header: some View {
+@@ -121,7 +124,10 @@
+     private func featureRow(_ feature: VeilFeatureDescriptor) -> some View {
+         let decision = registry.launchDecision(for: feature.id, profile: profile, passedGates: passedGates)
+         return Button {
++            if decision.canLaunch {
++                RuntimeDiagnosticsBridge.shared.recordFeatureOpening(feature)
++                onOpen(feature.id)
++            }
+-            if decision.canLaunch { onOpen(feature.id) }
+         } label: {
+             HStack(alignment: .top, spacing: 12) {
+                 Image(systemName: icon(feature.domain))
+diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.swift
+--- a/VeilLink/UI/OwnerConsoleView.swift
++++ b/VeilLink/UI/OwnerConsoleView.swift
+@@ -292,6 +292,24 @@
+ 
+             Divider().background(VeilTheme.hairline)
+ 
++            HStack(spacing: 9) {
++                Label(telemetry.touchProbeReady ? "触摸监听可用" : "监听安装异常",
++                      systemImage: telemetry.touchProbeReady
++                        ? "checkmark.circle" : "exclamationmark.triangle")
++                    .font(.caption)
++                    .foregroundColor(telemetry.touchProbeReady
++                        ? VeilTheme.goldBright : VeilTheme.secondaryText)
++                Spacer()
++                Text("已采集 \\(telemetry.capturedTouchCount) 次")
++                    .font(.caption.monospacedDigit())
++                    .foregroundColor(VeilTheme.goldBright)
++            }
++            .accessibilityIdentifier("owner.telemetry.touch_probe_status")
++            Text(telemetry.rawTouchCaptureEnabled
++                 ? "触摸监听已开启：在本页面点按或滑动，此处的次数应增加。键盘和输入区域不记录坐标。"
++                 : "触摸采集未开启：启用下方开关后，通过本页面触摸次数验证是否真正生效。")
++                .font(.caption2).foregroundColor(VeilTheme.secondaryText)
++
+             Toggle(isOn: $telemetry.rawTouchCaptureEnabled) {
+                 VStack(alignment: .leading, spacing: 2) {
+                     Text("全量 UI 触摸黑匣子")
+@@ -342,6 +360,25 @@
+ 
+             Divider().background(VeilTheme.hairline)
+ 
++            Button {
++                // This is explicit in-app owner consent, not an iOS privilege escalation.
++                telemetry.rawTouchCaptureEnabled = true
++                telemetry.inputLifecycleCaptureEnabled = true
++                telemetry.postInteractionSnapshotsEnabled = true
++                telemetry.performanceWatchEnabled = true
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "diagnostics", phase: "owner.enable_full_local",
++                    flags: ["raw_touch": true, "input_lifecycle": true, "ui_snapshot": true, "performance": true],
++                    level: .info
++                )
++            } label: {
++                Label("开启全部本机诊断采集", systemImage: "waveform.path.ecg")
++            }
++            .buttonStyle(.bordered)
++            .tint(VeilTheme.gold)
++            Text("仅采集 VeilLink 自身可访问的结构化事件；不会取得其他 App 或系统私有日志的权限。各开关将保持开启，直到手动关闭。")
++                .font(.caption2).foregroundColor(VeilTheme.secondaryText)
++
+             LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+                 Button("立即抓取状态") {
+                     RuntimeDiagnosticsBridge.shared.recordSemanticAction("owner.telemetry.capture_now")
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -78,6 +78,15 @@
+         case draw
+     }
+ 
++    // All seven local-game reducers share this privacy-safe event boundary.
++    private func flight(_ phase: String, values: [String: Int] = [:], flags: [String: Bool] = [:],
++                        level: DiagnosticLogLevel = .debug) {
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game." + game.rawValue, phase: phase,
++            counters: values, flags: flags, level: level
++        )
++    }
++
+     @Published private(set) var gomoku = GomokuState()
+     @Published private(set) var xiangqi = XiangqiState()
+     @Published private(set) var ludo = LudoState()
+@@ -230,6 +239,7 @@
+             boardMatchSaveWarning = nil
+         } catch {
+             boardMatchSaveWarning = "本步存档失败：本局仍可继续，但强制退出可能丢失最近走子。"
++            flight("save.failed", values: ["move_count": boardMatchMoves.count], level: .error)
+         }
+     }
+ 
+@@ -375,6 +385,7 @@
+         sessionID = UUID().uuidString
+         outcome = .playing
+         isAIThinking = false
++        flight("match.restart", flags: ["start_ai": startAI], level: .info)
+         developerFormationPlies.removeAll(keepingCapacity: true)
+         developerTeachingMode = false
+         lastDecisionMode = "规则 Bot"
+@@ -391,6 +402,7 @@
+         guard state.apply(index: index, actor: humanPlayer) else { return }
+         learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: .host))
+         gomoku = state
++        flight("move.human_applied", values: ["cell": index, "ply": state.moveCount], level: .info)
+         persistBoardMove(.gomoku(index: index), actor: humanPlayer)
+         finishOrScheduleAI()
+     }
+@@ -599,6 +611,7 @@
+             return
+         }
+         nativeTrainingTarget = target
++        flight("training.started", values: ["target": target], level: .info)
+         nativeTrainingCompleted = 0
+         isNativeTraining = true
+         setUseNativeTrainingEvidence(true)
+@@ -633,6 +646,7 @@
+                     if stored == 1 {
+                         self.nativeTrainingCompleted += 1
+                         self.trainedNativeGames = store.summary.completedGames
++                        self.flight("training.game_saved", values: ["count": self.nativeTrainingCompleted])
+                         failed = 0
+                     } else if store.lastSaveSucceeded {
+                         // Duplicate or invalid match: do NOT count it as trained.
+@@ -652,6 +666,10 @@
+                 await Task.yield()
+             }
+             self.trainedNativeGames = store.summary.completedGames
++            self.flight("training.finished",
++                        values: ["completed": self.nativeTrainingCompleted,
++                                 "target": target, "rejected": rejected, "failed": failed],
++                        flags: ["cancelled": Task.isCancelled], level: .info)
+             if self.nativeTrainingCompleted == target {
+                 self.nativeTrainingMessage = "本轮已保存 \(self.nativeTrainingCompleted) 局原生自对弈。"
+             } else if Task.isCancelled {
+@@ -770,6 +788,7 @@
+     }
+ 
+     private func finishOrScheduleAI() {
++        if game != .gomoku { flight("turn.human_applied") }
+         updateOutcome()
+         guard !developerTeachingMode else { return }
+         guard outcome == .playing else { return }
+@@ -777,6 +796,7 @@
+     }
+ 
+     private func updateOutcome() {
++        let previousOutcome = outcome
+         switch game {
+         case .gomoku:
+             if let winner = gomoku.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+@@ -799,6 +819,9 @@
+             if let winner = magneticHockey.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+             else if magneticHockey.isDraw { outcome = .draw }
+         }
++        if previousOutcome != outcome {
++            flight("match." + String(describing: outcome), level: .info)
++        }
+         guard !developerTeachingMode else { return }
+         if game == .gomoku, outcome != .playing {
+             _ = persistEclipseArchive(status: eclipseArchiveStatus)
+@@ -826,6 +849,10 @@
+         guard current == aiPlayer else { return }
+         aiTask?.cancel()
+         isAIThinking = true
++        flight("ai.search_started",
++               values: ["search_multiplier": boardDifficulty.searchBudgetMultiplier,
++                        "gomoku_ply": game == .gomoku ? gomoku.moveCount : 0],
++               flags: ["economy": boardSearchMode == .economy])
+         aiTask = Task { @MainActor [weak self] in
+             guard let self else { return }
+             try? await Task.sleep(nanoseconds: 180_000_000)
+@@ -837,6 +864,10 @@
+             if let selected { self.applyAI(selected) }
+             if self.game == .gomoku { self.eclipseTraceStore.clear() }
+             self.lastDecisionMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
++            self.flight("ai.search_finished",
++                        values: ["duration_ms": self.lastDecisionMilliseconds ?? 0],
++                        flags: ["candidate_found": selected != nil],
++                        level: selected == nil ? .warning : .info)
+             self.eclipseSearchStartedAt = nil
+             self.isAIThinking = false
+             self.aiTask = nil
+@@ -1089,6 +1120,7 @@
+     }
+ 
+     private func applyAI(_ candidate: AgentActionCandidate) {
++        flight("ai.candidate_apply")
+         switch game {
+         case .gomoku:
+             guard let index = candidate.metadata["index"].flatMap(Int.init) else { return }
+@@ -1097,6 +1129,7 @@
+             guard state.apply(index: index, actor: aiPlayer) else { return }
+             learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: .guest))
+             gomoku = state
++            flight("move.ai_applied", values: ["cell": index, "ply": state.moveCount], level: .info)
+             persistBoardMove(.gomoku(index: index), actor: aiPlayer)
+         case .xiangqi:
+             guard let from = candidate.metadata["from"].flatMap(Int.init),
+@@ -1136,6 +1169,7 @@
+             guard state.apply(angle: angle, power: power, actor: aiPlayer, sessionID: sessionID) else { return }
+             magneticHockey = state
+         }
++        if game != .gomoku { flight("turn.ai_applied") }
+     }
+ 
+     private func finalizeLearning(as result: AdaptiveBoardGameResult) {
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -247,7 +247,25 @@
+     private var audioRouteSubscription: AnyCancellable?
+     private var linkSnapshotRefreshWorkItem: DispatchWorkItem?
+     private var lastLinkSnapshotPublishAt: TimeInterval = 0
++    private var lastQueuePressureUptime: TimeInterval = -100
+ 
++    private func flight(_ phase: String, id: UUID? = nil,
++                        values: [String: Int] = [:], level: DiagnosticLogLevel = .debug) {
++        var fields: [String: String] = ["payload_recorded": "false"]
++        if let id { fields["transport_id"] = id.uuidString }
++        for (key, value) in values { fields[key] = String(value) }
++        DiagnosticLogStore.shared.log(level, .bluetooth, event: "ble.flight." + phase, metadata: fields)
++    }
++
++    private func reportQueuePressure(id: UUID, bytes: Int, packets: Int, pending: Int) {
++        let now = ProcessInfo.processInfo.systemUptime
++        guard now - lastQueuePressureUptime >= 5 else { return }
++        lastQueuePressureUptime = now
++        flight("queue_pressure", id: id,
++               values: ["payload_bytes": bytes, "pending_packets": packets, "pending_bytes": pending],
++               level: .warning)
++    }
++
+     private let maxFragmentsPerMessage = 16_384
+     private let passiveDiscoveryRetention: TimeInterval = 15
+     private let performanceProfile: DevicePerformanceProfile
+@@ -307,6 +325,7 @@
+     }
+ 
+     func start() {
++        flight("start", level: .info)
+         isRunning = true
+         refreshBluetoothAudioRoute()
+         startRSSIPolling()
+@@ -393,6 +412,7 @@
+     }
+ 
+     func disconnect(_ id: UUID) {
++        flight("disconnect_requested", id: id, level: .info)
+         if wantedConnections.remove(id) != nil {
+             connectionIntentStore.save(wantedConnections)
+         }
+@@ -408,6 +428,7 @@
+     /// Drops the current link while preserving the user's intent to stay connected.
+     /// Used by the security/session watchdog when a connection becomes stale.
+     func recover(_ id: UUID) {
++        flight("recover_requested", id: id, level: .warning)
+         if wantedConnections.insert(id).inserted {
+             connectionIntentStore.save(wantedConnections)
+         }
+@@ -439,6 +460,7 @@
+     }
+ 
+     func connect(to id: UUID) {
++        flight("connect_requested", id: id, level: .info)
+         if wantedConnections.insert(id).inserted {
+             connectionIntentStore.save(wantedConnections)
+         }
+@@ -493,6 +515,9 @@
+                 maximumPackets: maxQueuedPacketsPerPeer,
+                 maximumBytes: maxQueuedBytesPerPeer
+             ) else {
++                reportQueuePressure(id: transportID, bytes: data.count,
++                                    packets: existing?.pendingCount ?? 0,
++                                    pending: existing?.pendingBytes ?? 0)
+                 return .temporarilyUnavailable
+             }
+             guard centralOutboundQueues[transportID, default: PeerOutboundQueue()].appendEncodedPayload(
+@@ -524,6 +549,9 @@
+             maximumPackets: maxQueuedPacketsPerPeer,
+             maximumBytes: maxQueuedBytesPerPeer
+         ) else {
++            reportQueuePressure(id: transportID, bytes: data.count,
++                                packets: existing?.pendingCount ?? 0,
++                                pending: existing?.pendingBytes ?? 0)
+             return .temporarilyUnavailable
+         }
+         guard peripheralOutboundQueues[transportID, default: PeerOutboundQueue()].appendEncodedPayload(
+@@ -777,7 +805,10 @@
+         connectedPeerCount = connectionEvents.count
+         statusText = "蓝牙数据通道已就绪"
+         publishLinkSnapshots(force: true)
++        if firstConnectionEvent {
++            flight("data_ready", id: id, level: .info)
++            onConnected?(id)
++        }
+-        if firstConnectionEvent { onConnected?(id) }
+     }
+ 
+     private func publishDisconnected(_ id: UUID) {
+@@ -784,7 +815,10 @@
+         let didDisconnect = connectionEvents.markDisconnected(id)
+         connectedPeerCount = connectionEvents.count
+         publishLinkSnapshots(force: true)
++        if didDisconnect {
++            flight("data_disconnected", id: id, level: .warning)
++            onDisconnected?(id)
++        }
+-        if didDisconnect { onDisconnected?(id) }
+     }
+ 
+     private func scheduleReconnect(_ peripheral: CBPeripheral, immediate: Bool = false) {
+@@ -801,6 +835,8 @@
+         let baseDelay = immediate ? 0 : BLELinkReliabilityPolicy.reconnectDelay(attempt: attempt)
+         let jitter = immediate ? 0 : Double.random(in: 0...min(1.0, baseDelay * 0.12))
+         let delay = baseDelay + jitter
++        flight("reconnect_scheduled", id: id,
++               values: ["attempt": attempt, "delay_ms": Int(delay * 1_000)], level: .warning)
+         statusText = attempt <= 2 ? "蓝牙链路恢复中" : "蓝牙链路较弱，持续重连中"
+         publishLinkSnapshots()
+ 
+@@ -1093,6 +1129,7 @@
+         peripheral.discoverServices([Self.serviceUUID])
+         peripheral.readRSSI()
+         statusText = "蓝牙物理链路已连接，正在发现数据通道"
++        flight("physical_connected", id: peripheral.identifier, level: .info)
+         publishLinkSnapshots(force: true)
+     }
+ 
+@@ -1110,6 +1147,8 @@
+         } else {
+             statusText = "中央角色连接失败，备用数据通道仍可用"
+         }
++        flight("connect_failed", id: id,
++               values: ["error_code": (error as NSError?)?.code ?? 0], level: .warning)
+         scheduleReconnect(peripheral)
+     }
+ 
+@@ -1127,6 +1166,8 @@
+         } else {
+             statusText = "中央角色已断开，备用数据通道仍可用"
+         }
++        flight("physical_disconnected", id: id,
++               values: ["error_code": (error as NSError?)?.code ?? 0], level: .warning)
+         scheduleReconnect(peripheral)
+     }
+ 
+diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/VeilopolyMultiplayerBridge.swift
+--- a/VeilLink/App/VeilopolyMultiplayerBridge.swift
++++ b/VeilLink/App/VeilopolyMultiplayerBridge.swift
+@@ -50,7 +50,19 @@
+     private var waitingForHostAcceptance = false
+     private var peerLeft = false
+     private var foreground = true
++    // Observe committed game reducer state, never cards, finance details, IDs,
++    // display text or complete board snapshots.
++    private var gameObservation: AnyCancellable?
++    private var lastCommittedSignature: String?
+ 
++    private func flight(_ phase: String, values: [String: Int] = [:],
++                        flags: [String: Bool] = [:], level: DiagnosticLogLevel = .debug) {
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.veilopoly.multiplayer", phase: phase,
++            counters: values, flags: flags, level: level
++        )
++    }
++
+     init(sessions: any VeilopolyControlChannel, localIdentity: @escaping @MainActor () -> String?,
+          resumeURL: URL? = nil, gameSaveDirectory: URL? = nil) {
+         self.sessions = sessions
+@@ -72,6 +84,7 @@
+         presentationContext = context; isGamePresented = true
+     }
+     func invite(_ conversation: ConversationSummary, presentationContext: String = "game-lobby") {
++        flight("invite.requested", level: .info)
+         lastActionPeer = conversation.peerIdentityID
+         guard let local = localIdentity(), local != conversation.peerIdentityID else {
+             lastError = "请先启用本机身份，再邀请其他联系人。"
+@@ -87,6 +100,7 @@
+             lastError = "当前联系人身份无效，未创建或发送联机邀请。"
+             return
+         }
++        flight("invite.created", flags: ["secure_link": sessions.hasSecureSession(for: conversation.peerIdentityID)])
+         outgoingInvitation = config; boundLocalIdentity = local
+         self.presentationContext = presentationContext
+         lastError = nil
+@@ -105,6 +119,7 @@
+     }
+ 
+     func acceptInvitation(presentationContext: String = "game-lobby") {
++        flight("invite.accept_requested", level: .info)
+         guard let config = incomingInvitation, config.guestIdentityID == localIdentity(),
+               Date().timeIntervalSince(invitationBegan) <= 120 else { return }
+         do {
+@@ -116,6 +131,7 @@
+     }
+ 
+     func declineInvitation() {
++        flight("invite.decline", level: .info)
+         if let config = incomingInvitation {
+             enqueue(.init(roomID: config.roomID, kind: .decline), to: config.hostIdentityID)
+         }
+@@ -140,6 +156,8 @@
+             }
+             guard let packet = try assembler.ingest(fragment, from: authenticatedPeer,
+                 now: Date().timeIntervalSince1970) else { return }
++            flight("packet.received", values: ["fragment_count": fragment.count],
++                   flags: ["active_room": gameModel != nil])
+             switch packet.kind {
+             case .invite:
+                 guard let config = packet.configuration, config.hostIdentityID == authenticatedPeer,
+@@ -185,7 +203,10 @@
+                 if gameModel?.networkReady == true { lastError = nil }
+                 status = gameModel?.networkStatus ?? ""
+             }
++        } catch {
++            flight("packet.invalid", level: .warning)
++            lastError = "收到无效或不兼容的联机数据，已忽略；未更改对局。"
++        }
+-        } catch { lastError = "收到无效或不兼容的联机数据，已忽略；未更改对局。" }
+     }
+ 
+     private func createGame(_ config: VeilopolyRoomConfiguration, restoring: Bool = false) throws {
+@@ -199,6 +220,20 @@
+             self?.enqueue(packet, to: peer)
+         }
+         configuration = config; boundLocalIdentity = local; peerLeft = false; gameModel = game
++        gameObservation?.cancel()
++        lastCommittedSignature = nil
++        gameObservation = game.$game.sink { [weak self] snapshot in
++            guard let self else { return }
++            let signature = "\(snapshot.nextSeq)|\(snapshot.turn.player)|\(snapshot.turn.phase)|\(snapshot.winner != nil)"
++            guard lastCommittedSignature != signature else { return }
++            lastCommittedSignature = signature
++            flight("reducer." + String(describing: snapshot.turn.phase),
++                   values: ["sequence": snapshot.nextSeq,
++                            "turn_player": snapshot.turn.player,
++                            "players": snapshot.players.count],
++                   flags: ["finished": snapshot.winner != nil, "auction": snapshot.auction != nil, "trade": snapshot.trade != nil, "debt": snapshot.pendingDebt != nil], level: .info)
++        }
++        flight(restoring ? "game.restored" : "game.created", level: .info)
+         // The lobby can be backgrounded while constructing/restoring a room.
+         // Keep the game reducer's lifecycle gate aligned with the bridge gate.
+         game.setNetworkForeground(foreground)
+@@ -220,7 +255,10 @@
+             waitingForHostAcceptance = local == record.configuration.guestIdentityID
+             status = "已恢复本地联机断点，等待同一对手上线核对；不会自行变成房主"
+             gameModel?.requestNetworkSync()
++        } catch {
++            flight("restore.failed", level: .error)
++            lastError = "联机房间记录无法恢复，已保留文件；未覆盖单机存档。"
++        }
+-        } catch { lastError = "联机房间记录无法恢复，已保留文件；未覆盖单机存档。" }
+     }
+ 
+     private func persistResumeRecord(_ config: VeilopolyRoomConfiguration, local: String) {
+@@ -234,6 +272,7 @@
+     }
+ 
+     func leaveRoom() {
++        flight("room.leave", level: .info)
+         lastError = nil; lastActionPeer = nil
+         let active = configuration ?? outgoingInvitation
+         let removeResumeIndex = configuration != nil
+@@ -242,6 +281,7 @@
+             enqueue(.init(roomID: active.roomID, kind: .leave), to: peer(for: active, local: local))
+         }
+         gameModel?.flushSave()
++        gameObservation?.cancel(); gameObservation = nil; lastCommittedSignature = nil
+         gameModel = nil; configuration = nil; incomingInvitation = nil; outgoingInvitation = nil
+         isGamePresented = false; waitingForHostAcceptance = false
+         monitorTask?.cancel(); monitorTask = nil
+@@ -265,6 +305,7 @@
+     }
+ 
+     func reconnectAndSync() {
++        flight("sync.manual_requested", level: .info)
+         guard let config = configuration, let local = localIdentity() else { return }
+         let peer = peer(for: config, local: local)
+         if VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(
+@@ -287,10 +328,12 @@
+         if [.status, .snapshot, .resync].contains(packet.kind),
+            outgoing.contains(where: { $0.peer == peer && $0.packet.kind == packet.kind }) { return }
+         guard outgoing.count < 128 else {
++            flight("queue.full", values: ["queue_depth": outgoing.count], level: .error)
+             gameModel?.setNetworkAvailability(false, message: "同步队列已满，已暂停；请重新同步")
+             return
+         }
+         outgoing.append(Outbound(peer: peer, packet: packet))
++        flight("packet.queued", values: ["queue_depth": outgoing.count])
+         guard senderTask == nil else { return }
+         let generation = senderGeneration
+         senderTask = Task { @MainActor [weak self] in await self?.drain(generation: generation) }
+@@ -328,6 +371,7 @@
+                     guard sent else { throw VeilopolyRoomError.sequenceGap }
+                     try await Task.sleep(nanoseconds: 20_000_000)
+                 }
++                flight("packet.sent", values: ["fragments": fragments.count])
+                 if item.packet.kind == .invite, outgoingInvitation?.roomID == item.packet.roomID {
+                     status = "城市经济 V5 邀请已提交加密通道，等待对方接受（120 秒有效）"
+                 }
+@@ -340,6 +384,7 @@
+                 } else {
+                     status = "加密控制通道暂不可用，已暂停；请重连后重试或取消邀请。"
+                 }
++                flight("packet.send_failed", flags: ["unsupported_peer": error is SendFailure], level: .error)
+                 lastError = status
+                 gameModel?.setNetworkAvailability(false, message: status)
+                 return
+@@ -389,11 +434,13 @@
+         if gameModel?.networkReady == false || gameModel?.awaitingHost == true { gameModel?.requestNetworkSync() }
+     }
+     private func suspendForIdentityChange() {
++        flight("identity_change.suspend", level: .warning)
+         gameModel?.flushSave()
+         gameModel?.setNetworkAvailability(false, message: "本机身份已切换，原联机房间暂停")
+         senderTask?.cancel(); senderTask = nil; senderGeneration = UUID(); outgoing = []
+         monitorTask?.cancel(); monitorTask = nil
+         isGamePresented = false
++        gameObservation?.cancel(); gameObservation = nil; lastCommittedSignature = nil
+         gameModel = nil; configuration = nil; incomingInvitation = nil; outgoingInvitation = nil
+         boundLocalIdentity = nil
+     }
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -24,6 +24,11 @@
+         }
+         .background(VeilAmbientBackground())
+         .navigationTitle("游戏")
++        .onAppear {
++            RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                module: "game.lobby", phase: "screen.open", level: .info
++            )
++        }
+         .toolbar {
+             ToolbarItem(placement: .navigationBarTrailing) {
+                 VeilToolCenterToolbarLink(model: model)
+@@ -171,47 +176,91 @@
+     private var realtimeArcadeSection: some View {
+         VStack(alignment: .leading, spacing: 10) {
+             sectionTitle("实时渲染游戏", subtitle: "SpriteKit 2D + SceneKit 3D · 稳定帧循环 · 自适应画质")
++            NavigationLink(destination: PrismRift3DGameView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.prism-rift", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: PrismRift3DGameView()) {
+                 realtimeGameRow(title: "棱镜裂隙 3D", detail: "动态灯光 · 三维隧道 · 3 阶 Boss · 能量与舰体管理", motif: .circuit, badge: "3D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: AfterglowConvoyLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.afterglow-convoy", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: AfterglowConvoyLabView()) {
+                 realtimeGameRow(title: "余烬护航", detail: "雨夜视差 · 信标伙伴 · 风暴护盾 · 程序化航线", motif: .tide, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: AshHarborLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.ash-harbor", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: AshHarborLabView()) {
+                 realtimeGameRow(title: "灰港", detail: "暴风救援 · 探照灯与船体管理 · 四组求救信号", motif: .tide, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: RainlineLastTrainLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.rainline", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: RainlineLastTrainLabView()) {
+                 realtimeGameRow(title: "雨线末班车", detail: "实时列车调度 · 四类故障 · 夜雨材质与本地模型", motif: .comet, badge: "2D+")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: SignalDiveLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.signal-dive", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: SignalDiveLabView()) {
+                 realtimeGameRow(title: "深潜信号", detail: "深海探索 · 主动声呐 · 生物回波与压力管理", motif: .pulse, badge: "2D+")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: BlackoutDistrictLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.blackout-district", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: BlackoutDistrictLabView()) {
+                 realtimeGameRow(title: "熄灯街区", detail: "实时抢修驾驶 · 12 节点电网 · 130+ 建筑单元", motif: .circuit, badge: "2D+")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilPulseRunnerView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.pulse-runner", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilPulseRunnerView()) {
+                 realtimeGameRow(title: "星隙快递", detail: "三段式横版平台跳跃 · 收集星核 · 冲刺", motif: .comet, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilVoidSwarmView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.void-swarm", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilVoidSwarmView()) {
+                 realtimeGameRow(title: "虚空蜂群", detail: "触控移动 · 自动射击 · 波次生存", motif: .guardian, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: RhythmNeonView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.rhythm-neon", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: RhythmNeonView()) {
+                 realtimeGameRow(title: "霓虹节拍", detail: "节拍闪避 · 连击得分 · 超载冲刺", motif: .pulse, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilRhythmR6NativeGameView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.rhythm-expedition", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilRhythmR6NativeGameView()) {
+                 realtimeGameRow(title: "实时节奏远征", detail: "SpriteKit 实时判定 · 原生渲染 · 自适应画质", motif: .pulse, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: LatticeClashLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.lattice-clash", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: LatticeClashLabView()) {
+                 realtimeGameRow(title: "晶格冲突", detail: "确定性单机策略 · 连锁占领 · 本地 Bot", motif: .circuit, badge: "策略")
+             }
+             .buttonStyle(.plain)
+@@ -221,7 +270,11 @@
+     private var interactiveStorySection: some View {
+         VStack(alignment: .leading, spacing: 10) {
+             sectionTitle("互动剧情", subtitle: "剧情与游戏归入大厅，不再藏在工具箱")
++            NavigationLink(destination: VeilStoryLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.story", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilStoryLabView()) {
+                 realtimeGameRow(
+                     title: "故事实验室",
+                     detail: "原生分支叙事 · 多结局 · 完全离线",
+@@ -230,7 +283,11 @@
+                 )
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilMonogatariGameView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.monogatari-r6", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilMonogatariGameView()) {
+                 realtimeGameRow(
+                     title: "雨幕之后 · Monogatari R6",
+                     detail: "官方 2.8.0 完整引擎 · 东京雨夜 · 四种结局 · 本地存档",
+@@ -239,7 +296,11 @@
+                 )
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilMonogatariHostView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.monogatari-host", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilMonogatariHostView()) {
+                 realtimeGameRow(
+                     title: "VeilLink × Monogatari",
+                     detail: "官方 v2.8.0 引擎 · 原创离线剧情 · 本地存档",
+@@ -421,6 +482,9 @@
+             }
+         }
+         .onAppear {
++            RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                module: "game." + game.rawValue, phase: "screen.open", level: .info
++            )
+             model.agent.setComputeFocus(.gameDecision)
+             controller.resumeBoardMatchIfNeeded()
+             if game == .tactical,
+diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift
+--- a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift
++++ b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift
+@@ -112,11 +112,14 @@
+    if self.selectedTile != nil { self.boardSelectionRevision += 1 }
+   }
+   if unreadable {
++   flight("save.unavailable")
+    saveWarning = "本地存档无法读取，已保留原文件。可从「重新开局」明确重置。"
+    lastFeedback = "上次存档异常 · 未覆盖旧数据"
+   } else if let recovered {
++   flight("match.restored")
+    lastFeedback = "已恢复上次对局 · 进度 #\(recovered.game.nextSeq)"
+   } else {
++   flight("match.new")
+    checkpoint(force: true)
+   }
+   // A killed app can resume in .moveAnim/.tileResolve. Finish the pending
+@@ -150,11 +153,22 @@
+  public var saveSummary: String {
+   saveWarning ?? "自动保存已启用 · 异常退出后可继续本局"
+  }
++ /// App-owned primitive-only diagnostic bus. No game payload or IDs.
++ private func flight(_ phase: String, state: GameState? = nil) {
++  let current = state ?? game
++  NotificationCenter.default.post(name: NSNotification.Name("Veilopoly.FlightRecorder.v1"),
++   object: nil, userInfo: [
++    "phase": phase, "next_seq": current.nextSeq,
++    "player": current.turn.player, "turn_phase": current.turn.phase.rawValue,
++    "multiplayer": isMultiplayer
++   ])
++ }
+  private func checkpoint(force: Bool) {
+   if !force && Date().timeIntervalSince(lastCheckpointAt) < 30 { return }
+   guard !recoveryBlocked else { return }
+   guard let saveStore else {
+    saveWarning = "自动保存不可用：无法访问本机存储目录"
++   flight("save.unavailable")
+    return
+   }
+   do {
+@@ -164,6 +178,7 @@
+    saveWarning = nil
+   } catch {
+    saveWarning = "自动存档失败：请保留应用数据并反馈"
++   flight("save.failed")
+   }
+  }
+  public func flushSave() { checkpoint(force: true) }
+@@ -205,6 +220,7 @@
+   } else { result = VeilopolyEngine.apply(game, currentContext, move) }
+   switch result {
+   case .failure(let err):
++   flight("reducer.rejected")
+    guard reportErrors else { return }
+    errorMessage = VeilopolyGamePresentation.message(err)
+    errorAdvice = VeilopolyGamePresentation.advice(err)
+@@ -217,6 +233,7 @@
+     UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+   case .success((let newState, let effects)):
++   if move.type != .stockTick { flight("reducer.committed", state: newState) }
+    if let room = liveRoom {
+     networkSender?(.init(roomID: room.configuration.roomID, kind: .commit,
+      committed: .init(seq: move.seq, move: move, stateHash: StateDigest.hash(newState))))
+@@ -447,6 +464,7 @@
+     guard let snapshot = packet.snapshot else { return }
+     try room.acceptSnapshot(snapshot, from: sender)
+     liveRoom = room
++    flight("network.snapshot_applied", state: room.game)
+     installNetworkSnapshot(room.game)
+     sendNetworkStatus()
+    case .resync:
+@@ -469,6 +487,7 @@
+    case .invite, .accept, .decline: break // Invitation lifecycle belongs to the authenticated host bridge.
+    }
+   } catch {
++   flight("network.validation_failed")
+    if room.isHost { sendNetworkSnapshot() }
+    else {
+     setNetworkAvailability(false, message: "同步校验未通过，正在请求房主进度")
+diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/DeepTelemetry.swift
+--- a/VeilLink/Diagnostics/DeepTelemetry.swift
++++ b/VeilLink/Diagnostics/DeepTelemetry.swift
+@@ -26,6 +26,30 @@
+     }
+ }
+ 
++/// Structural touch decisions only; never derives keyboard characters.
++enum DeepTelemetryTouchPolicy {
++    static func kind(duration: TimeInterval, distance: CGFloat, dx: CGFloat,
++                     dy: CGFloat, fingers: Int) -> String {
++        if fingers > 1 { return "multitouch" }
++        if distance < 14 { return duration >= 0.9 ? "long_press" : "tap" }
++        if abs(dx) > abs(dy) { return dx >= 0 ? "swipe_right" : "swipe_left" }
++        return dy >= 0 ? "swipe_down" : "swipe_up"
++    }
++
++    static func acceptsWindow(typeName: String, level: Double,
++                              hasRoot: Bool, hidden: Bool) -> Bool {
++        let type = typeName.lowercased()
++        return hasRoot && !hidden && level >= -1 && level <= 2100
++            && !type.contains("keyboard") && !type.contains("texteffects")
++            && !type.contains("inputwindow") && !type.contains("remote")
++    }
++
++    static func redactCoordinates(sensitiveScreen: Bool, keyboardVisible: Bool,
++                                  inputFocused: Bool, touchedInput: Bool) -> Bool {
++        sensitiveScreen || keyboardVisible || inputFocused || touchedInput
++    }
++}
++
+ @MainActor
+ final class DeepTelemetry: ObservableObject {
+     static let shared = DeepTelemetry()
+@@ -47,6 +71,10 @@
+     }
+     @Published private(set) var currentScreen = "bootstrap"
+     @Published private(set) var lastInteractionAt: Date?
++    @Published private(set) var capturedTouchCount = 0
++    @Published private(set) var touchProbeReady = false
++    @Published private(set) var lastTouchAt: Date?
++    private(set) var keyboardVisible = false
+ 
+     private static let rawTouchKey = "diagnostics.deepTelemetry.rawTouch"
+     private static let inputLifecycleKey = "diagnostics.deepTelemetry.inputLifecycle"
+@@ -150,6 +178,35 @@
+         captureUIHierarchy(reason: "presentation", force: true)
+     }
+ 
++    func reportTouchProbe(ready: Bool, enabled: Bool) {
++        touchProbeReady = ready
++        store.log(.info, .ui, event: "ui.touch_probe.status", screen: currentScreen,
++                  metadata: ["ready": String(ready), "enabled": String(enabled),
++                             "source": "uiwindow.send_event"])
++    }
++
++    private static func isTextEntryView(_ view: UIView?) -> Bool {
++        var current = view
++        for _ in 0..<12 {
++            guard let candidate = current else { return false }
++            if candidate is UITextField || candidate is UITextView || candidate is UISearchBar {
++                return true
++            }
++            current = candidate.superview
++        }
++        return false
++    }
++
++    static func hasFocusedTextInput(in root: UIView?) -> Bool {
++        guard let root else { return false }
++        if root.isFirstResponder && (root is UITextField || root is UITextView) { return true }
++        return root.subviews.contains(where: { hasFocusedTextInput(in: $0) })
++    }
++
++    static func touchesTextInput(_ view: UIView?) -> Bool {
++        isTextEntryView(view)
++    }
++
+     func rawInteraction(
+         kind: String,
+         point: CGPoint,
+@@ -159,8 +216,12 @@
+     ) {
+         guard rawTouchCaptureEnabled else { return }
+         lastInteractionAt = Date()
++        capturedTouchCount += 1
++        lastTouchAt = lastInteractionAt
+         let secureContext = Self.isSensitiveScreen(currentScreen) || viewDescriptor["secure_context"] == "true"
+         var metadata = viewDescriptor
++        metadata.removeValue(forKey: "accessibility_id")
++        metadata.removeValue(forKey: "input_length")
+         if secureContext {
+             metadata.removeValue(forKey: "frame")
+             metadata.removeValue(forKey: "accessibility_id")
+@@ -289,7 +350,46 @@
+ 
+     private func installNotificationObservers() {
+         let center = NotificationCenter.default
++        // Isolated Veilopoly package emits a fixed primitive-only schema.
++        observers.append(center.addObserver(
++            forName: NSNotification.Name("Veilopoly.FlightRecorder.v1"),
++            object: nil, queue: .main
++        ) { notice in
++            Task { @MainActor in
++                guard let fields = notice.userInfo,
++                      let phase = fields["phase"] as? String,
++                      let step = fields["next_seq"] as? Int,
++                      let player = fields["player"] as? Int,
++                      let turnPhase = fields["turn_phase"] as? String,
++                      let multiplayer = fields["multiplayer"] as? Bool else { return }
++                let known = Set(["reducer.committed", "reducer.rejected",
++                                 "save.unavailable", "save.failed",
++                                 "network.snapshot_applied", "network.validation_failed",
++                                 "match.restored", "match.new"])
++                let phases = Set(["roll", "moveAnim", "tileResolve", "auction",
++                                  "manage", "trade", "debt", "finished"])
++                guard known.contains(phase), let phaseIndex = [
++                    "roll", "moveAnim", "tileResolve", "auction", "manage",
++                    "trade", "debt", "finished"
++                ].firstIndex(of: turnPhase), phases.contains(turnPhase) else { return }
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.veilopoly.engine", phase: phase,
++                    counters: ["sequence": step, "player": player,
++                               "turn_phase_code": phaseIndex],
++                    flags: ["multiplayer": multiplayer],
++                    level: phase.contains("failed") || phase == "reducer.rejected" ? .warning : .info
++                )
++            }
++        })
+ 
++        observers.append(center.addObserver(forName: UIResponder.keyboardWillShowNotification,
++                                            object: nil, queue: .main) { _ in
++            Task { @MainActor in DeepTelemetry.shared.keyboardVisible = true }
++        })
++        observers.append(center.addObserver(forName: UIResponder.keyboardDidHideNotification,
++                                            object: nil, queue: .main) { _ in
++            Task { @MainActor in DeepTelemetry.shared.keyboardVisible = false }
++        })
+         observers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+             Task { @MainActor in
+                 DeepTelemetry.shared.setApplicationActive(true)
+@@ -814,124 +914,107 @@
+     }
+ }
+ 
++/// Passive observation via window event dispatch; it never consumes touches.
+ @MainActor
+ private enum UIInteractionProbe {
++    private struct Contact {
++        let beganAt: TimeInterval
++        let start: CGPoint
++        var maxDistance: CGFloat
++        var fingers: Int
++        let inputView: Bool
++        let targetDescriptor: [String: String]
++    }
++
++    private static var attempted = false
++    private static var ready = false
++    private static var enabled = false
++    private static var contacts: [ObjectIdentifier: Contact] = [:]
+-    static func sync(enabled: Bool) {
+-        let windows = UIApplication.shared.connectedScenes
+-            .compactMap { $0 as? UIWindowScene }
+-            .flatMap(\.windows)
+ 
++    static func sync(enabled capture: Bool) {
++        if !attempted {
++            attempted = true
++            if let original = class_getInstanceMethod(UIWindow.self, #selector(UIWindow.sendEvent(_:))),
++               let replacement = class_getInstanceMethod(UIWindow.self, #selector(UIWindow.vl_sendEvent(_:))) {
++                method_exchangeImplementations(original, replacement)
++                ready = true
+-        for window in windows {
+-            let installed = (window.gestureRecognizers ?? []).compactMap { $0 as? PassiveTouchRecorder }
+-            if !enabled {
+-                for recorder in installed { window.removeGestureRecognizer(recorder) }
+-                continue
+             }
+-            guard !window.isHidden, installed.isEmpty else { continue }
+-            let recorder = PassiveTouchRecorder()
+-            recorder.delegate = recorder
+-            recorder.cancelsTouchesInView = false
+-            recorder.delaysTouchesBegan = false
+-            recorder.delaysTouchesEnded = false
+-            window.addGestureRecognizer(recorder)
+         }
++        enabled = capture && ready
++        if !enabled { contacts.removeAll(keepingCapacity: true) }
++        DeepTelemetry.shared.reportTouchProbe(ready: ready, enabled: enabled)
+     }
+-}
+ 
++    static func record(window: UIWindow, event: UIEvent) {
++        guard ready, enabled, event.type == .touches,
++              DeepTelemetryTouchPolicy.acceptsWindow(
++                typeName: String(reflecting: type(of: window)),
++                level: Double(window.windowLevel.rawValue),
++                hasRoot: window.rootViewController != nil, hidden: window.isHidden
++              ), let touches = event.allTouches else { return }
++        let activeCount = touches.filter {
++            $0.window === window && $0.phase != .ended && $0.phase != .cancelled
++        }.count
++        let now = ProcessInfo.processInfo.systemUptime
++        for touch in touches where touch.window === window {
++            let id = ObjectIdentifier(touch)
++            let point = touch.location(in: window)
++            switch touch.phase {
++            case .began:
++                contacts[id] = Contact(
++                    beganAt: now, start: point, maxDistance: 0,
++                    fingers: max(1, activeCount),
++                    inputView: DeepTelemetry.touchesTextInput(touch.view),
++                    targetDescriptor: DeepTelemetry.describeView(touch.view)
++                )
++            case .moved:
++                guard var item = contacts[id] else { continue }
++                item.maxDistance = max(item.maxDistance, hypot(point.x-item.start.x,
++                                                               point.y-item.start.y))
++                item.fingers = max(item.fingers, activeCount)
++                contacts[id] = item
++            case .ended:
++                guard let item = contacts.removeValue(forKey: id) else { continue }
++                let dx = point.x-item.start.x, dy = point.y-item.start.y
++                let dist = max(item.maxDistance, hypot(dx, dy))
++                let duration = max(0, now-item.beganAt)
++                let gesture = DeepTelemetryTouchPolicy.kind(
++                    duration: duration, distance: dist, dx: dx, dy: dy, fingers: item.fingers
++                )
++                var descriptor = item.targetDescriptor
++                descriptor["touch_count"] = String(item.fingers)
++                descriptor["capture_source"] = "uiwindow.send_event"
++                descriptor["secure_context"] = String(
++                    DeepTelemetryTouchPolicy.redactCoordinates(
++                        sensitiveScreen: DeepTelemetry.isSensitiveScreen(
++                            DeepTelemetry.shared.currentScreen
++                        ),
++                        keyboardVisible: DeepTelemetry.shared.keyboardVisible,
++                        inputFocused: DeepTelemetry.hasFocusedTextInput(in: window),
++                        touchedInput: item.inputView
++                    )
++                )
++                DeepTelemetry.shared.rawInteraction(
++                    kind: gesture, point: point, duration: duration,
++                    displacement: dist, viewDescriptor: descriptor
++                )
++            case .cancelled:
++                if contacts.removeValue(forKey: id) != nil {
++                    DiagnosticLogStore.shared.log(.debug, .ui, event: "ui.raw.cancelled",
++                        screen: DeepTelemetry.shared.currentScreen,
++                        metadata: ["capture_source": "uiwindow.send_event", "coordinates_recorded": "false"])
++                }
++            default: break
++            }
+-@MainActor
+-private final class PassiveTouchRecorder: UIGestureRecognizer, UIGestureRecognizerDelegate {
+-    // The recorder must never require normal controls/scrolling to fail.
+-    func gestureRecognizer(
+-        _ gestureRecognizer: UIGestureRecognizer,
+-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+-    ) -> Bool { true }
+-
+-    private var startedAt: TimeInterval = 0
+-    private var startPoint = CGPoint.zero
+-    private var lastPoint = CGPoint.zero
+-    private var maximumDisplacement: CGFloat = 0
+-    private var maximumTouchCount = 0
+-
+-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+-        guard let touch = touches.first, let view else { return }
+-        startedAt = ProcessInfo.processInfo.systemUptime
+-        startPoint = touch.location(in: view)
+-        lastPoint = startPoint
+-        maximumDisplacement = 0
+-        maximumTouchCount = max(touches.count, event.allTouches?.count ?? touches.count)
+-    }
+-
+-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+-        guard let touch = touches.first, let view else { return }
+-        lastPoint = touch.location(in: view)
+-        maximumDisplacement = max(maximumDisplacement, hypot(lastPoint.x - startPoint.x, lastPoint.y - startPoint.y))
+-        maximumTouchCount = max(maximumTouchCount, event.allTouches?.count ?? touches.count)
+-    }
+-
+-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+-        guard let touch = touches.first, let view else {
+-            state = .failed
+-            return
+         }
++        if contacts.count > 32 { contacts.removeAll(keepingCapacity: true) }
+-        lastPoint = touch.location(in: view)
+-        maximumDisplacement = max(maximumDisplacement, hypot(lastPoint.x - startPoint.x, lastPoint.y - startPoint.y))
+-        let duration = max(0, ProcessInfo.processInfo.systemUptime - startedAt)
+-        let window = view as? UIWindow ?? view.window
+-        let hit = window?.hitTest(lastPoint, with: nil)
+-        let kind: String
+-        if maximumTouchCount > 1 {
+-            kind = "multitouch"
+-        } else if maximumDisplacement < 14 && duration < 0.9 {
+-            kind = "tap"
+-        } else if maximumDisplacement < 14 {
+-            kind = "long_press"
+-        } else {
+-            kind = Self.gestureKind(from: startPoint, to: lastPoint)
+-        }
+-        let point = lastPoint
+-        var descriptor = DeepTelemetry.describeView(hit)
+-        descriptor["touch_count"] = String(maximumTouchCount)
+-        descriptor["secure_context"] = DeepTelemetry.hasSecureInput(in: window) ? "true" : "false"
+-
+-        Task { @MainActor in
+-            DeepTelemetry.shared.rawInteraction(
+-                kind: kind,
+-                point: point,
+-                duration: duration,
+-                displacement: maximumDisplacement,
+-                viewDescriptor: descriptor
+-            )
+-        }
+-        state = .failed
+     }
++}
+ 
++extension UIWindow {
++    @objc fileprivate func vl_sendEvent(_ event: UIEvent) {
++        UIInteractionProbe.record(window: self, event: event)
++        vl_sendEvent(event)
+-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+-        state = .failed
+-        // Only count cancellations in owner-enabled diagnostics, never content/location.
+-        guard DeepTelemetry.shared.rawTouchCaptureEnabled else { return }
+-        DiagnosticLogStore.shared.log(
+-            .debug, .ui, event: "ui.raw.cancelled",
+-            screen: DeepTelemetry.shared.currentScreen,
+-            metadata: ["touch_count": String(touches.count)]
+-        )
+     }
+-
+-    override func reset() {
+-        super.reset()
+-        startedAt = 0
+-        startPoint = .zero
+-        lastPoint = .zero
+-        maximumDisplacement = 0
+-        maximumTouchCount = 0
+-    }
+-
+-    private static func gestureKind(from start: CGPoint, to end: CGPoint) -> String {
+-        let dx = end.x - start.x
+-        let dy = end.y - start.y
+-        if abs(dx) > abs(dy) {
+-            return dx >= 0 ? "swipe_right" : "swipe_left"
+-        }
+-        return dy >= 0 ? "swipe_down" : "swipe_up"
+-    }
+ }
+ 
+diff --git a/VeilLink/UI/RainlineLastTrainLabView.swift b/VeilLink/UI/RainlineLastTrainLabView.swift
+--- a/VeilLink/UI/RainlineLastTrainLabView.swift
++++ b/VeilLink/UI/RainlineLastTrainLabView.swift
+@@ -7,6 +7,10 @@
+     @Published private(set) var line = "广播：雨线已经压到高架桥。末班车不停站。"
+ 
+     let scene: RainlineLastTrainScene
++    private var lastFlightFaults = -1
++    private var lastFlightRepairs = -1
++    private var lastFlightWindow = -1
++    private var lastFlightOutcome: RainlineOutcome = .running
+     private var seed: UInt64
+ 
+     init() {
+@@ -19,6 +23,25 @@
+             Task { @MainActor [weak self] in
+                 guard let self else { return }
+                 snapshot = value
++                let window = value.tick / (60 * 30)
++                if value.activeFaults != lastFlightFaults ||
++                   value.repairedFaults != lastFlightRepairs ||
++                   value.outcome != lastFlightOutcome || window != lastFlightWindow {
++                    let terminal = value.outcome != .running
++                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                        module: "game.rainline", phase: terminal
++                            ? "outcome." + String(describing: value.outcome)
++                            : "runtime.milestone",
++                        counters: ["tick": value.tick, "faults": value.activeFaults,
++                                   "repairs": value.repairedFaults,
++                                   "lit_cars": value.litCars, "power_percent": Int(value.trainPower)],
++                        flags: ["terminal": terminal], level: terminal ? .info : .debug
++                    )
++                    lastFlightFaults = value.activeFaults
++                    lastFlightRepairs = value.repairedFaults
++                    lastFlightWindow = window
++                    lastFlightOutcome = value.outcome
++                }
+                 if let active = value.activeLine, active != line {
+                     line = active
+                 }
+@@ -32,6 +55,11 @@
+     func setReduceMotion(_ enabled: Bool) { scene.setReduceMotion(enabled) }
+ 
+     func restart() {
++        lastFlightFaults = -1; lastFlightRepairs = -1
++        lastFlightWindow = -1; lastFlightOutcome = .running
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.rainline", phase: "game.restart", level: .info
++        )
+         seed &+= 0x9E3779B97F4A7C15
+         line = "广播：雨线重启。把八节车厢带到终点。"
+         scene.restart(seed: seed)
+diff --git a/VeilLink/UI/AfterglowConvoyLabView.swift b/VeilLink/UI/AfterglowConvoyLabView.swift
+--- a/VeilLink/UI/AfterglowConvoyLabView.swift
++++ b/VeilLink/UI/AfterglowConvoyLabView.swift
+@@ -7,6 +7,8 @@
+     @Published private(set) var storyLine: String
+ 
+     let scene: AfterglowConvoyScene
++    private var lastFlightWindow = -1
++    private var lastFlightOutcome: AfterglowConvoyOutcome = .running
+     private var seed: UInt64
+ 
+     init() {
+@@ -24,6 +26,23 @@
+             Task { @MainActor [weak self] in
+                 guard let self else { return }
+                 self.snapshot = snapshot
++                let window = snapshot.tick / (60 * 30)
++                if window != self.lastFlightWindow || snapshot.outcome != self.lastFlightOutcome {
++                    let terminal = snapshot.outcome != .running
++                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                        module: "game.afterglow-convoy",
++                        phase: terminal
++                            ? "outcome." + String(describing: snapshot.outcome)
++                            : "runtime.milestone",
++                        counters: ["tick": snapshot.tick,
++                                   "hull_percent": Int(snapshot.hull),
++                                   "beacon_percent": Int(snapshot.beacon),
++                                   "progress_percent": Int(snapshot.progress * 100)],
++                        flags: ["terminal": terminal], level: terminal ? .info : .debug
++                    )
++                    self.lastFlightWindow = window
++                    self.lastFlightOutcome = snapshot.outcome
++                }
+                 if let line = snapshot.storyLine, line != self.storyLine {
+                     self.storyLine = line
+                 }
+@@ -41,6 +60,10 @@
+     func setPaused(_ paused: Bool) { scene.isPaused = paused }
+ 
+     func restart() {
++        lastFlightWindow = -1; lastFlightOutcome = .running
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.afterglow-convoy", phase: "game.restart", level: .info
++        )
+         seed &+= 0x9E3779B97F4A7C15
+         storyLine = "信标：线路建立。我们再试一次。"
+         scene.restart(seed: seed)
+diff --git a/VeilLink/UI/SignalDiveLabView.swift b/VeilLink/UI/SignalDiveLabView.swift
+--- a/VeilLink/UI/SignalDiveLabView.swift
++++ b/VeilLink/UI/SignalDiveLabView.swift
+@@ -9,6 +9,9 @@
+     @Published private(set) var floodlight = true
+ 
+     let scene: SignalDiveScene
++    private var lastFlightRecovered = -1
++    private var lastFlightWindow = -1
++    private var lastFlightOutcome: SignalDiveOutcome = .running
+     private var seed: UInt64
+ 
+     init() {
+@@ -35,6 +38,23 @@
+                 }
+ 
+                 snapshot = value
++                let window = value.tick / (60 * 30)
++                if value.recovered != lastFlightRecovered ||
++                   value.outcome != lastFlightOutcome || window != lastFlightWindow {
++                    let terminal = value.outcome != .running
++                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                        module: "game.signal-dive",
++                        phase: terminal
++                            ? "outcome." + String(describing: value.outcome)
++                            : "runtime.milestone",
++                        counters: ["tick": value.tick, "beacons": value.recovered,
++                                   "hull_percent": Int(value.hull), "power_percent": Int(value.power)],
++                        flags: ["terminal": terminal], level: terminal ? .info : .debug
++                    )
++                    lastFlightRecovered = value.recovered
++                    lastFlightWindow = window
++                    lastFlightOutcome = value.outcome
++                }
+ 
+                 if let active =
+                         value.lastLine,
+@@ -102,6 +122,10 @@
+     }
+ 
+     func restart() {
++        lastFlightRecovered = -1; lastFlightWindow = -1; lastFlightOutcome = .running
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.signal-dive", phase: "game.restart", level: .info
++        )
+         seed &+=
+             0x9E3779B97F4A7C15
+ 
+diff --git a/VeilLink/UI/BlackoutDistrictLabView.swift b/VeilLink/UI/BlackoutDistrictLabView.swift
+--- a/VeilLink/UI/BlackoutDistrictLabView.swift
++++ b/VeilLink/UI/BlackoutDistrictLabView.swift
+@@ -8,6 +8,10 @@
+         "调度：暴雨导致多点电压波动。保持街区供电，优先关键节点。"
+ 
+     let scene: BlackoutDistrictScene
++    private var lastFlightFaults = -1
++    private var lastFlightPowered = -1
++    private var lastFlightWindow = -1
++    private var lastFlightOutcome: BlackoutOutcome = .running
+     private var seed: UInt64
+ 
+     init() {
+@@ -30,7 +34,28 @@
+                 @MainActor
+                 [weak self] in
+ 
++                guard let self else { return }
++                snapshot = value
++                let window = value.tick / (60 * 30)
++                if value.activeFaults != lastFlightFaults ||
++                   value.poweredNodes != lastFlightPowered ||
++                   value.outcome != lastFlightOutcome || window != lastFlightWindow {
++                    let terminal = value.outcome != .running
++                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                        module: "game.blackout-district",
++                        phase: terminal
++                            ? "outcome." + String(describing: value.outcome)
++                            : "runtime.milestone",
++                        counters: ["tick": value.tick, "faults": value.activeFaults,
++                                   "powered_nodes": value.poweredNodes,
++                                   "stability_percent": Int(value.gridStability)],
++                        flags: ["terminal": terminal], level: terminal ? .info : .debug
++                    )
++                    lastFlightFaults = value.activeFaults
++                    lastFlightPowered = value.poweredNodes
++                    lastFlightWindow = window
++                    lastFlightOutcome = value.outcome
++                }
+-                self?.snapshot = value
+             }
+         }
+ 
+@@ -85,6 +110,11 @@
+     }
+ 
+     func restart() {
++        lastFlightFaults = -1; lastFlightPowered = -1
++        lastFlightWindow = -1; lastFlightOutcome = .running
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.blackout-district", phase: "game.restart", level: .info
++        )
+         seed &+=
+             0x9E3779B97F4A7C15
+ 
+diff --git a/VeilLink/UI/LatticeClashLabView.swift b/VeilLink/UI/LatticeClashLabView.swift
+--- a/VeilLink/UI/LatticeClashLabView.swift
++++ b/VeilLink/UI/LatticeClashLabView.swift
+@@ -320,6 +320,11 @@
+             safety += 1
+         }
+ 
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.lattice-clash", phase: "move.committed",
++            counters: ["human_cell": index, "ai_response_count": safety, "turn": next.turn],
++            flags: ["finished": next.isFinished], level: .info
++        )
+         withAnimation(.easeInOut(duration: 0.18)) {
+             state = next
+         }
+diff --git a/VeilLink/UI/PrismRift3DGameView.swift b/VeilLink/UI/PrismRift3DGameView.swift
+--- a/VeilLink/UI/PrismRift3DGameView.swift
++++ b/VeilLink/UI/PrismRift3DGameView.swift
+@@ -417,7 +417,19 @@
+ 
+     private func process(_ events: [PrismRiftEvent]) {
+         for event in events {
++            // Ignore high-frequency laser shots and boss-hit frames. Record
++            // only meaningful transitions, never frame-by-frame raw render data.
+             switch event.kind {
++            case .impact, .collected, .bossArrived, .bossDefeated, .escaped, .destroyed:
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.prism-rift", phase: "runtime.event",
++                    counters: ["tick": event.tick,
++                               "score": state.score, "wave": state.wave],
++                    flags: ["terminal": state.outcome != .running], level: .info
++                )
++            case .shot, .bossHit: break
++            }
++            switch event.kind {
+             case .impact:
+                 message = "护盾受击 · 重新校准航向"
+                 cameraNode.runAction(SCNAction.sequence([
+diff --git a/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyUITests/FlightRecorderPrivacyTests.swift b/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyUITests/FlightRecorderPrivacyTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyUITests/FlightRecorderPrivacyTests.swift
+@@ -0,0 +1,46 @@
++#if os(iOS) && canImport(SpriteKit)
++import Foundation
++import XCTest
++import VeilopolyNet
++@testable import VeilopolyUI
++
++@MainActor
++final class FlightRecorderPrivacyTests: XCTestCase {
++    func testGameLifecycleEmitsOnlyPrimitiveStructuralMetadata() throws {
++        let dir = FileManager.default.temporaryDirectory
++            .appendingPathComponent("veilopoly-flight-" + UUID().uuidString)
++        defer { try? FileManager.default.removeItem(at: dir) }
++        let events = NSMutableArray()
++        let observer = NotificationCenter.default.addObserver(
++            forName: NSNotification.Name("Veilopoly.FlightRecorder.v1"),
++            object: nil, queue: nil
++        ) { notice in
++            if let fields = notice.userInfo { events.add(fields) }
++        }
++        defer { NotificationCenter.default.removeObserver(observer) }
++        let config = VeilopolyRoomConfiguration(
++            roomID: UUID().uuidString, seed: 8107,
++            hostIdentityID: "host-private", guestIdentityID: "guest-private"
++        )
++        let game = try GameSessionModel(
++            multiplayer: config, localIdentityID: "host-private",
++            saveDirectory: dir
++        ) { _ in }
++        XCTAssertEqual(game.game.nextSeq, 0)
++
++        let evidence = try XCTUnwrap(
++            events.compactMap { $0 as? [AnyHashable: Any] }
++                .first { ($0["phase"] as? String) == "match.new" }
++        )
++        XCTAssertEqual(Set(evidence.keys.compactMap { $0 as? String }), Set([
++            "phase", "next_seq", "player", "turn_phase", "multiplayer"
++        ]))
++        XCTAssertEqual(evidence["next_seq"] as? Int, 0)
++        XCTAssertEqual(evidence["multiplayer"] as? Bool, true)
++        let joined = evidence.values.map { String(describing: $0) }.joined(separator: "|")
++        XCTAssertFalse(joined.contains(config.roomID))
++        XCTAssertFalse(joined.contains("host-private"))
++        XCTAssertFalse(joined.contains("guest-private"))
++    }
++}
++#endif
+diff --git a/VeilLinkTests/DeepTelemetryTouchProbeTests.swift b/VeilLinkTests/DeepTelemetryTouchProbeTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/DeepTelemetryTouchProbeTests.swift
+@@ -0,0 +1,52 @@
++import XCTest
++import UIKit
++@testable import VeilLink
++
++@MainActor
++final class DeepTelemetryTouchProbeTests: XCTestCase {
++    func testGestureClassificationUsesCompletedTouchMovement() {
++        XCTAssertEqual(DeepTelemetryTouchPolicy.kind(
++            duration: 0.12, distance: 3, dx: 1, dy: 2, fingers: 1), "tap")
++        XCTAssertEqual(DeepTelemetryTouchPolicy.kind(
++            duration: 1.2, distance: 1, dx: 0, dy: 0, fingers: 1), "long_press")
++        XCTAssertEqual(DeepTelemetryTouchPolicy.kind(
++            duration: 0.23, distance: 90, dx: -90, dy: 5, fingers: 1), "swipe_left")
++        XCTAssertEqual(DeepTelemetryTouchPolicy.kind(
++            duration: 0.23, distance: 85, dx: 5, dy: 85, fingers: 1), "swipe_down")
++        XCTAssertEqual(DeepTelemetryTouchPolicy.kind(
++            duration: 0.33, distance: 60, dx: 50, dy: 10, fingers: 2), "multitouch")
++    }
++
++    func testOnlyOwnVisibleNormalApplicationWindowsAreEligible() {
++        XCTAssertTrue(DeepTelemetryTouchPolicy.acceptsWindow(
++            typeName: "_UIHostingWindow", level: 0, hasRoot: true, hidden: false))
++        XCTAssertFalse(DeepTelemetryTouchPolicy.acceptsWindow(
++            typeName: "UIRemoteKeyboardWindow", level: 0, hasRoot: true, hidden: false))
++        XCTAssertFalse(DeepTelemetryTouchPolicy.acceptsWindow(
++            typeName: "UITextEffectsWindow", level: 0, hasRoot: true, hidden: false))
++        XCTAssertTrue(DeepTelemetryTouchPolicy.acceptsWindow(
++            typeName: "_UIHostingWindow", level: 5, hasRoot: true, hidden: false))
++        XCTAssertFalse(DeepTelemetryTouchPolicy.acceptsWindow(
++            typeName: "_UIHostingWindow", level: 0, hasRoot: false, hidden: false))
++        XCTAssertFalse(DeepTelemetryTouchPolicy.acceptsWindow(
++            typeName: "_UIHostingWindow", level: 0, hasRoot: true, hidden: true))
++    }
++
++    func testRedactionCoversFocusedTextAndKeyboardEvenOutsidePasswordScreen() {
++        XCTAssertFalse(DeepTelemetryTouchPolicy.redactCoordinates(
++            sensitiveScreen: false, keyboardVisible: false,
++            inputFocused: false, touchedInput: false))
++        XCTAssertTrue(DeepTelemetryTouchPolicy.redactCoordinates(
++            sensitiveScreen: false, keyboardVisible: true,
++            inputFocused: false, touchedInput: false))
++        XCTAssertTrue(DeepTelemetryTouchPolicy.redactCoordinates(
++            sensitiveScreen: false, keyboardVisible: false,
++            inputFocused: true, touchedInput: false))
++        XCTAssertTrue(DeepTelemetryTouchPolicy.redactCoordinates(
++            sensitiveScreen: false, keyboardVisible: false,
++            inputFocused: false, touchedInput: true))
++        XCTAssertTrue(DeepTelemetryTouchPolicy.redactCoordinates(
++            sensitiveScreen: true, keyboardVisible: false,
++            inputFocused: false, touchedInput: false))
++    }
++}
