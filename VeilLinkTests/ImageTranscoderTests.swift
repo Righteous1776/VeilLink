@@ -8,14 +8,14 @@ final class ImageTranscoderTests: XCTestCase {
         let size = CGSize(width: 1_800, height: 1_200)
         let renderer = UIGraphicsImageRenderer(size: size)
         let image = renderer.image { context in
-            UIColor.white.setFill()
-            context.fill(CGRect(origin: .zero, size: size))
+            context.cgContext.setFillColor(UIColor.white.cgColor)
+            context.cgContext.fill(CGRect(origin: .zero, size: size))
             for i in 0..<160 {
-                UIColor(
+                context.cgContext.setFillColor(UIColor(
                     hue: CGFloat(i % 29) / 29, saturation: 0.55,
                     brightness: 0.6 + CGFloat(i % 5) / 15, alpha: 1
-                ).setFill()
-                context.fill(CGRect(
+                ).cgColor)
+                context.cgContext.fill(CGRect(
                     x: CGFloat((i * 53) % 1_800), y: CGFloat((i * 79) % 1_200),
                     width: 150, height: 90
                 ))
@@ -31,7 +31,7 @@ final class ImageTranscoderTests: XCTestCase {
         try sourceData.write(to: url, options: .atomic)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        for profile: ImageTransportProfile in [.bluetooth, .fastLAN] {
+        for profile in [ImageTransportProfile.bluetooth, .fastLAN] {
             let result = try ImageTranscoder.prepareSynchronously(at: url, profile: profile)
             XCTAssertTrue(MediaTransferPolicy.supportsImageMIMEType(result.mimeType))
             XCTAssertTrue(MediaTransferPolicy.mayTransmit(byteCount: result.data.count))
