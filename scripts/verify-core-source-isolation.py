@@ -27,12 +27,6 @@ PRESERVE_ROOTS = [
 PRESERVE_FILES = [
     "VeilLink/Agent/Games/TrainedGamePolicyRuntime.swift",
     "VeilLink/Agent/Games/MaleCNSGameDecisionEncoder.swift",
-    "VeilLink/Agent/Language/LlamaInferenceEngine.swift",
-    "VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift",
-    "VeilLink/Agent/Language/LlamaRuntimeConfiguration.swift",
-    "VeilLink/Agent/Language/LlamaCancellationGate.swift",
-    "VeilLink/Agent/Language/LocalModelCatalog.swift",
-    "VeilLink/Agent/Language/LocalModelManager.swift",
     "VeilLink/Resources/VeilFlyCore.vfly",
     "VeilLink/Resources/VeilFlyLite.vfly",
     "VeilLink/Resources/AgentModels/game_policy_ranker_v4.vlpol",
