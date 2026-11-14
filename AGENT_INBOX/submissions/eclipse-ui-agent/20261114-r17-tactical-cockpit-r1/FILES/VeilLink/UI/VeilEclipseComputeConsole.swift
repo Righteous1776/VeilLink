@@ -23,7 +23,7 @@ struct VeilEclipseComputeConsole: View {
         VStack(alignment: .leading, spacing: compact ? 3 : 7) {
             HStack(spacing: 6) {
                 Circle()
-                    .fill(active ? VeilEclipseChrome.green : VeilEclipseChrome.muted)
+                    .fill(active ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
                     .frame(width: 5, height: 5)
                 Text("ECLIPSE // VISUAL STREAM")
                     .font(.system(size: compact ? 8 : 10, weight: .bold, design: .monospaced))
@@ -31,7 +31,7 @@ struct VeilEclipseComputeConsole: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Text(active ? "RUN" : "IDLE")
-                    .foregroundColor(active ? VeilEclipseChrome.green : VeilEclipseChrome.muted)
+                    .foregroundColor(active ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
                     .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
             }
             if active, let startedAt = actualSearchStartedAt {
@@ -80,7 +80,7 @@ struct VeilEclipseComputeConsole: View {
                     let nodes = liveMetrics.visitedNodes.map(String.init) ?? "—"
                     Text("MEASURED · DEPTH \(depth) / NODES \(nodes)")
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(VeilEclipseChrome.green)
+                        .foregroundColor(VeilEclipseChrome.accent)
                 } else {
                     Text("MEASURED · 暂无实时深度/节点数据")
                         .font(.caption2)
@@ -101,7 +101,7 @@ struct VeilEclipseComputeConsole: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
-                .stroke(VeilEclipseChrome.green.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
+                .stroke(VeilEclipseChrome.accent.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
         )
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
@@ -111,9 +111,9 @@ struct VeilEclipseComputeConsole: View {
 
     private func tone(_ index: Int) -> Color {
         switch index {
-        case 0: return VeilEclipseChrome.green
+        case 0: return VeilEclipseChrome.accent
         case 1: return VeilTheme.paleMetal
-        case 2: return VeilTheme.success
+        case 2: return VeilEclipseChrome.amber
         default: return VeilEclipseChrome.silver
         }
     }
