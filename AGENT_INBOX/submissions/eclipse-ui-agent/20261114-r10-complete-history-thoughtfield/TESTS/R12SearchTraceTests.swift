@@ -49,6 +49,16 @@ import Foundation
         check(!store.record([112], nodes: 1, token: occupiedToken), "existing stone is not virtual candidate")
         check(store.record([113], nodes: 1, token: occupiedToken), "legal continuation on occupied board")
         check(store.snapshot(sessionID: "fresh", turn: 1, playing: true, aiThinking: true).count == 1, "occupied turn binding")
+        // Invalid begin is fail-closed, including after an earlier successful run.
+        check(store.begin(sessionID: "", board: board) == nil, "invalid session denied")
+        check(store.snapshot(sessionID: "s", turn: 0, playing: true, aiThinking: true).isEmpty, "invalid begin revokes old trace")
+        check(!store.record([112], nodes: 11, token: new), "invalid begin expires previous token")
+        var occupied = GomokuState()
+        check(occupied.apply(index: 112, actor: .host), "prepare occupied board")
+        guard let occupiedToken = store.begin(sessionID: "fresh", board: occupied) else { fatalError("occupied begin") }
+        check(!store.record([112], nodes: 1, token: occupiedToken), "existing stone is not virtual candidate")
+        check(store.record([113], nodes: 1, token: occupiedToken), "legal continuation on occupied board")
+        check(store.snapshot(sessionID: "fresh", turn: 1, playing: true, aiThinking: true).count == 1, "occupied turn binding")
         print("PASS: \(checks) search trace invariants")
     }
 }
