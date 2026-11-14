@@ -453,6 +453,21 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Label("数据与备份", systemImage: "externaldrive")
                 .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
+            NavigationLink(destination: VeilFileInboxView(model: model)) {
+                HStack {
+                    Image(systemName: "folder.badge.plus")
+                        .foregroundColor(VeilTheme.goldBright)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("统一导入文件").fontWeight(.semibold)
+                        Text("使用苹果「文件」· 自动识别并分发")
+                            .font(.caption).foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+            }
+            .buttonStyle(VeilPressStyle())
+            Divider().background(VeilTheme.hairline)
             NavigationLink(destination: StorageManagementView(model: model)) {
                 HStack {
                     Image(systemName: "internaldrive")
