@@ -1,0 +1,233 @@
+import Foundation
+import XCTest
+@testable import VeilLink
+
+/// Source-level R8 compatible fallback versus the R14 unified-native path.
+/// This suite DOES NOT pretend to execute the separately released V29 IPA.
+/// In current R14 source `diagnosticEclipseUnified: false` follows the original
+/// R8 fallback, while `true` allows the frozen learned PVS engine.
+final class GomokuR8R14PairedArenaTests: XCTestCase {
+    private let boardCapacity = GomokuState.size * GomokuState.size
+
+    /// Stable seed generation without unstable Swift Hasher or platform RNG.
+    private struct Generator {
+        var state: UInt64
+        mutating func next() -> UInt64 {
+            state = state &+ 0x9E3779B97F4A7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+            z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+            return z ^ (z >> 31)
+        }
+    }
+
+    private func opening(seed: UInt64) -> [Int] {
+        var generator = Generator(state: seed)
+        let center = GomokuState.size / 2
+        var pool: [Int] = []
+        for row in (center - 3)...(center + 3) {
+            for column in (center - 3)...(center + 3) {
+                pool.append(row * GomokuState.size + column)
+            }
+        }
+        var opening: [Int] = []
+        for _ in 0..<6 {
+            let chosen = Int(generator.next() % UInt64(pool.count))
+            opening.append(pool.remove(at: chosen))
+        }
+        return opening
+    }
+
+    private func seededBoard(_ moves: [Int]) throws -> GomokuState {
+        var state = GomokuState()
+        for move in moves {
+            let turn = state.currentPlayer
+            guard state.apply(index: move, actor: turn) else {
+                throw ArenaError.invalidOpening
+            }
+        }
+        guard state.winner == nil, !state.isDraw, state.moveCount == moves.count else {
+            throw ArenaError.invalidOpening
+        }
+        return state
+    }
+
+    private enum ArenaError: Error {
+        case invalidOpening
+        case invalidDecision
+        case incompleteGame
+        case duplicateOutput
+    }
+
+    private struct Record: Encodable {
+        struct Decision: Encodable {
+            let index: Int
+            let side: Int
+            let candidate: Bool
+            let nodes: Int
+            let milliseconds: Int
+            let engineLabel: String?
+        }
+        let schema: String
+        let baseline: String
+        let challenger: String
+        let seed: UInt64
+        let pair: Int
+        let trainedSide: Int
+        let presets: [Int]
+        let presetPlies: Int
+        let moves: [Int]
+        let decisions: [Decision]
+        let result: String
+        let winner: Int
+        let invalid: Bool
+        let countUnified: Int
+        let countFallback: Int
+    }
+
+    private func playPairGame(
+        pair: Int,
+        seed: UInt64,
+        candidateSide: Int,
+        limitMilliseconds: Int
+    ) throws -> Record {
+        let presets = opening(seed: seed)
+        var state = try seededBoard(presets)
+        var moves = presets
+        var decisions: [Record.Decision] = []
+        let budget = GomokuBotBudget(
+            candidateRadius: 2,
+            rootCandidateLimit: 22,
+            replyCandidateLimit: 12,
+            continuationCandidateLimit: 6,
+            timeLimitMilliseconds: limitMilliseconds
+        )
+        var unifiedCount = 0
+        var fallbackCount = 0
+        while state.winner == nil && !state.isDraw && moves.count < boardCapacity {
+            let turn = state.currentPlayer
+            let side = turn == .host ? 1 : 2
+            let candidate = (side == candidateSide)
+            guard let selected = GomokuBot.chooseMove(
+                in: state,
+                for: turn,
+                budget: budget,
+                learning: .empty,
+                formationPreference: .disabled,
+                diagnosticCounterForkR4: true,
+                diagnosticUseR6Defense: true,
+                diagnosticR8ForcedWin: true,
+                diagnosticEclipseUnified: candidate,
+                difficultyRawValue: "balanced"
+            ) else { throw ArenaError.invalidDecision }
+            guard selected.index >= 0, selected.index < boardCapacity,
+                  state.value(at: selected.index) == 0,
+                  state.apply(index: selected.index, actor: turn)
+            else { throw ArenaError.invalidDecision }
+            moves.append(selected.index)
+            decisions.append(.init(
+                index: selected.index,
+                side: side,
+                candidate: candidate,
+                nodes: selected.nodes,
+                milliseconds: selected.elapsedMilliseconds,
+                engineLabel: selected.engineLabel
+            ))
+            if candidate {
+                if selected.engineLabel != nil { unifiedCount += 1 }
+                else { fallbackCount += 1 }
+            }
+        }
+        let winner = state.winner == .host ? 1 : state.winner == .guest ? 2 : 0
+        let result = winner == 0 ? "draw" : winner == candidateSide ? "trainedWon" : "baselineWon"
+        return Record(
+            schema: "veillink.r8-vs-r14.native-paired-arena.v1",
+            baseline: "R8-compat-disabled-unified",
+            challenger: "R14-frozen-native-pvs-enabled",
+            seed: seed,
+            pair: pair,
+            trainedSide: candidateSide,
+            presets: presets,
+            presetPlies: presets.count,
+            moves: moves,
+            decisions: decisions,
+            result: result,
+            winner: winner,
+            invalid: false,
+            countUnified: unifiedCount,
+            countFallback: fallbackCount
+        )
+    }
+
+    func testOpeningPairsHaveLegalNonterminalDistinctPresets() throws {
+        var seen = Set<[Int]>()
+        for i in 0..<100 {
+            let seed = UInt64(937_551_941) &+ UInt64(i)
+            let preset = opening(seed: seed)
+            XCTAssertEqual(preset.count, 6)
+            XCTAssertEqual(Set(preset).count, 6)
+            XCTAssertTrue(seen.insert(preset).inserted)
+            let actual = try seededBoard(preset)
+            XCTAssertEqual(actual.moveCount, 6)
+            XCTAssertEqual(actual.currentPlayer, .host)
+        }
+    }
+
+    func testSameBoardDecisionsAreLegalAndDoNotMutateInput() throws {
+        let original = try seededBoard(opening(seed: 937_551_941))
+        let budget = GomokuBotBudget(
+            candidateRadius: 2, rootCandidateLimit: 12,
+            replyCandidateLimit: 8, continuationCandidateLimit: 0,
+            timeLimitMilliseconds: 80
+        )
+        for unified in [false, true] {
+            let result = GomokuBot.chooseMove(
+                in: original, for: .host, budget: budget,
+                diagnosticEclipseUnified: unified,
+                difficultyRawValue: "relaxed"
+            )
+            XCTAssertNotNil(result, "Both exact native paths must return a legal action")
+            if let result {
+                XCTAssertEqual(original.value(at: result.index), 0)
+                var copy = original
+                XCTAssertTrue(copy.apply(index: result.index, actor: .host))
+            }
+        }
+        XCTAssertEqual(original.moveCount, 6)
+    }
+
+    /// Run only when explicitly selected. CI smoke must not launch thousands
+    /// of long wall-time matches. Example: VEILLINK_GOMOKU_ARENA_PAIRS=50.
+    func testFullPairedArenaWhenEnabled() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let countString = environment["VEILLINK_GOMOKU_ARENA_PAIRS"],
+              let pairs = Int(countString), (1...2500).contains(pairs) else {
+            throw XCTSkip("Set VEILLINK_GOMOKU_ARENA_PAIRS=50 (100 games) or 2500 (5000 games)")
+        }
+        let perMove = min(2_000, max(60, Int(environment["VEILLINK_GOMOKU_ARENA_MS"] ?? "180") ?? 180))
+        let baseSeed = UInt64(environment["VEILLINK_GOMOKU_ARENA_SEED"] ?? "937551941") ?? 937_551_941
+        let path = environment["VEILLINK_GOMOKU_ARENA_OUTPUT"]
+            ?? NSTemporaryDirectory() + "gomoku-r8-r14-arena-\(baseSeed)-\(pairs).jsonl"
+        let url = URL(fileURLWithPath: path)
+        guard !FileManager.default.fileExists(atPath: url.path) else { throw ArenaError.duplicateOutput }
+
+        var data = Data()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        for pair in 0..<pairs {
+            let seed = baseSeed &+ UInt64(pair)
+            for candidateSide in [1, 2] {
+                let result = try playPairGame(
+                    pair: pair, seed: seed,
+                    candidateSide: candidateSide,
+                    limitMilliseconds: perMove
+                )
+                data.append(try encoder.encode(result))
+                data.append(0x0A)
+            }
+        }
+        try data.write(to: url, options: .atomic)
+        print("GOMOKU_R8_R14_ARENA_JSONL=\(url.path)")
+        print("GOMOKU_R8_R14_PAIRS=\(pairs) GAMES=\(pairs * 2) PER_MOVE_MS=\(perMove)")
+    }
+}
