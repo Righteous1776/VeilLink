@@ -46,7 +46,7 @@ enum VeilTheme {
         VeilAppearanceController.shared.isPlainline
             ? LinearGradient(colors: [panel, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
             : VeilAppearanceController.shared.isForge
-            ? LinearGradient(colors: [metalTop, panel, metalBottom], startPoint: .top, endPoint: .bottom)
+            ? LinearGradient(colors: [p.metalTop, panel, p.metalBottom], startPoint: .top, endPoint: .bottom)
             : VeilAppearanceController.shared.isIslet
             ? LinearGradient(colors: [panelSoft, panel], startPoint: .top, endPoint: .bottom)
             : VeilAppearanceController.shared.isAppleSoft
