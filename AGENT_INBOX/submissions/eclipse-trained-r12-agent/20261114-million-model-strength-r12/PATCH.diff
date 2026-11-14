@@ -1,0 +1,151 @@
+diff --git a/VeilLink/Agent/Games/EclipseR12OrderingMemo.swift b/VeilLink/Agent/Games/EclipseR12OrderingMemo.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Agent/Games/EclipseR12OrderingMemo.swift
+@@ -0,0 +1,79 @@
++import Foundation
++
++/// Local-only exact-key memo for ECLIPSE's frozen 48-tree ordering model.
++///
++/// This is *not* a second learned model or a transposition table for search
++/// values. Only heuristic candidate ordering scores are cached. It cannot
++/// bypass hard tactical rules, prove a win or change a legality decision.
++/// One instance belongs to one search, never a shared/global singleton.
++///
++/// A Zobrist fingerprint collision could alter candidate order (not rules).
++/// Caller must use the existing position Zobrist hash and pass side+cell.
++struct EclipseR12OrderingMemo: Sendable {
++    struct Stats: Equatable, Sendable {
++        var hits = 0
++        var misses = 0
++        var stores = 0
++    }
++
++    private struct Slot: Sendable {
++        var boardHash: UInt64 = 0
++        var index: UInt16 = 0
++        var side: UInt8 = 0
++        var value: Int = 0
++        var occupied: Bool = false
++    }
++
++    private var slots: [Slot]
++    private let mask: UInt64
++    private(set) var stats = Stats()
++
++    /// Capacity must be a power of two; 4096 slots cost roughly 128 KiB.
++    init(capacity: Int = 4096) {
++        precondition((1...65536).contains(capacity) && capacity.nonzeroBitCount == 1)
++        slots = [Slot](repeating: Slot(), count: capacity)
++        mask = UInt64(capacity - 1)
++    }
++
++    private func bucket(hash: UInt64, side: UInt8, index: Int) -> Int {
++        var key = hash ^ (UInt64(side) &* 0x9e3779b97f4a7c15)
++        key ^= UInt64(index) &* 0xbf58476d1ce4e5b9
++        key ^= key >> 30
++        key &*= 0xbf58476d1ce4e5b9
++        key ^= key >> 27
++        key &*= 0x94d049bb133111eb
++        key ^= key >> 31
++        return Int(key & mask)
++    }
++
++    mutating func get(hash: UInt64, side: UInt8, index: Int) -> Int? {
++        guard (1...2).contains(side), (0..<225).contains(index) else { return nil }
++        let v = slots[bucket(hash: hash, side: side, index: index)]
++        if v.occupied && v.boardHash == hash && v.side == side && v.index == index {
++            stats.hits += 1
++            return v.value
++        }
++        stats.misses += 1
++        return nil
++    }
++
++    mutating func put(hash: UInt64, side: UInt8, index: Int, value: Int) {
++        guard (1...2).contains(side), (0..<225).contains(index) else { return }
++        slots[bucket(hash: hash, side: side, index: index)] = Slot(
++            boardHash: hash, index: UInt16(index), side: side, value: value, occupied: true
++        )
++        stats.stores += 1
++    }
++
++    /// Evaluates the unchanged frozen policy on misses. Cache is never allowed
++    /// to *manufacture* a score for a position that was not evaluated.
++    mutating func score(
++        hash: UInt64, side: UInt8, index: Int, calculate: () -> Int
++    ) -> Int {
++        guard (1...2).contains(side), (0..<225).contains(index) else { return calculate() }
++        if let cached = get(hash: hash, side: side, index: index) { return cached }
++        let calculated = calculate()
++        put(hash: hash, side: side, index: index, value: calculated)
++        return calculated
++    }
++}
+diff --git a/VeilLink/Agent/Games/EclipseR12LeafThreats.swift b/VeilLink/Agent/Games/EclipseR12LeafThreats.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Agent/Games/EclipseR12LeafThreats.swift
+@@ -0,0 +1,62 @@
++import Foundation
++
++/// Exact five-completion threat classifier for terminal / depth-zero search
++/// nodes of 15×15 unrestricted Gomoku. Trained ECLIPSE scores remain intact.
++///
++/// Input position must be a valid, NONTERMINAL state with `side` to move.
++/// This module proves only immediate moves or forced one-square defense.
++/// It is not a complete VCT solver and never guesses a human response.
++enum EclipseR12LeafThreats {
++    enum State: Equatable, Sendable {
++        case ownImmediateWin(Int)
++        case forcedBlock(Int)
++        case unavoidableImmediateLoss([Int])
++        case quiet
++    }
++
++    /// Returns `quiet` for invalid input; legality is caller-owned.
++    static func inspect(cells: [UInt8], side: UInt8) -> State {
++        guard cells.count == 225, side == 1 || side == 2,
++              cells.allSatisfy({ $0 <= 2 }) else { return .quiet }
++        let enemy: UInt8 = side == 1 ? 2 : 1
++        // A winning move by the side to move outruns every opponent threat.
++        if let own = completionSquares(cells, stone: side).first {
++            return .ownImmediateWin(own)
++        }
++        let enemyWins = completionSquares(cells, stone: enemy)
++        switch enemyWins.count {
++        case 0: return .quiet
++        case 1: return .forcedBlock(enemyWins[0])
++        default: return .unavoidableImmediateLoss(enemyWins)
++        }
++    }
++
++    /// Enumerates each DISTINCT legal square that completes a five-cell line.
++    /// For the eight D4 orientations, the returned squares transform exactly.
++    static func completionSquares(_ cells: [UInt8], stone: UInt8) -> [Int] {
++        guard cells.count == 225, (1...2).contains(stone) else { return [] }
++        var found = [Bool](repeating: false, count: 225)
++        for (dr, dc) in [(0, 1), (1, 0), (1, 1), (1, -1)] {
++            for row in 0..<15 {
++                for col in 0..<15 {
++                    let endRow = row + dr * 4, endCol = col + dc * 4
++                    guard (0..<15).contains(endRow), (0..<15).contains(endCol) else { continue }
++                    var own = 0, empty = -1, blocked = false
++                    for offset in 0..<5 {
++                        let index = (row + dr * offset) * 15 + col + dc * offset
++                        switch cells[index] {
++                        case stone: own += 1
++                        case 0:
++                            if empty == -1 { empty = index }
++                            else { blocked = true }
++                        default: blocked = true
++                        }
++                        if blocked { break }
++                    }
++                    if !blocked && own == 4 && empty >= 0 { found[empty] = true }
++                }
++            }
++        }
++        return (0..<225).filter { found[$0] }
++    }
++}
