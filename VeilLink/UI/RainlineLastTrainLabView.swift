@@ -7,6 +7,10 @@ final class RainlineViewModel: ObservableObject {
     @Published private(set) var line = "广播：雨线已经压到高架桥。末班车不停站。"
 
     let scene: RainlineLastTrainScene
+    private var lastFlightFaults = -1
+    private var lastFlightRepairs = -1
+    private var lastFlightWindow = -1
+    private var lastFlightOutcome: RainlineOutcome = .running
     private var seed: UInt64
 
     init() {
@@ -19,6 +23,25 @@ final class RainlineViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 snapshot = value
+                let window = value.tick / (60 * 30)
+                if value.activeFaults != lastFlightFaults ||
+                   value.repairedFaults != lastFlightRepairs ||
+                   value.outcome != lastFlightOutcome || window != lastFlightWindow {
+                    let terminal = value.outcome != .running
+                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                        module: "game.rainline", phase: terminal
+                            ? "outcome." + String(describing: value.outcome)
+                            : "runtime.milestone",
+                        counters: ["tick": value.tick, "faults": value.activeFaults,
+                                   "repairs": value.repairedFaults,
+                                   "lit_cars": value.litCars, "power_percent": Int(value.trainPower)],
+                        flags: ["terminal": terminal], level: terminal ? .info : .debug
+                    )
+                    lastFlightFaults = value.activeFaults
+                    lastFlightRepairs = value.repairedFaults
+                    lastFlightWindow = window
+                    lastFlightOutcome = value.outcome
+                }
                 if let active = value.activeLine, active != line {
                     line = active
                 }
@@ -32,6 +55,11 @@ final class RainlineViewModel: ObservableObject {
     func setReduceMotion(_ enabled: Bool) { scene.setReduceMotion(enabled) }
 
     func restart() {
+        lastFlightFaults = -1; lastFlightRepairs = -1
+        lastFlightWindow = -1; lastFlightOutcome = .running
+        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+            module: "game.rainline", phase: "game.restart", level: .info
+        )
         seed &+= 0x9E3779B97F4A7C15
         line = "广播：雨线重启。把八节车厢带到终点。"
         scene.restart(seed: seed)

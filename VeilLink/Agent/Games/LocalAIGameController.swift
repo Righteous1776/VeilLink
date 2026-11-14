@@ -78,6 +78,15 @@ final class LocalAIGameController: ObservableObject {
         case draw
     }
 
+    // All seven local-game reducers share this privacy-safe event boundary.
+    private func flight(_ phase: String, values: [String: Int] = [:], flags: [String: Bool] = [:],
+                        level: DiagnosticLogLevel = .debug) {
+        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+            module: "game." + game.rawValue, phase: phase,
+            counters: values, flags: flags, level: level
+        )
+    }
+
     @Published private(set) var gomoku = GomokuState()
     @Published private(set) var xiangqi = XiangqiState()
     @Published private(set) var ludo = LudoState()
@@ -230,6 +239,7 @@ final class LocalAIGameController: ObservableObject {
             boardMatchSaveWarning = nil
         } catch {
             boardMatchSaveWarning = "本步存档失败：本局仍可继续，但强制退出可能丢失最近走子。"
+            flight("save.failed", values: ["move_count": boardMatchMoves.count], level: .error)
         }
     }
 
@@ -375,6 +385,7 @@ final class LocalAIGameController: ObservableObject {
         sessionID = UUID().uuidString
         outcome = .playing
         isAIThinking = false
+        flight("match.restart", flags: ["start_ai": startAI], level: .info)
         developerFormationPlies.removeAll(keepingCapacity: true)
         developerTeachingMode = false
         lastDecisionMode = "规则 Bot"
@@ -391,6 +402,7 @@ final class LocalAIGameController: ObservableObject {
         guard state.apply(index: index, actor: humanPlayer) else { return }
         learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: .host))
         gomoku = state
+        flight("move.human_applied", values: ["cell": index, "ply": state.moveCount], level: .info)
         persistBoardMove(.gomoku(index: index), actor: humanPlayer)
         finishOrScheduleAI()
     }
@@ -599,6 +611,7 @@ final class LocalAIGameController: ObservableObject {
             return
         }
         nativeTrainingTarget = target
+        flight("training.started", values: ["target": target], level: .info)
         nativeTrainingCompleted = 0
         isNativeTraining = true
         setUseNativeTrainingEvidence(true)
@@ -633,6 +646,7 @@ final class LocalAIGameController: ObservableObject {
                     if stored == 1 {
                         self.nativeTrainingCompleted += 1
                         self.trainedNativeGames = store.summary.completedGames
+                        self.flight("training.game_saved", values: ["count": self.nativeTrainingCompleted])
                         failed = 0
                     } else if store.lastSaveSucceeded {
                         // Duplicate or invalid match: do NOT count it as trained.
@@ -652,6 +666,10 @@ final class LocalAIGameController: ObservableObject {
                 await Task.yield()
             }
             self.trainedNativeGames = store.summary.completedGames
+            self.flight("training.finished",
+                        values: ["completed": self.nativeTrainingCompleted,
+                                 "target": target, "rejected": rejected, "failed": failed],
+                        flags: ["cancelled": Task.isCancelled], level: .info)
             if self.nativeTrainingCompleted == target {
                 self.nativeTrainingMessage = "本轮已保存 \(self.nativeTrainingCompleted) 局原生自对弈。"
             } else if Task.isCancelled {
@@ -770,6 +788,7 @@ final class LocalAIGameController: ObservableObject {
     }
 
     private func finishOrScheduleAI() {
+        if game != .gomoku { flight("turn.human_applied") }
         updateOutcome()
         guard !developerTeachingMode else { return }
         guard outcome == .playing else { return }
@@ -777,6 +796,7 @@ final class LocalAIGameController: ObservableObject {
     }
 
     private func updateOutcome() {
+        let previousOutcome = outcome
         switch game {
         case .gomoku:
             if let winner = gomoku.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
@@ -798,6 +818,9 @@ final class LocalAIGameController: ObservableObject {
         case .magneticHockey:
             if let winner = magneticHockey.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
             else if magneticHockey.isDraw { outcome = .draw }
+        }
+        if previousOutcome != outcome {
+            flight("match." + String(describing: outcome), level: .info)
         }
         guard !developerTeachingMode else { return }
         if game == .gomoku, outcome != .playing {
@@ -826,6 +849,10 @@ final class LocalAIGameController: ObservableObject {
         guard current == aiPlayer else { return }
         aiTask?.cancel()
         isAIThinking = true
+        flight("ai.search_started",
+               values: ["search_multiplier": boardDifficulty.searchBudgetMultiplier,
+                        "gomoku_ply": game == .gomoku ? gomoku.moveCount : 0],
+               flags: ["economy": boardSearchMode == .economy])
         aiTask = Task { @MainActor [weak self] in
             guard let self else { return }
             try? await Task.sleep(nanoseconds: 180_000_000)
@@ -837,6 +864,10 @@ final class LocalAIGameController: ObservableObject {
             if let selected { self.applyAI(selected) }
             if self.game == .gomoku { self.eclipseTraceStore.clear() }
             self.lastDecisionMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
+            self.flight("ai.search_finished",
+                        values: ["duration_ms": self.lastDecisionMilliseconds ?? 0],
+                        flags: ["candidate_found": selected != nil],
+                        level: selected == nil ? .warning : .info)
             self.eclipseSearchStartedAt = nil
             self.isAIThinking = false
             self.aiTask = nil
@@ -1089,6 +1120,7 @@ final class LocalAIGameController: ObservableObject {
     }
 
     private func applyAI(_ candidate: AgentActionCandidate) {
+        flight("ai.candidate_apply")
         switch game {
         case .gomoku:
             guard let index = candidate.metadata["index"].flatMap(Int.init) else { return }
@@ -1097,6 +1129,7 @@ final class LocalAIGameController: ObservableObject {
             guard state.apply(index: index, actor: aiPlayer) else { return }
             learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: .guest))
             gomoku = state
+            flight("move.ai_applied", values: ["cell": index, "ply": state.moveCount], level: .info)
             persistBoardMove(.gomoku(index: index), actor: aiPlayer)
         case .xiangqi:
             guard let from = candidate.metadata["from"].flatMap(Int.init),
@@ -1136,6 +1169,7 @@ final class LocalAIGameController: ObservableObject {
             guard state.apply(angle: angle, power: power, actor: aiPlayer, sessionID: sessionID) else { return }
             magneticHockey = state
         }
+        if game != .gomoku { flight("turn.ai_applied") }
     }
 
     private func finalizeLearning(as result: AdaptiveBoardGameResult) {

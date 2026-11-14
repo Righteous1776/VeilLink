@@ -29,14 +29,14 @@ final class PreConsentBlackBoxTests: XCTestCase {
             .appendingPathComponent("preconsent-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = VeilPreConsentBlackBox(rootDirectory: directory)
-        for _ in 0..<160 { first.record(.confirmationChanged, stage: .consent) }
-        XCTAssertEqual(first.entries.count, 128)
+        for _ in 0..<520 { first.record(.confirmationChanged, stage: .consent) }
+        XCTAssertEqual(first.entries.count, 512)
         let subsequent = VeilPreConsentBlackBox(rootDirectory: directory)
-        XCTAssertEqual(subsequent.entries.count, 128)
-        XCTAssertEqual(subsequent.entries.last?.sequence, 160)
+        XCTAssertEqual(subsequent.entries.count, 512)
+        XCTAssertEqual(subsequent.entries.last?.sequence, 520)
         subsequent.record(.appLaunched, stage: .launch)
-        XCTAssertEqual(subsequent.entries.last?.sequence, 161)
-        XCTAssertEqual(subsequent.entries.count, 128)
+        XCTAssertEqual(subsequent.entries.last?.sequence, 521)
+        XCTAssertEqual(subsequent.entries.count, 512)
     }
 
     func testNoLegalOrRuntimeInitializationNeededForExport() throws {

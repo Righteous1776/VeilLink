@@ -47,6 +47,9 @@ struct VeilFeatureLibraryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: query) { _ in offset = 0 }
         .onChange(of: domain) { _ in offset = 0 }
+        .onAppear {
+            RuntimeDiagnosticsBridge.shared.recordFeatureInventory(registry)
+        }
     }
 
     private var header: some View {
@@ -121,7 +124,10 @@ struct VeilFeatureLibraryView: View {
     private func featureRow(_ feature: VeilFeatureDescriptor) -> some View {
         let decision = registry.launchDecision(for: feature.id, profile: profile, passedGates: passedGates)
         return Button {
-            if decision.canLaunch { onOpen(feature.id) }
+            if decision.canLaunch {
+                RuntimeDiagnosticsBridge.shared.recordFeatureOpening(feature)
+                onOpen(feature.id)
+            }
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: icon(feature.domain))

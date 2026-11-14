@@ -9,6 +9,9 @@ final class SignalDiveViewModel: ObservableObject {
     @Published private(set) var floodlight = true
 
     let scene: SignalDiveScene
+    private var lastFlightRecovered = -1
+    private var lastFlightWindow = -1
+    private var lastFlightOutcome: SignalDiveOutcome = .running
     private var seed: UInt64
 
     init() {
@@ -35,6 +38,23 @@ final class SignalDiveViewModel: ObservableObject {
                 }
 
                 snapshot = value
+                let window = value.tick / (60 * 30)
+                if value.recovered != lastFlightRecovered ||
+                   value.outcome != lastFlightOutcome || window != lastFlightWindow {
+                    let terminal = value.outcome != .running
+                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                        module: "game.signal-dive",
+                        phase: terminal
+                            ? "outcome." + String(describing: value.outcome)
+                            : "runtime.milestone",
+                        counters: ["tick": value.tick, "beacons": value.recovered,
+                                   "hull_percent": Int(value.hull), "power_percent": Int(value.power)],
+                        flags: ["terminal": terminal], level: terminal ? .info : .debug
+                    )
+                    lastFlightRecovered = value.recovered
+                    lastFlightWindow = window
+                    lastFlightOutcome = value.outcome
+                }
 
                 if let active =
                         value.lastLine,
@@ -102,6 +122,10 @@ final class SignalDiveViewModel: ObservableObject {
     }
 
     func restart() {
+        lastFlightRecovered = -1; lastFlightWindow = -1; lastFlightOutcome = .running
+        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+            module: "game.signal-dive", phase: "game.restart", level: .info
+        )
         seed &+=
             0x9E3779B97F4A7C15
 

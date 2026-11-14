@@ -916,6 +916,12 @@ struct ChatView: View {
                 loadedFullHistoryForSearch = true
                 reload(loadAll: true)
             }
+            RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
+                conversationID: conversation.id,
+                messages: visibleMessages,
+                reason: "search.filter",
+                hasOlder: hasOlderMessages
+            )
         }
         .sheet(isPresented: $showsPhotoPicker) {
             PhotoPicker(
@@ -1067,6 +1073,12 @@ struct ChatView: View {
                     }
                 }
                 if presentWhenReady { showsConversationWorkspace = true }
+                RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
+                    conversationID: conversationID,
+                    messages: visibleMessages,
+                    reason: "workspace.load",
+                    hasOlder: hasOlderMessages
+                )
                 RuntimeDiagnosticsBridge.shared.recordSemanticAction(
                     "chat.workspace.ready",
                     metadata: [
@@ -1127,6 +1139,12 @@ struct ChatView: View {
                     loadAll: loadAll
                 )
                 if isReloadingMessages { isReloadingMessages = false }
+                RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
+                    conversationID: conversationID,
+                    messages: visibleMessages,
+                    reason: loadAll ? "reload.full" : "reload.recent",
+                    hasOlder: hasOlderMessages
+                )
             }
         }
     }
