@@ -18,3 +18,12 @@ All source SHA-256 digests: SHA256SUMS.txt.
 continuation_20261114: 92 tests; actual-search-start visual gate; 128KB archive JSON cap and clock rollback protection
 owner_zip_20261114: VeilLink_ECLIPSE_R10_MatchHistory_ThoughtField_20261114.zip
 owner_zip_sha256: 03a76de45aeeb539fa0893c814bdaf530923f639e8991459f8e2cc04e816412f
+
+## R11 video-terminal amendment (2026-11-14)
+- UPDATE IN PLACE: PR #208 remains canonical; no duplicated new UI PR.
+- Original 6 Swift source files retained (R10 per-match archive and abstract board field).
+- New source files: `FILES/VeilEclipseConsoleStream.swift`, `FILES/VeilEclipseComputeConsole.swift`; R10 identity/TRACE SwiftUI updated to embed the console and remove obsolete second abstract panel.
+- New tests: `TESTS/R11ConsoleTests.swift` (413 assertions); prior 39 + 18 + 35 retained = **505 total local assertions**.
+- `PATCH.diff` replaced by a single combined R10+R11 **advisory** product patch, NOT APPLIED.
+- Reference-video interpretation and other Agent de-dup: `R11_REFERENCE_AND_DEDUP.md`.
+- Never displays real candidate squares, PV, hidden reasoning, or artificial search progress; no live iOS build/IPA.
