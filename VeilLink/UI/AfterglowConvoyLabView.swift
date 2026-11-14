@@ -7,6 +7,8 @@ final class AfterglowConvoyViewModel: ObservableObject {
     @Published private(set) var storyLine: String
 
     let scene: AfterglowConvoyScene
+    private var lastFlightWindow = -1
+    private var lastFlightOutcome: AfterglowConvoyOutcome = .running
     private var seed: UInt64
 
     init() {
@@ -24,6 +26,23 @@ final class AfterglowConvoyViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.snapshot = snapshot
+                let window = snapshot.tick / (60 * 30)
+                if window != self.lastFlightWindow || snapshot.outcome != self.lastFlightOutcome {
+                    let terminal = snapshot.outcome != .running
+                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                        module: "game.afterglow-convoy",
+                        phase: terminal
+                            ? "outcome." + String(describing: snapshot.outcome)
+                            : "runtime.milestone",
+                        counters: ["tick": snapshot.tick,
+                                   "hull_percent": Int(snapshot.hull),
+                                   "beacon_percent": Int(snapshot.beacon),
+                                   "progress_percent": Int(snapshot.progress * 100)],
+                        flags: ["terminal": terminal], level: terminal ? .info : .debug
+                    )
+                    self.lastFlightWindow = window
+                    self.lastFlightOutcome = snapshot.outcome
+                }
                 if let line = snapshot.storyLine, line != self.storyLine {
                     self.storyLine = line
                 }
@@ -41,6 +60,10 @@ final class AfterglowConvoyViewModel: ObservableObject {
     func setPaused(_ paused: Bool) { scene.isPaused = paused }
 
     func restart() {
+        lastFlightWindow = -1; lastFlightOutcome = .running
+        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+            module: "game.afterglow-convoy", phase: "game.restart", level: .info
+        )
         seed &+= 0x9E3779B97F4A7C15
         storyLine = "信标：线路建立。我们再试一次。"
         scene.restart(seed: seed)

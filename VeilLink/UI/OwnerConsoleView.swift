@@ -292,6 +292,24 @@ struct OwnerConsoleView: View {
 
             Divider().background(VeilTheme.hairline)
 
+            HStack(spacing: 9) {
+                Label(telemetry.touchProbeReady ? "触摸监听可用" : "监听安装异常",
+                      systemImage: telemetry.touchProbeReady
+                        ? "checkmark.circle" : "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundColor(telemetry.touchProbeReady
+                        ? VeilTheme.goldBright : VeilTheme.secondaryText)
+                Spacer()
+                Text("已采集 \\(telemetry.capturedTouchCount) 次")
+                    .font(.caption.monospacedDigit())
+                    .foregroundColor(VeilTheme.goldBright)
+            }
+            .accessibilityIdentifier("owner.telemetry.touch_probe_status")
+            Text(telemetry.rawTouchCaptureEnabled
+                 ? "触摸监听已开启：在本页面点按或滑动，此处的次数应增加。键盘和输入区域不记录坐标。"
+                 : "触摸采集未开启：启用下方开关后，通过本页面触摸次数验证是否真正生效。")
+                .font(.caption2).foregroundColor(VeilTheme.secondaryText)
+
             Toggle(isOn: $telemetry.rawTouchCaptureEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("全量 UI 触摸黑匣子")
@@ -341,6 +359,25 @@ struct OwnerConsoleView: View {
             }
 
             Divider().background(VeilTheme.hairline)
+
+            Button {
+                // This is explicit in-app owner consent, not an iOS privilege escalation.
+                telemetry.rawTouchCaptureEnabled = true
+                telemetry.inputLifecycleCaptureEnabled = true
+                telemetry.postInteractionSnapshotsEnabled = true
+                telemetry.performanceWatchEnabled = true
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "diagnostics", phase: "owner.enable_full_local",
+                    flags: ["raw_touch": true, "input_lifecycle": true, "ui_snapshot": true, "performance": true],
+                    level: .info
+                )
+            } label: {
+                Label("开启全部本机诊断采集", systemImage: "waveform.path.ecg")
+            }
+            .buttonStyle(.bordered)
+            .tint(VeilTheme.gold)
+            Text("仅采集 VeilLink 自身可访问的结构化事件；不会取得其他 App 或系统私有日志的权限。各开关将保持开启，直到手动关闭。")
+                .font(.caption2).foregroundColor(VeilTheme.secondaryText)
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
                 Button("立即抓取状态") {

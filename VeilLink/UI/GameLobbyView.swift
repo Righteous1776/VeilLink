@@ -13,17 +13,23 @@ struct GameLobbyView: View {
 
     var body: some View {
         VeilStableScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                hero.veilStaggeredEntrance(index: 0)
+            // Prefer lazy layout and native scrolling over decorative card gestures.
+            LazyVStack(alignment: .leading, spacing: 18) {
+                hero
                 VeilopolyMultiplayerLobby(model: model)
-                singlePlayerSection.veilStaggeredEntrance(index: 1)
-                realtimeArcadeSection.veilStaggeredEntrance(index: 2)
-                interactiveStorySection.veilStaggeredEntrance(index: 3)
-                nearbySection.veilStaggeredEntrance(index: 4)
+                singlePlayerSection
+                realtimeArcadeSection
+                interactiveStorySection
+                nearbySection
             }
         }
         .background(VeilAmbientBackground())
         .navigationTitle("游戏")
+        .onAppear {
+            RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                module: "game.lobby", phase: "screen.open", level: .info
+            )
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 VeilToolCenterToolbarLink(model: model)
@@ -67,8 +73,6 @@ struct GameLobbyView: View {
             }
         }
         .veilCard(emphasized: true)
-        .veilSpatialPress(maximumTilt: 3.8, cornerRadius: 20, highlightColor: VeilTheme.goldBright)
-        .veilDynamicGlow(active: true, emphasized: true)
     }
 
     private var singlePlayerSection: some View {
@@ -88,37 +92,30 @@ struct GameLobbyView: View {
                 gameRow(.artillery, detail: "可视化弹道 · 确定性风力 · 本地参数搜索 Bot", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .lightTrail)) {
                 gameRow(.lightTrail, detail: "动态赛道 · 闪避与能量 · 本地预判 Bot", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .magneticHockey)) {
                 gameRow(.magneticHockey, detail: "固定步物理 · 磁场偏转 · 三球决胜", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
                 gameRow(.gomoku, detail: "可选黑白与先后手 · 四档棋力 · 个性化本地陪练", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
                 gameRow(.xiangqi, detail: "可选红黑与先后手 · 四档棋力 · 自学习阵法预判", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .ludo)) {
                 gameRow(.ludo, detail: "确定性骰子 · 规则评分 Bot 自动完成回合", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: TacticalV2SoloView(model: model)) {
                 gameRow(.tactical, detail: "48×27 官渡大战场 · 战争迷雾 · 补给 · 袁军实时行动", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
         }
     }
 
@@ -162,7 +159,6 @@ struct GameLobbyView: View {
                         .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
                     }
                     .buttonStyle(VeilPressStyle())
-                    .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
                 }
             }
         }
@@ -171,47 +167,91 @@ struct GameLobbyView: View {
     private var realtimeArcadeSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("实时渲染游戏", subtitle: "SpriteKit 2D + SceneKit 3D · 稳定帧循环 · 自适应画质")
-            NavigationLink(destination: PrismRift3DGameView()) {
+            NavigationLink(destination: PrismRift3DGameView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.prism-rift", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "棱镜裂隙 3D", detail: "动态灯光 · 三维隧道 · 3 阶 Boss · 能量与舰体管理", motif: .circuit, badge: "3D")
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: AfterglowConvoyLabView()) {
+            NavigationLink(destination: AfterglowConvoyLabView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.afterglow-convoy", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "余烬护航", detail: "雨夜视差 · 信标伙伴 · 风暴护盾 · 程序化航线", motif: .tide, badge: "2D")
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: AshHarborLabView()) {
+            NavigationLink(destination: AshHarborLabView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.ash-harbor", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "灰港", detail: "暴风救援 · 探照灯与船体管理 · 四组求救信号", motif: .tide, badge: "2D")
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: RainlineLastTrainLabView()) {
+            NavigationLink(destination: RainlineLastTrainLabView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.rainline", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "雨线末班车", detail: "实时列车调度 · 四类故障 · 夜雨材质与本地模型", motif: .comet, badge: "2D+")
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: SignalDiveLabView()) {
+            NavigationLink(destination: SignalDiveLabView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.signal-dive", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "深潜信号", detail: "深海探索 · 主动声呐 · 生物回波与压力管理", motif: .pulse, badge: "2D+")
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: BlackoutDistrictLabView()) {
+            NavigationLink(destination: BlackoutDistrictLabView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.blackout-district", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "熄灯街区", detail: "实时抢修驾驶 · 12 节点电网 · 130+ 建筑单元", motif: .circuit, badge: "2D+")
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: VeilPulseRunnerView()) {
+            NavigationLink(destination: VeilPulseRunnerView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.pulse-runner", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "星隙快递", detail: "三段式横版平台跳跃 · 收集星核 · 冲刺", motif: .comet, badge: "2D")
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: VeilVoidSwarmView()) {
+            NavigationLink(destination: VeilVoidSwarmView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.void-swarm", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "虚空蜂群", detail: "触控移动 · 自动射击 · 波次生存", motif: .guardian, badge: "2D")
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: RhythmNeonView()) {
+            NavigationLink(destination: RhythmNeonView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.rhythm-neon", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "霓虹节拍", detail: "节拍闪避 · 连击得分 · 超载冲刺", motif: .pulse, badge: "2D")
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: VeilRhythmR6NativeGameView()) {
+            NavigationLink(destination: VeilRhythmR6NativeGameView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.rhythm-expedition", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "实时节奏远征", detail: "SpriteKit 实时判定 · 原生渲染 · 自适应画质", motif: .pulse, badge: "2D")
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: LatticeClashLabView()) {
+            NavigationLink(destination: LatticeClashLabView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.lattice-clash", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(title: "晶格冲突", detail: "确定性单机策略 · 连锁占领 · 本地 Bot", motif: .circuit, badge: "策略")
             }
             .buttonStyle(.plain)
@@ -221,7 +261,11 @@ struct GameLobbyView: View {
     private var interactiveStorySection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("互动剧情", subtitle: "剧情与游戏归入大厅，不再藏在工具箱")
-            NavigationLink(destination: VeilStoryLabView()) {
+            NavigationLink(destination: VeilStoryLabView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.story", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(
                     title: "故事实验室",
                     detail: "原生分支叙事 · 多结局 · 完全离线",
@@ -230,7 +274,11 @@ struct GameLobbyView: View {
                 )
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: VeilMonogatariGameView()) {
+            NavigationLink(destination: VeilMonogatariGameView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.monogatari-r6", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(
                     title: "雨幕之后 · Monogatari R6",
                     detail: "官方 2.8.0 完整引擎 · 东京雨夜 · 四种结局 · 本地存档",
@@ -239,7 +287,11 @@ struct GameLobbyView: View {
                 )
             }
             .buttonStyle(.plain)
-            NavigationLink(destination: VeilMonogatariHostView()) {
+            NavigationLink(destination: VeilMonogatariHostView().onAppear {
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.monogatari-host", phase: "screen.open", level: .info
+                )
+            }) {
                 realtimeGameRow(
                     title: "VeilLink × Monogatari",
                     detail: "官方 v2.8.0 引擎 · 原创离线剧情 · 本地存档",
@@ -421,6 +473,9 @@ struct LocalAIGameView: View {
             }
         }
         .onAppear {
+            RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                module: "game." + game.rawValue, phase: "screen.open", level: .info
+            )
             model.agent.setComputeFocus(.gameDecision)
             controller.resumeBoardMatchIfNeeded()
             if game == .tactical,

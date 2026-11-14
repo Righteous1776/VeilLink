@@ -112,11 +112,14 @@ public final class GameSessionModel: ObservableObject {
    if self.selectedTile != nil { self.boardSelectionRevision += 1 }
   }
   if unreadable {
+   flight("save.unavailable")
    saveWarning = "本地存档无法读取，已保留原文件。可从「重新开局」明确重置。"
    lastFeedback = "上次存档异常 · 未覆盖旧数据"
   } else if let recovered {
+   flight("match.restored")
    lastFeedback = "已恢复上次对局 · 进度 #\(recovered.game.nextSeq)"
   } else {
+   flight("match.new")
    checkpoint(force: true)
   }
   // A killed app can resume in .moveAnim/.tileResolve. Finish the pending
@@ -150,11 +153,22 @@ public final class GameSessionModel: ObservableObject {
  public var saveSummary: String {
   saveWarning ?? "自动保存已启用 · 异常退出后可继续本局"
  }
+ /// App-owned primitive-only diagnostic bus. No game payload or IDs.
+ private func flight(_ phase: String, state: GameState? = nil) {
+  let current = state ?? game
+  NotificationCenter.default.post(name: NSNotification.Name("Veilopoly.FlightRecorder.v1"),
+   object: nil, userInfo: [
+    "phase": phase, "next_seq": current.nextSeq,
+    "player": current.turn.player, "turn_phase": current.turn.phase.rawValue,
+    "multiplayer": isMultiplayer
+   ])
+ }
  private func checkpoint(force: Bool) {
   if !force && Date().timeIntervalSince(lastCheckpointAt) < 30 { return }
   guard !recoveryBlocked else { return }
   guard let saveStore else {
    saveWarning = "自动保存不可用：无法访问本机存储目录"
+   flight("save.unavailable")
    return
   }
   do {
@@ -164,6 +178,7 @@ public final class GameSessionModel: ObservableObject {
    saveWarning = nil
   } catch {
    saveWarning = "自动存档失败：请保留应用数据并反馈"
+   flight("save.failed")
   }
  }
  public func flushSave() { checkpoint(force: true) }
@@ -205,6 +220,7 @@ public final class GameSessionModel: ObservableObject {
   } else { result = VeilopolyEngine.apply(game, currentContext, move) }
   switch result {
   case .failure(let err):
+   flight("reducer.rejected")
    guard reportErrors else { return }
    errorMessage = VeilopolyGamePresentation.message(err)
    errorAdvice = VeilopolyGamePresentation.advice(err)
@@ -217,6 +233,7 @@ public final class GameSessionModel: ObservableObject {
     UINotificationFeedbackGenerator().notificationOccurred(.error)
    }
   case .success((let newState, let effects)):
+   if move.type != .stockTick { flight("reducer.committed", state: newState) }
    if let room = liveRoom {
     networkSender?(.init(roomID: room.configuration.roomID, kind: .commit,
      committed: .init(seq: move.seq, move: move, stateHash: StateDigest.hash(newState))))
@@ -447,6 +464,7 @@ public final class GameSessionModel: ObservableObject {
     guard let snapshot = packet.snapshot else { return }
     try room.acceptSnapshot(snapshot, from: sender)
     liveRoom = room
+    flight("network.snapshot_applied", state: room.game)
     installNetworkSnapshot(room.game)
     sendNetworkStatus()
    case .resync:
@@ -469,6 +487,7 @@ public final class GameSessionModel: ObservableObject {
    case .invite, .accept, .decline: break // Invitation lifecycle belongs to the authenticated host bridge.
    }
   } catch {
+   flight("network.validation_failed")
    if room.isHost { sendNetworkSnapshot() }
    else {
     setNetworkAvailability(false, message: "同步校验未通过，正在请求房主进度")

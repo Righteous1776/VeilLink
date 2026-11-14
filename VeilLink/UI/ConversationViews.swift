@@ -252,6 +252,7 @@ private struct ConversationListRowChrome: ViewModifier {
 }
 
 private struct ConversationRow: View {
+    @ObservedObject private var appearance = VeilAppearanceController.shared
     let conversation: ConversationSummary
     let isSelected: Bool
 
@@ -274,14 +275,18 @@ private struct ConversationRow: View {
                     }
                     Spacer(minLength: 6)
                     if conversation.unreadCount > 0 {
-                        Text(conversation.unreadCount > 99 ? "99+" : "\(conversation.unreadCount)")
-                            .font(VeilType.terminalLabel)
-                            .foregroundColor(Color.black.opacity(0.88))
-                            .padding(.horizontal, 6)
-                            .frame(minWidth: 20, minHeight: 18)
-                            .background(VeilTheme.goldBright)
-                            .clipShape(Capsule())
-                            .accessibilityLabel("\(conversation.unreadCount) 条未读")
+                        if appearance.isForge {
+                            VeilForgeUnreadLatch(count: conversation.unreadCount)
+                        } else {
+                            Text(conversation.unreadCount > 99 ? "99+" : "\(conversation.unreadCount)")
+                                .font(VeilType.terminalLabel)
+                                .foregroundColor(Color.black.opacity(0.88))
+                                .padding(.horizontal, 6)
+                                .frame(minWidth: 20, minHeight: 18)
+                                .background(VeilTheme.goldBright)
+                                .clipShape(Capsule())
+                                .accessibilityLabel("\(conversation.unreadCount) 条未读")
+                        }
                     }
                     Text(conversation.updatedAt, style: .time)
                         .font(.system(size: 9.5, weight: .medium, design: .monospaced))
@@ -304,19 +309,29 @@ private struct ConversationRow: View {
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 12)
-        .background(
-            VeilPanelShape(cut: 15, radius: 7)
-                .fill(isSelected ? VeilTheme.gold.opacity(0.090) : VeilTheme.elevated.opacity(0.74))
-        )
-        .overlay(
-            VeilPanelShape(cut: 15, radius: 7)
-                .stroke(isSelected ? VeilTheme.gold.opacity(0.30) : VeilTheme.hairline, lineWidth: 1)
-        )
+        .background {
+            if appearance.isForge {
+                VeilForgeConversationPlate(
+                    selected: isSelected, unreadCount: conversation.unreadCount
+                )
+            } else {
+                VeilPanelShape(cut: 15, radius: 7)
+                    .fill(isSelected ? VeilTheme.gold.opacity(0.090) : VeilTheme.elevated.opacity(0.74))
+            }
+        }
+        .overlay {
+            if !appearance.isForge {
+                VeilPanelShape(cut: 15, radius: 7)
+                    .stroke(isSelected ? VeilTheme.gold.opacity(0.30) : VeilTheme.hairline, lineWidth: 1)
+            }
+        }
         .overlay(alignment: .topLeading) {
-            Rectangle()
-                .fill(isSelected ? VeilTheme.goldBright.opacity(0.72) : VeilTheme.hairline)
-                .frame(width: isSelected ? 34 : 14, height: 1)
-                .padding(.leading, 11)
+            if !appearance.isForge {
+                Rectangle()
+                    .fill(isSelected ? VeilTheme.goldBright.opacity(0.72) : VeilTheme.hairline)
+                    .frame(width: isSelected ? 34 : 14, height: 1)
+                    .padding(.leading, 11)
+            }
         }
         .contentShape(VeilPanelShape(cut: 15, radius: 7))
     }
@@ -370,9 +385,12 @@ struct ChatView: View {
     @State private var isReloadingMessages = false
     @State private var didInitialBottomAnchor = false
     @State private var isNearBottom = true
+    @State private var scrollToBottomRequest = 0
+    @FocusState private var composerFocused: Bool
     private var chatBottomAnchorID: String { "chat-bottom-\(conversation.id)" }
     @State private var loadedFullHistoryForSearch = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var appearance = VeilAppearanceController.shared
 
     private var usesReducedInteractionMotion: Bool {
         VeilMotionPolicy.quality(reduceMotionRequested: reduceMotion) != .high
@@ -490,14 +508,15 @@ struct ChatView: View {
                                         retry(message)
                                     } : nil
                                 )
-                                .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
+                                .transition(appearance.isForge ? .identity : (usesReducedInteractionMotion ? .opacity : .asymmetric(
                                     insertion: .opacity.combined(with: .scale(scale: 0.985)),
                                     removal: .opacity
-                                ))
+                                )))
                                 .id(message.id)
                             } else {
                                 MessageBubble(
                                     message: message,
+                                    forgeStyle: appearance.isForge,
                                     database: model.database,
                                     onRetry: message.isOutgoing && message.deliveryState == .failed ? { retry(message) } : nil,
                                     onPause: canPauseImage(message) ? { pauseImage(message) } : nil,
@@ -531,10 +550,10 @@ struct ChatView: View {
                                         Label("本地删除", systemImage: "trash")
                                     }
                                 }
-                                .transition(usesReducedInteractionMotion ? .opacity : .asymmetric(
+                                .transition(appearance.isForge ? .identity : (usesReducedInteractionMotion ? .opacity : .asymmetric(
                                     insertion: .opacity.combined(with: .scale(scale: 0.985)),
                                     removal: .opacity
-                                ))
+                                )))
                                 .id(message.id)
                             }
                         }
@@ -562,7 +581,7 @@ struct ChatView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 14)
-                    .animation(usesReducedInteractionMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
+                    // Do not animate the entire LazyVStack while the keyboard changes its viewport.
                 }
                 .coordinateSpace(name: "chatScroll")
                 .onAppear {
@@ -576,10 +595,19 @@ struct ChatView: View {
                     if !didInitialBottomAnchor {
                         didInitialBottomAnchor = true
                         DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
-                    } else if isNearBottom {
-                        // Do not steal scroll position when the user is reading older messages.
+                    } else if isNearBottom || composerFocused {
+                        // Follow new messages while composing; preserve older-message reading otherwise.
                         DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
                     }
+                }
+                .onChange(of: scrollToBottomRequest) { _ in
+                    guard !showsSearchBar else { return }
+                    DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
+                }
+                .onChange(of: viewport.size.height) { _ in
+                    guard didInitialBottomAnchor, !showsSearchBar,
+                          (composerFocused || isNearBottom) else { return }
+                    DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
                 }
                 .onPreferenceChange(ChatBottomOffsetPreferenceKey.self) { bottomY in
                     guard didInitialBottomAnchor, bottomY.isFinite else { return }
@@ -605,8 +633,11 @@ struct ChatView: View {
 
     private var chatComposerFooter: some View {
             VStack(spacing: 0) {
-                VeilopolyConversationInvitationView(bridge: model.veilopolyMultiplayer,
-                    peerIdentityID: conversation.peerIdentityID, presentationID: "chat-" + conversation.id)
+                // Large invitation controls do not belong above a visible text keyboard.
+                if !composerFocused {
+                    VeilopolyConversationInvitationView(bridge: model.veilopolyMultiplayer,
+                        peerIdentityID: conversation.peerIdentityID, presentationID: "chat-" + conversation.id)
+                }
                 if let mediaStatus {
                     HStack(spacing: 8) {
                         if isPreparingImage { ProgressView().controlSize(.small) }
@@ -735,6 +766,7 @@ struct ChatView: View {
                     } else {
                         TextField("加密消息", text: $draft)
                             .textFieldStyle(VeilTextFieldStyle())
+                            .focused($composerFocused)
                         if composerOptionsEnabled {
                             Button {
                                 showsComposerOptions = true
@@ -748,15 +780,23 @@ struct ChatView: View {
                             .accessibilityLabel("扩展输入")
                         }
                         Button(action: send) {
-                            ZStack {
-                                if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Circle().fill(VeilTheme.subtleFillStrong) }
-                                else { Circle().fill(VeilTheme.goldGradient) }
-                                Image(systemName: "arrow.up")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundColor(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? VeilTheme.tertiaryText : Color.black.opacity(0.88))
+                            Group {
+                                if appearance.isForge {
+                                    VeilForgeSendPlunger(
+                                        armed: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    )
+                                } else {
+                                    ZStack {
+                                        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Circle().fill(VeilTheme.subtleFillStrong) }
+                                        else { Circle().fill(VeilTheme.goldGradient) }
+                                        Image(systemName: "arrow.up")
+                                            .font(.system(size: 15, weight: .bold))
+                                            .foregroundColor(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? VeilTheme.tertiaryText : Color.black.opacity(0.88))
+                                    }
+                                    .frame(width: 36, height: 36)
+                                    .shadow(color: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .clear : VeilTheme.gold.opacity(0.22), radius: 8, x: 0, y: 3)
+                                }
                             }
-                            .frame(width: 36, height: 36)
-                            .shadow(color: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .clear : VeilTheme.gold.opacity(0.22), radius: 8, x: 0, y: 3)
                         }
                         .buttonStyle(VeilPressStyle())
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -767,12 +807,22 @@ struct ChatView: View {
             }
             .background(VeilTheme.elevated.opacity(0.95))
             .overlay(alignment: .top) {
-                HStack(spacing: 7) {
-                    Rectangle().fill(Color.clear).frame(maxWidth: .infinity, maxHeight: 1)
-                    VeilLinkTrace(active: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, width: 72)
-                    Rectangle().fill(Color.clear).frame(maxWidth: .infinity, maxHeight: 1)
+                Group {
+                    if appearance.isForge {
+                        VeilForgeComposerLatch(
+                            armed: composerMode == .text
+                                && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                    } else {
+                        HStack(spacing: 7) {
+                            Rectangle().fill(Color.clear).frame(maxWidth: .infinity, maxHeight: 1)
+                            VeilLinkTrace(active: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, width: 72)
+                            Rectangle().fill(Color.clear).frame(maxWidth: .infinity, maxHeight: 1)
+                        }
+                    }
                 }
                 .offset(y: -1)
+                .allowsHitTesting(false)
             }
     }
 
@@ -780,7 +830,11 @@ struct ChatView: View {
         VStack(spacing: 0) {
             chatSearchHeader
             chatMessageTimeline
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // The composer tracks the keyboard safe area; the message viewport resizes above it.
             chatComposerFooter
+                .fixedSize(horizontal: false, vertical: true)
         }
         .background(VeilAmbientBackground())
         .navigationTitle("")
@@ -848,6 +902,10 @@ struct ChatView: View {
             didInitialBottomAnchor = false
             isNearBottom = true
         }
+        .onChange(of: composerFocused) { _ in
+            // Restore the latest bubble after both keyboard opening and dismissal.
+            scrollToBottomRequest &+= 1
+        }
         .onChange(of: model.messagesRevision) { _ in
             if showsConversationWorkspace { prepareConversationWorkspace(presentWhenReady: false) }
             else { reload(loadAll: showsSearchBar && loadedFullHistoryForSearch) }
@@ -858,6 +916,12 @@ struct ChatView: View {
                 loadedFullHistoryForSearch = true
                 reload(loadAll: true)
             }
+            RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
+                conversationID: conversation.id,
+                messages: visibleMessages,
+                reason: "search.filter",
+                hasOlder: hasOlderMessages
+            )
         }
         .sheet(isPresented: $showsPhotoPicker) {
             PhotoPicker(
@@ -1009,6 +1073,12 @@ struct ChatView: View {
                     }
                 }
                 if presentWhenReady { showsConversationWorkspace = true }
+                RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
+                    conversationID: conversationID,
+                    messages: visibleMessages,
+                    reason: "workspace.load",
+                    hasOlder: hasOlderMessages
+                )
                 RuntimeDiagnosticsBridge.shared.recordSemanticAction(
                     "chat.workspace.ready",
                     metadata: [
@@ -1069,6 +1139,12 @@ struct ChatView: View {
                     loadAll: loadAll
                 )
                 if isReloadingMessages { isReloadingMessages = false }
+                RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
+                    conversationID: conversationID,
+                    messages: visibleMessages,
+                    reason: loadAll ? "reload.full" : "reload.recent",
+                    hasOlder: hasOlderMessages
+                )
             }
         }
     }
@@ -1288,6 +1364,7 @@ struct ChatView: View {
             draft = ""
             replyingTo = nil
             reload()
+            scrollToBottomRequest &+= 1
         } catch {
             model.alertMessage = error.localizedDescription
         }
@@ -1352,7 +1429,7 @@ struct ChatView: View {
     private func prepareAndSendImage(_ imported: ImportedImageFile) {
         guard !isPreparingImage else { return }
         isPreparingImage = true
-        withAnimation(.easeOut(duration: 0.18)) { mediaStatus = "正在高质量解析与压缩图片…" }
+        withAnimation(.easeOut(duration: 0.18)) { mediaStatus = "正在极限压缩图片（保留可读细节）…" }
 
         Task { @MainActor in
             let accessed = imported.shouldDeleteAfterUse ? false : imported.url.startAccessingSecurityScopedResource()
@@ -1425,6 +1502,7 @@ private struct VeilChatIdentityTitle: View {
 
 private struct MessageBubble: View {
     let message: ChatMessage
+    let forgeStyle: Bool
     let database: DatabaseStore
     let onRetry: (() -> Void)?
     let onPause: (() -> Void)?
@@ -1463,7 +1541,7 @@ private struct MessageBubble: View {
                         .font(.body.weight(.medium))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
-                        .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                        .background(MessageBubbleSurface(outgoing: message.isOutgoing, forgeStyle: forgeStyle))
                         .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
                         .clipShape(VeilPanelShape(cut: 11, radius: 7))
                 } else if let voiceMetadata = VoiceMessageCodec.decode(message.body) {
@@ -1482,7 +1560,7 @@ private struct MessageBubble: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)
-                    .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                    .background(MessageBubbleSurface(outgoing: message.isOutgoing, forgeStyle: forgeStyle))
                     .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
                     .clipShape(VeilPanelShape(cut: 11, radius: 7))
                 } else if let reply = ReplyTextCodec.decode(message.body) {
@@ -1503,7 +1581,7 @@ private struct MessageBubble: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)
-                    .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                    .background(MessageBubbleSurface(outgoing: message.isOutgoing, forgeStyle: forgeStyle))
                     .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
                     .clipShape(VeilPanelShape(cut: 11, radius: 7))
                     .overlay(
@@ -1517,7 +1595,7 @@ private struct MessageBubble: View {
                         .font(.body)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
-                        .background(MessageBubbleSurface(outgoing: message.isOutgoing))
+                        .background(MessageBubbleSurface(outgoing: message.isOutgoing, forgeStyle: forgeStyle))
                         .foregroundColor(message.isOutgoing ? Color.black.opacity(0.90) : VeilTheme.text)
                         .clipShape(VeilPanelShape(cut: 11, radius: 7))
                         .overlay(
@@ -1564,7 +1642,10 @@ private struct MessageBubble: View {
                 HStack(spacing: 4) {
                     Text(message.sentAt, style: .time)
                     if message.isOutgoing {
-                        if message.deliveryState == .delivered {
+                        if forgeStyle {
+                            VeilForgeDeliveryRail(state: message.deliveryState)
+                                .accessibilityLabel(deliveryLabel)
+                        } else if message.deliveryState == .delivered {
                             VeilResolveMark(resolved: true)
                                 .accessibilityLabel(deliveryLabel)
                         } else {
@@ -1594,10 +1675,13 @@ private struct MessageBubble: View {
 
 private struct MessageBubbleSurface: View {
     let outgoing: Bool
+    let forgeStyle: Bool
 
     var body: some View {
         Group {
-            if outgoing {
+            if forgeStyle {
+                VeilForgeBubbleSurface(outgoing: outgoing)
+            } else if outgoing {
                 VeilTheme.goldGradient
             } else {
                 VeilTheme.incomingBubbleGradient

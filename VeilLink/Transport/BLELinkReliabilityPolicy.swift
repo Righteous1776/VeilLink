@@ -27,6 +27,20 @@ struct BLELinkTuning: Equatable {
 enum BLELinkReliabilityPolicy {
     static let reconnectStabilityResetInterval: TimeInterval = 30
 
+    /// A stalled write queue requires a bounded flow-control probe, NOT a
+    /// speculative physical disconnect. CoreBluetooth reports real link loss.
+    static func shouldProbeStalledQueue(
+        channelReady: Bool,
+        pendingPackets: Int,
+        stalledFor: TimeInterval,
+        secondsSinceLastProbe: TimeInterval,
+        stallThreshold: TimeInterval
+    ) -> Bool {
+        channelReady && pendingPackets > 0
+            && stalledFor.isFinite && secondsSinceLastProbe.isFinite
+            && stalledFor >= stallThreshold && secondsSinceLastProbe >= 2
+    }
+
     /// Reconcile persisted connection intent when the app becomes foreground
     /// even when CBCentralManager never emitted a new poweredOn callback.
     static func shouldForegroundRestore(
