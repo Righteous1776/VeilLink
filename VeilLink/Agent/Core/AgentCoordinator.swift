@@ -444,7 +444,7 @@ final class AgentCoordinator: ObservableObject {
         AgentSession(messages: [
             AgentMessage(
                 role: .assistant,
-                text: "灵核在本机待命。当前运行时：\(LocalTextModelRuntimeFactory.backendName)。Core 版使用零模型本地对话规则；实验 AI 版可单独启用 llama/Qwen。"
+                text: "灵核在本机待命。当前运行时：\(LocalTextModelRuntimeFactory.backendName)。当前版本使用零模型本地对话规则，无需加载 GGUF 或原生语言模型。"
             )
         ])
     }
