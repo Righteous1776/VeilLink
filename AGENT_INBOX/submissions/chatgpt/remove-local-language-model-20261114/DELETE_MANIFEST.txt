@@ -1,0 +1,37 @@
+# Removal manifest — native language models only
+# main anchor: eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0
+# status: PROPOSED, NOT EXECUTED
+# intent: remove all Vertex 35M / Qwen GGUF / llama.cpp-language-model-only files.
+# The 29 paths below were checked against the exact main git tree (all present).
+# Important: the GGUF file is 29,203,168 bytes and MUST NOT be re-committed as an Inbox asset.
+# Deletion from HEAD does not rewrite Git history or remove historical Git blobs.
+
+VeilLink/Resources/LocalAI/Vertex-0.6-35M-Instruct-Q4_K_M.gguf
+VeilLink/Resources/LocalAI/README.md
+VeilLink/Resources/LocalAI/LICENSE-APACHE-2.0.txt
+VeilLink/Resources/LocalAI-THIRD-PARTY-NOTICES.txt
+VeilLink/Agent/Language/Vertex35MChatRuntime.swift
+VeilLink/Agent/Language/Vertex35MChineseQualityGate.swift
+VeilLink/Agent/Language/Vertex35MModelIntegrityGate.swift
+VeilLink/Agent/Language/LingCoreChatOnlyBoundary.swift
+VeilLink/UI/LingCoreTinyChatView.swift
+VeilLink/Agent/Language/LlamaInferenceEngine.swift
+VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift
+VeilLink/Agent/Language/LlamaRuntimeConfiguration.swift
+VeilLink/Agent/Language/LlamaCancellationGate.swift
+VeilLink/Agent/Language/LocalModelCatalog.swift
+VeilLink/Agent/Language/LocalModelManager.swift
+VeilLink/Agent/Language/QwenPromptFormatter.swift
+VeilLinkTests/Vertex35MChineseQualityGateTests.swift
+VeilLinkTests/Vertex35MModelIntegrityGateTests.swift
+VeilLinkTests/Vertex35MOnDeviceSmokeTests.swift
+VeilLinkTests/LingCoreChatOnlyBoundaryTests.swift
+VeilLinkTests/RealLocalInferenceSmokeTests.swift
+VeilLinkTests/LocalModelCatalogTests.swift
+VeilLinkTests/QwenPromptFormatterTests.swift
+scripts/build-llama-ios15.sh
+scripts/fetch-qwen-model.sh
+scripts/prepare-vertex35m-ios.sh
+scripts/make-vertex35m-project.py
+scripts/verify-vertex35m-model.py
+.github/workflows/lingcore-vertex35m-validation.yml

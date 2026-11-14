@@ -1,0 +1,136 @@
+name: VeilLink
+options:
+  bundleIdPrefix: studio.zeo
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: 5.9
+    MARKETING_VERSION: "29.0"
+    CURRENT_PROJECT_VERSION: "66"
+    SWIFT_STRICT_CONCURRENCY: complete
+    IPHONEOS_DEPLOYMENT_TARGET: 15.0
+    TARGETED_DEVICE_FAMILY: "1,2"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+packages:
+  Veilopoly:
+    path: VEILOPOLY_DEV/Veilopoly
+  CodeScanner:
+    url: https://github.com/twostraws/CodeScanner.git
+    exactVersion: 2.5.2
+  SwiftSoup:
+    url: https://github.com/scinfu/SwiftSoup.git
+    exactVersion: 2.9.6
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    exactVersion: 0.9.20
+targets:
+  VeilLink:
+    type: application
+    platform: iOS
+    sources:
+      - path: VeilLink
+        excludes:
+          - Agent/MaleCNS
+          - Agent/Games/TrainedGamePolicyRuntime.swift
+          - Agent/Games/MaleCNSGameDecisionEncoder.swift
+          - Resources/VeilFlyCore.vfly
+          - Resources/VeilFlyLite.vfly
+          - Resources/VeilFlyAssets.json
+          - Resources/VFLYInstallationVerification.json
+          - Resources/MaleCNSGameRankerCoreV1.json
+          - Resources/MaleCNSGameRankerCoreV1.manifest.json
+          - Resources/MaleCNSGameRankerLiteV1.json
+          - Resources/MaleCNSGameRankerLiteV1.manifest.json
+          - Resources/MaleCNSReadoutCoreV1.json
+          - Resources/MaleCNSReadoutCoreV1.manifest.json
+          - Resources/MaleCNSReadoutLiteV1.json
+          - Resources/MaleCNSReadoutLiteV1.manifest.json
+          - Resources/AgentModels/game_policy_ranker_v4.vlpol
+          - Resources/AgentModels/game_policy_ranker_v4.manifest.json
+          - Resources/MonogatariHost
+          - Resources/VisualNovelBundle
+          - Resources/GomokuEngineV2
+      # Preserve relative JS/CSS paths as a bundled folder reference.
+      - path: VeilLink/Resources/MonogatariHost
+        type: folder
+        buildPhase: resources
+      - path: VeilLink/Resources/VisualNovelBundle
+        type: folder
+        buildPhase: resources
+      - path: VeilLink/Resources/GomokuEngineV2
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: Veilopoly
+        product: VeilopolyUI
+      - sdk: libsqlite3.tbd
+      - package: CodeScanner
+      - package: SwiftSoup
+      - package: ZIPFoundation
+      - target: VeilBackgroundWidget
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink
+        PRODUCT_NAME: VeilLink
+        INFOPLIST_FILE: VeilLink/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_OBJC_BRIDGING_HEADER: VeilLink/Native/VeilLink-Bridging-Header.h
+        SUPPORTS_MACCATALYST: NO
+    scheme:
+      testTargets:
+        - VeilLinkTests
+        - VeilLinkUITests
+  VeilBackgroundWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.1"
+    sources:
+      - path: VeilBackgroundWidget
+      - path: VeilLink/Background/VeilBackgroundActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink.backgroundwidget
+        PRODUCT_NAME: VeilBackgroundWidget
+        INFOPLIST_FILE: VeilBackgroundWidget/Info.plist
+        IPHONEOS_DEPLOYMENT_TARGET: 16.1
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        SUPPORTS_MACCATALYST: NO
+
+  VeilLinkTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: VeilLinkTests
+        excludes:
+          - MaleCNSNativeKernelTests.swift
+          - MaleCNSNativeRolloutPoolTests.swift
+          - MaleCNSVFLY1Tests.swift
+          - Fixtures/MaleCNSFixture.vfly
+          - Fixtures/MaleCNSFixture.vfly.manifest.json
+      # These session/animation/lifecycle tests are conditionally excluded by
+      # macOS/Linux swift test; execute them in the real iOS test host instead.
+      - path: VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyUITests/LiveGameSessionTests.swift
+    dependencies:
+      - target: VeilLink
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.VeilLinkTests
+  VeilLinkUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: VeilLinkUITests
+    dependencies:
+      - target: VeilLink
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.VeilLinkUITests
+        TEST_TARGET_NAME: VeilLink
