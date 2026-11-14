@@ -36,3 +36,17 @@ Governor-managed cherry-pick or rewritten integration branch only; compare exist
 - [ ] Load test: 15-hour example scenario with simulated BLE retry storm, native Gomoku training and a realtime game; observe true retention span, overwritten segments, queue throttling, battery/thermal and ZIP size. No claim five nights unless observed.
 
 Compiled iOS/XCTest status: **NOT_RUN**. Patch context replay is NOT compile/test certification.
+
+## R4 regression additions / mandatory checks
+
+- [x] Verify prior 22-file unified-diff hunk contexts and line counts against exact main `af3d823546c288169d19cb3033a6111977d28bd7`.
+- [x] Stage new `FlightRecorderPrivacyTests.swift` inside VeilopolyUITests; verifies `match.new` notification emits only the five allowed primitive fields and never host/guest identity or room ID.
+- [ ] Compile and run `VeilopolyUITests` on iOS simulator. In particular, verify package-to-app notification bridge, actor isolation, event timing, and no extra private fields.
+- [ ] Compile, run `VeilLinkTests`, exercise BLE central/peripheral queue-pressure branches and reconnect diagnostics with fake transport. Verify event throttle and GATT timeout path.
+- [ ] Play local Gomoku at all seven difficulty tiers (including sixfold compute); verify player/AI accepted moves, search duration, result, training persistence and save failures in black-box output without board archive or user text.
+- [ ] Test multiplayer Veilopoly on two authenticated devices: invite, accept, retry, host commit, guest resync, bad state hash, reconnect and restart. Verify solo mode emits reducer event without requiring multiplayer.
+- [ ] Simulate 30+ minutes in Rainline/SignalDive/Blackout/Afterglow, confirm sparse state changes and terminal reason; simulate Prism Rift high-rate shooting and confirm no per-shot telemetry; LatticeClash move count.
+- [ ] Stress 5 evenings of game+chat+BLE use under 512 MiB; validate archive coverage and eviction counters, CPU/I/O/thermal, ZIP integrity and failed-write handling. **Not equivalent to running for five nights.**
+- [ ] Audit that chat content, voice/audio frames, private keys, game narrative/card texts, control payloads and persistent peer/room IDs do not appear in new R4 records.
+
+No Apple build, signed/unsigned IPA, physical dual-device validation or five-night endurance test has run in this Agent lane.
