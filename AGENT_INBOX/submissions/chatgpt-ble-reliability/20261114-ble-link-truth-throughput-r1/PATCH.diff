@@ -1,0 +1,168 @@
+diff --git a/VeilLink/Transport/BLELinkReliabilityPolicy.swift b/VeilLink/Transport/BLELinkReliabilityPolicy.swift
+--- a/VeilLink/Transport/BLELinkReliabilityPolicy.swift
++++ b/VeilLink/Transport/BLELinkReliabilityPolicy.swift
+@@ -24,7 +24,24 @@
+     let interBurstDelay: TimeInterval
+ }
+ 
+-enum BLELinkReliabilityPolicy {
++/// A stalled TX queue is not evidence that CoreBluetooth disconnected the radio link.
++/// Decisions to tear down a live GATT session must not be derived from RSSI or TX age.
++enum BLEStalledQueueAction: Equatable {
++    case probeLiveChannel
++    case awaitGATTRecovery
++    case recycleAfterSystemDisconnect
++}
++
++enum BLELinkReliabilityPolicy {
++    static func stalledQueueAction(
++        physicalConnected: Bool,
++        gattReady: Bool
++    ) -> BLEStalledQueueAction {
++        if physicalConnected {
++            return gattReady ? .probeLiveChannel : .awaitGATTRecovery
++        }
++        return .recycleAfterSystemDisconnect
++    }
+     static let reconnectStabilityResetInterval: TimeInterval = 30
+ 
+     /// Reconcile persisted connection intent when the app becomes foreground
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -583,10 +583,13 @@
+         )
+         var sent = 0
+         while sent < burstLimit, let packet = queue.first {
+-            guard peripheralManager.updateValue(packet, for: characteristic, onSubscribedCentrals: [central]) else {
+-                peripheralOutboundQueues[centralID] = queue
+-                return
+-            }
++            guard peripheralManager.updateValue(packet, for: characteristic, onSubscribedCentrals: [central]) else {
++                peripheralOutboundQueues[centralID] = queue
++                // didBecomeReady is the primary signal, but a lost callback must not
++                // strand this peer indefinitely. Only one low-frequency probe is armed.
++                schedulePeripheralDrain(for: centralID, after: max(0.4, tuning.interBurstDelay))
++                return
++            }
+             _ = queue.removeFirst()
+             sent += 1
+             queueProgress.recordProgress(.peripheral, peerID: centralID, at: Date().timeIntervalSinceReferenceDate)
+@@ -959,10 +962,31 @@
+             let tuning = linkTuning(for: id)
+             let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
+             guard now - (queueProgress.lastProgress(.central, peerID: id) ?? now) >= timeout else { continue }
+-            centralOutboundQueues.removeValue(forKey: id)
+-            queueProgress.clear(.central, peerID: id)
+-            statusText = "检测到蓝牙发送停滞，正在自动恢复链路"
+-            if wantedConnections.contains(id) { recover(id) }
++            // A TX stall is congestion, not a radio disconnect. Preserve the live
++            // CoreBluetooth session and every queued fragment while probing in place.
++            // Only recycle the queue after the OS reports that the PHY is gone.
++            let physicalConnected = remotePeripherals[id]?.state == .connected
++            let gattReady = remoteCharacteristics[id]?.isNotifying == true
++            switch BLELinkReliabilityPolicy.stalledQueueAction(
++                physicalConnected: physicalConnected,
++                gattReady: gattReady
++            ) {
++            case .probeLiveChannel:
++                scheduleCentralDrain(for: id, after: max(0.15, tuning.interBurstDelay))
++                statusText = "蓝牙发送暂时受阻，数据链路仍已连接"
++            case .awaitGATTRecovery:
++                statusText = "蓝牙物理链路已连接，等待数据通道恢复"
++            case .recycleAfterSystemDisconnect:
++                centralOutboundQueues.removeValue(forKey: id)
++                centralDrainWorkItems.removeValue(forKey: id)?.cancel()
++                queueProgress.clear(.central, peerID: id)
++                statusText = "蓝牙物理链路已断开，等待自动重连"
++                if let peripheral = remotePeripherals[id],
++                   wantedConnections.contains(id),
++                   reconnectWorkItems[id] == nil {
++                    scheduleReconnect(peripheral)
++                }
++            }
+         }
+         for id in Array(peripheralOutboundQueues.keys) {
+             guard let queue = peripheralOutboundQueues[id], !queue.isEmpty else { continue }
+diff --git a/VeilLink/Transport/BLELinkSnapshot.swift b/VeilLink/Transport/BLELinkSnapshot.swift
+--- a/VeilLink/Transport/BLELinkSnapshot.swift
++++ b/VeilLink/Transport/BLELinkSnapshot.swift
+@@ -29,7 +29,11 @@
+     let transportStage: BLETransportStage
+     let stalledFor: TimeInterval?
+ 
+-    var isRecovering: Bool { isWanted && !isConnected }
++    /// A PHY-connected peer is negotiating GATT, not disconnected.
++    var hasPhysicalLink: Bool {
++        transportStage == .phyConnected || transportStage == .gattReady
++    }
++    var isRecovering: Bool { isWanted && !isConnected && !hasPhysicalLink }
+ 
+     /// Passive scan-only peers must not lower A9 health or compute budgets. A peer becomes
+     /// operationally relevant when it is connected, explicitly wanted, or owns queued traffic.
+diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
+--- a/VeilLink/UI/NearbyView.swift
++++ b/VeilLink/UI/NearbyView.swift
+@@ -277,7 +277,7 @@
+ 
+             if let linkSnapshot {
+                 HStack(spacing: 8) {
+-                    Image(systemName: linkSnapshot.isConnected ? "antenna.radiowaves.left.and.right" : (linkSnapshot.isRecovering ? "arrow.triangle.2.circlepath" : "wave.3.right"))
++                    Image(systemName: linkSnapshot.hasPhysicalLink ? "antenna.radiowaves.left.and.right" : (linkSnapshot.isRecovering ? "arrow.triangle.2.circlepath" : "wave.3.right"))
+                         .font(.caption.weight(.semibold))
+                         .foregroundColor(linkSnapshot.isConnected ? VeilTheme.success : VeilTheme.gold)
+                     VStack(alignment: .leading, spacing: 2) {
+diff --git a/VeilLinkTests/BLELinkReliabilityPolicyTests.swift b/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
+--- a/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
++++ b/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
+@@ -78,7 +78,33 @@
+         XCTAssertGreaterThan(legacy.interBurstDelay, modern.interBurstDelay)
+     }
+ 
+-    func testReconnectBackoffProgressesAndCapsAtThirtySeconds() {
++    func testQueueStallDoesNotDestroyLiveGATTSessionRegardlessOfSignalQuality() {
++        // RSSI is intentionally absent from this decision. Weak signal is not
++        // an independent reason to declare a radio link disconnected.
++        XCTAssertEqual(
++            BLELinkReliabilityPolicy.stalledQueueAction(
++                physicalConnected: true, gattReady: true
++            ), .probeLiveChannel
++        )
++        XCTAssertEqual(
++            BLELinkReliabilityPolicy.stalledQueueAction(
++                physicalConnected: true, gattReady: false
++            ), .awaitGATTRecovery
++        )
++        XCTAssertEqual(
++            BLELinkReliabilityPolicy.stalledQueueAction(
++                physicalConnected: false, gattReady: false
++            ), .recycleAfterSystemDisconnect
++        )
++        // A stale GATT-ready flag cannot override an OS-confirmed PHY loss.
++        XCTAssertEqual(
++            BLELinkReliabilityPolicy.stalledQueueAction(
++                physicalConnected: false, gattReady: true
++            ), .recycleAfterSystemDisconnect
++        )
++    }
++
++    func testReconnectBackoffProgressesAndCapsAtThirtySeconds() {
+         XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 0), 0.75)
+         XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 1), 0.75)
+         XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 2), 1.5)
+diff --git a/VeilLinkTests/BLELinkSnapshotTests.swift b/VeilLinkTests/BLELinkSnapshotTests.swift
+--- a/VeilLinkTests/BLELinkSnapshotTests.swift
++++ b/VeilLinkTests/BLELinkSnapshotTests.swift
+@@ -27,8 +27,10 @@
+             transportStage: .phyConnected, stalledFor: nil
+         )
+         XCTAssertEqual(snapshot.transportStage, .phyConnected)
+-        XCTAssertTrue(snapshot.statusTitle.contains("PHY_CONNECTED"))
+-        XCTAssertFalse(snapshot.isConnected)
++        XCTAssertTrue(snapshot.statusTitle.contains("PHY_CONNECTED"))
++        XCTAssertFalse(snapshot.isConnected)
++        XCTAssertTrue(snapshot.hasPhysicalLink)
++        XCTAssertFalse(snapshot.isRecovering) // Avoid exposing a destructive recover button while PHY is live.
+     }
+ 
+     func testQueueSummaryCallsOutControlTraffic() {
