@@ -1,0 +1,418 @@
+diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostics/DiagnosticLogStore.swift
+--- a/VeilLink/Diagnostics/DiagnosticLogStore.swift
++++ b/VeilLink/Diagnostics/DiagnosticLogStore.swift
+@@ -145,10 +145,12 @@
+     private let rootDirectory: URL
+     private let auxiliaryDirectory: URL
+     private let currentLogURL: URL
++    // 16 bounded 8-MiB JSONL segments + 64 MiB of auxiliary evidence.
++    // Keep the pending RAM buffer small even when disk retention grows.
++    private let maxFileBytes = 8 * 1_024 * 1_024
++    private let rotatedFileCount = 15
++    private let maxRecentEntries = 6_000
++    private let maxAuxiliaryBytes = 64 * 1_024 * 1_024
+-    private let maxFileBytes = 2_000_000
+-    private let rotatedFileCount = 7
+-    private let maxRecentEntries = 2_000
+-    private let maxAuxiliaryBytes = 24 * 1_024 * 1_024
+     private let flushThresholdBytes = 256 * 1_024
+     // Keep diagnostics failures from turning into an unbounded RAM leak.
+     private let maxPendingBufferBytes = 4 * 1_024 * 1_024
+@@ -333,7 +335,7 @@
+         }
+ 
+         // Index and manifest derive from copied files only, never recentEntries.
++        // In particular, 6,000 entries in memory do not imply 6,000 records
+-        // In particular, 2,000 entries in memory do not imply 2,000 records
+         // survived file rotation or failed writes on an iOS 15 device.
+         let index = try makeExportIndex(from: logURLs)
+         let manifest = DiagnosticExportManifest(
+@@ -352,7 +354,7 @@
+             logFileCount: logURLs.count,
+             files: index.files,
+             retentionBytes: retentionBytes,
++            privacy: "No chat-bubble plaintext, typed text, media payload, password/PIN, private/session key, pairing code or AI prompt is intentionally recorded. Bubble order uses session-local ephemeral tokens, positions, direction, timestamps and delivery status only. Technical identifiers may be included in other diagnostic categories."
+-            privacy: "No message plaintext, media payload, password/PIN, private/session key, pairing code or AI prompt is intentionally recorded. Technical identifiers may be included for correlation."
+         )
+ 
+         let prettyEncoder = JSONEncoder()
+@@ -393,6 +395,8 @@
+         passwords, app-lock PINs, identity private keys, session keys, pairing codes and AI prompts.
+ 
+         Text input telemetry records field type/state and character length only, never the content.
++        Chat bubble telemetry records only ephemeral identifiers, visible order, direction,
++        delivery status, timestamp and attachment presence; never message text or message IDs.
+         Generic UI touch telemetry records coordinates, view classes and accessibility identifiers,
+         but does not scrape arbitrary accessibility labels or rendered text.
+ 
+@@ -413,7 +417,7 @@
+ 
+     @discardableResult
+     func storeAuxiliaryArtifact(prefix: String, fileExtension: String, data: Data) -> String? {
++        guard !data.isEmpty, data.count <= 16 * 1_024 * 1_024 else { return nil }
+-        guard !data.isEmpty, data.count <= 8 * 1_024 * 1_024 else { return nil }
+         let result: String? = logQueue.sync {
+             let formatter = DateFormatter()
+             formatter.locale = Locale(identifier: "en_US_POSIX")
+@@ -424,7 +428,7 @@
+             let url = auxiliaryDirectory.appendingPathComponent(name)
+             do {
+                 try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
++                trimAuxiliaryArtifacts(maxFiles: 48, maxBytes: maxAuxiliaryBytes)
+-                trimAuxiliaryArtifacts(maxFiles: 24, maxBytes: maxAuxiliaryBytes)
+                 refreshDiskUsage()
+                 return name
+             } catch {
+@@ -436,7 +440,7 @@
+     }
+ 
+     /// Read exactly what was staged for the ZIP, not the in-memory cache.
++    /// Streaming 64 KiB chunks avoids allocating a second large log image
+-    /// Streaming 64 KiB chunks avoids allocating a second ~16 MB log image
+     /// while an older 2 GB RAM device is preparing its crash report.
+     @MainActor
+     private func makeExportIndex(from stagedLogURLs: [URL]) throws -> DiagnosticExportIndex {
+@@ -615,21 +619,22 @@
+     }
+ 
+     private func loadRecentEntriesFromDiskUnsafe() {
++        // Visit newest segments and lines first. A 192-MiB retention budget
++        // must not require decoding every historic record during UI refresh.
++        var newestFirst: [DiagnosticLogEntry] = []
++        for url in orderedLogURLsForReading().reversed() {
++            guard newestFirst.count < maxRecentEntries,
++                  let data = try? Data(contentsOf: url),
+-        var loaded: [DiagnosticLogEntry] = []
+-        for url in orderedLogURLsForReading() {
+-            guard let data = try? Data(contentsOf: url),
+                   let string = String(data: data, encoding: .utf8) else { continue }
++            for rawLine in string.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
++                guard newestFirst.count < maxRecentEntries else { break }
+-            for rawLine in string.split(separator: "\n", omittingEmptySubsequences: true) {
+                 guard let lineData = String(rawLine).data(using: .utf8),
+                       let entry = try? decoder.decode(DiagnosticLogEntry.self, from: lineData) else { continue }
++                newestFirst.append(entry)
+-                loaded.append(entry)
+             }
+         }
++        recentEntriesStorage = Array(newestFirst.reversed())
++        nextSequence = (newestFirst.first?.sequence ?? 0) &+ 1
+-        if loaded.count > maxRecentEntries {
+-            loaded = Array(loaded.suffix(maxRecentEntries))
+-        }
+-        recentEntriesStorage = loaded
+-        nextSequence = (loaded.last?.sequence ?? 0) &+ 1
+         lastRefreshAtStorage = Date()
+         refreshDiskUsageUnsafe()
+     }
+@@ -795,7 +800,8 @@
+         "access_token", "refresh_token", "pairing_code", "pairingcode",
+         "message_body", "message_text", "plaintext", "typed_text", "prompt",
+         "media_payload", "image_payload", "attachment_payload", "raw_audio",
++        "raw_video", "bubble_body", "bubble_text", "chat_body", "chat_text",
++        "message_content", "reply_body", "attachment_name"
+-        "raw_video"
+     ]
+ 
+     static func sanitizeMetadata(_ metadata: [String: String]) -> [String: String] {
+diff --git a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift b/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
+--- a/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
++++ b/VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
+@@ -69,7 +69,7 @@
+     private let directory: URL
+     private let eventURL: URL
+     private let session = String(UUID().uuidString.prefix(8))
++    private let limit = 512
+-    private let limit = 128
+     private(set) var entries: [Entry]
+ 
+     init(rootDirectory: URL? = nil) {
+@@ -81,7 +81,7 @@
+         eventURL = directory.appendingPathComponent("events.json")
+         if let data = try? Data(contentsOf: eventURL),
+            let saved = try? JSONDecoder().decode([Entry].self, from: data) {
++            entries = Array(saved.suffix(512))
+-            entries = Array(saved.suffix(128))
+         } else {
+             entries = []
+         }
+diff --git a/VeilLink/UI/DiagnosticsLogView.swift b/VeilLink/UI/DiagnosticsLogView.swift
+--- a/VeilLink/UI/DiagnosticsLogView.swift
++++ b/VeilLink/UI/DiagnosticsLogView.swift
+@@ -65,7 +65,7 @@
+ 
+                 Toggle("仅当前界面", isOn: $onlyCurrentScreen)
+             } footer: {
++                Text("内存显示最近 6,000 条；磁盘约 \(store.retentionText) 环形保留。可记录聊天气泡的顺序、方向及送达状态，但不记录消息文字。系统访问仍受 iOS 沙盒和用户授权限制。")
+-                Text("内存显示最近 2,000 条；磁盘约 \(store.retentionText) 环形保留。UI 点击、手势、页面、输入生命周期、BLE、A9、Agent 与系统快照统一按时间序列记录。")
+             }
+ 
+             Section("时间线") {
+diff --git a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift b/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+--- a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
++++ b/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+@@ -14,6 +14,12 @@
+     private var lastSnapshotLoggedAt: [String: Date] = [:]
+     private var snapshotSuppressed: [String: Int] = [:]
+     private let snapshotMinInterval: TimeInterval = 30
++    // Tokens are intentionally random-session-local ordinals, never persisted
++    // message identifiers, hashes of plaintext, or peer identity IDs.
++    private var bubbleTokenLookup: [String: Int] = [:]
++    private var bubbleWindowSignatures: [Int: [Int: String]] = [:]
++    private var nextBubbleToken = 1
++    private var bubbleTokenEpoch = 0
+ 
+     private init() {}
+ 
+@@ -410,6 +416,89 @@
+             .store(in: &cancellables)
+     }
+ 
++    /// Observe only the actual rows rendered by ChatView. No body/text/ID
++    /// leaves this process via the diagnostic writer.
++    func recordVisibleBubbleOrder(
++        conversationID: String,
++        messages: [ChatMessage],
++        reason: String,
++        hasOlder: Bool
++    ) {
++        guard applicationActive else { return }
++        if bubbleTokenLookup.count >= 20_000 {
++            bubbleTokenLookup.removeAll(keepingCapacity: true)
++            bubbleWindowSignatures.removeAll(keepingCapacity: true)
++            nextBubbleToken = 1
++            bubbleTokenEpoch &+= 1
++        }
++
++        let conversationToken = bubbleToken(for: "conversation:\(conversationID)")
++        let window = messages.suffix(2_048)
++        let startIndex = messages.count - window.count
++        let previous = bubbleWindowSignatures[conversationToken] ?? [:]
++        var nextSignatures: [Int: String] = [:]
++        var changes: [(ordinal: Int, token: Int, message: ChatMessage)] = []
++
++        for (offset, message) in window.enumerated() {
++            let token = bubbleToken(for: "bubble:\(message.id)")
++            let ordinal = startIndex + offset
++            let signature = "\(ordinal)|\(message.isOutgoing)|\(message.deliveryState.rawValue)|\(message.sentAt.timeIntervalSince1970)|\(message.attachment != nil)"
++            nextSignatures[token] = signature
++            if previous[token] != signature {
++                changes.append((ordinal, token, message))
++            }
++        }
++        let noLongerVisible = previous.keys.filter { nextSignatures[$0] == nil }
++        guard !changes.isEmpty || !noLongerVisible.isEmpty else { return }
++
++        if bubbleWindowSignatures[conversationToken] == nil,
++           bubbleWindowSignatures.count >= 8,
++           let first = bubbleWindowSignatures.keys.sorted().first {
++            bubbleWindowSignatures.removeValue(forKey: first)
++        }
++        bubbleWindowSignatures[conversationToken] = nextSignatures
++        let common: [String: String] = [
++            "conversation_token": String(conversationToken),
++            "token_epoch": String(bubbleTokenEpoch),
++            "plaintext_recorded": "false"
++        ]
++        store.log(.info, .ui, event: "chat.bubbles.window", screen: "chats.detail", metadata: common.merging([
++            "reason": reason,
++            "total_visible": String(messages.count),
++            "window_start": String(startIndex),
++            "window_count": String(window.count),
++            "changed_count": String(changes.count),
++            "no_longer_visible_count": String(noLongerVisible.count),
++            "has_older": String(hasOlder)
++        ]) { _, new in new })
++
++        for change in changes {
++            store.log(.debug, .ui, event: "chat.bubble.order", screen: "chats.detail",
++                      metadata: DiagnosticBubbleTracePolicy.metadata(
++                        conversationToken: conversationToken,
++                        bubbleToken: change.token,
++                        tokenEpoch: bubbleTokenEpoch,
++                        ordinal: change.ordinal,
++                        outgoing: change.message.isOutgoing,
++                        delivery: change.message.deliveryState,
++                        sentAt: change.message.sentAt,
++                        hasAttachment: change.message.attachment != nil
++                      ))
++        }
++        for token in noLongerVisible {
++            store.log(.debug, .ui, event: "chat.bubble.no_longer_visible", screen: "chats.detail",
++                      metadata: common.merging(["bubble_token": String(token)]) { _, new in new })
++        }
++    }
++
++    private func bubbleToken(for key: String) -> Int {
++        if let existing = bubbleTokenLookup[key] { return existing }
++        let value = nextBubbleToken
++        nextBubbleToken &+= 1
++        bubbleTokenLookup[key] = value
++        return value
++    }
++
+     func recordStartupBegin() {
+         store.log(.info, .app, event: "startup.begin", metadata: ["build": VeilBuildInfo.display])
+     }
+@@ -680,3 +769,31 @@
+     }
+ }
+ 
++
++/// A content-free output boundary: this function never accepts ChatMessage,
++/// its body, a plaintext fingerprint, or a persistent conversation/message ID.
++enum DiagnosticBubbleTracePolicy {
++    static func metadata(
++        conversationToken: Int,
++        bubbleToken: Int,
++        tokenEpoch: Int,
++        ordinal: Int,
++        outgoing: Bool,
++        delivery: ChatMessage.DeliveryState,
++        sentAt: Date,
++        hasAttachment: Bool
++    ) -> [String: String] {
++        [
++            "conversation_token": String(conversationToken),
++            "bubble_token": String(bubbleToken),
++            "token_epoch": String(tokenEpoch),
++            "ordinal": String(ordinal),
++            "direction": outgoing ? "outbound" : "inbound",
++            "delivery": delivery.rawValue,
++            "sent_at_ms": String(Int64(sentAt.timeIntervalSince1970 * 1_000)),
++            "has_attachment": String(hasAttachment),
++            "plaintext_recorded": "false"
++        ]
++    }
++}
++
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -858,6 +858,12 @@
+                 loadedFullHistoryForSearch = true
+                 reload(loadAll: true)
+             }
++            RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
++                conversationID: conversation.id,
++                messages: visibleMessages,
++                reason: "search.filter",
++                hasOlder: hasOlderMessages
++            )
+         }
+         .sheet(isPresented: $showsPhotoPicker) {
+             PhotoPicker(
+@@ -1009,6 +1015,12 @@
+                     }
+                 }
+                 if presentWhenReady { showsConversationWorkspace = true }
++                RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
++                    conversationID: conversationID,
++                    messages: visibleMessages,
++                    reason: "workspace.load",
++                    hasOlder: hasOlderMessages
++                )
+                 RuntimeDiagnosticsBridge.shared.recordSemanticAction(
+                     "chat.workspace.ready",
+                     metadata: [
+@@ -1069,6 +1081,12 @@
+                     loadAll: loadAll
+                 )
+                 if isReloadingMessages { isReloadingMessages = false }
++                RuntimeDiagnosticsBridge.shared.recordVisibleBubbleOrder(
++                    conversationID: conversationID,
++                    messages: visibleMessages,
++                    reason: loadAll ? "reload.full" : "reload.recent",
++                    hasOlder: hasOlderMessages
++                )
+             }
+         }
+     }
+diff --git a/VeilLinkTests/PreConsentBlackBoxTests.swift b/VeilLinkTests/PreConsentBlackBoxTests.swift
+--- a/VeilLinkTests/PreConsentBlackBoxTests.swift
++++ b/VeilLinkTests/PreConsentBlackBoxTests.swift
+@@ -29,14 +29,14 @@
+             .appendingPathComponent("preconsent-test-\(UUID().uuidString)")
+         defer { try? FileManager.default.removeItem(at: directory) }
+         let first = VeilPreConsentBlackBox(rootDirectory: directory)
++        for _ in 0..<520 { first.record(.confirmationChanged, stage: .consent) }
++        XCTAssertEqual(first.entries.count, 512)
+-        for _ in 0..<160 { first.record(.confirmationChanged, stage: .consent) }
+-        XCTAssertEqual(first.entries.count, 128)
+         let subsequent = VeilPreConsentBlackBox(rootDirectory: directory)
++        XCTAssertEqual(subsequent.entries.count, 512)
++        XCTAssertEqual(subsequent.entries.last?.sequence, 520)
+-        XCTAssertEqual(subsequent.entries.count, 128)
+-        XCTAssertEqual(subsequent.entries.last?.sequence, 160)
+         subsequent.record(.appLaunched, stage: .launch)
++        XCTAssertEqual(subsequent.entries.last?.sequence, 521)
++        XCTAssertEqual(subsequent.entries.count, 512)
+-        XCTAssertEqual(subsequent.entries.last?.sequence, 161)
+-        XCTAssertEqual(subsequent.entries.count, 128)
+     }
+ 
+     func testNoLegalOrRuntimeInitializationNeededForExport() throws {
+diff --git a/VeilLinkTests/DiagnosticLogStoreTests.swift b/VeilLinkTests/DiagnosticLogStoreTests.swift
+--- a/VeilLinkTests/DiagnosticLogStoreTests.swift
++++ b/VeilLinkTests/DiagnosticLogStoreTests.swift
+@@ -71,6 +71,39 @@
+         XCTAssertEqual(sequences, sequences.sorted())
+     }
+ 
++    func testExpandedRetentionAndColdReloadOrdering() throws {
++        let root = FileManager.default.temporaryDirectory
++            .appendingPathComponent(UUID().uuidString, isDirectory: true)
++        defer { try? FileManager.default.removeItem(at: root) }
++        let store = DiagnosticLogStore(rootDirectory: root)
++        XCTAssertEqual(store.retentionBytes, 192 * 1_024 * 1_024)
++        for index in 0..<12 { store.log(.debug, .ui, event: "order.\(index)") }
++        let snapshot = try store.exportBundle(context: "test.cold-reload")
++        defer { try? FileManager.default.removeItem(at: snapshot) }
++        let reloaded = DiagnosticLogStore(rootDirectory: root)
++        XCTAssertEqual(reloaded.recentEntries.count, 12)
++        XCTAssertEqual(reloaded.recentEntries.map(\.sequence), Array(1...12).map(UInt64.init))
++        XCTAssertEqual(reloaded.recentEntries.last?.event, "order.11")
++    }
++
++    func testBubbleTraceMetadataContainsNoTextOrPersistentIdentifiers() {
++        let fields = DiagnosticBubbleTracePolicy.metadata(
++            conversationToken: 7, bubbleToken: 11, tokenEpoch: 0,
++            ordinal: 2, outgoing: true, delivery: .delivered,
++            sentAt: Date(timeIntervalSince1970: 1_700_000_000),
++            hasAttachment: false
++        )
++        XCTAssertEqual(fields["ordinal"], "2")
++        XCTAssertEqual(fields["direction"], "outbound")
++        XCTAssertEqual(fields["delivery"], "delivered")
++        XCTAssertEqual(fields["plaintext_recorded"], "false")
++        XCTAssertEqual(Set(fields.keys), Set([
++            "conversation_token", "bubble_token", "token_epoch", "ordinal",
++            "direction", "delivery", "sent_at_ms", "has_attachment", "plaintext_recorded"
++        ]))
++        XCTAssertFalse(fields.values.joined(separator: "|").contains("private"))
++    }
++
+     private func waitForEntries(_ count: Int, in store: DiagnosticLogStore) async {
+         // The existing export API synchronizes the serial log queue before
+         // reading it. Use that real completion barrier instead of assuming
+diff --git a/VeilLinkTests/BlackBoxExportIntegrityTests.swift b/VeilLinkTests/BlackBoxExportIntegrityTests.swift
+--- a/VeilLinkTests/BlackBoxExportIntegrityTests.swift
++++ b/VeilLinkTests/BlackBoxExportIntegrityTests.swift
+@@ -79,7 +79,7 @@
+         defer { try? FileManager.default.removeItem(at: root) }
+         let store = DiagnosticLogStore(rootDirectory: root)
+ 
++        let oldest = root.appendingPathComponent("runtime.15.jsonl")
+-        let oldest = root.appendingPathComponent("runtime.7.jsonl")
+         let sentinel = Data("keep-existing-diagnostics".utf8)
+         try sentinel.write(to: oldest, options: .atomic)
+ 
+@@ -89,7 +89,7 @@
+         let blockedActive = root.appendingPathComponent("runtime.jsonl", isDirectory: true)
+         try FileManager.default.createDirectory(at: blockedActive, withIntermediateDirectories: true)
+ 
++        // Exercise the failed-append path independently of the larger retention budget.
+-        // Cross the 2 MB rotation threshold even though no append can succeed.
+         let largeMessage = String(repeating: "x", count: 2_048)
+         for i in 0..<1_500 {
+             store.log(.info, .app, event: "retry.\(i)", message: largeMessage)
