@@ -42,3 +42,16 @@
 
 ### 2026-11-14 continuation
 The archived source and complete advisory patch were updated and reverified. R10 now passes 39 native archive/animation checks plus 18 fair-play and 35 telemetry checks = **92**. Abstract board animation starts only after the controller records the search start. File sizes >128 KB are rejected before decoding; clock rollback is guarded. Source-only PR; Xcode/CI/IPA NOT RUN.
+
+## R11 · ECLIPSE 黑底计算仪表盘（源代码已提交）
+
+本 PR 沿用现有 R10 历史对局与棋盘装饰流光，**没有第二套训练引擎、没有第二个历史库、没有另一个 UI PR**。
+新增 `VeilEclipseConsoleStream.swift`（纯 Foundation，确定性的视觉编码流）与 `VeilEclipseComputeConsole.swift`（SwiftUI 主题内嵌黑色长方形仪表盘）；原 `VeilEclipseIdentityAndTrace.swift` 已升级为卡片内的两行迷你屏与 TRACE 展开后的七行大屏；删除旧的重复抽象 TRACE 组件。统一 `PATCH.diff` 是 **R10 + R11 一份完整拟议补丁**。
+
+参考 Owner 提供的视频（22.03 秒，30 fps）：黑色底板、高密度线网、弧形数据带、快速变化的字符区与下方仪表分区。适配手机时分拆为 R10 棋盘光场 + R11 黑色文本显示屏；保留 VeilLink 既有「Veil 原生 / Apple Soft / 拟物仪器 / 浮屿 / 白描」切换，不创建新的主题。
+
+仪表盘每秒约 14 行滚动视觉编码，节能模式约 6 行；刷新限制 24Hz / 9Hz，系统 Reduce Motion 暂停动态。字符 `vis.*` **不是算法真实日志**，只表现技术氛围；真实节点与深度分区在没有可信数据时明确显示不可用。搜索实际启动前不会播放，绝不会延长真实落子时间。任何候选落点、胜率、PV、危险点都不显示给正在下棋的人。
+
+**本地测试：** R11 413 条、R10 39 条、Policy 18 条、SessionGate 35 条，共 **505 条 Swift 断言**通过；移动端浏览器 320/390/768px 无异常。SwiftUI 通过 Swift 5 语法解析，但 **未完成 Xcode 类型检查、XCTest、真实 iPhone/iPad 验收或 IPA 构建**。
+
+其他并行 Agent 的 V9/V10、R10 训练、R10 策略和 R11 战术成果**没有在此 PR 里被私自合并**，详情见 `R11_REFERENCE_AND_DEDUP.md`，交由 Integration Governor 根据测试证据仲裁。
