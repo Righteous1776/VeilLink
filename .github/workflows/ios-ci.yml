@@ -2,7 +2,7 @@ name: iOS CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, integration/20261115-v29_2-build68]
     paths-ignore:
       - 'AGENT_INBOX/**'
   pull_request:
