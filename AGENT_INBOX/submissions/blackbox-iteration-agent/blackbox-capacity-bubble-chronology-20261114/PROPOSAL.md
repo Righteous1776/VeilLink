@@ -40,3 +40,28 @@ No benchmark has established the 512 MiB budget will last five nights, so the pr
 ## 5. Compatibility and release governance
 
 Zero database/wire/crypto migrations. Existing diagnostic JSONL v2 keeps its schema. Only new optional export metadata and additive feature checkpoints are proposed. Main remains unchanged; PR #222 is INBOX_ONLY, Draft; no release/IPA has been triggered.
+
+
+## R3 ADDENDUM — Actual module-level instrumentation (2026-11-14)
+
+This revision implements proposed **typed capture at real product state-machine boundaries**, not just a game screen opening. PATCH.diff now contains **14 source/test files**. All writes remain proposals inside the Inbox only.
+
+### Native local game controller (all 7 MiniGameKind cases)
+In `LocalAIGameController`, emit `diagnostics.module.checkpoint` with `module=game.<kind>` for match restart, accepted human/AI turns, AI search begin/end, match outcome changes, match save failure and Gomoku native self-play training begin/saved/finished. For Gomoku/ECLIPSE capture accepted 0–224 board cell index, ply count, seven-tier *compute budget multiplier* and decision duration (ms); never claim 6x Elo or log board screenshot/search payload/learning archive. Other six reducers get accepted turn/outcome/AI execution lifecycle, without storing full state or private text.
+
+### BLE transport
+Direct low-level events use `ble.flight.*`, emitted where the transport actually changes state: explicit connect/disconnect/recover, physical connected/disconnected, GATT data channel ready/lost, reconnect attempt/delay, connection errors as codes, and congestion in both central/peripheral queue admission. Congestion reports are throttled to one per five seconds to protect multi-night retention; this is **sampling**, not exact suppressed-event accounting. Packet bytes themselves are never captured. Existing GATT timeout instrumentation and RuntimeDiagnosticsBridge snapshot logic remain.
+
+### Veilopoly multiplayer
+Inside `VeilopolyMultiplayerBridge`, capture invitation lifecycle, accepted/declined invitation actions, decoded-control packet observation by fragment count (not packet bytes), invalid packet, room create/restore/leave, queue full/queued/sent/send failure, manual resync and identity-switch suspension. A Combine observation on `GameSessionModel.$game` adds deduplicated committed reducer state (sequence, player seat, player count, finished flag) and explicitly cancels when leaving or suspending the room.
+
+This records critical real multiplayer behavior but **does not yet provide per-action economic engine telemetry** (buy/build/trade/auction/stock/bank/AI turn logic), nor does the offline Veilopoly game's reducer expose a host diagnostic hook. Those must be instrumented at `VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift` or via an injected app-host observer while keeping SwiftPM module independence; no fake subsystem-wide completeness claim.
+
+### Real-time and story games
+`GameLobbyView` records game-lobby entry and `screen.open` for fourteen real arcade/story routes: PrismRift, Afterglow Convoy, Ash Harbor, Rainline, Signal Dive, Blackout District, Pulse Runner, Void Swarm, Rhythm Neon, Rhythm R6, Lattice Clash, Story Lab and two Monogatari routes. Each game's physics/render tick, spawn/damage/score, collisions, loading, save/checkpoint and low-frame-rate events still require separate typed hooks. **An entry event is launch coverage only.**
+
+### Ongoing integration rule
+Every new feature must declare its **coverage tier**: `ENTRY_ONLY`, `LIFECYCLE`, `STATE_MACHINE`, `DEEP_DIAGNOSTICS` or `UNOBSERVED`. A feature registry count does not certify any deeper tier. Before promoting an extension, verify the same scenario's trace contains a start, transitions, success/failure, and cleanup event with shared correlation token. Add invariant tests for all modules and a coverage gate in integration CI. Do not store chat text, packet contents, private credentials or cross-app telemetry.
+
+### Five-evening storage
+Retention remains a configured 512 MiB ring, **not guaranteed five-day coverage**. Expected rates require measurement in real evening sessions, accounting for controller training and BLE reconnect bursts. Compression/age-partition/high-priority reserves/daily export remain future engineering gates.
