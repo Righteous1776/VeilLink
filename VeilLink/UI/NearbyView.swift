@@ -6,6 +6,7 @@ struct NearbyView: View {
     @ObservedObject var lanTurbo: LANTransport
     @ObservedObject var sessions: SessionCoordinator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var appearance = VeilAppearanceController.shared
 
     init(model: AppModel) {
         self.model = model
@@ -17,9 +18,26 @@ struct NearbyView: View {
     var body: some View {
         VeilStableScrollView {
             VStack(spacing: 16) {
+                if appearance.isForge {
+                    VeilForgeModuleHeader(
+                        serial: "VL / RF-01",
+                        title: "近场链路",
+                        state: bluetooth.isRunning ? "SCANNING" : "STANDBY",
+                        active: bluetooth.isRunning
+                    )
+                }
+
                 HStack(spacing: 16) {
-                    RadarStatusView(isRunning: bluetooth.isRunning, reduceMotion: reduceMotion)
-                        .frame(width: 86, height: 86)
+                    Group {
+                        if appearance.isForge {
+                            VeilForgeRotor(kind: .radio,
+                                           engaged: bluetooth.isRunning,
+                                           working: bluetooth.isRunning)
+                        } else {
+                            RadarStatusView(isRunning: bluetooth.isRunning, reduceMotion: reduceMotion)
+                        }
+                    }
+                    .frame(width: 86, height: 86)
 
                     VStack(alignment: .leading, spacing: 7) {
                         HStack(spacing: 7) {
@@ -33,6 +51,14 @@ struct NearbyView: View {
                             .font(.footnote)
                             .foregroundColor(VeilTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
+                        if appearance.isForge {
+                            VeilForgeDataRail(
+                                label: "RF SCANNER",
+                                value: bluetooth.isRunning ? "SCANNING" : "STANDBY",
+                                active: bluetooth.isRunning
+                            )
+                            VeilForgePeerCounter(count: sessions.nearbyPeers.count)
+                        }
                     }
                     Spacer(minLength: 0)
                 }
@@ -54,6 +80,17 @@ struct NearbyView: View {
                         Text(lanTurbo.dataPlaneSummary)
                             .font(.caption2.monospaced())
                             .foregroundColor((lanTurbo.totalPayloadBytesSent + lanTurbo.totalPayloadBytesReceived) > 0 ? VeilTheme.success : VeilTheme.secondaryText)
+                        if appearance.isForge {
+                            VeilForgeDataRail(
+                                label: "DATA PLANE",
+                                value: "\(lanTurbo.connectedPeerCount) TCP / \(sessions.secureLANPeerCount()) SECURE",
+                                active: sessions.secureLANPeerCount() > 0
+                            )
+                            VeilForgeRouteRail(
+                                connectedPeers: lanTurbo.connectedPeerCount,
+                                securePeers: sessions.secureLANPeerCount()
+                            )
+                        }
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 3) {
@@ -203,6 +240,7 @@ private struct RadarStatusView: View {
 }
 
 private struct NearbyPeerCard: View {
+    @ObservedObject private var appearance = VeilAppearanceController.shared
     @ObservedObject var model: AppModel
     @ObservedObject var bluetooth: BLETransport
     @ObservedObject var lanTurbo: LANTransport
@@ -291,9 +329,14 @@ private struct NearbyPeerCard: View {
                             .minimumScaleFactor(0.72)
                     }
                     Spacer(minLength: 6)
-                    Text("H\(linkSnapshot.healthScore)")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(VeilTheme.gold)
+                    HStack(spacing: 5) {
+                        if appearance.isForge {
+                            VeilForgeHealthGauge(healthScore: linkSnapshot.healthScore)
+                        }
+                        Text("H\(linkSnapshot.healthScore)")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(VeilTheme.gold)
+                    }
                     if linkSnapshot.isRecovering {
                         Button {
                             bluetooth.recover(peer.transportID)

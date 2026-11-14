@@ -171,7 +171,12 @@ final class LiveRoomTests: XCTestCase {
   XCTAssertEqual(guest.game, accepted)
  }
  func testGameTimeoutNeverAutomaticallyReseedsSharedSecureSession() {
-  XCTAssertTrue(VeilopolyRoomLinkPolicy.shouldPauseGame(secureSessionReady: true, secondsSincePeer: 16))
+  // A silent game does not imply loss of the shared encrypted transport.
+  XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldPauseGame(secureSessionReady: true, secondsSincePeer: 16))
+  XCTAssertTrue(VeilopolyRoomLinkPolicy.shouldProbeGameSync(secureSessionReady: true, secondsSincePeer: 16))
+  XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldProbeGameSync(secureSessionReady: true, secondsSincePeer: 5))
+  XCTAssertTrue(VeilopolyRoomLinkPolicy.shouldPauseGame(secureSessionReady: false, secondsSincePeer: 16))
+  XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldProbeGameSync(secureSessionReady: false, secondsSincePeer: 16))
   XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(secureSessionReady: true, userInitiated: false))
   XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(secureSessionReady: false, userInitiated: false))
   XCTAssertFalse(VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(secureSessionReady: true, userInitiated: true))

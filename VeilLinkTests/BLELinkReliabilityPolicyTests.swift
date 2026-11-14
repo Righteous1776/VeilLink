@@ -2,6 +2,29 @@ import XCTest
 @testable import VeilLink
 
 final class BLELinkReliabilityPolicyTests: XCTestCase {
+    func testStalledQueuesNeedAReadyChannelAndBoundedProbeInterval() {
+        XCTAssertTrue(BLELinkReliabilityPolicy.shouldProbeStalledQueue(
+            channelReady: true, pendingPackets: 4, stalledFor: 16,
+            secondsSinceLastProbe: 3, stallThreshold: 10
+        ))
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldProbeStalledQueue(
+            channelReady: false, pendingPackets: 4, stalledFor: 16,
+            secondsSinceLastProbe: 3, stallThreshold: 10
+        ))
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldProbeStalledQueue(
+            channelReady: true, pendingPackets: 0, stalledFor: 16,
+            secondsSinceLastProbe: 3, stallThreshold: 10
+        ))
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldProbeStalledQueue(
+            channelReady: true, pendingPackets: 4, stalledFor: 9,
+            secondsSinceLastProbe: 3, stallThreshold: 10
+        ))
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldProbeStalledQueue(
+            channelReady: true, pendingPackets: 4, stalledFor: 16,
+            secondsSinceLastProbe: 1, stallThreshold: 10
+        ))
+    }
+
     func testForegroundRestoreRequiresRunningForegroundAndPersistedIntent() {
         XCTAssertTrue(BLELinkReliabilityPolicy.shouldForegroundRestore(
             isRunning: true, foreground: true, wantedCount: 1
