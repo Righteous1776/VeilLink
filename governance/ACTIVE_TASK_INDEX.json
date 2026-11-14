@@ -1,7 +1,0 @@
-{
-  "schema_version": "1.0",
-  "active": [],
-  "queued": [],
-  "awaiting_owner": [],
-  "note": "New B namespace only; existing tasks, Issue #6 and AGENT_INBOX/QUEUE.md remain authoritative. Empty arrays do not assert there are no active legacy tasks."
-}
