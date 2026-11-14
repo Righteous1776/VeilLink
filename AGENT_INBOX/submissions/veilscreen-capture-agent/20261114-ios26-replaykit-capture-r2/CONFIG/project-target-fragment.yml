@@ -1,0 +1,27 @@
+# GOVERNOR REVIEW ONLY — integrate into existing project.yml, not a standalone file.
+# Host target VeilLink:
+#   sources[VeilLink].excludes += [ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift]
+#   dependencies += [{target: VeilScreenBroadcastUpload, embed: true}]
+#   settings.base.CODE_SIGN_ENTITLEMENTS = VeilLink/Resources/VeilScreen.entitlements
+#   host Info.plist keys VeilScreenAppGroup and VeilScreenKeychainGroup must be added.
+#   UIBackgroundModes already has bluetooth-central/peripheral; DO NOT claim these
+#   enable unlimited background execution.
+VeilScreenBroadcastUpload:
+  type: app-extension
+  platform: iOS
+  deploymentTarget: "15.0"
+  sources:
+    - path: VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift
+    - path: VeilLink/ScreenShare/VeilScreenBroadcastSecurity.swift
+    - path: VeilLink/ScreenShare/VeilScreenEncryptedMailbox.swift
+    - path: VeilLink/ScreenShare/VeilScreenCapturePolicy.swift
+    - path: VeilLink/ScreenShare/VeilScreenReplayKitEncoder.swift
+  settings:
+    base:
+      PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink.screenshare
+      PRODUCT_NAME: VeilScreenBroadcastUpload
+      INFOPLIST_FILE: VeilLink/Resources/VeilScreenBroadcastUpload-Info.plist
+      CODE_SIGN_ENTITLEMENTS: VeilLink/Resources/VeilScreen.entitlements
+      APPLICATION_EXTENSION_API_ONLY: YES
+      SKIP_INSTALL: YES
+      SUPPORTS_MACCATALYST: NO

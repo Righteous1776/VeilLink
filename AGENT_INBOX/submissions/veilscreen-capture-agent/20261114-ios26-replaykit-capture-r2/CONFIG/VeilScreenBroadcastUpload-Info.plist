@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleDisplayName</key><string>VeilScreen</string>
+  <key>CFBundleName</key><string>VeilScreenBroadcastUpload</string>
+  <key>CFBundlePackageType</key><string>XPC!</string>
+  <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+  <key>VeilScreenAppGroup</key><string>group.studio.zeo.veillink.screenshare</string>
+  <key>VeilScreenKeychainGroup</key><string>$(AppIdentifierPrefix)studio.zeo.veillink.screenshare</string>
+  <key>NSExtension</key><dict>
+    <key>NSExtensionPointIdentifier</key><string>com.apple.broadcast-services-upload</string>
+    <key>NSExtensionPrincipalClass</key><string>$(PRODUCT_MODULE_NAME).VeilScreenBroadcastUploadHandler</string>
+    <key>RPBroadcastProcessMode</key><string>RPBroadcastProcessModeSampleBuffer</string>
+  </dict>
+</dict></plist>
