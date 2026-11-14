@@ -1,0 +1,1234 @@
+diff --git a/VeilLink/ScreenShare/VeilScreenShareWire.swift b/VeilLink/ScreenShare/VeilScreenShareWire.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/ScreenShare/VeilScreenShareWire.swift
+@@ -0,0 +1,230 @@
++import Foundation
++
++/// Transient, authenticated session data only. Never put these packets in the chat database.
++/// Encryption/authentication is applied by SessionCoordinator BEFORE BLE framing.
++enum VeilScreenShareWireError: Error, Equatable {
++    case invalidPacket
++    case sizeLimit
++    case badSession
++}
++
++enum VeilScreenShareAction: UInt8, Codable {
++    case invite = 1
++    case accept = 2
++    case decline = 3
++    case ready = 4
++    case stop = 5
++    case readyAck = 6
++}
++
++struct VeilScreenShareControl: Equatable {
++    static let version: UInt8 = 1
++    let sessionID: UUID
++    let action: VeilScreenShareAction
++
++    func encode() -> Data {
++        var result = Data([Self.version, action.rawValue])
++        var bytes = sessionID.uuid
++        withUnsafeBytes(of: &bytes) { result.append(contentsOf: $0) }
++        return result
++    }
++
++    static func decode(_ data: Data) throws -> Self {
++        guard data.count == 18, data[0] == version,
++              let action = VeilScreenShareAction(rawValue: data[1]) else {
++            throw VeilScreenShareWireError.invalidPacket
++        }
++        return Self(sessionID: uuid(from: data[2..<18]), action: action)
++    }
++}
++
++private func uuid(from bytes: Data.SubSequence) -> UUID {
++    let b = Array(bytes)
++    return UUID(uuid: (b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
++                       b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]))
++}
++
++/// Small enough to cap memory and avoid starving the existing chat/control queues.
++/// All image bytes are encrypted by the current trusted peer session, never stored.
++struct VeilScreenShareChunk: Equatable {
++    static let version: UInt8 = 2 // R1; R0 packets are deliberately not silently decoded
++    static let headerBytes = 33
++    static let maximumChunkBytes = 384
++    static let maximumFrameBytes = 32 * 1024
++    static let maximumChunkCount = 86 // ceil(32768/384)
++
++    let sessionID: UUID
++    let frameID: UInt64
++    let index: UInt16
++    let total: UInt16
++    let width: UInt16
++    let height: UInt16
++    let bytes: Data
++
++    func encode() throws -> Data {
++        guard total > 0, total <= Self.maximumChunkCount,
++              index < total, width >= 64, height >= 64,
++              width <= 2048, height <= 2048,
++              !bytes.isEmpty, bytes.count <= Self.maximumChunkBytes else {
++            throw VeilScreenShareWireError.invalidPacket
++        }
++        var result = Data([Self.version])
++        var id = sessionID.uuid
++        withUnsafeBytes(of: &id) { result.append(contentsOf: $0) }
++        result.appendBE(frameID)
++        result.appendBE(index)
++        result.appendBE(total)
++        result.appendBE(width)
++        result.appendBE(height)
++        result.append(bytes)
++        return result
++    }
++
++    static func decode(_ data: Data) throws -> Self {
++        guard data.count > headerBytes, data.count <= headerBytes + maximumChunkBytes,
++              data[0] == version else { throw VeilScreenShareWireError.invalidPacket }
++        let value = Self(sessionID: uuid(from: data[1..<17]),
++                         frameID: data.readBEUInt64(at: 17),
++                         index: data.readBEUInt16(at: 25),
++                         total: data.readBEUInt16(at: 27),
++                         width: data.readBEUInt16(at: 29),
++                         height: data.readBEUInt16(at: 31),
++                         bytes: Data(data.dropFirst(headerBytes)))
++        _ = try value.encode() // validate lengths, dimensions and indices
++        return value
++    }
++
++    static func split(image: Data, sessionID: UUID, frameID: UInt64,
++                      width: Int, height: Int) throws -> [Self] {
++        guard !image.isEmpty, image.count <= maximumFrameBytes,
++              (64...2048).contains(width), (64...2048).contains(height) else {
++            throw VeilScreenShareWireError.sizeLimit
++        }
++        let total = (image.count + maximumChunkBytes - 1) / maximumChunkBytes
++        guard total <= maximumChunkCount else { throw VeilScreenShareWireError.sizeLimit }
++        return (0..<total).map { i in
++            let start = i * maximumChunkBytes
++            return Self(sessionID: sessionID, frameID: frameID,
++                        index: UInt16(i), total: UInt16(total),
++                        width: UInt16(width), height: UInt16(height),
++                        bytes: Data(image[start..<min(start + maximumChunkBytes, image.count)]))
++        }
++    }
++}
++
++private extension Data {
++    mutating func appendBE(_ v: UInt16) {
++        append(UInt8(truncatingIfNeeded: v >> 8)); append(UInt8(truncatingIfNeeded: v))
++    }
++    mutating func appendBE(_ v: UInt32) {
++        append(UInt8(truncatingIfNeeded: v >> 24)); append(UInt8(truncatingIfNeeded: v >> 16))
++        append(UInt8(truncatingIfNeeded: v >> 8)); append(UInt8(truncatingIfNeeded: v))
++    }
++    mutating func appendBE(_ v: UInt64) {
++        for shift in stride(from: 56, through: 0, by: -8) {
++            append(UInt8(truncatingIfNeeded: v >> UInt64(shift)))
++        }
++    }
++    func readBEUInt64(at offset: Int) -> UInt64 {
++        var result: UInt64 = 0
++        for i in 0..<8 { result = (result << 8) | UInt64(self[offset + i]) }
++        return result
++    }
++    func readBEUInt16(at offset: Int) -> UInt16 {
++        UInt16(self[offset]) << 8 | UInt16(self[offset + 1])
++    }
++    func readBEUInt32(at offset: Int) -> UInt32 {
++        UInt32(self[offset]) << 24 | UInt32(self[offset + 1]) << 16 |
++            UInt32(self[offset + 2]) << 8 | UInt32(self[offset + 3])
++    }
++}
++
++struct VeilScreenShareFrame: Equatable {
++    let frameID: UInt64
++    let width: Int
++    let height: Int
++    let image: Data
++}
++
++/// One in-flight frame, no disk writes, bounded allocation, short expiry.
++/// Incomplete frames are discarded instead of blocking newer frames.
++struct VeilScreenShareAssembler {
++    private let sessionID: UUID
++    private var activeID: UInt64?
++    private var firstReceivedAt: TimeInterval = 0
++    private var pieces: [UInt16: Data] = [:]
++    private var expected: UInt16 = 0
++    private var w: UInt16 = 0
++    private var h: UInt16 = 0
++    private var byteCount: Int = 0
++    private var newestCompletedID: UInt64?
++
++    init(sessionID: UUID) { self.sessionID = sessionID }
++
++    mutating func receive(_ chunk: VeilScreenShareChunk, at now: TimeInterval) throws -> VeilScreenShareFrame? {
++        guard chunk.sessionID == sessionID else { throw VeilScreenShareWireError.badSession }
++        _ = try chunk.encode()
++        if let completed = newestCompletedID, chunk.frameID <= completed { return nil }
++        if let current = activeID, chunk.frameID < current { return nil }
++        if activeID != chunk.frameID || now - firstReceivedAt > 7 {
++            activeID = chunk.frameID; firstReceivedAt = now
++            pieces.removeAll(keepingCapacity: true); byteCount = 0
++            expected = chunk.total; w = chunk.width; h = chunk.height
++        }
++        guard chunk.total == expected, chunk.width == w, chunk.height == h else {
++            throw VeilScreenShareWireError.invalidPacket
++        }
++        if let existing = pieces[chunk.index] {
++            if existing != chunk.bytes { throw VeilScreenShareWireError.invalidPacket }
++            return nil
++        }
++        guard byteCount + chunk.bytes.count <= VeilScreenShareChunk.maximumFrameBytes else {
++            reset(); throw VeilScreenShareWireError.sizeLimit
++        }
++        pieces[chunk.index] = chunk.bytes
++        byteCount += chunk.bytes.count
++        guard pieces.count == Int(expected) else { return nil }
++        var frame = Data(capacity: byteCount)
++        for i in 0..<expected {
++            guard let bytes = pieces[i] else { throw VeilScreenShareWireError.invalidPacket }
++            frame.append(bytes)
++        }
++        let output = VeilScreenShareFrame(frameID: chunk.frameID,
++                                          width: Int(w), height: Int(h), image: frame)
++        newestCompletedID = chunk.frameID
++        reset()
++        return output
++    }
++
++    private mutating func reset() {
++        activeID = nil; pieces.removeAll(keepingCapacity: false)
++        byteCount = 0; expected = 0; w = 0; h = 0
++    }
++}
++
++/// Adaptive to *measured* encrypted BLE throughput. It does not guess radio capability.
++struct VeilScreenShareRateController {
++    private(set) var targetWidth: Int = 320
++    private(set) var interval: TimeInterval = 2
++    private(set) var targetFrameBytes: Int = 8 * 1024
++
++    mutating func update(bytesPerSecond: Double, pendingBytes: Int) {
++        let kbps = max(0, bytesPerSecond) / 1024
++        if pendingBytes > 8 * 1024 || kbps < 2 {
++            targetWidth = 240; interval = 5; targetFrameBytes = 3 * 1024
++        } else if kbps < 6 {
++            targetWidth = 320; interval = 2.5; targetFrameBytes = 6 * 1024
++        } else if kbps < 14 {
++            targetWidth = 420; interval = 1.5; targetFrameBytes = 12 * 1024
++        } else {
++            targetWidth = 540; interval = 0.5; targetFrameBytes = 20 * 1024
++        }
++    }
++
++    /// A 64-bit fast digest of *already downsampled* luminance to avoid re-sending still frames.
++    static func digest(_ bytes: Data) -> UInt64 {
++        var value: UInt64 = 0xcbf29ce484222325
++        for byte in bytes { value = (value ^ UInt64(byte)) &* 0x100000001b3 }
++        return value
++    }
++}
+diff --git a/VeilLink/ScreenShare/VeilScreenSessionMachine.swift b/VeilLink/ScreenShare/VeilScreenSessionMachine.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/ScreenShare/VeilScreenSessionMachine.swift
+@@ -0,0 +1,155 @@
++import Foundation
++
++/// UI and control-plane truth source. Every transition is based on authenticated
++/// local/peer/capture events; a UI tap alone NEVER claims that capture succeeded.
++enum VeilScreenRole: Equatable { case sender, viewer }
++enum VeilScreenPhase: Equatable {
++    case inviting, incomingInvite, awaitingSystemConsent, awaitingSender,
++         connecting, live, stalled, ended, failed
++}
++enum VeilScreenEndReason: Equatable {
++    case declined, canceled, expired, disconnected, revoked, peerStopped, error
++}
++
++enum VeilScreenEvent: Equatable {
++    case peerAccepted
++    case senderReady
++    case viewerReady
++    case peerDeclined
++    case localAccepted
++    case localDeclined
++    case systemPickerOpened
++    case captureStarted
++    case firstFrame(id: UInt64)
++    case frame(id: UInt64)
++    case becameStale
++    case timeout
++    case linkLost
++    case captureRevoked
++    case localStop
++    case peerStopped
++    case failed
++}
++
++struct VeilScreenSnapshot: Equatable {
++    let sessionID: UUID
++    let peerIdentityID: String
++    let role: VeilScreenRole
++    private(set) var phase: VeilScreenPhase
++    private(set) var lastFrameID: UInt64?
++    private(set) var lastFrameTime: TimeInterval?
++    private(set) var endReason: VeilScreenEndReason?
++    private(set) var generation: UInt64 = 0
++    private(set) var captureActive = false
++    let createdAt: TimeInterval
++    let expiresAt: TimeInterval
++
++    static func outgoing(peerID: String, at now: TimeInterval, id: UUID = UUID()) -> Self {
++        .init(sessionID: id, peerIdentityID: peerID, role: .sender,
++              phase: .inviting, createdAt: now, expiresAt: now + 60)
++    }
++
++    static func incoming(peerID: String, at now: TimeInterval, id: UUID) -> Self {
++        .init(sessionID: id, peerIdentityID: peerID, role: .viewer,
++              phase: .incomingInvite, createdAt: now, expiresAt: now + 60)
++    }
++
++    var isTerminal: Bool { phase == .ended || phase == .failed }
++    var canAccept: Bool { role == .viewer && phase == .incomingInvite }
++    var canRequestSystemCapture: Bool { role == .sender && phase == .awaitingSystemConsent }
++    var isActivelySending: Bool { role == .sender && (phase == .live || phase == .stalled) }
++    var isActivelyReceiving: Bool { role == .viewer && (phase == .live || phase == .stalled) }
++    var hasStartedCapture: Bool { role == .sender && captureActive }
++
++    /// Requires the wire adapter to verify E2EE peer identity, session UUID,
++    /// negotiated feature bit and local role BEFORE calling transition.
++    @discardableResult
++    mutating func transition(_ event: VeilScreenEvent, at now: TimeInterval) -> Bool {
++        guard !isTerminal else { return false }
++        if now >= expiresAt && (phase == .inviting || phase == .incomingInvite) {
++            terminate(.expired)
++            return event == .timeout
++        }
++        switch event {
++        case .peerAccepted where role == .sender && phase == .inviting:
++            phase = .awaitingSystemConsent
++        case .peerDeclined where role == .sender && phase == .inviting:
++            terminate(.declined)
++        case .localAccepted where canAccept:
++            phase = .awaitingSender
++        case .localDeclined where canAccept:
++            terminate(.declined)
++        case .senderReady where role == .viewer && phase == .awaitingSender:
++            phase = .connecting
++        case .systemPickerOpened where canRequestSystemCapture:
++            phase = .connecting
++        case .captureStarted where role == .sender && phase == .connecting:
++            guard !captureActive else { return false }
++            captureActive = true
++        case .viewerReady where role == .sender && phase == .connecting && captureActive:
++            phase = .live
++        case .firstFrame(let id) where role == .viewer && phase == .connecting:
++            lastFrameID = id; lastFrameTime = now; phase = .live
++        case .frame(let id) where role == .viewer && (phase == .live || phase == .stalled):
++            guard lastFrameID.map({ id > $0 }) ?? true else { return false }
++            lastFrameID = id; lastFrameTime = now; phase = .live
++        case .becameStale where role == .viewer && phase == .live:
++            guard let last = lastFrameTime, now - last >= 8 else { return false }
++            phase = .stalled
++        case .timeout where phase == .incomingInvite || phase == .inviting:
++            guard now >= expiresAt else { return false }
++            terminate(.expired)
++        case .linkLost:
++            terminate(.disconnected)
++        case .captureRevoked where role == .sender:
++            terminate(.revoked)
++        case .localStop:
++            terminate(.canceled)
++        case .peerStopped:
++            terminate(.peerStopped)
++        case .failed:
++            terminate(.error)
++        default:
++            return false
++        }
++        return true
++    }
++
++    private mutating func terminate(_ reason: VeilScreenEndReason) {
++        phase = reason == .error ? .failed : .ended
++        endReason = reason
++        captureActive = false
++        lastFrameID = nil
++        lastFrameTime = nil
++        generation &+= 1  // rejects old in-flight capture/send callbacks
++    }
++}
++
++/// Authenticated session registry. One active share per conversation, no history/SQLite.
++struct VeilScreenSessionRegistry {
++    private(set) var active: VeilScreenSnapshot?
++
++    @discardableResult
++    mutating func install(_ candidate: VeilScreenSnapshot, trustedPeerID: String, now: TimeInterval) -> Bool {
++        guard !candidate.peerIdentityID.isEmpty,
++              candidate.peerIdentityID == trustedPeerID,
++              !candidate.isTerminal,
++              candidate.expiresAt > now,
++              active == nil || active?.isTerminal == true else { return false }
++        active = candidate
++        return true
++    }
++
++    @discardableResult
++    mutating func apply(_ event: VeilScreenEvent, sessionID: UUID, peerID: String, at now: TimeInterval) -> Bool {
++        guard var current = active, current.sessionID == sessionID,
++              current.peerIdentityID == peerID else { return false }
++        let result = current.transition(event, at: now)
++        if result { active = current }
++        return result
++    }
++
++    mutating func clearEnded() {
++        if active?.isTerminal == true { active = nil }
++    }
++}
+diff --git a/VeilLink/ScreenShare/VeilScreenSessionWorkflow.swift b/VeilLink/ScreenShare/VeilScreenSessionWorkflow.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/ScreenShare/VeilScreenSessionWorkflow.swift
+@@ -0,0 +1,194 @@
++import Foundation
++
++/// Adapter supplied by the real AppModel/SessionCoordinator at integration time.
++/// isSecureBLE MUST verify the current authenticated E2EE identity and BLE route.
++/// sendControl MUST encrypt with fresh AEAD sequence and a screen-control domain.
++struct VeilScreenSessionHooks {
++    let isSecureBLE: (String) -> Bool
++    let sendControl: (VeilScreenShareControl, String) -> Bool
++    let requestSystemPicker: (UUID) -> Void
++    let stopCapture: () -> Void
++}
++
++/// Entirely ephemeral: no timers, disk, chat messages, or private capture APIs.
++/// Call tick() on app lifecycle/timer, receiveControl() only AFTER decrypt+auth.
++struct VeilScreenSessionWorkflow {
++    private(set) var registry = VeilScreenSessionRegistry()
++    private(set) var latestImage: VeilScreenShareFrame?
++    private var lastControlSendAt: TimeInterval = -.infinity
++    private var captureStartedAt: TimeInterval?
++    private let hooks: VeilScreenSessionHooks
++
++    init(hooks: VeilScreenSessionHooks) { self.hooks = hooks }
++
++    @discardableResult
++    mutating func invite(peerID: String, now: TimeInterval) -> Bool {
++        guard hooks.isSecureBLE(peerID) else { return false }
++        let candidate = VeilScreenSnapshot.outgoing(peerID: peerID, at: now)
++        guard registry.install(candidate, trustedPeerID: peerID, now: now) else { return false }
++        guard send(.invite, sessionID: candidate.sessionID, peerID: peerID) else {
++            registry = VeilScreenSessionRegistry()
++            return false
++        }
++        lastControlSendAt = now
++        return true
++    }
++
++    @discardableResult
++    mutating func receiveControl(_ packet: VeilScreenShareControl, from peerID: String, now: TimeInterval) -> Bool {
++        guard hooks.isSecureBLE(peerID) else { return false }
++        if packet.action == .invite {
++            if let current = registry.active, !current.isTerminal,
++               current.sessionID == packet.sessionID, current.peerIdentityID == peerID,
++               current.role == .viewer {
++                // Lost ACCEPT: reply idempotently instead of opening a duplicate card.
++                if current.phase == .awaitingSender || current.phase == .connecting || current.phase == .live {
++                    return send(.accept, sessionID: packet.sessionID, peerID: peerID)
++                }
++                return true
++            }
++            return registry.install(.incoming(peerID: peerID, at: now, id: packet.sessionID),
++                                    trustedPeerID: peerID, now: now)
++        }
++        guard let current = registry.active,
++              current.sessionID == packet.sessionID,
++              current.peerIdentityID == peerID, !current.isTerminal else { return false }
++        switch packet.action {
++        case .accept:
++            return registry.apply(.peerAccepted, sessionID: packet.sessionID, peerID: peerID, at: now)
++        case .decline:
++            return registry.apply(.peerDeclined, sessionID: packet.sessionID, peerID: peerID, at: now)
++        case .ready:
++            guard current.role == .viewer,
++                  (current.phase == .awaitingSender || current.phase == .connecting || current.phase == .live || current.phase == .stalled) else { return false }
++            if current.phase == .awaitingSender {
++                guard registry.apply(.senderReady, sessionID: packet.sessionID, peerID: peerID, at: now) else { return false }
++            }
++            return send(.readyAck, sessionID: packet.sessionID, peerID: peerID)
++        case .readyAck:
++            return registry.apply(.viewerReady, sessionID: packet.sessionID, peerID: peerID, at: now)
++        case .stop:
++            close(.peerStopped, now: now, notifyPeer: false)
++            return true
++        case .invite: return false
++        }
++    }
++
++    @discardableResult
++    mutating func accept(now: TimeInterval) -> Bool {
++        guard let current = registry.active, current.canAccept,
++              hooks.isSecureBLE(current.peerIdentityID), now < current.expiresAt,
++              send(.accept, sessionID: current.sessionID, peerID: current.peerIdentityID) else { return false }
++        return registry.apply(.localAccepted, sessionID: current.sessionID,
++                              peerID: current.peerIdentityID, at: now)
++    }
++
++    @discardableResult
++    mutating func decline(now: TimeInterval) -> Bool {
++        guard let current = registry.active, current.canAccept else { return false }
++        if hooks.isSecureBLE(current.peerIdentityID) {
++            _ = send(.decline, sessionID: current.sessionID, peerID: current.peerIdentityID)
++        }
++        return registry.apply(.localDeclined, sessionID: current.sessionID,
++                              peerID: current.peerIdentityID, at: now)
++    }
++
++    @discardableResult
++    mutating func requestSystemCapture(now: TimeInterval) -> Bool {
++        guard let current = registry.active, current.canRequestSystemCapture,
++              registry.apply(.systemPickerOpened, sessionID: current.sessionID,
++                             peerID: current.peerIdentityID, at: now) else { return false }
++        hooks.requestSystemPicker(current.sessionID)
++        return true
++    }
++
++    /// Invoke ONLY after OS capture has actually started; not on picker appearance.
++    @discardableResult
++    mutating func captureDidStart(sessionID: UUID, now: TimeInterval) -> Bool {
++        guard let current = registry.active, current.role == .sender,
++              current.sessionID == sessionID,
++              registry.apply(.captureStarted, sessionID: sessionID,
++                             peerID: current.peerIdentityID, at: now) else { return false }
++        captureStartedAt = now
++        if !send(.ready, sessionID: sessionID, peerID: current.peerIdentityID) {
++            close(.failed, now: now, notifyPeer: false)
++            return false
++        }
++        lastControlSendAt = now
++        return true
++    }
++
++    /// Call after an authenticated/decrypted frame is fully assembled and validated.
++    @discardableResult
++    mutating func receiveFrame(_ frame: VeilScreenShareFrame, from peerID: String,
++                               sessionID: UUID, now: TimeInterval) -> Bool {
++        guard let current = registry.active, current.role == .viewer,
++              current.peerIdentityID == peerID, current.sessionID == sessionID,
++              hooks.isSecureBLE(peerID), !frame.image.isEmpty,
++              frame.image.count <= VeilScreenShareChunk.maximumFrameBytes,
++              (64...2048).contains(frame.width), (64...2048).contains(frame.height),
++              frame.image.count >= 4,
++              frame.image.prefix(2).elementsEqual([0xFF, 0xD8]),
++              frame.image.suffix(2).elementsEqual([0xFF, 0xD9]) else { return false }
++        let event: VeilScreenEvent = current.phase == .connecting
++            ? .firstFrame(id: frame.frameID) : .frame(id: frame.frameID)
++        guard registry.apply(event, sessionID: sessionID, peerID: peerID, at: now) else { return false }
++        latestImage = frame
++        return true
++    }
++
++    /// Control-plane retries are lightweight; never retry video as chat.
++    mutating func tick(now: TimeInterval) {
++        guard let current = registry.active, !current.isTerminal else { return }
++        if !hooks.isSecureBLE(current.peerIdentityID) {
++            close(.linkLost, now: now, notifyPeer: false)
++            return
++        }
++        if current.phase == .inviting || current.phase == .incomingInvite {
++            if now >= current.expiresAt {
++                _ = registry.apply(.timeout, sessionID: current.sessionID,
++                                   peerID: current.peerIdentityID, at: now)
++                return
++            }
++            if current.phase == .inviting && now - lastControlSendAt >= 3 {
++                _ = send(.invite, sessionID: current.sessionID, peerID: current.peerIdentityID)
++                lastControlSendAt = now
++            }
++        }
++        if current.role == .sender && current.phase == .connecting,
++           current.captureActive, let started = captureStartedAt {
++            if now - started >= 15 { close(.failed, now: now, notifyPeer: true); return }
++            if now - lastControlSendAt >= 2 {
++                _ = send(.ready, sessionID: current.sessionID, peerID: current.peerIdentityID)
++                lastControlSendAt = now
++            }
++        }
++        if current.role == .viewer && current.phase == .live,
++           let last = current.lastFrameTime, now - last >= 8 {
++            _ = registry.apply(.becameStale, sessionID: current.sessionID,
++                               peerID: current.peerIdentityID, at: now)
++        }
++        if current.role == .viewer && (current.phase == .awaitingSender || current.phase == .connecting),
++           now - current.createdAt > 75 {
++            close(.failed, now: now, notifyPeer: true)
++        }
++    }
++
++    mutating func close(_ event: VeilScreenEvent = .localStop, now: TimeInterval,
++                        notifyPeer: Bool = true) {
++        guard let current = registry.active, !current.isTerminal else { return }
++        if notifyPeer && hooks.isSecureBLE(current.peerIdentityID) {
++            _ = send(.stop, sessionID: current.sessionID, peerID: current.peerIdentityID)
++        }
++        if current.role == .sender && current.captureActive { hooks.stopCapture() }
++        _ = registry.apply(event, sessionID: current.sessionID,
++                           peerID: current.peerIdentityID, at: now)
++        latestImage = nil
++        captureStartedAt = nil
++    }
++
++    private func send(_ action: VeilScreenShareAction, sessionID: UUID, peerID: String) -> Bool {
++        guard hooks.isSecureBLE(peerID) else { return false }
++        return hooks.sendControl(.init(sessionID: sessionID, action: action), peerID)
++    }
++}
+diff --git a/VeilLink/ScreenShare/VeilScreenBLEScheduler.swift b/VeilLink/ScreenShare/VeilScreenBLEScheduler.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/ScreenShare/VeilScreenBLEScheduler.swift
+@@ -0,0 +1,85 @@
++import Foundation
++
++/// Session-local, lossy video scheduler. Video uses lower priority than chat and
++/// control; a frame is never retried as if it were a durable chat attachment.
++struct VeilScreenBLEScheduler {
++    private struct Pending {
++        let frameID: UInt64
++        let chunks: [VeilScreenShareChunk]
++        let enqueuedAt: TimeInterval
++        var nextIndex: Int = 0
++    }
++
++    private var active: Pending?
++    private var newestWaiting: Pending?
++    private(set) var lastOfferedID: UInt64?
++    private(set) var droppedFrames = 0
++    private(set) var admittedChunks = 0
++
++    private let maxQueuedBLEBytes = 8 * 1024
++    private let maxFrameAge: TimeInterval = 7
++
++    var hasPendingVideo: Bool { active != nil || newestWaiting != nil }
++
++    /// Replaces the waiting frame, not a partially transmitted active frame.
++    /// Bounds memory to at most two compressed frames / 64 KiB of payload.
++    @discardableResult
++    mutating func offer(image: Data, sessionID: UUID, frameID: UInt64,
++                        width: Int, height: Int, now: TimeInterval) -> Bool {
++        guard lastOfferedID.map({ frameID > $0 }) ?? true,
++              let chunks = try? VeilScreenShareChunk.split(
++                image: image, sessionID: sessionID, frameID: frameID, width: width, height: height
++              ) else { return false }
++        let next = Pending(frameID: frameID, chunks: chunks, enqueuedAt: now)
++        lastOfferedID = frameID
++        if active == nil { active = next }
++        else {
++            if newestWaiting != nil { droppedFrames += 1 }
++            newestWaiting = next
++        }
++        return true
++    }
++
++    /// Peek does NOT consume. Call didAdmit() *only* after BLE queue accepted
++    /// the exact packet; otherwise a full queue would silently lose chunks.
++    mutating func peek(pendingBLEBytes: Int, now: TimeInterval) -> VeilScreenShareChunk? {
++        expireOld(at: now)
++        guard pendingBLEBytes >= 0, pendingBLEBytes < maxQueuedBLEBytes else { return nil }
++        guard let item = active, item.nextIndex < item.chunks.count else { return nil }
++        return item.chunks[item.nextIndex]
++    }
++
++    /// This acknowledgment means enqueued locally, NOT received by the peer.
++    @discardableResult
++    mutating func didAdmit(_ accepted: VeilScreenShareChunk) -> Bool {
++        guard var item = active, item.nextIndex < item.chunks.count,
++              item.frameID == accepted.frameID,
++              item.chunks[item.nextIndex] == accepted else { return false }
++        item.nextIndex += 1
++        admittedChunks += 1
++        if item.nextIndex == item.chunks.count {
++            active = newestWaiting
++            newestWaiting = nil
++        } else { active = item }
++        return true
++    }
++
++    /// On stop, consent revocation, identity change, or disconnect.
++    mutating func cancel() {
++        active = nil
++        newestWaiting = nil
++        lastOfferedID = nil
++    }
++
++    private mutating func expireOld(at now: TimeInterval) {
++        if let item = active, now - item.enqueuedAt > maxFrameAge {
++            droppedFrames += 1
++            active = newestWaiting
++            newestWaiting = nil
++        }
++        if let item = newestWaiting, now - item.enqueuedAt > maxFrameAge {
++            droppedFrames += 1
++            newestWaiting = nil
++        }
++    }
++}
+diff --git a/VeilLink/ScreenShare/VeilScreenFrameEncoder.swift b/VeilLink/ScreenShare/VeilScreenFrameEncoder.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/ScreenShare/VeilScreenFrameEncoder.swift
+@@ -0,0 +1,62 @@
++#if os(iOS)
++import CoreImage
++import CoreMedia
++import CoreVideo
++import Foundation
++import ImageIO
++import UniformTypeIdentifiers
++
++/// R1 candidate. GPU-assisted, low-bitrate, video-only JPEG for a system-captured sample.
++/// This encoder does not request capture permission or start screen capture by itself.
++/// Caller must run off the main thread and enforce the adaptive send interval.
++final class VeilScreenFrameEncoder {
++    private let context = CIContext(options: [.useSoftwareRenderer: false])
++
++    struct Result {
++        let jpeg: Data
++        let width: Int
++        let height: Int
++    }
++
++    func encodeVideoSample(_ sample: CMSampleBuffer,
++                           targetWidth: Int,
++                           byteBudget: Int) -> Result? {
++        guard CMSampleBufferIsValid(sample),
++              let pixel = CMSampleBufferGetImageBuffer(sample),
++              (64...2048).contains(targetWidth),
++              (1...VeilScreenShareChunk.maximumFrameBytes).contains(byteBudget) else { return nil }
++        let originalWidth = CVPixelBufferGetWidth(pixel)
++        let originalHeight = CVPixelBufferGetHeight(pixel)
++        guard originalWidth > 0 && originalHeight > 0 else { return nil }
++        let image = CIImage(cvPixelBuffer: pixel)
++            .applyingFilter("CIColorControls", parameters: [
++                kCIInputSaturationKey: 0,      // no color bytes
++                kCIInputContrastKey: 1.12     // preserve text-edge contrast
++            ])
++
++        for candidate in [targetWidth, max(192, targetWidth * 3 / 4), max(128, targetWidth / 2)] {
++            let width = min(candidate, originalWidth)
++            let scale = CGFloat(width) / CGFloat(originalWidth)
++            let height = max(64, Int((CGFloat(originalHeight) * scale).rounded()))
++            guard height <= 2048 else { continue }
++            let scaled = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
++            guard let cgImage = context.createCGImage(scaled, from: CGRect(x: 0, y: 0, width: width, height: height)) else { continue }
++            for quality in [0.48, 0.28, 0.14] {
++                let payload = NSMutableData()
++                guard let destination = CGImageDestinationCreateWithData(payload, UTType.jpeg.identifier as CFString, 1, nil) else { continue }
++                CGImageDestinationAddImage(destination, cgImage, [
++                    kCGImageDestinationLossyCompressionQuality: quality
++                ] as CFDictionary)
++                guard CGImageDestinationFinalize(destination) else { continue }
++                let data = payload as Data
++                // Check generated bytes, never push oversized media into chat queues.
++                if data.count <= byteBudget {
++                    return Result(jpeg: data, width: width, height: height)
++                }
++            }
++        }
++        // No 'oversize send' fallback. Drop the frame to protect chat priority.
++        return nil
++    }
++}
++#endif
+diff --git a/VeilLink/UI/VeilScreenShareViews.swift b/VeilLink/UI/VeilScreenShareViews.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilScreenShareViews.swift
+@@ -0,0 +1,342 @@
++#if os(iOS)
++import SwiftUI
++import UIKit
++
++/// Presentation only. It has zero direct access to camera, screen, BLE or storage.
++/// The owning authenticated coordinator supplies a snapshot and handles actions.
++struct VeilScreenInviteCard: View {
++    let snapshot: VeilScreenSnapshot
++    let peerDisplayName: String
++    let now: TimeInterval
++    let onAccept: () -> Void
++    let onDecline: () -> Void
++    let onSystemPicker: () -> Void
++    let onOpenViewer: () -> Void
++    let onStop: () -> Void
++
++    private var status: String {
++        switch snapshot.phase {
++        case .inviting: return "已发送邀请 · 等待对方确认"
++        case .incomingInvite: return "对方邀请你观看屏幕"
++        case .awaitingSystemConsent: return "对方已接受 · 等待你授权系统采集"
++        case .awaitingSender: return "已接受 · 等待对方开始共享"
++        case .connecting: return "正在连接屏幕画面"
++        case .live: return snapshot.role == .sender ? "正在共享屏幕" : "正在接收屏幕"
++        case .stalled: return "画面更新延迟 · 正在恢复"
++        case .ended: return "屏幕共享已结束"
++        case .failed: return "屏幕共享失败"
++        }
++    }
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 13) {
++            HStack(spacing: 11) {
++                Image(systemName: "rectangle.on.rectangle.angled")
++                    .font(.system(size: 18, weight: .medium))
++                    .frame(width: 42, height: 42)
++                    .foregroundColor(.black)
++                    .background(VeilScreenColors.accent, in: RoundedRectangle(cornerRadius: 13))
++                VStack(alignment: .leading, spacing: 3) {
++                    Text("VeilScreen")
++                        .font(.system(size: 15, weight: .semibold, design: .rounded))
++                        .foregroundColor(.white)
++                    Text("蓝牙 · 端到端加密 · 无声音")
++                        .font(.system(size: 10, design: .monospaced))
++                        .foregroundColor(VeilScreenColors.secondary)
++                }
++                Spacer(minLength: 0)
++                if snapshot.phase == .live {
++                    Image(systemName: "dot.radiowaves.left.and.right")
++                        .foregroundColor(VeilScreenColors.accent)
++                        .accessibilityLabel("共享正在进行")
++                }
++            }
++
++            Text(status)
++                .font(.system(size: 13, weight: .medium))
++                .foregroundColor(.white)
++                .fixedSize(horizontal: false, vertical: true)
++            Text(detail)
++                .font(.system(size: 11))
++                .foregroundColor(VeilScreenColors.secondary)
++                .fixedSize(horizontal: false, vertical: true)
++
++            actionRows
++        }
++        .padding(16)
++        .frame(maxWidth: 355, alignment: .leading)
++        .background(VeilScreenColors.panel, in: RoundedRectangle(cornerRadius: 20))
++        .overlay(RoundedRectangle(cornerRadius: 20).stroke(VeilScreenColors.hairline, lineWidth: 1))
++        .accessibilityElement(children: .contain)
++    }
++
++    private var detail: String {
++        switch snapshot.phase {
++        case .inviting, .incomingInvite:
++            return "邀请有效期约 \(max(0, Int(snapshot.expiresAt - now))) 秒。接受邀请不代表允许远程自动录屏。"
++        case .awaitingSystemConsent:
++            return "只有你在苹果系统界面明确授权并启动后，\(peerDisplayName) 才能看到画面。"
++        case .awaitingSender, .connecting:
++            return "连接尚未建立，屏幕画面没有开始传输。"
++        case .live:
++            return "仅传输屏幕画面，不传输麦克风或应用声音。随时可以结束。"
++        case .stalled:
++            return "保留最后一帧供查看，但画面可能已过时。"
++        case .ended, .failed:
++            return "此会话已关闭，不会自动重新开始。"
++        }
++    }
++
++    @ViewBuilder private var actionRows: some View {
++        switch snapshot.phase {
++        case .incomingInvite:
++            HStack(spacing: 9) {
++                secondaryButton("拒绝", action: onDecline)
++                primaryButton("接受观看", icon: "checkmark", action: onAccept)
++            }
++        case .awaitingSystemConsent:
++            primaryButton("打开苹果系统共享选择器", icon: "rectangle.on.rectangle", action: onSystemPicker)
++            secondaryButton("取消邀请", action: onStop)
++        case .inviting:
++            secondaryButton("撤销邀请", action: onStop)
++        case .awaitingSender, .connecting:
++            secondaryButton("取消等待", action: onStop)
++        case .live, .stalled:
++            if snapshot.role == .viewer {
++                primaryButton("查看共享屏幕", icon: "arrow.up.left.and.arrow.down.right", action: onOpenViewer)
++                secondaryButton("结束观看", action: onStop)
++            } else {
++                secondaryButton("停止共享", action: onStop)
++            }
++        case .ended, .failed:
++            EmptyView()
++        }
++    }
++
++    private func primaryButton(_ label: String, icon: String, action: @escaping () -> Void) -> some View {
++        Button(action: action) {
++            Label(label, systemImage: icon)
++                .font(.system(size: 12, weight: .semibold))
++                .frame(maxWidth: .infinity, minHeight: 42)
++                .foregroundColor(.black)
++                .background(VeilScreenColors.accent, in: RoundedRectangle(cornerRadius: 12))
++        }
++        .buttonStyle(.plain)
++    }
++
++    private func secondaryButton(_ label: String, action: @escaping () -> Void) -> some View {
++        Button(action: action) {
++            Text(label)
++                .font(.system(size: 12, weight: .medium))
++                .frame(maxWidth: .infinity, minHeight: 42)
++                .foregroundColor(.white)
++                .background(VeilScreenColors.panel2, in: RoundedRectangle(cornerRadius: 12))
++        }
++        .buttonStyle(.plain)
++    }
++}
++
++/// User-controlled system consent. Rendering this does NOT start capture.
++struct VeilScreenCaptureConsentView: View {
++    let peerDisplayName: String
++    let onOpenSystemPicker: () -> Void
++    let onCancel: () -> Void
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 20) {
++            HStack {
++                Text("共享自己的屏幕")
++                    .font(.system(size: 21, weight: .bold, design: .rounded))
++                Spacer()
++                Button("取消", action: onCancel)
++                    .font(.subheadline)
++            }
++            .foregroundColor(.white)
++
++            Image(systemName: "iphone.radiowaves.left.and.right")
++                .resizable().scaledToFit()
++                .frame(height: 86)
++                .frame(maxWidth: .infinity)
++                .foregroundColor(VeilScreenColors.accent)
++                .padding(.vertical, 10)
++
++            Text("你的整块系统屏幕可能包含通知、聊天和其他敏感画面。")
++                .font(.system(size: 15, weight: .semibold))
++                .foregroundColor(.white)
++            Text("请先检查屏幕内容。开始后，\(peerDisplayName) 才能看到你主动选择的共享内容。此功能默认没有声音，不会在本机保存画面。")
++                .font(.system(size: 13))
++                .foregroundColor(VeilScreenColors.secondary)
++                .fixedSize(horizontal: false, vertical: true)
++            Button(action: onOpenSystemPicker) {
++                Label("继续到苹果系统授权", systemImage: "rectangle.on.rectangle")
++                    .font(.system(size: 14, weight: .semibold))
++                    .frame(maxWidth: .infinity, minHeight: 50)
++                    .background(VeilScreenColors.accent, in: RoundedRectangle(cornerRadius: 14))
++                    .foregroundColor(.black)
++            }
++            .buttonStyle(.plain)
++            Text("未经系统授权，VeilLink 不应采集或传输屏幕。")
++                .font(.system(size: 11))
++                .foregroundColor(VeilScreenColors.secondary)
++            Spacer(minLength: 0)
++        }
++        .padding(22)
++        .background(VeilScreenColors.background.ignoresSafeArea())
++    }
++}
++
++/// The viewer is not a recorder: holds only the latest in-memory JPEG.
++struct VeilScreenReceivedFrame: Equatable {
++    let sessionID: UUID
++    let frameID: UInt64
++    let receivedAt: TimeInterval
++    let jpeg: Data
++}
++
++struct VeilScreenViewerView: View {
++    let snapshot: VeilScreenSnapshot
++    let frame: VeilScreenReceivedFrame?
++    let now: TimeInterval
++    let onStop: () -> Void
++    let onDismiss: () -> Void
++
++    @State private var zoom: CGFloat = 1
++    @State private var zoomStart: CGFloat = 1
++    @State private var pan: CGSize = .zero
++
++    private var validFrame: VeilScreenReceivedFrame? {
++        guard snapshot.role == .viewer,
++              snapshot.isActivelyReceiving,
++              let frame = frame, frame.sessionID == snapshot.sessionID,
++              frame.frameID == snapshot.lastFrameID,
++              !frame.jpeg.isEmpty, frame.jpeg.count <= 32 * 1024 else { return nil }
++        return frame
++    }
++
++    private var age: TimeInterval? {
++        guard let last = validFrame?.receivedAt else { return nil }
++        return max(0, now - last)
++    }
++
++    var body: some View {
++        ZStack {
++            VeilScreenColors.background.ignoresSafeArea()
++            VStack(spacing: 0) {
++                topBar
++                ZStack {
++                    if let pixels = validFrame?.jpeg, let picture = UIImage(data: pixels) {
++                        GeometryReader { geometry in
++                            Image(uiImage: picture)
++                                .resizable()
++                                .interpolation(.none)
++                                .scaledToFit()
++                                .frame(width: geometry.size.width, height: geometry.size.height)
++                                .scaleEffect(zoom)
++                                .offset(pan)
++                                .gesture(
++                                    MagnificationGesture()
++                                        .onChanged { scale in zoom = min(5, max(1, zoomStart * scale)) }
++                                        .onEnded { _ in zoomStart = zoom; if zoom == 1 { pan = .zero } }
++                                )
++                                .simultaneousGesture(DragGesture()
++                                    .onChanged { drag in
++                                        if zoom > 1 { pan = drag.translation }
++                                    }
++                                    .onEnded { _ in if zoom == 1 { pan = .zero } })
++                                .onTapGesture(count: 2) {
++                                    zoom = zoom == 1 ? 2.5 : 1
++                                    zoomStart = zoom
++                                    pan = .zero
++                                }
++                                .accessibilityLabel("远程屏幕画面。双击放大，捏合缩放")
++                        }
++                        .clipped()
++                    } else {
++                        VStack(spacing: 13) {
++                            Image(systemName: "display")
++                                .font(.system(size: 40, weight: .ultraLight))
++                            Text(snapshot.isTerminal ? "共享已经结束" : "等待第一帧屏幕画面")
++                                .font(.system(size: 15, weight: .medium))
++                            Text("连接成功与收到画面是两个独立状态")
++                                .font(.system(size: 11))
++                        }
++                        .foregroundColor(VeilScreenColors.secondary)
++                        .multilineTextAlignment(.center)
++                    }
++                }
++                .frame(maxWidth: .infinity, maxHeight: .infinity)
++                footer
++            }
++        }
++    }
++
++    private var topBar: some View {
++        HStack(spacing: 10) {
++            Button(action: onDismiss) {
++                Image(systemName: "chevron.down")
++                    .font(.system(size: 15, weight: .semibold))
++                    .frame(width: 42, height: 42)
++                    .background(VeilScreenColors.panel2, in: Circle())
++            }
++            .accessibilityLabel("收起观看界面")
++            VStack(alignment: .leading, spacing: 4) {
++                Text("VeilScreen").font(.system(size: 16, weight: .semibold))
++                Text(statusLabel)
++                    .font(.system(size: 11, design: .monospaced))
++                    .foregroundColor(VeilScreenColors.secondary)
++            }
++            Spacer()
++            Button("结束观看", action: onStop)
++                .font(.system(size: 12, weight: .semibold))
++                .foregroundColor(.white)
++                .padding(.horizontal, 13)
++                .frame(height: 38)
++                .background(Color.red.opacity(0.70), in: Capsule())
++        }
++        .foregroundColor(.white)
++        .padding(.horizontal, 15)
++        .padding(.vertical, 10)
++    }
++
++    private var statusLabel: String {
++        switch snapshot.phase {
++        case .stalled: return "画面延迟 · 保留最后一帧"
++        case .live:
++            guard let age = age else { return "已连接 · 等待画面" }
++            return age >= 8 ? "画面已过时 · \(Int(age)) 秒" : "上一帧 \(String(format: "%.1f", age)) 秒前"
++        case .ended: return "共享已结束"
++        case .failed: return "连接失败"
++        default: return "等待连接"
++        }
++    }
++
++    private var footer: some View {
++        VStack(spacing: 8) {
++            HStack {
++                Image(systemName: "lock.shield")
++                Text("仅观看 · 无声音 · 不保存")
++                Spacer()
++                Text("\(Int(zoom * 100))%")
++                    .monospacedDigit()
++            }
++            .font(.system(size: 11))
++            .foregroundColor(VeilScreenColors.secondary)
++            Text("双击放大 · 双指缩放 · 拖动查看细节")
++                .font(.system(size: 11))
++                .foregroundColor(VeilScreenColors.secondary)
++        }
++        .padding(.horizontal, 20)
++        .padding(.vertical, 14)
++        .background(VeilScreenColors.panel)
++    }
++}
++
++private enum VeilScreenColors {
++    static let background = Color(red: 0.035, green: 0.045, blue: 0.055)
++    static let panel = Color(red: 0.075, green: 0.090, blue: 0.105)
++    static let panel2 = Color(red: 0.14, green: 0.16, blue: 0.19)
++    static let secondary = Color(red: 0.65, green: 0.67, blue: 0.69)
++    static let accent = Color(red: 0.84, green: 0.72, blue: 0.48)
++    static let hairline = Color.white.opacity(0.13)
++}
++#endif
+diff --git a/VeilLinkTests/VeilScreenR1Tests.swift b/VeilLinkTests/VeilScreenR1Tests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilScreenR1Tests.swift
+@@ -0,0 +1,81 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilScreenR1Tests: XCTestCase {
++    func testIncomingInviteRequiresExplicitAccept() {
++        let id = UUID()
++        var session = VeilScreenSnapshot.incoming(peerID: "alice", at: 100, id: id)
++        XCTAssertFalse(session.transition(.senderReady, at: 101))
++        XCTAssertEqual(session.phase, .incomingInvite)
++        XCTAssertTrue(session.transition(.localAccepted, at: 102))
++        XCTAssertEqual(session.phase, .awaitingSender)
++        XCTAssertFalse(session.transition(.firstFrame(id: 1), at: 103))
++        XCTAssertTrue(session.transition(.senderReady, at: 104))
++        XCTAssertTrue(session.transition(.firstFrame(id: 1), at: 105))
++        XCTAssertEqual(session.phase, .live)
++    }
++
++    func testCaptureCannotStartBeforePickerAndViewerAck() {
++        var session = VeilScreenSnapshot.outgoing(peerID: "bob", at: 100)
++        XCTAssertFalse(session.transition(.captureStarted, at: 100))
++        XCTAssertTrue(session.transition(.peerAccepted, at: 101))
++        XCTAssertFalse(session.transition(.viewerReady, at: 102))
++        XCTAssertTrue(session.transition(.systemPickerOpened, at: 102))
++        XCTAssertFalse(session.transition(.viewerReady, at: 103))
++        XCTAssertTrue(session.transition(.captureStarted, at: 104))
++        XCTAssertEqual(session.phase, .connecting)
++        XCTAssertTrue(session.transition(.viewerReady, at: 105))
++        XCTAssertEqual(session.phase, .live)
++    }
++
++    func testStopClearsFrameAndRejectsLateCallback() {
++        var session = VeilScreenSnapshot.incoming(peerID: "alice", at: 100, id: UUID())
++        XCTAssertTrue(session.transition(.localAccepted, at: 101))
++        XCTAssertTrue(session.transition(.senderReady, at: 102))
++        XCTAssertTrue(session.transition(.firstFrame(id: 5), at: 103))
++        XCTAssertTrue(session.transition(.peerStopped, at: 104))
++        XCTAssertNil(session.lastFrameID)
++        XCTAssertFalse(session.transition(.frame(id: 6), at: 105))
++    }
++
++    func testChunkV2ReverseOrderAndReplay() throws {
++        let id = UUID()
++        let bytes = Data(repeating: 0x5A, count: 10_001)
++        let fragments = try VeilScreenShareChunk.split(image: bytes, sessionID: id,
++                                                        frameID: UInt64.max - 1,
++                                                        width: 320, height: 640)
++        var assembler = VeilScreenShareAssembler(sessionID: id)
++        var decoded: VeilScreenShareFrame?
++        for fragment in fragments.reversed() {
++            let chunk = try VeilScreenShareChunk.decode(fragment.encode())
++            if let result = try assembler.receive(chunk, at: 100) { decoded = result }
++        }
++        XCTAssertEqual(decoded?.image, bytes)
++        XCTAssertEqual(decoded?.frameID, UInt64.max - 1)
++        XCTAssertNil(try assembler.receive(fragments[0], at: 101))
++    }
++
++    func testSenderDoesNotLosePacketWhenBLEQueueIsFull() throws {
++        var sender = VeilScreenBLEScheduler()
++        let id = UUID()
++        XCTAssertTrue(sender.offer(image: Data(repeating: 1, count: 4_000),
++                                   sessionID: id, frameID: 1,
++                                   width: 320, height: 640, now: 100))
++        XCTAssertNil(sender.peek(pendingBLEBytes: 9_000, now: 101))
++        let packet = try XCTUnwrap(sender.peek(pendingBLEBytes: 0, now: 101))
++        XCTAssertEqual(sender.peek(pendingBLEBytes: 0, now: 101), packet)
++        XCTAssertTrue(sender.didAdmit(packet))
++        XCTAssertFalse(sender.didAdmit(packet))
++    }
++
++    func testExpiredInviteAndForgedSessionID() {
++        let id = UUID()
++        var registry = VeilScreenSessionRegistry()
++        XCTAssertTrue(registry.install(.incoming(peerID: "alice", at: 100, id: id),
++                                       trustedPeerID: "alice", now: 101))
++        XCTAssertFalse(registry.apply(.localAccepted, sessionID: UUID(), peerID: "alice", at: 102))
++        XCTAssertFalse(registry.apply(.localAccepted, sessionID: id, peerID: "mallory", at: 102))
++        XCTAssertFalse(registry.apply(.localAccepted, sessionID: id, peerID: "alice", at: 160))
++        XCTAssertEqual(registry.active?.endReason, .expired)
++    }
++}
+diff --git a/VeilLink/UI/VeilScreenPreviewGallery.swift b/VeilLink/UI/VeilScreenPreviewGallery.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilScreenPreviewGallery.swift
+@@ -0,0 +1,45 @@
++#if DEBUG && os(iOS)
++import SwiftUI
++
++/// Xcode design-time only. No BLE, no capture, no real peer data.
++struct VeilScreenPreviewGallery: View {
++    private let incoming = VeilScreenSnapshot.incoming(peerID: "demo-peer", at: 100, id: UUID())
++    private let outgoing = VeilScreenSnapshot.outgoing(peerID: "demo-peer", at: 100)
++
++    var body: some View {
++        ScrollView {
++            VStack(alignment: .leading, spacing: 18) {
++                Text("VeilScreen · R1 UI Gallery")
++                    .font(.title2.bold())
++                    .foregroundColor(.white)
++                Text("仅为界面预览，不会连接蓝牙或打开系统录屏。")
++                    .font(.caption)
++                    .foregroundColor(.gray)
++                Text("01 / 对方发来邀请").font(.caption.bold()).foregroundColor(.white)
++                card(incoming)
++                Text("02 / 等待对方接受").font(.caption.bold()).foregroundColor(.white)
++                card(outgoing)
++                Text("03 / 接收端无画面时").font(.caption.bold()).foregroundColor(.white)
++                VeilScreenViewerView(snapshot: incoming, frame: nil, now: 103,
++                                     onStop: {}, onDismiss: {})
++                    .frame(height: 260)
++                    .clipShape(RoundedRectangle(cornerRadius: 16))
++            }
++            .padding(18)
++        }
++        .background(Color.black)
++    }
++
++    private func card(_ snapshot: VeilScreenSnapshot) -> some View {
++        VeilScreenInviteCard(snapshot: snapshot, peerDisplayName: "好友", now: 110,
++                             onAccept: {}, onDecline: {}, onSystemPicker: {},
++                             onOpenViewer: {}, onStop: {})
++    }
++}
++
++struct VeilScreenPreviewGallery_Previews: PreviewProvider {
++    static var previews: some View {
++        VeilScreenPreviewGallery().preferredColorScheme(.dark)
++    }
++}
++#endif
