@@ -12,3 +12,10 @@
 9. **R2 shared motion-policy surface**: `VeilMotionKit.swift` now receives a FORGE-specific branch in `VeilSpatialPressModifier`, bypassing only the decorative zero-distance drag gesture. This is a global modifier definition, though behavior changes only under the selected FORGE theme; verify parent scrolling and button taps. The same source file disables infinite border rotation in FORGE only.
 10. **Game agent overlap**: user's screenshots reference `GameLobbyView.swift` and ECLIPSE search/training UI currently being developed separately. R2 deliberately does not edit these files; integration Governor must coordinate later component adoption.
 11. **Screenshot state is not source state**: screenshots capture an installed app with global dust/particles. The image alone does not prove frame-time causes; isolate #229 as root particle removal before claiming full elimination.
+
+
+12. R3 differentiation: Five distinct actuators could create visual competition during simultaneous state changes. Limit them to their local panels and review hierarchy in real iPhone screenshots.
+13. Odometer dependency: uses existing VeilOdometerNumber from VeilMotionKit, not a newly reimplemented digit engine; test multi-digit changes and VoiceOver.
+14. LAN state semantics: secure peers take priority over merely connected peers. This represents observed route availability, not selected active transport, file-transfer percentage or negotiated bandwidth.
+15. Reduced motion: CPU shutters/LAN/health use existing short VeilMotionPolicy animations and no independent scheduler. RF has a single conditional TimelineView. Explicitly inspect OS Reduce Motion and performance overrides on device before integration.
+16. All state labels are actual app-derived values; no fabricated load/speed, no root overlay, no new gestures or persistent background work.
