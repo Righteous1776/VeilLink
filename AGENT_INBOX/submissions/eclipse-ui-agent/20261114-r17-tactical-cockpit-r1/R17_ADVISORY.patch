@@ -1,11 +1,53 @@
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+index 0a8ac1a..d0da517 100644
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -105,6 +105,8 @@ final class LocalAIGameController: ObservableObject {
+     @Published private(set) var isAIThinking = false
+     @Published private(set) var lastDecisionMode = "基础策略"
+     @Published private(set) var lastDecisionMilliseconds: Int?
++    @Published private(set) var lastDecisionNodes: Int?
++    @Published private(set) var lastDecisionNodeCeiling: Int? // Captured for the measured move, not current settings
+     @Published private(set) var eclipseSearchStartedAt: Date?
+     @Published private(set) var eclipseVisualizationEnabled = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
+     @Published private(set) var eclipseAdvancedOptions = EclipseAdvancedOptions.load()
+@@ -411,6 +413,8 @@ final class LocalAIGameController: ObservableObject {
+         developerTeachingMode = false
+         lastDecisionMode = "规则 Bot"
+         lastDecisionMilliseconds = nil
++        lastDecisionNodes = nil
++        lastDecisionNodeCeiling = nil
+         eclipseSearchStartedAt = nil
+         if startAI { scheduleAIIfNeeded() }
+     }
+@@ -910,9 +914,18 @@ final class LocalAIGameController: ObservableObject {
+             guard !Task.isCancelled else { return }
+             let started = Date()
+             self.eclipseSearchStartedAt = self.game == .gomoku ? started : nil
++            // Snapshot the active limit before await: users may change sliders mid-search.
++            let measuredNodeCeiling: Int? = self.game == .gomoku && self.eclipseAdvancedOptions.thinkingMode != .automatic
++                ? self.eclipseAdvancedOptions.maxNodes : nil
+             let selected = await self.selectAIMove()
+             guard !Task.isCancelled else { return }
+-            if let selected { self.applyAI(selected) }
++            if let selected {
++                if self.game == .gomoku {
++                    self.lastDecisionNodes = selected.metadata["nodes"].flatMap(Int.init)
++                    self.lastDecisionNodeCeiling = self.lastDecisionNodes == nil ? nil : measuredNodeCeiling
++                }
++                self.applyAI(selected)
++            }
+             if self.game == .gomoku { self.eclipseTraceStore.clear() }
+             self.lastDecisionMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
+             self.eclipseSearchStartedAt = nil
 diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+index bb8dd5c..a7a4ce2 100644
 --- a/VeilLink/UI/GameLobbyView.swift
 +++ b/VeilLink/UI/GameLobbyView.swift
-@@ -2,6 +2,68 @@
- import UniformTypeIdentifiers
+@@ -3,6 +3,183 @@ import UniformTypeIdentifiers
  import VeilopolyUI
  
-+
+ 
 +// ECLIPSE R17.1: restore the original VeilLink INSTRUMENT orange identity.
 +// Use the EXISTING theme to preserve ambient particles, grey material cards,
 +// warm Gomoku board, orange highlight, and accessibility color adaptation.
@@ -67,10 +109,126 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +        return threats
 +    }
 +}
- 
++
++// A measured stopwatch instrument. The sweep represents elapsed wall time ONLY;
++// it never claims to be search progress, internal reasoning or an evaluation score.
++private struct VeilEclipseSearchDial: View {
++    let searchStartedAt: Date?
++    let isThinking: Bool
++    let mode: EclipseThinkingMode
++    let secondsLimit: Int
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
++
++    private var active: Bool { isThinking && searchStartedAt != nil }
++    private var budget: Double? { mode == .custom ? Double(max(1, secondsLimit)) : nil }
++
++    var body: some View {
++        TimelineView(.periodic(from: .now, by: active && scenePhase == .active ? (reduceMotion ? 0.5 :
++                 (ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.25 : 0.1)) : 5)) { clock in
++            let elapsed = active ? max(0, clock.date.timeIntervalSince(searchStartedAt ?? clock.date)) : 0
++            let fraction = budget.map { min(1, elapsed / $0) }
++            HStack(spacing: 14) {
++                ZStack {
++                    Circle().stroke(VeilEclipseChrome.line, lineWidth: 3)
++                    ForEach(0..<20, id: \.self) { tick in
++                        Capsule()
++                            .fill(tick % 5 == 0 ? VeilEclipseChrome.silver.opacity(0.85)
++                                                  : VeilEclipseChrome.muted.opacity(0.35))
++                            .frame(width: 1, height: tick % 5 == 0 ? 5 : 3)
++                            .offset(y: -31)
++                            .rotationEffect(.degrees(Double(tick) * 18))
++                    }
++                    Circle()
++                        .trim(from: 0, to: active ? (fraction ?? 0.16) : 0)
++                        .stroke(VeilEclipseChrome.accent,
++                                style: StrokeStyle(lineWidth: 3, lineCap: .round))
++                        .rotationEffect(.degrees(fraction == nil && active && !reduceMotion
++                            ? elapsed.truncatingRemainder(dividingBy: 3) * 120 - 90
++                            : -90))
++                    Image(systemName: active ? "cpu" : "pause.fill")
++                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
++                        .foregroundColor(active ? VeilEclipseChrome.accent : VeilEclipseChrome.silver)
++                }
++                .frame(width: 66, height: 66)
++                .accessibilityHidden(true)
++                VStack(alignment: .leading, spacing: 4) {
++                    HStack {
++                        Text(active ? "SEARCH CLOCK / LIVE" : "SEARCH CLOCK / STANDBY")
++                            .foregroundColor(active ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
++                        Spacer(minLength: 3)
++                        Text(mode == .untimed ? "NO TIMER" : mode == .custom ? "CUSTOM" : "AUTO")
++                            .foregroundColor(VeilEclipseChrome.silver)
++                    }
++                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
++                    Text(active ? String(format: "T+ %.1f s", elapsed) : "T+ —")
++                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
++                        .contentTransition(.numericText())
++                        .foregroundColor(VeilEclipseChrome.white)
++                    Text(active && budget != nil
++                         ? "已用时间 / 自定上限 · 不是搜索完成进度"
++                         : "仅记录真实耗时 · 不推测搜索完成比例")
++                        .font(.system(size: 9, weight: .regular, design: .monospaced))
++                        .foregroundColor(VeilEclipseChrome.muted)
++                        .lineLimit(2)
++                }
++            }
++            .padding(10)
++            .background(VeilEclipseChrome.black, in: RoundedRectangle(cornerRadius: 11))
++            .overlay(RoundedRectangle(cornerRadius: 11)
++                .stroke(VeilEclipseChrome.line, lineWidth: 0.7))
++            .accessibilityElement(children: .ignore)
++            .accessibilityLabel(active ? "ECLIPSE 正在搜索，已耗时 \(String(format: "%.1f", elapsed)) 秒" : "ECLIPSE 搜索计时待机")
++        }
++        .allowsHitTesting(false)
++    }
++}
++
++// Counts are real search statistics from the LAST committed AI decision.
++// The marked ratio only exists when users explicitly configured a node ceiling.
++private struct VeilEclipseNodeGauge: View {
++    let visitedNodes: Int?
++    let configuredCeiling: Int?
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 6) {
++            HStack {
++                Text("MEASURED NODE USE / LAST MOVE")
++                    .foregroundColor(VeilEclipseChrome.silver)
++                Spacer(minLength: 4)
++                if let used = visitedNodes, let ceiling = configuredCeiling, ceiling > 0 {
++                    Text("\(used.formatted()) / \(ceiling.formatted())")
++                        .foregroundColor(VeilEclipseChrome.white)
++                } else {
++                    Text("NO COMPARABLE BUDGET")
++                        .foregroundColor(VeilEclipseChrome.muted)
++                }
++            }
++            .font(.system(size: 8, weight: .medium, design: .monospaced))
++            GeometryReader { geometry in
++                let fraction = min(1, CGFloat(max(0, visitedNodes ?? 0)) /
++                    CGFloat(max(1, configuredCeiling ?? 1)))
++                ZStack(alignment: .leading) {
++                    RoundedRectangle(cornerRadius: 2)
++                        .fill(VeilEclipseChrome.line)
++                    RoundedRectangle(cornerRadius: 2)
++                        .fill(VeilEclipseChrome.accent)
++                        .frame(width: max(0, geometry.size.width * fraction))
++                        .animation(.easeOut(duration: 0.34), value: fraction)
++                }
++            }
++            .frame(height: 5)
++        }
++        .padding(10)
++        .background(VeilEclipseChrome.black, in: RoundedRectangle(cornerRadius: 9))
++        .allowsHitTesting(false)
++    }
++}
++
  struct GameLobbyView: View {
      @ObservedObject var model: AppModel
-@@ -106,10 +168,10 @@
+     @State private var nearbyConversation: ConversationSummary?
+@@ -106,10 +283,10 @@ struct GameLobbyView: View {
              .buttonStyle(VeilPressStyle())
              .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
              NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
@@ -83,7 +241,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
              NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
                  gameRow(.xiangqi, detail: "可选红黑与先后手 · 四档棋力 · 自学习阵法预判", enabled: true)
              }
-@@ -291,6 +353,43 @@
+@@ -291,6 +468,43 @@ struct GameLobbyView: View {
      }
  
  
@@ -127,7 +285,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
      private func gameRow(_ game: MiniGameKind, detail: String, enabled: Bool) -> some View {
          HStack(spacing: 12) {
              ZStack {
-@@ -352,6 +451,9 @@
+@@ -352,6 +566,9 @@ struct LocalAIGameView: View {
      @State private var showsLearningImporter = false
      @State private var showsLearningShare = false
      @State private var showsEclipseTrace = false
@@ -137,7 +295,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
      @State private var learningExportURL: URL?
      @State private var learningExchangeMessage: String?
      @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
-@@ -376,6 +478,9 @@
+@@ -376,6 +593,9 @@ struct LocalAIGameView: View {
      var body: some View {
          ScrollView {
              VStack(spacing: 14) {
@@ -147,7 +305,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                  statusCard
                  if game == .gomoku {
                      VeilEclipseIdentityCard(
-@@ -411,11 +516,12 @@
+@@ -411,11 +631,12 @@ struct LocalAIGameView: View {
                  board
                  if controller.outcome != .playing { resultCard }
                  if game == .gomoku || game == .xiangqi { boardAdvancedPanel }
@@ -161,11 +319,10 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
          .navigationBarTitleDisplayMode(.inline)
          .toolbar {
              ToolbarItemGroup(placement: .navigationBarTrailing) {
-@@ -470,6 +576,38 @@
-                     }
+@@ -471,6 +692,38 @@ struct LocalAIGameView: View {
                  )
              }
-+        }
+         }
 +        .sheet(isPresented: Binding(
 +            get: { game == .gomoku && showsBoardAdvanced },
 +            set: { showsBoardAdvanced = $0 }
@@ -197,10 +354,11 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +            .preferredColorScheme(.dark)
 +            .presentationDragIndicator(.visible)
 +            .presentationDetents([.large])
-         }
++        }
          .sheet(isPresented: $showsLearningShare, onDismiss: {
              if let learningExportURL {
-@@ -531,6 +669,296 @@
+                 try? FileManager.default.removeItem(at: learningExportURL)
+@@ -531,6 +784,332 @@ struct LocalAIGameView: View {
      }
  
  
@@ -219,9 +377,14 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                            .lineLimit(1)
 +                            .minimumScaleFactor(0.8)
 +                        Spacer(minLength: 0)
-+                        Circle()
-+                            .fill(controller.isAIThinking ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
-+                            .frame(width: 7, height: 7)
++                        HStack(spacing: 5) {
++                            Circle()
++                                .fill(controller.eclipseSearchStartedAt != nil ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
++                                .frame(width: 6, height: 6)
++                            Text(controller.eclipseSearchStartedAt != nil ? "COMPUTE" : "READY")
++                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
++                                .foregroundColor(controller.eclipseSearchStartedAt != nil ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
++                        }
 +                    }
 +                    HStack(alignment: .firstTextBaseline) {
 +                        Text(controller.statusText)
@@ -298,7 +461,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +        VeilEclipseDeckSurface {
 +            VStack(alignment: .leading, spacing: 10) {
 +                HStack {
-+                    Text("01  /  SEARCH TELEMETRY")
++                    Text("01  /  SEARCH INSTRUMENTS")
 +                        .font(.system(size: 10, weight: .bold, design: .monospaced))
 +                        .foregroundColor(VeilEclipseChrome.silver)
 +                    Spacer()
@@ -306,11 +469,22 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                        .font(.system(size: 9, weight: .medium, design: .monospaced))
 +                        .foregroundColor(VeilEclipseChrome.muted)
 +                }
-+                HStack(spacing: 8) {
++                VeilEclipseSearchDial(
++                    searchStartedAt: controller.eclipseSearchStartedAt,
++                    isThinking: controller.isAIThinking,
++                    mode: controller.eclipseAdvancedOptions.thinkingMode,
++                    secondsLimit: controller.eclipseAdvancedOptions.seconds
++                )
++                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
 +                    eclipseMetric("VISITED NODES", controller.lastDecisionNodes.map { "\($0)" } ?? "—")
 +                    eclipseMetric("THINK TIME", controller.lastDecisionMilliseconds.map { "\($0) ms" } ?? "—")
-+                    eclipseMetric("TRAINED", "\(controller.trainedNativeGames) G")
++                    eclipseMetric("NODES / SEC", eclipseThroughput)
++                    eclipseMetric("TRAINED GAMES", "\(controller.trainedNativeGames)")
 +                }
++                VeilEclipseNodeGauge(
++                    visitedNodes: controller.lastDecisionNodes,
++                    configuredCeiling: controller.lastDecisionNodeCeiling
++                )
 +                Text(controller.lastDecisionMode)
 +                    .font(.system(size: 10, weight: .regular, design: .monospaced))
 +                    .foregroundColor(VeilEclipseChrome.muted)
@@ -323,12 +497,20 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +        }
 +    }
 +
++    private var eclipseThroughput: String {
++        guard let count = controller.lastDecisionNodes, count >= 0,
++              let millis = controller.lastDecisionMilliseconds, millis > 0 else { return "—" }
++        return "\(Int((Double(count) * 1_000.0 / Double(millis)).rounded()).formatted())"
++    }
++
 +    private func eclipseMetric(_ label: String, _ value: String) -> some View {
 +        VStack(alignment: .leading, spacing: 4) {
 +            Text(label).font(.system(size: 8, weight: .bold, design: .monospaced))
 +                .foregroundColor(VeilEclipseChrome.muted)
 +                .lineLimit(1).minimumScaleFactor(0.7)
 +            Text(value).font(.system(size: 16, weight: .semibold, design: .monospaced))
++                .contentTransition(.numericText())
++                .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: value)
 +                .foregroundColor(VeilEclipseChrome.white)
 +                .lineLimit(1).minimumScaleFactor(0.7)
 +        }
@@ -355,6 +537,16 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                    eclipseThreatBox("ECLIPSE 即时成五点", count: ai, accent: VeilEclipseChrome.accent)
 +                    eclipseThreatBox("我方即时成五点", count: human, accent: human > 0 ? VeilEclipseChrome.amber : VeilEclipseChrome.silver)
 +                }
++                HStack(spacing: 7) {
++                    Image(systemName: ai > 0 ? "bolt.fill" : human > 0 ? "shield.lefthalf.filled" : "checkmark.shield")
++                        .foregroundColor(ai > 0 ? VeilEclipseChrome.accent : human > 0 ? VeilEclipseChrome.amber : VeilEclipseChrome.muted)
++                    Text(ai > 0 ? "进攻信号 / ECLIPSE 当前存在一步成五机会"
++                         : human > 0 ? "防守信号 / 我方存在一步成五机会"
++                         : "攻防信号 / 双方暂无一步成五点")
++                        .foregroundColor(VeilEclipseChrome.silver)
++                }
++                .font(.system(size: 10, weight: .medium, design: .monospaced))
++                .accessibilityElement(children: .combine)
 +                Text("仅统计当前棋盘一步成五的空点数量，不展示坐标，不是模型置信度。")
 +                    .font(.caption2)
 +                    .foregroundColor(VeilEclipseChrome.muted)
@@ -374,6 +566,8 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                    .lineLimit(2)
 +                Text("\(count)")
 +                    .font(.system(size: 23, weight: .bold, design: .monospaced))
++                    .contentTransition(.numericText())
++                    .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: count)
 +                    .foregroundColor(count > 0 ? accent : VeilEclipseChrome.silver)
 +            }
 +            Spacer(minLength: 0)
@@ -497,7 +691,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
      private var grokBotMood: VeilOpponentAvatarMood {
          if controller.isAIThinking { return .thinking }
          switch controller.outcome {
-@@ -678,142 +1106,170 @@
+@@ -678,142 +1257,170 @@ struct LocalAIGameView: View {
      }
  
  
@@ -540,7 +734,18 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 -                        var next = controller.eclipseAdvancedOptions
 -                        next.seconds = Int(seconds.rounded())
 -                        controller.setEclipseAdvancedOptions(next)
--                    }
++        return VStack(alignment: .leading, spacing: 13) {
++            VeilEclipseDeckSurface {
++                VStack(alignment: .leading, spacing: 12) {
++                    HStack {
++                        Label("COMPUTE / TIME BUDGET", systemImage: "brain")
++                            .font(.system(size: 11, weight: .bold, design: .monospaced))
++                            .foregroundColor(VeilEclipseChrome.white)
++                        Spacer()
++                        Text("LIVE CONFIG")
++                            .font(.system(size: 9, weight: .medium, design: .monospaced))
++                            .foregroundColor(VeilEclipseChrome.accent)
+                     }
 -                ), in: 5...300, step: 5)
 -                .tint(VeilTheme.gold)
 -                .accessibilityIdentifier("gomoku.eclipse.thinking.seconds.slider")
@@ -564,7 +769,18 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 -                        var next = controller.eclipseAdvancedOptions
 -                        next.maxNodes = Int(nodes.rounded() / 50_000) * 50_000
 -                        controller.setEclipseAdvancedOptions(next)
--                    }
++                    Picker("思考时长", selection: Binding(
++                        get: { options.thinkingMode },
++                        set: { mode in
++                            var next = controller.eclipseAdvancedOptions
++                            next.thinkingMode = mode
++                            controller.setEclipseAdvancedOptions(next)
++                        }
++                    )) {
++                        Text("自动").tag(EclipseThinkingMode.automatic)
++                        Text("自定").tag(EclipseThinkingMode.custom)
++                        Text("不限时").tag(EclipseThinkingMode.untimed)
+                     }
 -                ), in: 50_000...2_000_000, step: 50_000)
 -                .tint(VeilTheme.gold)
 -                .accessibilityIdentifier("gomoku.eclipse.thinking.nodes.slider")
@@ -579,75 +795,6 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 -                        var next = controller.eclipseAdvancedOptions
 -                        next.maxDepth = Int(depth.rounded())
 -                        controller.setEclipseAdvancedOptions(next)
--                    }
--                ), in: 3...12, step: 1)
--                .tint(VeilTheme.gold)
--                .accessibilityIdentifier("gomoku.eclipse.thinking.depth.slider")
--            }
--
--            Toggle(isOn: Binding(
--                get: { options.r12Enabled },
--                set: { enabled in
--                    var next = controller.eclipseAdvancedOptions
--                    next.r12Enabled = enabled
--                    controller.setEclipseAdvancedOptions(next)
--                }
--            )) {
--                VStack(alignment: .leading, spacing: 2) {
--                    Text("R12 · 强制攻防延伸").font(.caption.weight(.semibold))
--                    Text("默认开启；在搜索叶节点继续检查必防和必胜威胁。")
--                        .font(.caption2).foregroundColor(VeilTheme.secondaryText)
--                }
--            }
--            .tint(VeilTheme.gold)
--            .accessibilityIdentifier("gomoku.eclipse.r12.toggle")
--
--            Toggle(isOn: Binding(
--                get: { options.r13Enabled },
--                set: { enabled in
--                    var next = controller.eclipseAdvancedOptions
--                    next.r13Enabled = enabled
--                    controller.setEclipseAdvancedOptions(next)
--                }
--            )) {
--                VStack(alignment: .leading, spacing: 2) {
--                    Text("R13 · 增量威胁索引（实验）").font(.caption.weight(.semibold))
--                    Text("可主动启用；正确性抽测已过，尚需完整真机性能验证。")
--                        .font(.caption2).foregroundColor(VeilTheme.secondaryText)
--                }
--            }
--            .tint(VeilTheme.gold)
--            .accessibilityIdentifier("gomoku.eclipse.r13.toggle")
--            Text("改动从下一步 AI 决策起生效；持续深度思考可能增加耗电和发热。")
--                .font(.caption2)
--                .foregroundColor(VeilTheme.secondaryText)
--        }
--        .padding(12)
--        .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-+        return VStack(alignment: .leading, spacing: 13) {
-+            VeilEclipseDeckSurface {
-+                VStack(alignment: .leading, spacing: 12) {
-+                    HStack {
-+                        Label("COMPUTE / TIME BUDGET", systemImage: "brain")
-+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-+                            .foregroundColor(VeilEclipseChrome.white)
-+                        Spacer()
-+                        Text("LIVE CONFIG")
-+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
-+                            .foregroundColor(VeilEclipseChrome.accent)
-+                    }
-+                    Picker("思考时长", selection: Binding(
-+                        get: { options.thinkingMode },
-+                        set: { mode in
-+                            var next = controller.eclipseAdvancedOptions
-+                            next.thinkingMode = mode
-+                            controller.setEclipseAdvancedOptions(next)
-+                        }
-+                    )) {
-+                        Text("自动").tag(EclipseThinkingMode.automatic)
-+                        Text("自定").tag(EclipseThinkingMode.custom)
-+                        Text("不限时").tag(EclipseThinkingMode.untimed)
-+                    }
 +                    .pickerStyle(.segmented)
 +                    .accessibilityIdentifier("gomoku.eclipse.thinking.mode")
 +                    if options.thinkingMode == .custom {
@@ -714,9 +861,35 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                        ), in: 3...12, step: 1)
 +                        .tint(VeilEclipseChrome.accent)
 +                        .accessibilityIdentifier("gomoku.eclipse.thinking.depth.slider")
-+                    }
-+                }
-+            }
+                     }
+-                ), in: 3...12, step: 1)
+-                .tint(VeilTheme.gold)
+-                .accessibilityIdentifier("gomoku.eclipse.thinking.depth.slider")
+-            }
+-
+-            Toggle(isOn: Binding(
+-                get: { options.r12Enabled },
+-                set: { enabled in
+-                    var next = controller.eclipseAdvancedOptions
+-                    next.r12Enabled = enabled
+-                    controller.setEclipseAdvancedOptions(next)
+-                }
+-            )) {
+-                VStack(alignment: .leading, spacing: 2) {
+-                    Text("R12 · 强制攻防延伸").font(.caption.weight(.semibold))
+-                    Text("默认开启；在搜索叶节点继续检查必防和必胜威胁。")
+-                        .font(.caption2).foregroundColor(VeilTheme.secondaryText)
+                 }
+             }
+-            .tint(VeilTheme.gold)
+-            .accessibilityIdentifier("gomoku.eclipse.r12.toggle")
+-
+-            Toggle(isOn: Binding(
+-                get: { options.r13Enabled },
+-                set: { enabled in
+-                    var next = controller.eclipseAdvancedOptions
+-                    next.r13Enabled = enabled
+-                    controller.setEclipseAdvancedOptions(next)
 +            VeilEclipseDeckSurface {
 +                VStack(alignment: .leading, spacing: 13) {
 +                    Text("TACTICAL MODULES / MANUAL OVERRIDE")
@@ -755,7 +928,12 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                    }
 +                    .tint(VeilEclipseChrome.accent)
 +                    .accessibilityIdentifier("gomoku.eclipse.r13.toggle")
-+                }
+                 }
+-            )) {
+-                VStack(alignment: .leading, spacing: 2) {
+-                    Text("R13 · 增量威胁索引（实验）").font(.caption.weight(.semibold))
+-                    Text("可主动启用；正确性抽测已过，尚需完整真机性能验证。")
+-                        .font(.caption2).foregroundColor(VeilTheme.secondaryText)
 +            }
 +            VeilEclipseDeckSurface {
 +                VStack(alignment: .leading, spacing: 5) {
@@ -766,9 +944,16 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                        .font(.caption)
 +                        .foregroundColor(VeilEclipseChrome.silver)
 +                        .fixedSize(horizontal: false, vertical: true)
-+                }
-+            }
-+        }
+                 }
+             }
+-            .tint(VeilTheme.gold)
+-            .accessibilityIdentifier("gomoku.eclipse.r13.toggle")
+-            Text("改动从下一步 AI 决策起生效；持续深度思考可能增加耗电和发热。")
+-                .font(.caption2)
+-                .foregroundColor(VeilTheme.secondaryText)
+         }
+-        .padding(12)
+-        .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 +        .padding(.horizontal, 12)
 +        .accessibilityIdentifier("gomoku.eclipse.advanced.console")
      }
@@ -790,7 +975,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                  }
                  Spacer()
                  Button("清空") { showsLearningResetConfirmation = true }
-@@ -825,7 +1281,6 @@
+@@ -825,7 +1432,6 @@ struct LocalAIGameView: View {
                  .foregroundColor(VeilTheme.secondaryText)
                  .fixedSize(horizontal: false, vertical: true)
              if game == .gomoku {
@@ -798,7 +983,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                  Toggle(isOn: Binding(
                      get: { controller.eclipseVisualizationEnabled },
                      set: { controller.setEclipseVisualizationEnabled($0) }
-@@ -836,10 +1291,10 @@
+@@ -836,10 +1442,10 @@ struct LocalAIGameView: View {
                              .font(.caption2).foregroundColor(VeilTheme.secondaryText)
                      }
                  }
@@ -811,7 +996,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                      VStack(alignment: .leading, spacing: 2) {
                          Text("ECLIPSE 原生搜索")
                              .font(.caption.weight(.semibold))
-@@ -872,7 +1327,7 @@
+@@ -872,7 +1478,7 @@ struct LocalAIGameView: View {
                              .font(.caption2)
                          Image(systemName: "chevron.up.chevron.down")
                      }
@@ -820,7 +1005,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                      .padding(10)
                      .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                  }
-@@ -884,13 +1339,13 @@
+@@ -884,13 +1490,13 @@ struct LocalAIGameView: View {
                  VStack(alignment: .leading, spacing: 8) {
                      HStack {
                          Image(systemName: "repeat.circle")
@@ -836,7 +1021,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                      }
                      Text("原生 Bot 离线自对弈，仅完整胜负局计数；使用训练经验时会切到原生搜索。")
                          .font(.caption2)
-@@ -900,7 +1355,7 @@
+@@ -900,7 +1506,7 @@ struct LocalAIGameView: View {
                          set: { controller.setUseNativeTrainingEvidence($0) }
                      ))
                      .font(.caption2)
@@ -845,7 +1030,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                      if controller.isNativeTraining {
                          ProgressView(
                              value: Double(controller.nativeTrainingCompleted),
-@@ -923,7 +1378,7 @@
+@@ -923,7 +1529,7 @@ struct LocalAIGameView: View {
                          } label: {
                              Label("开始真正的 Bot 自对弈", systemImage: "play.circle.fill")
                                  .font(.caption.weight(.semibold))
@@ -854,7 +1039,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                          }
                      }
                      Text(controller.nativeTrainingMessage)
-@@ -960,11 +1415,11 @@
+@@ -960,11 +1566,11 @@ struct LocalAIGameView: View {
                      .fixedSize(horizontal: false, vertical: true)
                  Text(controller.coachTip)
                      .font(.caption2)
@@ -868,7 +1053,7 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
              HStack(spacing: 10) {
                  Button {
                      do {
-@@ -1017,7 +1472,7 @@
+@@ -1017,7 +1623,7 @@ struct LocalAIGameView: View {
          case .gomoku:
              GomokuBoardView(
                  state: controller.gomoku,
@@ -877,61 +1062,39 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                  enabled: controller.canHumanAct || (
                      controller.developerTeachingMode
                          && ownerMode.isAuthorized(for: .developerTraining)
-@@ -1031,7 +1486,8 @@
+@@ -1031,7 +1637,9 @@ struct LocalAIGameView: View {
                  eclipseTraceStore: controller.eclipseTraceStore,
                  eclipseSessionID: controller.sessionID,
                  eclipseBoardTurn: controller.gomoku.moveCount,
 -                eclipseMatchPlaying: controller.outcome == .playing
 +                eclipseMatchPlaying: controller.outcome == .playing,
-+                eclipseConsoleStyle: false
++                eclipseConsoleStyle: false,
++                eclipseMotionEnabled: true
              ) { index in
                  if controller.developerTeachingMode,
                     ownerMode.isAuthorized(for: .developerTraining),
-diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
---- a/VeilLink/Agent/Games/LocalAIGameController.swift
-+++ b/VeilLink/Agent/Games/LocalAIGameController.swift
-@@ -105,6 +105,7 @@
-     @Published private(set) var isAIThinking = false
-     @Published private(set) var lastDecisionMode = "基础策略"
-     @Published private(set) var lastDecisionMilliseconds: Int?
-+    @Published private(set) var lastDecisionNodes: Int?
-     @Published private(set) var eclipseSearchStartedAt: Date?
-     @Published private(set) var eclipseVisualizationEnabled = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
-     @Published private(set) var eclipseAdvancedOptions = EclipseAdvancedOptions.load()
-@@ -411,6 +412,7 @@
-         developerTeachingMode = false
-         lastDecisionMode = "规则 Bot"
-         lastDecisionMilliseconds = nil
-+        lastDecisionNodes = nil
-         eclipseSearchStartedAt = nil
-         if startAI { scheduleAIIfNeeded() }
-     }
-@@ -912,7 +914,12 @@
-             self.eclipseSearchStartedAt = self.game == .gomoku ? started : nil
-             let selected = await self.selectAIMove()
-             guard !Task.isCancelled else { return }
--            if let selected { self.applyAI(selected) }
-+            if let selected {
-+                if self.game == .gomoku {
-+                    self.lastDecisionNodes = selected.metadata["nodes"].flatMap(Int.init)
-+                }
-+                self.applyAI(selected)
-+            }
-             if self.game == .gomoku { self.eclipseTraceStore.clear() }
-             self.lastDecisionMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
-             self.eclipseSearchStartedAt = nil
 diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
+index 96911d6..6f37154 100644
 --- a/VeilLink/UI/MiniGameViews.swift
 +++ b/VeilLink/UI/MiniGameViews.swift
-@@ -1558,6 +1558,7 @@
+@@ -1548,6 +1548,7 @@ private struct VeilBoardTapSurface: UIViewRepresentable {
+ 
+ struct GomokuBoardView: View {
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @State private var impactExpanded = true
+     let state: GomokuState
+     let localPlayer: MiniGamePlayer
+     let enabled: Bool
+@@ -1558,6 +1559,8 @@ struct GomokuBoardView: View {
      var eclipseSessionID = ""
      var eclipseBoardTurn = 0
      var eclipseMatchPlaying = true
 +    var eclipseConsoleStyle = false
++    var eclipseMotionEnabled = false
      let onMove: (Int) -> Void
  
  
-@@ -1574,17 +1575,18 @@
+@@ -1574,17 +1577,18 @@ struct GomokuBoardView: View {
  
                  ZStack {
                      RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -954,7 +1117,7 @@ diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
                      }
  
  
-@@ -1613,7 +1615,7 @@
+@@ -1613,7 +1617,7 @@ struct GomokuBoardView: View {
                              path.move(to: gomokuPoint(index: first, margin: margin, step: step))
                              path.addLine(to: gomokuPoint(index: last, margin: margin, step: step))
                          }
@@ -963,7 +1126,7 @@ diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
                      }
  
  
-@@ -1622,10 +1624,13 @@
+@@ -1622,10 +1626,13 @@ struct GomokuBoardView: View {
                          if value != 0 {
                              let point = gomokuPoint(index: index, margin: margin, step: step)
                              Circle()
@@ -979,7 +1142,28 @@ diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
                                  )
                                  .shadow(color: Color.black.opacity(0.28), radius: 1.4, x: 0, y: 1)
                                  .position(point)
-@@ -1660,7 +1665,9 @@
+@@ -1634,6 +1641,20 @@ struct GomokuBoardView: View {
+                     }
+ 
+ 
++                    // Short event-bound mechanical lock pulse for a REAL committed move.
++                    // No continuous board animation and no new drag/gesture recognizer.
++                    if eclipseMotionEnabled && !reduceMotion,
++                       let last = state.lastMove, state.value(at: last) != 0 {
++                        let impactPoint = gomokuPoint(index: last, margin: margin, step: step)
++                        Circle()
++                            .stroke(VeilEclipseChrome.accent.opacity(impactExpanded ? 0 : 0.8),
++                                    style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
++                            .frame(width: impactExpanded ? step * 1.8 : step * 0.85,
++                                   height: impactExpanded ? step * 1.8 : step * 0.85)
++                            .position(impactPoint)
++                            .allowsHitTesting(false)
++                    }
++
+                     VeilBoardTapSurface(enabled: enabled) { location in
+                         guard enabled, step > 0 else { return }
+                         let col = Int(round((location.x - margin) / step))
+@@ -1660,7 +1681,17 @@ struct GomokuBoardView: View {
                  Text(enabled ? "轻触交叉点落子" : "等待对方")
              }
              .font(.caption)
@@ -987,13 +1171,199 @@ diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
 +            .foregroundColor(eclipseConsoleStyle
 +                ? (enabled ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
 +                : (enabled ? VeilTheme.gold : VeilTheme.secondaryText))
++        }
++        .onChange(of: state.lastMove) { last in
++            guard eclipseMotionEnabled, !reduceMotion, last != nil else { return }
++            impactExpanded = false
++            // Begin on the following run loop so SwiftUI renders the collapsed state first.
++            DispatchQueue.main.async {
++                withAnimation(.easeOut(duration: 0.65)) { impactExpanded = true }
++            }
          }
          .accessibilityElement(children: .ignore)
          .accessibilityLabel("五子棋棋盘，已进行 \(state.moveCount) 手，\(enabled ? "轮到你落子" : "等待对方落子")")
+diff --git a/VeilLink/UI/VeilEclipseBoardThoughtField.swift b/VeilLink/UI/VeilEclipseBoardThoughtField.swift
+index 56f5ba6..82648a3 100644
+--- a/VeilLink/UI/VeilEclipseBoardThoughtField.swift
++++ b/VeilLink/UI/VeilEclipseBoardThoughtField.swift
+@@ -33,8 +33,8 @@ struct VeilEclipseBoardThoughtField: View {
+                     Canvas(opaque: false, rendersAsynchronously: false) { context, area in
+                         let margin = min(area.width, area.height) * 0.055
+                         let step = (min(area.width, area.height) - margin * 2) / 14
+-                        let tones = [VeilTheme.goldBright, VeilTheme.paleMetal,
+-                                     VeilTheme.success, VeilTheme.mutedGold]
++                        let tones = [VeilEclipseChrome.accent, VeilTheme.paleMetal,
++                                     VeilEclipseChrome.accent, VeilEclipseChrome.amber]
+                         for (rank, branch) in branches.enumerated() {
+                             let age = max(0, now - branch.emittedAtUptime)
+                             let fading = max(0, 1.0 - age / 1.35)
+diff --git a/VeilLink/UI/VeilEclipseComputeConsole.swift b/VeilLink/UI/VeilEclipseComputeConsole.swift
+index 48c69b4..85b8fc7 100644
+--- a/VeilLink/UI/VeilEclipseComputeConsole.swift
++++ b/VeilLink/UI/VeilEclipseComputeConsole.swift
+@@ -14,6 +14,7 @@ struct VeilEclipseComputeConsole: View {
+ 
+     @ObservedObject private var appearance = VeilAppearanceController.shared
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
+ 
+ 
+     private var active: Bool { isComputing && actualSearchStartedAt != nil }
+@@ -23,7 +24,7 @@ struct VeilEclipseComputeConsole: View {
+         VStack(alignment: .leading, spacing: compact ? 3 : 7) {
+             HStack(spacing: 6) {
+                 Circle()
+-                    .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                    .fill(active ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
+                     .frame(width: 5, height: 5)
+                 Text("ECLIPSE // VISUAL STREAM")
+                     .font(.system(size: compact ? 8 : 10, weight: .bold, design: .monospaced))
+@@ -31,46 +32,70 @@ struct VeilEclipseComputeConsole: View {
+                     .lineLimit(1)
+                 Spacer(minLength: 0)
+                 Text(active ? "RUN" : "IDLE")
+-                    .foregroundColor(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                    .foregroundColor(active ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
+                     .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
+             }
+             if active, let startedAt = actualSearchStartedAt {
+-                TimelineView(.animation(
+-                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 / 9.0 : 1.0 / 24.0,
+-                    paused: reduceMotion
++                TimelineView(.periodic(from: .now,
++                    by: scenePhase != .active ? 5 : (reduceMotion ? 0.5 : (ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.2 : 0.10))
+                 )) { timeline in
+                     let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
+                     let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+                     let position = VeilEclipseConsoleStream.scrollPosition(
+                         elapsedSeconds: reduceMotion ? 0 : elapsed, lowPower: lowPower
+                     )
+-                    let lineHeight: CGFloat = compact ? 11 : 15
+-                    let visibleCount = compact ? 2 : 7
++                    let lineHeight: CGFloat = compact ? 10 : 15
++                    let visibleCount = compact ? 1 : 7
+                     let rows = VeilEclipseConsoleStream.lines(
+                         elapsedSeconds: reduceMotion ? 0 : elapsed,
+                         visibleRows: visibleCount + 1,
+                         lowPower: lowPower
+                     )
+-                    VStack(alignment: .leading, spacing: 0) {
+-                        ForEach(0..<rows.count, id: \.self) { index in
++                    VStack(alignment: .leading, spacing: compact ? 2 : 6) {
++                        HStack(spacing: 5) {
++                            Image(systemName: "stopwatch")
++                                .font(.system(size: compact ? 7 : 9))
++                            Text(String(format: "REAL CLOCK  T+%.1fs", elapsed))
++                                .font(.system(size: compact ? 8 : 10, weight: .semibold, design: .monospaced))
++                                .monospacedDigit()
++                            Spacer(minLength: 0)
++                            Text("ELAPSED")
++                                .font(.system(size: compact ? 7 : 9, weight: .medium, design: .monospaced))
++                        }
++                        .foregroundColor(VeilEclipseChrome.accent)
++                        HStack(spacing: 2) {
++                            ForEach(0..<16, id: \.self) { tick in
++                                RoundedRectangle(cornerRadius: 1)
++                                    .fill(reduceMotion ? VeilEclipseChrome.line :
++                                          (tick == Int(elapsed * (lowPower ? 6 : 12)) % 16
++                                           ? VeilEclipseChrome.accent
++                                           : VeilEclipseChrome.silver.opacity(0.18)))
++                                    .frame(maxWidth: .infinity)
++                            }
++                        }
++                        .frame(height: 3)
++                        .accessibilityHidden(true)
++                        VStack(alignment: .leading, spacing: 0) {
++                            ForEach(0..<rows.count, id: \.self) { index in
+                             Text(rows[index].text)
+                                 .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
+                                 .foregroundColor(tone(rows[index].tone))
+                                 .lineLimit(1)
+                                 .minimumScaleFactor(0.8)
+                                 .frame(height: lineHeight, alignment: .leading)
++                            }
+                         }
++                        .offset(y: -CGFloat(position - floor(position)) * lineHeight)
++                        .frame(maxWidth: .infinity, alignment: .leading)
++                        .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
++                        .clipped()
++                        .accessibilityHidden(true)
+                     }
+-                    .offset(y: -CGFloat(position - floor(position)) * lineHeight)
+-                    .frame(maxWidth: .infinity, alignment: .leading)
+-                    .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
+-                    .clipped()
+-                    .accessibilityHidden(true)
+                 }
+             } else {
+                 Text("vis.idle ()")
+                     .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
+-                    .foregroundColor(VeilTheme.secondaryText)
++                    .foregroundColor(VeilEclipseChrome.silver)
+                     .frame(maxWidth: .infinity, alignment: .leading)
+                     .accessibilityHidden(true)
+             }
+@@ -80,28 +105,28 @@ struct VeilEclipseComputeConsole: View {
+                     let nodes = liveMetrics.visitedNodes.map(String.init) ?? "—"
+                     Text("MEASURED · DEPTH \(depth) / NODES \(nodes)")
+                         .font(.system(size: 9, weight: .medium, design: .monospaced))
+-                        .foregroundColor(VeilTheme.goldBright)
++                        .foregroundColor(VeilEclipseChrome.accent)
+                 } else {
+                     Text("MEASURED · 暂无实时深度/节点数据")
+                         .font(.caption2)
+-                        .foregroundColor(VeilTheme.secondaryText)
++                        .foregroundColor(VeilEclipseChrome.silver)
+                 }
+                 Text(VeilEclipseConsoleStream.disclosure)
+                     .font(.caption2)
+-                    .foregroundColor(VeilTheme.secondaryText)
++                    .foregroundColor(VeilEclipseChrome.silver)
+                     .fixedSize(horizontal: false, vertical: true)
+             }
+         }
+         .padding(compact ? 8 : 12)
+         .frame(maxWidth: .infinity, alignment: .leading)
+-        .frame(minHeight: compact ? 55 : 166)
++        .frame(minHeight: compact ? 66 : 166)
+         .background(
+             RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
+                 .fill(Color.black.opacity(0.97))
+         )
+         .overlay(
+             RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
+-                .stroke(VeilTheme.gold.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
++                .stroke(VeilEclipseChrome.accent.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
+         )
+         .allowsHitTesting(false)
+         .accessibilityElement(children: .combine)
+@@ -111,10 +136,10 @@ struct VeilEclipseComputeConsole: View {
+ 
+     private func tone(_ index: Int) -> Color {
+         switch index {
+-        case 0: return VeilTheme.goldBright
++        case 0: return VeilEclipseChrome.accent
+         case 1: return VeilTheme.paleMetal
+-        case 2: return VeilTheme.success
+-        default: return VeilTheme.secondaryText
++        case 2: return VeilEclipseChrome.amber
++        default: return VeilEclipseChrome.silver
+         }
+     }
+ }
 diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
+index ebe7a12..c57146f 100644
 --- a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
 +++ b/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
-@@ -29,13 +29,13 @@
+@@ -17,6 +17,7 @@ struct VeilEclipseIdentityCard: View {
+ 
+ 
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
+     @ObservedObject private var appearance = VeilAppearanceController.shared
+ 
+ 
+@@ -29,13 +30,13 @@ struct VeilEclipseIdentityCard: View {
                  VStack(alignment: .leading, spacing: VeilSpacing.xxs) {
                      Text("ECLIPSE")
                          .font(.headline.weight(.semibold))
@@ -1011,7 +1381,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                          .lineLimit(1)
                          .minimumScaleFactor(0.8)
                  }
-@@ -57,7 +57,7 @@
+@@ -57,7 +58,7 @@ struct VeilEclipseIdentityCard: View {
                              .lineLimit(1)
                      }
                  }
@@ -1020,7 +1390,15 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                  }
                  // The black instrument is contained within existing VeilLink
                  // materials. It never receives candidates, PV or threat cells.
-@@ -95,10 +95,10 @@
+@@ -87,6 +88,7 @@ struct VeilEclipseIdentityCard: View {
+ /// in-app bot card instead of adding an unrelated cyberpunk/blue-metal brand.
+ private struct VeilEclipseAvatar: View {
+     let isThinking: Bool
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+     @ObservedObject private var appearance = VeilAppearanceController.shared
+ 
+ 
+@@ -95,28 +97,49 @@ private struct VeilEclipseAvatar: View {
              Circle()
                  .fill(VeilTheme.obsidian)
              Circle()
@@ -1033,7 +1411,28 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                          style: StrokeStyle(lineWidth: appearance.isPlainline ? 1 : 1.7,
                                             lineCap: .round))
                  .padding(7)
-@@ -106,17 +106,17 @@
+                 .rotationEffect(.degrees(-35))
++            ForEach(0..<16, id: \.self) { tick in
++                Capsule()
++                    .fill(tick % 4 == 0 ? VeilEclipseChrome.accent.opacity(0.62)
++                                          : VeilEclipseChrome.silver.opacity(0.20))
++                    .frame(width: 1, height: tick % 4 == 0 ? 5 : 3)
++                    .offset(y: -33)
++                    .rotationEffect(.degrees(Double(tick) * 22.5))
++            }
++            if isThinking && !reduceMotion && scenePhase == .active {
++                TimelineView(.animation(minimumInterval:
++                    ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.125 : 0.05)) { timeline in
++                    Circle()
++                        .trim(from: 0, to: 0.20)
++                        .stroke(VeilEclipseChrome.accent,
++                                style: StrokeStyle(lineWidth: 1.7, lineCap: .square))
++                        .padding(2)
++                        .rotationEffect(.degrees(timeline.date.timeIntervalSinceReferenceDate
++                            .truncatingRemainder(dividingBy: 2.6) / 2.6 * 360))
++                }
++                .allowsHitTesting(false)
++            }
              // Theme-aware mask/eyes: Veil Original gold, Instrument amber,
              // Apple Soft adaptive light/dark, Islet aurora, Plainline hairline.
              HStack(spacing: 12) {
@@ -1055,7 +1454,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                  radius: 6, y: 2)
          .accessibilityHidden(true)
          .allowsHitTesting(false)
-@@ -182,7 +182,7 @@
+@@ -182,7 +205,7 @@ struct VeilEclipseTraceSheet: View {
                      HStack {
                          Label(matchFinished ? "赛后只读回放" : "对局中 · 无落点提示",
                                systemImage: matchFinished ? "lock.shield" : "eye.slash")
@@ -1064,7 +1463,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                              .font(.caption.weight(.semibold))
                          Spacer()
                      }
-@@ -195,18 +195,18 @@
+@@ -195,18 +218,18 @@ struct VeilEclipseTraceSheet: View {
                      VStack(alignment: .leading, spacing: VeilSpacing.xxs) {
                          HStack(spacing: VeilSpacing.sm) {
                              Text("当前棋力档位")
@@ -1087,7 +1486,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                          }
                      }
                      .veilCard()
-@@ -220,7 +220,7 @@
+@@ -220,7 +243,7 @@ struct VeilEclipseTraceSheet: View {
                               ? "当前版本尚无实时深度/节点流；数值不会伪造。"
                               : "真实引擎指标 · 抽象图不代表搜索路径")
                              .font(.caption2)
@@ -1096,7 +1495,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                      }
                      .veilCard()
                      if matchFinished {
-@@ -228,7 +228,7 @@
+@@ -228,7 +251,7 @@ struct VeilEclipseTraceSheet: View {
                              HStack {
                                  Text("历次对局 · \(knownMatchCount) 份")
                                      .font(.headline)
@@ -1105,7 +1504,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                                  Spacer()
                                  if selectedMatchID != nil {
                                      Button("返回本局") {
-@@ -237,7 +237,7 @@
+@@ -237,7 +260,7 @@ struct VeilEclipseTraceSheet: View {
                                          playing = false
                                      }
                                      .font(.caption.weight(.semibold))
@@ -1114,7 +1513,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                                  }
                              }
                              ForEach(savedMatches) { saved in
-@@ -249,19 +249,19 @@
+@@ -249,19 +272,19 @@ struct VeilEclipseTraceSheet: View {
                                  } label: {
                                      HStack(spacing: 8) {
                                          Image(systemName: "clock.arrow.circlepath")
@@ -1138,7 +1537,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                                      .padding(8)
                                      .background(VeilTheme.subtleFill, in: RoundedRectangle(cornerRadius: 9))
                                  }
-@@ -271,7 +271,7 @@
+@@ -271,7 +294,7 @@ struct VeilEclipseTraceSheet: View {
                              if nextOffset != nil {
                                  Button("加载更多历史对局") { loadArchivePage() }
                                      .font(.caption.weight(.semibold))
@@ -1147,7 +1546,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                              }
                              if unreadableCount > 0 {
                                  Text("另有 \(unreadableCount) 份棋谱校验失败，原始文件已保留。")
-@@ -287,7 +287,7 @@
+@@ -287,7 +310,7 @@ struct VeilEclipseTraceSheet: View {
                              .font(.headline)
                          Text("以下是存档中真实发生的棋步，不显示未落下的候选点、预测走法或风险提示。")
                              .font(.caption)
@@ -1156,7 +1555,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                          EclipseCommittedBoard(frame: replayFrames[min(replayPly, replayFrames.count-1)])
                              .aspectRatio(1, contentMode: .fit)
                              .veilCard()
-@@ -318,7 +318,7 @@
+@@ -318,7 +341,7 @@ struct VeilEclipseTraceSheet: View {
                          Text(matchFinished ? "本局的已验证走子记录暂不可用。"
                               : "为保证公平，对局进行时不会显示棋盘推演、推荐点、对方威胁位置或主变路线。赛后才能查看实际棋步。")
                              .font(.subheadline)
@@ -1165,7 +1564,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                              .padding(.vertical, 12)
                      }
                  }
-@@ -351,9 +351,9 @@
+@@ -351,9 +374,9 @@ struct VeilEclipseTraceSheet: View {
  
      private func metric(_ name: String, _ value: String) -> some View {
          VStack(alignment: .leading, spacing: 5) {
@@ -1177,7 +1576,7 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
          }
          .frame(maxWidth: .infinity, alignment: .leading)
          .padding(VeilSpacing.sm)
-@@ -406,7 +406,7 @@
+@@ -406,7 +429,7 @@ private struct EclipseCommittedBoard: View {
                  if frame.lastCommittedIndex == i {
                      let ring = Path(ellipseIn: CGRect(x: x-diameter*0.37, y: y-diameter*0.37,
                                                       width: diameter*0.74, height: diameter*0.74))
@@ -1186,89 +1585,3 @@ diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEcl
                  }
              }
          }
-diff --git a/VeilLink/UI/VeilEclipseComputeConsole.swift b/VeilLink/UI/VeilEclipseComputeConsole.swift
---- a/VeilLink/UI/VeilEclipseComputeConsole.swift
-+++ b/VeilLink/UI/VeilEclipseComputeConsole.swift
-@@ -23,7 +23,7 @@
-         VStack(alignment: .leading, spacing: compact ? 3 : 7) {
-             HStack(spacing: 6) {
-                 Circle()
--                    .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
-+                    .fill(active ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
-                     .frame(width: 5, height: 5)
-                 Text("ECLIPSE // VISUAL STREAM")
-                     .font(.system(size: compact ? 8 : 10, weight: .bold, design: .monospaced))
-@@ -31,7 +31,7 @@
-                     .lineLimit(1)
-                 Spacer(minLength: 0)
-                 Text(active ? "RUN" : "IDLE")
--                    .foregroundColor(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
-+                    .foregroundColor(active ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
-                     .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
-             }
-             if active, let startedAt = actualSearchStartedAt {
-@@ -70,7 +70,7 @@
-             } else {
-                 Text("vis.idle ()")
-                     .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
--                    .foregroundColor(VeilTheme.secondaryText)
-+                    .foregroundColor(VeilEclipseChrome.silver)
-                     .frame(maxWidth: .infinity, alignment: .leading)
-                     .accessibilityHidden(true)
-             }
-@@ -80,15 +80,15 @@
-                     let nodes = liveMetrics.visitedNodes.map(String.init) ?? "—"
-                     Text("MEASURED · DEPTH \(depth) / NODES \(nodes)")
-                         .font(.system(size: 9, weight: .medium, design: .monospaced))
--                        .foregroundColor(VeilTheme.goldBright)
-+                        .foregroundColor(VeilEclipseChrome.accent)
-                 } else {
-                     Text("MEASURED · 暂无实时深度/节点数据")
-                         .font(.caption2)
--                        .foregroundColor(VeilTheme.secondaryText)
-+                        .foregroundColor(VeilEclipseChrome.silver)
-                 }
-                 Text(VeilEclipseConsoleStream.disclosure)
-                     .font(.caption2)
--                    .foregroundColor(VeilTheme.secondaryText)
-+                    .foregroundColor(VeilEclipseChrome.silver)
-                     .fixedSize(horizontal: false, vertical: true)
-             }
-         }
-@@ -101,7 +101,7 @@
-         )
-         .overlay(
-             RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
--                .stroke(VeilTheme.gold.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
-+                .stroke(VeilEclipseChrome.accent.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
-         )
-         .allowsHitTesting(false)
-         .accessibilityElement(children: .combine)
-@@ -111,10 +111,10 @@
- 
-     private func tone(_ index: Int) -> Color {
-         switch index {
--        case 0: return VeilTheme.goldBright
-+        case 0: return VeilEclipseChrome.accent
-         case 1: return VeilTheme.paleMetal
--        case 2: return VeilTheme.success
--        default: return VeilTheme.secondaryText
-+        case 2: return VeilEclipseChrome.amber
-+        default: return VeilEclipseChrome.silver
-         }
-     }
- }
-diff --git a/VeilLink/UI/VeilEclipseBoardThoughtField.swift b/VeilLink/UI/VeilEclipseBoardThoughtField.swift
---- a/VeilLink/UI/VeilEclipseBoardThoughtField.swift
-+++ b/VeilLink/UI/VeilEclipseBoardThoughtField.swift
-@@ -33,8 +33,8 @@
-                     Canvas(opaque: false, rendersAsynchronously: false) { context, area in
-                         let margin = min(area.width, area.height) * 0.055
-                         let step = (min(area.width, area.height) - margin * 2) / 14
--                        let tones = [VeilTheme.goldBright, VeilTheme.paleMetal,
--                                     VeilTheme.success, VeilTheme.mutedGold]
-+                        let tones = [VeilEclipseChrome.accent, VeilTheme.paleMetal,
-+                                     VeilEclipseChrome.accent, VeilEclipseChrome.amber]
-                         for (rank, branch) in branches.enumerated() {
-                             let age = max(0, now - branch.emittedAtUptime)
-                             let fading = max(0, 1.0 - age / 1.35)
