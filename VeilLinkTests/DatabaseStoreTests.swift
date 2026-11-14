@@ -29,8 +29,8 @@ final class DatabaseStoreTests: XCTestCase {
         }
         let expected = entries.map { $0.0 }
         XCTAssertEqual(store.fetchMessageIDs(conversationID: conversation), expected)
-        XCTAssertEqual(store.fetchMessages(conversationID: conversation).map(\\.id), expected)
-        XCTAssertEqual(store.fetchRecentMessages(conversationID: conversation, limit: 32).messages.map(\\.id), expected)
+        XCTAssertEqual(store.fetchMessages(conversationID: conversation).map(\.id), expected)
+        XCTAssertEqual(store.fetchRecentMessages(conversationID: conversation, limit: 32).messages.map(\.id), expected)
         XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.lastMessage, "peer-c")
         let updatedAt = try XCTUnwrap(store.fetchConversations(localIdentityID: local).first?.updatedAt)
         XCTAssertLessThan(abs(updatedAt.timeIntervalSinceNow), 15)
@@ -41,7 +41,7 @@ final class DatabaseStoreTests: XCTestCase {
             body: "duplicate", sentAt: now.addingTimeInterval(125),
             isOutgoing: false, deliveryState: .delivered
         ))
-        XCTAssertEqual(store.fetchMessages(conversationID: conversation).map(\\.id), expected)
+        XCTAssertEqual(store.fetchMessages(conversationID: conversation).map(\.id), expected)
 
         // Local deletion previews must also follow insertion order rather than remote clocks.
         try store.deleteMessageLocally(messageID: "peer-c", conversationID: conversation)
