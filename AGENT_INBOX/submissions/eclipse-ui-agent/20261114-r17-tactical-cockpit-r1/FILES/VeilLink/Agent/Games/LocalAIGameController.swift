@@ -106,6 +106,7 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var lastDecisionMode = "基础策略"
     @Published private(set) var lastDecisionMilliseconds: Int?
     @Published private(set) var lastDecisionNodes: Int?
+    @Published private(set) var lastDecisionNodeCeiling: Int? // Captured for the measured move, not current settings
     @Published private(set) var eclipseSearchStartedAt: Date?
     @Published private(set) var eclipseVisualizationEnabled = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
     @Published private(set) var eclipseAdvancedOptions = EclipseAdvancedOptions.load()
@@ -413,6 +414,7 @@ final class LocalAIGameController: ObservableObject {
         lastDecisionMode = "规则 Bot"
         lastDecisionMilliseconds = nil
         lastDecisionNodes = nil
+        lastDecisionNodeCeiling = nil
         eclipseSearchStartedAt = nil
         if startAI { scheduleAIIfNeeded() }
     }
@@ -912,11 +914,15 @@ final class LocalAIGameController: ObservableObject {
             guard !Task.isCancelled else { return }
             let started = Date()
             self.eclipseSearchStartedAt = self.game == .gomoku ? started : nil
+            // Snapshot the active limit before await: users may change sliders mid-search.
+            let measuredNodeCeiling: Int? = self.game == .gomoku && self.eclipseAdvancedOptions.thinkingMode != .automatic
+                ? self.eclipseAdvancedOptions.maxNodes : nil
             let selected = await self.selectAIMove()
             guard !Task.isCancelled else { return }
             if let selected {
                 if self.game == .gomoku {
                     self.lastDecisionNodes = selected.metadata["nodes"].flatMap(Int.init)
+                    self.lastDecisionNodeCeiling = self.lastDecisionNodes == nil ? nil : measuredNodeCeiling
                 }
                 self.applyAI(selected)
             }
