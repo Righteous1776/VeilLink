@@ -846,70 +846,40 @@ final class LocalAIGameController: ObservableObject {
                 opponentHistory: learningPlies.filter { $0.actor == .host }.compactMap { Int($0.action) },
                 discovered: formationDiscovery.eligibleSignatures
             )
-            var chosen: GomokuBotMove?
-            var engineName = "原生"
-            // Native tactics are the only engine that currently consumes these
-            // formation preferences. Do not claim PVS/VCF uses them.
-            if useExternalGomokuEngine && !preference.enabled && !nativeActive {
-                // A standalone JavaScriptCore actor; the external engine never
-                // touches gameplay/DB and is validated by our own rule gate.
-                let external = await VeilOfflineGomokuEngine.shared.chooseMove(
-                    in: snapshot,
-                    for: computer,
-                    timeLimitMilliseconds: budget.timeLimitMilliseconds,
-                    maxDepth: boardDifficulty == .master ? 7 : boardDifficulty == .advanced ? 5 : 3
+            // One ECLIPSE arbiter. Never let an old persisted JSCore toggle
+            // silently bypass native training, mandatory tactical rules or
+            // actual search-branch telemetry. Vendored JS is retained only as
+            // a cold rollback asset until the Governor completes iOS QA.
+            let traceStore = eclipseTraceStore
+            let token = (eclipseVisualizationEnabled && !inSeparateTeachingSession)
+                ? traceStore.begin(sessionID: sessionID, board: snapshot) : nil
+            let observer: (@Sendable ([Int], Int) -> Void)?
+            if let token {
+                observer = { indices, nodes in
+                    _ = traceStore.record(indices, nodes: nodes, token: token)
+                }
+            } else {
+                observer = nil
+            }
+            let rawDifficulty = boardDifficulty.rawValue
+            let chosen = await Task.detached(priority: .userInitiated) {
+                GomokuBot.chooseMove(
+                    in: snapshot, for: computer, budget: budget,
+                    learning: learning, formationPreference: preference,
+                    difficultyRawValue: rawDifficulty,
+                    onExploredLine: observer
                 )
-                if let external {
-                    var trial = snapshot
-                    if trial.apply(index: external.index, actor: computer) {
-                        chosen = external
-                        engineName = "PVS/VCF"
-                    }
-                }
-            }
-            if chosen == nil {
-                // The R12 visualizer observes the SAME measured native search.
-                // It never chooses, ranks or vetoes a move.
-                let traceStore = eclipseTraceStore
-                let token = (eclipseVisualizationEnabled && !inSeparateTeachingSession)
-                    ? traceStore.begin(sessionID: sessionID, board: snapshot) : nil
-                let observer: (@Sendable ([Int], Int) -> Void)?
-                if let token {
-                    observer = { indices, nodes in
-                        _ = traceStore.record(indices, nodes: nodes, token: token)
-                    }
-                } else {
-                    observer = nil
-                }
-                // Actor-isolated controller settings must be frozen BEFORE Task.detached.
-                let rawDifficulty = boardDifficulty.rawValue
-                chosen = await Task.detached(priority: .userInitiated) {
-                    GomokuBot.chooseMove(
-                        in: snapshot, for: computer, budget: budget,
-                        learning: learning, formationPreference: preference,
-                        difficultyRawValue: rawDifficulty,
-                        onExploredLine: observer
-                    )
-                }.value
-            }
+            }.value
             guard let result = chosen else { return nil }
 
             var ruleGate = gomoku
             guard ruleGate.apply(index: result.index, actor: computer) else { return nil }
             let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
             let formationLabel = formation.matchedLessonNames.first.map { " · 阵法：\($0)" } ?? ""
-            // Preserve the incumbent controller's observable status contract.
-            // External PVS/VCF does NOT consume AdaptiveBoardLearningSnapshot:
-            // reporting its training level or Owner formation as applied would
-            // misrepresent actual search inputs.
-            if engineName == "原生" {
-                let title = result.engineLabel.map { "五子棋 · \($0)" } ?? "五子棋"
-                lastDecisionMode = "\(title) · \(boardDifficulty.title)\(learned)\(formationLabel)"
-                    + (preference.enabled ? " · \(preference.mode.title)" : "")
-                    + (nativeActive ? " · 原生实战训练 \(trainedNativeGames) 局" : "")
-            } else {
-                lastDecisionMode = "五子棋 · PVS/VCF · \(boardDifficulty.title)"
-            }
+            let title = result.engineLabel.map { "五子棋 · \($0)" } ?? "五子棋 · ECLIPSE"
+            lastDecisionMode = "\(title) · \(boardDifficulty.title)\(learned)\(formationLabel)"
+                + (preference.enabled ? " · \(preference.mode.title)" : "")
+                + (nativeActive ? " · 原生实战训练 \(trainedNativeGames) 局" : "")
             return AgentActionCandidate(
                 actionID: "gomoku:\(result.index)",
                 encodedAction: AgentGameEncoding.encodeInts([result.index]),
