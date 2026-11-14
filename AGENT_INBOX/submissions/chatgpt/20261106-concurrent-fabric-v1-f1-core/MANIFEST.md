@@ -1,0 +1,14 @@
+# [AGENT-DROP] Concurrent Fabric V1 / F1 scheduler foundation
+- agent_id: chatgpt
+- task_id: 20261106-concurrent-fabric-v1-f1-core
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- mode: INBOX_ONLY
+- submission_path: AGENT_INBOX/submissions/chatgpt/20261106-concurrent-fabric-v1-f1-core/
+- proposed_files:
+  - VeilLink/Core/RuntimeMaintenanceTuning.swift
+  - VeilLink/Transport/BLETransport.swift
+  - VeilLink/Voice/WalkieTalkieAudioController.swift
+  - VeilLinkTests/BLETransportSafetyTests.swift
+  - VeilLinkTests/VoiceAndPTTTests.swift
+- status: DROPPED
+- asset_grant: none
