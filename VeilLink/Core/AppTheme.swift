@@ -34,6 +34,8 @@ enum VeilTheme {
     static var goldGradient: LinearGradient {
         VeilAppearanceController.shared.isPlainline
             ? LinearGradient(colors: [gold, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
+            : VeilAppearanceController.shared.isForge
+            ? LinearGradient(colors: [goldBright, gold], startPoint: .leading, endPoint: .trailing)
             : VeilAppearanceController.shared.isIslet
             ? LinearGradient(colors: [goldBright, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
             : VeilAppearanceController.shared.isAppleSoft
@@ -43,6 +45,8 @@ enum VeilTheme {
     static var metalGradient: LinearGradient {
         VeilAppearanceController.shared.isPlainline
             ? LinearGradient(colors: [panel, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
+            : VeilAppearanceController.shared.isForge
+            ? LinearGradient(colors: [metalTop, panel, metalBottom], startPoint: .top, endPoint: .bottom)
             : VeilAppearanceController.shared.isIslet
             ? LinearGradient(colors: [panelSoft, panel], startPoint: .top, endPoint: .bottom)
             : VeilAppearanceController.shared.isAppleSoft
@@ -52,6 +56,8 @@ enum VeilTheme {
     static var surfaceGradient: LinearGradient {
         VeilAppearanceController.shared.isPlainline
             ? LinearGradient(colors: [Color.clear, Color.clear], startPoint: .top, endPoint: .bottom)
+            : VeilAppearanceController.shared.isForge
+            ? LinearGradient(colors: [paleMetal.opacity(0.10), Color.clear], startPoint: .top, endPoint: .bottom)
             : VeilAppearanceController.shared.isIslet
             ? LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.02)], startPoint: .top, endPoint: .bottom)
             : VeilAppearanceController.shared.isAppleSoft
@@ -202,7 +208,7 @@ struct VeilPanelShape: Shape {
             return RoundedRectangle(cornerRadius: max(12, radius * 1.8), style: .continuous).path(in: rect)
         }
         let c = min(cut, min(rect.width, rect.height) * 0.28)
-        let r = min(radius, c * 0.7)
+        let r = min(VeilAppearanceController.shared.isForge ? 2 : radius, c * 0.7)
         var p = Path()
         p.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
         p.addLine(to: CGPoint(x: rect.maxX - c, y: rect.minY))
@@ -248,6 +254,8 @@ struct VeilAmbientBackground: View {
                 VeilAppleSoftBackground()
             } else if appearance.isInstrument {
                 VeilInstrumentBackground()
+            } else if appearance.isForge {
+                VeilForgeBackground()
             } else if VeilRenderProfile.usesLegacyCompositorPath {
                 // Keep the legacy background strictly within its parent's bounds. On iOS 15,
                 // an ignoresSafeArea background attached to ScrollView can participate in the
@@ -394,6 +402,10 @@ struct VeilCardModifier: ViewModifier {
             content
                 .padding(VeilSpacing.md)
                 .background(VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: emphasized ? 22 : 18, style: .continuous), emphasized: emphasized))
+        } else if appearance.isForge {
+            content
+                .padding(VeilSpacing.md)
+                .background(VeilForgePlate(emphasized: emphasized))
         } else if VeilRenderProfile.usesLegacyCompositorPath {
             // Preserve the cut-panel identity, but avoid clip + duplicate-shape + large shadow
             // off-screen rendering inside ScrollView/Sheet on iPhone 7.
@@ -456,13 +468,14 @@ struct VeilPressStyle: ButtonStyle {
         let appleSoft = VeilAppearanceController.shared.isAppleSoft
         let plainline = VeilAppearanceController.shared.isPlainline
         let islet = VeilAppearanceController.shared.isIslet
+        let forge = VeilAppearanceController.shared.isForge
         configuration.label
-            .scaleEffect(pressed && !plainline && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : (islet ? 0.975 : VeilMotionPolicy.pressScale)) : 1)
-            .offset(y: pressed && !plainline ? (appleSoft ? 0.8 : (islet ? 0.6 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4))) : 0)
-            .brightness(pressed ? (plainline ? -0.05 : (islet ? 0.045 : (appleSoft ? -0.018 : -0.035))) : 0)
+            .scaleEffect(pressed && !plainline && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (forge ? 0.986 : (appleSoft ? 0.982 : (islet ? 0.975 : VeilMotionPolicy.pressScale))) : 1)
+            .offset(y: pressed && !plainline ? (forge ? 1.8 : (appleSoft ? 0.8 : (islet ? 0.6 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4)))) : 0)
+            .brightness(pressed ? (plainline ? -0.05 : (forge ? -0.065 : (islet ? 0.045 : (appleSoft ? -0.018 : -0.035)))) : 0)
             .opacity(pressed ? (plainline ? 0.72 : (islet ? 1.0 : (appleSoft ? 0.90 : 0.96))) : 1)
             .shadow(
-                color: plainline ? .clear : (islet ? VeilTheme.gold.opacity(pressed ? 0.32 : 0.0) : Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12)))),
+                color: plainline || forge ? .clear : (islet ? VeilTheme.gold.opacity(pressed ? 0.32 : 0.0) : Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12)))),
                 radius: islet ? (pressed ? 12 : 0.1) : (pressed ? 2 : (appleSoft ? 5 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3))),
                 x: 0,
                 y: pressed ? 1 : (appleSoft ? 3 : (VeilMotionPolicy.allowsFullSpatialEffects ? 4 : 2))

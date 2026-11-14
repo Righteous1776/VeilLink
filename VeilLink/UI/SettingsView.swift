@@ -284,13 +284,19 @@ struct SettingsView: View {
                     haptics.selection()
                 } label: {
                     HStack(spacing: 12) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 9)
-                                .fill(choice.previewSurfaceColor)
-                            Image(systemName: choice.previewSystemImage)
-                                .foregroundColor(choice == appearance.selection ? VeilTheme.goldBright : VeilTheme.secondaryText)
+                        Group {
+                            if choice == .forge {
+                                VeilForgeThemePreview()
+                            } else {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 9)
+                                        .fill(choice.previewSurfaceColor)
+                                    Image(systemName: choice.previewSystemImage)
+                                        .foregroundColor(choice == appearance.selection ? VeilTheme.goldBright : VeilTheme.secondaryText)
+                                }
+                                .frame(width: 42, height: 42)
+                            }
                         }
-                        .frame(width: 42, height: 42)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(choice.title).fontWeight(.semibold).foregroundColor(VeilTheme.text)
                             Text(choice.subtitle).font(.caption).foregroundColor(VeilTheme.secondaryText)
@@ -307,6 +313,9 @@ struct SettingsView: View {
                 if choice != VeilAppearanceSelection.switchableCases.last {
                     Divider().background(VeilTheme.hairline)
                 }
+            }
+            if appearance.isForge {
+                VeilForgeThemeSpecification()
             }
             Divider().background(VeilTheme.hairline)
             Button {
