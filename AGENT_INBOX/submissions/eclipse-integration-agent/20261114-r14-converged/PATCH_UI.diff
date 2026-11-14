@@ -66,14 +66,17 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
                  }
                  Spacer()
                  if controller.isAIThinking {
-@@ -643,6 +678,18 @@
+@@ -643,18 +678,28 @@
                  .fixedSize(horizontal: false, vertical: true)
              if game == .gomoku {
                  Toggle(isOn: Binding(
+-                    get: { controller.useExternalGomokuEngine },
+-                    set: { controller.setExternalGomokuEngineEnabled($0) }
 +                    get: { controller.eclipseVisualizationEnabled },
 +                    set: { controller.setEclipseVisualizationEnabled($0) }
-+                )) {
-+                    VStack(alignment: .leading, spacing: 2) {
+                 )) {
+                     VStack(alignment: .leading, spacing: 2) {
+-                        Text("离线强力引擎 · PVS/VCF")
 +                        Text("棋盘思考可视化").font(.caption.weight(.semibold))
 +                        Text("仅原生搜索显示真实分支；可能透露策略，默认关闭。")
 +                            .font(.caption2).foregroundColor(VeilTheme.secondaryText)
@@ -81,11 +84,23 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
 +                }
 +                .tint(VeilTheme.gold)
 +                .accessibilityIdentifier("gomoku.eclipse.live-trace.toggle")
-+                Toggle(isOn: Binding(
-                     get: { controller.useExternalGomokuEngine },
-                     set: { controller.setExternalGomokuEngineEnabled($0) }
-                 )) {
-@@ -828,7 +875,14 @@
++                HStack(spacing: 8) {
++                    Image(systemName: "cpu").foregroundColor(VeilTheme.goldBright)
++                    VStack(alignment: .leading, spacing: 2) {
++                        Text("ECLIPSE 原生搜索")
+                             .font(.caption.weight(.semibold))
+-                        Text("独立离线引擎；异常自动回退，不改写棋谱。")
++                            .foregroundColor(VeilTheme.text)
++                        Text("统一原生战术安全门、训练排序与深度搜索")
+                             .font(.caption2)
+                             .foregroundColor(VeilTheme.secondaryText)
+                     }
+                 }
+-                .tint(VeilTheme.gold)
+                 Menu {
+                     ForEach(GomokuFormationMode.allCases) { mode in
+                         Button {
+@@ -828,7 +873,14 @@
                          && model.appLock.isEnabled
                          && !model.appLock.isLocked
                          && developerLearningGate.canImportTraining()
