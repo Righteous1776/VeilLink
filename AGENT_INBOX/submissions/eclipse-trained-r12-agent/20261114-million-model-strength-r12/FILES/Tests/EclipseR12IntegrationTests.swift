@@ -19,11 +19,11 @@ final class EclipseR12IntegrationTests: XCTestCase {
 
     func testLeavesRecognizeExactForcedBlockAndMultipleFiveThreats() {
         var b = [UInt8](repeating: 0, count: 225)
-        for i in [109, 110, 111, 112] { b[i] = 2 }
-        XCTAssertEqual(EclipseR12LeafThreats.inspect(cells: b, side: 1), .forcedBlock(113))
+        for i in [105, 106, 107, 108] { b[i] = 2 }
+        XCTAssertEqual(EclipseR12LeafThreats.inspect(cells: b, side: 1), .forcedBlock(109))
         b[97] = 1
-        XCTAssertEqual(EclipseR12LeafThreats.inspect(cells: b, side: 1), .forcedBlock(113))
-        b[113] = 1
+        XCTAssertEqual(EclipseR12LeafThreats.inspect(cells: b, side: 1), .forcedBlock(109))
+        b[109] = 1
         XCTAssertEqual(EclipseR12LeafThreats.inspect(cells: b, side: 1), .quiet)
     }
 
