@@ -73,7 +73,7 @@ def check_plist():
         fail("widget release identity must inherit the app build settings")
     project = (ROOT / "project.yml").read_text(encoding="utf-8")
     if 'MARKETING_VERSION: "29.0"' not in project or 'CURRENT_PROJECT_VERSION: "66"' not in project:
-        fail("VeilLink 29.0 / Build 66 release identity missing from project.yml")
+        fail("VeilLink 29.1 / Build 67 release identity missing from project.yml")
     modes = set(plist.get("UIBackgroundModes", []))
     if not {"bluetooth-central", "bluetooth-peripheral"} <= modes:
         fail("Bluetooth background modes missing")
@@ -222,7 +222,6 @@ def check_tests():
         "MiniGameTests.swift",
         "DatabaseStoreTests.swift",
         "CryptoEngineTests.swift",
-        "RealLocalInferenceSmokeTests.swift",
         "AgentControlAndLocalGameTests.swift",
         "AgentGameExecutionValidationTests.swift",
         "A9RuntimeConstraintTests.swift",

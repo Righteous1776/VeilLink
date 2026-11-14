@@ -11,19 +11,11 @@ CORE_SOURCE_EXCLUDES = [
     "Agent/MaleCNS",
     "Agent/Games/TrainedGamePolicyRuntime.swift",
     "Agent/Games/MaleCNSGameDecisionEncoder.swift",
-    "Agent/Language/LlamaInferenceEngine.swift",
-    "Agent/Language/LlamaLocalTextModelRuntime.swift",
-    "Agent/Language/LlamaRuntimeConfiguration.swift",
-    "Agent/Language/LlamaCancellationGate.swift",
-    "Agent/Language/LocalModelCatalog.swift",
-    "Agent/Language/LocalModelManager.swift",
 ]
 CORE_TEST_EXCLUDES = [
     "MaleCNSNativeKernelTests.swift",
     "MaleCNSNativeRolloutPoolTests.swift",
     "MaleCNSVFLY1Tests.swift",
-    "LocalModelCatalogTests.swift",
-    "RealLocalInferenceSmokeTests.swift",
     "Fixtures/MaleCNSFixture.vfly",
     "Fixtures/MaleCNSFixture.vfly.manifest.json",
 ]
