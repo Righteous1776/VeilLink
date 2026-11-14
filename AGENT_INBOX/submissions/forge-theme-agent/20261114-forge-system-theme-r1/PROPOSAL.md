@@ -18,3 +18,6 @@ Build a COMPLETE, independently selectable VeilLink theme instead of applying su
 
 ## Integration stance
 This is a new core theme lane, more comprehensive than #231's standalone all-theme mechanical retrofit. Governor should treat #231 as superseded for UI selection/rotor design and reuse only after explicit overlap arbitration; do not apply both raw patches. #229 global particle removal is compatible but separately required and still in the Inbox. No application build has run in this Inbox stage.
+
+## Continuation verification record (2026-11-14)
+The staged patch has been repaired to use the existing palette metal fields and replayed against the exact base for all seven product files. The deterministic Foundation motion core compiled on Linux and passed 17 value checks. App-level and theme case XCTest remain unrun until Apple CI. The required palette-selection regression XCTest is now included in the proposed test file. This is **not** a merged or released change.
