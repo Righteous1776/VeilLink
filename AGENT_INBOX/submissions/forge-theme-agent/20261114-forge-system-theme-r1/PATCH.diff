@@ -247,21 +247,22 @@ diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
  
                      VStack(alignment: .leading, spacing: 7) {
                          HStack(spacing: 7) {
-@@ -33,6 +51,13 @@
+@@ -33,6 +51,14 @@
                              .font(.footnote)
                              .foregroundColor(VeilTheme.secondaryText)
                              .fixedSize(horizontal: false, vertical: true)
 +                        if appearance.isForge {
 +                            VeilForgeDataRail(
 +                                label: "RF SCANNER",
-+                                value: "\(sessions.nearbyPeers.count) PEERS",
++                                value: bluetooth.isRunning ? "SCANNING" : "STANDBY",
 +                                active: bluetooth.isRunning
 +                            )
++                            VeilForgePeerCounter(count: sessions.nearbyPeers.count)
 +                        }
                      }
                      Spacer(minLength: 0)
                  }
-@@ -54,6 +79,13 @@
+@@ -54,6 +80,17 @@
                          Text(lanTurbo.dataPlaneSummary)
                              .font(.caption2.monospaced())
                              .foregroundColor((lanTurbo.totalPayloadBytesSent + lanTurbo.totalPayloadBytesReceived) > 0 ? VeilTheme.success : VeilTheme.secondaryText)
@@ -271,11 +272,15 @@ diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
 +                                value: "\(lanTurbo.connectedPeerCount) TCP / \(sessions.secureLANPeerCount()) SECURE",
 +                                active: sessions.secureLANPeerCount() > 0
 +                            )
++                            VeilForgeRouteRail(
++                                connectedPeers: lanTurbo.connectedPeerCount,
++                                securePeers: sessions.secureLANPeerCount()
++                            )
 +                        }
                      }
                      Spacer()
                      VStack(alignment: .trailing, spacing: 3) {
-@@ -203,6 +235,7 @@
+@@ -203,6 +240,7 @@
  }
  
  private struct NearbyPeerCard: View {
@@ -283,7 +288,7 @@ diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
      @ObservedObject var model: AppModel
      @ObservedObject var bluetooth: BLETransport
      @ObservedObject var lanTurbo: LANTransport
-@@ -291,9 +324,14 @@
+@@ -291,9 +329,14 @@
                              .minimumScaleFactor(0.72)
                      }
                      Spacer(minLength: 6)
@@ -312,7 +317,7 @@ diff --git a/VeilLink/UI/AgentStatusView.swift b/VeilLink/UI/AgentStatusView.swi
  
      init(model: AppModel) {
          self.model = model
-@@ -26,12 +27,35 @@
+@@ -26,12 +27,34 @@
  
      var body: some View {
          VStack(alignment: .leading, spacing: 12) {
@@ -328,8 +333,7 @@ diff --git a/VeilLink/UI/AgentStatusView.swift b/VeilLink/UI/AgentStatusView.swi
              HStack(spacing: 12) {
 +                Group {
 +                    if appearance.isForge {
-+                        VeilForgeRotor(
-+                            kind: .compute,
++                        VeilForgeComputeShutter(
 +                            engaged: coordinator.runtimeState == .ready
 +                                || coordinator.runtimeState == .generating
 +                                || coordinator.runtimeState == .loading,
@@ -353,7 +357,7 @@ diff --git a/VeilLink/UI/AgentStatusView.swift b/VeilLink/UI/AgentStatusView.swi
                  VStack(alignment: .leading, spacing: 4) {
                      HStack(spacing: 7) {
                          Text("灵核")
-@@ -59,6 +83,15 @@
+@@ -59,6 +82,15 @@
                  }
              }
  
@@ -369,7 +373,7 @@ diff --git a/VeilLink/UI/AgentStatusView.swift b/VeilLink/UI/AgentStatusView.swi
              HStack(spacing: 8) {
                  AgentStatusChip(title: "RUNTIME", value: coordinator.runtimeManifest?.displayName ?? "未载入")
                  AgentStatusChip(title: "ENGINE", value: LocalTextModelRuntimeFactory.backendName)
-@@ -75,8 +108,18 @@
+@@ -75,8 +107,18 @@
              }
          }
          .padding(14)
@@ -394,7 +398,7 @@ diff --git a/VeilLink/Core/VeilForgeMotionCore.swift b/VeilLink/Core/VeilForgeMo
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/Core/VeilForgeMotionCore.swift
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,29 @@
 +import Foundation
 +
 +/// Visual actuation is discrete and deterministic. State indicators are never
@@ -410,6 +414,14 @@ new file mode 100644
 +        return floor(phase * 12) * 7.5
 +    }
 +
++    /// Routing carriage positions only reflect observed link counts:
++    /// 0 = disconnected, 1 = TCP present, 2 = secure peer present.
++    static func routeStage(connectedPeers: Int, securePeers: Int) -> Int {
++        if securePeers > 0 { return 2 }
++        if connectedPeers > 0 { return 1 }
++        return 0
++    }
++
 +    /// Only actual BLE health scores may be fed to this gauge (0...100).
 +    static func healthBars(_ score: Int) -> Int {
 +        let clamped = min(100, max(0, score))
@@ -420,7 +432,7 @@ diff --git a/VeilLink/UI/VeilForgeVisualSystem.swift b/VeilLink/UI/VeilForgeVisu
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/VeilForgeVisualSystem.swift
-@@ -0,0 +1,388 @@
+@@ -0,0 +1,549 @@
 +import SwiftUI
 +import Foundation
 +
@@ -667,10 +679,17 @@ new file mode 100644
 +                Rectangle()
 +                    .fill(index < count ? VeilTheme.goldBright : VeilTheme.hairline)
 +                    .frame(width: 2.8, height: CGFloat(5 + (index % 4) * 2))
++                    .scaleEffect(x: 1, y: index < count ? 1 : 0.42, anchor: .bottom)
++                    // A bounded, short ratchet sequence on ACTUAL health change.
++                    // No independent timer and no simulated link speed.
++                    .animation(
++                        VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion)?
++                            .delay(Double(index) * 0.018),
++                        value: count
++                    )
 +            }
 +        }
 +        .frame(height: 12, alignment: .bottom)
-+        .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: count)
 +        .allowsHitTesting(false)
 +        .accessibilityHidden(true)
 +    }
@@ -809,11 +828,165 @@ new file mode 100644
 +        .clipShape(VeilPanelShape(cut: 5, radius: 1))
 +    }
 +}
++
++
++/// A CPU aperture is a different actuator family from the RF stepper rotor.
++/// Opening shutters mean the actual local runtime is loading or generating;
++/// the instrument makes no claim about synthetic CPU load percentages.
++struct VeilForgeComputeShutter: View {
++    let engaged: Bool
++    let working: Bool
++
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    var body: some View {
++        GeometryReader { proxy in
++            let size = max(1, min(proxy.size.width, proxy.size.height))
++            ZStack {
++                VeilPanelShape(cut: size * 0.10, radius: 2)
++                    .fill(VeilTheme.obsidian)
++                VeilPanelShape(cut: size * 0.10, radius: 2)
++                    .stroke(VeilTheme.gold.opacity(engaged ? 0.55 : 0.18), lineWidth: 1)
++
++                // Stator rails remain fixed; the jaws slide sideways.
++                ForEach([-1.0, 1.0], id: \.self) { direction in
++                    Rectangle()
++                        .fill(VeilTheme.paleMetal.opacity(0.22))
++                        .frame(width: size * 0.68, height: 1)
++                        .offset(y: direction * size * 0.31)
++                }
++
++                Rectangle()
++                    .fill(working ? VeilTheme.goldBright : VeilTheme.hairline)
++                    .frame(width: size * 0.075, height: size * 0.40)
++                    .opacity(engaged ? 1 : 0.20)
++
++                HStack(spacing: size * 0.06) {
++                    shutterLeaf(size: size)
++                        .offset(x: working ? -size * 0.16 : 0)
++                    shutterLeaf(size: size)
++                        .offset(x: working ? size * 0.16 : 0)
++                }
++                .frame(width: size * 0.65)
++
++                Text("CPU")
++                    .font(.system(size: max(8, size * 0.14), weight: .heavy, design: .monospaced))
++                    .foregroundColor(engaged ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                    .padding(.horizontal, 2)
++                    .background(VeilTheme.obsidian.opacity(0.92))
++            }
++            .animation(
++                VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion),
++                value: working
++            )
++            .frame(width: size, height: size)
++            .frame(maxWidth: .infinity, maxHeight: .infinity)
++        }
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .ignore)
++        .accessibilityLabel("本地计算模块：\(working ? "运行中" : (engaged ? "就绪" : "未运行"))")
++    }
++
++    private func shutterLeaf(size: CGFloat) -> some View {
++        VeilPanelShape(cut: size * 0.04, radius: 1)
++            .fill(VeilTheme.panelSoft)
++            .frame(width: size * 0.25, height: size * 0.50)
++            .overlay {
++                VeilPanelShape(cut: size * 0.04, radius: 1)
++                    .stroke(VeilTheme.paleMetal.opacity(0.50), lineWidth: 0.7)
++            }
++    }
++}
++
++/// Reuse the existing physical odometer as a genuine observed-peer counter.
++/// It advances only when discovery results change, never on a display timer.
++struct VeilForgePeerCounter: View {
++    let count: Int
++
++    var body: some View {
++        HStack(spacing: 7) {
++            Text("DISCOVERED")
++                .foregroundColor(VeilTheme.mutedGold)
++                .font(.system(size: 8, weight: .semibold, design: .monospaced))
++            VeilOdometerNumber(value: max(0, count))
++                .fixedSize(horizontal: true, vertical: false)
++            Text("PEERS")
++                .foregroundColor(VeilTheme.secondaryText)
++                .font(.system(size: 8, weight: .semibold, design: .monospaced))
++        }
++        .frame(maxWidth: .infinity, alignment: .leading)
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .ignore)
++        .accessibilityLabel("已发现设备 \(max(0, count)) 台")
++    }
++}
++
++/// Three-position sliding carriage maps the REAL LAN routing state.
++/// Idle → TCP present → secure LAN peer available. This is not a transfer
++/// progress bar and does not imply that the radio has a given throughput.
++struct VeilForgeRouteRail: View {
++    let connectedPeers: Int
++    let securePeers: Int
++
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    private var stage: Int {
++        VeilForgeMotionCore.routeStage(
++            connectedPeers: connectedPeers,
++            securePeers: securePeers
++        )
++    }
++
++    var body: some View {
++        GeometryReader { proxy in
++            let cellWidth = max(1, proxy.size.width / 3)
++            ZStack(alignment: .leading) {
++                VeilPanelShape(cut: 6, radius: 1)
++                    .fill(VeilTheme.obsidian.opacity(0.76))
++
++                Rectangle()
++                    .fill(VeilTheme.gold.opacity(0.23))
++                    .frame(width: cellWidth, height: 26)
++                    .overlay {
++                        Rectangle()
++                            .stroke(VeilTheme.goldBright.opacity(0.70), lineWidth: 1)
++                    }
++                    .offset(x: CGFloat(stage) * cellWidth)
++
++                HStack(spacing: 0) {
++                    label("IDLE", number: 0)
++                    label("TCP", number: 1)
++                    label("SECURE", number: 2)
++                }
++            }
++            .frame(height: 26)
++            .clipped()
++            .animation(
++                VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion),
++                value: stage
++            )
++        }
++        .frame(height: 26)
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .ignore)
++        .accessibilityLabel(stage == 2 ? "已建立安全局域网连接" :
++                            stage == 1 ? "已建立 TCP 连接" : "局域网数据链路待机")
++    }
++
++    private func label(_ value: String, number: Int) -> some View {
++        Text(value)
++            .font(.system(size: 8, weight: .bold, design: .monospaced))
++            .tracking(0.2)
++            .foregroundColor(stage == number ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++            .frame(maxWidth: .infinity)
++            .frame(height: 26)
++    }
++}
 diff --git a/VeilLinkTests/VeilForgeMotionCoreTests.swift b/VeilLinkTests/VeilForgeMotionCoreTests.swift
 new file mode 100644
 --- /dev/null
 +++ b/VeilLinkTests/VeilForgeMotionCoreTests.swift
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,47 @@
 +import XCTest
 +@testable import VeilLink
 +
@@ -842,6 +1015,14 @@ new file mode 100644
 +        XCTAssertEqual(VeilForgeMotionCore.healthBars(100), 8)
 +        XCTAssertEqual(VeilForgeMotionCore.healthBars(101), 8)
 +    }
++    func testRoutingCarriageStatesComeFromRealPeerCounts() {
++        XCTAssertEqual(VeilForgeMotionCore.routeStage(connectedPeers: 0, securePeers: 0), 0)
++        XCTAssertEqual(VeilForgeMotionCore.routeStage(connectedPeers: 2, securePeers: 0), 1)
++        XCTAssertEqual(VeilForgeMotionCore.routeStage(connectedPeers: 4, securePeers: 2), 2)
++        XCTAssertEqual(VeilForgeMotionCore.routeStage(connectedPeers: 0, securePeers: 1), 2)
++        XCTAssertEqual(VeilForgeMotionCore.routeStage(connectedPeers: -1, securePeers: -9), 0)
++    }
++
 +    func testForgeThemeCaseIsAvailableWithoutReplacingLegacyThemes() {
 +        XCTAssertTrue(VeilAppearanceSelection.switchableCases.contains(.forge))
 +        XCTAssertEqual(VeilAppearanceSelection.forge.rawValue, "forge")
