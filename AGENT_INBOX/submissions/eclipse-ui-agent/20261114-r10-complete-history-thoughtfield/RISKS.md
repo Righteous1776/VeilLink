@@ -12,3 +12,11 @@
 10. **Tests:** Linux Foundation compile and SwiftUI syntax parse do NOT establish Apple SDK typecheck or iOS build. Synthetic git preflight does NOT establish full-main applicability. No release or IPA authority.
 
 11. **Crash-window / continuity:** JSON bounds and clock rollback are now handled. A crash between deleting the latest-match journal and finalizing an interrupted historical entry can leave a saved historical match temporarily labeled playing; a future orphan-status reconciliation should be reviewed before shipping.
+
+## R11 additional risks / other-lane overlap
+- This PR #208 is the SINGLE UI/history visualizer artifact; no second UI proposal branch created. See `R11_REFERENCE_AND_DEDUP.md` for other Agent PR #199/#206/#207/#209/#210 and older UI #203/#204 dependency/conflict ledger.
+- Decorative animated `vis.*` strings must **never be presented as actual internal AI reasoning/code**. Real measured fields are separate and currently unavailable in deployed main.
+- Black rectangular terminal is embedded in original .veilCard; avoid replacing the VeilLink theme or hiding the 15×15 board under dense UI.
+- R10 board abstract field and R11 console are intentionally cosmetic and take no search-point/PV information. They must not become covert hints.
+- Two separate animation Timelines may increase GPU use: normal ≤24Hz, low power ≤9Hz console; Reduce Motion pauses updates. Apple-device energy/thermal validation outstanding.
+- Complete combined product PATCH.diff is still not applied to full repository/Xcode; proposal only under governance.
