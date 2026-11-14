@@ -405,7 +405,11 @@ struct ChatView: View {
         }
     }
 
-    var body: some View {
+    var body: some View { conversationPresentation }
+
+    // Split the large SwiftUI expression so Xcode type-checks each subsystem
+    // independently. The rendered hierarchy and state bindings are unchanged.
+    private var conversationCore: some View {
         VStack(spacing: 0) {
             if showsSearchBar {
                 HStack(spacing: 8) {
@@ -767,6 +771,10 @@ struct ChatView: View {
                 .offset(y: -1)
             }
         }
+    }
+
+    private var conversationTopLevel: some View {
+        conversationCore
         .background(VeilAmbientBackground())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -844,6 +852,10 @@ struct ChatView: View {
                 reload(loadAll: true)
             }
         }
+    }
+
+    private var conversationPresentation: some View {
+        conversationTopLevel
         .sheet(isPresented: $showsPhotoPicker) {
             PhotoPicker(
                 onPicked: { imported in prepareAndSendImage(imported) },
