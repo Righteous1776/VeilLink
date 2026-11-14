@@ -54,3 +54,14 @@
 - scope_extension: Monopoly core reducer/restore/save/snapshot event bus, turn phase ordinal, low-volume realtime-game milestones/outcomes; LatticeClash move commits; PrismRift discrete events
 - limits: no frame-by-frame logging, card/narrative text, chat plaintext, identity/room IDs, transport bytes, user-supplied content, passwords or private keys; R4 does NOT claim full coverage of all engines
 - verification: 22 existing-file hunks validated against pinned main; brand-new 46-line test only statically prepared. Apple build + XCTest + device testing NOT_RUN
+
+## R5 continuation — 2026-11-14: window-level touch capture repair
+
+- status: DROPPED / INBOX_ONLY; app not integrated, Apple XCTest/device validation NOT_RUN
+- proposed_paths_total: **24**, including 2 proposed new XCTest sources
+- additionally proposed: `VeilLinkTests/DeepTelemetryTouchProbeTests.swift` (new)
+- updated proposed: `VeilLink/Diagnostics/DeepTelemetry.swift`, `VeilLink/UI/OwnerConsoleView.swift`
+- root_cause_hypotheses: `rawTouchCaptureEnabled` default false; existing PassiveTouchRecorder attaches at a fixed sync moment to visible windows only, and `state = .failed` gesture lifecycle may miss SwiftUI/window transition interactions
+- R5 proposal: app-owned window `sendEvent` passthrough observer; per-touch completion classification, UIKit subview metadata, overlay window coverage, keyboard/text-input coordinate redaction, owner visible ready status and completed-touch counter
+- protected boundaries: no raw text, key positions with keyboard open, audio, other-app windows, keyboard window touch logging, new entitlements, release changes or direct source edits
+- validation: proposed diff syntax/context checked for changed R5 paths; Xcode/real iOS pending
