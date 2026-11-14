@@ -20,3 +20,11 @@
 - R10 board abstract field and R11 console are intentionally cosmetic and take no search-point/PV information. They must not become covert hints.
 - Two separate animation Timelines may increase GPU use: normal ≤24Hz, low power ≤9Hz console; Reduce Motion pauses updates. Apple-device energy/thermal validation outstanding.
 - Complete combined product PATCH.diff is still not applied to full repository/Xcode; proposal only under governance.
+
+## R12 actual-search UI risks
+- Earlier R7/R8 forbade revealing search point coordinates during active human play. Owner now explicitly requests real path visualization. Narrow exception: ONLY while native AI is calculating and human cannot act; clear immediately after AI move, cancellation, match change, disabled toggle, or stale session; no active-human replay.
+- This R12 patch overlaps another Agent's GomokuBot/LocalAIGameController patches (#193/#196/#199/#207/#209/#210) and gameplay UI #208 itself. **No cross-agent edits/merge performed**; Governor must choose callback API/ordering and re-run tactical safety.
+- The optional JavaScriptCore engine currently cannot report 3ply explored-line callbacks. No true events = no ghost stones. Do not animate fabricated points to fill silence.
+- Even correct hypothetical lines could indirectly reveal AI exploration to a watching human. Default OFF, user-controlled; never highlight strength, safest move or probabilities, and never persist active analysis.
+- UI now paints translucent virtual stones on grid, so accessibility must clearly distinguish them from real stones; no hit-target interception; watch runtime/thermal.
+- Current hunk validation is model-side exact-main preimage checking, not Xcode, XCTest or IPA. No direct product or main changes.
