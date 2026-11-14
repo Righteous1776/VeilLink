@@ -6,6 +6,22 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
     case balanced
     case advanced
     case master
+    case grandmaster
+    case legendary
+    case zenith
+
+    /// Only Gomoku exposes the new budgets; Chinese chess remains four-tier.
+    static let xiangqiCases: [BoardBotDifficulty] = [.relaxed, .balanced, .advanced, .master]
+    var isExtendedGomokuTier: Bool { self == .grandmaster || self == .legendary || self == .zenith }
+    /// Compute budget multiplier relative to master, not measured win rate or Elo.
+    var searchBudgetMultiplier: Int {
+        switch self {
+        case .grandmaster: return 2
+        case .legendary: return 4
+        case .zenith: return 6
+        default: return 1
+        }
+    }
 
     var id: String { rawValue }
 
@@ -15,6 +31,9 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
         case .balanced: return "均衡"
         case .advanced: return "进阶"
         case .master: return "宗师"
+        case .grandmaster: return "棋圣 · 2×"
+        case .legendary: return "传奇 · 4×"
+        case .zenith: return "天元 · 6×"
         }
     }
 
@@ -24,6 +43,9 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
         case .balanced: return "稳定策略与本地学习"
         case .advanced: return "更宽候选、更深反击搜索"
         case .master: return "更宽候选与更深搜索；可手动选择节能模式"
+        case .grandmaster: return "宗师计算预算约 2 倍；不表示棋力翻倍"
+        case .legendary: return "宗师计算预算约 4 倍；不表示棋力四倍"
+        case .zenith: return "宗师计算预算约 6 倍；不表示棋力六倍"
         }
     }
 }
@@ -176,6 +198,9 @@ final class LocalAIGameController: ObservableObject {
             boardMatchMoves = saved.moves
             sessionID = saved.sessionID
             boardDifficulty = BoardBotDifficulty(rawValue: saved.difficulty) ?? .balanced
+            if game == .xiangqi && boardDifficulty.isExtendedGomokuTier {
+                boardDifficulty = .master
+            }
             if game == .gomoku {
                 if let winner = gomoku.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
                 else if gomoku.isDraw { outcome = .draw }
@@ -647,6 +672,7 @@ final class LocalAIGameController: ObservableObject {
 
     func setBoardDifficulty(_ difficulty: BoardBotDifficulty) {
         guard game == .gomoku || game == .xiangqi else { return }
+        guard game == .gomoku || !difficulty.isExtendedGomokuTier else { return }
         boardDifficulty = difficulty
     }
 
@@ -839,7 +865,7 @@ final class LocalAIGameController: ObservableObject {
             let budget = GomokuBotBudget.forDifficulty(
                 boardDifficulty,
                 profileLabel: boardSearchMode.budgetProfileLabel
-            ).reinforced(by: learning.trainingLevel)
+            ).reinforced(by: learning.trainingLevel, preserveSearchBudget: boardDifficulty.isExtendedGomokuTier)
             let preference = GomokuFormationPreference(
                 mode: gomokuFormationMode,
                 aiHistory: learningPlies.filter { $0.actor == .guest }.compactMap { Int($0.action) },

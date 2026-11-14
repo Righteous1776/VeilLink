@@ -39,10 +39,22 @@ struct GomokuBotBudget: Equatable, Sendable {
             return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: legacy ? 22 : 36, replyCandidateLimit: legacy ? 14 : 22, continuationCandidateLimit: legacy ? 6 : 14, timeLimitMilliseconds: legacy ? 240 : 520)
         case .master:
             return GomokuBotBudget(candidateRadius: legacy ? 2 : 3, rootCandidateLimit: legacy ? 28 : 48, replyCandidateLimit: legacy ? 16 : 30, continuationCandidateLimit: legacy ? 8 : 20, timeLimitMilliseconds: legacy ? 420 : 950)
+        case .grandmaster, .legendary, .zenith:
+            let master = forDifficulty(.master, profileLabel: profileLabel)
+            return GomokuBotBudget(
+                candidateRadius: master.candidateRadius,
+                rootCandidateLimit: master.rootCandidateLimit,
+                replyCandidateLimit: master.replyCandidateLimit,
+                continuationCandidateLimit: master.continuationCandidateLimit,
+                timeLimitMilliseconds: master.timeLimitMilliseconds * difficulty.searchBudgetMultiplier
+            )
         }
     }
 
-    func reinforced(by trainingLevel: Int) -> GomokuBotBudget {
+    func reinforced(by trainingLevel: Int, preserveSearchBudget: Bool = false) -> GomokuBotBudget {
+        // Learning still affects candidate scores; selected extended time caps
+        // must not be silently re-clamped to the ordinary 1,100 ms limit.
+        if preserveSearchBudget { return self }
         let reinforcement = max(0, min(8, trainingLevel))
         guard reinforcement > 0 else { return self }
         return GomokuBotBudget(
