@@ -50,6 +50,18 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
     private var waitingForHostAcceptance = false
     private var peerLeft = false
     private var foreground = true
+    // Observe committed game reducer state, never cards, finance details, IDs,
+    // display text or complete board snapshots.
+    private var gameObservation: AnyCancellable?
+    private var lastCommittedSignature: String?
+
+    private func flight(_ phase: String, values: [String: Int] = [:],
+                        flags: [String: Bool] = [:], level: DiagnosticLogLevel = .debug) {
+        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+            module: "game.veilopoly.multiplayer", phase: phase,
+            counters: values, flags: flags, level: level
+        )
+    }
 
     init(sessions: any VeilopolyControlChannel, localIdentity: @escaping @MainActor () -> String?,
          resumeURL: URL? = nil, gameSaveDirectory: URL? = nil) {
@@ -72,6 +84,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
         presentationContext = context; isGamePresented = true
     }
     func invite(_ conversation: ConversationSummary, presentationContext: String = "game-lobby") {
+        flight("invite.requested", level: .info)
         lastActionPeer = conversation.peerIdentityID
         guard let local = localIdentity(), local != conversation.peerIdentityID else {
             lastError = "请先启用本机身份，再邀请其他联系人。"
@@ -87,6 +100,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
             lastError = "当前联系人身份无效，未创建或发送联机邀请。"
             return
         }
+        flight("invite.created", flags: ["secure_link": sessions.hasSecureSession(for: conversation.peerIdentityID)])
         outgoingInvitation = config; boundLocalIdentity = local
         self.presentationContext = presentationContext
         lastError = nil
@@ -105,6 +119,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
     }
 
     func acceptInvitation(presentationContext: String = "game-lobby") {
+        flight("invite.accept_requested", level: .info)
         guard let config = incomingInvitation, config.guestIdentityID == localIdentity(),
               Date().timeIntervalSince(invitationBegan) <= 120 else { return }
         do {
@@ -116,6 +131,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
     }
 
     func declineInvitation() {
+        flight("invite.decline", level: .info)
         if let config = incomingInvitation {
             enqueue(.init(roomID: config.roomID, kind: .decline), to: config.hostIdentityID)
         }
@@ -140,6 +156,8 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
             }
             guard let packet = try assembler.ingest(fragment, from: authenticatedPeer,
                 now: Date().timeIntervalSince1970) else { return }
+            flight("packet.received", values: ["fragment_count": fragment.count],
+                   flags: ["active_room": gameModel != nil])
             switch packet.kind {
             case .invite:
                 guard let config = packet.configuration, config.hostIdentityID == authenticatedPeer,
@@ -185,7 +203,10 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
                 if gameModel?.networkReady == true { lastError = nil }
                 status = gameModel?.networkStatus ?? ""
             }
-        } catch { lastError = "收到无效或不兼容的联机数据，已忽略；未更改对局。" }
+        } catch {
+            flight("packet.invalid", level: .warning)
+            lastError = "收到无效或不兼容的联机数据，已忽略；未更改对局。"
+        }
     }
 
     private func createGame(_ config: VeilopolyRoomConfiguration, restoring: Bool = false) throws {
@@ -199,6 +220,20 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
             self?.enqueue(packet, to: peer)
         }
         configuration = config; boundLocalIdentity = local; peerLeft = false; gameModel = game
+        gameObservation?.cancel()
+        lastCommittedSignature = nil
+        gameObservation = game.$game.sink { [weak self] snapshot in
+            guard let self else { return }
+            let signature = "\(snapshot.nextSeq)|\(snapshot.turn.player)|\(snapshot.turn.phase)|\(snapshot.winner != nil)"
+            guard lastCommittedSignature != signature else { return }
+            lastCommittedSignature = signature
+            flight("reducer." + String(describing: snapshot.turn.phase),
+                   values: ["sequence": snapshot.nextSeq,
+                            "turn_player": snapshot.turn.player,
+                            "players": snapshot.players.count],
+                   flags: ["finished": snapshot.winner != nil, "auction": snapshot.auction != nil, "trade": snapshot.trade != nil, "debt": snapshot.pendingDebt != nil], level: .info)
+        }
+        flight(restoring ? "game.restored" : "game.created", level: .info)
         // The lobby can be backgrounded while constructing/restoring a room.
         // Keep the game reducer's lifecycle gate aligned with the bridge gate.
         game.setNetworkForeground(foreground)
@@ -220,7 +255,10 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
             waitingForHostAcceptance = local == record.configuration.guestIdentityID
             status = "已恢复本地联机断点，等待同一对手上线核对；不会自行变成房主"
             gameModel?.requestNetworkSync()
-        } catch { lastError = "联机房间记录无法恢复，已保留文件；未覆盖单机存档。" }
+        } catch {
+            flight("restore.failed", level: .error)
+            lastError = "联机房间记录无法恢复，已保留文件；未覆盖单机存档。"
+        }
     }
 
     private func persistResumeRecord(_ config: VeilopolyRoomConfiguration, local: String) {
@@ -234,6 +272,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
     }
 
     func leaveRoom() {
+        flight("room.leave", level: .info)
         lastError = nil; lastActionPeer = nil
         let active = configuration ?? outgoingInvitation
         let removeResumeIndex = configuration != nil
@@ -242,6 +281,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
             enqueue(.init(roomID: active.roomID, kind: .leave), to: peer(for: active, local: local))
         }
         gameModel?.flushSave()
+        gameObservation?.cancel(); gameObservation = nil; lastCommittedSignature = nil
         gameModel = nil; configuration = nil; incomingInvitation = nil; outgoingInvitation = nil
         isGamePresented = false; waitingForHostAcceptance = false
         monitorTask?.cancel(); monitorTask = nil
@@ -265,6 +305,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
     }
 
     func reconnectAndSync() {
+        flight("sync.manual_requested", level: .info)
         guard let config = configuration, let local = localIdentity() else { return }
         let peer = peer(for: config, local: local)
         if VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(
@@ -287,10 +328,12 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
         if [.status, .snapshot, .resync].contains(packet.kind),
            outgoing.contains(where: { $0.peer == peer && $0.packet.kind == packet.kind }) { return }
         guard outgoing.count < 128 else {
+            flight("queue.full", values: ["queue_depth": outgoing.count], level: .error)
             gameModel?.setNetworkAvailability(false, message: "同步队列已满，已暂停；请重新同步")
             return
         }
         outgoing.append(Outbound(peer: peer, packet: packet))
+        flight("packet.queued", values: ["queue_depth": outgoing.count])
         guard senderTask == nil else { return }
         let generation = senderGeneration
         senderTask = Task { @MainActor [weak self] in await self?.drain(generation: generation) }
@@ -328,6 +371,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
                     guard sent else { throw VeilopolyRoomError.sequenceGap }
                     try await Task.sleep(nanoseconds: 20_000_000)
                 }
+                flight("packet.sent", values: ["fragments": fragments.count])
                 if item.packet.kind == .invite, outgoingInvitation?.roomID == item.packet.roomID {
                     status = "城市经济 V5 邀请已提交加密通道，等待对方接受（120 秒有效）"
                 }
@@ -340,6 +384,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
                 } else {
                     status = "加密控制通道暂不可用，已暂停；请重连后重试或取消邀请。"
                 }
+                flight("packet.send_failed", flags: ["unsupported_peer": error is SendFailure], level: .error)
                 lastError = status
                 gameModel?.setNetworkAvailability(false, message: status)
                 return
@@ -396,11 +441,13 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
         if gameModel?.networkReady == false || gameModel?.awaitingHost == true { gameModel?.requestNetworkSync() }
     }
     private func suspendForIdentityChange() {
+        flight("identity_change.suspend", level: .warning)
         gameModel?.flushSave()
         gameModel?.setNetworkAvailability(false, message: "本机身份已切换，原联机房间暂停")
         senderTask?.cancel(); senderTask = nil; senderGeneration = UUID(); outgoing = []
         monitorTask?.cancel(); monitorTask = nil
         isGamePresented = false
+        gameObservation?.cancel(); gameObservation = nil; lastCommittedSignature = nil
         gameModel = nil; configuration = nil; incomingInvitation = nil; outgoingInvitation = nil
         boundLocalIdentity = nil
     }
