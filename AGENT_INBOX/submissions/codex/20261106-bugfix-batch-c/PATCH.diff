@@ -1,0 +1,241 @@
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -320,7 +320,14 @@
+     }
+ }
+ 
+-struct ChatView: View {
++private struct ChatBottomOffsetPreferenceKey: PreferenceKey {
++    static let defaultValue: CGFloat = .greatestFiniteMagnitude
++    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
++        value = nextValue()
++    }
++}
++
++struct ChatView: View {
+     @ObservedObject var model: AppModel
+     let conversation: ConversationSummary
+     @State private var messages: [ChatMessage] = []
+@@ -350,7 +357,10 @@
+     @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
+     @State private var hasOlderMessages = false
+     @State private var messageReloadGeneration = 0
+-    @State private var isReloadingMessages = false
++    @State private var isReloadingMessages = false
++    @State private var didInitialBottomAnchor = false
++    @State private var isNearBottom = true
++    private var chatBottomAnchorID: String { "chat-bottom-\(conversation.id)" }
+     @State private var loadedFullHistoryForSearch = false
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+ 
+@@ -422,8 +432,9 @@
+                 .transition(.opacity.combined(with: .move(edge: .top)))
+             }
+ 
+-            ScrollViewReader { proxy in
+-                ScrollView {
++            ScrollViewReader { proxy in
++                GeometryReader { viewport in
++                ScrollView {
+                     LazyVStack(spacing: 12) {
+                         if hasOlderMessages && !showsSearchBar {
+                             Button(action: loadOlderMessages) {
+@@ -511,7 +522,17 @@
+                                 .id(message.id)
+                             }
+                         }
+-                        if showsSearchBar, !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, visibleMessages.isEmpty {
++                        // Stable target even if the last stored packet is hidden game traffic.
++                        Color.clear
++                            .frame(height: 1)
++                            .background(GeometryReader { marker in
++                                Color.clear.preference(
++                                    key: ChatBottomOffsetPreferenceKey.self,
++                                    value: marker.frame(in: .named("chatScroll")).maxY
++                                )
++                            })
++                            .id(chatBottomAnchorID)
++                        if showsSearchBar, !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, visibleMessages.isEmpty {
+                             VStack(spacing: 8) {
+                                 Image(systemName: "magnifyingglass")
+                                     .font(.title2)
+@@ -527,9 +548,28 @@
+                     .padding(.vertical, 14)
+                     .animation(usesReducedInteractionMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
+                 }
+-                .onChange(of: messages.last?.id) { _ in
+-                    if !showsSearchBar, let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+-                }
++                .coordinateSpace(name: "chatScroll")
++                .onAppear {
++                    // reload() completes asynchronously; anchor now only if data is available.
++                    guard !didInitialBottomAnchor, !visibleMessages.isEmpty else { return }
++                    didInitialBottomAnchor = true
++                    DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
++                }
++                .onChange(of: visibleMessages.last?.id) { _ in
++                    guard !showsSearchBar, !visibleMessages.isEmpty else { return }
++                    if !didInitialBottomAnchor {
++                        didInitialBottomAnchor = true
++                        DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
++                    } else if isNearBottom {
++                        // Do not steal scroll position when the user is reading older messages.
++                        DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
++                    }
++                }
++                .onPreferenceChange(ChatBottomOffsetPreferenceKey.self) { bottomY in
++                    guard didInitialBottomAnchor, bottomY.isFinite else { return }
++                    let nearBottom = bottomY - viewport.size.height <= 200
++                    if isNearBottom != nearBottom { isNearBottom = nearBottom }
++                }
+                 .onChange(of: pendingWorkspaceJumpID) { target in
+                     guard let target else { return }
+                     if usesReducedInteractionMotion {
+@@ -539,12 +579,13 @@
+                             proxy.scrollTo(target, anchor: .center)
+                         }
+                     }
+-                    pendingWorkspaceJumpID = nil
+-                    model.haptics.selection()
+-                }
+-            }
+-
+-            VStack(spacing: 0) {
++                    pendingWorkspaceJumpID = nil
++                    model.haptics.selection()
++                }
++                }
++            }
++
++            VStack(spacing: 0) {
+                 if let mediaStatus {
+                     HStack(spacing: 8) {
+                         if isPreparingImage { ProgressView().controlSize(.small) }
+@@ -738,9 +779,11 @@
+             reload()
+             model.setConversationVisible(conversation.id, visible: true)
+         }
+-        .onDisappear {
+-            model.setConversationVisible(conversation.id, visible: false)
+-        }
++        .onDisappear {
++            model.setConversationVisible(conversation.id, visible: false)
++            didInitialBottomAnchor = false
++            isNearBottom = true
++        }
+         .onChange(of: model.messagesRevision) { _ in
+             if showsConversationWorkspace { prepareConversationWorkspace(presentWhenReady: false) }
+             else { reload(loadAll: showsSearchBar && loadedFullHistoryForSearch) }
+diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
+--- a/VeilLink/UI/MiniGameViews.swift
++++ b/VeilLink/UI/MiniGameViews.swift
+@@ -588,8 +588,9 @@
+ 
+     var body: some View {
+         VStack(alignment: .leading, spacing: 12) {
+-            Button(action: onOpen) {
+-                VStack(alignment: .leading, spacing: 12) {
++            // Keep only the explicit CTA tappable, so a vertical drag over
++            // the rest of the card reaches the ancestor chat ScrollView.
++            VStack(alignment: .leading, spacing: 12) {
+                     HStack(spacing: 11) {
+                         ZStack {
+                             Circle().fill(VeilTheme.gold.opacity(isIncomingInvitation ? 0.16 : 0.10))
+@@ -619,17 +620,19 @@
+                         Text("·")
+                         Text("#\(session.id.prefix(4))")
+                         Spacer()
+-                        Text(session.status == .active ? "进入棋局" : (isIncomingInvitation ? "查看详情" : "查看"))
+-                            .fontWeight(.semibold)
+-                            .foregroundColor(VeilTheme.gold)
++                        Button(action: onOpen) {
++                            Text(session.status == .active ? "进入棋局" : (isIncomingInvitation ? "查看详情" : "查看"))
++                                .fontWeight(.semibold)
++                                .foregroundColor(VeilTheme.gold)
++                        }
++                        .buttonStyle(.plain)
++                        .accessibilityLabel("打开\(session.game.title)对局")
+                     }
+                     .font(.caption2.monospacedDigit())
+                     .foregroundColor(VeilTheme.tertiaryText)
+-                }
+-            }
+-            .buttonStyle(.plain)
+-
+-            if isIncomingInvitation, let onDecline, let onAccept {
++            }
++
++            if isIncomingInvitation, let onDecline, let onAccept {
+                 HStack(spacing: 10) {
+                     Button("拒绝", action: onDecline)
+                         .buttonStyle(VeilGameSecondaryButtonStyle())
+diff --git a/VeilLink/Storage/DatabaseStore.swift b/VeilLink/Storage/DatabaseStore.swift
+--- a/VeilLink/Storage/DatabaseStore.swift
++++ b/VeilLink/Storage/DatabaseStore.swift
+@@ -873,7 +873,7 @@
+                    m.sent_at, m.is_outgoing, m.delivery_state, m.delivery_error, m.transfer_progress, a.id, a.mime_type, a.byte_count
+             FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
+             WHERE m.conversation_id = ?
+-            ORDER BY m.sent_at DESC, m.id DESC
++            ORDER BY m.sent_at DESC, m.rowid DESC
+             LIMIT \(safeLimit + 1);
+             """, bindings: [.text(conversationID)]) { decodedMessage($0) }
+         let hasOlder = rows.count > safeLimit
+@@ -892,7 +892,7 @@
+ 
+     func fetchMessageIDs(conversationID: String) -> [String] {
+         read(
+-            "SELECT id FROM messages WHERE conversation_id = ? ORDER BY sent_at ASC, id ASC;",
++            "SELECT id FROM messages WHERE conversation_id = ? ORDER BY sent_at ASC, rowid ASC;",
+             bindings: [.text(conversationID)]
+         ) { text($0, 0) }
+     }
+@@ -902,7 +902,7 @@
+             SELECT m.id, m.conversation_id, m.sender_identity_id, m.body_ciphertext,
+                    m.sent_at, m.is_outgoing, m.delivery_state, m.delivery_error, m.transfer_progress, a.id, a.mime_type, a.byte_count
+             FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
+-            WHERE m.conversation_id = ? ORDER BY m.sent_at ASC, m.id ASC;
++            WHERE m.conversation_id = ? ORDER BY m.sent_at ASC, m.rowid ASC;
+             """, bindings: [.text(conversationID)]) { decodedMessage($0) }
+     }
+ 
+diff --git a/VeilLinkTests/DatabaseStoreTests.swift b/VeilLinkTests/DatabaseStoreTests.swift
+--- a/VeilLinkTests/DatabaseStoreTests.swift
++++ b/VeilLinkTests/DatabaseStoreTests.swift
+@@ -3,7 +3,34 @@
+ import XCTest
+ @testable import VeilLink
+ 
+-final class DatabaseStoreTests: XCTestCase {
++final class DatabaseStoreTests: XCTestCase {
++    func testEqualTimestampMessagesFollowLocalInsertionOrderAcrossReadPaths() throws {
++        let (store, root) = try makeStore()
++        defer { try? FileManager.default.removeItem(at: root) }
++        let conversation = try store.createConversation(
++            localIdentityID: "local-order", peerIdentityID: "peer-order", title: "Order"
++        )
++        let instant = Date(timeIntervalSince1970: 1_700_000_000.125)
++        // Reverse lexical ID order to distinguish rowid from UUID-string ordering.
++        let ids = ["zz-last-lexical", "aa-first-lexical", "mm-middle-lexical"]
++        for (index, id) in ids.enumerated() {
++            try store.saveMessage(ChatMessage(
++                id: id, conversationID: conversation,
++                senderIdentityID: index.isMultiple(of: 2) ? "local-order" : "peer-order",
++                body: "message-\(index)", sentAt: instant,
++                isOutgoing: index.isMultiple(of: 2), deliveryState: .queued
++            ))
++        }
++        XCTAssertEqual(store.fetchMessageIDs(conversationID: conversation), ids)
++        XCTAssertEqual(store.fetchMessages(conversationID: conversation).map(\.id), ids)
++        XCTAssertEqual(store.fetchRecentMessages(conversationID: conversation, limit: 32).messages.map(\.id), ids)
++        // Duplicate retransmission must not move the original record.
++        try store.saveMessage(ChatMessage(
++            id: ids[0], conversationID: conversation, senderIdentityID: "local-order",
++            body: "duplicate", sentAt: instant, isOutgoing: true, deliveryState: .queued
++        ))
++        XCTAssertEqual(store.fetchMessageIDs(conversationID: conversation), ids)
++    }
+     func testIdentityDeletionClearsDurableControlPayloadAndTargets() throws {
+         let (store, root) = try makeStore()
+         defer { try? FileManager.default.removeItem(at: root) }
