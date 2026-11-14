@@ -1,0 +1,9 @@
+# Integration risks and overlap
+
+1. **Shared theme root**: AppearanceTheme.swift and AppTheme.swift are core display surfaces. New `.forge` is additive, but owner must review exhaustive switches/new model persistence and day/night behavior before merge.
+2. **PR #231 supersedence**: existing mechanical animation proposal edits `NearbyView.swift` and `AgentStatusView.swift`; do not apply both patch sets independently. This FORGE proposal replaces their appearance-level intent with theme-scoped UI and should become the canonical theme candidate; the older PR remains an audit reference until Governor decides.
+3. **PR #229 dependency**: root global particle deletion in `VeilLinkApp.swift` is separate. FORGE itself introduces no root-level particle system but cannot guarantee a particle-free app until #229 is integrated.
+4. **Theme scope**: current hard-coded surface colors in nested game/third-party screens may not fully inherit FORGE palette. This R1 installs the shell and selected system panels, not a claim that every hard-coded UI has been redesigned. Audit remaining screens after actual iOS visual review.
+5. **Legacy device/SwiftUI**: TimelineView, gradient layers and stator ticks require iOS simulator and physical-device validation. Existing VeilMotionPolicy and app lifecycle gates minimize but do not prove zero performance impact.
+6. **Data truthfulness**: RF/CPU rotor only reflects state; cannot infer clock rates/search depth; actual BLE health score is a diagnostic scalar, not signal strength or throughput.
+7. **No release authority**: Inbox-only five-document submission; no product files, main, version, signing, workflows or IPA changed.
