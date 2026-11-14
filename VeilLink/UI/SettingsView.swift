@@ -53,7 +53,8 @@ struct SettingsView: View {
         VeilStableScrollView {
             VStack(spacing: 16) {
                 profileCard.veilStaggeredEntrance(index: 0)
-                securityCard.veilStaggeredEntrance(index: 1)
+                unifiedImportCard.veilStaggeredEntrance(index: 1)
+                securityCard.veilStaggeredEntrance(index: 2)
                 VeilSettingsDisclosureSection(section: .appearanceAndData, isExpanded: $appearanceAndDataExpanded) {
                     VStack(spacing: 12) {
                         appearanceCard
@@ -449,25 +450,35 @@ struct SettingsView: View {
         .veilCard()
     }
 
+    private var unifiedImportCard: some View {
+        NavigationLink(destination: VeilFileInboxView(model: model)) {
+            HStack(spacing: 13) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+                    .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("统一导入文件")
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.text)
+                    Text("苹果「文件」· 自动识别备份、训练包与文档")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+            .padding(14)
+            .veilCard(emphasized: true)
+        }
+        .buttonStyle(VeilPressStyle())
+    }
+
     private var storageCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("数据与备份", systemImage: "externaldrive")
                 .font(VeilType.cardTitle).foregroundColor(VeilTheme.goldBright)
-            NavigationLink(destination: VeilFileInboxView(model: model)) {
-                HStack {
-                    Image(systemName: "folder.badge.plus")
-                        .foregroundColor(VeilTheme.goldBright)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("统一导入文件").fontWeight(.semibold)
-                        Text("使用苹果「文件」· 自动识别并分发")
-                            .font(.caption).foregroundColor(VeilTheme.secondaryText)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                }
-            }
-            .buttonStyle(VeilPressStyle())
-            Divider().background(VeilTheme.hairline)
             NavigationLink(destination: StorageManagementView(model: model)) {
                 HStack {
                     Image(systemName: "internaldrive")
