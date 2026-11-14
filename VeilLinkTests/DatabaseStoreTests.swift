@@ -4,6 +4,51 @@ import XCTest
 @testable import VeilLink
 
 final class DatabaseStoreTests: XCTestCase {
+    func testTwoMinutePeerClockSkewNeverReordersMessageBubbles() throws {
+        let (store, root) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let local = "local-skew"
+        let peer = "peer-skew"
+        let conversation = try store.createConversation(
+            localIdentityID: local, peerIdentityID: peer, title: "Clock Skew"
+        )
+        let now = Date()
+        // The remote clock runs two minutes ahead. Arrival / local send order is
+        // remote A, local B, remote C, even though sentAt suggests B is oldest.
+        let entries: [(String, String, Date, Bool)] = [
+            ("peer-a", peer, now.addingTimeInterval(120), false),
+            ("local-b", local, now, true),
+            ("peer-c", peer, now.addingTimeInterval(121), false)
+        ]
+        for (id, sender, sentAt, outgoing) in entries {
+            try store.saveMessage(ChatMessage(
+                id: id, conversationID: conversation, senderIdentityID: sender,
+                body: id, sentAt: sentAt, isOutgoing: outgoing,
+                deliveryState: .delivered
+            ))
+        }
+        let expected = entries.map { $0.0 }
+        XCTAssertEqual(store.fetchMessageIDs(conversationID: conversation), expected)
+        XCTAssertEqual(store.fetchMessages(conversationID: conversation).map(\\.id), expected)
+        XCTAssertEqual(store.fetchRecentMessages(conversationID: conversation, limit: 32).messages.map(\\.id), expected)
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.lastMessage, "peer-c")
+        let updatedAt = try XCTUnwrap(store.fetchConversations(localIdentityID: local).first?.updatedAt)
+        XCTAssertLessThan(abs(updatedAt.timeIntervalSinceNow), 15)
+
+        // A duplicate resend / delivery update must not displace its bubble.
+        try store.saveMessage(ChatMessage(
+            id: "peer-a", conversationID: conversation, senderIdentityID: peer,
+            body: "duplicate", sentAt: now.addingTimeInterval(125),
+            isOutgoing: false, deliveryState: .delivered
+        ))
+        XCTAssertEqual(store.fetchMessages(conversationID: conversation).map(\\.id), expected)
+
+        // Local deletion previews must also follow insertion order rather than remote clocks.
+        try store.deleteMessageLocally(messageID: "peer-c", conversationID: conversation)
+        XCTAssertEqual(store.fetchMessageIDs(conversationID: conversation), ["peer-a", "local-b"])
+        XCTAssertEqual(store.fetchConversations(localIdentityID: local).first?.lastMessage, "local-b")
+    }
+
     func testEqualTimestampMessagesFollowLocalInsertionOrderAcrossReadPaths() throws {
         let (store, root) = try makeStore()
         defer { try? FileManager.default.removeItem(at: root) }
