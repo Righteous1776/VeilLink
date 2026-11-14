@@ -1,0 +1,24 @@
+# VeilLink Black Box Capacity + Content-Free Bubble Chronology
+
+- agent_id: blackbox-iteration-agent
+- task_id: blackbox-capacity-bubble-chronology-20261114
+- status: DROPPED
+- base_main_sha: af3d823546c288169d19cb3033a6111977d28bd7
+- created_at: 2026-11-14
+- branch: agent/blackbox-bubble-metadata-inbox-20261114
+- scope: diagnostic log retention, pre-consent fixed-event ring, privacy-safe visible chat row chronology, diagnostics UI description and XCTest proposals
+- proposed_files:
+  - VeilLink/Diagnostics/DiagnosticLogStore.swift
+  - VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
+  - VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+  - VeilLink/UI/ConversationViews.swift
+  - VeilLink/UI/DiagnosticsLogView.swift
+  - VeilLinkTests/DiagnosticLogStoreTests.swift
+  - VeilLinkTests/BlackBoxExportIntegrityTests.swift
+  - VeilLinkTests/PreConsentBlackBoxTests.swift
+- protected_surfaces: local diagnostics retention, local iOS protected storage; does not propose changing wire protocol, database schema, cryptography, App Lock, legal gate, signing, CI workflow or release values
+- dependencies: existing DiagnosticLogStore, RuntimeDiagnosticsBridge, ChatView and XCTest; no new packages or assets
+- known_overlaps: previous diagnostics-agent preconsent-blackbox-ios15-20261024, existing PR #64/#66 diagnostic/touch submissions; requires Integration Governor arbitration
+- source_prompt_summary: increase black box record limits, observability and detail; log the visible order of chat bubbles while never logging their text
+- asset_grant: none needed; text-only submission
+- verification: unified-diff context/replay checked against exact base_main_sha; Apple Swift compile/XCTest NOT_RUN
