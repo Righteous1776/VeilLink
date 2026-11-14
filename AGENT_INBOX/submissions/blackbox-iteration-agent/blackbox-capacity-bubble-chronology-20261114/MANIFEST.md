@@ -1,24 +1,25 @@
-# VeilLink Black Box Capacity + Content-Free Bubble Chronology
+# VEILLINK Diagnostic Flight Recorder / five-night coverage revision
 
 - agent_id: blackbox-iteration-agent
 - task_id: blackbox-capacity-bubble-chronology-20261114
 - status: DROPPED
 - base_main_sha: af3d823546c288169d19cb3033a6111977d28bd7
-- created_at: 2026-11-14
-- branch: agent/blackbox-bubble-metadata-inbox-20261114
-- scope: diagnostic log retention, pre-consent fixed-event ring, privacy-safe visible chat row chronology, diagnostics UI description and XCTest proposals
+- revision_date: 2026-11-14
+- scope: bounded 512 MiB diagnostics, visible-bubble order metadata, rotation loss evidence, registry inventory and module hook API, explicit owner capture activation, pre-consent ring 512
 - proposed_files:
   - VeilLink/Diagnostics/DiagnosticLogStore.swift
   - VeilLink/Diagnostics/VeilPreConsentBlackBox.swift
   - VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
   - VeilLink/UI/ConversationViews.swift
   - VeilLink/UI/DiagnosticsLogView.swift
+  - VeilLink/UI/OwnerConsoleView.swift
+  - VeilLink/UI/VeilFeatureLibraryView.swift
   - VeilLinkTests/DiagnosticLogStoreTests.swift
   - VeilLinkTests/BlackBoxExportIntegrityTests.swift
   - VeilLinkTests/PreConsentBlackBoxTests.swift
-- protected_surfaces: local diagnostics retention, local iOS protected storage; does not propose changing wire protocol, database schema, cryptography, App Lock, legal gate, signing, CI workflow or release values
-- dependencies: existing DiagnosticLogStore, RuntimeDiagnosticsBridge, ChatView and XCTest; no new packages or assets
-- known_overlaps: previous diagnostics-agent preconsent-blackbox-ios15-20261024, existing PR #64/#66 diagnostic/touch submissions; requires Integration Governor arbitration
-- source_prompt_summary: increase black box record limits, observability and detail; log the visible order of chat bubbles while never logging their text
-- asset_grant: none needed; text-only submission
-- verification: unified-diff context/replay checked against exact base_main_sha; Apple Swift compile/XCTest NOT_RUN
+- protected_surfaces: diagnostics local files, owner UI and pre-consent separation. NO wire protocol, SQLite schema, cryptography, private entitlements, signing, CI, version or release changes
+- dependencies: SwiftUI / existing Foundation, ZIPFoundation, MetricKit; no binaries or new libraries
+- known_overlaps: earlier diagnostics-agent preconsent task; PR #64/#66 instrumentation and protected UI
+- source_prompt_summary: global future-proof module diagnostics and complete five-night owner debugging; prioritize no message plaintext and auditable data loss, improve in-app hooks without OS privilege bypass
+- asset_grant: none, proposal text only
+- verification: unified diff context replay against main PASS; Xcode XCTest/hardware/privacy benchmark NOT_RUN
