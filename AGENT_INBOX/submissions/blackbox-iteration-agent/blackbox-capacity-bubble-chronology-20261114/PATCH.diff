@@ -659,7 +659,32 @@ diff --git a/VeilLink/UI/VeilFeatureLibraryView.swift b/VeilLink/UI/VeilFeatureL
 diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.swift
 --- a/VeilLink/UI/OwnerConsoleView.swift
 +++ b/VeilLink/UI/OwnerConsoleView.swift
-@@ -342,6 +342,25 @@
+@@ -292,6 +292,24 @@
+ 
+             Divider().background(VeilTheme.hairline)
+ 
++            HStack(spacing: 9) {
++                Label(telemetry.touchProbeReady ? "触摸监听可用" : "监听安装异常",
++                      systemImage: telemetry.touchProbeReady
++                        ? "checkmark.circle" : "exclamationmark.triangle")
++                    .font(.caption)
++                    .foregroundColor(telemetry.touchProbeReady
++                        ? VeilTheme.goldBright : VeilTheme.secondaryText)
++                Spacer()
++                Text("已采集 \\(telemetry.capturedTouchCount) 次")
++                    .font(.caption.monospacedDigit())
++                    .foregroundColor(VeilTheme.goldBright)
++            }
++            .accessibilityIdentifier("owner.telemetry.touch_probe_status")
++            Text(telemetry.rawTouchCaptureEnabled
++                 ? "触摸监听已开启：在本页面点按或滑动，此处的次数应增加。键盘和输入区域不记录坐标。"
++                 : "触摸采集未开启：启用下方开关后，通过本页面触摸次数验证是否真正生效。")
++                .font(.caption2).foregroundColor(VeilTheme.secondaryText)
++
+             Toggle(isOn: $telemetry.rawTouchCaptureEnabled) {
+                 VStack(alignment: .leading, spacing: 2) {
+                     Text("全量 UI 触摸黑匣子")
+@@ -342,6 +360,25 @@
  
              Divider().background(VeilTheme.hairline)
  
