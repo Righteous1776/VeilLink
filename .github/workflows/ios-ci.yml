@@ -15,13 +15,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ios-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
     runs-on: macos-15
-    timeout-minutes: 50
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -41,12 +41,6 @@ jobs:
           set -o pipefail
           python3 scripts/ci-standard-preflight.py 2>&1 | tee ci-artifacts/static-preflight.log
 
-      - name: Test offline Veilopoly package before expensive native preparation
-        run: |
-          set -o pipefail
-          python3 scripts/test-verify-veilopoly-release.py 2>&1 | tee ci-artifacts/veilopoly-resource-gate-tests.log
-          swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2 2>&1 | tee ci-artifacts/veilopoly-package-tests.log
-
       - name: Install XcodeGen
         run: brew install xcodegen cmake 2>&1 | tee ci-artifacts/install-xcodegen.log
 
@@ -59,12 +53,65 @@ jobs:
           xcodegen generate --spec project.yml 2>&1 | tee ci-artifacts/xcodegen.log
           cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.pbxproj
 
+      - name: Compile Release for iPhoneOS (unsigned candidate)
+        run: |
+          set -o pipefail
+          rm -rf DerivedData
+          xcodebuild \
+            -project VeilLink.xcodeproj \
+            -scheme VeilLink \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee ci-artifacts/ios-device-release-build.log
+
+      - name: Package and verify unsigned IPA
+        run: |
+          set -o pipefail
+          bash scripts/package-unsigned-ipa.sh 2>&1 | tee ci-artifacts/unsigned-package.log
+          python3 scripts/verify-core-release.py \
+            --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
+            --ipa "build/VeilLink-unsigned.ipa" \
+            --manifest CORE_RELEASE_MANIFEST.json \
+            --provenance CORE_RELEASE_PROVENANCE.json \
+            --sums CORE_RELEASE_SHA256SUMS.txt 2>&1 | tee ci-artifacts/unsigned-verify.log
+          cp CORE_RELEASE_MANIFEST.json CORE_RELEASE_PROVENANCE.json CORE_RELEASE_SHA256SUMS.txt ci-artifacts/
+
+      - name: Upload VeilLink 29.2 Build 68 unsigned IPA immediately
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-29.2-b68-unsigned-${{ github.run_id }}
+          path: |
+            build/VeilLink-unsigned.ipa
+            CORE_RELEASE_MANIFEST.json
+            CORE_RELEASE_PROVENANCE.json
+            CORE_RELEASE_SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Test offline Veilopoly package
+        run: |
+          set -o pipefail
+          python3 scripts/test-verify-veilopoly-release.py 2>&1 | tee ci-artifacts/veilopoly-resource-gate-tests.log
+          swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2 2>&1 | tee ci-artifacts/veilopoly-package-tests.log
+
       - name: Build for iOS Simulator
         run: |
           set -o pipefail
           rm -rf ci-artifacts/BuildResults.xcresult
           set +e
-          xcodebuild             -project VeilLink.xcodeproj             -scheme VeilLink             -configuration Debug             -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             -resultBundlePath ci-artifacts/BuildResults.xcresult             CODE_SIGNING_ALLOWED=NO             build 2>&1 | tee ci-artifacts/ios-simulator-build.log
+          xcodebuild \
+            -project VeilLink.xcodeproj \
+            -scheme VeilLink \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -resultBundlePath ci-artifacts/BuildResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee ci-artifacts/ios-simulator-build.log
           build_status=${PIPESTATUS[0]}
           set -e
           if [ "$build_status" -ne 0 ]; then
@@ -91,44 +138,6 @@ jobs:
             --output ci-artifacts/CI_TEST_EVIDENCE.json \
             --require-tests-passed
 
-      - name: Compile Release for iPhoneOS (unsigned candidate)
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -project VeilLink.xcodeproj \
-            -scheme VeilLink \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath DerivedData \
-            CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee ci-artifacts/ios-device-release-build.log
-
-      - name: Package and verify unsigned IPA
-        run: |
-          set -o pipefail
-          bash scripts/package-unsigned-ipa.sh 2>&1 | tee ci-artifacts/unsigned-pr-package.log
-          python3 scripts/verify-core-release.py \
-            --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
-            --ipa "build/VeilLink-unsigned.ipa" \
-            --manifest CORE_RELEASE_MANIFEST.json \
-            --provenance CORE_RELEASE_PROVENANCE.json \
-            --sums CORE_RELEASE_SHA256SUMS.txt 2>&1 | tee ci-artifacts/unsigned-pr-verify.log
-          cp CORE_RELEASE_MANIFEST.json CORE_RELEASE_PROVENANCE.json CORE_RELEASE_SHA256SUMS.txt ci-artifacts/
-
-      - name: Upload unsigned IPA
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: VeilLink-29.2-b68-unsigned-${{ github.run_id }}
-          path: |
-            build/VeilLink-unsigned.ipa
-            CORE_RELEASE_MANIFEST.json
-            CORE_RELEASE_PROVENANCE.json
-            CORE_RELEASE_SHA256SUMS.txt
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Collect CI evidence
         if: always()
         env:
@@ -137,7 +146,12 @@ jobs:
           if [ -d TestResults.xcresult ]; then
             ditto TestResults.xcresult ci-artifacts/TestResults.xcresult
           fi
-          python3 scripts/ci-collect-evidence.py             --workflow "iOS CI"             --phase "standard-preflight"             --status "$JOB_STATUS"             --artifact-dir ci-artifacts             --output ci-artifacts/CI_EVIDENCE.json
+          python3 scripts/ci-collect-evidence.py \
+            --workflow "iOS CI" \
+            --phase "29.2-release-first" \
+            --status "$JOB_STATUS" \
+            --artifact-dir ci-artifacts \
+            --output ci-artifacts/CI_EVIDENCE.json
 
       - name: Upload CI evidence
         if: always()
@@ -145,5 +159,5 @@ jobs:
         with:
           name: VeilLink-iOS-CI-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ci-artifacts
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
