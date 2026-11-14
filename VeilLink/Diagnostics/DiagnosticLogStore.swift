@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 import ZIPFoundation
 
@@ -85,6 +86,16 @@ struct DiagnosticLogEntry: Codable, Identifiable, Hashable {
     let metadata: [String: String]
 }
 
+private struct DiagnosticExportFileSummary: Codable {
+    let name: String
+    let byteCount: Int
+    let eventCount: Int
+    let invalidLineCount: Int
+    let firstSequence: UInt64?
+    let lastSequence: UInt64?
+    let sha256: String
+}
+
 private struct DiagnosticExportManifest: Codable {
     let format: String
     let version: Int
@@ -93,7 +104,15 @@ private struct DiagnosticExportManifest: Codable {
     let build: String
     let runtimeSessionID: String
     let eventCount: Int
+    /// Diagnostic store's in-memory window can be larger than what disk retained.
+    /// Never present this as the number of records actually included in the ZIP.
+    let inMemoryEventCount: Int
+    let invalidLineCount: Int
+    let logWriteFailureCount: Int
+    let droppedUnpersistedLineCount: Int
+    let unpersistedBytes: Int
     let logFileCount: Int
+    let files: [DiagnosticExportFileSummary]
     let retentionBytes: Int
     let privacy: String
 }
@@ -103,6 +122,8 @@ private struct DiagnosticExportIndex: Codable {
     let firstTimestamp: Date?
     let lastTimestamp: Date?
     let eventCount: Int
+    let invalidLineCount: Int
+    let files: [DiagnosticExportFileSummary]
     let categoryCounts: [String: Int]
     let levelCounts: [String: Int]
     let currentScreen: String
@@ -129,6 +150,11 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
     private let maxRecentEntries = 2_000
     private let maxAuxiliaryBytes = 24 * 1_024 * 1_024
     private let flushThresholdBytes = 256 * 1_024
+    // Keep diagnostics failures from turning into an unbounded RAM leak.
+    private let maxPendingBufferBytes = 4 * 1_024 * 1_024
+    private var logWriteFailureCount = 0
+    private var droppedUnpersistedLineCount = 0
+    private var nextPersistRetryUptime: TimeInterval = 0
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private var nextSequence: UInt64 = 1
@@ -233,6 +259,8 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             if let encoded = try? self.encoder.encode(entry) {
                 self.pendingBuffer.append(encoded)
                 self.pendingBuffer.append(0x0A)
+                // Bound RAM during a five-second disk retry backoff as well.
+                self.trimPendingBufferUnsafe()
                 if self.pendingBuffer.count >= self.flushThresholdBytes {
                     self.flushPendingBufferUnsafe()
                 } else {
@@ -275,19 +303,24 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
 
     @MainActor
     func exportBundle(context: String, extraFiles: [String: Data] = [:]) throws -> URL {
-        logQueue.sync { flushPendingBuffer() }
-
         let staging = fileManager.temporaryDirectory
             .appendingPathComponent("VeilLink-Diagnostics-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: staging) }
 
-        let logURLs = existingLogURLs()
-        for source in logURLs {
-            try fileManager.copyItem(
-                at: source,
-                to: staging.appendingPathComponent(source.lastPathComponent)
-            )
+        // Take the exact log-file snapshot on the serial writer queue. Copying
+        // outside this barrier races the logger's append/rotation and can mix
+        // different generations of runtime.N.jsonl in one archive.
+        let logURLs = try logQueue.sync { () throws -> [URL] in
+            flushPendingBuffer(force: true)
+            let sources = orderedLogURLsForReading()
+            for source in sources {
+                try fileManager.copyItem(
+                    at: source,
+                    to: staging.appendingPathComponent(source.lastPathComponent)
+                )
+            }
+            return sources.map { staging.appendingPathComponent($0.lastPathComponent) }
         }
 
         let auxiliary = auxiliaryURLs()
@@ -299,7 +332,10 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             }
         }
 
-        let index = makeExportIndex()
+        // Index and manifest derive from copied files only, never recentEntries.
+        // In particular, 2,000 entries in memory do not imply 2,000 records
+        // survived file rotation or failed writes on an iOS 15 device.
+        let index = try makeExportIndex(from: logURLs)
         let manifest = DiagnosticExportManifest(
             format: "VeilLinkDiagnostics",
             version: 2,
@@ -307,8 +343,14 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             appVersion: VeilBuildInfo.shortVersion,
             build: VeilBuildInfo.build,
             runtimeSessionID: runtimeSessionID,
-            eventCount: recentEntries.count,
+            eventCount: index.eventCount,
+            inMemoryEventCount: recentEntries.count,
+            invalidLineCount: index.invalidLineCount,
+            logWriteFailureCount: withStateLock { logWriteFailureCount },
+            droppedUnpersistedLineCount: withStateLock { droppedUnpersistedLineCount },
+            unpersistedBytes: withStateLock { pendingBuffer.count },
             logFileCount: logURLs.count,
+            files: index.files,
             retentionBytes: retentionBytes,
             privacy: "No message plaintext, media payload, password/PIN, private/session key, pairing code or AI prompt is intentionally recorded. Technical identifiers may be included for correlation."
         )
@@ -393,20 +435,100 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         return result
     }
 
+    /// Read exactly what was staged for the ZIP, not the in-memory cache.
+    /// Streaming 64 KiB chunks avoids allocating a second ~16 MB log image
+    /// while an older 2 GB RAM device is preparing its crash report.
     @MainActor
-    private func makeExportIndex() -> DiagnosticExportIndex {
-        let entries = recentEntries
+    private func makeExportIndex(from stagedLogURLs: [URL]) throws -> DiagnosticExportIndex {
         var categoryCounts: [String: Int] = [:]
         var levelCounts: [String: Int] = [:]
-        for entry in entries {
-            categoryCounts[entry.category.rawValue, default: 0] += 1
-            levelCounts[entry.level.rawValue, default: 0] += 1
+        var firstTimestamp: Date?
+        var lastTimestamp: Date?
+        var totalEvents = 0
+        var totalInvalidLines = 0
+        var files: [DiagnosticExportFileSummary] = []
+
+        for url in stagedLogURLs {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            var hasher = SHA256()
+            var pendingLine = Data()
+            var droppingOversizedLine = false
+            var fileEvents = 0
+            var invalidLines = 0
+            var fileFirstSequence: UInt64?
+            var fileLastSequence: UInt64?
+            var byteCount = 0
+
+            func consumeLine(_ bytes: Data) {
+                guard !bytes.isEmpty else { return }
+                guard let entry = try? decoder.decode(DiagnosticLogEntry.self, from: bytes) else {
+                    invalidLines += 1
+                    return
+                }
+                fileEvents += 1
+                totalEvents += 1
+                categoryCounts[entry.category.rawValue, default: 0] += 1
+                levelCounts[entry.level.rawValue, default: 0] += 1
+                if let old = firstTimestamp {
+                    firstTimestamp = min(old, entry.timestamp)
+                } else {
+                    firstTimestamp = entry.timestamp
+                }
+                if let old = lastTimestamp {
+                    lastTimestamp = max(old, entry.timestamp)
+                } else {
+                    lastTimestamp = entry.timestamp
+                }
+                if fileFirstSequence == nil { fileFirstSequence = entry.sequence }
+                fileLastSequence = entry.sequence
+            }
+
+            while let chunk = try handle.read(upToCount: 65_536), !chunk.isEmpty {
+                byteCount += chunk.count
+                hasher.update(data: chunk)
+                var segmentStart = chunk.startIndex
+                for index in chunk.indices where chunk[index] == 0x0A {
+                    if !droppingOversizedLine {
+                        pendingLine.append(contentsOf: chunk[segmentStart..<index])
+                        if pendingLine.count > 65_536 { invalidLines += 1 }
+                        else { consumeLine(pendingLine) }
+                    }
+                    pendingLine.removeAll(keepingCapacity: true)
+                    droppingOversizedLine = false
+                    segmentStart = chunk.index(after: index)
+                }
+                if !droppingOversizedLine && segmentStart < chunk.endIndex {
+                    pendingLine.append(contentsOf: chunk[segmentStart..<chunk.endIndex])
+                    if pendingLine.count > 65_536 {
+                        // A corrupt line must not become unbounded export RAM.
+                        invalidLines += 1
+                        pendingLine.removeAll(keepingCapacity: true)
+                        droppingOversizedLine = true
+                    }
+                }
+            }
+            if !pendingLine.isEmpty && !droppingOversizedLine {
+                // The writer always terminates JSONL with \n. An incomplete
+                // last record is diagnostically useful but never counted valid.
+                invalidLines += 1
+            }
+            totalInvalidLines += invalidLines
+            let sha256 = hasher.finalize().map { String(format: "%02x", Int($0)) }.joined()
+            files.append(DiagnosticExportFileSummary(
+                name: url.lastPathComponent, byteCount: byteCount,
+                eventCount: fileEvents, invalidLineCount: invalidLines,
+                firstSequence: fileFirstSequence, lastSequence: fileLastSequence,
+                sha256: sha256
+            ))
         }
         return DiagnosticExportIndex(
             generatedAt: Date(),
-            firstTimestamp: entries.first?.timestamp,
-            lastTimestamp: entries.last?.timestamp,
-            eventCount: entries.count,
+            firstTimestamp: firstTimestamp,
+            lastTimestamp: lastTimestamp,
+            eventCount: totalEvents,
+            invalidLineCount: totalInvalidLines,
+            files: files,
             categoryCounts: categoryCounts,
             levelCounts: levelCounts,
             currentScreen: DeepTelemetry.shared.currentScreen
@@ -422,22 +544,45 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func flushPendingBuffer() {
+    private func flushPendingBuffer(force: Bool = false) {
         stateLock.lock()
-        flushPendingBufferUnsafe()
+        flushPendingBufferUnsafe(force: force)
         stateLock.unlock()
         notifyObservers()
     }
 
-    private func flushPendingBufferUnsafe() {
+    private func flushPendingBufferUnsafe(force: Bool = false) {
         flushTask?.cancel()
         flushTask = nil
         guard !pendingBuffer.isEmpty else { return }
+        // Repeated disk-protection or storage errors must not cause a new
+        // flush/rotation attempt on every UI event.
+        if !force && ProcessInfo.processInfo.systemUptime < nextPersistRetryUptime {
+            scheduleFlushUnsafe()
+            return
+        }
 
         let data = pendingBuffer
+        // NEVER rotate/delete retained evidence before the new write succeeds.
+        // On an iOS protected-storage/disk-full failure the retry must leave
+        // every previously persisted runtime.N.jsonl untouched.
+        guard append(data) else {
+            // A failed FileHandle write used to silently discard the ENTIRE
+            // pending buffer, giving 2,000 cached entries but 72 on disk.
+            // Preserve for a later retry, but limit it on low-memory devices.
+            logWriteFailureCount += 1
+            nextPersistRetryUptime = ProcessInfo.processInfo.systemUptime + 5
+            trimPendingBufferUnsafe()
+            // Retry asynchronously; don't block the main UI on unavailable disk.
+            scheduleFlushUnsafe()
+            return
+        }
         pendingBuffer.removeAll(keepingCapacity: true)
-        let rotated = rotateIfNeeded(incomingBytes: data.count)
-        append(data)
+        nextPersistRetryUptime = 0
+        // Roll over only after a confirmed append. Even if the archival
+        // rename fails, the appended bytes remain in the active log and will
+        // be included by export, rather than having been lost beforehand.
+        let rotated = rotateIfNeeded(incomingBytes: 0)
         flushesSinceDiskUsageRefresh += 1
         if rotated || flushesSinceDiskUsageRefresh >= 8 {
             refreshDiskUsageUnsafe()
@@ -445,6 +590,20 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         } else {
             diskUsageBytesStorage = min(retentionBytes, max(0, diskUsageBytesStorage + data.count))
             lastRefreshAtStorage = Date()
+        }
+    }
+
+    /// Preserve complete JSONL records at the tail of the retry buffer.
+    /// This is called under stateLock on the serial logging queue.
+    private func trimPendingBufferUnsafe() {
+        while pendingBuffer.count > maxPendingBufferBytes {
+            guard let newline = pendingBuffer.firstIndex(of: 0x0A) else {
+                pendingBuffer.removeAll(keepingCapacity: true)
+                droppedUnpersistedLineCount += 1
+                break
+            }
+            pendingBuffer.removeSubrange(pendingBuffer.startIndex...newline)
+            droppedUnpersistedLineCount += 1
         }
     }
 
@@ -482,22 +641,36 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         )
     }
 
-    private func append(_ data: Data) {
+    @discardableResult
+    private func append(_ data: Data) -> Bool {
         if !fileManager.fileExists(atPath: currentLogURL.path) {
-            try? data.write(
-                to: currentLogURL,
-                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
-            )
-            return
+            do {
+                try data.write(
+                    to: currentLogURL,
+                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+                )
+                return true
+            } catch {
+                return false
+            }
         }
 
         do {
             let handle = try FileHandle(forWritingTo: currentLogURL)
             defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data)
+            let originalLength = try handle.seekToEnd()
+            do {
+                try handle.write(contentsOf: data)
+                return true
+            } catch {
+                // An interrupted append can leave partial JSONL. Best effort
+                // rollback prevents duplicate sequence numbers on the retry.
+                try? handle.truncate(atOffset: originalLength)
+                return false
+            }
         } catch {
-            // Diagnostics must never become a new source of runtime failure.
+            // Keep failed data in RAM, never pretend persistence succeeded.
+            return false
         }
     }
 
