@@ -28,3 +28,11 @@
 - Even correct hypothetical lines could indirectly reveal AI exploration to a watching human. Default OFF, user-controlled; never highlight strength, safest move or probabilities, and never persist active analysis.
 - UI now paints translucent virtual stones on grid, so accessibility must clearly distinguish them from real stones; no hit-target interception; watch runtime/thermal.
 - Current hunk validation is model-side exact-main preimage checking, not Xcode, XCTest or IPA. No direct product or main changes.
+
+## R12 risks and boundaries
+- Actual spatial search branches could teach a human despite the lack of ranking/scores. Default OFF; only visible during AI compute, cleared immediately on finish; never claim absolute zero-information disclosure. Hide for competitive play.
+- Native `GomokuBot` is the current trace source. Optional JSCore engine does not emit callbacks; do not generate fake paths, and label limited support in the advanced setting.
+- Other Agent PR #199/#206/#207/#209/#210 and R5 #193/#196 overlap `GomokuBot.swift` and/or controller. Governor must resolve; no self-merge or simultaneous blind patch application.
+- Race/cancel: store token and turn guard filter stale detached worker events; opt-out and restart clear; formal Apple concurrency stress and performance tests outstanding.
+- UI R10 abstract random board field replaced in place; not drawn in addition. R11 textual console remains separate and explicitly decorative. Original VeilLink themes remain authoritative.
+- Local main patch compatibility was verified in memory; actual Xcode build/iOS XCTest, production search event stream and release NOT done.
