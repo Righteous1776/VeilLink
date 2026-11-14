@@ -10,6 +10,8 @@
 - Game lobby `LazyVStack`, removal of zero-distance decorative drag handlers, and reduced unrelated motion work to preserve vertical scrolling (PR #235).
 - FORGE industrial orange/graphite theme with theme-scoped RF/CPU instrumentation and accessibility/motion policy (PR #233), reworked to preserve Wave 1 keyboard stability.
 - Flight Recorder R5: 512 MiB configurable retention budget, bounded pre-consent events, rotation/integrity and structural bubble-order diagnostics; module telemetry and **explicitly opt-in** pass-through touch capture with secure-input/keyboard redaction (PR #222).
+- BLE physical/GATT connection status classification, non-destructive recovery UI while PHY negotiation continues, and in-place bounded GATT discovery/notify retry. Integrates the still-missing safe portion of Inbox PR #223 and #225; BLE real-device behavior remains unverified.
+- Veilopoly noncritical STATUS/RESYNC backpressure no longer pauses an otherwise healthy encrypted room; critical commit/proposal/snapshot failures still pause to preserve authoritative game integrity (PR #225).
 
 ## Important exclusions — DO NOT represent as shipped
 
@@ -26,4 +28,4 @@ Dual-phone BLE/Veilopoly recovery, iOS15 ReplayKit compatibility, actual RF thro
 
 ## Machine-checkable release acceptance
 
-The unified `ios-ci.yml` workflow runs `scripts/verify-inbox-integration.py` before compilation and against the compiled iPhoneOS `.app`. Its `INBOX_INTEGRATION_AUDIT.json` source/executable receipt ships alongside the IPA, allowing users to distinguish accepted changes from unmerged Inbox-only proposals. The source gate checks 8 accepted functional areas, not the entire historical AGENT_INBOX backlog. This is not a physical-device behavior attestation.
+The unified `ios-ci.yml` workflow runs `scripts/verify-inbox-integration.py` before compilation and against the compiled iPhoneOS `.app`. Its `INBOX_INTEGRATION_AUDIT.json` source/executable receipt ships alongside the IPA, allowing users to distinguish accepted changes from unmerged Inbox-only proposals. The source gate checks 10 accepted functional areas, not the entire historical AGENT_INBOX backlog. This is not a physical-device behavior attestation.

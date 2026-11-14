@@ -29,6 +29,19 @@ final class BLELinkSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.transportStage, .phyConnected)
         XCTAssertTrue(snapshot.statusTitle.contains("PHY_CONNECTED"))
         XCTAssertFalse(snapshot.isConnected)
+        XCTAssertTrue(snapshot.hasPhysicalLink)
+        XCTAssertFalse(snapshot.isRecovering)
+    }
+
+    func testUnknownPhysicalLinkOffersActualRecovery() {
+        let snapshot = BLEPeerLinkSnapshot(
+            id: UUID(), isConnected: false, isWanted: true, reconnectAttempt: 2,
+            rssi: nil, quality: .unknown, pendingPackets: 0, pendingBytes: 0,
+            controlPendingPackets: 0, maximumPacketSize: nil, role: .unavailable,
+            transportStage: .unavailable, stalledFor: nil
+        )
+        XCTAssertFalse(snapshot.hasPhysicalLink)
+        XCTAssertTrue(snapshot.isRecovering)
     }
 
     func testQueueSummaryCallsOutControlTraffic() {

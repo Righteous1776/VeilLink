@@ -315,7 +315,7 @@ private struct NearbyPeerCard: View {
 
             if let linkSnapshot {
                 HStack(spacing: 8) {
-                    Image(systemName: linkSnapshot.isConnected ? "antenna.radiowaves.left.and.right" : (linkSnapshot.isRecovering ? "arrow.triangle.2.circlepath" : "wave.3.right"))
+                    Image(systemName: linkSnapshot.hasPhysicalLink ? "antenna.radiowaves.left.and.right" : (linkSnapshot.isRecovering ? "arrow.triangle.2.circlepath" : "wave.3.right"))
                         .font(.caption.weight(.semibold))
                         .foregroundColor(linkSnapshot.isConnected ? VeilTheme.success : VeilTheme.gold)
                     VStack(alignment: .leading, spacing: 2) {

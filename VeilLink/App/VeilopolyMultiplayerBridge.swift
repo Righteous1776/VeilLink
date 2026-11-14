@@ -377,16 +377,32 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
                 }
             } catch {
                 if Task.isCancelled || generation != senderGeneration { return }
-                outgoing = [] // Authoritative state is saved; recovery sends a NEW snapshot, not stale moves.
+                // A failed non-authoritative status/resync probe is not a physical
+                // disconnect; preserve the room if the authenticated session remains.
+                let isProbePacket = item.packet.kind == .status || item.packet.kind == .resync
+                let remainingAreProbes = outgoing.allSatisfy {
+                    $0.packet.kind == .status || $0.packet.kind == .resync
+                }
+                let nonCriticalProbeFailure = isProbePacket && remainingAreProbes
+                    && sessions.hasSecureSession(for: item.peer)
+                    && !(error is SendFailure)
+                outgoing = [] // Never replay a partially accepted authoritative move.
                 if error is SendFailure {
                     status = "对方链路未声明支持联机控制消息，请确认两端均已升级并重新连接。"
                     if item.packet.kind == .invite { outgoingInvitation = nil }
+                } else if nonCriticalProbeFailure {
+                    status = "游戏同步探测暂时拥塞；加密会话仍可用，稍后继续探测。"
                 } else {
-                    status = "加密控制通道暂不可用，已暂停；请重连后重试或取消邀请。"
+                    status = "重要对局数据未成功提交，保留进度并等待核对；不代表蓝牙物理断开。"
                 }
-                flight("packet.send_failed", flags: ["unsupported_peer": error is SendFailure], level: .error)
+                flight("packet.send_failed", flags: [
+                    "unsupported_peer": error is SendFailure,
+                    "advisory_only": nonCriticalProbeFailure
+                ], level: nonCriticalProbeFailure ? .warning : .error)
                 lastError = status
-                gameModel?.setNetworkAvailability(false, message: status)
+                if !nonCriticalProbeFailure {
+                    gameModel?.setNetworkAvailability(false, message: status)
+                }
                 return
             }
         }

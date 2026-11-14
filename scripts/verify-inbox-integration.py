@@ -41,6 +41,14 @@ FEATURES = {
         "VeilLink/Diagnostics/DeepTelemetry.swift": ["rawTouchCaptureEnabled", "enum DeepTelemetryTouchPolicy"],
         "VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift": ["bubbleWindowSignatures", "nextBubbleToken"],
     },
+    "ble-physical-vs-gatt-state-and-recovery": {
+        "VeilLink/Transport/BLELinkSnapshot.swift": ["var hasPhysicalLink: Bool", "isWanted && !isConnected && !hasPhysicalLink"],
+        "VeilLink/UI/NearbyView.swift": ["linkSnapshot.hasPhysicalLink"],
+        "VeilLink/Transport/BLETransport.swift": ["蓝牙数据通道握手暂未就绪，原地重试发现与订阅", "peripheral.setNotifyValue(true, for: characteristic)"],
+    },
+    "veilopoly-advisory-status-probe": {
+        "VeilLink/App/VeilopolyMultiplayerBridge.swift": ["nonCriticalProbeFailure", "remainingAreProbes"],
+    },
     "particle-overlay-removal": {
         "VeilLink/App/VeilLinkApp.swift": [],
     },

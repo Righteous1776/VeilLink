@@ -1074,13 +1074,23 @@ final class BLETransport: NSObject, ObservableObject {
                   let peripheral = remotePeripherals[id],
                   peripheral.state == .connected,
                   remoteCharacteristics[id]?.isNotifying != true else { continue }
-            statusText = "蓝牙数据通道握手超时，正在重新建立连接"
+            // A live PHY is not lost just because GATT discovery/subscribe is late.
+            // Re-arm one bounded watchdog interval and retry in-place; never cancel a
+            // connected CoreBluetooth peripheral on a timer alone.
+            gattHandshakeWatchdog.physicalLinkConnected(
+                id, uptime: ProcessInfo.processInfo.systemUptime
+            )
+            statusText = "蓝牙数据通道握手暂未就绪，原地重试发现与订阅"
             DiagnosticLogStore.shared.log(
                 .warning, .bluetooth,
                 event: "ble.gatt_handshake_timeout",
-                metadata: ["phase": "notification_wait", "attempt": String(reconnectAttempts[id] ?? 0)]
+                metadata: ["phase": "in_place_retry", "attempt": String(reconnectAttempts[id] ?? 0)]
             )
-            centralManager.cancelPeripheralConnection(peripheral)
+            if let characteristic = remoteCharacteristics[id] {
+                peripheral.setNotifyValue(true, for: characteristic)
+            } else {
+                peripheral.discoverServices([Self.serviceUUID])
+            }
         }
     }
 
