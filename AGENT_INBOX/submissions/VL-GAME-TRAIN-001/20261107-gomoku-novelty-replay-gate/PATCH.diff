@@ -1,0 +1,123 @@
+diff --git a/VeilLink/Agent/Games/NativeGomokuSelfPlay.swift b/VeilLink/Agent/Games/NativeGomokuSelfPlay.swift
+--- a/VeilLink/Agent/Games/NativeGomokuSelfPlay.swift
++++ b/VeilLink/Agent/Games/NativeGomokuSelfPlay.swift
+@@ -17,10 +17,12 @@
+ /// subsequent move comes from the production native GomokuBot.chooseMove.
+ /// "Games trained" counts only complete, legal, durably recorded matches.
+ enum NativeGomokuSelfPlay {
+-    private static let openingIndices = [
+-        112, 111, 113, 97, 127, 96, 98, 126, 128,
+-        110, 114, 82, 142, 95, 99, 125, 129
+-    ]
++    // A deterministic 7×7 central opening curriculum replaces the old 17
++    // hardcoded starts. Novelty does not imply strength: finished games still
++    // have to pass legal replay, de-duplication and held-out A/B gates.
++    static let openingIndices: [Int] = (4...10).flatMap { row in
++        (4...10).map { column in row * GomokuState.size + column }
++    }
+ 
+     /// Intentionally bounded for a real device; the user may resume in batches.
+     static let trainingBudget = GomokuBotBudget(
+diff --git a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
+--- a/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
++++ b/VeilLink/Agent/Games/AdaptiveBoardLearning.swift
+@@ -507,12 +507,33 @@
+         guard scopedGame == .gomoku, !requiresRecovery, !games.isEmpty else { return 0 }
+         let previous = database
+         var accepted = 0
++        // Count new *experiences*, not thousands of deterministic replays
++        // of the same line. Keep the old archive unchanged for provenance.
++        var seenSequences = Set(database.recentGames.map { $0.actions })
+         for game in games {
+-            guard game.result != .unfinished, !game.plies.isEmpty,
+-                  game.plies.allSatisfy({
+-                      $0.position.hasPrefix("g:")
+-                      && Int($0.action).map { (0..<225).contains($0) } == true
+-                  }) else { continue }
++            guard game.result != .unfinished, !game.plies.isEmpty else { continue }
++
++            // Fail closed on forged/out-of-order position hashes, illegal stones,
++            // nonterminal claimed wins, or mislabelled winners.
++            var replay = GomokuState()
++            var sequence: [String] = []
++            sequence.reserveCapacity(game.plies.count)
++            var valid = true
++            for ply in game.plies {
++                guard ply.position == AdaptiveBoardPosition.gomoku(replay),
++                      ply.actor == replay.currentPlayer,
++                      let index = Int(ply.action),
++                      replay.apply(index: index, actor: ply.actor) else {
++                    valid = false
++                    break
++                }
++                sequence.append((ply.actor == .host ? "h" : "a") + ply.action)
++            }
++            guard valid, replay.winner != nil || replay.isDraw,
++                  game.result == (replay.isDraw ? .draw
++                      : (replay.winner == .guest ? .aiWon : .humanWon)),
++                  seenSequences.insert(sequence).inserted else { continue }
++
+             database.sequence += 1
+             let sequence = database.sequence
+             for ply in game.plies {
+@@ -529,7 +550,7 @@
+             database.recentGames.append(GameRecord(
+                 game: .gomoku,
+                 result: game.result,
+-                actions: game.plies.map { ($0.actor == .host ? "h" : "a") + $0.action },
++                actions: sequence,
+                 finishedAt: Date()
+             ))
+             accepted += 1
+diff --git a/VeilLinkTests/NativeGomokuSelfPlayTests.swift b/VeilLinkTests/NativeGomokuSelfPlayTests.swift
+--- a/VeilLinkTests/NativeGomokuSelfPlayTests.swift
++++ b/VeilLinkTests/NativeGomokuSelfPlayTests.swift
+@@ -52,6 +52,11 @@
+         )
+         XCTAssertEqual(archive.summary.completedGames, 1)
+         XCTAssertTrue(archive.lastSaveSucceeded)
++        XCTAssertEqual(
++            archive.recordCompletedNativeBatch([(plies: game.plies, result: game.result)]),
++            0, "Repeated lines must not be counted as additional learning"
++        )
++        XCTAssertEqual(archive.summary.completedGames, 1)
+ 
+         // Export the dedicated native archive, not the human-player repertoire.
+         // It must retain every move and the actual terminal result.
+@@ -83,6 +88,36 @@
+         XCTAssertGreaterThan(restored.summary.rememberedPositions, 0)
+     }
+ 
++    func testOpeningCurriculumHas49DistinctCentralSeeds() {
++        let openings = NativeGomokuSelfPlay.openingIndices
++        XCTAssertEqual(openings.count, 49)
++        XCTAssertEqual(Set(openings).count, 49)
++        XCTAssertTrue(openings.contains(112))
++        XCTAssertTrue(openings.allSatisfy {
++            let row = $0 / GomokuState.size
++            let col = $0 % GomokuState.size
++            return (4...10).contains(row) && (4...10).contains(col)
++        })
++    }
++
++    func testForgedNonterminalNativeResultIsNeverCommitted() {
++        let url = FileManager.default.temporaryDirectory
++            .appendingPathComponent("veillink-native-fake-\(UUID().uuidString).json")
++        defer { try? FileManager.default.removeItem(at: url) }
++        let archive = AdaptiveBoardLearningStore(game: .gomoku, fileURL: url)
++        let start = GomokuState()
++        let ply = AdaptiveBoardPly(
++            position: AdaptiveBoardPosition.gomoku(start),
++            action: "112",
++            actor: .host
++        )
++        XCTAssertEqual(
++            archive.recordCompletedNativeBatch([(plies: [ply], result: .humanWon)]),
++            0
++        )
++        XCTAssertEqual(archive.summary.completedGames, 0)
++    }
++
+     func testNoFalseMatchesWhenGameDidNotComplete() async {
+         let game = await Task.detached {
+             NativeGomokuSelfPlay.play(
