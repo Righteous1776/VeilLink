@@ -1,0 +1,35 @@
+{
+  "repository_head": "eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0",
+  "source_sha256": {
+    "VeilLink/Core/MiniGames.swift": "2bd7e04f6622845f50923a0363255e82a69ebb0efba19ccb78efe271694a5916",
+    "VeilLink/Agent/Games/AdaptiveBoardLearning.swift": "9857f2caf1a27b24a432b3b029797dadf27f62d6bee8bde4973988d358e8ccd7",
+    "VeilLink/Agent/Games/LocalAIGameController.swift": "381faa075c294c2f973474498a2c563ede06e04f4d92fdb2f372ccda1d0a4202",
+    "VeilLink/Agent/Games/GomokuFormationLearning.swift": "89fc31fc31d6d5531bcb4f99ec9ca246735ecae2abba418be1de29be214665ba"
+  },
+  "extracted_support_sha256": "2e486998f3a8ec4f5102f8a9d5a38b2eec3f5aa4d6183d4f2522a047bd0ca822",
+  "compiler": [
+    "/workspace/scratch/swift/usr/bin/swiftc",
+    "-O",
+    "-o",
+    "/workspace/scratch/eclipse-integration/production_hook_tests",
+    "/workspace/scratch/eclipse-integration/ExtractedProductionDependencies.swift",
+    "/workspace/VeilLink/VeilLink/Agent/Games/GomokuCounterForkR4.swift",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Native/GomokuBot.swift",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Native/VeilGomokuUnifiedBridge.swift",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Native/VeilGomokuUnifiedSearch.swift",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Training/EclipseTrainedOrdering.swift",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/IntegrationTests/ProductionHookTests.swift"
+  ],
+  "scope": "Linux Swift local production-hook compile; no iOS/XCTest/build-resource claim",
+  "compiled_sha256": {
+    "/workspace/VeilLink/VeilLink/Agent/Games/GomokuCounterForkR4.swift": "2decd204532a671b19013a00e35848cb15a09410d63222b147ba5dd7a1d76991",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Native/GomokuBot.swift": "316a05b599727fc9e225e466a1dc814303b5fefbd32cd164d9a88c2989d5485a",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Native/VeilGomokuUnifiedBridge.swift": "59799006a4758e9ccbaadcc89b9df7671762244e78ceca17e1175af7078f1408",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Native/VeilGomokuUnifiedSearch.swift": "8dc3a0a51e578dbef73da595c6183b19464d127002a78c61174b6a5d36b091e9",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Training/EclipseTrainedOrdering.swift": "2ea800600753fc1456b29556dac53d99a5c3e8c6ecd9084fd18c14fdaa0aefbe",
+    "/workspace/VeilLink/AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/IntegrationTests/ProductionHookTests.swift": "54141e8f4d3dfbedcd4fc58336e83455414fa77cd43ba661171919f3b5f7ff10"
+  },
+  "result": "PASS",
+  "log": "PASS product empty-center rule\nPASS product mandatory win with hook enabled and disabled\nPASS product mandatory block with hook enabled and disabled\nPASS own win takes priority over opponent threat\nPASS product terminal and wrong-turn guards\nPASS actual GomokuBot -> bridge -> ECLIPSE -> trained policy; move=97 nodes=26 score=4698; oldNodes=97 oldScore=-4675\nPASS fitted model loaded with 23 distinct candidate scores\nALL PRODUCTION HOOK TESTS PASSED (Linux Swift; iOS/XCTest not run)\n",
+  "note": "Pilot model only; rerun after final canonical-action-orbit dedup refit."
+}

@@ -1,0 +1,8 @@
+{
+  "base_main_sha": "eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0",
+  "files": 6,
+  "main_git_apply_check": "PASS",
+  "isolated_apply_and_byte_readback": "6/6 identical",
+  "product_tree_edited": false,
+  "patch_sha256": "5d5bee7d041fed7145140a87bb24e978aaa603c0efc1f315c09cd1e07cd2afb1"
+}

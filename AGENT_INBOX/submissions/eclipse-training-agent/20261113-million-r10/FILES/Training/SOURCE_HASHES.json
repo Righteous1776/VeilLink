@@ -1,0 +1,34 @@
+{
+  "EclipseTrainedOrdering.swift": {
+    "bytes": 153494,
+    "sha256": "f89f234fcf2db59c52db70f1d2352576e727fd3c070fbb055ae59e10c391abfe"
+  },
+  "PARITY_AUDIT.json": {
+    "bytes": 1395,
+    "sha256": "1b05aa1262d4cd407aedc15df7660f196c6f3bb136f9146a51269dd238523b30"
+  },
+  "README.md": {
+    "bytes": 8378,
+    "sha256": "13211d9ebf3b1b81090faeba730ceda061759094398b91c8d69f839f098c3f06"
+  },
+  "TRAINING_METRICS.json": {
+    "bytes": 6632,
+    "sha256": "6808363f90d8531c9f8fb6df4ff4254a76963c9ca477bedba02dabb1370988ca"
+  },
+  "VerifyOrderingParity.swift": {
+    "bytes": 994,
+    "sha256": "5925003f2aaa641abcd0e233244ad845b91237e04e21c8a2d8b35caaaa806ada"
+  },
+  "audit_training.py": {
+    "bytes": 7448,
+    "sha256": "2b7d4b4369a21c9ffc992b24ee22a1ce899db88a4d74778509bf72adc9c301b1"
+  },
+  "candidate_teacher.cpp": {
+    "bytes": 4231,
+    "sha256": "fb8d65e171753843e78a712c29704de77d154bb62aa3a4e15972af94146caf1d"
+  },
+  "train_ordering.py": {
+    "bytes": 18505,
+    "sha256": "4b33370f66812fed067bacb32649906950ac0aaf1483868ce00d2810e03d41e8"
+  }
+}

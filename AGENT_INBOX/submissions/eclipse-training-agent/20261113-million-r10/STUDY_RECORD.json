@@ -1,0 +1,24 @@
+{
+  "source": "live_repo + owner_uploaded_archives",
+  "base_main_sha": "eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0",
+  "mode": "LOCAL_VALIDATION / INBOX_ONLY proposal",
+  "current_repository_rules_read": [
+    "AGENTS.md",
+    "AGENT_INBOX/00_READ_ME_FIRST.md",
+    "AGENT_INBOX/01_GOVERNOR_IDENTITY.md",
+    "AGENT_INBOX/02_RULES.md",
+    "AGENT_INBOX/03_PROMPT_FOR_AGENTS.md",
+    "AGENT_INBOX/05_SUBMISSION_FLOW.md",
+    "AGENT_INBOX/06_ASSET_DROP_POLICY.md",
+    "AGENT_INBOX/ASSET_GRANTS.json",
+    "GitHub Issue6 + relevant comments"
+  ],
+  "missing_current_main": [
+    "governance/CONSTITUTION_SEAL.json",
+    "governance/MANDATORY_READ_SET.json",
+    "AGENT_INBOX/07_LEARNING_GATE.md",
+    "AGENT_EXCHANGE"
+  ],
+  "dual_learning_state": "PARTIAL; not installed on current main; no fabricated machine PASS",
+  "scope": "own submission only; product changes advisory; no release/integration grant claimed"
+}

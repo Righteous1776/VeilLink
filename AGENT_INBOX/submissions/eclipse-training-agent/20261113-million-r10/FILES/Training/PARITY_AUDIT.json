@@ -1,0 +1,43 @@
+{
+  "all_pre_dedup_candidate_rows": 2195214,
+  "actual_fitted_array_rows": 2189491,
+  "actual_fitted_rows_by_split": [
+    1848616,
+    120343,
+    220532
+  ],
+  "actual_fit_array_matches_full_d4_board_action_orbits": true,
+  "all_candidate_pairs_exact_canonical_board_action_unique": true,
+  "d4_canonical_board_identity_overlap_between_splits": 0,
+  "d4_board_action_orbits_by_split": [
+    1848616,
+    120343,
+    220532
+  ],
+  "symmetry_equivalent_action_redundancy_by_split": [
+    5204,
+    0,
+    519
+  ],
+  "boards_with_nontrivial_automorphism_by_split": [
+    49,
+    0,
+    5
+  ],
+  "independent_bruteforce_teacher_rows": 48,
+  "teacher_label_mismatches": 0,
+  "own_fork_checks_without_preexisting_immediate_wins": 36,
+  "positive_opponent_fork_cases": 20,
+  "positive_own_fork_cases": 16,
+  "positive_completion_cases": 12,
+  "teacher_label_mismatch_details": [],
+  "swift_fixture_rows": 9024,
+  "swift_original_private_fixture_rows": 4000,
+  "swift_color_inversion_rows": 4000,
+  "swift_additional_d4_color_rows": 1024,
+  "swift_feature_mismatches": 0,
+  "swift_integer_score_mismatches": 0,
+  "max_float_prediction_error": 0.0,
+  "wall_seconds": 33.408883810043335,
+  "limitations": "Full trace D4 families and exact board identity isolation; no claim of opening-connected-component isolation. Tactical teacher heuristic, not minimax. No private boards in this aggregate report."
+}

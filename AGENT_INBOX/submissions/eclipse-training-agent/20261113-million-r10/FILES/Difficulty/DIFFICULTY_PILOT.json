@@ -1,0 +1,316 @@
+{
+  "format": "veillink.eclipse.difficulty-calibration.v1",
+  "binary_sha256": "1fe1bfec5ca719f0fb2a1803f8af7e0b08d7abc7e7234f2b4e5e247b22a1a713",
+  "games_per_adjacent": 60,
+  "tier_limits": {
+    "relaxed": [
+      1,
+      4,
+      128,
+      80,
+      0
+    ],
+    "balanced": [
+      2,
+      6,
+      384,
+      180,
+      1
+    ],
+    "advanced": [
+      3,
+      8,
+      1000,
+      400,
+      2
+    ],
+    "master": [
+      4,
+      12,
+      5000,
+      950,
+      3
+    ]
+  },
+  "matches": [
+    {
+      "lower": "relaxed",
+      "higher": "balanced",
+      "raw_sha256": "51e3b9968c668c6baa6181e8479d90ad778dcd0a33623e6f199ab2a51ad24b34",
+      "command": [
+        "/workspace/scratch/eclipse-difficulty/arena",
+        "--baseline-trained",
+        "--games",
+        "60",
+        "--seed",
+        "937552101",
+        "--output",
+        "/workspace/scratch/eclipse-difficulty/calibration-v1/balanced-vs-relaxed.jsonl",
+        "--depth",
+        "2",
+        "--width",
+        "6",
+        "--nodes",
+        "384",
+        "--milliseconds",
+        "180",
+        "--forcing-depth",
+        "1",
+        "--baseline-depth",
+        "1",
+        "--baseline-width",
+        "4",
+        "--baseline-nodes",
+        "128",
+        "--baseline-milliseconds",
+        "80",
+        "--baseline-forcing-depth",
+        "0"
+      ],
+      "report": {
+        "files": {
+          "/workspace/scratch/eclipse-difficulty/calibration-v1/balanced-vs-relaxed.jsonl": {
+            "sha256": "51e3b9968c668c6baa6181e8479d90ad778dcd0a33623e6f199ab2a51ad24b34",
+            "bytes": 374937
+          }
+        },
+        "games": 60,
+        "result": {
+          "trainedWon": 36,
+          "baselineWon": 23,
+          "draw": 1
+        },
+        "resultsByTrainedColor": {
+          "1": {
+            "trainedWon": 22,
+            "baselineWon": 7,
+            "draw": 1
+          },
+          "2": {
+            "baselineWon": 16,
+            "trainedWon": 14
+          }
+        },
+        "invalidReplayErrors": [],
+        "presets": 360,
+        "actualNativeDecisions": 2349,
+        "nodes": 54361,
+        "exactFullSequences": 58,
+        "completeColorPairs": 30,
+        "trainedPointRateCompleteGames": 0.6083333333333333,
+        "perGameWilson95Descriptive": [
+          0.48190111435104804,
+          0.7217283176848324
+        ],
+        "pairedBootstrap95": [
+          0.5,
+          0.7166666666666667
+        ],
+        "completedDepthHistogram": {
+          "2": 966,
+          "1": 1381,
+          "0": 2
+        },
+        "meanMillisecondsPerDecision": 18.006941418588898,
+        "p95MillisecondsPerDecision": 56.60414695739746,
+        "maxMillisecondsPerDecision": 98.76978397369385,
+        "strengthScope": "CPU Linux native kernel at the exact recorded budget; not full Master/Elo/device result",
+        "budgetCaveat": "Node cap applies to counted search-tree nodes; mandatory root safety scans are not included and may exceed the wall-time ceiling"
+      }
+    },
+    {
+      "lower": "balanced",
+      "higher": "advanced",
+      "raw_sha256": "0d00553cec350b1c1820c425efee329e308711b287a8bcb8643c26d27b21aa8f",
+      "command": [
+        "/workspace/scratch/eclipse-difficulty/arena",
+        "--baseline-trained",
+        "--games",
+        "60",
+        "--seed",
+        "937552102",
+        "--output",
+        "/workspace/scratch/eclipse-difficulty/calibration-v1/advanced-vs-balanced.jsonl",
+        "--depth",
+        "3",
+        "--width",
+        "8",
+        "--nodes",
+        "1000",
+        "--milliseconds",
+        "400",
+        "--forcing-depth",
+        "2",
+        "--baseline-depth",
+        "2",
+        "--baseline-width",
+        "6",
+        "--baseline-nodes",
+        "384",
+        "--baseline-milliseconds",
+        "180",
+        "--baseline-forcing-depth",
+        "1"
+      ],
+      "report": {
+        "files": {
+          "/workspace/scratch/eclipse-difficulty/calibration-v1/advanced-vs-balanced.jsonl": {
+            "sha256": "0d00553cec350b1c1820c425efee329e308711b287a8bcb8643c26d27b21aa8f",
+            "bytes": 316774
+          }
+        },
+        "games": 60,
+        "result": {
+          "trainedWon": 40,
+          "baselineWon": 20
+        },
+        "resultsByTrainedColor": {
+          "1": {
+            "trainedWon": 26,
+            "baselineWon": 4
+          },
+          "2": {
+            "baselineWon": 16,
+            "trainedWon": 14
+          }
+        },
+        "invalidReplayErrors": [],
+        "presets": 360,
+        "actualNativeDecisions": 1940,
+        "nodes": 224041,
+        "exactFullSequences": 58,
+        "completeColorPairs": 30,
+        "trainedPointRateCompleteGames": 0.6666666666666666,
+        "perGameWilson95Descriptive": [
+          0.5405686645211968,
+          0.7727073847647731
+        ],
+        "pairedBootstrap95": [
+          0.5666666666666667,
+          0.7666666666666667
+        ],
+        "completedDepthHistogram": {
+          "3": 680,
+          "2": 793,
+          "1": 443,
+          "4": 24
+        },
+        "meanMillisecondsPerDecision": 23.506170818486165,
+        "p95MillisecondsPerDecision": 70.53053379058838,
+        "maxMillisecondsPerDecision": 164.44718837738037,
+        "strengthScope": "CPU Linux native kernel at the exact recorded budget; not full Master/Elo/device result",
+        "budgetCaveat": "Node cap applies to counted search-tree nodes; mandatory root safety scans are not included and may exceed the wall-time ceiling"
+      }
+    },
+    {
+      "lower": "advanced",
+      "higher": "master",
+      "raw_sha256": "2f2118a274d5fdc5f75e46d1c5202310cf2fb3fa35fa37a56ce48daa9a038e29",
+      "command": [
+        "/workspace/scratch/eclipse-difficulty/arena",
+        "--baseline-trained",
+        "--games",
+        "60",
+        "--seed",
+        "937552103",
+        "--output",
+        "/workspace/scratch/eclipse-difficulty/calibration-v1/master-vs-advanced.jsonl",
+        "--depth",
+        "4",
+        "--width",
+        "12",
+        "--nodes",
+        "5000",
+        "--milliseconds",
+        "950",
+        "--forcing-depth",
+        "3",
+        "--baseline-depth",
+        "3",
+        "--baseline-width",
+        "8",
+        "--baseline-nodes",
+        "1000",
+        "--baseline-milliseconds",
+        "400",
+        "--baseline-forcing-depth",
+        "2"
+      ],
+      "report": {
+        "files": {
+          "/workspace/scratch/eclipse-difficulty/calibration-v1/master-vs-advanced.jsonl": {
+            "sha256": "2f2118a274d5fdc5f75e46d1c5202310cf2fb3fa35fa37a56ce48daa9a038e29",
+            "bytes": 341962
+          }
+        },
+        "games": 60,
+        "result": {
+          "trainedWon": 35,
+          "baselineWon": 25
+        },
+        "resultsByTrainedColor": {
+          "1": {
+            "trainedWon": 22,
+            "baselineWon": 8
+          },
+          "2": {
+            "baselineWon": 17,
+            "trainedWon": 13
+          }
+        },
+        "invalidReplayErrors": [],
+        "presets": 360,
+        "actualNativeDecisions": 2099,
+        "nodes": 1693507,
+        "exactFullSequences": 59,
+        "completeColorPairs": 30,
+        "trainedPointRateCompleteGames": 0.5833333333333334,
+        "perGameWilson95Descriptive": [
+          0.45728081022640116,
+          0.6993572144165838
+        ],
+        "pairedBootstrap95": [
+          0.48333333333333334,
+          0.6833333333333333
+        ],
+        "completedDepthHistogram": {
+          "2": 59,
+          "1": 474,
+          "4": 731,
+          "3": 812,
+          "6": 23
+        },
+        "meanMillisecondsPerDecision": 37.31020096655742,
+        "p95MillisecondsPerDecision": 172.53684997558594,
+        "maxMillisecondsPerDecision": 573.6582279205322,
+        "decisionTimingByPolicy": {
+          "learned": {
+            "decisions": 2099,
+            "meanMilliseconds": 37.31020096655742,
+            "p95Milliseconds": 172.53684997558594,
+            "maxMilliseconds": 573.6582279205322
+          }
+        },
+        "strengthScope": "CPU Linux native kernel at the exact recorded budget; not full Master/Elo/device result",
+        "budgetCaveat": "Node cap applies to counted search-tree nodes; mandatory root safety scans are not included and may exceed the wall-time ceiling"
+      }
+    }
+  ],
+  "provenance": {
+    "sources": {
+      "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Native/VeilGomokuUnifiedSearch.swift": "8dc3a0a51e578dbef73da595c6183b19464d127002a78c61174b6a5d36b091e9",
+      "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Training/EclipseTrainedOrdering.swift": "f89f234fcf2db59c52db70f1d2352576e727fd3c070fbb055ae59e10c391abfe",
+      "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Arena/NativeGomokuRules.swift": "988a2e9be5503ed0720291e35e690a2fba54e5a4640e012557827acce091b1f4",
+      "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Arena/EclipseArena.swift": "c5cdb3ce4aaea2e59306009e07d41bed431b53919fb14954ac85442414f37005",
+      "AGENT_INBOX/submissions/eclipse-training-agent/20261113-million-r10/FILES/Difficulty/EclipseDifficultyPolicy.swift": "bfa2779d6dfbdf66e11d82ad4373e686626bb5c6a7aaf6dc3312e5cd090ecd8d"
+    },
+    "seed_plan": [
+      937552101,
+      937552102,
+      937552103
+    ],
+    "games_per_adjacent": 60,
+    "purpose": "Calibrate difficulty at fixed trained model; all source-native decisions and mandatory tactics remain enabled."
+  },
+  "interpretation": "Both players use final f89f234f trained model. These matches compare four proposed search-budget tiers, NOT trained versus untrained. 60 games/30 paired openings per adjacent comparison; no budgets adjusted from results."
+}
