@@ -1,10 +1,16 @@
 --- a/VeilLink/UI/GameLobbyView.swift
 +++ b/VeilLink/UI/GameLobbyView.swift
-@@ -16,2 +16,3 @@
+@@ -337,6 +337,7 @@
+     @State private var showsBoardAdvanced = false
+     @State private var showsLearningImporter = false
      @State private var showsLearningShare = false
 +    @State private var showsEclipseTrace = false
      @State private var learningExportURL: URL?
-@@ -41,3 +42,15 @@
+     @State private var learningExchangeMessage: String?
+     @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
+@@ -360,7 +361,19 @@
+         ScrollView {
+             VStack(spacing: 14) {
                  statusCard
 -                if VeilOpponentAvatarPolicy.shouldRender(
 +                if game == .gomoku {
@@ -21,7 +27,11 @@
 +                    .veilCard()
 +                } else if VeilOpponentAvatarPolicy.shouldRender(
                      enabled: grokBotEnabled, hasComputerOpponent: true
-@@ -93,2 +106,19 @@
+                 ) {
+                     HStack(spacing: 12) {
+@@ -425,6 +438,23 @@
+         .sheet(isPresented: $showsTacticalGuide) {
+             TacticalSoloGuideView()
          }
 +        .sheet(isPresented: $showsEclipseTrace) {
 +            if game == .gomoku {
@@ -41,7 +51,11 @@
 +            }
 +        }
          .sheet(isPresented: $showsLearningShare, onDismiss: {
-@@ -120,2 +150,7 @@
+             if let learningExportURL {
+                 try? FileManager.default.removeItem(at: learningExportURL)
+@@ -524,6 +554,11 @@
+                             .font(.caption2)
+                             .foregroundColor(.orange)
                      }
 +                    if let warning = controller.eclipseArchiveWarning, game == .gomoku {
 +                        Text(warning)
@@ -49,17 +63,107 @@
 +                            .foregroundColor(VeilTheme.danger)
 +                    }
                  }
-@@ -142,3 +177,5 @@
+                 Spacer()
+                 if controller.isAIThinking {
+@@ -643,6 +678,18 @@
+                 .fixedSize(horizontal: false, vertical: true)
+             if game == .gomoku {
+                 Toggle(isOn: Binding(
++                    get: { controller.eclipseVisualizationEnabled },
++                    set: { controller.setEclipseVisualizationEnabled($0) }
++                )) {
++                    VStack(alignment: .leading, spacing: 2) {
++                        Text("棋盘思考可视化").font(.caption.weight(.semibold))
++                        Text("AI 计算时显示已探索的虚拟棋子与分支；非落子建议。")
++                            .font(.caption2).foregroundColor(VeilTheme.secondaryText)
++                    }
++                }
++                .tint(VeilTheme.gold)
++                .accessibilityIdentifier("gomoku.eclipse.live-trace.toggle")
++                Toggle(isOn: Binding(
+                     get: { controller.useExternalGomokuEngine },
+                     set: { controller.setExternalGomokuEngineEnabled($0) }
+                 )) {
+@@ -828,7 +875,14 @@
+                         && model.appLock.isEnabled
+                         && !model.appLock.isLocked
                          && developerLearningGate.canImportTraining()
 -                )
 +                ),
 +                eclipseThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
-+                actualSearchStartedAt: controller.eclipseSearchStartedAt
++                actualSearchStartedAt: controller.eclipseSearchStartedAt,
++                eclipseVisualizationEnabled: controller.eclipseVisualizationEnabled,
++                eclipseTraceStore: controller.eclipseTraceStore,
++                eclipseSessionID: controller.sessionID,
++                eclipseBoardTurn: controller.gomoku.moveCount,
++                eclipseMatchPlaying: controller.outcome == .playing
              ) { index in
+                 if controller.developerTeachingMode,
+                    ownerMode.isAuthorized(for: .developerTraining),
 --- a/VeilLink/Agent/Games/LocalAIGameController.swift
 +++ b/VeilLink/Agent/Games/LocalAIGameController.swift
-@@ -15,2 +15,64 @@
+@@ -72,6 +72,8 @@
+     @Published private(set) var isAIThinking = false
+     @Published private(set) var lastDecisionMode = "基础策略"
+     @Published private(set) var lastDecisionMilliseconds: Int?
++    @Published private(set) var eclipseSearchStartedAt: Date?
++    @Published private(set) var eclipseVisualizationEnabled = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
+     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
+     @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
+     @Published private(set) var boardSearchMode = BoardSearchMode.restore(
+@@ -96,6 +98,7 @@
+     @Published private(set) var developerFormationCount = 0
+     @Published private(set) var didRestoreBoardMatch = false
+     @Published private(set) var boardMatchSaveWarning: String?
++    @Published private(set) var eclipseArchiveWarning: String?
+ 
+     let game: MiniGameKind
+     @Published private(set) var humanPlayer: MiniGamePlayer = .host
+@@ -113,6 +116,8 @@
+ 
+     private var aiTask: Task<Void, Never>?
+     private let boardMatchStore: LocalBoardMatchStore?
++    private let eclipseArchive: VeilGomokuMatchArchive?
++    let eclipseTraceStore = VeilEclipseSearchTraceStore()
+     private var boardMatchMoves: [LocalBoardMatchMove] = []
+     private var boardMatchRecoveryBlocked = false
+     private var inSeparateTeachingSession = false
+@@ -137,6 +142,7 @@
+         // The real hall injects durable storage. Standalone controllers/tests
+         // remain fresh and do not contaminate each other's default directory.
+         self.boardMatchStore = game == .gomoku || game == .xiangqi ? matchStore : nil
++        self.eclipseArchive = game == .gomoku ? VeilGomokuMatchArchive() : nil
+         let resolvedLearningStore = learningStore ?? AdaptiveBoardLearningStore.store(for: game)
+         self.learningStore = resolvedLearningStore
+         self.formationLibrary = formationLibrary
+@@ -180,6 +186,9 @@
+             if outcome != .playing { learningPlies.removeAll() }
+             didRestoreBoardMatch = true
+             boardMatchSaveWarning = nil
++            if game == .gomoku {
++                _ = persistEclipseArchive(status: eclipseArchiveStatus)
++            }
+         } catch {
+             boardMatchRecoveryBlocked = true
+             boardMatchSaveWarning = "存档校验失败：旧文件保留；可以导出黑匣子或明确点击“重开”。"
+@@ -190,6 +199,7 @@
+         guard let disk = boardMatchStore, !inSeparateTeachingSession else { return }
+         boardMatchMoves.append(.init(actor: actor, move: move))
+         guard !boardMatchRecoveryBlocked else { return }
++        if game == .gomoku { _ = persistEclipseArchive(status: .playing) }
+         do {
+             try disk.save(.init(
+                 version: LocalBoardMatchRecord.version, game: game,
+@@ -223,6 +233,75 @@
+ 
      var learningStoreAvailable: Bool { learningStore.lastSaveSucceeded }
+ 
++    func setEclipseVisualizationEnabled(_ enabled: Bool) {
++        guard game == .gomoku else { return }
++        eclipseVisualizationEnabled = enabled
++        UserDefaults.standard.set(enabled, forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
++        if !enabled { eclipseTraceStore.clear() }
++    }
 +
 +    private var eclipseArchiveStatus: VeilGomokuMatchArchive.Status {
 +        switch outcome {
@@ -122,140 +226,266 @@
 +        )
 +        return frames.isEmpty ? [] : moves
 +    }
++
+     var statusText: String {
+         switch outcome {
+         case .humanWon: return "你赢了"
+@@ -235,9 +314,18 @@
+     }
  
-@@ -33,2 +95,3 @@
-     @Published private(set) var lastDecisionMilliseconds: Int?
-+    @Published private(set) var eclipseSearchStartedAt: Date?
-     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
-@@ -47,2 +110,3 @@
-     @Published private(set) var boardMatchSaveWarning: String?
-+    @Published private(set) var eclipseArchiveWarning: String?
- 
-@@ -64,2 +128,3 @@
-     private let boardMatchStore: LocalBoardMatchStore?
-+    private let eclipseArchive: VeilGomokuMatchArchive?
- 
-@@ -79,2 +144,3 @@
-         self.boardMatchStore = game == .gomoku || game == .xiangqi ? matchStore : nil
-+        self.eclipseArchive = game == .gomoku ? VeilGomokuMatchArchive() : nil
-         let resolvedLearningStore = learningStore ?? AdaptiveBoardLearningStore.store(for: game)
-@@ -93,2 +159,5 @@
-             boardMatchSaveWarning = nil
-+            if game == .gomoku {
-+                _ = persistEclipseArchive(status: eclipseArchiveStatus)
-+            }
-         } catch {
-@@ -109,2 +178,3 @@
-         guard !boardMatchRecoveryBlocked else { return }
-+        if game == .gomoku { _ = persistEclipseArchive(status: .playing) }
-         do {
-@@ -122,2 +192,6 @@
      func restart(startAI: Bool = true) {
++        if game == .gomoku { eclipseTraceStore.clear() }
 +        // Keep every move before the legacy latest-match file is discarded.
 +        // Failure blocks restart rather than silently sacrificing the match.
 +        if game == .gomoku, outcome == .playing, !boardMatchMoves.isEmpty,
 +           !persistEclipseArchive(status: .playing) { return }
          if let disk = boardMatchStore {
-@@ -125,2 +199,6 @@
+             do {
                  try disk.discardOnExplicitRestart()
 +                if game == .gomoku, !boardMatchMoves.isEmpty {
 +                    // The playing snapshot already exists if this step fails.
 +                    _ = persistEclipseArchive(status: outcome == .playing ? .interrupted : eclipseArchiveStatus)
 +                }
                  boardMatchMoves.removeAll()
-@@ -142,2 +220,3 @@
+                 boardMatchRecoveryBlocked = false
+                 boardMatchSaveWarning = nil
+@@ -270,6 +358,7 @@
+         developerTeachingMode = false
+         lastDecisionMode = "规则 Bot"
          lastDecisionMilliseconds = nil
 +        eclipseSearchStartedAt = nil
          if startAI { scheduleAIIfNeeded() }
-@@ -155,3 +234,3 @@
+     }
+ 
+@@ -292,7 +381,7 @@
+             return
+         }
          developerTeachingMode = enabled
 -        if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false }
 +        if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false; eclipseSearchStartedAt = nil }
- 
-@@ -169,2 +248,3 @@
+         if !enabled && inSeparateTeachingSession {
+             restoreAfterTeaching()
+         }
+@@ -323,6 +412,7 @@
+         gomoku = GomokuState()
+         outcome = .playing
          isAIThinking = false
 +        eclipseSearchStartedAt = nil
          sessionID = UUID().uuidString
-@@ -185,2 +265,3 @@
+         developerFormationPlies.removeAll(keepingCapacity: true)
+         developerTeachingMode = true
+@@ -595,9 +685,11 @@
+     }
+ 
+     func cancelAI() {
++        if game == .gomoku { eclipseTraceStore.clear() }
+         stopNativeTraining()
+         aiTask?.cancel(); aiTask = nil
          isAIThinking = false
 +        eclipseSearchStartedAt = nil
          // Navigation is not a resignation; leave unsaved learning plies intact.
-@@ -198,2 +279,5 @@
+     }
+ 
+@@ -686,6 +778,9 @@
+             else if magneticHockey.isDraw { outcome = .draw }
+         }
          guard !developerTeachingMode else { return }
 +        if game == .gomoku, outcome != .playing {
 +            _ = persistEclipseArchive(status: eclipseArchiveStatus)
 +        }
          switch outcome {
-@@ -218,2 +302,3 @@
+         case .humanWon: finalizeLearning(as: .humanWon)
+         case .aiWon: finalizeLearning(as: .aiWon)
+@@ -714,10 +809,13 @@
+             try? await Task.sleep(nanoseconds: 180_000_000)
+             guard !Task.isCancelled else { return }
              let started = Date()
 +            self.eclipseSearchStartedAt = self.game == .gomoku ? started : nil
              let selected = await self.selectAIMove()
-@@ -222,2 +307,3 @@
+             guard !Task.isCancelled else { return }
+             if let selected { self.applyAI(selected) }
++            if self.game == .gomoku { self.eclipseTraceStore.clear() }
              self.lastDecisionMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
 +            self.eclipseSearchStartedAt = nil
              self.isAIThinking = false
+             self.aiTask = nil
+             self.updateOutcome()
+@@ -770,10 +868,22 @@
+                 }
+             }
+             if chosen == nil {
++                let traceStore = eclipseTraceStore
++                let traceToken = (eclipseVisualizationEnabled && !inSeparateTeachingSession)
++                    ? traceStore.begin(sessionID: sessionID, board: snapshot) : nil
++                let observer: (@Sendable ([Int], Int) -> Void)?
++                if let traceToken {
++                    observer = { indices, nodes in
++                        _ = traceStore.record(indices, nodes: nodes, token: traceToken)
++                    }
++                } else {
++                    observer = nil
++                }
+                 chosen = await Task.detached(priority: .userInitiated) {
+                     GomokuBot.chooseMove(
+                         in: snapshot, for: computer, budget: budget,
+-                        learning: learning, formationPreference: preference
++                        learning: learning, formationPreference: preference,
++                        onExploredLine: observer
+                     )
+                 }.value
+             }
 --- a/VeilLink/UI/MiniGameViews.swift
 +++ b/VeilLink/UI/MiniGameViews.swift
-@@ -16,2 +16,4 @@
+@@ -1454,6 +1454,13 @@
+     let state: GomokuState
+     let localPlayer: MiniGamePlayer
      let enabled: Bool
 +    var eclipseThinking = false
 +    var actualSearchStartedAt: Date? = nil
++    var eclipseVisualizationEnabled = false
++    var eclipseTraceStore: VeilEclipseSearchTraceStore? = nil
++    var eclipseSessionID = ""
++    var eclipseBoardTurn = 0
++    var eclipseMatchPlaying = true
      let onMove: (Int) -> Void
-@@ -35,2 +37,13 @@
+ 
+     private let starPoints = [48, 56, 112, 168, 176]
+@@ -1478,6 +1485,23 @@
+                         Circle().fill(Color.white.opacity(0.42)).frame(width: 4.2, height: 4.2).position(point)
+                     }
  
 +                    // Purely decorative; has NO board data/search scores and
 +                    // cannot intercept touches or provide a move recommendation.
-+                    if eclipseThinking {
++                    if eclipseThinking && eclipseVisualizationEnabled,
++                       let eclipseTraceStore {
 +                        VeilEclipseBoardThoughtField(
 +                            isThinking: eclipseThinking,
-+                            actualSearchStartedAt: actualSearchStartedAt
++                            actualSearchStartedAt: actualSearchStartedAt,
++                            enabled: eclipseVisualizationEnabled,
++                            searchTrace: eclipseTraceStore,
++                            sessionID: eclipseSessionID,
++                            turn: eclipseBoardTurn,
++                            matchPlaying: eclipseMatchPlaying
 +                        )
 +                        .frame(width: side, height: side)
 +                        .allowsHitTesting(false)
 +                    }
 +
                      if state.winningLine.count >= 5,
+                        let first = state.winningLine.first,
+                        let last = state.winningLine.last {
+--- a/VeilLink/Agent/Games/GomokuBot.swift
++++ b/VeilLink/Agent/Games/GomokuBot.swift
+@@ -77,7 +77,8 @@
+         formationPreference: GomokuFormationPreference = .disabled,
+         diagnosticCounterForkR4: Bool = true,
+         diagnosticUseR6Defense: Bool = true,
+-        diagnosticR8ForcedWin: Bool = true
++        diagnosticR8ForcedWin: Bool = true,
++        onExploredLine: (@Sendable ([Int], Int) -> Void)? = nil
+     ) -> GomokuBotMove? {
+         guard state.winner == nil,
+               !state.isDraw,
+@@ -186,6 +187,7 @@
+             nodes += 1
+             var next = state
+             guard next.apply(index: index, actor: player) else { continue }
++            onExploredLine?([index], nodes)
+ 
+             var score = priority + staticEvaluation(next, root: player)
+             if next.winner == player {
+@@ -214,6 +216,7 @@
+                     nodes += 1
+                     var afterReply = next
+                     guard afterReply.apply(index: reply, actor: opponent) else { continue }
++                    onExploredLine?([index, reply], nodes)
+                     var replyScore: Int
+                     if afterReply.winner == opponent {
+                         replyScore = lossScore
+@@ -250,6 +253,7 @@
+                                 nodes += 1
+                                 var afterContinuation = afterReply
+                                 guard afterContinuation.apply(index: continuation, actor: player) else { continue }
++                                onExploredLine?([index, reply, continuation], nodes)
+                                 let continuationScore = afterContinuation.winner == player
+                                     ? winScore
+                                     : staticEvaluation(afterContinuation, root: player)
 --- /dev/null
 +++ b/VeilLink/UI/VeilEclipseBoardThoughtField.swift
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,83 @@
 +import Foundation
 +import SwiftUI
 +
-+/// Placed between the background grid and stones. Board tapping remains owned
-+/// by VeilBoardTapSurface, which is above this in the ZStack.
++/// Genuine *examined* hypothetical search branches, not random particles.
++/// Visible only while the native AI is searching and the user cannot move.
++/// Never retained as an active-game hint after the worker stops.
 +struct VeilEclipseBoardThoughtField: View {
 +    let isThinking: Bool
 +    let actualSearchStartedAt: Date?
++    let enabled: Bool
++    let searchTrace: VeilEclipseSearchTraceStore
++    let sessionID: String
++    let turn: Int
++    let matchPlaying: Bool
 +
 +    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-+    @ObservedObject private var appearance = VeilAppearanceController.shared
 +
 +    var body: some View {
 +        Group {
-+            if isThinking {
++            if enabled && isThinking && actualSearchStartedAt != nil && matchPlaying {
 +                TimelineView(.animation(
-+                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 / 12.0 : 1.0 / 24.0,
++                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0/12.0 : 1.0/24.0,
 +                    paused: reduceMotion
-+                )) { timeline in
++                )) { _ in
++                    let now = ProcessInfo.processInfo.systemUptime
++                    let branches = searchTrace.snapshot(
++                        sessionID: sessionID, turn: turn,
++                        playing: matchPlaying, aiThinking: isThinking
++                    )
 +                    Canvas(opaque: false, rendersAsynchronously: false) { context, area in
-+                        let elapsed = max(0, timeline.date.timeIntervalSince(actualSearchStartedAt ?? timeline.date))
-+                        let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-+                        let count = reduceMotion ? 18 : VeilEclipseThoughtPattern.density(
-+                            elapsedSeconds: elapsed, lowPower: lowPower
-+                        )
-+                        let frame = reduceMotion ? 0 : max(0, Int(timeline.date.timeIntervalSinceReferenceDate * 24))
++                        let margin = min(area.width, area.height) * 0.055
++                        let step = (min(area.width, area.height) - margin * 2) / 14
 +                        let tones = [VeilTheme.goldBright, VeilTheme.paleMetal,
 +                                     VeilTheme.success, VeilTheme.mutedGold]
-+                        for spark in VeilEclipseThoughtPattern.frame(frame: frame, count: count) {
-+                            var ray = Path()
-+                            let first = CGPoint(x: spark.x * area.width, y: spark.y * area.height)
-+                            let second = CGPoint(x: first.x + spark.dx * area.width,
-+                                                 y: first.y + spark.dy * area.height)
-+                            ray.move(to: first)
-+                            ray.addLine(to: second)
-+                            context.stroke(ray,
-+                                with: .color(tones[spark.tone].opacity(spark.opacity)),
-+                                style: StrokeStyle(lineWidth: 1.1, lineCap: .round))
++                        for (rank, branch) in branches.enumerated() {
++                            let age = max(0, now - branch.emittedAtUptime)
++                            let fading = max(0, 1.0 - age / 1.35)
++                            guard fading > 0 else { continue }
++                            let tone = tones[rank % tones.count]
++                            let points = branch.indices.map { index in
++                                CGPoint(x: margin + CGFloat(index % 15) * step,
++                                        y: margin + CGFloat(index / 15) * step)
++                            }
++                            for hop in points.indices {
++                                let progress = reduceMotion ? 1.0 : min(1, max(0, (age - Double(hop) * 0.09) * 9.0))
++                                guard progress > 0 else { continue }
++                                if hop > 0 {
++                                    let a = points[hop - 1], b = points[hop]
++                                    let tip = CGPoint(
++                                        x: a.x + (b.x - a.x) * progress,
++                                        y: a.y + (b.y - a.y) * progress
++                                    )
++                                    var path = Path()
++                                    path.move(to: a)
++                                    path.addLine(to: tip)
++                                    context.stroke(path, with: .color(tone.opacity(0.65 * fading)),
++                                                   style: StrokeStyle(lineWidth: 1.15, lineCap: .round))
++                                }
++                                if progress >= 0.96 {
++                                    let r = max(3, step * 0.35)
++                                    let point = points[hop]
++                                    let oval = Path(ellipseIn: CGRect(
++                                        x: point.x - r, y: point.y - r,
++                                        width: r * 2, height: r * 2
++                                    ))
++                                    // Hollow/dashed: a hypothetical stone, not a placed stone.
++                                    context.fill(oval, with: .color(tone.opacity(0.10 * fading)))
++                                    context.stroke(oval, with: .color(tone.opacity(0.8 * fading)),
++                                                   style: StrokeStyle(lineWidth: 1,
++                                                                      lineCap: .round,
++                                                                      dash: [2, 2]))
++                                }
++                            }
 +                        }
 +                    }
 +                }
@@ -263,8 +493,173 @@
 +        }
 +        .allowsHitTesting(false)
 +        .accessibilityHidden(true)
-+        .accessibilityIdentifier("game.eclipse.decorative-thinking-no-hints")
++        .accessibilityIdentifier("game.eclipse.live-examined-branches")
 +    }
++}
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseComputeConsole.swift
+@@ -0,0 +1,115 @@
++import SwiftUI
++import Foundation
++
++/// The black console sits INSIDE the original VeilLink themed card.
++/// It is a decorative display: no board coordinate, candidate, PV or
++/// protected engine reasoning object can enter its public interface.
++struct VeilEclipseComputeConsole: View {
++    let isComputing: Bool
++    let actualSearchStartedAt: Date?
++    let liveMetrics: VeilEclipseTracePolicy.LiveMetrics?
++    var compact: Bool = false
++
++    @ObservedObject private var appearance = VeilAppearanceController.shared
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    private var active: Bool { isComputing && actualSearchStartedAt != nil }
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: compact ? 3 : 7) {
++            HStack(spacing: 6) {
++                Circle()
++                    .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                    .frame(width: 5, height: 5)
++                Text("ECLIPSE // VISUAL STREAM")
++                    .font(.system(size: compact ? 8 : 10, weight: .bold, design: .monospaced))
++                    .foregroundColor(VeilTheme.paleMetal)
++                    .lineLimit(1)
++                Spacer(minLength: 0)
++                Text(active ? "RUN" : "IDLE")
++                    .foregroundColor(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                    .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
++            }
++            if active, let startedAt = actualSearchStartedAt {
++                TimelineView(.animation(
++                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 / 9.0 : 1.0 / 24.0,
++                    paused: reduceMotion
++                )) { timeline in
++                    let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
++                    let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
++                    let position = VeilEclipseConsoleStream.scrollPosition(
++                        elapsedSeconds: reduceMotion ? 0 : elapsed, lowPower: lowPower
++                    )
++                    let lineHeight: CGFloat = compact ? 11 : 15
++                    let visibleCount = compact ? 2 : 7
++                    let rows = VeilEclipseConsoleStream.lines(
++                        elapsedSeconds: reduceMotion ? 0 : elapsed,
++                        visibleRows: visibleCount + 1,
++                        lowPower: lowPower
++                    )
++                    VStack(alignment: .leading, spacing: 0) {
++                        ForEach(0..<rows.count, id: \.self) { index in
++                            Text(rows[index].text)
++                                .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
++                                .foregroundColor(tone(rows[index].tone))
++                                .lineLimit(1)
++                                .minimumScaleFactor(0.8)
++                                .frame(height: lineHeight, alignment: .leading)
++                        }
++                    }
++                    .offset(y: -CGFloat(position - floor(position)) * lineHeight)
++                    .frame(maxWidth: .infinity, alignment: .leading)
++                    .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
++                    .clipped()
++                    .accessibilityHidden(true)
++                }
++            } else {
++                Text("vis.idle ()")
++                    .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .frame(maxWidth: .infinity, alignment: .leading)
++                    .accessibilityHidden(true)
++            }
++            if !compact {
++                if active, let liveMetrics {
++                    let depth = liveMetrics.completedDepth.map { "D\($0)" } ?? "—"
++                    let nodes = liveMetrics.visitedNodes.map(String.init) ?? "—"
++                    Text("MEASURED · DEPTH \(depth) / NODES \(nodes)")
++                        .font(.system(size: 9, weight: .medium, design: .monospaced))
++                        .foregroundColor(VeilTheme.goldBright)
++                } else {
++                    Text("MEASURED · 暂无实时深度/节点数据")
++                        .font(.caption2)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++                Text(VeilEclipseConsoleStream.disclosure)
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .fixedSize(horizontal: false, vertical: true)
++            }
++        }
++        .padding(compact ? 8 : 12)
++        .frame(maxWidth: .infinity, alignment: .leading)
++        .frame(minHeight: compact ? 55 : 166)
++        .background(
++            RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
++                .fill(Color.black.opacity(0.97))
++        )
++        .overlay(
++            RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
++                .stroke(VeilTheme.gold.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
++        )
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .combine)
++        .accessibilityLabel("ECLIPSE 计算显示屏。\(active ? "计算中" : "待机")。装饰性编码流，不代表真实推理，也不会提示落点。")
++    }
++
++    private func tone(_ index: Int) -> Color {
++        switch index {
++        case 0: return VeilTheme.goldBright
++        case 1: return VeilTheme.paleMetal
++        case 2: return VeilTheme.success
++        default: return VeilTheme.secondaryText
++        }
++    }
++}
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseConsoleStream.swift
+@@ -0,0 +1,44 @@
++import Foundation
++
++/// Decorative visual code. It does not receive search candidates, board cells,
++/// threat maps, principal variations or any private reasoning data.
++/// Genuine measured depth/nodes are shown separately, only if available.
++enum VeilEclipseConsoleStream {
++    struct Line: Equatable, Sendable {
++        let text: String
++        let tone: Int
++    }
++    private static let verbs = [
++        "vis.sync", "vis.phase", "vis.flux", "vis.orbit",
++        "vis.align", "vis.echo", "vis.fold", "vis.pulse"
++    ]
++    private static func mix(_ seed: UInt64) -> UInt64 {
++        var x = seed &+ 0x9e3779b97f4a7c15
++        x = (x ^ (x >> 30)) &* 0xbf58476d1ce4e5b9
++        x = (x ^ (x >> 27)) &* 0x94d049bb133111eb
++        return x ^ (x >> 31)
++    }
++    /// Visual row scrolls: 14 lines/s normal, 6 in Low Power Mode.
++    /// Uses only genuine elapsed calculation time; rate is decorative, not a
++    /// measure of model speed. The result is deterministic and bounded.
++    static func scrollPosition(elapsedSeconds: Double, lowPower: Bool = false) -> Double {
++        let elapsed = elapsedSeconds.isFinite ? max(0, min(86_400, elapsedSeconds)) : 0
++        return elapsed * (lowPower ? 6 : 14)
++    }
++    static func lines(elapsedSeconds: Double, visibleRows: Int, lowPower: Bool = false) -> [Line] {
++        let frame = UInt64(scrollPosition(elapsedSeconds: elapsedSeconds, lowPower: lowPower))
++        let rows = max(1, min(10, visibleRows))
++        return (0..<rows).map { row in
++            let k = mix((frame &+ UInt64(row)) &* 0x2545f4914f6cdd1d)
++            let operation = verbs[Int(k % UInt64(verbs.count))]
++            let channel = Int((k >> 7) & 0xf)
++            let phase = Int((k >> 12) & 0xff)
++            let mask = Int((k >> 21) & 0xffff)
++            return Line(
++                text: String(format: "%@ (ch:%X, phase:%02X, flux:%04X)", operation, channel, phase, mask),
++                tone: Int((k >> 40) & 3)
++            )
++        }
++    }
++    static let disclosure = "视觉编码流 · 非真实搜索日志，不表示候选落点或推理过程"
 +}
 --- /dev/null
 +++ b/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
@@ -672,55 +1067,6 @@
 +    }
 +}
 --- /dev/null
-+++ b/VeilLink/UI/VeilEclipseThoughtPattern.swift
-@@ -0,0 +1,46 @@
-+import Foundation
-+
-+enum VeilEclipseThoughtPattern {
-+    struct Streak: Sendable, Equatable {
-+        let x: Double
-+        let y: Double
-+        let dx: Double
-+        let dy: Double
-+        let tone: Int
-+        let opacity: Double
-+    }
-+
-+    private static func mix(_ x: UInt64) -> UInt64 {
-+        var v = x &+ 0x9e3779b97f4a7c15
-+        v = (v ^ (v >> 30)) &* 0xbf58476d1ce4e5b9
-+        v = (v ^ (v >> 27)) &* 0x94d049bb133111eb
-+        return v ^ (v >> 31)
-+    }
-+
-+    /// Display-time only. Increasing density is artistic buildup with elapsed
-+    /// thinking time; it makes NO claim about the number of nodes explored.
-+    static func density(elapsedSeconds: Double, lowPower: Bool) -> Int {
-+        let elapsed = elapsedSeconds.isFinite ? max(0, min(30, elapsedSeconds)) : 0
-+        let count = 72 + Int(elapsed * 8)
-+        return min(lowPower ? 80 : 170, count)
-+    }
-+
-+    static func frame(frame: Int, count: Int) -> [Streak] {
-+        guard frame >= 0, count > 0 else { return [] }
-+        return (0..<min(180, count)).map { i in
-+            let seed = mix(UInt64(i) &* 0x9e3779b97f4a7c15 &+ UInt64(frame) &* 0x632be59bd9b4e019)
-+            let a = mix(seed), b = mix(seed ^ 0xe7037ed1a0b428db)
-+            let x = Double(a & 0xffff) / 65_535.0
-+            let y = Double((a >> 16) & 0xffff) / 65_535.0
-+            // Off-square, flowing lines: nothing snaps to a Gomoku intersection.
-+            let dx = 0.008 + Double(b & 0x7ff) / 70_000.0
-+            let dy = Double((b >> 11) & 0x7ff) / 110_000.0 - 0.009
-+            return Streak(x: 0.055 + x * 0.89,
-+                          y: 0.055 + y * 0.89,
-+                          dx: dx, dy: dy,
-+                          tone: Int((b >> 23) & 3),
-+                          opacity: 0.22 + Double((b >> 32) & 0xff) / 1_800.0)
-+        }
-+    }
-+}
-+
---- /dev/null
 +++ b/VeilLink/UI/VeilEclipseTracePolicy.swift
 @@ -0,0 +1,140 @@
 +import Foundation
@@ -985,7 +1331,7 @@
 +    static let multiplierDisclosure = "档位倍率表示搜索时间预算，并非已验证的棋力或胜率倍数。"
 +}
 --- /dev/null
-+++ b/VeilLink/Agent/Games/VeilGomokuMatchArchive.swift
++++ b/VeilLink/UI/VeilGomokuMatchArchive.swift
 @@ -0,0 +1,233 @@
 +import Foundation
 +
@@ -1221,167 +1567,84 @@
 +    }
 +}
 --- /dev/null
-+++ b/VeilLink/UI/VeilEclipseConsoleStream.swift
-@@ -0,0 +1,44 @@
++++ b/VeilLink/UI/VeilEclipseSearchTraceStore.swift
+@@ -0,0 +1,79 @@
 +import Foundation
 +
-+/// Decorative visual code. It does not receive search candidates, board cells,
-+/// threat maps, principal variations or any private reasoning data.
-+/// Genuine measured depth/nodes are shown separately, only if available.
-+enum VeilEclipseConsoleStream {
-+    struct Line: Equatable, Sendable {
-+        let text: String
-+        let tone: Int
++/// Live, validated, voluntarily visible AI-search branches. Not human coaching.
++/// This gate has zero influence on move ordering, scores, or time budgets.
++/// Session token invalidation also drops late callbacks from cancelled workers.
++final class VeilEclipseSearchTraceStore: @unchecked Sendable {
++    struct Branch: Equatable, Sendable {
++        let indices: [Int]       // only positions the native search actually applied
++        let exploredNodes: Int   // real cumulative node counter, not a probability
++        let serial: UInt64
++        let emittedAtUptime: TimeInterval
 +    }
-+    private static let verbs = [
-+        "vis.sync", "vis.phase", "vis.flux", "vis.orbit",
-+        "vis.align", "vis.echo", "vis.fold", "vis.pulse"
-+    ]
-+    private static func mix(_ seed: UInt64) -> UInt64 {
-+        var x = seed &+ 0x9e3779b97f4a7c15
-+        x = (x ^ (x >> 30)) &* 0xbf58476d1ce4e5b9
-+        x = (x ^ (x >> 27)) &* 0x94d049bb133111eb
-+        return x ^ (x >> 31)
++    private let lock = NSLock()
++    private var session: String?
++    private var token: UUID?
++    private var turn: Int = -1
++    private var root: GomokuState?
++    private var stored: [Branch] = []
++    private var serial: UInt64 = 0
++    private var lastTime: TimeInterval = -1
++
++    @discardableResult
++    func begin(sessionID: String, board: GomokuState) -> UUID? {
++        guard !sessionID.isEmpty, board.winner == nil, !board.isDraw else { return nil }
++        lock.lock(); defer { lock.unlock() }
++        session = sessionID
++        token = UUID()
++        turn = board.moveCount
++        root = board
++        stored = []
++        serial = 0
++        lastTime = -1
++        return token
 +    }
-+    /// Visual row scrolls: 14 lines/s normal, 6 in Low Power Mode.
-+    /// Uses only genuine elapsed calculation time; rate is decorative, not a
-+    /// measure of model speed. The result is deterministic and bounded.
-+    static func scrollPosition(elapsedSeconds: Double, lowPower: Bool = false) -> Double {
-+        let elapsed = elapsedSeconds.isFinite ? max(0, min(86_400, elapsedSeconds)) : 0
-+        return elapsed * (lowPower ? 6 : 14)
++
++    func clear() {
++        lock.lock(); defer { lock.unlock() }
++        session = nil
++        token = nil
++        turn = -1
++        root = nil
++        stored = []
++        serial = 0
++        lastTime = -1
 +    }
-+    static func lines(elapsedSeconds: Double, visibleRows: Int, lowPower: Bool = false) -> [Line] {
-+        let frame = UInt64(scrollPosition(elapsedSeconds: elapsedSeconds, lowPower: lowPower))
-+        let rows = max(1, min(10, visibleRows))
-+        return (0..<rows).map { row in
-+            let k = mix((frame &+ UInt64(row)) &* 0x2545f4914f6cdd1d)
-+            let operation = verbs[Int(k % UInt64(verbs.count))]
-+            let channel = Int((k >> 7) & 0xf)
-+            let phase = Int((k >> 12) & 0xff)
-+            let mask = Int((k >> 21) & 0xffff)
-+            return Line(
-+                text: String(format: "%@ (ch:%X, phase:%02X, flux:%04X)", operation, channel, phase, mask),
-+                tone: Int((k >> 40) & 3)
-+            )
++
++    /// Called only from an actual GomokuBot exploration branch. At most 20 events/s.
++    /// Returns false if the path is stale, fabricated, illegal, or out of turn.
++    @discardableResult
++    func record(_ indices: [Int], nodes: Int, token expected: UUID) -> Bool {
++        guard (1...3).contains(indices.count), (1...2_000_000_000).contains(nodes) else { return false }
++        lock.lock(); defer { lock.unlock() }
++        guard expected == token, let root else { return false }
++        var test = root
++        for index in indices {
++            guard (0..<225).contains(index),
++                  test.apply(index: index, actor: test.currentPlayer) else { return false }
 +        }
-+    }
-+    static let disclosure = "视觉编码流 · 非真实搜索日志，不表示候选落点或推理过程"
-+}
---- /dev/null
-+++ b/VeilLink/UI/VeilEclipseComputeConsole.swift
-@@ -0,0 +1,115 @@
-+import SwiftUI
-+import Foundation
-+
-+/// The black console sits INSIDE the original VeilLink themed card.
-+/// It is a decorative display: no board coordinate, candidate, PV or
-+/// protected engine reasoning object can enter its public interface.
-+struct VeilEclipseComputeConsole: View {
-+    let isComputing: Bool
-+    let actualSearchStartedAt: Date?
-+    let liveMetrics: VeilEclipseTracePolicy.LiveMetrics?
-+    var compact: Bool = false
-+
-+    @ObservedObject private var appearance = VeilAppearanceController.shared
-+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-+
-+    private var active: Bool { isComputing && actualSearchStartedAt != nil }
-+
-+    var body: some View {
-+        VStack(alignment: .leading, spacing: compact ? 3 : 7) {
-+            HStack(spacing: 6) {
-+                Circle()
-+                    .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
-+                    .frame(width: 5, height: 5)
-+                Text("ECLIPSE // VISUAL STREAM")
-+                    .font(.system(size: compact ? 8 : 10, weight: .bold, design: .monospaced))
-+                    .foregroundColor(VeilTheme.paleMetal)
-+                    .lineLimit(1)
-+                Spacer(minLength: 0)
-+                Text(active ? "RUN" : "IDLE")
-+                    .foregroundColor(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
-+                    .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
-+            }
-+            if active, let startedAt = actualSearchStartedAt {
-+                TimelineView(.animation(
-+                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 / 9.0 : 1.0 / 24.0,
-+                    paused: reduceMotion
-+                )) { timeline in
-+                    let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
-+                    let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-+                    let position = VeilEclipseConsoleStream.scrollPosition(
-+                        elapsedSeconds: reduceMotion ? 0 : elapsed, lowPower: lowPower
-+                    )
-+                    let lineHeight: CGFloat = compact ? 11 : 15
-+                    let visibleCount = compact ? 2 : 7
-+                    let rows = VeilEclipseConsoleStream.lines(
-+                        elapsedSeconds: reduceMotion ? 0 : elapsed,
-+                        visibleRows: visibleCount + 1,
-+                        lowPower: lowPower
-+                    )
-+                    VStack(alignment: .leading, spacing: 0) {
-+                        ForEach(0..<rows.count, id: \.self) { index in
-+                            Text(rows[index].text)
-+                                .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
-+                                .foregroundColor(tone(rows[index].tone))
-+                                .lineLimit(1)
-+                                .minimumScaleFactor(0.8)
-+                                .frame(height: lineHeight, alignment: .leading)
-+                        }
-+                    }
-+                    .offset(y: -CGFloat(position - floor(position)) * lineHeight)
-+                    .frame(maxWidth: .infinity, alignment: .leading)
-+                    .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
-+                    .clipped()
-+                    .accessibilityHidden(true)
-+                }
-+            } else {
-+                Text("vis.idle ()")
-+                    .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
-+                    .foregroundColor(VeilTheme.secondaryText)
-+                    .frame(maxWidth: .infinity, alignment: .leading)
-+                    .accessibilityHidden(true)
-+            }
-+            if !compact {
-+                if active, let liveMetrics {
-+                    let depth = liveMetrics.completedDepth.map { "D\($0)" } ?? "—"
-+                    let nodes = liveMetrics.visitedNodes.map(String.init) ?? "—"
-+                    Text("MEASURED · DEPTH \(depth) / NODES \(nodes)")
-+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-+                        .foregroundColor(VeilTheme.goldBright)
-+                } else {
-+                    Text("MEASURED · 暂无实时深度/节点数据")
-+                        .font(.caption2)
-+                        .foregroundColor(VeilTheme.secondaryText)
-+                }
-+                Text(VeilEclipseConsoleStream.disclosure)
-+                    .font(.caption2)
-+                    .foregroundColor(VeilTheme.secondaryText)
-+                    .fixedSize(horizontal: false, vertical: true)
-+            }
-+        }
-+        .padding(compact ? 8 : 12)
-+        .frame(maxWidth: .infinity, alignment: .leading)
-+        .frame(minHeight: compact ? 55 : 166)
-+        .background(
-+            RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
-+                .fill(Color.black.opacity(0.97))
-+        )
-+        .overlay(
-+            RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
-+                .stroke(VeilTheme.gold.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
-+        )
-+        .allowsHitTesting(false)
-+        .accessibilityElement(children: .combine)
-+        .accessibilityLabel("ECLIPSE 计算显示屏。\(active ? "计算中" : "待机")。装饰性编码流，不代表真实推理，也不会提示落点。")
++        let now = ProcessInfo.processInfo.systemUptime
++        guard now >= lastTime else { return false }
++        // Always capture first valid branch. Subsequent views are bounded,
++        // and nested steps can be visible if slower searches allow updates.
++        if lastTime >= 0 && now - lastTime < 0.05 { return false }
++        serial &+= 1
++        stored.append(Branch(indices: indices, exploredNodes: nodes, serial: serial, emittedAtUptime: now))
++        if stored.count > 14 { stored.removeFirst(stored.count - 14) }
++        lastTime = now
++        return true
 +    }
 +
-+    private func tone(_ index: Int) -> Color {
-+        switch index {
-+        case 0: return VeilTheme.goldBright
-+        case 1: return VeilTheme.paleMetal
-+        case 2: return VeilTheme.success
-+        default: return VeilTheme.secondaryText
-+        }
++    /// No branch is visible outside the exact AI turn that produced it.
++    func snapshot(sessionID requestedSession: String, turn requestedTurn: Int,
++                  playing: Bool, aiThinking: Bool) -> [Branch] {
++        lock.lock(); defer { lock.unlock() }
++        guard playing, aiThinking, token != nil,
++              requestedSession == session, requestedTurn == turn else { return [] }
++        return stored
 +    }
 +}
