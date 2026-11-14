@@ -33,13 +33,12 @@ enum ImagePreparationError: LocalizedError {
         switch self {
         case .unreadable: return "无法读取这张图片。"
         case .unsupported: return "当前系统无法解码这种图片或 RAW 格式。"
-        case .stillTooLarge: return "在优先保证画质的压缩策略下，图片仍超过 3 MB。"
+        case .stillTooLarge: return "图片无法安全压缩到可传输范围（最大 3 MB）。"
         }
     }
 }
 
 enum ImageTranscoder {
-    private static let dimensionSteps = [4_096, 3_072, 2_560, 2_048, 1_600, 1_280, 1_024, 800, 640]
 
     static func prepare(
         at url: URL, profile: ImageTransportProfile = .bluetooth
@@ -70,174 +69,110 @@ enum ImageTranscoder {
         let sourceType = sourceUTType(for: url, source: source)
         let sourceFormat = displayName(for: sourceType, url: url)
         let sourceInfo = imageDimensions(source: source)
+        let textSensitive = isLikelyTextOrGraphic(type: sourceType, dimensions: sourceInfo)
 
-        if let preserved = try preserveIfAppropriate(
-            url: url,
-            byteCount: originalByteCount,
-            type: sourceType,
-            sourceFormat: sourceFormat,
-            dimensions: sourceInfo, profile: profile
-        ) {
-            return preserved
-        }
+        // The profile no longer changes output quality. A queued image may move
+        // between BLE and LAN without being recompressed or mutated.
+        _ = profile
+        let requestedEdge = MediaTransferPolicy.compressedLongestEdge(
+            originalWidth: sourceInfo?.width ?? MediaTransferPolicy.maximumImageDimension,
+            originalHeight: sourceInfo?.height ?? MediaTransferPolicy.maximumImageDimension,
+            isLikelyTextOrGraphic: textSensitive
+        )
+        guard let bitmap = decodeImage(
+            url: url, source: source, maximumDimension: requestedEdge
+        ) else { throw ImagePreparationError.unsupported }
 
-        let preferred = MediaTransferPolicy.preferredBytes(for: profile)
-        let dimensions = effectiveDimensions(original: sourceInfo, profile: profile)
-        var fallback: PreparedImage?
+        var smallest: PreparedImage?
 
-        // Retain the original if it is valid on Wire v4. A failed attempt to
-        // meet the BLE soft target must not turn a valid image into an error.
+        // The source can occasionally be smaller than a re-encode (e.g. an
+        // optimized PNG of flat UI). Keep it only if it is a valid wire type.
         if let type = sourceType, let size = sourceInfo,
            max(size.width, size.height) <= MediaTransferPolicy.maximumImageDimension,
            MediaTransferPolicy.mayTransmit(byteCount: originalByteCount) {
-            let originalFormat: (mime: String, label: String)?
+            let originalEncoding: (mime: String, label: String)?
             if type.conforms(to: .jpeg) {
-                originalFormat = ("image/jpeg", "JPEG")
+                originalEncoding = ("image/jpeg", "JPEG")
             } else if type == .heic {
-                originalFormat = ("image/heic", "HEIC")
+                originalEncoding = ("image/heic", "HEIC")
             } else if type.conforms(to: .png) {
-                originalFormat = ("image/png", "PNG")
-            } else { originalFormat = nil }
-            if let originalFormat {
-                let bytes = try Data(contentsOf: url, options: [.mappedIfSafe])
-                if bytes.count == originalByteCount {
-                    fallback = PreparedImage(
-                        data: bytes, mimeType: originalFormat.mime,
-                        sourceFormat: sourceFormat, outputFormat: originalFormat.label,
-                        originalByteCount: originalByteCount,
-                        pixelWidth: size.width, pixelHeight: size.height,
-                        wasTranscoded: false
-                    )
-                }
+                originalEncoding = ("image/png", "PNG")
+            } else {
+                originalEncoding = nil
             }
-        }
-
-        // Alpha-bearing screenshots stay PNG. Reducing dimensions is not
-        // mathematically lossless, but does not destroy transparency.
-        if sourceType?.conforms(to: .png) == true,
-           let first = dimensions.first,
-           let preview = decodeImage(url: url, source: source, maximumDimension: first),
-           hasAlpha(preview) {
-            for dimension in dimensions {
-                try Task.checkCancellation()
-                guard let bitmap = decodeImage(
-                    url: url, source: source, maximumDimension: dimension
-                ), let bytes = encode(
-                    bitmap, as: UTType.png.identifier as CFString, quality: 1
-                ) else { continue }
-                let prepared = PreparedImage(
-                    data: bytes, mimeType: "image/png",
-                    sourceFormat: sourceFormat, outputFormat: "PNG",
+            if let encoding = originalEncoding,
+               let bytes = try? Data(contentsOf: url, options: [.mappedIfSafe]),
+               bytes.count == originalByteCount {
+                smallest = PreparedImage(
+                    data: bytes, mimeType: encoding.mime,
+                    sourceFormat: sourceFormat, outputFormat: encoding.label,
                     originalByteCount: originalByteCount,
-                    pixelWidth: bitmap.width, pixelHeight: bitmap.height,
-                    wasTranscoded: true
+                    pixelWidth: size.width, pixelHeight: size.height,
+                    wasTranscoded: false
                 )
-                if bytes.count <= preferred { return prepared }
-                if MediaTransferPolicy.preferCandidate(
-                    bytes: bytes.count, over: fallback?.data.count
-                ) { fallback = prepared }
             }
-            if let fallback { return fallback }
-            throw ImagePreparationError.stillTooLarge
         }
 
+        // Screenshots deliberately use an aggressive 500 px short edge and
+        // 0.18 lossy quality. For long screenshots the short edge matters
+        // more than reducing the longest dimension to a fixed 1280 px.
+        // Compare ACTUAL encoded byte counts rather than stopping at a target.
         let native = preferredOutputEncoding()
-        let encodings: [(type: CFString, mime: String, label: String)] =
-            native.mimeType == "image/jpeg"
-                ? [(native.type, "image/jpeg", "JPEG")]
-                : [
-                    (native.type, "image/heic", "HEIC"),
-                    (UTType.jpeg.identifier as CFString, "image/jpeg", "JPEG")
-                ]
-        let qualityRange = MediaTransferPolicy.qualityRange(for: profile)
+        var encodings: [(type: CFString, mime: String, label: String)] = [
+            (UTType.jpeg.identifier as CFString, "image/jpeg", "JPEG")
+        ]
+        if native.mimeType == "image/heic" {
+            encodings.insert((native.type, native.mimeType, native.label), at: 0)
+        }
+        if textSensitive {
+            // Screenshots with flat colors and tiny lettering may be smaller
+            // AND clearer as a downsampled PNG; it must compete by byte count.
+            encodings.append((UTType.png.identifier as CFString, "image/png", "PNG"))
+        }
+
         for encoding in encodings {
-            for dimension in dimensions {
-                try Task.checkCancellation()
-                guard let bitmap = decodeImage(
-                    url: url, source: source, maximumDimension: dimension
-                ) else { continue }
-                var quality = qualityRange.start
-                for _ in 0..<3 {
-                    try Task.checkCancellation()
-                    guard let bytes = encode(
-                        bitmap, as: encoding.type, quality: CGFloat(quality)
-                    ) else { break }
-                    let candidate = PreparedImage(
-                        data: bytes, mimeType: encoding.mime,
-                        sourceFormat: sourceFormat, outputFormat: encoding.label,
-                        originalByteCount: originalByteCount,
-                        pixelWidth: bitmap.width, pixelHeight: bitmap.height,
-                        wasTranscoded: true
-                    )
-                    // 384 KB is the preferred result, NOT a requirement.
-                    if bytes.count <= preferred { return candidate }
-                    if MediaTransferPolicy.preferCandidate(
-                        bytes: bytes.count, over: fallback?.data.count
-                    ) { fallback = candidate }
-                    guard let q = MediaTransferPolicy.nextQuality(
-                        after: quality, encodedBytes: bytes.count,
-                        preferredBytes: preferred, minimum: qualityRange.floor
-                    ) else { break }
-                    quality = q
-                }
-            }
-        }
-        // Existing 48KiB chunks/ACK/checkpoints will send a larger image via
-        // BLE if necessary. Never mutate an attachment after enqueue.
-        if let fallback { return fallback }
+            try Task.checkCancellation()
+            let quality: CGFloat = encoding.mime == "image/png" ? 1 :
+                CGFloat(MediaTransferPolicy.extremeQuality(isLikelyTextOrGraphic: textSensitive))
+            guard let bytes = encode(bitmap, as: encoding.type, quality: quality),
+                  MediaTransferPolicy.mayTransmit(byteCount: bytes.count),
+                  bytes.count < (smallest?.data.count ?? Int.max),
+                  isDecodable(bytes) else { continue }
 
-        throw sourceType?.conforms(to: .image) == true ? ImagePreparationError.stillTooLarge : ImagePreparationError.unsupported
+            smallest = PreparedImage(
+                data: bytes,
+                mimeType: encoding.mime,
+                sourceFormat: sourceFormat,
+                outputFormat: encoding.label,
+                originalByteCount: originalByteCount,
+                pixelWidth: bitmap.width,
+                pixelHeight: bitmap.height,
+                wasTranscoded: true
+            )
+        }
+
+        if let smallest { return smallest }
+        throw ImagePreparationError.stillTooLarge
     }
 
-    private static func preserveIfAppropriate(
-        url: URL,
-        byteCount: Int,
-        type: UTType?,
-        sourceFormat: String,
-        dimensions: (width: Int, height: Int)?,
-        profile: ImageTransportProfile
-    ) throws -> PreparedImage? {
-        guard let type, let dimensions,
-              max(dimensions.width, dimensions.height) <= MediaTransferPolicy.maximumImageDimension else { return nil }
-
-        let mapping: (mime: String, label: String, limit: Int)?
-        if type.conforms(to: .jpeg) {
-            mapping = ("image/jpeg", "JPEG", MediaTransferPolicy.preferredBytes(for: profile))
-        } else if type == .heic {
-            mapping = ("image/heic", "HEIC", MediaTransferPolicy.preferredBytes(for: profile))
-        } else if type.conforms(to: .png) {
-            // Keep smaller screenshots/graphics lossless instead of forcing a lossy photo codec.
-            mapping = ("image/png", "PNG", MediaTransferPolicy.preferredBytes(for: profile))
-        } else {
-            mapping = nil
-        }
-        guard let mapping, byteCount <= mapping.limit else { return nil }
-        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-        guard data.count == byteCount else { throw ImagePreparationError.unreadable }
-        return PreparedImage(
-            data: data,
-            mimeType: mapping.mime,
-            sourceFormat: sourceFormat,
-            outputFormat: mapping.label,
-            originalByteCount: byteCount,
-            pixelWidth: dimensions.width,
-            pixelHeight: dimensions.height,
-            wasTranscoded: false
-        )
+    private static func isLikelyTextOrGraphic(
+        type: UTType?, dimensions: (width: Int, height: Int)?
+    ) -> Bool {
+        if type?.conforms(to: .png) == true { return true }
+        guard let dimensions else { return false }
+        let short = min(dimensions.width, dimensions.height)
+        guard short > 0 else { return false }
+        // Very tall phone screenshots should retain more pixels for text.
+        return Double(max(dimensions.width, dimensions.height)) / Double(short) > 1.9
     }
 
-    private static func effectiveDimensions(
-        original: (width: Int, height: Int)?, profile: ImageTransportProfile
-    ) -> [Int] {
-        let longest = original.map { max($0.width, $0.height) }
-            ?? MediaTransferPolicy.maximumImageDimension
-        let ceiling = max(1, min(longest, MediaTransferPolicy.preferredDimension(for: profile)))
-        var values = [ceiling]
-        for candidate in dimensionSteps where candidate < ceiling &&
-            candidate >= (profile == .bluetooth ? 640 : MediaTransferPolicy.minimumImageDimension) {
-            values.append(candidate)
-        }
-        return values
+    private static func isDecodable(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(
+            data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
+        ), CGImageSourceGetCount(source) > 0 else { return false }
+        return CGImageSourceCreateImageAtIndex(
+            source, 0, [kCGImageSourceShouldCache: false] as CFDictionary
+        ) != nil
     }
 
     private static func decodeImage(url: URL, source: CGImageSource?, maximumDimension: Int) -> CGImage? {
@@ -263,20 +198,16 @@ enum ImageTranscoder {
         return CIContext(options: [.cacheIntermediates: false]).createCGImage(output, from: output.extent)
     }
 
-    private static func hasAlpha(_ image: CGImage) -> Bool {
-        switch image.alphaInfo {
-        case .none, .noneSkipFirst, .noneSkipLast: return false
-        default: return true
-        }
-    }
-
     private static func encode(_ image: CGImage, as type: CFString, quality: CGFloat) -> Data? {
         let mutable = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(mutable, type, 1, nil) else { return nil }
         CGImageDestinationAddImage(
             destination,
             image,
-            [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary
+            [
+                kCGImageDestinationLossyCompressionQuality: quality,
+                kCGImageDestinationBackgroundColor: CGColor(gray: 1, alpha: 1)
+            ] as CFDictionary
         )
         guard CGImageDestinationFinalize(destination) else { return nil }
         return mutable as Data

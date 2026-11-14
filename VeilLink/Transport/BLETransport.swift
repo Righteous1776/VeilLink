@@ -237,6 +237,8 @@ final class BLETransport: NSObject, ObservableObject {
     private var lastRSSIPublishAt: [UUID: TimeInterval] = [:]
     private var lastSeenAt: [UUID: TimeInterval] = [:]
     private var queueProgress = BLEQueueProgressState()
+    private var centralStallProbeAt: [UUID: TimeInterval] = [:]
+    private var peripheralStallProbeAt: [UUID: TimeInterval] = [:]
     private var gattHandshakeWatchdog = BLEGattHandshakeWatchdog()
     private var rssiPollTask: Task<Void, Never>?
     private var lastRSSIMaintenanceAt: TimeInterval = 0
@@ -387,6 +389,8 @@ final class BLETransport: NSObject, ObservableObject {
         centralOutboundQueues.removeAll()
         peripheralOutboundQueues.removeAll()
         queueProgress.clearAll()
+        centralStallProbeAt.removeAll()
+        peripheralStallProbeAt.removeAll()
         gattHandshakeWatchdog.resetAll()
         statusText = "蓝牙发现已暂停"
         publishLinkSnapshots(force: true)
@@ -434,6 +438,8 @@ final class BLETransport: NSObject, ObservableObject {
         peripheralOutboundQueues.removeValue(forKey: id)
         remoteCharacteristics.removeValue(forKey: id)
         queueProgress.clear(peerID: id)
+        centralStallProbeAt.removeValue(forKey: id)
+        peripheralStallProbeAt.removeValue(forKey: id)
         gattHandshakeWatchdog.disconnected(id)
         assembler.reset(source: id)
     }
@@ -557,6 +563,7 @@ final class BLETransport: NSObject, ObservableObject {
         }
         if queue.isEmpty {
             centralOutboundQueues.removeValue(forKey: id)
+            centralStallProbeAt.removeValue(forKey: id)
             queueProgress.clear(.central, peerID: id)
         } else {
             centralOutboundQueues[id] = queue
@@ -585,6 +592,9 @@ final class BLETransport: NSObject, ObservableObject {
         while sent < burstLimit, let packet = queue.first {
             guard peripheralManager.updateValue(packet, for: characteristic, onSubscribedCentrals: [central]) else {
                 peripheralOutboundQueues[centralID] = queue
+                // Ready callback is primary; the bounded fallback prevents a lost
+                // callback from stranding the existing data indefinitely.
+                schedulePeripheralDrain(for: centralID, after: max(0.4, tuning.interBurstDelay))
                 return
             }
             _ = queue.removeFirst()
@@ -593,6 +603,7 @@ final class BLETransport: NSObject, ObservableObject {
         }
         if queue.isEmpty {
             peripheralOutboundQueues.removeValue(forKey: centralID)
+            peripheralStallProbeAt.removeValue(forKey: centralID)
             queueProgress.clear(.peripheral, peerID: centralID)
         } else {
             peripheralOutboundQueues[centralID] = queue
@@ -958,23 +969,36 @@ final class BLETransport: NSObject, ObservableObject {
             guard let queue = centralOutboundQueues[id], !queue.isEmpty else { continue }
             let tuning = linkTuning(for: id)
             let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
-            guard now - (queueProgress.lastProgress(.central, peerID: id) ?? now) >= timeout else { continue }
-            centralOutboundQueues.removeValue(forKey: id)
-            queueProgress.clear(.central, peerID: id)
-            statusText = "检测到蓝牙发送停滞，正在自动恢复链路"
-            if wantedConnections.contains(id) { recover(id) }
+            let stalled = now - (queueProgress.lastProgress(.central, peerID: id) ?? now)
+            let peripheral = remotePeripherals[id]
+            let characteristic = remoteCharacteristics[id]
+            guard BLELinkReliabilityPolicy.shouldProbeStalledQueue(
+                channelReady: peripheral?.state == .connected && characteristic?.isNotifying == true,
+                pendingPackets: queue.pendingCount,
+                stalledFor: stalled,
+                secondsSinceLastProbe: centralStallProbeAt[id].map { now - $0 } ?? 2,
+                stallThreshold: timeout
+            ), let peripheral, let characteristic else { continue }
+            centralStallProbeAt[id] = now
+            statusText = "蓝牙发送暂时停滞，保持连接并重试队列"
+            // No queue-stall-derived disconnect or loss of pending fragments.
+            drainCentralQueue(peripheral: peripheral, characteristic: characteristic)
         }
         for id in Array(peripheralOutboundQueues.keys) {
             guard let queue = peripheralOutboundQueues[id], !queue.isEmpty else { continue }
             let tuning = linkTuning(for: id)
             let timeout: TimeInterval = tuning.quality == .weak ? 16 : (tuning.quality == .marginal ? 13 : 10)
-            guard now - (queueProgress.lastProgress(.peripheral, peerID: id) ?? now) >= timeout else { continue }
-            // A peripheral cannot force-disconnect one subscribed central. Drop only the stale
-            // transport frame; the persistent application outbox/checkpoint logic will resend it.
-            peripheralOutboundQueues.removeValue(forKey: id)
-            peripheralDrainWorkItems.removeValue(forKey: id)?.cancel()
-            queueProgress.clear(.peripheral, peerID: id)
-            statusText = "检测到蓝牙发送停滞，已切换到应用层重传"
+            let stalled = now - (queueProgress.lastProgress(.peripheral, peerID: id) ?? now)
+            guard BLELinkReliabilityPolicy.shouldProbeStalledQueue(
+                channelReady: subscribedCentrals[id] != nil && localCharacteristic != nil,
+                pendingPackets: queue.pendingCount,
+                stalledFor: stalled,
+                secondsSinceLastProbe: peripheralStallProbeAt[id].map { now - $0 } ?? 2,
+                stallThreshold: timeout
+            ), let localCharacteristic else { continue }
+            peripheralStallProbeAt[id] = now
+            statusText = "蓝牙外围发送暂时停滞，保持订阅并重试队列"
+            drainPeripheralQueue(for: id, characteristic: localCharacteristic)
         }
         publishLinkSnapshots()
     }
@@ -1102,6 +1126,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
         remoteCharacteristics.removeValue(forKey: id)
         centralOutboundQueues.removeValue(forKey: id)
+        centralStallProbeAt.removeValue(forKey: id)
         queueProgress.clear(.central, peerID: id)
         reconcileConnectionEvent(id)
         if !hasReadyDataChannel(id) {
@@ -1119,6 +1144,7 @@ extension BLETransport: @preconcurrency CBCentralManagerDelegate {
         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
         remoteCharacteristics.removeValue(forKey: id)
         centralOutboundQueues.removeValue(forKey: id)
+        centralStallProbeAt.removeValue(forKey: id)
         queueProgress.clear(.central, peerID: id)
         reconcileConnectionEvent(id)
         if !hasReadyDataChannel(id) {
@@ -1256,6 +1282,7 @@ extension BLETransport: @preconcurrency CBPeripheralManagerDelegate {
         let id = central.identifier
         subscribedCentrals.removeValue(forKey: id)
         peripheralOutboundQueues.removeValue(forKey: id)
+        peripheralStallProbeAt.removeValue(forKey: id)
         queueProgress.clear(.peripheral, peerID: id)
         reconcileConnectionEvent(id)
         if !hasReadyDataChannel(id) {

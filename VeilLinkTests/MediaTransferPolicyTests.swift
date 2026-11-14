@@ -35,6 +35,44 @@ final class MediaTransferPolicyTests: XCTestCase {
         XCTAssertLessThan(q ?? 1, 0.90)
     }
 
+    func testScreenshotCompressionIsUltraAggressiveWithoutCrushingLongScreenshots() {
+        XCTAssertEqual(MediaTransferPolicy.screenshotShortEdge, 500)
+        XCTAssertEqual(MediaTransferPolicy.screenshotLossyQuality, 0.18)
+        XCTAssertEqual(MediaTransferPolicy.photoLongestEdge, 640)
+        XCTAssertEqual(MediaTransferPolicy.photoLossyQuality, 0.28)
+
+        let normalScreenshot = MediaTransferPolicy.compressedLongestEdge(
+            originalWidth: 1_170, originalHeight: 2_532,
+            isLikelyTextOrGraphic: true
+        )
+        XCTAssertEqual(normalScreenshot, 1_083)
+
+        let longScreenshot = MediaTransferPolicy.compressedLongestEdge(
+            originalWidth: 1_170, originalHeight: 6_000,
+            isLikelyTextOrGraphic: true
+        )
+        XCTAssertEqual(longScreenshot, 2_565)
+        XCTAssertLessThanOrEqual(longScreenshot, MediaTransferPolicy.maximumImageDimension)
+
+        let oversized = MediaTransferPolicy.compressedLongestEdge(
+            originalWidth: 1_170, originalHeight: 14_000,
+            isLikelyTextOrGraphic: true
+        )
+        XCTAssertEqual(oversized, 4_096)
+
+        let smallScreenshot = MediaTransferPolicy.compressedLongestEdge(
+            originalWidth: 360, originalHeight: 780,
+            isLikelyTextOrGraphic: true
+        )
+        XCTAssertEqual(smallScreenshot, 780) // never upscale
+
+        let photo = MediaTransferPolicy.compressedLongestEdge(
+            originalWidth: 4_032, originalHeight: 3_024,
+            isLikelyTextOrGraphic: false
+        )
+        XCTAssertEqual(photo, 640)
+    }
+
     func testGenericFilePolicyIsBoundedAndRejectsPathTraversal() {
         XCTAssertEqual(MediaTransferPolicy.maximumGenericFileBytes, 2_000_000)
         XCTAssertEqual(MediaTransferPolicy.genericFileCapabilityBit, 8)

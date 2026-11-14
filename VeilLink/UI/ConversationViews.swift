@@ -370,6 +370,8 @@ struct ChatView: View {
     @State private var isReloadingMessages = false
     @State private var didInitialBottomAnchor = false
     @State private var isNearBottom = true
+    @State private var scrollToBottomRequest = 0
+    @FocusState private var composerFocused: Bool
     private var chatBottomAnchorID: String { "chat-bottom-\(conversation.id)" }
     @State private var loadedFullHistoryForSearch = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -562,7 +564,7 @@ struct ChatView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 14)
-                    .animation(usesReducedInteractionMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88), value: messages.count)
+                    // Do not animate the entire LazyVStack while the keyboard changes its viewport.
                 }
                 .coordinateSpace(name: "chatScroll")
                 .onAppear {
@@ -576,10 +578,19 @@ struct ChatView: View {
                     if !didInitialBottomAnchor {
                         didInitialBottomAnchor = true
                         DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
-                    } else if isNearBottom {
-                        // Do not steal scroll position when the user is reading older messages.
+                    } else if isNearBottom || composerFocused {
+                        // Follow new messages while composing; preserve older-message reading otherwise.
                         DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
                     }
+                }
+                .onChange(of: scrollToBottomRequest) { _ in
+                    guard !showsSearchBar else { return }
+                    DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
+                }
+                .onChange(of: viewport.size.height) { _ in
+                    guard didInitialBottomAnchor, !showsSearchBar,
+                          (composerFocused || isNearBottom) else { return }
+                    DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
                 }
                 .onPreferenceChange(ChatBottomOffsetPreferenceKey.self) { bottomY in
                     guard didInitialBottomAnchor, bottomY.isFinite else { return }
@@ -605,8 +616,11 @@ struct ChatView: View {
 
     private var chatComposerFooter: some View {
             VStack(spacing: 0) {
-                VeilopolyConversationInvitationView(bridge: model.veilopolyMultiplayer,
-                    peerIdentityID: conversation.peerIdentityID, presentationID: "chat-" + conversation.id)
+                // Large invitation controls do not belong above a visible text keyboard.
+                if !composerFocused {
+                    VeilopolyConversationInvitationView(bridge: model.veilopolyMultiplayer,
+                        peerIdentityID: conversation.peerIdentityID, presentationID: "chat-" + conversation.id)
+                }
                 if let mediaStatus {
                     HStack(spacing: 8) {
                         if isPreparingImage { ProgressView().controlSize(.small) }
@@ -735,6 +749,7 @@ struct ChatView: View {
                     } else {
                         TextField("加密消息", text: $draft)
                             .textFieldStyle(VeilTextFieldStyle())
+                            .focused($composerFocused)
                         if composerOptionsEnabled {
                             Button {
                                 showsComposerOptions = true
@@ -780,7 +795,11 @@ struct ChatView: View {
         VStack(spacing: 0) {
             chatSearchHeader
             chatMessageTimeline
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // The composer tracks the keyboard safe area; the message viewport resizes above it.
             chatComposerFooter
+                .fixedSize(horizontal: false, vertical: true)
         }
         .background(VeilAmbientBackground())
         .navigationTitle("")
@@ -847,6 +866,10 @@ struct ChatView: View {
             confirmsComposerArtwork = false
             didInitialBottomAnchor = false
             isNearBottom = true
+        }
+        .onChange(of: composerFocused) { _ in
+            // Restore the latest bubble after both keyboard opening and dismissal.
+            scrollToBottomRequest &+= 1
         }
         .onChange(of: model.messagesRevision) { _ in
             if showsConversationWorkspace { prepareConversationWorkspace(presentWhenReady: false) }
@@ -1288,6 +1311,7 @@ struct ChatView: View {
             draft = ""
             replyingTo = nil
             reload()
+            scrollToBottomRequest &+= 1
         } catch {
             model.alertMessage = error.localizedDescription
         }
@@ -1352,7 +1376,7 @@ struct ChatView: View {
     private func prepareAndSendImage(_ imported: ImportedImageFile) {
         guard !isPreparingImage else { return }
         isPreparingImage = true
-        withAnimation(.easeOut(duration: 0.18)) { mediaStatus = "正在高质量解析与压缩图片…" }
+        withAnimation(.easeOut(duration: 0.18)) { mediaStatus = "正在极限压缩图片（保留可读细节）…" }
 
         Task { @MainActor in
             let accessed = imported.shouldDeleteAfterUse ? false : imported.url.startAccessingSecurityScopedResource()

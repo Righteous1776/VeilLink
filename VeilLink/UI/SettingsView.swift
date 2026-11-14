@@ -53,7 +53,8 @@ struct SettingsView: View {
         VeilStableScrollView {
             VStack(spacing: 16) {
                 profileCard.veilStaggeredEntrance(index: 0)
-                securityCard.veilStaggeredEntrance(index: 1)
+                unifiedImportCard.veilStaggeredEntrance(index: 1)
+                securityCard.veilStaggeredEntrance(index: 2)
                 VeilSettingsDisclosureSection(section: .appearanceAndData, isExpanded: $appearanceAndDataExpanded) {
                     VStack(spacing: 12) {
                         appearanceCard
@@ -447,6 +448,31 @@ struct SettingsView: View {
                 .foregroundColor(VeilTheme.tertiaryText)
         }
         .veilCard()
+    }
+
+    private var unifiedImportCard: some View {
+        NavigationLink(destination: VeilFileInboxView(model: model)) {
+            HStack(spacing: 13) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(VeilTheme.goldBright)
+                    .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("统一导入文件")
+                        .font(.headline)
+                        .foregroundColor(VeilTheme.text)
+                    Text("苹果「文件」· 自动识别备份、训练包与文档")
+                        .font(.caption)
+                        .foregroundColor(VeilTheme.secondaryText)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .foregroundColor(VeilTheme.tertiaryText)
+            }
+            .padding(14)
+            .veilCard(emphasized: true)
+        }
+        .buttonStyle(VeilPressStyle())
     }
 
     private var storageCard: some View {

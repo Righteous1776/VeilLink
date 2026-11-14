@@ -357,7 +357,7 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
             }
         }
     }
-    func tick() {
+    func tick(now: Date = Date()) {
         guard boundLocalIdentity == localIdentity() else { suspendForIdentityChange(); return }
         guard foreground else { return }
         if (incomingInvitation != nil || outgoingInvitation != nil), Date().timeIntervalSince(invitationBegan) > 120 {
@@ -374,12 +374,19 @@ final class VeilopolyMultiplayerBridge: ObservableObject {
         }
         guard let config = configuration, let local = localIdentity(), !peerLeft else { return }
         let peer = peer(for: config, local: local)
-        if VeilopolyRoomLinkPolicy.shouldPauseGame(secureSessionReady: sessions.hasSecureSession(for: peer),
-            secondsSincePeer: Date().timeIntervalSince(lastHeard)) {
-            gameModel?.setNetworkAvailability(false, message: "等待对方重连／同步；不会代替真人操作")
-            // recoverSecureSession removes/reseeds the shared security context.
-            // Do NOT call it from a game timer: chat may still be healthy.
+        let secureReady = sessions.hasSecureSession(for: peer)
+        let silence = now.timeIntervalSince(lastHeard)
+        if VeilopolyRoomLinkPolicy.shouldPauseGame(
+            secureSessionReady: secureReady, secondsSincePeer: silence
+        ) {
+            gameModel?.setNetworkAvailability(false, message: "加密会话尚未就绪，保留房间并等待恢复")
+        } else if VeilopolyRoomLinkPolicy.shouldProbeGameSync(
+            secureSessionReady: secureReady, secondsSincePeer: silence
+        ) {
+            // Missing game packets do not revoke a live encrypted chat/BLE session.
+            status = "对方游戏数据暂未回应；保留加密连接并继续同步"
         }
+        // Never reset a healthy chat security context from a game timer.
         if waitingForHostAcceptance {
             enqueue(.init(roomID: config.roomID, kind: .accept), to: config.hostIdentityID)
         }
