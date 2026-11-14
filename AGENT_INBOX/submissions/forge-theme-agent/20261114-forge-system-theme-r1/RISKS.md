@@ -19,3 +19,10 @@
 14. LAN state semantics: secure peers take priority over merely connected peers. This represents observed route availability, not selected active transport, file-transfer percentage or negotiated bandwidth.
 15. Reduced motion: CPU shutters/LAN/health use existing short VeilMotionPolicy animations and no independent scheduler. RF has a single conditional TimelineView. Explicitly inspect OS Reduce Motion and performance overrides on device before integration.
 16. All state labels are actual app-derived values; no fabricated load/speed, no root overlay, no new gestures or persistent background work.
+
+
+17. R4 chat is a high-interaction surface: the proposed patch deliberately changes only presentational components. Do not interpret this as resolving preexisting keyboard obstruction, inverted message order on device clock skew, or scroll-to-top regression. These need separate functional investigations and tests.
+18. FORGE message status has three discrete detents for QUEUE/TX/ACK and explicit HOLD/STOP/ERR labels; it is an exact status symbol, not a three-phase progress percentage. Do not mistake .sending for acknowledged delivery.
+19. ChatView gains one observed theme controller; the many MessageBubble instances receive a Bool instead of each subscribing to the global theme object. Still profile for long histories and iOS theme switching.
+20. Send plunger preserves native Button hit testing and a fixed 36pt footprint; footer top-line overlay introduces no additional height. Validate the keyboard safe area and VoiceOver on physical devices.
+21. Global-message animation disable applies only to FORGE. Other themes' original insertion and message count transitions are deliberately preserved.
