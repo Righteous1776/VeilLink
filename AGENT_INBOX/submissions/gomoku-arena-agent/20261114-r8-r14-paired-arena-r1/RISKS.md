@@ -1,0 +1,14 @@
+# Risks, overlap and stop conditions
+
+1. **Not yet actual direct games.** This package designs and locally checks a harness, not a game result. No native product Xcode build or XCTest has been run on the full R14 tree; any statement of R8 vs R14 actual winning rate is currently unsupported.
+2. **Comparator identity:** `diagnosticEclipseUnified:false` is the R8-compatible R14 fallback, not a separately compiled V29 release IPA. The fallback suffix matches the V29 source after removing trace callbacks; entire engine environment, board rules and optional app-level learning must still be checked in an Apple integration test. Do not claim full binary identity.
+3. **Time budgeting:** Mandatory full-board tactical safety scans can exceed a nominal wall-clock cap. A fixed `timeLimitMilliseconds` is matched intent, not a hard equal CPU-work guarantee; report actual decision timing and avoid misleading equal-node comparisons (node counters differ by engine).
+4. **Search activation:** R14 may make early winning/defensive moves before dispatching trained PVS. `countUnified` must be nonzero and the routed fraction disclosed. All-fallback match sets are nonqualifying even if scoring appears favorable.
+5. **Source competition:** PRs #215–#220 select R14 variants; #199 seven-level tiers, #209 fitted policy, #213/#214 off-by-default tactics and #210/#211/#212 alternatives overlap. Apply this test only after Governor chooses one exact target source. New code must not self-promote R12/R13 or rewrite engine code.
+6. **Training leakage:** Deterministic central six-ply openings might overlap with prior training D4 states; absence of collisions is not independently proven. The experiment is an engineering comparison, not uncontaminated generalized Elo verification. Separate predeclared, untrained heldout opening families are preferable.
+7. **Fixture integrity:** Independent Python tests use tiny toy boards to check validation logic; they are not real AI completed games and must never be counted in benchmark totals.
+8. **Platform:** Linux can validate source syntax and Python audit, not full Apple XCTest, background scheduling, CPU/thermal, Energy Diagnostics or unsigned IPA. iPhone model/time must be reported separately.
+9. **Data safety:** No private game histories, model binaries, raw private samples or signing secrets go in the Inbox. JSONL direct results must be auditable and stored off Inbox until owner-approved summary; no DB or iOS persistent data is changed by this harness.
+10. **CI duration:** 2,500 pairs × complete games can exceed standard CI limits. Run sharded off the release workflow in an authorized Apple environment, combining exact seed/pair-exclusive raw logs with the auditor. A single incomplete shard invalidates the combined test.
+
+Status: `DROPPED`; no release authority; no true match win-rate assertions.
