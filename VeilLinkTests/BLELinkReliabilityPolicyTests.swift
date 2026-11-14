@@ -2,6 +2,33 @@ import XCTest
 @testable import VeilLink
 
 final class BLELinkReliabilityPolicyTests: XCTestCase {
+    func testForegroundRestoreRequiresRunningForegroundAndPersistedIntent() {
+        XCTAssertTrue(BLELinkReliabilityPolicy.shouldForegroundRestore(
+            isRunning: true, foreground: true, wantedCount: 1
+        ))
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldForegroundRestore(
+            isRunning: false, foreground: true, wantedCount: 1
+        ))
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldForegroundRestore(
+            isRunning: true, foreground: false, wantedCount: 1
+        ))
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldForegroundRestore(
+            isRunning: true, foreground: true, wantedCount: 0
+        ))
+    }
+
+    func testRestoredPeripheralDoesNotResetPendingReconnectBackoff() {
+        XCTAssertTrue(BLELinkReliabilityPolicy.shouldScheduleRestoredReconnect(
+            isDisconnected: true, hasPendingRetry: false
+        ))
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldScheduleRestoredReconnect(
+            isDisconnected: true, hasPendingRetry: true
+        ))
+        XCTAssertFalse(BLELinkReliabilityPolicy.shouldScheduleRestoredReconnect(
+            isDisconnected: false, hasPendingRetry: false
+        ))
+    }
+
     func testRSSIQualityBands() {
         XCTAssertEqual(BLELinkReliabilityPolicy.quality(rssi: -55), .strong)
         XCTAssertEqual(BLELinkReliabilityPolicy.quality(rssi: -62), .strong)
