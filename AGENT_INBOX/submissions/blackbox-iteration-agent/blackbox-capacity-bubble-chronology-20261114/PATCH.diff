@@ -685,3 +685,596 @@ diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.s
              LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
                  Button("立即抓取状态") {
                      RuntimeDiagnosticsBridge.shared.recordSemanticAction("owner.telemetry.capture_now")
+diff --git a/VeilLink/Agent/Games/LocalAIGameController.swift b/VeilLink/Agent/Games/LocalAIGameController.swift
+--- a/VeilLink/Agent/Games/LocalAIGameController.swift
++++ b/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -78,6 +78,15 @@
+         case draw
+     }
+ 
++    // All seven local-game reducers share this privacy-safe event boundary.
++    private func flight(_ phase: String, values: [String: Int] = [:], flags: [String: Bool] = [:],
++                        level: DiagnosticLogLevel = .debug) {
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game." + game.rawValue, phase: phase,
++            counters: values, flags: flags, level: level
++        )
++    }
++
+     @Published private(set) var gomoku = GomokuState()
+     @Published private(set) var xiangqi = XiangqiState()
+     @Published private(set) var ludo = LudoState()
+@@ -230,6 +239,7 @@
+             boardMatchSaveWarning = nil
+         } catch {
+             boardMatchSaveWarning = "本步存档失败：本局仍可继续，但强制退出可能丢失最近走子。"
++            flight("save.failed", values: ["move_count": boardMatchMoves.count], level: .error)
+         }
+     }
+ 
+@@ -375,6 +385,7 @@
+         sessionID = UUID().uuidString
+         outcome = .playing
+         isAIThinking = false
++        flight("match.restart", flags: ["start_ai": startAI], level: .info)
+         developerFormationPlies.removeAll(keepingCapacity: true)
+         developerTeachingMode = false
+         lastDecisionMode = "规则 Bot"
+@@ -391,6 +402,7 @@
+         guard state.apply(index: index, actor: humanPlayer) else { return }
+         learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: .host))
+         gomoku = state
++        flight("move.human_applied", values: ["cell": index, "ply": state.moveCount], level: .info)
+         persistBoardMove(.gomoku(index: index), actor: humanPlayer)
+         finishOrScheduleAI()
+     }
+@@ -599,6 +611,7 @@
+             return
+         }
+         nativeTrainingTarget = target
++        flight("training.started", values: ["target": target], level: .info)
+         nativeTrainingCompleted = 0
+         isNativeTraining = true
+         setUseNativeTrainingEvidence(true)
+@@ -633,6 +646,7 @@
+                     if stored == 1 {
+                         self.nativeTrainingCompleted += 1
+                         self.trainedNativeGames = store.summary.completedGames
++                        self.flight("training.game_saved", values: ["count": self.nativeTrainingCompleted])
+                         failed = 0
+                     } else if store.lastSaveSucceeded {
+                         // Duplicate or invalid match: do NOT count it as trained.
+@@ -652,6 +666,10 @@
+                 await Task.yield()
+             }
+             self.trainedNativeGames = store.summary.completedGames
++            self.flight("training.finished",
++                        values: ["completed": self.nativeTrainingCompleted,
++                                 "target": target, "rejected": rejected, "failed": failed],
++                        flags: ["cancelled": Task.isCancelled], level: .info)
+             if self.nativeTrainingCompleted == target {
+                 self.nativeTrainingMessage = "本轮已保存 \(self.nativeTrainingCompleted) 局原生自对弈。"
+             } else if Task.isCancelled {
+@@ -770,6 +788,7 @@
+     }
+ 
+     private func finishOrScheduleAI() {
++        if game != .gomoku { flight("turn.human_applied") }
+         updateOutcome()
+         guard !developerTeachingMode else { return }
+         guard outcome == .playing else { return }
+@@ -777,6 +796,7 @@
+     }
+ 
+     private func updateOutcome() {
++        let previousOutcome = outcome
+         switch game {
+         case .gomoku:
+             if let winner = gomoku.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+@@ -799,6 +819,9 @@
+             if let winner = magneticHockey.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
+             else if magneticHockey.isDraw { outcome = .draw }
+         }
++        if previousOutcome != outcome {
++            flight("match." + String(describing: outcome), level: .info)
++        }
+         guard !developerTeachingMode else { return }
+         if game == .gomoku, outcome != .playing {
+             _ = persistEclipseArchive(status: eclipseArchiveStatus)
+@@ -826,6 +849,10 @@
+         guard current == aiPlayer else { return }
+         aiTask?.cancel()
+         isAIThinking = true
++        flight("ai.search_started",
++               values: ["search_multiplier": boardDifficulty.searchBudgetMultiplier,
++                        "gomoku_ply": game == .gomoku ? gomoku.moveCount : 0],
++               flags: ["economy": boardSearchMode == .economy])
+         aiTask = Task { @MainActor [weak self] in
+             guard let self else { return }
+             try? await Task.sleep(nanoseconds: 180_000_000)
+@@ -837,6 +864,10 @@
+             if let selected { self.applyAI(selected) }
+             if self.game == .gomoku { self.eclipseTraceStore.clear() }
+             self.lastDecisionMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
++            self.flight("ai.search_finished",
++                        values: ["duration_ms": self.lastDecisionMilliseconds ?? 0],
++                        flags: ["candidate_found": selected != nil],
++                        level: selected == nil ? .warning : .info)
+             self.eclipseSearchStartedAt = nil
+             self.isAIThinking = false
+             self.aiTask = nil
+@@ -1089,6 +1120,7 @@
+     }
+ 
+     private func applyAI(_ candidate: AgentActionCandidate) {
++        flight("ai.candidate_apply")
+         switch game {
+         case .gomoku:
+             guard let index = candidate.metadata["index"].flatMap(Int.init) else { return }
+@@ -1097,6 +1129,7 @@
+             guard state.apply(index: index, actor: aiPlayer) else { return }
+             learningPlies.append(AdaptiveBoardPly(position: position, action: String(index), actor: .guest))
+             gomoku = state
++            flight("move.ai_applied", values: ["cell": index, "ply": state.moveCount], level: .info)
+             persistBoardMove(.gomoku(index: index), actor: aiPlayer)
+         case .xiangqi:
+             guard let from = candidate.metadata["from"].flatMap(Int.init),
+@@ -1136,6 +1169,7 @@
+             guard state.apply(angle: angle, power: power, actor: aiPlayer, sessionID: sessionID) else { return }
+             magneticHockey = state
+         }
++        if game != .gomoku { flight("turn.ai_applied") }
+     }
+ 
+     private func finalizeLearning(as result: AdaptiveBoardGameResult) {
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -247,7 +247,25 @@
+     private var audioRouteSubscription: AnyCancellable?
+     private var linkSnapshotRefreshWorkItem: DispatchWorkItem?
+     private var lastLinkSnapshotPublishAt: TimeInterval = 0
++    private var lastQueuePressureUptime: TimeInterval = -100
+ 
++    private func flight(_ phase: String, id: UUID? = nil,
++                        values: [String: Int] = [:], level: DiagnosticLogLevel = .debug) {
++        var fields: [String: String] = ["payload_recorded": "false"]
++        if let id { fields["transport_id"] = id.uuidString }
++        for (key, value) in values { fields[key] = String(value) }
++        DiagnosticLogStore.shared.log(level, .bluetooth, event: "ble.flight." + phase, metadata: fields)
++    }
++
++    private func reportQueuePressure(id: UUID, bytes: Int, packets: Int, pending: Int) {
++        let now = ProcessInfo.processInfo.systemUptime
++        guard now - lastQueuePressureUptime >= 5 else { return }
++        lastQueuePressureUptime = now
++        flight("queue_pressure", id: id,
++               values: ["payload_bytes": bytes, "pending_packets": packets, "pending_bytes": pending],
++               level: .warning)
++    }
++
+     private let maxFragmentsPerMessage = 16_384
+     private let passiveDiscoveryRetention: TimeInterval = 15
+     private let performanceProfile: DevicePerformanceProfile
+@@ -307,6 +325,7 @@
+     }
+ 
+     func start() {
++        flight("start", level: .info)
+         isRunning = true
+         refreshBluetoothAudioRoute()
+         startRSSIPolling()
+@@ -393,6 +412,7 @@
+     }
+ 
+     func disconnect(_ id: UUID) {
++        flight("disconnect_requested", id: id, level: .info)
+         if wantedConnections.remove(id) != nil {
+             connectionIntentStore.save(wantedConnections)
+         }
+@@ -408,6 +428,7 @@
+     /// Drops the current link while preserving the user's intent to stay connected.
+     /// Used by the security/session watchdog when a connection becomes stale.
+     func recover(_ id: UUID) {
++        flight("recover_requested", id: id, level: .warning)
+         if wantedConnections.insert(id).inserted {
+             connectionIntentStore.save(wantedConnections)
+         }
+@@ -439,6 +460,7 @@
+     }
+ 
+     func connect(to id: UUID) {
++        flight("connect_requested", id: id, level: .info)
+         if wantedConnections.insert(id).inserted {
+             connectionIntentStore.save(wantedConnections)
+         }
+@@ -493,6 +515,9 @@
+                 maximumPackets: maxQueuedPacketsPerPeer,
+                 maximumBytes: maxQueuedBytesPerPeer
+             ) else {
++                reportQueuePressure(id: transportID, bytes: data.count,
++                                    packets: existing?.pendingCount ?? 0,
++                                    pending: existing?.pendingBytes ?? 0)
+                 return .temporarilyUnavailable
+             }
+             guard centralOutboundQueues[transportID, default: PeerOutboundQueue()].appendEncodedPayload(
+@@ -524,6 +549,9 @@
+             maximumPackets: maxQueuedPacketsPerPeer,
+             maximumBytes: maxQueuedBytesPerPeer
+         ) else {
++            reportQueuePressure(id: transportID, bytes: data.count,
++                                packets: existing?.pendingCount ?? 0,
++                                pending: existing?.pendingBytes ?? 0)
+             return .temporarilyUnavailable
+         }
+         guard peripheralOutboundQueues[transportID, default: PeerOutboundQueue()].appendEncodedPayload(
+@@ -777,7 +805,10 @@
+         connectedPeerCount = connectionEvents.count
+         statusText = "蓝牙数据通道已就绪"
+         publishLinkSnapshots(force: true)
++        if firstConnectionEvent {
++            flight("data_ready", id: id, level: .info)
++            onConnected?(id)
++        }
+-        if firstConnectionEvent { onConnected?(id) }
+     }
+ 
+     private func publishDisconnected(_ id: UUID) {
+@@ -784,7 +815,10 @@
+         let didDisconnect = connectionEvents.markDisconnected(id)
+         connectedPeerCount = connectionEvents.count
+         publishLinkSnapshots(force: true)
++        if didDisconnect {
++            flight("data_disconnected", id: id, level: .warning)
++            onDisconnected?(id)
++        }
+-        if didDisconnect { onDisconnected?(id) }
+     }
+ 
+     private func scheduleReconnect(_ peripheral: CBPeripheral, immediate: Bool = false) {
+@@ -801,6 +835,8 @@
+         let baseDelay = immediate ? 0 : BLELinkReliabilityPolicy.reconnectDelay(attempt: attempt)
+         let jitter = immediate ? 0 : Double.random(in: 0...min(1.0, baseDelay * 0.12))
+         let delay = baseDelay + jitter
++        flight("reconnect_scheduled", id: id,
++               values: ["attempt": attempt, "delay_ms": Int(delay * 1_000)], level: .warning)
+         statusText = attempt <= 2 ? "蓝牙链路恢复中" : "蓝牙链路较弱，持续重连中"
+         publishLinkSnapshots()
+ 
+@@ -1093,6 +1129,7 @@
+         peripheral.discoverServices([Self.serviceUUID])
+         peripheral.readRSSI()
+         statusText = "蓝牙物理链路已连接，正在发现数据通道"
++        flight("physical_connected", id: peripheral.identifier, level: .info)
+         publishLinkSnapshots(force: true)
+     }
+ 
+@@ -1110,6 +1147,8 @@
+         } else {
+             statusText = "中央角色连接失败，备用数据通道仍可用"
+         }
++        flight("connect_failed", id: id,
++               values: ["error_code": (error as NSError?)?.code ?? 0], level: .warning)
+         scheduleReconnect(peripheral)
+     }
+ 
+@@ -1127,6 +1166,8 @@
+         } else {
+             statusText = "中央角色已断开，备用数据通道仍可用"
+         }
++        flight("physical_disconnected", id: id,
++               values: ["error_code": (error as NSError?)?.code ?? 0], level: .warning)
+         scheduleReconnect(peripheral)
+     }
+ 
+diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/VeilopolyMultiplayerBridge.swift
+--- a/VeilLink/App/VeilopolyMultiplayerBridge.swift
++++ b/VeilLink/App/VeilopolyMultiplayerBridge.swift
+@@ -51,6 +51,14 @@
+     private var peerLeft = false
+     private var foreground = true
+ 
++    private func flight(_ phase: String, values: [String: Int] = [:],
++                        flags: [String: Bool] = [:], level: DiagnosticLogLevel = .debug) {
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.veilopoly.multiplayer", phase: phase,
++            counters: values, flags: flags, level: level
++        )
++    }
++
+     init(sessions: any VeilopolyControlChannel, localIdentity: @escaping @MainActor () -> String?,
+          resumeURL: URL? = nil, gameSaveDirectory: URL? = nil) {
+         self.sessions = sessions
+@@ -72,6 +80,7 @@
+         presentationContext = context; isGamePresented = true
+     }
+     func invite(_ conversation: ConversationSummary, presentationContext: String = "game-lobby") {
++        flight("invite.requested", level: .info)
+         lastActionPeer = conversation.peerIdentityID
+         guard let local = localIdentity(), local != conversation.peerIdentityID else {
+             lastError = "请先启用本机身份，再邀请其他联系人。"
+@@ -87,6 +96,7 @@
+             lastError = "当前联系人身份无效，未创建或发送联机邀请。"
+             return
+         }
++        flight("invite.created", flags: ["secure_link": sessions.hasSecureSession(for: conversation.peerIdentityID)])
+         outgoingInvitation = config; boundLocalIdentity = local
+         self.presentationContext = presentationContext
+         lastError = nil
+@@ -105,6 +115,7 @@
+     }
+ 
+     func acceptInvitation(presentationContext: String = "game-lobby") {
++        flight("invite.accept_requested", level: .info)
+         guard let config = incomingInvitation, config.guestIdentityID == localIdentity(),
+               Date().timeIntervalSince(invitationBegan) <= 120 else { return }
+         do {
+@@ -116,6 +127,7 @@
+     }
+ 
+     func declineInvitation() {
++        flight("invite.decline", level: .info)
+         if let config = incomingInvitation {
+             enqueue(.init(roomID: config.roomID, kind: .decline), to: config.hostIdentityID)
+         }
+@@ -140,6 +152,8 @@
+             }
+             guard let packet = try assembler.ingest(fragment, from: authenticatedPeer,
+                 now: Date().timeIntervalSince1970) else { return }
++            flight("packet.received", values: ["fragment_count": fragment.count],
++                   flags: ["active_room": gameModel != nil])
+             switch packet.kind {
+             case .invite:
+                 guard let config = packet.configuration, config.hostIdentityID == authenticatedPeer,
+@@ -185,7 +199,10 @@
+                 if gameModel?.networkReady == true { lastError = nil }
+                 status = gameModel?.networkStatus ?? ""
+             }
++        } catch {
++            flight("packet.invalid", level: .warning)
++            lastError = "收到无效或不兼容的联机数据，已忽略；未更改对局。"
++        }
+-        } catch { lastError = "收到无效或不兼容的联机数据，已忽略；未更改对局。" }
+     }
+ 
+     private func createGame(_ config: VeilopolyRoomConfiguration, restoring: Bool = false) throws {
+@@ -199,6 +216,7 @@
+             self?.enqueue(packet, to: peer)
+         }
+         configuration = config; boundLocalIdentity = local; peerLeft = false; gameModel = game
++        flight(restoring ? "game.restored" : "game.created", level: .info)
+         // The lobby can be backgrounded while constructing/restoring a room.
+         // Keep the game reducer's lifecycle gate aligned with the bridge gate.
+         game.setNetworkForeground(foreground)
+@@ -220,7 +238,10 @@
+             waitingForHostAcceptance = local == record.configuration.guestIdentityID
+             status = "已恢复本地联机断点，等待同一对手上线核对；不会自行变成房主"
+             gameModel?.requestNetworkSync()
++        } catch {
++            flight("restore.failed", level: .error)
++            lastError = "联机房间记录无法恢复，已保留文件；未覆盖单机存档。"
++        }
+-        } catch { lastError = "联机房间记录无法恢复，已保留文件；未覆盖单机存档。" }
+     }
+ 
+     private func persistResumeRecord(_ config: VeilopolyRoomConfiguration, local: String) {
+@@ -234,6 +255,7 @@
+     }
+ 
+     func leaveRoom() {
++        flight("room.leave", level: .info)
+         lastError = nil; lastActionPeer = nil
+         let active = configuration ?? outgoingInvitation
+         let removeResumeIndex = configuration != nil
+@@ -265,6 +287,7 @@
+     }
+ 
+     func reconnectAndSync() {
++        flight("sync.manual_requested", level: .info)
+         guard let config = configuration, let local = localIdentity() else { return }
+         let peer = peer(for: config, local: local)
+         if VeilopolyRoomLinkPolicy.shouldRequestSecureRecovery(
+@@ -287,10 +310,12 @@
+         if [.status, .snapshot, .resync].contains(packet.kind),
+            outgoing.contains(where: { $0.peer == peer && $0.packet.kind == packet.kind }) { return }
+         guard outgoing.count < 128 else {
++            flight("queue.full", values: ["queue_depth": outgoing.count], level: .error)
+             gameModel?.setNetworkAvailability(false, message: "同步队列已满，已暂停；请重新同步")
+             return
+         }
+         outgoing.append(Outbound(peer: peer, packet: packet))
++        flight("packet.queued", values: ["queue_depth": outgoing.count])
+         guard senderTask == nil else { return }
+         let generation = senderGeneration
+         senderTask = Task { @MainActor [weak self] in await self?.drain(generation: generation) }
+@@ -328,6 +353,7 @@
+                     guard sent else { throw VeilopolyRoomError.sequenceGap }
+                     try await Task.sleep(nanoseconds: 20_000_000)
+                 }
++                flight("packet.sent", values: ["fragments": fragments.count])
+                 if item.packet.kind == .invite, outgoingInvitation?.roomID == item.packet.roomID {
+                     status = "城市经济 V5 邀请已提交加密通道，等待对方接受（120 秒有效）"
+                 }
+@@ -340,6 +366,7 @@
+                 } else {
+                     status = "加密控制通道暂不可用，已暂停；请重连后重试或取消邀请。"
+                 }
++                flight("packet.send_failed", flags: ["unsupported_peer": error is SendFailure], level: .error)
+                 lastError = status
+                 gameModel?.setNetworkAvailability(false, message: status)
+                 return
+@@ -389,6 +416,7 @@
+         if gameModel?.networkReady == false || gameModel?.awaitingHost == true { gameModel?.requestNetworkSync() }
+     }
+     private func suspendForIdentityChange() {
++        flight("identity_change.suspend", level: .warning)
+         gameModel?.flushSave()
+         gameModel?.setNetworkAvailability(false, message: "本机身份已切换，原联机房间暂停")
+         senderTask?.cancel(); senderTask = nil; senderGeneration = UUID(); outgoing = []
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -24,6 +24,11 @@
+         }
+         .background(VeilAmbientBackground())
+         .navigationTitle("游戏")
++        .onAppear {
++            RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                module: "game.lobby", phase: "screen.open", level: .info
++            )
++        }
+         .toolbar {
+             ToolbarItem(placement: .navigationBarTrailing) {
+                 VeilToolCenterToolbarLink(model: model)
+@@ -171,47 +176,91 @@
+     private var realtimeArcadeSection: some View {
+         VStack(alignment: .leading, spacing: 10) {
+             sectionTitle("实时渲染游戏", subtitle: "SpriteKit 2D + SceneKit 3D · 稳定帧循环 · 自适应画质")
++            NavigationLink(destination: PrismRift3DGameView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.prism-rift", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: PrismRift3DGameView()) {
+                 realtimeGameRow(title: "棱镜裂隙 3D", detail: "动态灯光 · 三维隧道 · 3 阶 Boss · 能量与舰体管理", motif: .circuit, badge: "3D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: AfterglowConvoyLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.afterglow-convoy", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: AfterglowConvoyLabView()) {
+                 realtimeGameRow(title: "余烬护航", detail: "雨夜视差 · 信标伙伴 · 风暴护盾 · 程序化航线", motif: .tide, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: AshHarborLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.ash-harbor", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: AshHarborLabView()) {
+                 realtimeGameRow(title: "灰港", detail: "暴风救援 · 探照灯与船体管理 · 四组求救信号", motif: .tide, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: RainlineLastTrainLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.rainline", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: RainlineLastTrainLabView()) {
+                 realtimeGameRow(title: "雨线末班车", detail: "实时列车调度 · 四类故障 · 夜雨材质与本地模型", motif: .comet, badge: "2D+")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: SignalDiveLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.signal-dive", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: SignalDiveLabView()) {
+                 realtimeGameRow(title: "深潜信号", detail: "深海探索 · 主动声呐 · 生物回波与压力管理", motif: .pulse, badge: "2D+")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: BlackoutDistrictLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.blackout-district", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: BlackoutDistrictLabView()) {
+                 realtimeGameRow(title: "熄灯街区", detail: "实时抢修驾驶 · 12 节点电网 · 130+ 建筑单元", motif: .circuit, badge: "2D+")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilPulseRunnerView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.pulse-runner", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilPulseRunnerView()) {
+                 realtimeGameRow(title: "星隙快递", detail: "三段式横版平台跳跃 · 收集星核 · 冲刺", motif: .comet, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilVoidSwarmView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.void-swarm", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilVoidSwarmView()) {
+                 realtimeGameRow(title: "虚空蜂群", detail: "触控移动 · 自动射击 · 波次生存", motif: .guardian, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: RhythmNeonView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.rhythm-neon", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: RhythmNeonView()) {
+                 realtimeGameRow(title: "霓虹节拍", detail: "节拍闪避 · 连击得分 · 超载冲刺", motif: .pulse, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilRhythmR6NativeGameView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.rhythm-expedition", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilRhythmR6NativeGameView()) {
+                 realtimeGameRow(title: "实时节奏远征", detail: "SpriteKit 实时判定 · 原生渲染 · 自适应画质", motif: .pulse, badge: "2D")
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: LatticeClashLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.lattice-clash", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: LatticeClashLabView()) {
+                 realtimeGameRow(title: "晶格冲突", detail: "确定性单机策略 · 连锁占领 · 本地 Bot", motif: .circuit, badge: "策略")
+             }
+             .buttonStyle(.plain)
+@@ -221,7 +270,11 @@
+     private var interactiveStorySection: some View {
+         VStack(alignment: .leading, spacing: 10) {
+             sectionTitle("互动剧情", subtitle: "剧情与游戏归入大厅，不再藏在工具箱")
++            NavigationLink(destination: VeilStoryLabView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.story", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilStoryLabView()) {
+                 realtimeGameRow(
+                     title: "故事实验室",
+                     detail: "原生分支叙事 · 多结局 · 完全离线",
+@@ -230,7 +283,11 @@
+                 )
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilMonogatariGameView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.monogatari-r6", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilMonogatariGameView()) {
+                 realtimeGameRow(
+                     title: "雨幕之后 · Monogatari R6",
+                     detail: "官方 2.8.0 完整引擎 · 东京雨夜 · 四种结局 · 本地存档",
+@@ -239,7 +296,11 @@
+                 )
+             }
+             .buttonStyle(.plain)
++            NavigationLink(destination: VeilMonogatariHostView().onAppear {
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.monogatari-host", phase: "screen.open", level: .info
++                )
++            }) {
+-            NavigationLink(destination: VeilMonogatariHostView()) {
+                 realtimeGameRow(
+                     title: "VeilLink × Monogatari",
+                     detail: "官方 v2.8.0 引擎 · 原创离线剧情 · 本地存档",
+@@ -421,6 +482,9 @@
+             }
+         }
+         .onAppear {
++            RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                module: "game." + game.rawValue, phase: "screen.open", level: .info
++            )
+             model.agent.setComputeFocus(.gameDecision)
+             controller.resumeBoardMatchIfNeeded()
+             if game == .tactical,
