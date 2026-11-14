@@ -36,3 +36,21 @@
 - scope_extension: native Gomoku/ECLIPSE and all seven local AI game reducers; BLE link lifecycle + sampled backpressure; Veilopoly secure-room traffic plus committed game reducer state; 14 arcade/story game launch boundaries
 - constraints: no user chat body, BLE packet payload, private keys, Monopoly card bodies or complete save data; no true cross-app/system privilege
 - R3_verification: 14-file unified patch (83+ hunks) context-matched against exact main. Apple Xcode/XCTest/device tests NOT_RUN; native-engine coverage is partial.
+
+## R4 continuation — 2026-11-14 (supersedes R3 file count)
+
+- status: DROPPED / INBOX_ONLY / uncompiled proposal
+- proposed_files_total: **23** (22 existing source + test files, 1 proposed new Swift package privacy regression test)
+- R4 additional proposed paths:
+  - VeilLink/Diagnostics/DeepTelemetry.swift
+  - VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift
+  - VEILOPOLY_DEV/Veilopoly/Tests/VeilopolyUITests/FlightRecorderPrivacyTests.swift (NEW)
+  - VeilLink/UI/RainlineLastTrainLabView.swift
+  - VeilLink/UI/AfterglowConvoyLabView.swift
+  - VeilLink/UI/SignalDiveLabView.swift
+  - VeilLink/UI/BlackoutDistrictLabView.swift
+  - VeilLink/UI/LatticeClashLabView.swift
+  - VeilLink/UI/PrismRift3DGameView.swift
+- scope_extension: Monopoly core reducer/restore/save/snapshot event bus, turn phase ordinal, low-volume realtime-game milestones/outcomes; LatticeClash move commits; PrismRift discrete events
+- limits: no frame-by-frame logging, card/narrative text, chat plaintext, identity/room IDs, transport bytes, user-supplied content, passwords or private keys; R4 does NOT claim full coverage of all engines
+- verification: 22 existing-file hunks validated against pinned main; brand-new 46-line test only statically prepared. Apple build + XCTest + device testing NOT_RUN
