@@ -32,7 +32,7 @@ owner_zip_sha256: 03a76de45aeeb539fa0893c814bdaf530923f639e8991459f8e2cc04e81641
 - Canonical PR: #208, same Inbox lane, no product tree writes.
 - Complete, current-main preimage-verified `PATCH.diff`: 4 existing product paths + 8 new Swift sources; 12 paths, 35 checked hunks.
 - New source `FILES/VeilEclipseSearchTraceStore.swift`; rewritten `FILES/VeilEclipseBoardThoughtField.swift` (actual native examined lines, no random field).
-- New test `TESTS/R12SearchTraceTests.swift`: 27 assertions; prior R10/R11 505; total 532 local passed checks.
+- New test `TESTS/R12SearchTraceTests.swift`: 33 assertions; prior R10/R11 505; total 538 local passed checks.
 - Setting `VeilLink.Gomoku.EclipseTraceEnabled.v1`, default false, inside Gomoku Training/Advanced UI.
 - R12 detailed behavior, conflicts and CI gates: `R12_ACTUAL_SEARCH_VISUALIZATION.md`.
 - Other agent strength proposals not merged; Apple iOS build/IPA not done.
