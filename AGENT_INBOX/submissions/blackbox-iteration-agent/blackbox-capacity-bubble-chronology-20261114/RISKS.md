@@ -21,3 +21,12 @@ Status: DRAFT proposal; product not applied; CI/physical-device testing NOT_RUN.
 - **Exact source compatibility:** App code must not be imported into the standalone Veilopoly SwiftPM package. Architecture must provide a host-facing typed event adapter before instrumenting offline economic decisions. UI view modifier additions may increase SwiftUI type-check cost.
 - **Structured move data:** Gomoku board index and timestamps may expose strategy/timing patterns; treat exports as confidential even without chat contents. No full board frames or user-entered narrative text in black box.
 - **Version and readiness:** no iOS compile/XCTest/IPA verification; PR remains Inbox-only draft and must not merge until Governor reviews other agents and a complete product integration gate passes.
+
+## R4 engineering risks
+
+- **Coverage remains incomplete** for other real-time games, story engines, LAN/Internet relay and A10 inference internals. Game-lobby open events alone do NOT constitute engine coverage.
+- **Scene snapshot rate:** view-model callbacks can fire many times per second. R4 compares fault/outcome/30-second windows and records only meaningful transitions; verify actual capture volume in long play sessions.
+- **Monopoly cross-package event bus:** NotificationCenter is app-process-local. Runtime bridge validates fixed phase strings and integer counters. iOS build and actual delivery tests must confirm initialization order and actor behavior. Events emitted before DeepTelemetry installation could be missed; startup replay is not guaranteed.
+- **Evidence precision:** recording Gomoku cell/turn metadata and Monopoly sequence/phase can reveal play patterns, although not content. Keep local/export on explicit owner action, never silently upload. No raw game replay or card content.
+- **Energy and retention:** 512 MiB configured ring plus auxiliary is a **budget**, not a five-night guarantee; high-frequency transport/lifecycle anomalies can still evict old evidence. Priority segment reservation, age-aware compression and segmented export not yet implemented.
+- **CI and conflict gates:** all 23 proposed paths remain in PATCH.diff only; package resource/test settings and PR overlap need Integration Governor review. No Swift compiler/XCTest or iPhone/iPad QA was performed.
