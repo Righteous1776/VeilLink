@@ -10,11 +10,10 @@ diff --git a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift b/VeilLink/Agent
      }
  
      enum Phase: String, Sendable {
-@@ -351,7 +353,40 @@
+@@ -351,6 +353,38 @@
              nodes += 1
              if overBudget() { return 0 }
              if last >= 0 && winningStone(at: last, side: opponent(side)) { return -mate + ply }
-+            if !board.contains(0) { return 0 }
 +            if depth == 0 && limits.r12HorizonQuiescence {
 +                // A depth-limit leaf must not disguise an existing win or a
 +                // double-five forced loss as a merely positional heuristic.
@@ -47,11 +46,9 @@ diff --git a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift b/VeilLink/Agent
 +                    }
 +                }
 +            }
-+            if depth == 0 { return staticValue(toMove: side) }
--            if depth == 0 || !board.contains(0) { return staticValue(toMove: side) }
+             if depth == 0 || !board.contains(0) { return staticValue(toMove: side) }
              let tableKey = hash ^ VeilGomokuUnifiedSearch.sideHash[Int(side)]
              let oldAlpha = alpha
-             if let hit = table[tableKey], hit.depth >= depth {
 diff --git a/VeilLink/Agent/Games/EclipseHorizonQuiescenceR12.swift b/VeilLink/Agent/Games/EclipseHorizonQuiescenceR12.swift
 new file mode 100644
 --- /dev/null
