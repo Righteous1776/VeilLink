@@ -1,0 +1,627 @@
+diff --git a/VeilLink/UI/VeilInlineGlyphText.swift b/VeilLink/UI/VeilInlineGlyphText.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilInlineGlyphText.swift
+@@ -0,0 +1,127 @@
++import Foundation
++import SwiftUI
++import UIKit
++
++/// Region-independent rendering for a legacy inline Unicode symbol.
++///
++/// Some iOS devices do not provide a glyph for this regional-indicator sequence
++/// U+1F1F9 U+1F1FC. All views using this adapter draw a local vector-backed
++/// image instead of consulting the platform's Emoji font or system region.
++///
++/// Display-only: never rewrite message bodies, drafts, wire payloads,
++/// database rows, exports or clipboard text.
++@MainActor
++enum VeilInlineGlyphText {
++    static let emoji = "\u{1F1F9}\u{1F1FC}"
++    static let spokenName = "中华民国国旗"
++
++    /// Article 4: 3:2 red field, 1/4 blue canton (1/2 width × 1/2 height).
++    /// Article 3: 12 white rays, blue gap, and white disk.
++    static let horizontalUnits: CGFloat = 3
++    static let verticalUnits: CGFloat = 2
++    static let rayCount = 12
++
++    private static let flagImage: Image = Image(uiImage: makeImage()).renderingMode(.original)
++
++    static func containsFlag(_ value: String) -> Bool {
++        value.contains(emoji)
++    }
++
++    /// Preserves SwiftUI Text wrapping, selection semantics and surrounding
++    /// text styling; a collection of HStacks would break inline wrapping.
++    static func render(_ value: String) -> Text {
++        guard containsFlag(value) else { return Text(verbatim: value) }
++        let pieces = value.components(separatedBy: emoji)
++        var result = Text(verbatim: pieces[0])
++        for part in pieces.dropFirst() {
++            result = result + Text(flagImage) + Text(verbatim: part)
++        }
++        return result
++    }
++
++    /// Readable in VoiceOver even when the region has no emoji glyph.
++    static func accessibilityDescription(for text: String) -> String {
++        text.replacingOccurrences(of: emoji, with: spokenName)
++    }
++
++    /// Uses public drawing APIs, not an external image or a system emoji.
++    /// The same colors and geometry are rendered on iOS 15 and iOS 26.
++    static func makeImage(size: CGSize = CGSize(width: 24, height: 16)) -> UIImage {
++        let width = max(3, size.width)
++        let height = width * 2 / 3
++        let actual = CGSize(width: width, height: height)
++        let format = UIGraphicsImageRendererFormat()
++        // Inline text glyphs benefit from 3x antialiasing, but a 480pt-wide
++        // outgoing attachment must not allocate a 1440x960 offscreen bitmap
++        // on memory-constrained iOS15 devices.
++        format.scale = width >= 300 ? 1 : 3
++        format.opaque = true
++        let renderer = UIGraphicsImageRenderer(size: actual, format: format)
++        return renderer.image { context in
++            let cg = context.cgContext
++            let red = UIColor(red: 254 / 255, green: 0, blue: 0, alpha: 1)
++            let blue = UIColor(red: 0, green: 0, blue: 149 / 255, alpha: 1)
++            cg.setFillColor(red.cgColor)
++            cg.fill(CGRect(origin: .zero, size: actual))
++
++            let canton = CGRect(x: 0, y: 0, width: width / 2, height: height / 2)
++            cg.setFillColor(blue.cgColor)
++            cg.fill(canton)
++
++            let center = CGPoint(x: canton.midX, y: canton.midY)
++            let diskRadius = canton.width / 8
++            let gap = (2 * diskRadius) / 15 // Statutory blue ring.
++            let baseRadius = diskRadius + gap
++            let tipRadius = diskRadius * 2
++
++            // A 30-degree angle at each ray tip, with 12 tips at 30° intervals.
++            // Solve half base-angle once; no magic-size dependence.
++            let halfAngle = rayHalfBaseAngle(baseRadius: baseRadius, tipRadius: tipRadius)
++            cg.setFillColor(UIColor.white.cgColor)
++            for ray in 0..<rayCount {
++                let angle = CGFloat(ray) * CGFloat.pi / 6 - CGFloat.pi / 2
++                let path = UIBezierPath()
++                path.move(to: polar(center, distance: tipRadius, angle: angle))
++                path.addLine(to: polar(center, distance: baseRadius, angle: angle - halfAngle))
++                path.addLine(to: polar(center, distance: baseRadius, angle: angle + halfAngle))
++                path.close()
++                path.fill()
++            }
++
++            let disk = CGRect(x: center.x - diskRadius, y: center.y - diskRadius,
++                              width: diskRadius * 2, height: diskRadius * 2)
++            cg.fillEllipse(in: disk)
++        }
++    }
++
++    private static func polar(_ c: CGPoint, distance r: CGFloat, angle: CGFloat) -> CGPoint {
++        CGPoint(x: c.x + r * cos(angle), y: c.y + r * sin(angle))
++    }
++
++    private static func rayHalfBaseAngle(baseRadius: CGFloat, tipRadius: CGFloat) -> CGFloat {
++        let tangent = CGFloat(tan(Double.pi / 12)) // Half the 30-degree tip angle.
++        var low: CGFloat = 0
++        var high = CGFloat.pi / 6
++        for _ in 0..<25 {
++            let middle = (low + high) / 2
++            let ratio = baseRadius * sin(middle) /
++                (tipRadius - baseRadius * cos(middle))
++            if ratio < tangent { low = middle } else { high = middle }
++        }
++        return (low + high) / 2
++    }
++}
++
++/// Reusable explicit flag view for future country/region pickers or contact cards.
++@MainActor
++struct VeilInlineGlyphView: View {
++    var body: some View {
++        Image(uiImage: VeilInlineGlyphText.makeImage())
++            .renderingMode(.original)
++            .interpolation(.high)
++            .resizable()
++            .aspectRatio(1.5, contentMode: .fit)
++            .frame(width: 24, height: 16)
++            .accessibilityLabel(VeilInlineGlyphText.spokenName)
++    }
++}
+diff --git a/VeilLink/UI/ConversationViews.swift b/VeilLink/UI/ConversationViews.swift
+--- a/VeilLink/UI/ConversationViews.swift
++++ b/VeilLink/UI/ConversationViews.swift
+@@ -261,7 +261,8 @@
+ 
+             VStack(alignment: .leading, spacing: 7) {
+                 HStack(spacing: 8) {
++                    VeilInlineGlyphText.render(conversation.title)
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.title))
+-                    Text(conversation.title)
+                         .font(.system(.body, design: .rounded).weight(.semibold))
+                         .foregroundColor(VeilTheme.text)
+                         .lineLimit(1)
+@@ -293,7 +294,9 @@
+                         .tracking(0.8)
+                         .foregroundColor(VeilTheme.mutedGold)
+                     VeilLinkTrace(active: isSelected, width: 28)
++                    VeilInlineGlyphText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
+-                    Text(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
+                         .font(.subheadline)
+                         .foregroundColor(VeilTheme.secondaryText)
+                         .lineLimit(1)
+@@ -354,6 +357,14 @@
+     @State private var conversationWorkspaceSnapshot: ConversationWorkspaceSnapshot?
+     @State private var pendingWorkspaceJumpID: String?
+     @State private var showsMessageForge = false
++    // Session-only, explicit opt-in to an additional composer control.
++    @State private var showsComposerAccess = false
++    @State private var showsComposerOptions = false
++    @State private var confirmsComposerArtwork = false
++    @State private var composerAccessToken = ""
++    @State private var composerAccessDenied = false
++    @State private var composerAccessFailures = 0
++    @State private var composerOptionsEnabled = false
+     @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
+     @State private var hasOlderMessages = false
+     @State private var messageReloadGeneration = 0
+@@ -613,7 +624,8 @@
+                             Text("引用回复")
+                                 .font(.caption2.weight(.semibold))
+                                 .foregroundColor(VeilTheme.gold)
++                            VeilInlineGlyphText.render(ReplyTextCodec.quoteSource(for: replyingTo))
++                            .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: ReplyTextCodec.quoteSource(for: replyingTo)))
+-                            Text(ReplyTextCodec.quoteSource(for: replyingTo))
+                                 .font(.caption)
+                                 .foregroundColor(VeilTheme.secondaryText)
+                                 .lineLimit(1)
+@@ -659,6 +671,15 @@
+                                 Label("导入图片或文本", systemImage: "doc.badge.plus")
+                             }
+                             Divider()
++                            Button {
++                                if composerOptionsEnabled {
++                                    showsComposerOptions = true
++                                } else {
++                                    showsComposerAccess = true
++                                }
++                            } label: {
++                                Label("输入扩展", systemImage: "keyboard")
++                            }
+                             Menu {
+                                 Button {
+                                     model.veilopolyMultiplayer.invite(conversation,
+@@ -706,6 +727,18 @@
+                     } else {
+                         TextField("加密消息", text: $draft)
+                             .textFieldStyle(VeilTextFieldStyle())
++                        if composerOptionsEnabled {
++                            Button {
++                                showsComposerOptions = true
++                            } label: {
++                                Image(systemName: "square.grid.2x2")
++                                    .font(.system(size: 15, weight: .medium))
++                                    .frame(width: 36, height: 36)
++                                    .contentShape(Rectangle())
++                            }
++                            .buttonStyle(VeilPressStyle())
++                            .accessibilityLabel("扩展输入")
++                        }
+                         Button(action: send) {
+                             ZStack {
+                                 if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Circle().fill(VeilTheme.subtleFillStrong) }
+@@ -790,6 +823,13 @@
+         }
+         .onDisappear {
+             model.setConversationVisible(conversation.id, visible: false)
++            composerOptionsEnabled = false
++            composerAccessToken = ""
++            composerAccessFailures = 0
++            composerAccessDenied = false
++            showsComposerAccess = false
++            showsComposerOptions = false
++            confirmsComposerArtwork = false
+             didInitialBottomAnchor = false
+             isNearBottom = true
+         }
+@@ -828,6 +868,90 @@
+                 )
+             }
+         }
++        .sheet(isPresented: $showsComposerAccess) {
++            NavigationView {
++                VStack(alignment: .leading, spacing: 15) {
++                    Text("输入扩展")
++                        .font(.headline)
++                    Text("此功能默认关闭。输入访问码后，本次会话内可使用附加内容。")
++                        .font(.footnote)
++                        .foregroundColor(VeilTheme.secondaryText)
++                    SecureField("八位访问码", text: $composerAccessToken)
++                        .keyboardType(.numberPad)
++                        .textInputAutocapitalization(.never)
++                        .autocorrectionDisabled()
++                        .textFieldStyle(VeilTextFieldStyle())
++                        .onChange(of: composerAccessToken) { next in
++                            // unlockComposerOptions() clears the SecureField
++                            // programmatically. That empty-string change must
++                            // not erase the just-presented invalid-code error.
++                            if !next.isEmpty { composerAccessDenied = false }
++                        }
++                        .accessibilityLabel("输入八位访问码")
++                    if composerAccessDenied {
++                        Text("访问码不正确")
++                            .font(.caption)
++                            .foregroundColor(VeilTheme.danger)
++                    }
++                    Button("开启本次会话") { unlockComposerOptions() }
++                        .disabled(composerAccessFailures >= 5 || composerAccessToken.utf8.count != 8)
++                        .frame(minHeight: 44)
++                    if composerAccessFailures >= 5 {
++                        Text("尝试次数已达本次会话上限")
++                            .font(.caption)
++                            .foregroundColor(VeilTheme.secondaryText)
++                    }
++                    Spacer()
++                }
++                .padding(20)
++                .navigationBarTitleDisplayMode(.inline)
++                .toolbar {
++                    ToolbarItem(placement: .cancellationAction) {
++                        Button("取消") {
++                            composerAccessToken = ""
++                            showsComposerAccess = false
++                        }
++                    }
++                }
++            }
++        }
++        .confirmationDialog("输入选项", isPresented: $showsComposerOptions) {
++            Button("插入字符") { appendComposerSymbol() }
++            Button("发送图形…") {
++                // Let the first confirmation sheet dismiss before the alert.
++                DispatchQueue.main.async { confirmsComposerArtwork = true }
++            }
++            Button("关闭扩展") { composerOptionsEnabled = false }
++        }
++        // iOS15 already has several message-delete/cancel alerts on ChatView.
++        // An independent confirmation sheet avoids SwiftUI alert override.
++        .sheet(isPresented: $confirmsComposerArtwork) {
++            NavigationView {
++                VStack(alignment: .leading, spacing: 16) {
++                    Text("确认发送图形")
++                        .font(.headline)
++                    Text("这是一张应用内生成的图片；确认后将通过原有加密图片通道发送。")
++                        .font(.subheadline)
++                        .foregroundColor(VeilTheme.secondaryText)
++                    HStack(spacing: 12) {
++                        Button("取消") {
++                            confirmsComposerArtwork = false
++                        }
++                        .frame(maxWidth: .infinity, minHeight: 44)
++                        Button("发送图片") {
++                            confirmsComposerArtwork = false
++                            sendComposerArtwork()
++                        }
++                        .frame(maxWidth: .infinity, minHeight: 44)
++                        .disabled(isPreparingImage)
++                    }
++                    .buttonStyle(.bordered)
++                    Spacer(minLength: 0)
++                }
++                .padding(20)
++                .navigationBarTitleDisplayMode(.inline)
++            }
++        }
+         .sheet(isPresented: $showsMessageForge) {
+             VeilMessageForgeView(
+                 initialText: draft,
+@@ -1084,6 +1208,47 @@
+         }
+     }
+ 
++    private func unlockComposerOptions() {
++        // Local only, never emit the entered token in logs or analytics.
++        let allowed = VeilComposerOptionGate.accepts(composerAccessToken)
++        composerAccessToken = ""
++        guard allowed else {
++            composerAccessFailures += 1
++            composerAccessDenied = true
++            return
++        }
++        composerAccessDenied = false
++        composerAccessFailures = 0
++        composerOptionsEnabled = true
++        showsComposerAccess = false
++    }
++
++    private func appendComposerSymbol() {
++        guard composerOptionsEnabled else { return }
++        draft.append(VeilInlineGlyphText.emoji)
++        composerMode = .text
++        // Sending remains a separate user-confirmed tap.
++    }
++
++    private func sendComposerArtwork() {
++        guard composerOptionsEnabled, !isPreparingImage else { return }
++        // Generate inside this app. Existing image transcode / encryption /
++        // media-transfer limits apply exactly as for an imported photo.
++        let image = VeilInlineGlyphText.makeImage(size: CGSize(width: 480, height: 320))
++        guard let bytes = image.pngData() else {
++            model.alertMessage = "无法生成图片"
++            return
++        }
++        let file = FileManager.default.temporaryDirectory
++            .appendingPathComponent("vl-artwork-\(UUID().uuidString).png")
++        do {
++            try bytes.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
++            prepareAndSendImage(ImportedImageFile(url: file, shouldDeleteAfterUse: true))
++        } catch {
++            model.alertMessage = "无法准备图片：\(error.localizedDescription)"
++        }
++    }
++
+     private func send() {
+         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard !text.isEmpty else { return }
+@@ -1216,7 +1381,8 @@
+         HStack(spacing: 9) {
+             VeilIdentityGlyph(seed: peerIdentityID, size: 30, active: true)
+             VStack(alignment: .leading, spacing: 1) {
++                VeilInlineGlyphText.render(title)
++                    .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: title))
+-                Text(title)
+                     .font(.system(size: 14, weight: .semibold, design: .rounded))
+                     .foregroundColor(VeilTheme.text)
+                     .lineLimit(1)
+@@ -1268,7 +1434,8 @@
+                     TransferShardView(image: nil, progress: progress, mode: .receiving)
+                         .frame(width: 190)
+                 } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
++                    VeilInlineGlyphText.render(gamePreview)
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: gamePreview))
+-                    Text(gamePreview)
+                         .font(.body.weight(.medium))
+                         .padding(.horizontal, 14)
+                         .padding(.vertical, 11)
+@@ -1300,12 +1467,14 @@
+                             RoundedRectangle(cornerRadius: 1)
+                                 .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
+                                 .frame(width: 3)
++                            VeilInlineGlyphText.render(reply.quote)
++                                .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: reply.quote))
+-                            Text(reply.quote)
+                                 .font(.caption)
+                                 .foregroundColor(message.isOutgoing ? Color.black.opacity(0.66) : VeilTheme.secondaryText)
+                                 .lineLimit(2)
+                         }
++                        VeilInlineGlyphText.render(reply.reply)
++                            .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: reply.reply))
+-                        Text(reply.reply)
+                             .frame(maxWidth: .infinity, alignment: .leading)
+                     }
+                     .padding(.horizontal, 14)
+@@ -1319,7 +1488,8 @@
+                     )
+                     .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
+                 } else {
++                    VeilInlineGlyphText.render(message.body)
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: message.body))
+-                    Text(message.body)
+                         .font(.body)
+                         .padding(.horizontal, 14)
+                         .padding(.vertical, 11)
+@@ -1631,7 +1801,8 @@
+                             .font(VeilType.terminalLabel)
+                             .tracking(1.4)
+                             .foregroundColor(VeilTheme.mutedGold)
++                        VeilInlineGlyphText.render(conversation.title)
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.title))
+-                        Text(conversation.title)
+                             .font(.system(.title3, design: .rounded).weight(.semibold))
+                         VeilLinkTrace(active: false, width: 86)
+                     }
+diff --git a/VeilLink/UI/AgentChatView.swift b/VeilLink/UI/AgentChatView.swift
+--- a/VeilLink/UI/AgentChatView.swift
++++ b/VeilLink/UI/AgentChatView.swift
+@@ -101,7 +101,8 @@
+     var body: some View {
+         HStack {
+             if message.role == .user { Spacer(minLength: 42) }
++            VeilInlineGlyphText.render(message.text.isEmpty ? "…" : message.text)
++                .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: message.text))
+-            Text(message.text.isEmpty ? "…" : message.text)
+                 .font(.system(size: 14.5, weight: .regular, design: .rounded))
+                 .foregroundColor(message.role == .user ? Color.black.opacity(0.88) : VeilTheme.text)
+                 .textSelection(.enabled)
+diff --git a/VeilLink/UI/LingCoreTinyChatView.swift b/VeilLink/UI/LingCoreTinyChatView.swift
+--- a/VeilLink/UI/LingCoreTinyChatView.swift
++++ b/VeilLink/UI/LingCoreTinyChatView.swift
+@@ -204,7 +204,8 @@
+                         ForEach(chat.messages) { message in
+                             HStack {
+                                 if message.role == .user { Spacer(minLength: 40) }
++                                VeilInlineGlyphText.render(message.text.isEmpty ? "…" : message.text)
++                                    .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: message.text))
+-                                Text(message.text.isEmpty ? "…" : message.text)
+                                     .font(.system(size: 14))
+                                     .foregroundColor(message.role == .user ? .black : VeilTheme.text)
+                                     .padding(12)
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -234,7 +234,9 @@
+                         .font(VeilType.terminalLabel)
+                         .tracking(1.25)
+                         .foregroundColor(VeilTheme.mutedGold)
++                    VeilInlineGlyphText.render(identity.activeIdentity?.displayName ?? "未创建")
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
++                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
+-                    Text(identity.activeIdentity?.displayName ?? "未创建")
+                         .font(.system(.title3, design: .rounded).weight(.semibold))
+                     HStack(spacing: 7) {
+                         Text(String((identity.activeIdentity?.id ?? "offline").prefix(12)).uppercased())
+@@ -806,16 +808,19 @@
+         let ultraDecision = ultraSample?.ultraDecision
+         let ultraBudget = ultraSample?.ultraBudget
+         let engineName = usesUltra ? "A10 Ultra Ω" : "A9"
++        let a9Evaluated = a9Health.lastEvaluatedAt != nil
++        // Before the first sampling pass, the default A9 decision is green/100
++        // for initialization only. It is NOT a real measured health result.
++        let shownLevel = usesUltra ? (ultraDecision.map { "L\($0.level)" } ?? "--") : (a9Evaluated ? decision.level.shortTitle : "--")
++        let shownHealth = usesUltra ? (ultraDecision.map { String($0.healthScore) } ?? "--") : (a9Evaluated ? String(decision.healthScore) : "--")
++        let shownLight = usesUltra ? (ultraDecision?.light ?? "等待首个样本") : (a9Evaluated ? decision.light.title : "未评估")
++        let shownRisk = usesUltra ? (ultraDecision.map { String(format: "%.0f", Double($0.riskBasisPoints) / 100) } ?? "--") : (a9Evaluated ? String(format: "%.0f", decision.riskPoints) : "--")
++        let shownPersistence = usesUltra ? (ultraDecision.map { "\($0.persistenceSeconds)s" } ?? "--") : (a9Evaluated ? "\(decision.persistenceRuns)" : "--")
++        let shownCell = usesUltra ? (ultraDecision.map { "\($0.latticeCell)" } ?? "--") : (a9Evaluated ? "\(decision.latticeIndex)" : "--")
+-        let shownLevel = usesUltra ? (ultraDecision.map { "L\($0.level)" } ?? "--") : decision.level.shortTitle
+-        let shownHealth = usesUltra ? (ultraDecision.map { String($0.healthScore) } ?? "--") : String(decision.healthScore)
+-        let shownLight = usesUltra ? (ultraDecision?.light ?? "等待首个样本") : decision.light.title
+-        let shownRisk = usesUltra ? (ultraDecision.map { String(format: "%.0f", Double($0.riskBasisPoints) / 100) } ?? "--") : String(format: "%.0f", decision.riskPoints)
+-        let shownPersistence = usesUltra ? (ultraDecision.map { "\($0.persistenceSeconds)s" } ?? "--") : "\(decision.persistenceRuns)"
+-        let shownCell = usesUltra ? (ultraDecision.map { "\($0.latticeCell)" } ?? "--") : "\(decision.latticeIndex)"
+         return VStack(alignment: .leading, spacing: 12) {
+             HStack(spacing: 10) {
+                 Circle()
++                    .fill(usesUltra ? VeilTheme.goldBright : (a9Evaluated ? a9LightColor : VeilTheme.tertiaryText))
+-                    .fill(usesUltra ? VeilTheme.goldBright : a9LightColor)
+                     .frame(width: 9, height: 9)
+                 VStack(alignment: .leading, spacing: 2) {
+                     Text("\(engineName) 健康治理")
+@@ -828,7 +833,7 @@
+                 Spacer()
+                 Text("\(shownLevel) · H\(shownHealth)")
+                     .font(.system(size: 11, weight: .bold, design: .monospaced))
++                    .foregroundColor(usesUltra ? VeilTheme.goldBright : (a9Evaluated ? a9LightColor : VeilTheme.tertiaryText))
+-                    .foregroundColor(usesUltra ? VeilTheme.goldBright : a9LightColor)
+             }
+ 
+             HStack(spacing: 8) {
+@@ -870,6 +875,10 @@
+                         .font(.caption)
+                         .foregroundColor(VeilTheme.secondaryText)
+                 }
++            } else if !a9Evaluated {
++                Text("A9 本轮尚未完成健康评估。H-- 不代表连接、存储或系统健康。")
++                    .font(.caption)
++                    .foregroundColor(VeilTheme.secondaryText)
+             } else if decision.issues.isEmpty {
+                 Text("当前没有需要裁决的异常。A9 不会主动断链、删数据或修改游戏状态。")
+                     .font(.caption)
+diff --git a/VeilLink/UI/VeilComposerOptionGate.swift b/VeilLink/UI/VeilComposerOptionGate.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilComposerOptionGate.swift
+@@ -0,0 +1,19 @@
++import CryptoKit
++import Foundation
++
++/// An optional, session-only composer affordance. This gate is a convenience
++/// discoverability control, NOT an authentication or anti-analysis boundary.
++/// Never log, persist, transmit or analytics-track the submitted access token.
++enum VeilComposerOptionGate {
++    // SHA-256 of the owner-selected 8 ASCII digits. The plaintext is not
++    // embedded in the app; an 8-digit fixed token is still brute-forceable.
++    private static let expectedDigest = "4e7acdb4943849f89d2e6f3cbab9025043e3831c77357e4ec1441bf3b0d096df"
++
++    static func accepts(_ candidate: String) -> Bool {
++        guard candidate.utf8.count == 8,
++              candidate.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) else { return false }
++        let actual = SHA256.hash(data: Data(candidate.utf8))
++            .map { String(format: "%02x", $0) }.joined()
++        return actual == expectedDigest
++    }
++}
+diff --git a/VeilLinkTests/VeilInlineGlyphTextTests.swift b/VeilLinkTests/VeilInlineGlyphTextTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilInlineGlyphTextTests.swift
+@@ -0,0 +1,61 @@
++import XCTest
++import SwiftUI
++@testable import VeilLink
++
++@MainActor
++final class VeilInlineGlyphTextTests: XCTestCase {
++    func testRocFlagLiteralIsTheTwoRegionalIndicatorScalars() {
++        XCTAssertEqual(
++            VeilInlineGlyphText.emoji.unicodeScalars.map(\.value),
++            [0x1F1F9, 0x1F1FC]
++        )
++    }
++
++    func testFlagUsesThreeToTwoAspectAndTwelveRays() {
++        XCTAssertEqual(VeilInlineGlyphText.horizontalUnits, 3)
++        XCTAssertEqual(VeilInlineGlyphText.verticalUnits, 2)
++        XCTAssertEqual(VeilInlineGlyphText.rayCount, 12)
++        let image = VeilInlineGlyphText.makeImage()
++        XCTAssertEqual(image.size.width, 24, accuracy: 0.0001)
++        XCTAssertEqual(image.size.height, 16, accuracy: 0.0001)
++        XCTAssertNotNil(image.cgImage)
++    }
++
++    func testNonStandardInputStillRespectsAspectRatio() {
++        let image = VeilInlineGlyphText.makeImage(size: CGSize(width: 72, height: 1))
++        XCTAssertEqual(image.size.width / image.size.height, 1.5, accuracy: 0.0001)
++    }
++
++    func testOutgoingArtworkUsesBoundedRasterSizeOnSmallDevices() {
++        let image = VeilInlineGlyphText.makeImage(
++            size: CGSize(width: 480, height: 320)
++        )
++        XCTAssertEqual(image.size.width, 480)
++        XCTAssertEqual(image.size.height, 320)
++        XCTAssertEqual(image.cgImage?.width, 480)
++        XCTAssertEqual(image.cgImage?.height, 320)
++    }
++
++    func testAccessibilityReplacesOnlyTheFlagSequence() {
++        let original = "晚安 \(VeilInlineGlyphText.emoji) ✨ \(VeilInlineGlyphText.emoji) 🇯🇵 🇺🇸"
++        XCTAssertTrue(VeilInlineGlyphText.containsFlag(original))
++        XCTAssertEqual(
++            VeilInlineGlyphText.accessibilityDescription(for: original),
++            "晚安 中华民国国旗 ✨ 中华民国国旗 🇯🇵 🇺🇸"
++        )
++        XCTAssertFalse(VeilInlineGlyphText.containsFlag("🇯🇵 🇺🇸"))
++        XCTAssertEqual(
++            VeilInlineGlyphText.accessibilityDescription(for: "🇯🇵 🇺🇸"),
++            "🇯🇵 🇺🇸"
++        )
++    }
++
++    func testRichTextAdapterBuildsInlineTextWithoutMutatingStorage() {
++        let raw = "引用：\(VeilInlineGlyphText.emoji)\n详情：\(VeilInlineGlyphText.emoji)"
++        let unchanged = raw
++        _ = VeilInlineGlyphText.render(raw)
++        XCTAssertEqual(raw, unchanged)
++        // Persisted chat bodies must never be passed through accessibilityDescription.
++        XCTAssertEqual(raw.unicodeScalars.filter { $0.value == 0x1F1F9 }.count, 2)
++    }
++}
+diff --git a/VeilLinkTests/VeilComposerOptionGateTests.swift b/VeilLinkTests/VeilComposerOptionGateTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilComposerOptionGateTests.swift
+@@ -0,0 +1,19 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilComposerOptionGateTests: XCTestCase {
++    func testDefaultInputsFailClosed() {
++        XCTAssertFalse(VeilComposerOptionGate.accepts(""))
++        XCTAssertFalse(VeilComposerOptionGate.accepts("00000000"))
++        XCTAssertFalse(VeilComposerOptionGate.accepts("12345678"))
++        XCTAssertFalse(VeilComposerOptionGate.accepts("１２３４５６７８"))
++        XCTAssertFalse(VeilComposerOptionGate.accepts("abcdefgh"))
++        XCTAssertFalse(VeilComposerOptionGate.accepts("0000 0000"))
++    }
++
++    func testAccessTokenValidationUsesOnlyASCIIEightDigits() {
++        for s in ["1", "012345678", "000000000", "12\n345678", "🎲1234567"] {
++            XCTAssertFalse(VeilComposerOptionGate.accepts(s))
++        }
++    }
++}
