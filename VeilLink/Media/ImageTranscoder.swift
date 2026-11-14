@@ -74,12 +74,11 @@ enum ImageTranscoder {
         // The profile no longer changes output quality. A queued image may move
         // between BLE and LAN without being recompressed or mutated.
         _ = profile
-        let originalLongest = sourceInfo.map { max($0.width, $0.height) }
-            ?? MediaTransferPolicy.maximumImageDimension
-        let readableEdge = MediaTransferPolicy.extremeMinimumLongestEdge(
+        let requestedEdge = MediaTransferPolicy.compressedLongestEdge(
+            originalWidth: sourceInfo?.width ?? MediaTransferPolicy.maximumImageDimension,
+            originalHeight: sourceInfo?.height ?? MediaTransferPolicy.maximumImageDimension,
             isLikelyTextOrGraphic: textSensitive
         )
-        let requestedEdge = max(1, min(originalLongest, readableEdge))
         guard let bitmap = decodeImage(
             url: url, source: source, maximumDimension: requestedEdge
         ) else { throw ImagePreparationError.unsupported }
@@ -114,8 +113,10 @@ enum ImageTranscoder {
             }
         }
 
-        // Compare ACTUAL encoded byte counts rather than choosing a format
-        // by reputation or stopping at an arbitrary soft target.
+        // Screenshots deliberately use an aggressive 500 px short edge and
+        // 0.18 lossy quality. For long screenshots the short edge matters
+        // more than reducing the longest dimension to a fixed 1280 px.
+        // Compare ACTUAL encoded byte counts rather than stopping at a target.
         let native = preferredOutputEncoding()
         var encodings: [(type: CFString, mime: String, label: String)] = [
             (UTType.jpeg.identifier as CFString, "image/jpeg", "JPEG")
