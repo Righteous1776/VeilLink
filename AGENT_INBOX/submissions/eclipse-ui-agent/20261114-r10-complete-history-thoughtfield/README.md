@@ -62,3 +62,16 @@ The archived source and complete advisory patch were updated and reverified. R10
 用户开关在「五子棋 → 训练与高级设置 → 棋盘思考可视化」，默认关闭，独立于棋力设置。旧 JS 引擎没有回调时，不得制造假线路。
 
 本 PR #208 现在包含全部 R10/R11/R12 的 8 份新 Swift 产品源码、一份以当前 main 全文重新构建的 `PATCH.diff`（4 个已有文件 + 8 个新增文件）、存档、仪表盘与 33 项搜索轨迹回归测试。R10/R11 既有 505 项断言亦通过。未来需 Governor 解决其他 Agent 棋力改动冲突，Xcode/XCTest/IPA 均未运行。详见 `R12_ACTUAL_SEARCH_VISUALIZATION.md`。
+
+## R12 · 真实搜索连接线 / 虚拟棋子 / 高级设置开关
+
+本版替换之前 R10 棋盘随机光场：棋盘仅绘制**真实 GomokuBot 已探索**的根落点、对方应手、后续应手，使用 1–3 个虚线虚拟棋子与细线连接。R11 黑底代码仪表盘与 R10 逐局独立历史库继续保留。
+
+新增 FILES/VeilEclipseSearchTraceStore.swift，原 FILES/VeilEclipseBoardThoughtField.swift 原位替换；单一 PATCH.diff 包含 4 个现有产品文件和 8 个新增原生 Swift 文件。
+
+**高级设置开关**：五子棋 → 训练与高级设置 → 棋盘思考可视化；默认关闭，独立于棋力档位。仅原生 GomokuBot 有真实分支事件；旧 JSCore 模式不会伪造轨迹。虚拟棋子仅 AI 实际计算时可见，结束、取消、重开后清除；不影响棋力、移动端手势或搜索时限。
+
+Linux Swift 6.2.1 通过新增加的 33 项严格断言。可复现测试源码为 TESTS/GomokuStub.swift、FILES/VeilEclipseSearchTraceStore.swift 和 TESTS/R12SearchTraceTests.swift；累积此前 505 项检查，合计 538 项。**注意：真实棋盘坐标仍可能间接泄露对手策略，因此不能保证绝对无提示；竞技场景必须关闭此功能。**
+
+当前 main 的 12 个产品补丁目标已逐项内存验证：已存在文件的旧上下文逐行匹配，新增 8 个源文件与补丁内容完全一致。尚未运行 Apple SDK/XCTest、手机真机或正式合并；如需上线，先由 Integration Governor 协调其他 Agent 的 R5/V9/V10/R10/R11 搜索入口改动。
+
