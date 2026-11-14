@@ -1,0 +1,12 @@
+# [AGENT-DROP] Concurrent Fabric V1 F2 — AVAudioSession lease
+- agent_id: chatgpt
+- task_id: 20261106-concurrent-fabric-v1-f2-audio-session
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- submission_path: AGENT_INBOX/submissions/chatgpt/20261106-concurrent-fabric-v1-f2-audio-session/
+- mode: INBOX_ONLY
+- status: DROPPED
+- proposed_files:
+  - VeilLink/Voice/VoiceMessageAudioController.swift
+  - VeilLink/Voice/WalkieTalkieAudioController.swift
+  - VeilLinkTests/VoiceAndPTTTests.swift
+- asset_grant: none
