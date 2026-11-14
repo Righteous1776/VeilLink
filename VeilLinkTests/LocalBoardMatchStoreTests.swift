@@ -93,7 +93,8 @@ final class LocalBoardMatchStoreTests: XCTestCase {
     func testSecondSeatAndSemanticLearningRolesSurviveRestore() throws {
         let (disk, folder) = try store(.gomoku)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let record = LocalBoardMatchRecord(version: 1, game: .gomoku, sessionID: "white-human",
+        let legacySessionID = "white-human-\(UUID().uuidString)" // historical non-UUID IDs must restore safely
+        let record = LocalBoardMatchRecord(version: 1, game: .gomoku, sessionID: legacySessionID,
             difficulty: "balanced", moves: [
                 .init(actor: .host, move: .gomoku(index: 112)),
                 .init(actor: .guest, move: .gomoku(index: 113))
