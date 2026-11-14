@@ -11,6 +11,17 @@ enum MediaTransferPolicy {
     static let maximumImageDimension = 4_096
     static let minimumImageDimension = 1_600
 
+    // Aggressive but finite readability floors: photos need recognizable
+    // subjects; screenshots/UI need enough pixels to read labels.
+    // These are longest-edge bounds, never a request to upscale.
+    static func extremeMinimumLongestEdge(isLikelyTextOrGraphic: Bool) -> Int {
+        isLikelyTextOrGraphic ? 1_280 : 640
+    }
+
+    static func extremeQuality(isLikelyTextOrGraphic: Bool) -> Double {
+        isLikelyTextOrGraphic ? 0.50 : 0.28
+    }
+
     // BLE preferences, not admission restrictions.
     static let bleTargetBytes = 200_000
     static let blePreferredBytes = 384_000
