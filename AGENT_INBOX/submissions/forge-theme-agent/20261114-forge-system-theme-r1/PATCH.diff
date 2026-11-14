@@ -659,7 +659,7 @@ diff --git a/VeilLinkTests/VeilForgeMotionCoreTests.swift b/VeilLinkTests/VeilFo
 new file mode 100644
 --- /dev/null
 +++ b/VeilLinkTests/VeilForgeMotionCoreTests.swift
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,38 @@
 +import XCTest
 +@testable import VeilLink
 +
@@ -688,4 +688,13 @@ new file mode 100644
 +        XCTAssertEqual(VeilForgeMotionCore.healthBars(100), 8)
 +        XCTAssertEqual(VeilForgeMotionCore.healthBars(101), 8)
 +    }
++    func testForgeThemeCaseIsAvailableWithoutReplacingLegacyThemes() {
++        XCTAssertTrue(VeilAppearanceSelection.switchableCases.contains(.forge))
++        XCTAssertEqual(VeilAppearanceSelection.forge.rawValue, "forge")
++        XCTAssertEqual(VeilAppearanceSelection(rawValue: "forge"), .forge)
++        XCTAssertEqual(VeilAppearanceSelection.forge.title, "FORGE · 锻造")
++        XCTAssertTrue(VeilAppearanceSelection.switchableCases.contains(.instrumentAuto))
++        XCTAssertTrue(VeilAppearanceSelection.switchableCases.contains(.veilOriginal))
++    }
++
 +}
