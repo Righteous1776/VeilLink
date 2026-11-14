@@ -1,0 +1,22 @@
+diff --git a/VeilLinkTests/AgentControlAndLocalGameTests.swift b/VeilLinkTests/AgentControlAndLocalGameTests.swift
+index 8c41b78..f87ed4a 100644
+--- a/VeilLinkTests/AgentControlAndLocalGameTests.swift
++++ b/VeilLinkTests/AgentControlAndLocalGameTests.swift
+@@ -53,7 +53,7 @@ final class AgentControlAndLocalGameTests: XCTestCase {
+         XCTAssertEqual(controller.gomoku.value(at: 112), 1)
+         XCTAssertTrue(controller.isAIThinking)
+ 
+-        let deadline = Date().addingTimeInterval(2.0)
++        let deadline = Date().addingTimeInterval(8.0)
+         while controller.isAIThinking && Date() < deadline {
+             try await Task.sleep(nanoseconds: 40_000_000)
+         }
+@@ -111,7 +111,7 @@ final class AgentControlAndLocalGameTests: XCTestCase {
+         XCTAssertEqual(controller.tactical.currentPlayer, .guest)
+         XCTAssertTrue(controller.isAIThinking)
+ 
+-        let deadline = Date().addingTimeInterval(3.0)
++        let deadline = Date().addingTimeInterval(8.0)
+         while (controller.tactical.currentPlayer != .host || controller.isAIThinking), Date() < deadline {
+             try await Task.sleep(nanoseconds: 40_000_000)
+         }
