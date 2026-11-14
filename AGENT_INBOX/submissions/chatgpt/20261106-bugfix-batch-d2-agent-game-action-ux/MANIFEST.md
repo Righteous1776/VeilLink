@@ -1,0 +1,12 @@
+# [AGENT-DROP] D2 — Agent game suggested-move execution UX
+- agent_id: chatgpt
+- task_id: 20261106-bugfix-batch-d2-agent-game-action-ux
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- submission_path: AGENT_INBOX/submissions/chatgpt/20261106-bugfix-batch-d2-agent-game-action-ux/
+- mode: INBOX_ONLY
+- proposed_files:
+  - VeilLink/UI/AgentGameAssistantSheet.swift
+  - VeilLinkTests/AgentControlAndLocalGameTests.swift
+- scope: Bug #6, suggested game move appears non-executable / opaque disabled state.
+- status: DROPPED (inert PATCH.diff only)
+- asset_grant: none
