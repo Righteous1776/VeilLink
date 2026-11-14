@@ -46,3 +46,10 @@
 - Rebuilt unified PATCH.diff from exact current-main text, checked 35 hunks on 12 paths: preimage and source-text match. This is an in-memory exact-main preflight, not a full Apple CI/Xcode run.
 - REQUIRED: iOS build/XCTest, 3ply native signal from actual iPhone/iPad with Swift actor isolation, cancellation/new-match stress, high-tier search temperature and performance, VoiceOver/Reduce Motion.
 - Integration Governor must reconcile GomokuBot signature with PR #199 forced-search and #193/#196/#207/#209/#210 competing search proposals.
+
+## R12 tests added
+- `swiftc -swift-version 6 -warnings-as-errors -O TESTS/GomokuStub.swift FILES/VeilEclipseSearchTraceStore.swift TESTS/R12SearchTraceTests.swift -o /tmp/veil-r12-trace && /tmp/veil-r12-trace` (where `GomokuStub.swift` is an external test fixture, NOT in public PR): **33/33 PASS**, validating 1/2/3-ply real path gate, stale/cancelled sessions, illegal/occupied stones, invalid/negative/empty coordinates, 20Hz throttle, fail-closed begin/reset.
+- `swiftc -frontend -parse -swift-version 5 FILES/VeilEclipseBoardThoughtField.swift`: PASS; this is syntax parsing, **not SwiftUI iOS SDK compilation**.
+- 505 preceding assertions in previously reported R10/R11 suites; 538 total local assertions currently.
+- Full R12 `PATCH.diff` structurally valid with 35 hunks and 12 targets: exact main in-memory application, context and line counts 12/12 PASS, all 8 add-file contents equal staged source.
+- Must still run: Xcode typecheck, XCTest including real `GomokuBot` callback path, complete real iOS game live flow and cancellation, all themes and VoiceOver, 24fps energy/thermal, observer-vs-no-observer equal-budget strength/performance, actual main integration and IPA signing.
