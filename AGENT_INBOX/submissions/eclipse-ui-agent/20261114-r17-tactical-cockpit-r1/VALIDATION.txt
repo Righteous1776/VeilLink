@@ -1,0 +1,31 @@
+{
+  "zip": "/mnt/data/VeilLink_ECLIPSE_R17_2_MechanicalTelemetry_INBOX_20261115.zip",
+  "bytes": 160724,
+  "swift_count": 10,
+  "modified": [
+    "VeilLink/Agent/Games/LocalAIGameController.swift",
+    "VeilLink/UI/GameLobbyView.swift",
+    "VeilLink/UI/MiniGameViews.swift",
+    "VeilLink/UI/VeilEclipseComputeConsole.swift",
+    "VeilLink/UI/VeilEclipseIdentityAndTrace.swift"
+  ],
+  "patch_len": 85606,
+  "delta_len": 24553
+}
+PASS: original accent via VeilTheme.gold
+PASS: no new green/cyan/purple palette
+PASS: dial uses actual search timestamp
+PASS: dial has explicit non-progress disclosure
+PASS: actual nodes and measured last decision time
+PASS: last move node ceiling captured BEFORE await
+PASS: only measured result receives the same cap
+PASS: no fabricated node count during active thinking
+PASS: board pulse opt-in, default off in multiplayer
+PASS: board impact only when committed, no gestures
+PASS: reduced-motion stops board pulse
+PASS: avatar animates only while thinking and scene active
+PASS: low power clock and console throttled
+PASS: no giant visual scroll swallows touches
+PASS: no new drag gesture in source
+PASS: R12 R13 toggles preserved
+ALL 16 MOTION/INTEGRITY CONTRACTS PASS
