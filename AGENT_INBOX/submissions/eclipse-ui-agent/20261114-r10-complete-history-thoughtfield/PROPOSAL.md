@@ -28,3 +28,10 @@ The source code is a proposed 6-file addition + 3-file modification in `PATCH.di
 - Archive JSON reads have a 128 KB cap before decoding, and oversize writes are rejected without overwriting records.
 - Device clock rollback cannot invalidate a persisted match's timestamp ordering; updatedAt/completedAt stay monotone.
 - Test inventory: 39 new archive/visual assertions, 18 fair-play and 35 telemetry = 92 passed.
+
+## R11 implementation / explicit owner video request
+Owner supplied 22s reference video with a black instrument field, kinetic radial lines, a curved text-heavy band, and compact bottom diagnostics. We implemented a mobile-sized black rectangle inside the existing ECLIPSE avatar card (compact 2-line visible code flow) and expanded TRACE (7-line visible flow), reusing the existing R10 high-density abstract board effect. Do NOT clone another site's complete screen or expose search internals. Simulated `vis.*` lines scroll ~14 rows/s; clearly labeled cosmetic and never mistaken for measured engine logic. Genuine node/depth telemetry uses the unchanged redacted type when available.
+
+The R10 identity panel was modified rather than adding a duplicate standalone card. The obsolete `EclipseAbstractThoughtField` was removed to prevent double rendering. The full R10 archive and previous theme-native/no-hint policies remain unchanged. For de-dup with other Agents see `R11_REFERENCE_AND_DEDUP.md`.
+
+Status: real source + one combined advisory product patch now staged directly in PR #208. Nothing merged into main. Apple SDK compile, full checkout patch apply, actual runtime telemetry and IPA are **not verified**.
