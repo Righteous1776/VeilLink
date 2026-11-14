@@ -104,8 +104,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee ci-artifacts/ios-device-release-build.log
 
-      - name: Package and verify unsigned PR candidate IPA
-        if: github.event_name == 'pull_request'
+      - name: Package and verify unsigned IPA
         run: |
           set -o pipefail
           bash scripts/package-unsigned-ipa.sh 2>&1 | tee ci-artifacts/unsigned-pr-package.log
@@ -117,11 +116,11 @@ jobs:
             --sums CORE_RELEASE_SHA256SUMS.txt 2>&1 | tee ci-artifacts/unsigned-pr-verify.log
           cp CORE_RELEASE_MANIFEST.json CORE_RELEASE_PROVENANCE.json CORE_RELEASE_SHA256SUMS.txt ci-artifacts/
 
-      - name: Upload unsigned PR candidate IPA
-        if: success() && github.event_name == 'pull_request'
+      - name: Upload unsigned IPA
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: VeilLink-PR-unsigned-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          name: VeilLink-29.2-b68-unsigned-${{ github.run_id }}
           path: |
             build/VeilLink-unsigned.ipa
             CORE_RELEASE_MANIFEST.json
