@@ -4,9 +4,9 @@
   "FILES/VeilLink/Agent/Games/LocalAIGameController.swift": "6b491e0503ac809023193f0f7a500bdf7c2eb64047b9cf50cdfb5e805a4b134d",
   "FILES/VeilLink/Agent/Games/VeilGomokuUnifiedBridge.swift": "15e83857e716b2d8d34b303178d8e92351c21808d89094c8c8af0b3318027547",
   "FILES/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift": "71d70477c14540ff3de7141828b8aa381db0b2761000ea7a3db18759b151aaf9",
-  "FILES/VeilLink/UI/GameLobbyView.swift": "93db543ccbcd105d7be06441d6fab59384c31aad4392bb2d2407e63c0ced75cb",
-  "FILES/VeilLink/UI/MiniGameViews.swift": "00ecef320e55f92d432b885b657056a81b3d9ab575c234e2d347b0390ceb3d45",
-  "FILES/VeilLink/UI/VeilEclipseBoardThoughtField.swift": "4d72f6b217d5bff5e5164b1292ae2f864a8eabcfa93bdcbc747a12adb6547adb",
-  "FILES/VeilLink/UI/VeilEclipseComputeConsole.swift": "3916ff554cd5a0e417458ed7856722a6480d8eef402b8d5b5bfa3ee723c07cef",
-  "FILES/VeilLink/UI/VeilEclipseIdentityAndTrace.swift": "ce758b1837810e0f7018e9b12512149d05389794f1a5d52b57782c47d8e4fae9"
+  "FILES/VeilLink/UI/GameLobbyView.swift": "a99924e1f9deef7aa93a2f196a4209e857f3c1f2a8ebbcf4b780a844b59af5a8",
+  "FILES/VeilLink/UI/MiniGameViews.swift": "120cec3849bfb85478e7bd5a7c733a49fa9a7625e5814795e2958fe9b5546683",
+  "FILES/VeilLink/UI/VeilEclipseBoardThoughtField.swift": "b1b020f636d5db45a58bfdc9c0d2f662074500f120e65435d759b3aff33837e7",
+  "FILES/VeilLink/UI/VeilEclipseComputeConsole.swift": "41d63b9ce08c6db3b4ab038924ba34695725cefdb6715a647bc66486eb0e4c76",
+  "FILES/VeilLink/UI/VeilEclipseIdentityAndTrace.swift": "49016dda556dc09a907f653a34a83638cd48bca72f793f8541665b5f0a209f90"
 }
