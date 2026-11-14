@@ -8,6 +8,7 @@ enum VeilUnifiedImportRoute: Equatable {
     case html
     case boardLearning(MiniGameKind)
     case image
+    case preview(String)
     case retained(String)
 
     var destinationTitle: String {
@@ -15,7 +16,8 @@ enum VeilUnifiedImportRoute: Equatable {
         case .backup: return "加密备份 · 等待密码确认"
         case .html: return "离线 HTML 阅读器"
         case .boardLearning(let game): return game.title + " · 开发训练库（需授权确认）"
-        case .image: return "本机图片文件"
+        case .image: return "本机图片预览"
+        case .preview(let title): return title
         case .retained(let reason): return reason
         }
     }
@@ -38,8 +40,11 @@ enum VeilUnifiedImportRouter {
         case .image: return .image
         case .numpy:
             return .retained("NPZ 已保存 · 尚未建立经验证的模型权重加载协议")
-        case .text: return .retained("文本数据已保存 · 未自动写入聊天或训练数据库")
-        case .pdf: return .retained("PDF 已保存 · 可从收件箱分享")
+        case .text:
+            if record.displayName.lowercased().hasSuffix(".json"),
+               let game = boardLearningGame(at: url) { return .boardLearning(game) }
+            return .preview("文本数据 · 本机预览（不会发送聊天）")
+        case .pdf: return .preview("PDF 文档 · 本机预览")
         case .other: return .retained("文件已保存 · 暂无自动处理器")
         }
     }
