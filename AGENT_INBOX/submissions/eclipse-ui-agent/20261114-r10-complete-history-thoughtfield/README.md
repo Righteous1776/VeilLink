@@ -61,4 +61,4 @@ The archived source and complete advisory patch were updated and reverified. R10
 
 用户开关在「五子棋 → 训练与高级设置 → 棋盘思考可视化」，默认关闭，独立于棋力设置。旧 JS 引擎没有回调时，不得制造假线路。
 
-本 PR #208 现在包含全部 R10/R11/R12 的 8 份新 Swift 产品源码、一份以当前 main 全文重新构建的 `PATCH.diff`（4 个已有文件 + 8 个新增文件）、存档、仪表盘与 27 项搜索轨迹回归测试。R10/R11 既有 505 项断言亦通过。未来需 Governor 解决其他 Agent 棋力改动冲突，Xcode/XCTest/IPA 均未运行。详见 `R12_ACTUAL_SEARCH_VISUALIZATION.md`。
+本 PR #208 现在包含全部 R10/R11/R12 的 8 份新 Swift 产品源码、一份以当前 main 全文重新构建的 `PATCH.diff`（4 个已有文件 + 8 个新增文件）、存档、仪表盘与 33 项搜索轨迹回归测试。R10/R11 既有 505 项断言亦通过。未来需 Governor 解决其他 Agent 棋力改动冲突，Xcode/XCTest/IPA 均未运行。详见 `R12_ACTUAL_SEARCH_VISUALIZATION.md`。
