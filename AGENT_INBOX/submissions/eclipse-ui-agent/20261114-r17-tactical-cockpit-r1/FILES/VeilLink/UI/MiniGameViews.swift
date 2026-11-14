@@ -1586,7 +1586,7 @@ struct GomokuBoardView: View {
 
                     ForEach(starPoints, id: \.self) { index in
                         let point = gomokuPoint(index: index, margin: margin, step: step)
-                        Circle().fill(eclipseConsoleStyle ? VeilEclipseChrome.green.opacity(0.72) : Color.white.opacity(0.42)).frame(width: 4.2, height: 4.2).position(point)
+                        Circle().fill(eclipseConsoleStyle ? VeilEclipseChrome.accent.opacity(0.72) : Color.white.opacity(0.42)).frame(width: 4.2, height: 4.2).position(point)
                     }
 
 
@@ -1615,7 +1615,7 @@ struct GomokuBoardView: View {
                             path.move(to: gomokuPoint(index: first, margin: margin, step: step))
                             path.addLine(to: gomokuPoint(index: last, margin: margin, step: step))
                         }
-                        .stroke((eclipseConsoleStyle ? VeilEclipseChrome.green : VeilTheme.gold).opacity(0.9), style: StrokeStyle(lineWidth: max(2, step * 0.12), lineCap: .round))
+                        .stroke((eclipseConsoleStyle ? VeilEclipseChrome.accent : VeilTheme.gold).opacity(0.9), style: StrokeStyle(lineWidth: max(2, step * 0.12), lineCap: .round))
                     }
 
 
@@ -1628,7 +1628,7 @@ struct GomokuBoardView: View {
                                 .frame(width: step * 0.82, height: step * 0.82)
                                 .overlay(
                                     Circle().stroke(state.lastMove == index
-                                        ? (eclipseConsoleStyle ? VeilEclipseChrome.green : VeilTheme.gold)
+                                        ? (eclipseConsoleStyle ? VeilEclipseChrome.accent : VeilTheme.gold)
                                         : (value == 1 ? Color.white.opacity(eclipseConsoleStyle ? 0.68 : 0.16) : Color.black.opacity(0.24)),
                                         lineWidth: state.lastMove == index ? 2 : (eclipseConsoleStyle ? 1 : 0.7))
                                 )
@@ -1666,7 +1666,7 @@ struct GomokuBoardView: View {
             }
             .font(.caption)
             .foregroundColor(eclipseConsoleStyle
-                ? (enabled ? VeilEclipseChrome.green : VeilEclipseChrome.muted)
+                ? (enabled ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
                 : (enabled ? VeilTheme.gold : VeilTheme.secondaryText))
         }
         .accessibilityElement(children: .ignore)
