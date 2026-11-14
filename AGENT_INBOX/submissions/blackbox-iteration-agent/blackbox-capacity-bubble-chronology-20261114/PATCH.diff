@@ -1310,3 +1310,121 @@ diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
              model.agent.setComputeFocus(.gameDecision)
              controller.resumeBoardMatchIfNeeded()
              if game == .tactical,
+diff --git a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift
+--- a/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift
++++ b/VEILOPOLY_DEV/Veilopoly/Sources/VeilopolyUI/UI.swift
+@@ -112,11 +112,14 @@
+    if self.selectedTile != nil { self.boardSelectionRevision += 1 }
+   }
+   if unreadable {
++   flight("save.unavailable")
+    saveWarning = "本地存档无法读取，已保留原文件。可从「重新开局」明确重置。"
+    lastFeedback = "上次存档异常 · 未覆盖旧数据"
+   } else if let recovered {
++   flight("match.restored")
+    lastFeedback = "已恢复上次对局 · 进度 #\(recovered.game.nextSeq)"
+   } else {
++   flight("match.new")
+    checkpoint(force: true)
+   }
+   // A killed app can resume in .moveAnim/.tileResolve. Finish the pending
+@@ -150,11 +153,22 @@
+  public var saveSummary: String {
+   saveWarning ?? "自动保存已启用 · 异常退出后可继续本局"
+  }
++ /// App-owned primitive-only diagnostic bus. No game payload or IDs.
++ private func flight(_ phase: String, state: GameState? = nil) {
++  let current = state ?? game
++  NotificationCenter.default.post(name: NSNotification.Name("Veilopoly.FlightRecorder.v1"),
++   object: nil, userInfo: [
++    "phase": phase, "next_seq": current.nextSeq,
++    "player": current.turn.player, "turn_phase": current.turn.phase.rawValue,
++    "multiplayer": isMultiplayer
++   ])
++ }
+  private func checkpoint(force: Bool) {
+   if !force && Date().timeIntervalSince(lastCheckpointAt) < 30 { return }
+   guard !recoveryBlocked else { return }
+   guard let saveStore else {
+    saveWarning = "自动保存不可用：无法访问本机存储目录"
++   flight("save.unavailable")
+    return
+   }
+   do {
+@@ -164,6 +178,7 @@
+    saveWarning = nil
+   } catch {
+    saveWarning = "自动存档失败：请保留应用数据并反馈"
++   flight("save.failed")
+   }
+  }
+  public func flushSave() { checkpoint(force: true) }
+@@ -205,6 +220,7 @@
+   } else { result = VeilopolyEngine.apply(game, currentContext, move) }
+   switch result {
+   case .failure(let err):
++   flight("reducer.rejected")
+    guard reportErrors else { return }
+    errorMessage = VeilopolyGamePresentation.message(err)
+    errorAdvice = VeilopolyGamePresentation.advice(err)
+@@ -217,6 +233,7 @@
+     UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+   case .success((let newState, let effects)):
++   if move.type != .stockTick { flight("reducer.committed", state: newState) }
+    if let room = liveRoom {
+     networkSender?(.init(roomID: room.configuration.roomID, kind: .commit,
+      committed: .init(seq: move.seq, move: move, stateHash: StateDigest.hash(newState))))
+@@ -447,6 +464,7 @@
+     guard let snapshot = packet.snapshot else { return }
+     try room.acceptSnapshot(snapshot, from: sender)
+     liveRoom = room
++    flight("network.snapshot_applied", state: room.game)
+     installNetworkSnapshot(room.game)
+     sendNetworkStatus()
+    case .resync:
+@@ -469,6 +487,7 @@
+    case .invite, .accept, .decline: break // Invitation lifecycle belongs to the authenticated host bridge.
+    }
+   } catch {
++   flight("network.validation_failed")
+    if room.isHost { sendNetworkSnapshot() }
+    else {
+     setNetworkAvailability(false, message: "同步校验未通过，正在请求房主进度")
+diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/DeepTelemetry.swift
+--- a/VeilLink/Diagnostics/DeepTelemetry.swift
++++ b/VeilLink/Diagnostics/DeepTelemetry.swift
+@@ -289,6 +289,33 @@
+ 
+     private func installNotificationObservers() {
+         let center = NotificationCenter.default
++        // Isolated Veilopoly package emits a fixed primitive-only schema.
++        observers.append(center.addObserver(
++            forName: NSNotification.Name("Veilopoly.FlightRecorder.v1"),
++            object: nil, queue: .main
++        ) { notice in
++            Task { @MainActor in
++                guard let fields = notice.userInfo,
++                      let phase = fields["phase"] as? String,
++                      let step = fields["next_seq"] as? Int,
++                      let player = fields["player"] as? Int,
++                      let turnPhase = fields["turn_phase"] as? String,
++                      let multiplayer = fields["multiplayer"] as? Bool else { return }
++                let known = Set(["reducer.committed", "reducer.rejected",
++                                 "save.unavailable", "save.failed",
++                                 "network.snapshot_applied", "network.validation_failed",
++                                 "match.restored", "match.new"])
++                let phases = Set(["roll", "moveAnim", "tileResolve", "auction",
++                                  "manage", "trade", "debt", "finished"])
++                guard known.contains(phase), phases.contains(turnPhase) else { return }
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.veilopoly.engine", phase: phase,
++                    counters: ["sequence": step, "player": player],
++                    flags: ["multiplayer": multiplayer],
++                    level: phase.contains("failed") || phase == "reducer.rejected" ? .warning : .info
++                )
++            }
++        })
+ 
+         observers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+             Task { @MainActor in
