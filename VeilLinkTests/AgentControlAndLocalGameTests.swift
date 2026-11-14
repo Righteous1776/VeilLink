@@ -71,7 +71,8 @@ final class AgentControlAndLocalGameTests: XCTestCase {
         XCTAssertEqual(controller.gomoku.currentPlayer, .host)
         let decisionMode = controller.lastDecisionMode
         XCTAssertTrue(
-            decisionMode == "五子棋 Bot" || decisionMode.hasPrefix("五子棋 · 均衡"),
+            decisionMode == "五子棋 Bot" || decisionMode.hasPrefix("五子棋 · 均衡") ||
+            (decisionMode.hasPrefix("五子棋 · ECLIPSE") && decisionMode.contains(" · 均衡")),
             "Unexpected default Gomoku baseline decision label: \(decisionMode)"
         )
 

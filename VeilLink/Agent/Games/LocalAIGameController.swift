@@ -6,6 +6,20 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
     case balanced
     case advanced
     case master
+    case grandmaster
+    case legendary
+    case zenith
+
+    static let xiangqiCases: [BoardBotDifficulty] = [.relaxed, .balanced, .advanced, .master]
+    var isExtendedGomokuTier: Bool { self == .grandmaster || self == .legendary || self == .zenith }
+    var searchBudgetMultiplier: Int {
+        switch self {
+        case .grandmaster: return 2
+        case .legendary: return 4
+        case .zenith: return 6
+        default: return 1
+        }
+    }
 
     var id: String { rawValue }
 
@@ -15,6 +29,9 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
         case .balanced: return "均衡"
         case .advanced: return "进阶"
         case .master: return "宗师"
+        case .grandmaster: return "棋圣 · 2×"
+        case .legendary: return "传奇 · 4×"
+        case .zenith: return "天元 · 6×"
         }
     }
 
@@ -24,6 +41,9 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
         case .balanced: return "稳定策略与本地学习"
         case .advanced: return "更宽候选、更深反击搜索"
         case .master: return "更宽候选与更深搜索；可手动选择节能模式"
+        case .grandmaster: return "以宗师为基准，最多 2 倍搜索预算；不是棋力倍数"
+        case .legendary: return "以宗师为基准，最多 4 倍搜索预算；不是棋力倍数"
+        case .zenith: return "以宗师为基准，最多 6 倍搜索预算；不是棋力倍数"
         }
     }
 }
@@ -72,6 +92,8 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var isAIThinking = false
     @Published private(set) var lastDecisionMode = "基础策略"
     @Published private(set) var lastDecisionMilliseconds: Int?
+    @Published private(set) var eclipseSearchStartedAt: Date?
+    @Published private(set) var eclipseVisualizationEnabled = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
     @Published private(set) var boardDifficulty: BoardBotDifficulty = .balanced
     @Published private(set) var boardSearchMode = BoardSearchMode.restore(
@@ -96,6 +118,7 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var developerFormationCount = 0
     @Published private(set) var didRestoreBoardMatch = false
     @Published private(set) var boardMatchSaveWarning: String?
+    @Published private(set) var eclipseArchiveWarning: String?
 
     let game: MiniGameKind
     @Published private(set) var humanPlayer: MiniGamePlayer = .host
@@ -113,6 +136,8 @@ final class LocalAIGameController: ObservableObject {
 
     private var aiTask: Task<Void, Never>?
     private let boardMatchStore: LocalBoardMatchStore?
+    private let eclipseArchive: VeilGomokuMatchArchive?
+    let eclipseTraceStore = VeilEclipseSearchTraceStore()
     private var boardMatchMoves: [LocalBoardMatchMove] = []
     private var boardMatchRecoveryBlocked = false
     private var inSeparateTeachingSession = false
@@ -137,6 +162,7 @@ final class LocalAIGameController: ObservableObject {
         // The real hall injects durable storage. Standalone controllers/tests
         // remain fresh and do not contaminate each other's default directory.
         self.boardMatchStore = game == .gomoku || game == .xiangqi ? matchStore : nil
+        self.eclipseArchive = game == .gomoku ? VeilGomokuMatchArchive() : nil
         let resolvedLearningStore = learningStore ?? AdaptiveBoardLearningStore.store(for: game)
         self.learningStore = resolvedLearningStore
         self.formationLibrary = formationLibrary
@@ -170,6 +196,7 @@ final class LocalAIGameController: ObservableObject {
             boardMatchMoves = saved.moves
             sessionID = saved.sessionID
             boardDifficulty = BoardBotDifficulty(rawValue: saved.difficulty) ?? .balanced
+            if game == .xiangqi && boardDifficulty.isExtendedGomokuTier { boardDifficulty = .master }
             if game == .gomoku {
                 if let winner = gomoku.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
                 else if gomoku.isDraw { outcome = .draw }
@@ -180,6 +207,9 @@ final class LocalAIGameController: ObservableObject {
             if outcome != .playing { learningPlies.removeAll() }
             didRestoreBoardMatch = true
             boardMatchSaveWarning = nil
+            if game == .gomoku {
+                _ = persistEclipseArchive(status: eclipseArchiveStatus)
+            }
         } catch {
             boardMatchRecoveryBlocked = true
             boardMatchSaveWarning = "存档校验失败：旧文件保留；可以导出黑匣子或明确点击“重开”。"
@@ -190,6 +220,7 @@ final class LocalAIGameController: ObservableObject {
         guard let disk = boardMatchStore, !inSeparateTeachingSession else { return }
         boardMatchMoves.append(.init(actor: actor, move: move))
         guard !boardMatchRecoveryBlocked else { return }
+        if game == .gomoku { _ = persistEclipseArchive(status: .playing) }
         do {
             try disk.save(.init(
                 version: LocalBoardMatchRecord.version, game: game,
@@ -223,6 +254,75 @@ final class LocalAIGameController: ObservableObject {
 
     var learningStoreAvailable: Bool { learningStore.lastSaveSucceeded }
 
+    func setEclipseVisualizationEnabled(_ enabled: Bool) {
+        guard game == .gomoku else { return }
+        eclipseVisualizationEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
+        if !enabled { eclipseTraceStore.clear() }
+    }
+
+    private var eclipseArchiveStatus: VeilGomokuMatchArchive.Status {
+        switch outcome {
+        case .playing: return .playing
+        case .humanWon: return .humanWon
+        case .aiWon: return .aiWon
+        case .draw: return .draw
+        }
+    }
+
+    @discardableResult
+    private func persistEclipseArchive(status: VeilGomokuMatchArchive.Status) -> Bool {
+        guard game == .gomoku, let archive = eclipseArchive, !inSeparateTeachingSession,
+              !boardMatchMoves.isEmpty else { return true }
+        var records: [VeilGomokuMatchArchive.Move] = []
+        records.reserveCapacity(boardMatchMoves.count)
+        for item in boardMatchMoves {
+            guard item.move.from == nil, item.move.piece == nil, let index = item.move.to else {
+                eclipseArchiveWarning = "历史棋谱校验失败，当前对局未覆盖。"
+                return false
+            }
+            records.append(.init(index: index, stone: item.actor == .host ? 1 : 2))
+        }
+        do {
+            try archive.save(sessionID: sessionID, moves: records,
+                             difficulty: boardDifficulty.rawValue,
+                             humanStone: humanPlayer == .host ? 1 : 2,
+                             status: status)
+            eclipseArchiveWarning = nil
+            return true
+        } catch {
+            eclipseArchiveWarning = "历史对局归档失败：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func eclipseHistoryPage(offset: Int, limit: Int) -> VeilGomokuMatchArchive.Page? {
+        guard game == .gomoku, outcome != .playing, let archive = eclipseArchive else {
+            return nil // Never expose spatial history while user match is ongoing.
+        }
+        do { return try archive.page(offset: offset, limit: limit) }
+        catch {
+            eclipseArchiveWarning = "读取历史对局失败：\(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    var eclipseCompletedMoveHistory: [VeilEclipseTracePolicy.PlacedMove] {
+        guard game == .gomoku, outcome != .playing,
+              !inSeparateTeachingSession, !developerTeachingMode else { return [] }
+        let moves = boardMatchMoves.compactMap { record -> VeilEclipseTracePolicy.PlacedMove? in
+            guard record.move.from == nil, record.move.piece == nil,
+                  let index = record.move.to else { return nil }
+            return .init(index: index, stone: record.actor == .host ? 1 : 2)
+        }
+        guard moves.count == boardMatchMoves.count else { return [] }
+        let frames = VeilEclipseTracePolicy.replayFrames(
+            moves, matchFinished: true, separateReadOnlyPanel: true,
+            expectedFinalBoard: gomoku.board.map { UInt8($0) }
+        )
+        return frames.isEmpty ? [] : moves
+    }
+
     var statusText: String {
         switch outcome {
         case .humanWon: return "你赢了"
@@ -235,9 +335,18 @@ final class LocalAIGameController: ObservableObject {
     }
 
     func restart(startAI: Bool = true) {
+        if game == .gomoku { eclipseTraceStore.clear() }
+        // Keep every move before the legacy latest-match file is discarded.
+        // Failure blocks restart rather than silently sacrificing the match.
+        if game == .gomoku, outcome == .playing, !boardMatchMoves.isEmpty,
+           !persistEclipseArchive(status: .playing) { return }
         if let disk = boardMatchStore {
             do {
                 try disk.discardOnExplicitRestart()
+                if game == .gomoku, !boardMatchMoves.isEmpty {
+                    // The playing snapshot already exists if this step fails.
+                    _ = persistEclipseArchive(status: outcome == .playing ? .interrupted : eclipseArchiveStatus)
+                }
                 boardMatchMoves.removeAll()
                 boardMatchRecoveryBlocked = false
                 boardMatchSaveWarning = nil
@@ -270,6 +379,7 @@ final class LocalAIGameController: ObservableObject {
         developerTeachingMode = false
         lastDecisionMode = "规则 Bot"
         lastDecisionMilliseconds = nil
+        eclipseSearchStartedAt = nil
         if startAI { scheduleAIIfNeeded() }
     }
 
@@ -292,7 +402,7 @@ final class LocalAIGameController: ObservableObject {
             return
         }
         developerTeachingMode = enabled
-        if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false }
+        if enabled { aiTask?.cancel(); aiTask = nil; isAIThinking = false; eclipseSearchStartedAt = nil }
         if !enabled && inSeparateTeachingSession {
             restoreAfterTeaching()
         }
@@ -323,6 +433,7 @@ final class LocalAIGameController: ObservableObject {
         gomoku = GomokuState()
         outcome = .playing
         isAIThinking = false
+        eclipseSearchStartedAt = nil
         sessionID = UUID().uuidString
         developerFormationPlies.removeAll(keepingCapacity: true)
         developerTeachingMode = true
@@ -557,6 +668,7 @@ final class LocalAIGameController: ObservableObject {
 
     func setBoardDifficulty(_ difficulty: BoardBotDifficulty) {
         guard game == .gomoku || game == .xiangqi else { return }
+        guard game == .gomoku || !difficulty.isExtendedGomokuTier else { return }
         boardDifficulty = difficulty
     }
 
@@ -595,9 +707,11 @@ final class LocalAIGameController: ObservableObject {
     }
 
     func cancelAI() {
+        if game == .gomoku { eclipseTraceStore.clear() }
         stopNativeTraining()
         aiTask?.cancel(); aiTask = nil
         isAIThinking = false
+        eclipseSearchStartedAt = nil
         // Navigation is not a resignation; leave unsaved learning plies intact.
     }
 
@@ -686,6 +800,9 @@ final class LocalAIGameController: ObservableObject {
             else if magneticHockey.isDraw { outcome = .draw }
         }
         guard !developerTeachingMode else { return }
+        if game == .gomoku, outcome != .playing {
+            _ = persistEclipseArchive(status: eclipseArchiveStatus)
+        }
         switch outcome {
         case .humanWon: finalizeLearning(as: .humanWon)
         case .aiWon: finalizeLearning(as: .aiWon)
@@ -714,10 +831,13 @@ final class LocalAIGameController: ObservableObject {
             try? await Task.sleep(nanoseconds: 180_000_000)
             guard !Task.isCancelled else { return }
             let started = Date()
+            self.eclipseSearchStartedAt = self.game == .gomoku ? started : nil
             let selected = await self.selectAIMove()
             guard !Task.isCancelled else { return }
             if let selected { self.applyAI(selected) }
+            if self.game == .gomoku { self.eclipseTraceStore.clear() }
             self.lastDecisionMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
+            self.eclipseSearchStartedAt = nil
             self.isAIThinking = false
             self.aiTask = nil
             self.updateOutcome()
@@ -748,52 +868,40 @@ final class LocalAIGameController: ObservableObject {
                 opponentHistory: learningPlies.filter { $0.actor == .host }.compactMap { Int($0.action) },
                 discovered: formationDiscovery.eligibleSignatures
             )
-            var chosen: GomokuBotMove?
-            var engineName = "原生"
-            // Native tactics are the only engine that currently consumes these
-            // formation preferences. Do not claim PVS/VCF uses them.
-            if useExternalGomokuEngine && !preference.enabled && !nativeActive {
-                // A standalone JavaScriptCore actor; the external engine never
-                // touches gameplay/DB and is validated by our own rule gate.
-                let external = await VeilOfflineGomokuEngine.shared.chooseMove(
-                    in: snapshot,
-                    for: computer,
-                    timeLimitMilliseconds: budget.timeLimitMilliseconds,
-                    maxDepth: boardDifficulty == .master ? 7 : boardDifficulty == .advanced ? 5 : 3
-                )
-                if let external {
-                    var trial = snapshot
-                    if trial.apply(index: external.index, actor: computer) {
-                        chosen = external
-                        engineName = "PVS/VCF"
-                    }
+            // One ECLIPSE arbiter. Never let an old persisted JSCore toggle
+            // silently bypass native training, mandatory tactical rules or
+            // actual search-branch telemetry. Vendored JS is retained only as
+            // a cold rollback asset until the Governor completes iOS QA.
+            let traceStore = eclipseTraceStore
+            let token = (eclipseVisualizationEnabled && !inSeparateTeachingSession)
+                ? traceStore.begin(sessionID: sessionID, board: snapshot) : nil
+            let observer: (@Sendable ([Int], Int) -> Void)?
+            if let token {
+                observer = { indices, nodes in
+                    _ = traceStore.record(indices, nodes: nodes, token: token)
                 }
+            } else {
+                observer = nil
             }
-            if chosen == nil {
-                chosen = await Task.detached(priority: .userInitiated) {
-                    GomokuBot.chooseMove(
-                        in: snapshot, for: computer, budget: budget,
-                        learning: learning, formationPreference: preference
-                    )
-                }.value
-            }
+            let rawDifficulty = boardDifficulty.rawValue
+            let chosen = await Task.detached(priority: .userInitiated) {
+                GomokuBot.chooseMove(
+                    in: snapshot, for: computer, budget: budget,
+                    learning: learning, formationPreference: preference,
+                    difficultyRawValue: rawDifficulty,
+                    onExploredLine: observer
+                )
+            }.value
             guard let result = chosen else { return nil }
 
             var ruleGate = gomoku
             guard ruleGate.apply(index: result.index, actor: computer) else { return nil }
             let learned = learning.hasSequenceEvidence ? " · 训练 Lv\(learning.trainingLevel)" : ""
             let formationLabel = formation.matchedLessonNames.first.map { " · 阵法：\($0)" } ?? ""
-            // Preserve the incumbent controller's observable status contract.
-            // External PVS/VCF does NOT consume AdaptiveBoardLearningSnapshot:
-            // reporting its training level or Owner formation as applied would
-            // misrepresent actual search inputs.
-            if engineName == "原生" {
-                lastDecisionMode = "五子棋 · \(boardDifficulty.title)\(learned)\(formationLabel)"
-                    + (preference.enabled ? " · \(preference.mode.title)" : "")
-                    + (nativeActive ? " · 原生实战训练 \(trainedNativeGames) 局" : "")
-            } else {
-                lastDecisionMode = "五子棋 · PVS/VCF · \(boardDifficulty.title)"
-            }
+            let title = result.engineLabel.map { "五子棋 · \($0)" } ?? "五子棋 · ECLIPSE"
+            lastDecisionMode = "\(title) · \(boardDifficulty.title)\(learned)\(formationLabel)"
+                + (preference.enabled ? " · \(preference.mode.title)" : "")
+                + (nativeActive ? " · 原生实战训练 \(trainedNativeGames) 局" : "")
             return AgentActionCandidate(
                 actionID: "gomoku:\(result.index)",
                 encodedAction: AgentGameEncoding.encodeInts([result.index]),

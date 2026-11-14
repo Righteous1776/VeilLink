@@ -112,7 +112,7 @@ final class VeilTalkLiteRuntime: LocalTextModelRuntime {
         if let context = localContext, context.bluetooth.connectedPeers > 0 {
             return "我收到「\(clipped)」。VeilTalk Lite 不是大模型，所以复杂开放式问答能力有限；当前本机有 \(context.bluetooth.connectedPeers) 个 BLE 连接，我更适合处理 VeilLink 状态、对局和简单聊天。"
         }
-        return "我收到「\(clipped)」。VeilTalk Lite 是零模型本地运行时，适合简单聊天和 VeilLink 本机状态问答；复杂知识问答需要实验 AI 版。"
+        return "我收到「\(clipped)」。VeilTalk Lite 是零模型本地运行时，适合简单聊天和 VeilLink 本机状态问答；复杂开放式知识问答不属于本地规则助手的能力范围。"
     }
 
     nonisolated private static func containsAny(_ text: String, _ needles: [String]) -> Bool {

@@ -93,7 +93,8 @@ final class LocalBoardMatchStoreTests: XCTestCase {
     func testSecondSeatAndSemanticLearningRolesSurviveRestore() throws {
         let (disk, folder) = try store(.gomoku)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let record = LocalBoardMatchRecord(version: 1, game: .gomoku, sessionID: "white-human",
+        let legacySessionID = "white-human-\(UUID().uuidString)" // historical non-UUID IDs must restore safely
+        let record = LocalBoardMatchRecord(version: 1, game: .gomoku, sessionID: legacySessionID,
             difficulty: "balanced", moves: [
                 .init(actor: .host, move: .gomoku(index: 112)),
                 .init(actor: .guest, move: .gomoku(index: 113))
@@ -104,8 +105,18 @@ final class LocalBoardMatchStoreTests: XCTestCase {
         XCTAssertEqual(game.aiPlayer, .host)
         let replay = try XCTUnwrap(LocalBoardMatchReplay.validate(record))
         XCTAssertEqual(replay.plies.map(\.actor), [.guest, .host])
+        let history = VeilGomokuMatchArchive()
+        let playing = try XCTUnwrap(history.read(sessionID: legacySessionID))
+        XCTAssertEqual(playing.humanStone, 2)
+        XCTAssertEqual(playing.moves.count, 2)
+        XCTAssertNil(game.eclipseArchiveWarning)
         game.restart()
         XCTAssertTrue(game.isAIThinking)
+        XCTAssertNil(try disk.load())
+        let interrupted = try XCTUnwrap(history.read(sessionID: legacySessionID))
+        XCTAssertEqual(interrupted.id, playing.id)
+        XCTAssertEqual(interrupted.status, .interrupted)
+        XCTAssertEqual(interrupted.moves.count, 2)
         game.cancelAI()
     }
 
