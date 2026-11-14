@@ -1054,11 +1054,11 @@ diff --git a/VeilLink/App/VeilopolyMultiplayerBridge.swift b/VeilLink/App/Veilop
 +            let signature = "\(snapshot.nextSeq)|\(snapshot.turn.player)|\(snapshot.turn.phase)|\(snapshot.winner != nil)"
 +            guard lastCommittedSignature != signature else { return }
 +            lastCommittedSignature = signature
-+            flight("reducer.state_committed",
++            flight("reducer." + String(describing: snapshot.turn.phase),
 +                   values: ["sequence": snapshot.nextSeq,
 +                            "turn_player": snapshot.turn.player,
 +                            "players": snapshot.players.count],
-+                   flags: ["finished": snapshot.winner != nil], level: .info)
++                   flags: ["finished": snapshot.winner != nil, "auction": snapshot.auction != nil, "trade": snapshot.trade != nil, "debt": snapshot.pendingDebt != nil], level: .info)
 +        }
 +        flight(restoring ? "game.restored" : "game.created", level: .info)
          // The lobby can be backgrounded while constructing/restoring a room.
