@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "task_id": "zeo-additive-20261113",
+  "session_id": "SESSION-ZEO-20261113",
+  "predecessor_session_id": null,
+  "profile": "ENGINEER",
+  "lane": "governance",
+  "authority": "AGENT",
+  "governor_identity": null,
+  "branch": "admin/zeo-foundation-migration-20261113",
+  "workspace": "/workspace/VeilLink",
+  "governance_epoch": 1,
+  "constitution_version": "VEILLINK-ZEO-ADDITIVE-V1",
+  "governance_source_sha": "eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0",
+  "read_attestation": {
+    "status": "PENDING",
+    "acknowledged_at": null,
+    "files_read": [],
+    "mandatory_read_complete": false
+  },
+  "output_contract_id": "UNIFIED_OUTPUT_V6",
+  "active_output_mode": "COMPACT_STATUS",
+  "owner_overrides": [
+    "2026-11-13 Owner authorized governance initialization; preserve every pre-existing file and only add new content."
+  ],
+  "status": "READ_PENDING",
+  "last_verified_commit": "eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0",
+  "completed": [
+    "Added missing core B/C and memory tools on isolated admin branch",
+    "30 synthetic integration regressions passed",
+    "Read-only empty Exchange validation and scan returned zero errors/blockers"
+  ],
+  "active_files": [],
+  "durable_decisions": [
+    "Existing AGENTS/Governor/Asset Drop/CI/proposals remain unchanged",
+    "No new Governor/Relay authority",
+    "Draft PR only; no self-merge or release",
+    "Do not claim main learning PASS: new source is not on main yet"
+  ],
+  "must_not_change": [
+    "Any file present at bootstrap_base_sha",
+    "Other PRs/branches and existing Inbox submissions",
+    "Version/build, product code, protocol/schema/identity, signing/release"
+  ],
+  "unresolved": [
+    "New learning source absent from current main; dual production gate awaits reviewed main baseline",
+    "Server-side protection not inspected/configured",
+    "Remote Draft PR and CI results must be read back; never assume success"
+  ],
+  "locks": {
+    "held": [],
+    "released": []
+  },
+  "next_unique_task_zh_cn": "核对本任务 Draft PR、远端文件和 CI，由既有 Owner/Governor 审查增量迁移；合并前不宣称主线启用。",
+  "takeover_ready": true,
+  "handoff_path": "agent_sessions/zeo-additive-20261113/HANDOFF.md",
+  "agent_exchange": {
+    "last_scan_at": "2026-11-13T15:34:08.095574+00:00",
+    "pending_required_messages": [],
+    "blocking_messages": [],
+    "latest_work_report_id": null,
+    "latest_work_report_path": null,
+    "completion_reported": false
+  },
+  "autonomous_loop": {
+    "mode": "ON_DEMAND",
+    "current_assignment_message_id": null,
+    "task_request_pending": false,
+    "stop_reason": null,
+    "next_pull_policy": "REPORT_SCAN_PULL_NEXT"
+  },
+  "updated_at": "2026-11-13T15:34:08.095574+00:00",
+  "bootstrap_initialization": true
+}

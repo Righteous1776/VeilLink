@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "task_id": "<TASK-ID>",
+  "session_id": "<SESSION-ID>",
+  "predecessor_session_id": null,
+  "profile": "<PROFILE>",
+  "lane": "<LANE>",
+  "authority": "AGENT",
+  "governor_identity": null,
+  "branch": "<BRANCH>",
+  "workspace": "workspaces/<LANE>/<TASK-ID>/",
+  "governance_epoch": 1,
+  "constitution_version": "VEILLINK-ZEO-ADDITIVE-V1",
+  "governance_source_sha": null,
+  "read_attestation": {
+    "status": "PENDING",
+    "acknowledged_at": null,
+    "files_read": [],
+    "mandatory_read_complete": false
+  },
+  "output_contract_id": "UNIFIED_OUTPUT_V6",
+  "active_output_mode": "COMPACT_STATUS",
+  "owner_overrides": [],
+  "status": "READ_PENDING",
+  "last_verified_commit": null,
+  "completed": [],
+  "active_files": [],
+  "durable_decisions": [],
+  "must_not_change": [],
+  "unresolved": [],
+  "locks": {
+    "held": [],
+    "released": []
+  },
+  "next_unique_task_zh_cn": "完成 Mandatory Read，并记录真实 ACK。",
+  "takeover_ready": false,
+  "handoff_path": "agent_sessions/<TASK-ID>/HANDOFF.md",
+  "agent_exchange": {
+    "last_scan_at": null,
+    "pending_required_messages": [],
+    "blocking_messages": [],
+    "latest_work_report_id": null,
+    "latest_work_report_path": null,
+    "completion_reported": false
+  },
+  "autonomous_loop": {
+    "mode": "ON_DEMAND",
+    "current_assignment_message_id": null,
+    "task_request_pending": false,
+    "stop_reason": null,
+    "next_pull_policy": "REPORT_SCAN_PULL_NEXT"
+  },
+  "updated_at": null
+}
