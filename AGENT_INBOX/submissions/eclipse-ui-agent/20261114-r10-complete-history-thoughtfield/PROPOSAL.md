@@ -35,3 +35,10 @@ Owner supplied 22s reference video with a black instrument field, kinetic radial
 The R10 identity panel was modified rather than adding a duplicate standalone card. The obsolete `EclipseAbstractThoughtField` was removed to prevent double rendering. The full R10 archive and previous theme-native/no-hint policies remain unchanged. For de-dup with other Agents see `R11_REFERENCE_AND_DEDUP.md`.
 
 Status: real source + one combined advisory product patch now staged directly in PR #208. Nothing merged into main. Apple SDK compile, full checkout patch apply, actual runtime telemetry and IPA are **not verified**.
+
+## R12 owner-requested change
+Owner rejected random board particles: actual searched candidates should be connected by thin transient lines and hollow hypothetical stones; controlled via Gomoku Advanced Settings. This replaces the prior R10 decorative board-field display, without removing R10 every-game archive or R11 black console.
+
+Source-accurate native `GomokuBot` callback emits only after root/reply/continuation `GomokuState.apply` succeeded. A locked collector validates all 1-3 step paths against the board snapshot, enforces UUID/session/turn and 20Hz cap, promotes deeper same-root branches, expires after AI stops, and never changes move choice. UI renders only on current AI-turn and only when the independently persisted setting is enabled. No events from the JS alternative means no line rendering, NOT fake data.
+
+Full code & single consolidated current-main patch are staged in this PR; code changes still require Integration Governor approval. See R12_ACTUAL_SEARCH_VISUALIZATION.md.
