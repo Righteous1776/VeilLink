@@ -84,3 +84,22 @@ An on-device owner's diagnostic authority applies to owned application modules o
 - Verify SwiftUI/Swift Package (VeilopolyUI) compatibility and Checkpoint event delivery before enabling full runtime traces.
 - Add per-engine crash/transaction/recovery hooks where this patch records only sparse milestones.
 - Mark diagnostics coverage distinctly: `full internal`, `partial`, `entry only`, `unobserved`; observed event count is **not** proof of module completeness.
+
+## R5 — repair UI touch black-box observability
+
+### Evidence from current source
+
+`DeepTelemetry.rawTouchCaptureEnabled` defaults to `false`. The original `UIInteractionProbe.sync` adds a custom `PassiveTouchRecorder: UIGestureRecognizer` only to visible windows at install/reactivation or explicit toggle; it reports after a touch ends, then forces the recognizer state to `.failed`. This is not a reliable proof of complete window coverage; later windows, overlays and some SwiftUI gestures may be missed. This is a code-path diagnosis, **not** a physical-device reproduction.
+
+### Proposed implementation in PATCH.diff
+
+- Register a `UIWindow.sendEvent(_:) ` event interceptor *once*, using the existing app's Objective-C method-exchange approach. Invoke the original event dispatcher unconditionally; never consume, cancel or delay user touches. No additional `UIGestureRecognizer` is installed. Runtime interception requires on-device compatibility testing.
+- Observe only visible, app-process application/overlay windows with a root controller in expected window levels, excluding known system keyboard/text-effects/remote windows. Track `UITouch` object identity per active gesture and produce a single concise end-of-gesture record; include touch count, tap/long press/swipe/multitouch, duration, displacement, view class/ancestry, and non-sensitive coordinates when permitted.
+- Never record keyboard-window touches. Redact coordinate, frame, accessibility ID and text-input length if keyboard is displayed, any text input has focus, the touched view is a text entry, or a secure screen is active. Do not keep `UIView` instances in the active-touch tracker. The existing `ui.raw.*` event schema remains compatible with prior diagnostic export.
+- Persist only captured events through existing DiagnosticLogStore. Keep raw touch default **off** until Owner explicitly opts in; no secret self-activation. Report `ui.touch_probe.status` on installation/enable transitions with a `ready`/ `enabled` flag and stable capture source identifier.
+- Show clear status and `capturedTouchCount` in the Owner diagnostics card. A user can turn the switch on, tap in the same page and verify the counter increments. This is a self-test indicator, not a claim of 100% touch coverage.
+- Add pure-policy XCTest `DeepTelemetryTouchProbeTests` covering gesture categorization, app overlay versus keyboard/system windows, and suppression of coordinates on password/input/keyboard contexts.
+
+### Result and limitations
+
+Provides a more direct instrumentation boundary for scrolling, button taps and multi-touch on application windows while avoiding gesture-recognizer interference. Does not capture external apps, iOS system touch streams, typed characters or pixel/screen recordings. Method swizzling is a compatibility risk; simulator and device acceptance gates are mandatory. Optional window subclass alternatives should be considered if UIKit interception breaks any platform. The earlier 512 MiB five-night retention and other R4 game/transport hooks are unchanged.
