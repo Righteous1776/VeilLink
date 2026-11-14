@@ -1,0 +1,696 @@
+diff --git a/VeilLink/Core/AppearanceTheme.swift b/VeilLink/Core/AppearanceTheme.swift
+--- a/VeilLink/Core/AppearanceTheme.swift
++++ b/VeilLink/Core/AppearanceTheme.swift
+@@ -54,6 +54,7 @@
+     case veilOriginal
+     case appleSoft
+     case instrumentAuto
++    case forge
+     case plainline
+     case islet
+ 
+@@ -70,6 +71,7 @@
+         case .veilOriginal: return "Veil 原生"
+         case .appleSoft: return "Apple Soft"
+         case .instrumentAuto: return "拟物仪器"
++        case .forge: return "FORGE · 锻造"
+         case .plainline: return "白描"
+         case .islet: return "浮屿"
+         }
+@@ -79,6 +81,7 @@
+         case .veilOriginal: return "保留现有黑金、切角面板与 Veil 动效。"
+         case .appleSoft: return "苹果式软质拟物；iOS 26 自动接入底层 Liquid Glass。"
+         case .instrumentAuto: return "柔和仪器拟物；完整支持浅色、深色与跟随系统。"
++        case .forge: return "工业硬核｜橙色控制台、金属切角面板与状态驱动的机械仪表。"
+         case .plainline: return "极简字排版面：无材质无阴影，仅留白、发丝线与文字。"
+         case .islet: return "深海极光上的浮岛：内容浮起，导航收成一枚罗经胶囊。"
+         }
+@@ -89,6 +92,7 @@
+         case .veilOriginal: return "sparkles"
+         case .appleSoft: return "circle.grid.2x2.fill"
+         case .instrumentAuto: return "dial.medium.fill"
++        case .forge: return "gearshape.2.fill"
+         case .plainline: return "text.alignleft"
+         case .islet: return "circle.hexagongrid"
+         }
+@@ -99,6 +103,7 @@
+         case .veilOriginal: return Color(red: 0.02, green: 0.02, blue: 0.03)
+         case .appleSoft: return Color(red: 0.91, green: 0.93, blue: 0.97)
+         case .instrumentAuto: return Color(red: 0.38, green: 0.38, blue: 0.40)
++        case .forge: return Color(red: 0.085, green: 0.095, blue: 0.11)
+         case .plainline: return Color(red: 0.96, green: 0.955, blue: 0.94)
+         case .islet: return Color(red: 0.05, green: 0.09, blue: 0.14)
+         }
+@@ -183,6 +188,7 @@
+     var preferredColorScheme: ColorScheme? { colorMode.preferredColorScheme }
+     var isDarkAppearance: Bool { colorMode.resolvesDark(systemIsDark: systemIsDark) }
+     var isInstrument: Bool { selection == .instrumentAuto }
++    var isForge: Bool { selection == .forge }
+     var isAppleSoft: Bool { selection == .appleSoft }
+     var isPlainline: Bool { selection == .plainline }
+     var isIslet: Bool { selection == .islet }
+@@ -192,6 +198,7 @@
+         case .veilOriginal: return "VEIL ORIGINAL · \(phase)"
+         case .appleSoft: return "APPLE SOFT · \(phase)"
+         case .instrumentAuto: return "INSTRUMENT · \(phase)"
++        case .forge: return "FORGE // \(phase)"
+         case .plainline: return "PLAINLINE · \(phase)"
+         case .islet: return "ISLET · \(phase)"
+         }
+@@ -202,6 +209,7 @@
+         case .veilOriginal: return isDarkAppearance ? Self.original : Self.originalDay
+         case .appleSoft: return isDarkAppearance ? Self.appleSoftNight : Self.appleSoftDay
+         case .instrumentAuto: return isDarkAppearance ? Self.instrumentNight : Self.instrumentDay
++        case .forge: return isDarkAppearance ? Self.forgeNight : Self.forgeDay
+         case .plainline: return isDarkAppearance ? Self.plainlineNight : Self.plainlineDay
+         case .islet: return isDarkAppearance ? Self.isletNight : Self.isletDay
+         }
+@@ -369,6 +377,63 @@
+         indicator: Color(red: 1.0, green: 0.31, blue: 0.04)
+     )
+ 
++    /// FORGE: dedicated industrial control-surface identity. No ambient particles.
++    /// Dark graphite, sharp machined metal, high-visibility orange telemetry.
++    static let forgeNight = VeilThemePalette(
++        background: Color(red: 0.035, green: 0.040, blue: 0.048),
++        backgroundLift: Color(red: 0.065, green: 0.074, blue: 0.084),
++        elevated: Color(red: 0.100, green: 0.112, blue: 0.125),
++        panel: Color(red: 0.124, green: 0.137, blue: 0.150),
++        panelSoft: Color(red: 0.158, green: 0.172, blue: 0.190),
++        obsidian: Color(red: 0.015, green: 0.019, blue: 0.025),
++        veil: Color(red: 0.048, green: 0.054, blue: 0.065),
++        gold: Color(red: 1.00, green: 0.43, blue: 0.08),
++        goldBright: Color(red: 1.00, green: 0.57, blue: 0.18),
++        goldDeep: Color(red: 0.60, green: 0.19, blue: 0.02),
++        mutedGold: Color(red: 0.66, green: 0.44, blue: 0.30),
++        paleMetal: Color(red: 0.80, green: 0.83, blue: 0.87),
++        text: Color.white.opacity(0.96),
++        secondaryText: Color.white.opacity(0.69),
++        tertiaryText: Color.white.opacity(0.46),
++        hairline: Color.white.opacity(0.15),
++        danger: Color(red: 1.00, green: 0.29, blue: 0.20),
++        success: Color(red: 0.28, green: 0.83, blue: 0.59),
++        metalTop: Color(red: 0.235, green: 0.251, blue: 0.271),
++        metalBottom: Color(red: 0.072, green: 0.080, blue: 0.092),
++        recess: Color.black.opacity(0.80),
++        keycapTop: Color(red: 0.245, green: 0.260, blue: 0.283),
++        keycapBottom: Color(red: 0.080, green: 0.091, blue: 0.104),
++        indicator: Color(red: 1.00, green: 0.47, blue: 0.09)
++    )
++
++    /// Light-mode FORGE: industrial aluminum; darker orange preserves contrast.
++    static let forgeDay = VeilThemePalette(
++        background: Color(red: 0.900, green: 0.916, blue: 0.932),
++        backgroundLift: Color(red: 0.951, green: 0.960, blue: 0.969),
++        elevated: Color(red: 0.969, green: 0.976, blue: 0.982),
++        panel: Color(red: 0.918, green: 0.933, blue: 0.944),
++        panelSoft: Color(red: 0.978, green: 0.983, blue: 0.988),
++        obsidian: Color(red: 0.828, green: 0.849, blue: 0.869),
++        veil: Color(red: 0.876, green: 0.892, blue: 0.907),
++        gold: Color(red: 0.74, green: 0.27, blue: 0.015),
++        goldBright: Color(red: 0.84, green: 0.32, blue: 0.02),
++        goldDeep: Color(red: 0.43, green: 0.16, blue: 0.01),
++        mutedGold: Color(red: 0.47, green: 0.30, blue: 0.20),
++        paleMetal: Color(red: 0.36, green: 0.42, blue: 0.47),
++        text: Color.black.opacity(0.92),
++        secondaryText: Color.black.opacity(0.66),
++        tertiaryText: Color.black.opacity(0.45),
++        hairline: Color.black.opacity(0.17),
++        danger: Color(red: 0.74, green: 0.13, blue: 0.13),
++        success: Color(red: 0.07, green: 0.46, blue: 0.28),
++        metalTop: Color(red: 0.986, green: 0.989, blue: 0.994),
++        metalBottom: Color(red: 0.823, green: 0.851, blue: 0.873),
++        recess: Color.black.opacity(0.13),
++        keycapTop: Color.white.opacity(0.98),
++        keycapBottom: Color(red: 0.858, green: 0.877, blue: 0.898),
++        indicator: Color(red: 0.78, green: 0.27, blue: 0.015)
++    )
++
+     /// Plainline （白描）: ink-on-paper minimalism. Depth channels collapse to flat values so
+     /// material gradients render as solid color; a single gold carries all trust/action weight.
+     static let plainlineDay = VeilThemePalette(
+diff --git a/VeilLink/Core/AppTheme.swift b/VeilLink/Core/AppTheme.swift
+--- a/VeilLink/Core/AppTheme.swift
++++ b/VeilLink/Core/AppTheme.swift
+@@ -34,6 +34,8 @@
+     static var goldGradient: LinearGradient {
+         VeilAppearanceController.shared.isPlainline
+             ? LinearGradient(colors: [gold, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
++            : VeilAppearanceController.shared.isForge
++            ? LinearGradient(colors: [goldBright, gold], startPoint: .leading, endPoint: .trailing)
+             : VeilAppearanceController.shared.isIslet
+             ? LinearGradient(colors: [goldBright, gold], startPoint: .topLeading, endPoint: .bottomTrailing)
+             : VeilAppearanceController.shared.isAppleSoft
+@@ -43,6 +45,8 @@
+     static var metalGradient: LinearGradient {
+         VeilAppearanceController.shared.isPlainline
+             ? LinearGradient(colors: [panel, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
++            : VeilAppearanceController.shared.isForge
++            ? LinearGradient(colors: [metalTop, panel, metalBottom], startPoint: .top, endPoint: .bottom)
+             : VeilAppearanceController.shared.isIslet
+             ? LinearGradient(colors: [panelSoft, panel], startPoint: .top, endPoint: .bottom)
+             : VeilAppearanceController.shared.isAppleSoft
+@@ -52,6 +56,8 @@
+     static var surfaceGradient: LinearGradient {
+         VeilAppearanceController.shared.isPlainline
+             ? LinearGradient(colors: [Color.clear, Color.clear], startPoint: .top, endPoint: .bottom)
++            : VeilAppearanceController.shared.isForge
++            ? LinearGradient(colors: [paleMetal.opacity(0.10), Color.clear], startPoint: .top, endPoint: .bottom)
+             : VeilAppearanceController.shared.isIslet
+             ? LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.02)], startPoint: .top, endPoint: .bottom)
+             : VeilAppearanceController.shared.isAppleSoft
+@@ -202,7 +208,7 @@
+             return RoundedRectangle(cornerRadius: max(12, radius * 1.8), style: .continuous).path(in: rect)
+         }
+         let c = min(cut, min(rect.width, rect.height) * 0.28)
++        let r = min(VeilAppearanceController.shared.isForge ? 2 : radius, c * 0.7)
+-        let r = min(radius, c * 0.7)
+         var p = Path()
+         p.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
+         p.addLine(to: CGPoint(x: rect.maxX - c, y: rect.minY))
+@@ -248,6 +254,8 @@
+                 VeilAppleSoftBackground()
+             } else if appearance.isInstrument {
+                 VeilInstrumentBackground()
++            } else if appearance.isForge {
++                VeilForgeBackground()
+             } else if VeilRenderProfile.usesLegacyCompositorPath {
+                 // Keep the legacy background strictly within its parent's bounds. On iOS 15,
+                 // an ignoresSafeArea background attached to ScrollView can participate in the
+@@ -394,6 +402,10 @@
+             content
+                 .padding(VeilSpacing.md)
+                 .background(VeilInstrumentPlate(shape: RoundedRectangle(cornerRadius: emphasized ? 22 : 18, style: .continuous), emphasized: emphasized))
++        } else if appearance.isForge {
++            content
++                .padding(VeilSpacing.md)
++                .background(VeilForgePlate(emphasized: emphasized))
+         } else if VeilRenderProfile.usesLegacyCompositorPath {
+             // Preserve the cut-panel identity, but avoid clip + duplicate-shape + large shadow
+             // off-screen rendering inside ScrollView/Sheet on iPhone 7.
+@@ -456,13 +468,14 @@
+         let appleSoft = VeilAppearanceController.shared.isAppleSoft
+         let plainline = VeilAppearanceController.shared.isPlainline
+         let islet = VeilAppearanceController.shared.isIslet
++        let forge = VeilAppearanceController.shared.isForge
+         configuration.label
++            .scaleEffect(pressed && !plainline && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (forge ? 0.986 : (appleSoft ? 0.982 : (islet ? 0.975 : VeilMotionPolicy.pressScale))) : 1)
++            .offset(y: pressed && !plainline ? (forge ? 1.8 : (appleSoft ? 0.8 : (islet ? 0.6 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4)))) : 0)
++            .brightness(pressed ? (plainline ? -0.05 : (forge ? -0.065 : (islet ? 0.045 : (appleSoft ? -0.018 : -0.035)))) : 0)
+-            .scaleEffect(pressed && !plainline && !VeilMotionPolicy.usesReducedMotion(reduceMotion) ? (appleSoft ? 0.982 : (islet ? 0.975 : VeilMotionPolicy.pressScale)) : 1)
+-            .offset(y: pressed && !plainline ? (appleSoft ? 0.8 : (islet ? 0.6 : (VeilAppearanceController.shared.isInstrument ? 2.5 : 1.4))) : 0)
+-            .brightness(pressed ? (plainline ? -0.05 : (islet ? 0.045 : (appleSoft ? -0.018 : -0.035))) : 0)
+             .opacity(pressed ? (plainline ? 0.72 : (islet ? 1.0 : (appleSoft ? 0.90 : 0.96))) : 1)
+             .shadow(
++                color: plainline || forge ? .clear : (islet ? VeilTheme.gold.opacity(pressed ? 0.32 : 0.0) : Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12)))),
+-                color: plainline ? .clear : (islet ? VeilTheme.gold.opacity(pressed ? 0.32 : 0.0) : Color.black.opacity(appleSoft ? (pressed ? 0.04 : 0.08) : (pressed ? 0.10 : (VeilMotionPolicy.allowsFullSpatialEffects ? 0.22 : 0.12)))),
+                 radius: islet ? (pressed ? 12 : 0.1) : (pressed ? 2 : (appleSoft ? 5 : (VeilMotionPolicy.allowsFullSpatialEffects ? 7 : 3))),
+                 x: 0,
+                 y: pressed ? 1 : (appleSoft ? 3 : (VeilMotionPolicy.allowsFullSpatialEffects ? 4 : 2))
+diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
+--- a/VeilLink/UI/NearbyView.swift
++++ b/VeilLink/UI/NearbyView.swift
+@@ -6,6 +6,7 @@
+     @ObservedObject var lanTurbo: LANTransport
+     @ObservedObject var sessions: SessionCoordinator
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @ObservedObject private var appearance = VeilAppearanceController.shared
+ 
+     init(model: AppModel) {
+         self.model = model
+@@ -18,8 +19,16 @@
+         VeilStableScrollView {
+             VStack(spacing: 16) {
+                 HStack(spacing: 16) {
++                    Group {
++                        if appearance.isForge {
++                            VeilForgeRotor(kind: .radio,
++                                           engaged: bluetooth.isRunning,
++                                           working: bluetooth.isRunning)
++                        } else {
++                            RadarStatusView(isRunning: bluetooth.isRunning, reduceMotion: reduceMotion)
++                        }
++                    }
++                    .frame(width: 86, height: 86)
+-                    RadarStatusView(isRunning: bluetooth.isRunning, reduceMotion: reduceMotion)
+-                        .frame(width: 86, height: 86)
+ 
+                     VStack(alignment: .leading, spacing: 7) {
+                         HStack(spacing: 7) {
+@@ -33,6 +42,13 @@
+                             .font(.footnote)
+                             .foregroundColor(VeilTheme.secondaryText)
+                             .fixedSize(horizontal: false, vertical: true)
++                        if appearance.isForge {
++                            VeilForgeDataRail(
++                                label: "RF SCANNER",
++                                value: "\(sessions.nearbyPeers.count) PEERS",
++                                active: bluetooth.isRunning
++                            )
++                        }
+                     }
+                     Spacer(minLength: 0)
+                 }
+@@ -66,6 +82,17 @@
+                     }
+                 }
+                 .veilCard(emphasized: sessions.secureLANPeerCount() > 0)
++                .overlay(alignment: .bottomLeading) {
++                    if appearance.isForge {
++                        VeilForgeDataRail(
++                            label: "DATA PLANE",
++                            value: "\(lanTurbo.connectedPeerCount) TCP / \(sessions.secureLANPeerCount()) SECURE",
++                            active: sessions.secureLANPeerCount() > 0
++                        )
++                        .padding(.leading, 16)
++                        .padding(.bottom, 1)
++                    }
++                }
+                 .veilSpatialPress(maximumTilt: 2.4, cornerRadius: 18, highlightColor: VeilTheme.goldBright)
+                 .veilStaggeredEntrance(index: 1)
+ 
+@@ -203,6 +230,7 @@
+ }
+ 
+ private struct NearbyPeerCard: View {
++    @ObservedObject private var appearance = VeilAppearanceController.shared
+     @ObservedObject var model: AppModel
+     @ObservedObject var bluetooth: BLETransport
+     @ObservedObject var lanTurbo: LANTransport
+@@ -291,9 +319,14 @@
+                             .minimumScaleFactor(0.72)
+                     }
+                     Spacer(minLength: 6)
++                    HStack(spacing: 5) {
++                        if appearance.isForge {
++                            VeilForgeHealthGauge(healthScore: linkSnapshot.healthScore)
++                        }
++                        Text("H\(linkSnapshot.healthScore)")
++                            .font(.system(size: 10, weight: .bold, design: .monospaced))
++                            .foregroundColor(VeilTheme.gold)
++                    }
+-                    Text("H\(linkSnapshot.healthScore)")
+-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+-                        .foregroundColor(VeilTheme.gold)
+                     if linkSnapshot.isRecovering {
+                         Button {
+                             bluetooth.recover(peer.transportID)
+diff --git a/VeilLink/UI/AgentStatusView.swift b/VeilLink/UI/AgentStatusView.swift
+--- a/VeilLink/UI/AgentStatusView.swift
++++ b/VeilLink/UI/AgentStatusView.swift
+@@ -5,6 +5,7 @@
+     @ObservedObject var coordinator: AgentCoordinator
+     @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
+     @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
++    @ObservedObject private var appearance = VeilAppearanceController.shared
+ 
+     init(model: AppModel) {
+         self.model = model
+@@ -27,11 +28,25 @@
+     var body: some View {
+         VStack(alignment: .leading, spacing: 12) {
+             HStack(spacing: 12) {
++                Group {
++                    if appearance.isForge {
++                        VeilForgeRotor(
++                            kind: .compute,
++                            engaged: coordinator.runtimeState == .ready
++                                || coordinator.runtimeState == .generating
++                                || coordinator.runtimeState == .loading,
++                            working: coordinator.runtimeState == .generating
++                                || coordinator.runtimeState == .loading
++                        )
++                        .frame(width: 54, height: 54)
++                    } else {
++                        VeilIdentityGlyph(
++                            seed: "veillink-agent-foundation",
++                            size: 46,
++                            active: coordinator.runtimeState == .ready || coordinator.runtimeState == .generating
++                        )
++                    }
++                }
+-                VeilIdentityGlyph(
+-                    seed: "veillink-agent-foundation",
+-                    size: 46,
+-                    active: coordinator.runtimeState == .ready || coordinator.runtimeState == .generating
+-                )
+                 VStack(alignment: .leading, spacing: 4) {
+                     HStack(spacing: 7) {
+                         Text("灵核")
+@@ -59,6 +74,15 @@
+                 }
+             }
+ 
++            if appearance.isForge {
++                VeilForgeDataRail(
++                    label: "COMPUTE / STATE",
++                    value: coordinator.runtimeState.displayName,
++                    active: coordinator.runtimeState == .generating
++                        || coordinator.runtimeState == .loading
++                )
++            }
++
+             HStack(spacing: 8) {
+                 AgentStatusChip(title: "RUNTIME", value: coordinator.runtimeManifest?.displayName ?? "未载入")
+                 AgentStatusChip(title: "ENGINE", value: LocalTextModelRuntimeFactory.backendName)
+@@ -75,8 +99,18 @@
+             }
+         }
+         .padding(14)
++        .background {
++            if appearance.isForge {
++                VeilForgePlate(emphasized: coordinator.runtimeState == .generating)
++            } else {
++                VeilPanelShape(cut: 14, radius: 7).fill(VeilTheme.panel.opacity(0.72))
++            }
++        }
++        .overlay {
++            if !appearance.isForge {
++                VeilPanelShape(cut: 14, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1)
++            }
++        }
+-        .background(VeilPanelShape(cut: 14, radius: 7).fill(VeilTheme.panel.opacity(0.72)))
+-        .overlay(VeilPanelShape(cut: 14, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+     }
+ }
+ 
+diff --git a/VeilLink/Core/VeilForgeMotionCore.swift b/VeilLink/Core/VeilForgeMotionCore.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/VeilForgeMotionCore.swift
+@@ -0,0 +1,21 @@
++import Foundation
++
++/// Visual actuation is discrete and deterministic. State indicators are never
++/// fabricated throughput, search depth, message order, or other telemetry.
++enum VeilForgeMotionCore {
++    static let healthBarCount = 8
++
++    /// Stepper rotor makes 48 detents (7.5°) per four-second cycle at 12 Hz.
++    /// It parks instantly when the underlying subsystem is no longer working.
++    static func rotorAngle(atSeconds seconds: TimeInterval, working: Bool) -> Double {
++        guard working, seconds.isFinite else { return 0 }
++        let phase = max(0, seconds).truncatingRemainder(dividingBy: 4)
++        return floor(phase * 12) * 7.5
++    }
++
++    /// Only actual BLE health scores may be fed to this gauge (0...100).
++    static func healthBars(_ score: Int) -> Int {
++        let clamped = min(100, max(0, score))
++        return (clamped * healthBarCount + 99) / 100
++    }
++}
+diff --git a/VeilLink/UI/VeilForgeVisualSystem.swift b/VeilLink/UI/VeilForgeVisualSystem.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilForgeVisualSystem.swift
+@@ -0,0 +1,255 @@
++import SwiftUI
++import Foundation
++
++/// Industrial atmosphere is static, bounded and input-transparent.
++struct VeilForgeBackground: View {
++    @ObservedObject private var appearance = VeilAppearanceController.shared
++
++    var body: some View {
++        ZStack {
++            LinearGradient(
++                colors: [VeilTheme.backgroundLift, VeilTheme.background, VeilTheme.obsidian],
++                startPoint: .topLeading,
++                endPoint: .bottomTrailing
++            )
++
++            VeilForgeGrid(spacing: 36)
++                .stroke(VeilTheme.hairline.opacity(0.35), lineWidth: 0.5)
++
++            VStack(spacing: 0) {
++                LinearGradient(
++                    colors: [VeilTheme.gold.opacity(0.70), Color.clear],
++                    startPoint: .leading,
++                    endPoint: .trailing
++                )
++                .frame(height: 1.5)
++                Spacer(minLength: 0)
++                Rectangle().fill(VeilTheme.hairline).frame(height: 1)
++            }
++        }
++        .ignoresSafeArea()
++        .allowsHitTesting(false)
++        .accessibilityHidden(true)
++    }
++}
++
++private struct VeilForgeGrid: Shape {
++    let spacing: CGFloat
++
++    func path(in rect: CGRect) -> Path {
++        var path = Path()
++        guard rect.width > 0, rect.height > 0, spacing > 0 else { return path }
++        for step in 0...Int(rect.width / spacing) {
++            let x = CGFloat(step) * spacing
++            path.move(to: CGPoint(x: x, y: 0))
++            path.addLine(to: CGPoint(x: x, y: rect.height))
++        }
++        for step in 0...Int(rect.height / spacing) {
++            let y = CGFloat(step) * spacing
++            path.move(to: CGPoint(x: 0, y: y))
++            path.addLine(to: CGPoint(x: rect.width, y: y))
++        }
++        return path
++    }
++}
++
++/// Consistent cut metal, engraved crossbars, orange datum mark.
++/// An underlay only: it must never absorb drag/keyboard/pairing gestures.
++struct VeilForgePlate: View {
++    let emphasized: Bool
++
++    var body: some View {
++        let shape = VeilPanelShape(cut: emphasized ? 20 : 14, radius: 2)
++        shape
++            .fill(
++                LinearGradient(
++                    colors: [VeilTheme.metalTop.opacity(0.70),
++                             VeilTheme.panel,
++                             VeilTheme.metalBottom.opacity(0.73)],
++                    startPoint: .topLeading,
++                    endPoint: .bottomTrailing
++                )
++            )
++            .overlay(shape.stroke(VeilTheme.gold.opacity(emphasized ? 0.55 : 0.24), lineWidth: 1))
++            .overlay(alignment: .topLeading) {
++                HStack(spacing: 4) {
++                    Rectangle()
++                        .fill(VeilTheme.goldBright)
++                        .frame(width: emphasized ? 37 : 23, height: 2)
++                    Rectangle()
++                        .fill(VeilTheme.paleMetal.opacity(0.38))
++                        .frame(width: 12, height: 2)
++                }
++                .padding(.leading, 12)
++                .padding(.top, 1)
++            }
++            .overlay(alignment: .bottomTrailing) {
++                HStack(spacing: 4) {
++                    Circle().fill(VeilTheme.paleMetal.opacity(0.38)).frame(width: 2.5, height: 2.5)
++                    Circle().fill(VeilTheme.paleMetal.opacity(0.38)).frame(width: 2.5, height: 2.5)
++                }
++                .padding(.trailing, 13)
++                .padding(.bottom, 8)
++            }
++            .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 2)
++            .allowsHitTesting(false)
++    }
++}
++
++/// Role-coded modular status, with genuine source values provided by callers.
++struct VeilForgeDataRail: View {
++    let label: String
++    let value: String
++    let active: Bool
++
++    var body: some View {
++        HStack(spacing: 5) {
++            Rectangle()
++                .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                .frame(width: 3, height: 10)
++            Text(label)
++                .foregroundColor(VeilTheme.mutedGold)
++                .lineLimit(1)
++            Text("//")
++                .foregroundColor(VeilTheme.tertiaryText)
++            Text(value)
++                .foregroundColor(active ? VeilTheme.goldBright : VeilTheme.secondaryText)
++                .lineLimit(1)
++                .minimumScaleFactor(0.75)
++        }
++        .font(.system(size: 8, weight: .semibold, design: .monospaced))
++        .frame(maxWidth: .infinity, alignment: .leading)
++        .accessibilityElement(children: .combine)
++    }
++}
++
++/// Data-bound mechanical actuator; only local to RF/CPU modules.
++/// ECLIPSE inspiration: deliberate hard contrast, calibrated ticks, measured state.
++struct VeilForgeRotor: View {
++    enum Kind {
++        case radio
++        case compute
++        var mark: String {
++            switch self {
++            case .radio: return "RF"
++            case .compute: return "CPU"
++            }
++        }
++        var label: String {
++            switch self {
++            case .radio: return "射频扫描"
++            case .compute: return "计算核心"
++            }
++        }
++    }
++
++    let kind: Kind
++    let engaged: Bool
++    let working: Bool
++
++    @Environment(\.scenePhase) private var scenePhase
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
++
++    private var motorMoves: Bool {
++        working && engaged && scenePhase == .active && !reduceMotion
++            && !lowPowerMode && VeilMotionPolicy.allowsContinuousDecorativeMotion
++    }
++
++    var body: some View {
++        GeometryReader { proxy in
++            let diameter = max(1, min(proxy.size.width, proxy.size.height))
++            ZStack {
++                VeilPanelShape(cut: diameter * 0.11, radius: 2)
++                    .fill(VeilTheme.obsidian)
++                VeilPanelShape(cut: diameter * 0.11, radius: 2)
++                    .stroke(VeilTheme.gold.opacity(engaged ? 0.44 : 0.15), lineWidth: 1)
++
++                ForEach(0..<24, id: \.self) { index in
++                    Rectangle()
++                        .fill(index.isMultiple(of: 6)
++                              ? VeilTheme.gold.opacity(engaged ? 0.88 : 0.22)
++                              : VeilTheme.paleMetal.opacity(0.25))
++                        .frame(width: max(0.8, diameter * 0.013),
++                               height: diameter * (index.isMultiple(of: 6) ? 0.09 : 0.045))
++                        .offset(y: -diameter * 0.40)
++                        .rotationEffect(.degrees(Double(index) * 15))
++                }
++
++                Circle()
++                    .stroke(VeilTheme.hairline, lineWidth: 1)
++                    .frame(width: diameter * 0.70, height: diameter * 0.70)
++
++                TimelineView(.animation(minimumInterval: 1.0 / 12.0, paused: !motorMoves)) { timeline in
++                    let angle = VeilForgeMotionCore.rotorAngle(
++                        atSeconds: timeline.date.timeIntervalSinceReferenceDate,
++                        working: motorMoves
++                    )
++                    ZStack {
++                        Circle()
++                            .trim(from: 0.03, to: 0.34)
++                            .stroke(VeilTheme.goldBright.opacity(engaged ? 0.92 : 0.19),
++                                    style: StrokeStyle(lineWidth: max(1.1, diameter * 0.025)))
++                            .rotationEffect(.degrees(angle - 90))
++                        Circle()
++                            .trim(from: 0.52, to: 0.83)
++                            .stroke(VeilTheme.paleMetal.opacity(engaged ? 0.71 : 0.19),
++                                    style: StrokeStyle(lineWidth: max(0.8, diameter * 0.014)))
++                            .padding(diameter * 0.055)
++                            .rotationEffect(.degrees(-angle * 0.5 + 45))
++                        Rectangle()
++                            .fill(VeilTheme.gold.opacity(engaged ? 0.55 : 0.14))
++                            .frame(width: diameter * 0.32, height: 1)
++                            .rotationEffect(.degrees(angle * 0.5))
++                    }
++                    .frame(width: diameter * 0.69, height: diameter * 0.69)
++                }
++
++                VeilPanelShape(cut: diameter * 0.027, radius: 2)
++                    .fill(VeilTheme.elevated)
++                    .frame(width: diameter * 0.38, height: diameter * 0.28)
++                    .overlay {
++                        VeilPanelShape(cut: diameter * 0.027, radius: 2)
++                            .stroke(VeilTheme.gold.opacity(engaged ? 0.64 : 0.20), lineWidth: 1)
++                    }
++                Text(kind.mark)
++                    .font(.system(size: max(8, diameter * 0.125), weight: .black, design: .monospaced))
++                    .foregroundColor(engaged ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++
++                Rectangle()
++                    .fill(working ? VeilTheme.goldBright : (engaged ? VeilTheme.success : VeilTheme.tertiaryText))
++                    .frame(width: diameter * 0.11, height: 2)
++                    .offset(x: diameter * 0.33, y: diameter * 0.34)
++            }
++            .frame(width: diameter, height: diameter)
++            .frame(maxWidth: .infinity, maxHeight: .infinity)
++        }
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .ignore)
++        .accessibilityLabel("\(kind.label)：\(working ? "工作中" : (engaged ? "就绪" : "待机"))")
++        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
++            lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
++        }
++    }
++}
++
++struct VeilForgeHealthGauge: View {
++    let healthScore: Int
++
++    private var count: Int { VeilForgeMotionCore.healthBars(healthScore) }
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    var body: some View {
++        HStack(alignment: .bottom, spacing: 1.5) {
++            ForEach(0..<VeilForgeMotionCore.healthBarCount, id: \.self) { index in
++                Rectangle()
++                    .fill(index < count ? VeilTheme.goldBright : VeilTheme.hairline)
++                    .frame(width: 2.8, height: CGFloat(5 + (index % 4) * 2))
++            }
++        }
++        .frame(height: 12, alignment: .bottom)
++        .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: count)
++        .allowsHitTesting(false)
++        .accessibilityHidden(true)
++    }
++}
+diff --git a/VeilLinkTests/VeilForgeMotionCoreTests.swift b/VeilLinkTests/VeilForgeMotionCoreTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilForgeMotionCoreTests.swift
+@@ -0,0 +1,29 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilForgeMotionCoreTests: XCTestCase {
++    func testStepperDetentsAndPhaseRepeat() {
++        XCTAssertEqual(VeilForgeMotionCore.rotorAngle(atSeconds: 0, working: true), 0)
++        XCTAssertEqual(VeilForgeMotionCore.rotorAngle(atSeconds: 0.09, working: true), 7.5)
++        XCTAssertEqual(VeilForgeMotionCore.rotorAngle(atSeconds: 0.18, working: true), 15)
++        XCTAssertEqual(VeilForgeMotionCore.rotorAngle(atSeconds: 4.09, working: true), 7.5)
++    }
++
++    func testParkedMotorAndBadInputsNeverAdvance() {
++        XCTAssertEqual(VeilForgeMotionCore.rotorAngle(atSeconds: 3.7, working: false), 0)
++        XCTAssertEqual(VeilForgeMotionCore.rotorAngle(atSeconds: -.infinity, working: true), 0)
++        XCTAssertEqual(VeilForgeMotionCore.rotorAngle(atSeconds: .nan, working: true), 0)
++        XCTAssertEqual(VeilForgeMotionCore.rotorAngle(atSeconds: -25, working: true), 0)
++    }
++
++    func testHealthBarsClampActualBLEHealthScore() {
++        XCTAssertEqual(VeilForgeMotionCore.healthBars(-1), 0)
++        XCTAssertEqual(VeilForgeMotionCore.healthBars(0), 0)
++        XCTAssertEqual(VeilForgeMotionCore.healthBars(1), 1)
++        XCTAssertEqual(VeilForgeMotionCore.healthBars(25), 2)
++        XCTAssertEqual(VeilForgeMotionCore.healthBars(50), 4)
++        XCTAssertEqual(VeilForgeMotionCore.healthBars(75), 6)
++        XCTAssertEqual(VeilForgeMotionCore.healthBars(100), 8)
++        XCTAssertEqual(VeilForgeMotionCore.healthBars(101), 8)
++    }
++}
