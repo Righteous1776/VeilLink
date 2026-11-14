@@ -73,8 +73,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     project = (ROOT / "project.yml").read_text(encoding="utf-8")
-    if 'MARKETING_VERSION: "29.2"' not in project or 'CURRENT_PROJECT_VERSION: "68"' not in project:
-        error("Build 68 release source identity not present")
+    if 'MARKETING_VERSION: "29.2"' not in project or 'CURRENT_PROJECT_VERSION: "69"' not in project:
+        error("Build 69 release source identity not present")
     if "path: VeilLink" not in project or "VeilLinkTests" not in project:
         error("expected iOS application/test targets are absent")
     for excluded in NOT_PRESENT:
@@ -96,7 +96,7 @@ def main():
     receipt = {
         "schema": "VEILLINK_INBOX_SOURCE_GATE_V1",
         "release": "29.2",
-        "build": "68",
+        "build": "69",
         "source_gate": "PASS",
         "accepted_features": hashes,
         "excluded_unfinished_features": NOT_SHIPPED,
@@ -111,7 +111,7 @@ def main():
         if not binary_path.is_file() or not info_path.is_file():
             error("compiled application executable/Info.plist missing")
         info = plistlib.loads(info_path.read_bytes())
-        if (info.get("CFBundleShortVersionString"), str(info.get("CFBundleVersion"))) != ("29.2", "68"):
+        if (info.get("CFBundleShortVersionString"), str(info.get("CFBundleVersion"))) != ("29.2", "69"):
             error("built application identity does not match source")
         receipt["build_app_verified"] = True
         receipt["device_executable_sha256"] = hashlib.sha256(binary_path.read_bytes()).hexdigest()
