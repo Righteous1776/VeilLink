@@ -32,6 +32,7 @@ struct VeilFileInboxView: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 Button {
+                    DeepTelemetry.shared.action("files.unified.picker_opened")
                     showsImporter = true
                 } label: {
                     HStack {
@@ -73,12 +74,17 @@ struct VeilFileInboxView: View {
         ) { result in
             switch result {
             case .failure(let error):
+                DeepTelemetry.shared.action("files.unified.picker_failed", metadata: ["code": String((error as NSError).code)])
                 resultMessage = error.localizedDescription
             case .success(let urls):
                 guard !urls.isEmpty else { return }
                 // Files grants are obtained in the picker's callback, not later
                 // in an unrelated async task after the picker has disappeared.
                 let securedSelections = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
+                DeepTelemetry.shared.action("files.unified.selection", metadata: [
+                    "count": String(urls.count),
+                    "granted_count": String(securedSelections.filter { $0.1 }.count)
+                ])
                 isImporting = true
                 Task { @MainActor in
                     defer {
@@ -96,6 +102,9 @@ struct VeilFileInboxView: View {
                                 selected, maximumBytes: Int(VeilFileInbox.maximumFileBytes)
                             )
                             defer { VeilImportedFileAccess.removeStagedCopy(staged) }
+                            DeepTelemetry.shared.action("files.unified.staging_ready", metadata: [
+                                "ext": String(selected.pathExtension.lowercased().prefix(16))
+                            ])
                             let result = try await Task.detached(priority: .userInitiated) {
                                 let stored = try VeilFileInbox.importStaged(staged)
                                 let localURL = try VeilFileInbox.fileURL(for: stored)
@@ -104,7 +113,16 @@ struct VeilFileInboxView: View {
                             }.value
                             successful.append(result)
                             routes[result.0.id] = result.1
+                            DeepTelemetry.shared.action("files.unified.persisted", metadata: [
+                                "type": result.0.kind.rawValue,
+                                "bytes": String(result.0.byteCount),
+                                "destination": result.1.destinationTitle
+                            ])
                         } catch {
+                            DeepTelemetry.shared.action("files.unified.import_failed", metadata: [
+                                "ext": String(selected.pathExtension.lowercased().prefix(16)),
+                                "code": String((error as NSError).code)
+                            ])
                             failures.append(selected.lastPathComponent + "：" + error.localizedDescription)
                         }
                     }
