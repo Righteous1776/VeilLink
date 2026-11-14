@@ -1,0 +1,13 @@
+# [AGENT-DROP] D2 — Game assistant action opt-in and refresh
+- agent_id: chatgpt
+- task_id: 20261106-bugfix-batch-d2-game-advice-execution
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- submission_path: AGENT_INBOX/submissions/chatgpt/20261106-bugfix-batch-d2-game-advice-execution/
+- mode: INBOX_ONLY
+- scope: Bug #6 (game recommendations not executable), partial UI/runtime fix
+- proposed_files:
+  - VeilLink/App/AppModel.swift
+  - VeilLink/UI/AgentGameAssistantSheet.swift
+  - VeilLinkTests/AgentControlAndLocalGameTests.swift
+- asset_grant: NONE
+- status: DROPPED
