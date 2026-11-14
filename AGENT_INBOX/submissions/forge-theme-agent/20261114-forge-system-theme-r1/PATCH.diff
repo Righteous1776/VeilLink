@@ -464,9 +464,9 @@ new file mode 100644
 +        shape
 +            .fill(
 +                LinearGradient(
-+                    colors: [VeilTheme.metalTop.opacity(0.70),
++                    colors: [VeilAppearanceController.shared.palette.metalTop.opacity(0.70),
 +                             VeilTheme.panel,
-+                             VeilTheme.metalBottom.opacity(0.73)],
++                             VeilAppearanceController.shared.palette.metalBottom.opacity(0.73)],
 +                    startPoint: .topLeading,
 +                    endPoint: .bottomTrailing
 +                )
