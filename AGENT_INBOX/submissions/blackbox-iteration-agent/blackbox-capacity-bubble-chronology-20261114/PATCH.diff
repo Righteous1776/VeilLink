@@ -1771,6 +1771,7 @@ diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/Dee
 -        return dy >= 0 ? "swipe_down" : "swipe_up"
 -    }
  }
+ 
 diff --git a/VeilLink/UI/RainlineLastTrainLabView.swift b/VeilLink/UI/RainlineLastTrainLabView.swift
 --- a/VeilLink/UI/RainlineLastTrainLabView.swift
 +++ b/VeilLink/UI/RainlineLastTrainLabView.swift
