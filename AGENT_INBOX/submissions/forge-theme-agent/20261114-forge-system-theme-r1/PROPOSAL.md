@@ -35,3 +35,18 @@ These photos show: (1) saturated orange reserved for high-priority controls, dar
 - Game-specific ECLIPSE code, learned positions, training and visual-trace logic remain untouched to avoid collision with the ongoing Gomoku agent work.
 
 These changes are an independent, theme-wide visual foundation; they do NOT alter the screenshots' third-party navigation bar or claim to repair existing keyboard/scroll issues. The global dust/particle layer requires the separately queued PR #229.
+
+
+## R3 / Five differentiated actuator families (2026-11-15)
+
+Owner explicitly requested a broader FORGE motion language with structurally different mechanisms, not repetitive loops.
+
+| Family | Grounded data | Motion |
+| --- | --- | --- |
+| RF stepper rotor | bluetooth.isRunning | 12 Hz stepped rotation, foreground scanning only, low-power/reduced-motion gated |
+| CPU opposed shutters | coordinator.runtimeState | Two jaw plates slide out while actual loading/generating, settle when ready |
+| Peer-count odometer | sessions.nearbyPeers.count | Reuses the native VeilOdometerNumber, rolling actual observed digits on count changes |
+| LAN sliding routing carriage | lanTurbo.connectedPeerCount and sessions.secureLANPeerCount() | Transient three-position IDLE / TCP / SECURE selected by real link presence; NOT throughput or transfer progress |
+| BLE link-health ratchet | linkSnapshot.healthScore | Eight discrete bars, each settles with a bounded stagger on actual score change |
+
+Mechanical language: rotary / aperture / vertical rolling digits / horizontal sliding carriage / segmented ratchet. Each localized device is visually different. New devices do not add gestures or persistent timers; decorative layers do not intercept touches. Non-FORGE appearance branches and the in-flight Gomoku engine remain untouched. Global particle deletion still requires separately proposed #229.
