@@ -20,3 +20,11 @@ asset_grant: none
 MANIFEST.md, PROPOSAL.md, PATCH.diff, TEST_PLAN.md, RISKS.md
 
 The repository product tree, main, version, workflows, signing, protocol and release surfaces were NOT modified.
+
+## Checkpoint / R1 continuation
+- proposed_product_paths: 7
+- exact_base_hunk_replay: PASS
+- Swift Foundation-only smoke: PASS, 17 checks
+- theme regression XCTest: PROPOSED / NOT_RUN
+- Apple simulator, XCTest, iOS device, IPA: NOT_RUN
+- overlap: #231 (non-theme-specific animation), #229 (global particle removal); Governor review required
