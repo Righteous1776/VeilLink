@@ -1451,6 +1451,8 @@ private struct VeilBoardTapSurface: UIViewRepresentable {
 
 struct GomokuBoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var impactIndex: Int?
+    @State private var impactScale: CGFloat = 1
     let state: GomokuState
     let localPlayer: MiniGamePlayer
     let enabled: Bool
@@ -1528,6 +1530,19 @@ struct GomokuBoardView: View {
                         }
                     }
 
+                    // Event-bound ECLIPSE move impact; never on multiplayer boards.
+                    if !eclipseSessionID.isEmpty && !reduceMotion,
+                       let index = impactIndex, state.lastMove == index {
+                        let center = gomokuPoint(index: index, margin: margin, step: step)
+                        Circle()
+                            .stroke(VeilTheme.goldBright.opacity(Double(1 - impactScale)), lineWidth: 2)
+                            .frame(width: step * (0.7 + 1.5 * impactScale),
+                                   height: step * (0.7 + 1.5 * impactScale))
+                            .position(center)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+
                     VeilBoardTapSurface(enabled: enabled) { location in
                         guard enabled, step > 0 else { return }
                         let col = Int(round((location.x - margin) / step))
@@ -1544,6 +1559,16 @@ struct GomokuBoardView: View {
                 }
                 .frame(width: side, height: side)
                 .animation(VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion), value: state.moveCount)
+                .onChange(of: state.lastMove) { index in
+                    guard !eclipseSessionID.isEmpty, !reduceMotion, let index else {
+                        impactIndex = nil
+                        impactScale = 1
+                        return
+                    }
+                    impactIndex = index
+                    impactScale = 0
+                    withAnimation(.easeOut(duration: 0.65)) { impactScale = 1 }
+                }
             }
             .aspectRatio(1, contentMode: .fit)
 

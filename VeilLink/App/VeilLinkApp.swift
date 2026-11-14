@@ -350,7 +350,6 @@ private struct RootContainer: View {
     @ObservedObject var appLock: AppLockController
     @ObservedObject var legalConsent: VeilLegalConsentController
     @ObservedObject var stressTest: DeviceStressTestController
-    @ObservedObject var performanceOverrides: PerformanceOverrideController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
@@ -360,13 +359,6 @@ private struct RootContainer: View {
         appLock = model.appLock
         legalConsent = model.legalConsent
         stressTest = DeviceStressTestController.shared
-        performanceOverrides = model.performanceOverrides
-    }
-
-    private var particleEventToken: String {
-        // Bursts mark root lifecycle changes only. Tab navigation keeps the ambient particle
-        // field alive without firing a full-screen celebration on every page switch.
-        "\(legalConsent.isSatisfied)-\(identity.activeIdentity == nil)-\(appLock.isLocked)"
     }
 
     var body: some View {
@@ -390,7 +382,6 @@ private struct RootContainer: View {
                     .transition(motionReduced ? .opacity : .opacity.combined(with: .scale(scale: 1.006)))
             }
         }
-        .veilAdaptiveParticles(eventToken: particleEventToken, overrideSnapshot: performanceOverrides.snapshot)
         .overlay(alignment: .topTrailing) {
             if stressTest.isRunning {
                 DeviceStressTestHUD(controller: stressTest)

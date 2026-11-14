@@ -5,6 +5,7 @@ struct AgentStatusView: View {
     @ObservedObject var coordinator: AgentCoordinator
     @ObservedObject var kernelRuntime: VeilKernelRuntimeSelector
     @ObservedObject var a10Ultra: A10UltraOmegaShadowCoordinator
+    @ObservedObject private var appearance = VeilAppearanceController.shared
 
     init(model: AppModel) {
         self.model = model
@@ -26,12 +27,34 @@ struct AgentStatusView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                VeilIdentityGlyph(
-                    seed: "veillink-agent-foundation",
-                    size: 46,
-                    active: coordinator.runtimeState == .ready || coordinator.runtimeState == .generating
+            if appearance.isForge {
+                VeilForgeModuleHeader(
+                    serial: "VL / CPU-02",
+                    title: "本地计算核心",
+                    state: coordinator.runtimeState.displayName,
+                    active: coordinator.runtimeState == .generating
+                        || coordinator.runtimeState == .loading
                 )
+            }
+            HStack(spacing: 12) {
+                Group {
+                    if appearance.isForge {
+                        VeilForgeComputeShutter(
+                            engaged: coordinator.runtimeState == .ready
+                                || coordinator.runtimeState == .generating
+                                || coordinator.runtimeState == .loading,
+                            working: coordinator.runtimeState == .generating
+                                || coordinator.runtimeState == .loading
+                        )
+                        .frame(width: 54, height: 54)
+                    } else {
+                        VeilIdentityGlyph(
+                            seed: "veillink-agent-foundation",
+                            size: 46,
+                            active: coordinator.runtimeState == .ready || coordinator.runtimeState == .generating
+                        )
+                    }
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 7) {
                         Text("灵核")
@@ -59,6 +82,15 @@ struct AgentStatusView: View {
                 }
             }
 
+            if appearance.isForge {
+                VeilForgeDataRail(
+                    label: "COMPUTE / STATE",
+                    value: coordinator.runtimeState.displayName,
+                    active: coordinator.runtimeState == .generating
+                        || coordinator.runtimeState == .loading
+                )
+            }
+
             HStack(spacing: 8) {
                 AgentStatusChip(title: "RUNTIME", value: coordinator.runtimeManifest?.displayName ?? "未载入")
                 AgentStatusChip(title: "ENGINE", value: LocalTextModelRuntimeFactory.backendName)
@@ -75,8 +107,18 @@ struct AgentStatusView: View {
             }
         }
         .padding(14)
-        .background(VeilPanelShape(cut: 14, radius: 7).fill(VeilTheme.panel.opacity(0.72)))
-        .overlay(VeilPanelShape(cut: 14, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
+        .background {
+            if appearance.isForge {
+                VeilForgePlate(emphasized: coordinator.runtimeState == .generating)
+            } else {
+                VeilPanelShape(cut: 14, radius: 7).fill(VeilTheme.panel.opacity(0.72))
+            }
+        }
+        .overlay {
+            if !appearance.isForge {
+                VeilPanelShape(cut: 14, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1)
+            }
+        }
     }
 }
 

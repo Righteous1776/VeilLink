@@ -320,6 +320,11 @@ struct LatticeClashLabView: View {
             safety += 1
         }
 
+        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+            module: "game.lattice-clash", phase: "move.committed",
+            counters: ["human_cell": index, "ai_response_count": safety, "turn": next.turn],
+            flags: ["finished": next.isFinished], level: .info
+        )
         withAnimation(.easeInOut(duration: 0.18)) {
             state = next
         }

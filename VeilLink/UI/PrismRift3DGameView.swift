@@ -417,6 +417,18 @@ final class PrismRift3DController: NSObject, ObservableObject {
 
     private func process(_ events: [PrismRiftEvent]) {
         for event in events {
+            // Ignore high-frequency laser shots and boss-hit frames. Record
+            // only meaningful transitions, never frame-by-frame raw render data.
+            switch event.kind {
+            case .impact, .collected, .bossArrived, .bossDefeated, .escaped, .destroyed:
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.prism-rift", phase: "runtime.event",
+                    counters: ["tick": event.tick,
+                               "score": state.score, "wave": state.wave],
+                    flags: ["terminal": state.outcome != .running], level: .info
+                )
+            case .shot, .bossHit: break
+            }
             switch event.kind {
             case .impact:
                 message = "护盾受击 · 重新校准航向"

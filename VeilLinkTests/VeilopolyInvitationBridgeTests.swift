@@ -83,6 +83,35 @@ final class VeilopolyInvitationBridgeTests: XCTestCase {
         bridge.presentGame(context: "game-lobby")
         XCTAssertEqual(bridge.presentationContext, "game-lobby", "Only the chosen route presents the shared room")
     }
+    func testQuietGameDoesNotFalselyMarkHealthySecureLinkOffline() throws {
+        let channel = InvitationChannel()
+        let (bridge, directory) = makeBridge(channel, local: "guest")
+        defer { bridge.leaveRoom(); try? FileManager.default.removeItem(at: directory) }
+        let config = VeilopolyRoomConfiguration.current(
+            roomID: UUID().uuidString, seed: 77,
+            hostIdentityID: "host", guestIdentityID: "guest"
+        )
+        for fragment in try VeilopolyControlCodec.fragments(
+            .init(roomID: config.roomID, kind: .invite, configuration: config)
+        ) {
+            bridge.receive(
+                .init(topic: VeilopolyControlCodec.topic,
+                      payload: try JSONEncoder().encode(fragment)),
+                from: "host"
+            )
+        }
+        bridge.acceptInvitation()
+        bridge.gameModel?.setNetworkAvailability(true, message: "已同步")
+        XCTAssertEqual(bridge.gameModel?.networkReady, true)
+        bridge.tick(now: Date().addingTimeInterval(30))
+        XCTAssertEqual(bridge.gameModel?.networkReady, true)
+        XCTAssertTrue(bridge.status.contains("保留加密连接"))
+        XCTAssertEqual(channel.recoveries, 0)
+        channel.ready = false
+        bridge.tick(now: Date().addingTimeInterval(31))
+        XCTAssertEqual(bridge.gameModel?.networkReady, false)
+    }
+
     func testBusyRoomDoesNotSilentlyDropAnotherConversationInvite() {
         let channel = InvitationChannel(); channel.ready = false
         let (bridge, directory) = makeBridge(channel)

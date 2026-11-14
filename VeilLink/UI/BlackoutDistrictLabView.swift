@@ -8,6 +8,10 @@ final class BlackoutDistrictViewModel: ObservableObject {
         "调度：暴雨导致多点电压波动。保持街区供电，优先关键节点。"
 
     let scene: BlackoutDistrictScene
+    private var lastFlightFaults = -1
+    private var lastFlightPowered = -1
+    private var lastFlightWindow = -1
+    private var lastFlightOutcome: BlackoutOutcome = .running
     private var seed: UInt64
 
     init() {
@@ -30,7 +34,28 @@ final class BlackoutDistrictViewModel: ObservableObject {
                 @MainActor
                 [weak self] in
 
-                self?.snapshot = value
+                guard let self else { return }
+                snapshot = value
+                let window = value.tick / (60 * 30)
+                if value.activeFaults != lastFlightFaults ||
+                   value.poweredNodes != lastFlightPowered ||
+                   value.outcome != lastFlightOutcome || window != lastFlightWindow {
+                    let terminal = value.outcome != .running
+                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                        module: "game.blackout-district",
+                        phase: terminal
+                            ? "outcome." + String(describing: value.outcome)
+                            : "runtime.milestone",
+                        counters: ["tick": value.tick, "faults": value.activeFaults,
+                                   "powered_nodes": value.poweredNodes,
+                                   "stability_percent": Int(value.gridStability)],
+                        flags: ["terminal": terminal], level: terminal ? .info : .debug
+                    )
+                    lastFlightFaults = value.activeFaults
+                    lastFlightPowered = value.poweredNodes
+                    lastFlightWindow = window
+                    lastFlightOutcome = value.outcome
+                }
             }
         }
 
@@ -85,6 +110,11 @@ final class BlackoutDistrictViewModel: ObservableObject {
     }
 
     func restart() {
+        lastFlightFaults = -1; lastFlightPowered = -1
+        lastFlightWindow = -1; lastFlightOutcome = .running
+        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+            module: "game.blackout-district", phase: "game.restart", level: .info
+        )
         seed &+=
             0x9E3779B97F4A7C15
 

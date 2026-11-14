@@ -26,6 +26,30 @@ enum DeepTelemetryStallPolicy {
     }
 }
 
+/// Structural touch decisions only; never derives keyboard characters.
+enum DeepTelemetryTouchPolicy {
+    static func kind(duration: TimeInterval, distance: CGFloat, dx: CGFloat,
+                     dy: CGFloat, fingers: Int) -> String {
+        if fingers > 1 { return "multitouch" }
+        if distance < 14 { return duration >= 0.9 ? "long_press" : "tap" }
+        if abs(dx) > abs(dy) { return dx >= 0 ? "swipe_right" : "swipe_left" }
+        return dy >= 0 ? "swipe_down" : "swipe_up"
+    }
+
+    static func acceptsWindow(typeName: String, level: Double,
+                              hasRoot: Bool, hidden: Bool) -> Bool {
+        let type = typeName.lowercased()
+        return hasRoot && !hidden && level >= -1 && level <= 2100
+            && !type.contains("keyboard") && !type.contains("texteffects")
+            && !type.contains("inputwindow") && !type.contains("remote")
+    }
+
+    static func redactCoordinates(sensitiveScreen: Bool, keyboardVisible: Bool,
+                                  inputFocused: Bool, touchedInput: Bool) -> Bool {
+        sensitiveScreen || keyboardVisible || inputFocused || touchedInput
+    }
+}
+
 @MainActor
 final class DeepTelemetry: ObservableObject {
     static let shared = DeepTelemetry()
@@ -47,6 +71,10 @@ final class DeepTelemetry: ObservableObject {
     }
     @Published private(set) var currentScreen = "bootstrap"
     @Published private(set) var lastInteractionAt: Date?
+    @Published private(set) var capturedTouchCount = 0
+    @Published private(set) var touchProbeReady = false
+    @Published private(set) var lastTouchAt: Date?
+    private(set) var keyboardVisible = false
 
     private static let rawTouchKey = "diagnostics.deepTelemetry.rawTouch"
     private static let inputLifecycleKey = "diagnostics.deepTelemetry.inputLifecycle"
@@ -150,6 +178,35 @@ final class DeepTelemetry: ObservableObject {
         captureUIHierarchy(reason: "presentation", force: true)
     }
 
+    func reportTouchProbe(ready: Bool, enabled: Bool) {
+        touchProbeReady = ready
+        store.log(.info, .ui, event: "ui.touch_probe.status", screen: currentScreen,
+                  metadata: ["ready": String(ready), "enabled": String(enabled),
+                             "source": "uiwindow.send_event"])
+    }
+
+    private static func isTextEntryView(_ view: UIView?) -> Bool {
+        var current = view
+        for _ in 0..<12 {
+            guard let candidate = current else { return false }
+            if candidate is UITextField || candidate is UITextView || candidate is UISearchBar {
+                return true
+            }
+            current = candidate.superview
+        }
+        return false
+    }
+
+    static func hasFocusedTextInput(in root: UIView?) -> Bool {
+        guard let root else { return false }
+        if root.isFirstResponder && (root is UITextField || root is UITextView) { return true }
+        return root.subviews.contains(where: { hasFocusedTextInput(in: $0) })
+    }
+
+    static func touchesTextInput(_ view: UIView?) -> Bool {
+        isTextEntryView(view)
+    }
+
     func rawInteraction(
         kind: String,
         point: CGPoint,
@@ -159,8 +216,12 @@ final class DeepTelemetry: ObservableObject {
     ) {
         guard rawTouchCaptureEnabled else { return }
         lastInteractionAt = Date()
+        capturedTouchCount += 1
+        lastTouchAt = lastInteractionAt
         let secureContext = Self.isSensitiveScreen(currentScreen) || viewDescriptor["secure_context"] == "true"
         var metadata = viewDescriptor
+        metadata.removeValue(forKey: "accessibility_id")
+        metadata.removeValue(forKey: "input_length")
         if secureContext {
             metadata.removeValue(forKey: "frame")
             metadata.removeValue(forKey: "accessibility_id")
@@ -289,7 +350,46 @@ final class DeepTelemetry: ObservableObject {
 
     private func installNotificationObservers() {
         let center = NotificationCenter.default
+        // Isolated Veilopoly package emits a fixed primitive-only schema.
+        observers.append(center.addObserver(
+            forName: NSNotification.Name("Veilopoly.FlightRecorder.v1"),
+            object: nil, queue: .main
+        ) { notice in
+            Task { @MainActor in
+                guard let fields = notice.userInfo,
+                      let phase = fields["phase"] as? String,
+                      let step = fields["next_seq"] as? Int,
+                      let player = fields["player"] as? Int,
+                      let turnPhase = fields["turn_phase"] as? String,
+                      let multiplayer = fields["multiplayer"] as? Bool else { return }
+                let known = Set(["reducer.committed", "reducer.rejected",
+                                 "save.unavailable", "save.failed",
+                                 "network.snapshot_applied", "network.validation_failed",
+                                 "match.restored", "match.new"])
+                let phases = Set(["roll", "moveAnim", "tileResolve", "auction",
+                                  "manage", "trade", "debt", "finished"])
+                guard known.contains(phase), let phaseIndex = [
+                    "roll", "moveAnim", "tileResolve", "auction", "manage",
+                    "trade", "debt", "finished"
+                ].firstIndex(of: turnPhase), phases.contains(turnPhase) else { return }
+                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
+                    module: "game.veilopoly.engine", phase: phase,
+                    counters: ["sequence": step, "player": player,
+                               "turn_phase_code": phaseIndex],
+                    flags: ["multiplayer": multiplayer],
+                    level: phase.contains("failed") || phase == "reducer.rejected" ? .warning : .info
+                )
+            }
+        })
 
+        observers.append(center.addObserver(forName: UIResponder.keyboardWillShowNotification,
+                                            object: nil, queue: .main) { _ in
+            Task { @MainActor in DeepTelemetry.shared.keyboardVisible = true }
+        })
+        observers.append(center.addObserver(forName: UIResponder.keyboardDidHideNotification,
+                                            object: nil, queue: .main) { _ in
+            Task { @MainActor in DeepTelemetry.shared.keyboardVisible = false }
+        })
         observers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             Task { @MainActor in
                 DeepTelemetry.shared.setApplicationActive(true)
@@ -814,123 +914,106 @@ extension UIApplication {
     }
 }
 
+/// Passive observation via window event dispatch; it never consumes touches.
 @MainActor
 private enum UIInteractionProbe {
-    static func sync(enabled: Bool) {
-        let windows = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
+    private struct Contact {
+        let beganAt: TimeInterval
+        let start: CGPoint
+        var maxDistance: CGFloat
+        var fingers: Int
+        let inputView: Bool
+        let targetDescriptor: [String: String]
+    }
 
-        for window in windows {
-            let installed = (window.gestureRecognizers ?? []).compactMap { $0 as? PassiveTouchRecorder }
-            if !enabled {
-                for recorder in installed { window.removeGestureRecognizer(recorder) }
-                continue
+    private static var attempted = false
+    private static var ready = false
+    private static var enabled = false
+    private static var contacts: [ObjectIdentifier: Contact] = [:]
+
+    static func sync(enabled capture: Bool) {
+        if !attempted {
+            attempted = true
+            if let original = class_getInstanceMethod(UIWindow.self, #selector(UIWindow.sendEvent(_:))),
+               let replacement = class_getInstanceMethod(UIWindow.self, #selector(UIWindow.vl_sendEvent(_:))) {
+                method_exchangeImplementations(original, replacement)
+                ready = true
             }
-            guard !window.isHidden, installed.isEmpty else { continue }
-            let recorder = PassiveTouchRecorder()
-            recorder.delegate = recorder
-            recorder.cancelsTouchesInView = false
-            recorder.delaysTouchesBegan = false
-            recorder.delaysTouchesEnded = false
-            window.addGestureRecognizer(recorder)
         }
+        enabled = capture && ready
+        if !enabled { contacts.removeAll(keepingCapacity: true) }
+        DeepTelemetry.shared.reportTouchProbe(ready: ready, enabled: enabled)
+    }
+
+    static func record(window: UIWindow, event: UIEvent) {
+        guard ready, enabled, event.type == .touches,
+              DeepTelemetryTouchPolicy.acceptsWindow(
+                typeName: String(reflecting: type(of: window)),
+                level: Double(window.windowLevel.rawValue),
+                hasRoot: window.rootViewController != nil, hidden: window.isHidden
+              ), let touches = event.allTouches else { return }
+        let activeCount = touches.filter {
+            $0.window === window && $0.phase != .ended && $0.phase != .cancelled
+        }.count
+        let now = ProcessInfo.processInfo.systemUptime
+        for touch in touches where touch.window === window {
+            let id = ObjectIdentifier(touch)
+            let point = touch.location(in: window)
+            switch touch.phase {
+            case .began:
+                contacts[id] = Contact(
+                    beganAt: now, start: point, maxDistance: 0,
+                    fingers: max(1, activeCount),
+                    inputView: DeepTelemetry.touchesTextInput(touch.view),
+                    targetDescriptor: DeepTelemetry.describeView(touch.view)
+                )
+            case .moved:
+                guard var item = contacts[id] else { continue }
+                item.maxDistance = max(item.maxDistance, hypot(point.x-item.start.x,
+                                                               point.y-item.start.y))
+                item.fingers = max(item.fingers, activeCount)
+                contacts[id] = item
+            case .ended:
+                guard let item = contacts.removeValue(forKey: id) else { continue }
+                let dx = point.x-item.start.x, dy = point.y-item.start.y
+                let dist = max(item.maxDistance, hypot(dx, dy))
+                let duration = max(0, now-item.beganAt)
+                let gesture = DeepTelemetryTouchPolicy.kind(
+                    duration: duration, distance: dist, dx: dx, dy: dy, fingers: item.fingers
+                )
+                var descriptor = item.targetDescriptor
+                descriptor["touch_count"] = String(item.fingers)
+                descriptor["capture_source"] = "uiwindow.send_event"
+                descriptor["secure_context"] = String(
+                    DeepTelemetryTouchPolicy.redactCoordinates(
+                        sensitiveScreen: DeepTelemetry.isSensitiveScreen(
+                            DeepTelemetry.shared.currentScreen
+                        ),
+                        keyboardVisible: DeepTelemetry.shared.keyboardVisible,
+                        inputFocused: DeepTelemetry.hasFocusedTextInput(in: window),
+                        touchedInput: item.inputView
+                    )
+                )
+                DeepTelemetry.shared.rawInteraction(
+                    kind: gesture, point: point, duration: duration,
+                    displacement: dist, viewDescriptor: descriptor
+                )
+            case .cancelled:
+                if contacts.removeValue(forKey: id) != nil {
+                    DiagnosticLogStore.shared.log(.debug, .ui, event: "ui.raw.cancelled",
+                        screen: DeepTelemetry.shared.currentScreen,
+                        metadata: ["capture_source": "uiwindow.send_event", "coordinates_recorded": "false"])
+                }
+            default: break
+            }
+        }
+        if contacts.count > 32 { contacts.removeAll(keepingCapacity: true) }
     }
 }
 
-@MainActor
-private final class PassiveTouchRecorder: UIGestureRecognizer, UIGestureRecognizerDelegate {
-    // The recorder must never require normal controls/scrolling to fail.
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool { true }
-
-    private var startedAt: TimeInterval = 0
-    private var startPoint = CGPoint.zero
-    private var lastPoint = CGPoint.zero
-    private var maximumDisplacement: CGFloat = 0
-    private var maximumTouchCount = 0
-
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard let touch = touches.first, let view else { return }
-        startedAt = ProcessInfo.processInfo.systemUptime
-        startPoint = touch.location(in: view)
-        lastPoint = startPoint
-        maximumDisplacement = 0
-        maximumTouchCount = max(touches.count, event.allTouches?.count ?? touches.count)
-    }
-
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard let touch = touches.first, let view else { return }
-        lastPoint = touch.location(in: view)
-        maximumDisplacement = max(maximumDisplacement, hypot(lastPoint.x - startPoint.x, lastPoint.y - startPoint.y))
-        maximumTouchCount = max(maximumTouchCount, event.allTouches?.count ?? touches.count)
-    }
-
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard let touch = touches.first, let view else {
-            state = .failed
-            return
-        }
-        lastPoint = touch.location(in: view)
-        maximumDisplacement = max(maximumDisplacement, hypot(lastPoint.x - startPoint.x, lastPoint.y - startPoint.y))
-        let duration = max(0, ProcessInfo.processInfo.systemUptime - startedAt)
-        let window = view as? UIWindow ?? view.window
-        let hit = window?.hitTest(lastPoint, with: nil)
-        let kind: String
-        if maximumTouchCount > 1 {
-            kind = "multitouch"
-        } else if maximumDisplacement < 14 && duration < 0.9 {
-            kind = "tap"
-        } else if maximumDisplacement < 14 {
-            kind = "long_press"
-        } else {
-            kind = Self.gestureKind(from: startPoint, to: lastPoint)
-        }
-        let point = lastPoint
-        var descriptor = DeepTelemetry.describeView(hit)
-        descriptor["touch_count"] = String(maximumTouchCount)
-        descriptor["secure_context"] = DeepTelemetry.hasSecureInput(in: window) ? "true" : "false"
-
-        Task { @MainActor in
-            DeepTelemetry.shared.rawInteraction(
-                kind: kind,
-                point: point,
-                duration: duration,
-                displacement: maximumDisplacement,
-                viewDescriptor: descriptor
-            )
-        }
-        state = .failed
-    }
-
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
-        state = .failed
-        // Only count cancellations in owner-enabled diagnostics, never content/location.
-        guard DeepTelemetry.shared.rawTouchCaptureEnabled else { return }
-        DiagnosticLogStore.shared.log(
-            .debug, .ui, event: "ui.raw.cancelled",
-            screen: DeepTelemetry.shared.currentScreen,
-            metadata: ["touch_count": String(touches.count)]
-        )
-    }
-
-    override func reset() {
-        super.reset()
-        startedAt = 0
-        startPoint = .zero
-        lastPoint = .zero
-        maximumDisplacement = 0
-        maximumTouchCount = 0
-    }
-
-    private static func gestureKind(from start: CGPoint, to end: CGPoint) -> String {
-        let dx = end.x - start.x
-        let dy = end.y - start.y
-        if abs(dx) > abs(dy) {
-            return dx >= 0 ? "swipe_right" : "swipe_left"
-        }
-        return dy >= 0 ? "swipe_down" : "swipe_up"
+extension UIWindow {
+    @objc fileprivate func vl_sendEvent(_ event: UIEvent) {
+        UIInteractionProbe.record(window: self, event: event)
+        vl_sendEvent(event)
     }
 }

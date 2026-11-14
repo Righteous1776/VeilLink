@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 /// User-operated, offline-only HTML reading surface.
 struct VeilOfflineHTMLReaderView: View {
+    var initialFileURL: URL? = nil
     @State private var showingImporter = false
     @State private var document: VeilOfflineHTMLDocument?
     @State private var query = ""
@@ -127,6 +128,25 @@ struct VeilOfflineHTMLReaderView: View {
                     if importGeneration == token { isLoading = false }
                 }
             }
+        }
+        .task(id: initialFileURL) {
+            guard let initialFileURL else { return }
+            let token = UUID()
+            importGeneration = token
+            document = nil
+            errorDescription = nil
+            isLoading = true
+            do {
+                let parsed = try await Task.detached(priority: .userInitiated) {
+                    try VeilOfflineHTMLImporter.load(fileURL: initialFileURL)
+                }.value
+                guard importGeneration == token else { return }
+                document = parsed
+            } catch {
+                guard importGeneration == token else { return }
+                errorDescription = error.localizedDescription
+            }
+            if importGeneration == token { isLoading = false }
         }
         .onDisappear {
             importGeneration = UUID()

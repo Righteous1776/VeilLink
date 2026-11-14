@@ -14,6 +14,12 @@ final class RuntimeDiagnosticsBridge {
     private var lastSnapshotLoggedAt: [String: Date] = [:]
     private var snapshotSuppressed: [String: Int] = [:]
     private let snapshotMinInterval: TimeInterval = 30
+    // Tokens are intentionally random-session-local ordinals, never persisted
+    // message identifiers, hashes of plaintext, or peer identity IDs.
+    private var bubbleTokenLookup: [String: Int] = [:]
+    private var bubbleWindowSignatures: [Int: [Int: String]] = [:]
+    private var nextBubbleToken = 1
+    private var bubbleTokenEpoch = 0
 
     private init() {}
 
@@ -410,6 +416,144 @@ final class RuntimeDiagnosticsBridge {
             .store(in: &cancellables)
     }
 
+    /// Observe only the actual rows rendered by ChatView. No body/text/ID
+    /// leaves this process via the diagnostic writer.
+    func recordVisibleBubbleOrder(
+        conversationID: String,
+        messages: [ChatMessage],
+        reason: String,
+        hasOlder: Bool
+    ) {
+        guard applicationActive else { return }
+        if bubbleTokenLookup.count >= 20_000 {
+            bubbleTokenLookup.removeAll(keepingCapacity: true)
+            bubbleWindowSignatures.removeAll(keepingCapacity: true)
+            nextBubbleToken = 1
+            bubbleTokenEpoch &+= 1
+        }
+
+        let conversationToken = bubbleToken(for: "conversation:\(conversationID)")
+        let window = messages.suffix(2_048)
+        let startIndex = messages.count - window.count
+        let previous = bubbleWindowSignatures[conversationToken] ?? [:]
+        var nextSignatures: [Int: String] = [:]
+        var changes: [(ordinal: Int, token: Int, message: ChatMessage)] = []
+
+        for (offset, message) in window.enumerated() {
+            let token = bubbleToken(for: "bubble:\(message.id)")
+            let ordinal = startIndex + offset
+            let signature = "\(ordinal)|\(message.isOutgoing)|\(message.deliveryState.rawValue)|\(message.sentAt.timeIntervalSince1970)|\(message.attachment != nil)"
+            nextSignatures[token] = signature
+            if previous[token] != signature {
+                changes.append((ordinal, token, message))
+            }
+        }
+        let noLongerVisible = previous.keys.filter { nextSignatures[$0] == nil }
+        guard !changes.isEmpty || !noLongerVisible.isEmpty else { return }
+
+        if bubbleWindowSignatures[conversationToken] == nil,
+           bubbleWindowSignatures.count >= 8,
+           let first = bubbleWindowSignatures.keys.sorted().first {
+            bubbleWindowSignatures.removeValue(forKey: first)
+        }
+        bubbleWindowSignatures[conversationToken] = nextSignatures
+        let common: [String: String] = [
+            "conversation_token": String(conversationToken),
+            "token_epoch": String(bubbleTokenEpoch),
+            "plaintext_recorded": "false"
+        ]
+        store.log(.info, .ui, event: "chat.bubbles.window", screen: "chats.detail", metadata: common.merging([
+            "reason": reason,
+            "total_visible": String(messages.count),
+            "window_start": String(startIndex),
+            "window_count": String(window.count),
+            "changed_count": String(changes.count),
+            "no_longer_visible_count": String(noLongerVisible.count),
+            "has_older": String(hasOlder)
+        ]) { _, new in new })
+
+        for change in changes {
+            store.log(.debug, .ui, event: "chat.bubble.order", screen: "chats.detail",
+                      metadata: DiagnosticBubbleTracePolicy.metadata(
+                        conversationToken: conversationToken,
+                        bubbleToken: change.token,
+                        tokenEpoch: bubbleTokenEpoch,
+                        ordinal: change.ordinal,
+                        outgoing: change.message.isOutgoing,
+                        delivery: change.message.deliveryState,
+                        sentAt: change.message.sentAt,
+                        hasAttachment: change.message.attachment != nil
+                      ))
+        }
+        for token in noLongerVisible {
+            store.log(.debug, .ui, event: "chat.bubble.no_longer_visible", screen: "chats.detail",
+                      metadata: common.merging(["bubble_token": String(token)]) { _, new in new })
+        }
+    }
+
+    private func bubbleToken(for key: String) -> Int {
+        if let existing = bubbleTokenLookup[key] { return existing }
+        let value = nextBubbleToken
+        nextBubbleToken &+= 1
+        bubbleTokenLookup[key] = value
+        return value
+    }
+
+
+    /// Source-of-truth feature inventory; being registered is NOT equivalent
+    /// to having deep diagnostic coverage. No titles or free-text are emitted.
+    func recordFeatureInventory(_ registry: VeilFeatureRegistry) {
+        let audit = registry.audit()
+        store.log(.info, .app, event: "diagnostics.feature_registry.inventory",
+                  metadata: [
+                    "feature_count": String(audit.featureCount),
+                    "pack_count": String(audit.packCounts.count),
+                    "pack_ids": audit.packCounts.keys.sorted().joined(separator: ","),
+                    "coverage_status": "inventory_only",
+                    "deep_hooks_verified": "false"
+                  ])
+    }
+
+    /// An app-owned module may report structured numeric state without granting
+    /// access to other apps, raw text, keys, or OS-private telemetry.
+    func recordModuleCheckpoint(
+        module: String,
+        phase: String,
+        counters: [String: Int] = [:],
+        flags: [String: Bool] = [:],
+        level: DiagnosticLogLevel = .debug
+    ) {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-")
+        let safeModule = String(module.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(64))
+        let safePhase = String(phase.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(48))
+        guard !safeModule.isEmpty, !safePhase.isEmpty else { return }
+        var metadata: [String: String] = [
+            "module": safeModule,
+            "phase": safePhase,
+            "schema": "module-checkpoint.v1",
+            "plaintext_recorded": "false"
+        ]
+        for (key, number) in counters.prefix(12) {
+            let safe = String(key.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(40))
+            if !safe.isEmpty { metadata["counter." + safe] = String(number) }
+        }
+        for (key, flag) in flags.prefix(12) {
+            let safe = String(key.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(40))
+            if !safe.isEmpty { metadata["flag." + safe] = flag ? "true" : "false" }
+        }
+        store.log(level, .app, event: "diagnostics.module.checkpoint", metadata: metadata)
+    }
+
+    func recordFeatureOpening(_ feature: VeilFeatureDescriptor) {
+        recordModuleCheckpoint(
+            module: feature.packID,
+            phase: "feature.open",
+            counters: ["feature_count": 1],
+            flags: ["experimental": feature.isExperimental],
+            level: .info
+        )
+    }
+
     func recordStartupBegin() {
         store.log(.info, .app, event: "startup.begin", metadata: ["build": VeilBuildInfo.display])
     }
@@ -677,5 +821,33 @@ final class RuntimeDiagnosticsBridge {
             hash &*= 1099511628211
         }
         return String(format: "%016llx", hash)
+    }
+}
+
+
+/// A content-free output boundary: this function never accepts ChatMessage,
+/// its body, a plaintext fingerprint, or a persistent conversation/message ID.
+enum DiagnosticBubbleTracePolicy {
+    static func metadata(
+        conversationToken: Int,
+        bubbleToken: Int,
+        tokenEpoch: Int,
+        ordinal: Int,
+        outgoing: Bool,
+        delivery: ChatMessage.DeliveryState,
+        sentAt: Date,
+        hasAttachment: Bool
+    ) -> [String: String] {
+        [
+            "conversation_token": String(conversationToken),
+            "bubble_token": String(bubbleToken),
+            "token_epoch": String(tokenEpoch),
+            "ordinal": String(ordinal),
+            "direction": outgoing ? "outbound" : "inbound",
+            "delivery": delivery.rawValue,
+            "sent_at_ms": String(Int64(sentAt.timeIntervalSince1970 * 1_000)),
+            "has_attachment": String(hasAttachment),
+            "plaintext_recorded": "false"
+        ]
     }
 }

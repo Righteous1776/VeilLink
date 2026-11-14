@@ -51,6 +51,26 @@ final class BlackBoxExportIntegrityTests: XCTestCase {
         XCTAssertEqual(files[0]["name"] as? String, "runtime.jsonl")
     }
 
+    func testFeatureRegistryInventoryMarksUnobservedPacksWithoutClaimingCoverage() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DiagnosticLogStore(rootDirectory: root)
+        store.log(.info, .app, event: "diagnostics.feature_registry.inventory",
+                  metadata: ["pack_ids": "v27.alpha,v27.beta", "coverage_status": "inventory_only"])
+        store.log(.info, .app, event: "diagnostics.module.checkpoint",
+                  metadata: ["module": "v27.alpha", "phase": "feature.open"])
+        let archive = try store.exportBundle(context: "test.module-coverage")
+        defer { try? FileManager.default.removeItem(at: archive) }
+        let output = root.appendingPathComponent("coverage-output")
+        try unpack(archive, to: output)
+        let index = try readJSON("event-index.json", in: output)
+        XCTAssertEqual(index["registeredFeaturePacks"] as? [String], ["v27.alpha", "v27.beta"])
+        XCTAssertEqual(index["unobservedRegisteredPacks"] as? [String], ["v27.beta"])
+        let counts = try XCTUnwrap(index["moduleCheckpointCounts"] as? [String: Int])
+        XCTAssertEqual(counts["v27.alpha"], 1)
+    }
+
     func testIncludedFileSHA256MatchesTheActualStagedPayload() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -79,7 +99,7 @@ final class BlackBoxExportIntegrityTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = DiagnosticLogStore(rootDirectory: root)
 
-        let oldest = root.appendingPathComponent("runtime.7.jsonl")
+        let oldest = root.appendingPathComponent("runtime.23.jsonl")
         let sentinel = Data("keep-existing-diagnostics".utf8)
         try sentinel.write(to: oldest, options: .atomic)
 
@@ -89,7 +109,7 @@ final class BlackBoxExportIntegrityTests: XCTestCase {
         let blockedActive = root.appendingPathComponent("runtime.jsonl", isDirectory: true)
         try FileManager.default.createDirectory(at: blockedActive, withIntermediateDirectories: true)
 
-        // Cross the 2 MB rotation threshold even though no append can succeed.
+        // Exercise the failed-append path independently of the larger retention budget.
         let largeMessage = String(repeating: "x", count: 2_048)
         for i in 0..<1_500 {
             store.log(.info, .app, event: "retry.\(i)", message: largeMessage)

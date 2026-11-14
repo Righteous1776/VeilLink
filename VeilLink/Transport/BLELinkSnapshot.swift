@@ -29,7 +29,12 @@ struct BLEPeerLinkSnapshot: Identifiable, Equatable {
     let transportStage: BLETransportStage
     let stalledFor: TimeInterval?
 
-    var isRecovering: Bool { isWanted && !isConnected }
+    /// A connected CoreBluetooth PHY negotiating GATT must not be shown as disconnected.
+    /// Data-channel readiness (isConnected) remains a separate, stricter signal.
+    var hasPhysicalLink: Bool {
+        transportStage == .phyConnected || transportStage == .gattReady
+    }
+    var isRecovering: Bool { isWanted && !isConnected && !hasPhysicalLink }
 
     /// Passive scan-only peers must not lower A9 health or compute budgets. A peer becomes
     /// operationally relevant when it is connected, explicitly wanted, or owns queued traffic.
