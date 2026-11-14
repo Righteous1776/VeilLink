@@ -35,6 +35,25 @@ final class MediaTransferPolicyTests: XCTestCase {
         XCTAssertLessThan(q ?? 1, 0.90)
     }
 
+    func testExtremeCompressionReadabilityBounds() {
+        XCTAssertEqual(MediaTransferPolicy.extremeMinimumLongestEdge(
+            isLikelyTextOrGraphic: false
+        ), 640)
+        XCTAssertEqual(MediaTransferPolicy.extremeMinimumLongestEdge(
+            isLikelyTextOrGraphic: true
+        ), 1_280)
+        XCTAssertEqual(MediaTransferPolicy.extremeQuality(
+            isLikelyTextOrGraphic: false
+        ), 0.28)
+        XCTAssertEqual(MediaTransferPolicy.extremeQuality(
+            isLikelyTextOrGraphic: true
+        ), 0.50)
+        XCTAssertLessThan(
+            MediaTransferPolicy.extremeQuality(isLikelyTextOrGraphic: false),
+            MediaTransferPolicy.qualityRange(for: .bluetooth).floor
+        )
+    }
+
     func testGenericFilePolicyIsBoundedAndRejectsPathTraversal() {
         XCTAssertEqual(MediaTransferPolicy.maximumGenericFileBytes, 2_000_000)
         XCTAssertEqual(MediaTransferPolicy.genericFileCapabilityBit, 8)
