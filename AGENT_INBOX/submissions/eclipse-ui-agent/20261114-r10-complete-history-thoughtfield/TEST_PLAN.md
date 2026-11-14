@@ -30,3 +30,11 @@
 ## Continuation additions
 - Three new native checks: oversized JSON rejected before decode, oversized evidence preserved, clock rollback maintains a valid record.
 - Search-start visual gating is checked in the proposed GameLobbyView patch; NOT Apple iOS runtime-tested.
+
+## R11 additions
+- Build pure Foundation display generator with `swiftc -swift-version 6 -warnings-as-errors -O FILES/VeilEclipseConsoleStream.swift TESTS/R11ConsoleTests.swift -o /tmp/eclipsescreen && /tmp/eclipsescreen` — 413 passing checks locally.
+- Previous R10/Policy/Gate tests remained 39 + 18 + 35 = 92 passes; aggregate **505** local assertions.
+- `swiftc -frontend -parse -swift-version 5 FILES/VeilEclipseIdentityAndTrace.swift FILES/VeilEclipseComputeConsole.swift` parsed, but no Apple SDK typecheck.
+- Browser prototype inspected at 320x640, 390x844, 768x1024 with active/inactive terminal, visible moving text, and opened TRACE (no viewport overflow/error).
+- Governor must validate the **combined** `PATCH.diff` against a complete current main checkout; staged patches are advisory and local source-derived/synthetic checks do not constitute full-repo green.
+- Xcode/iPhone/iPad/XCTest/thermal/VoiceOver checks NOT EXECUTED.
