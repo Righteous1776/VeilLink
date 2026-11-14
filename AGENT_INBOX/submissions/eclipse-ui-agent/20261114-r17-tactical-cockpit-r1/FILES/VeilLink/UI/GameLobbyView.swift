@@ -3,20 +3,22 @@ import UniformTypeIdentifiers
 import VeilopolyUI
 
 
-// ECLIPSE R17: purposely restricted to charcoal, white/silver, green, amber and red.
-// This palette is scoped to the Gomoku experience, never the other game lobbies.
+// ECLIPSE R17.1: restore the original VeilLink INSTRUMENT orange identity.
+// Use the EXISTING theme to preserve ambient particles, grey material cards,
+// warm Gomoku board, orange highlight, and accessibility color adaptation.
+// This cockpit remains Gomoku-only; never recolor other games or global UI.
 enum VeilEclipseChrome {
-    static let black = Color(red: 0.032, green: 0.037, blue: 0.044)
-    static let canvas = Color(red: 0.052, green: 0.058, blue: 0.065)
-    static let panel = Color(red: 0.085, green: 0.094, blue: 0.105)
-    static let raised = Color(red: 0.12, green: 0.13, blue: 0.14)
-    static let silver = Color(red: 0.78, green: 0.81, blue: 0.82)
-    static let white = Color(red: 0.95, green: 0.96, blue: 0.96)
-    static let muted = Color(red: 0.53, green: 0.56, blue: 0.57)
-    static let line = Color(red: 0.24, green: 0.28, blue: 0.28)
-    static let green = Color(red: 0.19, green: 0.86, blue: 0.54)
-    static let amber = Color(red: 0.96, green: 0.59, blue: 0.19)
-    static let red = Color(red: 0.95, green: 0.27, blue: 0.27)
+    static var black: Color { .black }
+    static var canvas: Color { VeilTheme.obsidian }
+    static var panel: Color { VeilTheme.elevated }
+    static var raised: Color { VeilTheme.subtleFillStrong }
+    static var silver: Color { VeilTheme.secondaryText }
+    static var white: Color { VeilTheme.text }
+    static var muted: Color { VeilTheme.tertiaryText }
+    static var line: Color { VeilTheme.hairline }
+    static var accent: Color { VeilTheme.gold }          // original orange
+    static var amber: Color { VeilTheme.mutedGold }      // caution only
+    static var red: Color { VeilTheme.danger }           // fault/error only
 }
 
 private struct VeilEclipseDeckSurface<Content: View>: View {
@@ -169,7 +171,7 @@ struct GameLobbyView: View {
                 eclipseLobbyRow
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilEclipseChrome.green)
+            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilEclipseChrome.accent)
             NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
                 gameRow(.xiangqi, detail: "可选红黑与先后手 · 四档棋力 · 自学习阵法预判", enabled: true)
             }
@@ -360,7 +362,7 @@ struct GameLobbyView: View {
                     .strokeBorder(VeilEclipseChrome.line, lineWidth: 0.9)
                 Image(systemName: "cpu")
                     .font(.system(size: 21, weight: .medium, design: .monospaced))
-                    .foregroundColor(VeilEclipseChrome.green)
+                    .foregroundColor(VeilEclipseChrome.accent)
             }
             .frame(width: 49, height: 49)
             VStack(alignment: .leading, spacing: 4) {
@@ -375,7 +377,7 @@ struct GameLobbyView: View {
             Spacer(minLength: 3)
             Text("LOCAL")
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundColor(VeilEclipseChrome.green)
+                .foregroundColor(VeilEclipseChrome.accent)
             Image(systemName: "chevron.right")
                 .font(.caption.bold())
                 .foregroundColor(VeilEclipseChrome.silver)
@@ -518,10 +520,7 @@ struct LocalAIGameView: View {
             }
             .padding(14)
         }
-        .background {
-            if game == .gomoku { VeilEclipseChrome.canvas.ignoresSafeArea() }
-            else { VeilAmbientBackground() }
-        }
+        .background(VeilAmbientBackground())
         .navigationTitle(game == .gomoku ? "ECLIPSE · 五子棋" : game.title + " · 人机")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -596,13 +595,13 @@ struct LocalAIGameView: View {
                     }
                     .padding(.bottom, 24)
                 }
-                .background(VeilEclipseChrome.canvas.ignoresSafeArea())
+                .background(VeilAmbientBackground())
                 .navigationTitle("ECLIPSE / CONTROL")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("完成") { showsBoardAdvanced = false }
-                            .foregroundColor(VeilEclipseChrome.green)
+                            .foregroundColor(VeilEclipseChrome.accent)
                     }
                 }
             }
@@ -677,7 +676,7 @@ struct LocalAIGameView: View {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(spacing: 8) {
                         Image(systemName: "cpu.fill")
-                            .foregroundColor(VeilEclipseChrome.green)
+                            .foregroundColor(VeilEclipseChrome.accent)
                         Text("ECLIPSE  /  NATIVE INTELLIGENCE")
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .tracking(0.7)
@@ -686,13 +685,13 @@ struct LocalAIGameView: View {
                             .minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
                         Circle()
-                            .fill(controller.isAIThinking ? VeilEclipseChrome.green : VeilEclipseChrome.muted)
+                            .fill(controller.isAIThinking ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
                             .frame(width: 7, height: 7)
                     }
                     HStack(alignment: .firstTextBaseline) {
                         Text(controller.statusText)
                             .font(.system(size: 19, weight: .semibold, design: .rounded))
-                            .foregroundColor(controller.canHumanAct ? VeilEclipseChrome.green : VeilEclipseChrome.white)
+                            .foregroundColor(controller.canHumanAct ? VeilEclipseChrome.accent : VeilEclipseChrome.white)
                         Spacer()
                         Text("OFFLINE  ·  15×15")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -747,7 +746,7 @@ struct LocalAIGameView: View {
                         Text("BLACK  /  WHITE")
                         Spacer()
                         Text(controller.canHumanAct ? "YOUR TURN" : controller.isAIThinking ? "SEARCHING" : "LOCKED")
-                            .foregroundColor(controller.canHumanAct ? VeilEclipseChrome.green : VeilEclipseChrome.silver)
+                            .foregroundColor(controller.canHumanAct ? VeilEclipseChrome.accent : VeilEclipseChrome.silver)
                     }
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(VeilEclipseChrome.muted)
@@ -815,10 +814,10 @@ struct LocalAIGameView: View {
                     Spacer()
                     Text("RULE VERIFIED")
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(VeilEclipseChrome.green)
+                        .foregroundColor(VeilEclipseChrome.accent)
                 }
                 HStack(spacing: 8) {
-                    eclipseThreatBox("ECLIPSE 即时成五点", count: ai, accent: VeilEclipseChrome.green)
+                    eclipseThreatBox("ECLIPSE 即时成五点", count: ai, accent: VeilEclipseChrome.accent)
                     eclipseThreatBox("我方即时成五点", count: human, accent: human > 0 ? VeilEclipseChrome.amber : VeilEclipseChrome.silver)
                 }
                 Text("仅统计当前棋盘一步成五的空点数量，不展示坐标，不是模型置信度。")
@@ -859,7 +858,7 @@ struct LocalAIGameView: View {
                     Spacer()
                     Text("USER OVERRIDE")
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(VeilEclipseChrome.green)
+                        .foregroundColor(VeilEclipseChrome.accent)
                 }
                 HStack(spacing: 8) {
                     Menu {
@@ -882,7 +881,7 @@ struct LocalAIGameView: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .foregroundColor(VeilEclipseChrome.green)
+                    .foregroundColor(VeilEclipseChrome.accent)
                     .accessibilityIdentifier("board.difficulty.menu")
                     Toggle("深度搜索", isOn: Binding(
                         get: { controller.boardSearchMode == .full },
@@ -890,7 +889,7 @@ struct LocalAIGameView: View {
                     ))
                     .font(.caption.weight(.semibold))
                     .foregroundColor(VeilEclipseChrome.silver)
-                    .tint(VeilEclipseChrome.green)
+                    .tint(VeilEclipseChrome.accent)
                     .fixedSize(horizontal: true, vertical: false)
                     .accessibilityIdentifier("board.deepSearch.toggle")
                 }
@@ -945,7 +944,7 @@ struct LocalAIGameView: View {
         VeilEclipseDeckSurface {
             VStack(spacing: 8) {
                 Image(systemName: controller.outcome == .humanWon ? "trophy.fill" : "checkmark.shield")
-                    .foregroundColor(controller.outcome == .humanWon ? VeilEclipseChrome.green : VeilEclipseChrome.silver)
+                    .foregroundColor(controller.outcome == .humanWon ? VeilEclipseChrome.accent : VeilEclipseChrome.silver)
                 Text(controller.statusText)
                     .font(.headline)
                     .foregroundColor(VeilEclipseChrome.white)
@@ -954,7 +953,7 @@ struct LocalAIGameView: View {
                     model.haptics.selection()
                 }
                 .font(.subheadline.weight(.semibold))
-                .foregroundColor(VeilEclipseChrome.green)
+                .foregroundColor(VeilEclipseChrome.accent)
             }
             .frame(maxWidth: .infinity)
         }
@@ -1120,7 +1119,7 @@ struct LocalAIGameView: View {
                         Spacer()
                         Text("LIVE CONFIG")
                             .font(.system(size: 9, weight: .medium, design: .monospaced))
-                            .foregroundColor(VeilEclipseChrome.green)
+                            .foregroundColor(VeilEclipseChrome.accent)
                     }
                     Picker("思考时长", selection: Binding(
                         get: { options.thinkingMode },
@@ -1141,7 +1140,7 @@ struct LocalAIGameView: View {
                             Text("TIME LIMIT")
                             Spacer()
                             Text("\(options.seconds) s")
-                                .foregroundColor(VeilEclipseChrome.green)
+                                .foregroundColor(VeilEclipseChrome.accent)
                         }
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundColor(VeilEclipseChrome.silver)
@@ -1153,14 +1152,14 @@ struct LocalAIGameView: View {
                                 controller.setEclipseAdvancedOptions(next)
                             }
                         ), in: 5...300, step: 5)
-                        .tint(VeilEclipseChrome.green)
+                        .tint(VeilEclipseChrome.accent)
                         .accessibilityIdentifier("gomoku.eclipse.thinking.seconds.slider")
                     } else {
                         Text(options.thinkingMode == .untimed
                              ? "NO HARD TIMER · 由搜索节点与深度保护结束计算"
                              : "AUTO BUDGET · 当前难度自动决定每步搜索上限")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(options.thinkingMode == .untimed ? VeilEclipseChrome.green : VeilEclipseChrome.muted)
+                            .foregroundColor(options.thinkingMode == .untimed ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
                     }
                     if options.thinkingMode != .automatic {
                         Divider().overlay(VeilEclipseChrome.line)
@@ -1168,7 +1167,7 @@ struct LocalAIGameView: View {
                             Text("NODE BUDGET")
                             Spacer()
                             Text("\(options.maxNodes / 1_000) K")
-                                .foregroundColor(VeilEclipseChrome.green)
+                                .foregroundColor(VeilEclipseChrome.accent)
                         }
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundColor(VeilEclipseChrome.silver)
@@ -1180,13 +1179,13 @@ struct LocalAIGameView: View {
                                 controller.setEclipseAdvancedOptions(next)
                             }
                         ), in: 50_000...2_000_000, step: 50_000)
-                        .tint(VeilEclipseChrome.green)
+                        .tint(VeilEclipseChrome.accent)
                         .accessibilityIdentifier("gomoku.eclipse.thinking.nodes.slider")
                         HStack {
                             Text("DEPTH CEILING")
                             Spacer()
                             Text("D\(options.maxDepth)")
-                                .foregroundColor(VeilEclipseChrome.green)
+                                .foregroundColor(VeilEclipseChrome.accent)
                         }
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundColor(VeilEclipseChrome.silver)
@@ -1198,7 +1197,7 @@ struct LocalAIGameView: View {
                                 controller.setEclipseAdvancedOptions(next)
                             }
                         ), in: 3...12, step: 1)
-                        .tint(VeilEclipseChrome.green)
+                        .tint(VeilEclipseChrome.accent)
                         .accessibilityIdentifier("gomoku.eclipse.thinking.depth.slider")
                     }
                 }
@@ -1222,7 +1221,7 @@ struct LocalAIGameView: View {
                                 .font(.caption2).foregroundColor(VeilEclipseChrome.muted)
                         }
                     }
-                    .tint(VeilEclipseChrome.green)
+                    .tint(VeilEclipseChrome.accent)
                     .accessibilityIdentifier("gomoku.eclipse.r12.toggle")
                     Divider().overlay(VeilEclipseChrome.line)
                     Toggle(isOn: Binding(
@@ -1239,7 +1238,7 @@ struct LocalAIGameView: View {
                                 .font(.caption2).foregroundColor(VeilEclipseChrome.muted)
                         }
                     }
-                    .tint(VeilEclipseChrome.green)
+                    .tint(VeilEclipseChrome.accent)
                     .accessibilityIdentifier("gomoku.eclipse.r13.toggle")
                 }
             }
@@ -1263,14 +1262,14 @@ struct LocalAIGameView: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top) {
                 Image(systemName: "brain.head.profile")
-                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.gold)
+                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.gold)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("本地自学习棋手")
                         .font(.subheadline.weight(.bold))
                         .foregroundColor(VeilTheme.text)
                     Text(controller.learningSummary.compactText)
                         .font(.caption.monospacedDigit())
-                        .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
+                        .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                 }
                 Spacer()
                 Button("清空") { showsLearningResetConfirmation = true }
@@ -1292,10 +1291,10 @@ struct LocalAIGameView: View {
                             .font(.caption2).foregroundColor(VeilTheme.secondaryText)
                     }
                 }
-                .tint(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.gold)
+                .tint(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.gold)
                 .accessibilityIdentifier("gomoku.eclipse.live-trace.toggle")
                 HStack(spacing: 8) {
-                    Image(systemName: "cpu").foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
+                    Image(systemName: "cpu").foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("ECLIPSE 原生搜索")
                             .font(.caption.weight(.semibold))
@@ -1328,7 +1327,7 @@ struct LocalAIGameView: View {
                             .font(.caption2)
                         Image(systemName: "chevron.up.chevron.down")
                     }
-                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
+                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                     .padding(10)
                     .background(VeilTheme.subtleFillStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
@@ -1340,13 +1339,13 @@ struct LocalAIGameView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Image(systemName: "repeat.circle")
-                            .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.gold)
+                            .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.gold)
                         Text("原生 Bot 自对弈训练")
                             .font(.caption.weight(.bold))
                         Spacer()
                         Text("已实战 \(controller.trainedNativeGames) 局")
                             .font(.caption.monospacedDigit())
-                            .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
+                            .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                     }
                     Text("原生 Bot 离线自对弈，仅完整胜负局计数；使用训练经验时会切到原生搜索。")
                         .font(.caption2)
@@ -1356,7 +1355,7 @@ struct LocalAIGameView: View {
                         set: { controller.setUseNativeTrainingEvidence($0) }
                     ))
                     .font(.caption2)
-                    .tint(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.gold)
+                    .tint(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.gold)
                     if controller.isNativeTraining {
                         ProgressView(
                             value: Double(controller.nativeTrainingCompleted),
@@ -1379,7 +1378,7 @@ struct LocalAIGameView: View {
                         } label: {
                             Label("开始真正的 Bot 自对弈", systemImage: "play.circle.fill")
                                 .font(.caption.weight(.semibold))
-                                .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
+                                .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                         }
                     }
                     Text(controller.nativeTrainingMessage)
@@ -1416,11 +1415,11 @@ struct LocalAIGameView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Text(controller.coachTip)
                     .font(.caption2)
-                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.green : VeilTheme.goldBright)
+                    .foregroundColor(game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.goldBright)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(9)
-            .background((game == .gomoku ? VeilEclipseChrome.green : VeilTheme.gold).opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background((game == .gomoku ? VeilEclipseChrome.accent : VeilTheme.gold).opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             HStack(spacing: 10) {
                 Button {
                     do {
@@ -1488,7 +1487,7 @@ struct LocalAIGameView: View {
                 eclipseSessionID: controller.sessionID,
                 eclipseBoardTurn: controller.gomoku.moveCount,
                 eclipseMatchPlaying: controller.outcome == .playing,
-                eclipseConsoleStyle: true
+                eclipseConsoleStyle: false
             ) { index in
                 if controller.developerTeachingMode,
                    ownerMode.isAuthorized(for: .developerTraining),
