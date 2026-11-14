@@ -75,6 +75,14 @@ enum VeilImportedFileAccess {
         acceptedExtensions: Set<String> = [],
         maximumBytes: Int? = nil
     ) async throws -> URL {
+        // Acquire the provider grant before hopping to the detached copying
+        // executor. A Files picker may begin dismissal immediately after its
+        // completion handler returns. The outer scope stays live until all
+        // coordination/copy work has actually finished.
+        let outerGrant = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if outerGrant { sourceURL.stopAccessingSecurityScopedResource() }
+        }
         let worker = Task.detached(priority: .userInitiated) {
             try materialize(sourceURL, acceptedExtensions: acceptedExtensions, maximumBytes: maximumBytes)
         }
