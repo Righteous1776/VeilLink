@@ -1,33 +1,42 @@
-# Proposal — Black Box 192 MiB + privacy-safe chat bubble order
+# VeilLink Diagnostic Flight Recorder R2 — Global Coverage / Five-Night Evidence
 
-## Scope and implementation
+## 1. Why V1 is insufficient
 
-The current main revision V29.1 Build 67 has an approximately 40 MiB configured retention budget (2,000,000-byte active+7 rotated JSONL segments plus 24 MiB auxiliary), an in-memory 2,000-entry timeline and a separate 128-event pre-consent ring. Messages revisions exist, but they cannot reconstruct the order of actual rendered chat rows.
+V29.1 Build 67 contains a working DiagnosticLogStore, DeepTelemetry and MetricKit, but the prior candidate's 192 MiB budget has no demonstrated five-evening coverage. New VeilLink modules are not automatically instrumented merely because UI and global touch probes exist. Consequently, **coverage completeness** and **retention completeness** must be audited independently. Never claim arbitrary iOS process or private system-log access.
 
-The patch raises the configured **runtime retention budget** to **192 MiB**: 16 × 8 MiB JSONL segments (one active, 15 rotations) + 64 MiB auxiliary; increases auxiliary per-artifact allowance to 16 MiB / 48 filenames (subject to 64 MiB aggregate trim); increases the UI in-memory window to 6,000 events; and increases pre-consent fixed-event ring to 512 entries. The pre-consent recorder remains isolated from AppModel, BLE, SQLite, Keychain and consent-gated services.
+Assumption used only for sizing illustration: five nights × three hours = 15 active hours. 512 MiB / 15 h ≈ 9.7 KiB/sec average. It is a target budget, not measured event throughput and NOT a guarantee of five nights.
 
-The cold-reload reader now traverses newest files and rows first, decoding only the newest 6,000 records rather than every retained JSONL entry. The 4 MiB pending RAM backpressure limit and 1.5-second flush cadence are intentionally unchanged. Rotation remains post-successful-append, and the ZIP manifest continues to count only physically included file records with per-file SHA-256.
+## 2. Actual staged code proposal (PATCH.diff)
 
-## Chat bubble event contract
+**512 MiB configured budget:** 24 × 16 MiB JSONL segments (384 MiB) and 128 MiB auxiliary; auxiliary file cap 32 MiB / 96 files; in-memory last 6,000; pre-consent fixed schema 512. Pending 4 MiB RAM buffer and post-successful-append rotation are deliberately preserved. No new permission or background mode is declared.
 
-The ChatView observation point is the final `visibleMessages` collection, after session-card/protocol filtering. The UI observes this at message reload, workspace load and local search filter changes. RuntimeDiagnosticsBridge emits:
+**Retention evidence:** Count and persist the number of overwritten oldest segments in `retention-evictions.json`; include `rotationEvictionCount` and `retainedTimeSpanHours` (actual earliest/latest captured timestamps from export) in the ZIP manifest. Provide owner-visible disk utilization and eviction count. If either the span is short or evictions occurred, do not call the archive a complete multi-night record.
 
-- `chat.bubbles.window`: session-local conversation token, window start/count, total visible, changed/removed counts, older-page flag and fixed reason.
-- `chat.bubble.order`: session-local ephemeral bubble token, zero-based visible ordinal, inbound/outbound, delivery state, sent timestamp, attachment presence and a literal `plaintext_recorded=false`.
-- `chat.bubble.no_longer_visible`: ephemeral token of an item leaving the observed display window (not a claim that it was deleted).
+**Content-free UI chronology:** ChatView's actual visible row order is captured via ephemeral per-session tokens, ordinal, direction, delivery state, timestamp, attachment presence and non-plaintext flag. New observations are deduplicated; no message body, search phrase or persistent message IDs are exported by this channel.
 
-First snapshot writes the visible window; subsequent snapshots write only changed rows and disappeared tokens. At most the newest 2,048 visible rows per observation are enumerated. In-memory token mapping is capped by a 20,000-entry reset; epoch metadata distinguishes token resets; at most eight conversation snapshot maps remain cached.
+**Feature evolution:** `VeilFeatureLibraryView` automatically emits an inventory for the existing `VeilFeatureRegistry` on open and reports a typed `feature.open` checkpoint. The export index records `registeredFeaturePacks`, `moduleCheckpointCounts`, and `unobservedRegisteredPacks`. A new feature registered here will appear in this inventory without editing the recorder. A pack missing an event is described as *not observed during this capture*, not necessarily uninstrumented or broken.
 
-**Privacy boundary:** no `ChatMessage.body`, reply text, draft, search term, screenshot, media payload, persistent message ID, peer ID or content hash is added to this logger. Persistent IDs are used only inside a temporary runtime mapping to ephemeral monotonically numbered tokens. The metadata function has no string payload or message-ID parameter. Added sensitive-key fragments further redact accidentally supplied chat text fields in generic diagnostic metadata.
+**Integration API:** `RuntimeDiagnosticsBridge.recordModuleCheckpoint(module:phase:counters:flags:level:)` accepts only identifier-shaped module/phase strings and integer/Boolean telemetry. Future BLE/LAN/Relay/Community/Game/Agent/Storage/AI lanes should emit checkpoints on lifecycle, enqueue, retry, timeout, failure and recovery. This is opt-in per module; no reflective or private UI scraping.
 
-## System permission boundary
+**Owner controls:** Add explicit “开启全部本机诊断采集” in the existing owner-protected console; it enables four already supported in-app DeepTelemetry categories (raw touch, input lifecycle without text, post-interaction UI hierarchy metadata, performance). It does not acquire OS or other-app privileges; switches stay on until the owner disables them.
 
-The app may observe **its own** UI, message state, transport health, storage failures, memory/thermal indicators, and public iOS telemetry APIs under existing authorized entitlements. The proposal does not claim or attempt cross-application log scraping, private conversation access, OS sandbox escape, silent microphone recording, background capture beyond iOS policy, or privilege escalation. All new chat diagnostics remain on-device until the owner explicitly exports the bundle.
+## 3. Permission model, bounded by reality
 
-## Data compatibility
+| Scope | Implementation | Permission |
+|---|---|---|
+| App lifecycle, own UI and bubbles | Current app-owned events and new typed checkpoints | Within app, with owner settings where sensitive |
+| BLE/LAN/Relay internals | Add module-specific state counters and correlation IDs | Only own transport state, no captured user payload |
+| Own SQLite migrations/error codes | Add typed step/failure events; no table dumps | Sandbox data only |
+| MetricKit crash/hang/energy | Existing MetricKit integration, OS delivery scheduling | Official OS API, no guaranteed immediate full history |
+| Keychain/identity | Log access outcome/error *codes*, never secret values | Existing scoped app authorization |
+| Other applications / system-private logs / sandbox escape | Not included | Not granted; no bypasses or privilege escalation |
 
-No database migration, wire format mutation, key or protocol change. Existing JSONL schemaVersion 2 decodes unchanged; both old and new segment names are read. Older pre-consent fixed-event JSON arrays decode under the 512-entry cap. No app/build version change and no IPA generated.
+## 4. Follow-on integration milestone: not falsely claimed as implemented
 
-## Integration gates
+A five-night guarantee **cannot** be promised from a 512 MiB circular JSONL store. Before release, implement and validate: (A) daily partitions or archived segments with age-aware eviction; (B) stream-compressed cold segments and integrity checks; (C) incident-priority reserve to prevent routine high-volume UI events erasing crash causality; (D) bounded volume telemetry per subsystem with visible suppression/drop counters; (E) segment-by-day export instead of one enormous ZIP; (F) time-coverage and free-space forecasting from measured foreground write rate; (G) module-specific coverage obligations plus CI check for every newly added feature. Consider owner-configurable 1 GiB only after actual storage/power measurements.
 
-Apply only via Governor-selected integration branch, review pre-consent overlap, run macOS simulator compile + XCTest, verify privacy artifacts, stress 10k+ records with truncation/rotation failures, run full product CI and manual device export. Reject or revise if UX, memory, availability or privacy regression occurs.
+No benchmark has established the 512 MiB budget will last five nights, so the product must label retention completeness honestly and allow export after sessions.
+
+## 5. Compatibility and release governance
+
+Zero database/wire/crypto migrations. Existing diagnostic JSONL v2 keeps its schema. Only new optional export metadata and additive feature checkpoints are proposed. Main remains unchanged; PR #222 is INBOX_ONLY, Draft; no release/IPA has been triggered.
