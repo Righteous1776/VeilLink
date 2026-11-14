@@ -17,6 +17,7 @@ struct VeilEclipseIdentityCard: View {
 
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var appearance = VeilAppearanceController.shared
 
 
@@ -87,6 +88,7 @@ struct VeilEclipseIdentityCard: View {
 /// in-app bot card instead of adding an unrelated cyberpunk/blue-metal brand.
 private struct VeilEclipseAvatar: View {
     let isThinking: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var appearance = VeilAppearanceController.shared
 
 
@@ -103,6 +105,27 @@ private struct VeilEclipseAvatar: View {
                                            lineCap: .round))
                 .padding(7)
                 .rotationEffect(.degrees(-35))
+            ForEach(0..<16, id: \.self) { tick in
+                Capsule()
+                    .fill(tick % 4 == 0 ? VeilEclipseChrome.accent.opacity(0.62)
+                                          : VeilEclipseChrome.silver.opacity(0.20))
+                    .frame(width: 1, height: tick % 4 == 0 ? 5 : 3)
+                    .offset(y: -33)
+                    .rotationEffect(.degrees(Double(tick) * 22.5))
+            }
+            if isThinking && !reduceMotion && scenePhase == .active {
+                TimelineView(.animation(minimumInterval:
+                    ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.125 : 0.05)) { timeline in
+                    Circle()
+                        .trim(from: 0, to: 0.20)
+                        .stroke(VeilEclipseChrome.accent,
+                                style: StrokeStyle(lineWidth: 1.7, lineCap: .square))
+                        .padding(2)
+                        .rotationEffect(.degrees(timeline.date.timeIntervalSinceReferenceDate
+                            .truncatingRemainder(dividingBy: 2.6) / 2.6 * 360))
+                }
+                .allowsHitTesting(false)
+            }
             // Theme-aware mask/eyes: Veil Original gold, Instrument amber,
             // Apple Soft adaptive light/dark, Islet aurora, Plainline hairline.
             HStack(spacing: 12) {
