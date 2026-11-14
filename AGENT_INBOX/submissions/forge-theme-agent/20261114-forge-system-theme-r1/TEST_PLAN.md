@@ -35,3 +35,20 @@
 - Compare supplied screenshot composition to FORGE: orange emphasis, ECLIPSE dark console contrast, graphite panel hierarchy, nested training control readability, 42pt theme specimen.
 - Test small iPhone portrait, dark mode, light mode, Dynamic Type and VoiceOver so extra module headers do not overlap buttons or keyboard.
 - Xcode full iOS compile, simulator XCTest, BLE test, physical device FPS and screenshots: **NOT_RUN**. Static patch replay does not prove SwiftUI compilation or frame-time improvement.
+
+
+## R3 test and validation checkpoint
+
+Static frozen-main diff replay: nine product paths, 38 hunks, all exact contexts PASS. PR #233 still stages only five own Agent Inbox files.
+
+Swift 6.2.1 Linux Foundation-only compile of the proposed VeilForgeMotionCore.swift: PASS. 21 deterministic executable assertions for detents, parked motor, bad clock values, route-state mapping and health mapping: PASS. This is NOT full iOS SwiftUI compilation or XCTest.
+
+Still required on macOS/Xcode and physical devices:
+- RF: scan on/off, parked while stopped/background/low power/reduced motion; no duplicate root particles.
+- CPU: unloaded/ready/loading/generating/cooling/unavailable, shutter movement tied only to actual runtime transitions, label remains legible.
+- Count odometer: 0->1->10->9 peers, actual discovery only, settled visible digits and VoiceOver.
+- LAN: (TCP,secure) (0,0)->(1,0)->(1,1)->(0,0) corresponds to IDLE/TCP/SECURE/IDLE. Confirm no false bandwidth/progress assertion, width adapts on iPhone/iPad.
+- BLE: verify all 8 segments reflect observed health score 0/1/25/50/75/100 and that short stagger fires only on score changes.
+- Theme regression: five old choices unchanged and FORGE selected-only conditional instrumentation.
+- Touch: chat keyboard, message list, pairing, back swipe, scrolling, game board, training lists unaffected; FPS/thermal/energy audit at idle vs scan.
+- Apple simulator compile, full XCTest, screenshots, actual BLE and IPA: NOT_RUN.
