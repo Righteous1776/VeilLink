@@ -1,0 +1,87 @@
+diff --git a/VeilLink/UI/VeilFileIntegrityToolView.swift b/VeilLink/UI/VeilFileIntegrityToolView.swift
+--- a/VeilLink/UI/VeilFileIntegrityToolView.swift
++++ b/VeilLink/UI/VeilFileIntegrityToolView.swift
+@@ -17,6 +17,7 @@
+     @State private var copiedReport = false
+     @State private var errorText: String?
+     @State private var inspectionTask: Task<Void, Never>?
++    @State private var importerTask: Task<Void, Never>?
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+ 
+     var body: some View {
+@@ -75,12 +76,24 @@
+             switch result {
+             case .success(let urls):
+                 guard let selectedURL = urls.first else { return }
+-                Task {
++                busySlot = slot
++                importerTask = Task { @MainActor in
+                     do {
+                         let url = try await VeilImportedFileAccess.materializeInBackground(selectedURL)
++                        // The Files picker grant may outlive this view. Never begin hashing
++                        // after navigation has already cancelled the import.
++                        guard !Task.isCancelled else {
++                            VeilImportedFileAccess.removeStagedCopy(url)
++                            return
++                        }
+                         inspect(url: url, into: slot)
++                    } catch is CancellationError {
++                        if !Task.isCancelled { busySlot = nil }
+                     } catch {
+-                        errorText = error.localizedDescription
++                        if !Task.isCancelled {
++                            errorText = error.localizedDescription
++                            busySlot = nil
++                        }
+                     }
+                 }
+             case .failure(let error):
+@@ -88,6 +101,8 @@
+             }
+         }
+         .onDisappear {
++            importerTask?.cancel()
++            importerTask = nil
+             inspectionTask?.cancel()
+             inspectionTask = nil
+         }
+@@ -218,9 +233,13 @@
+         inspectionTask = Task {
+             defer { VeilImportedFileAccess.removeStagedCopy(url) }
+             do {
+-                let result = try await Task.detached(priority: .userInitiated) {
++                let worker = Task.detached(priority: .userInitiated) {
+                     try VeilFileIntegrityEngine.inspect(url: url)
+-                }.value
++                }
++                let result = try await withTaskCancellationHandler(
++                    operation: { try await worker.value },
++                    onCancel: { worker.cancel() }
++                )
+                 try Task.checkCancellation()
+                 if slot == .first {
+                     first = result
+diff --git a/VeilLinkTests/VeilFileIntegrityEngineTests.swift b/VeilLinkTests/VeilFileIntegrityEngineTests.swift
+--- a/VeilLinkTests/VeilFileIntegrityEngineTests.swift
++++ b/VeilLinkTests/VeilFileIntegrityEngineTests.swift
+@@ -77,6 +77,20 @@
+         XCTAssertFalse(report.contains(temporaryDirectory.path))
+     }
+ 
++    func testAlreadyCancelledInspectionDoesNotReturnDigest() async throws {
++        let url = try file(named: "cancelled.bin", data: Data(repeating: 0x7F, count: 1024))
++        let task = Task.detached { () throws -> VeilFileIntegrityResult in
++            withUnsafeCurrentTask { $0?.cancel() }
++            return try VeilFileIntegrityEngine.inspect(url: url)
++        }
++        do {
++            _ = try await task.value
++            XCTFail("A cancelled inspection must not return a completed SHA-256.")
++        } catch is CancellationError {
++            // Engine cooperatively checks cancellation at each 512 KiB chunk.
++        }
++    }
++
+     func testDirectoryIsRejected() {
+         XCTAssertThrowsError(try VeilFileIntegrityEngine.inspect(url: temporaryDirectory)) {
+             XCTAssertEqual($0 as? VeilFileIntegrityError, .notRegularFile)
