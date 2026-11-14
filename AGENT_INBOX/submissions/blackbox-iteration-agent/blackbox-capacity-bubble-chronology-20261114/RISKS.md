@@ -30,3 +30,12 @@ Status: DRAFT proposal; product not applied; CI/physical-device testing NOT_RUN.
 - **Evidence precision:** recording Gomoku cell/turn metadata and Monopoly sequence/phase can reveal play patterns, although not content. Keep local/export on explicit owner action, never silently upload. No raw game replay or card content.
 - **Energy and retention:** 512 MiB configured ring plus auxiliary is a **budget**, not a five-night guarantee; high-frequency transport/lifecycle anomalies can still evict old evidence. Priority segment reservation, age-aware compression and segmented export not yet implemented.
 - **CI and conflict gates:** all 23 proposed paths remain in PATCH.diff only; package resource/test settings and PR overlap need Integration Governor review. No Swift compiler/XCTest or iPhone/iPad QA was performed.
+
+## R5 risks and mitigations
+
+- **Window interception correctness:** swizzling `UIWindow.sendEvent` (public UIKit API) relies on runtime method dispatch; custom subclasses/OS versions can differ. Original dispatcher is always called, but app-level scrolling and accessibility must be exercised on hardware. Owner visible readiness/counter makes silent failure detectable, not impossible.
+- **Sensitive input inference:** touch x/y on keyboard keys can reveal typing even without saving text. Exclude keyboard windows and redact coordinates/frames when any input is focused or keyboard visible. Test both normal text and secure fields, software and hardware keyboard cases.
+- **Completeness:** pointer/mouse events, Apple Pencil hover, hardware keyboard, assistive technology actions and background screen interaction are not necessarily `UITouch` end events. UIKit `sendAction` is still a separate diagnostic source. Don't advertise 100% capture.
+- **Energy/performance:** per-touch completion logging avoids per-frame flood; traversal for focused input and event swizzling still need benchmarks. State cache is limited; no UITouch or UIView object is exported.
+- **Owner opt-in:** raw touch remains disabled by default. Users need explicitly enable it; current installed App version does not include PR #222's proposed changes.
+- **Governance:** 24 source/test paths exist only inside the Inbox `PATCH.diff`; actual Apple CI/device validation and main integration are not done. No unauthorized entitlement escalation or release.
