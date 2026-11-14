@@ -100,7 +100,8 @@ enum VeilFileInbox {
             && cleanExtension.utf8.allSatisfy { byte in
                 (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57)
             }
-        let storedName = isSafeExtension ? "content." + cleanExtension : "content.bin"
+        let storedName = MediaTransferPolicy.safeGenericFilename(originalName)
+            ?? (isSafeExtension ? "content." + cleanExtension : "content.bin")
         let pending = root.appendingPathComponent(".pending-" + id.uuidString, isDirectory: true)
         let published = root.appendingPathComponent(id.uuidString, isDirectory: true)
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
@@ -188,12 +189,7 @@ enum VeilFileInbox {
         let record = try JSONDecoder().decode(VeilFileInboxRecord.self, from: data)
         guard record.id == id, record.byteCount >= 0, record.byteCount <= maximumFileBytes,
               record.sha256.count == 64,
-              record.storedName == "content.bin" ||
-                (record.storedName.hasPrefix("content.") &&
-                 record.storedName.dropFirst("content.".count).utf8.count <= 16 &&
-                 record.storedName.dropFirst("content.".count).utf8.allSatisfy {
-                    ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57)
-                 }) else {
+              MediaTransferPolicy.safeGenericFilename(record.storedName) == record.storedName else {
             throw VeilFileInboxError.invalidRecord
         }
         let file = folder.appendingPathComponent(record.storedName)
