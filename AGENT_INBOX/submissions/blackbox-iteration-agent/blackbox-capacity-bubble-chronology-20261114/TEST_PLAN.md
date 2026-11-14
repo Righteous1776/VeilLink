@@ -50,3 +50,16 @@ Compiled iOS/XCTest status: **NOT_RUN**. Patch context replay is NOT compile/tes
 - [ ] Audit that chat content, voice/audio frames, private keys, game narrative/card texts, control payloads and persistent peer/room IDs do not appear in new R4 records.
 
 No Apple build, signed/unsigned IPA, physical dual-device validation or five-night endurance test has run in this Agent lane.
+
+## R5 specific acceptance tests (required before enabling production trace)
+
+1. Build with Xcode iOS simulator and `VeilLinkTests`; execute `DeepTelemetryTouchProbeTests` and existing privacy/diagnostic tests. **NOT_RUN**.
+2. Owner diagnostics: verify default `rawTouchCaptureEnabled == false`; enable, observe `touchProbeReady == true`, tap 10 times and check counter grows by approximately 10, then disable and verify no additional raw touch events. **NOT_RUN**.
+3. Inspect `ui.touch_probe.status` and `ui.raw.tap` in a new ZIP export; verify that the event source, screen, timestamp and view class are useful, with no message body or text. **NOT_RUN**.
+4. Trigger keyboard while tapping send, composer toolbar, dismiss, ScrollView and sheet; require `secure_context=true` and no precise `x`/`y`/`frame` or accessibility identifier from any keyboard-active trace. **NOT_RUN**.
+5. Rapidly swipe, long press, multi-touch, switch tabs, open popovers/overlays, turn device orientation, return from background; check that these interactions appear without disturbing normal gesture execution. **NOT_RUN**.
+6. Test no keyboard/system window raw touches, no input key logging, and no other-app/event access; compare exact exported records against a privacy sentinel. **NOT_RUN**.
+7. Stress with native games, keyboard, BLE + 15 hours simulated owner activity on iPhone/iPad; compare event rate, CPU/main-thread budget, allocation growth, UI responsiveness and 512 MiB retention pressure. **NOT_RUN**.
+8. Ensure post-update behavior works across both iOS 26 and repository-supported deployment targets in the build matrix, with documented fallback if UIWindow dispatch hooking differs. **NOT_RUN**.
+
+Static unified-diff context matching is not a substitute for compile, touchscreen hardware, keyboard safety or review of method-swizzle runtime behavior.
