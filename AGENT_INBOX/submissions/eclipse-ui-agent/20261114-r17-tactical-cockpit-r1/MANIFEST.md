@@ -1,43 +1,31 @@
-# ECLIPSE R17.1 — Original Orange Theme Restoration / Inbox Candidate
+# ECLIPSE R17.2 — Mechanical Intelligence Cockpit / INBOX_ONLY
 
-**Authority:** Agent `INBOX_ONLY`, no main/source mutation, no release/IPA, no Actions manually launched.
-**Correction:** User-provided real iPhone screenshots establish the approved baseline: orange navigation/lighting, dark grey material cards, warm brown chessboard, and black code stream. R17 green was not user-approved.
-**Scope:** Gomoku-only visual layer and the existing R16 advanced controls, plus one actual engine decision telemetry field. Other games and user training database unchanged.
+**Authority:** Owner → Integration Governor VEILLINK-IG-001 → Lane INBOX_ONLY. No direct main edits, merge, release, IPA, manually triggered Actions, or training-weight changes.
 
-## Source baselines / critical integration dependency
-- `GameLobbyView.swift`, `LocalAIGameController.swift`: R16 local candidate from `VeilLink_ECLIPSE_R16_Advanced_Thinking_Control_20261114.zip`, itself based on the Nov 14 R14 integration branch. The R16 search options and their four native core files are carried in `FILES/`.
-- `MiniGameViews.swift`, `VeilEclipseIdentityAndTrace.swift`, `VeilEclipseComputeConsole.swift`, `VeilEclipseBoardThoughtField.swift`: PR #220 integration candidate `integration/v29-1-gomoku-eclipse-seven-tier-model-free-20261114` before R17 changes.
-- **Do NOT apply directly to main** until the Integration Governor resolves PR #220, confirms the R16 search baseline, and verifies Xcode project file membership. The patch deliberately does not touch `main`, release numbers, signing or `.pbxproj`.
+**User direction:** Preserve the real iPhone **original VeilLink orange** UI with deep grey cards, warm brown Gomoku board, black code console and white/silver text. Make the cockpit more mechanical and emotionally engaging through **genuine, readable information-bearing animations**, not colorful decoration or fake AI reasoning.
 
-## Palette correction relative to original R17
-- All Gomoku-only `VeilEclipseChrome.green` usages are replaced with `VeilEclipseChrome.accent`, bound to `VeilTheme.gold` (the real app instrument orange).
-- Original ambient particle background and existing theme-elevated panel materials restored.
-- Player Gomoku board uses original warm-brown grid, black/white stones, orange last-move ring, and unchanged tap surface.
-- The existing ECLIPSE portrait and terminal stream preserve the orange ring and black display.
-- R16 search budgets, toggles, R12/R13, gameplay and AI training logic remain unchanged.
+**Baseline:** R17.1 (PR #234 inbox), built upon R16 local engine + PR #220 user interface. Do not apply full patch directly to main. See `COLOR_REGRESSION.md` and `MOTION_SPEC.md`.
 
-## What changed
-1. **ECLIPSE-only visual identity:** graphite/black surfaces, silver/white text, original VeilLink orange accent, silver/white text, amber caution and red errors. Retains the existing original avatar and `VeilEclipseComputeConsole` animation, rather than depicting pretend engine thoughts.
-2. **Distinct match cockpit:** seat picker, compact original model identity, original dark warm-brown 15×15 board, original warm board with orange last-move ring, clear status, quick difficulty and deep-search controls; rest of the lobby/game modes retain their style.
-3. **Real telemetry:** last *completed* decision's actual `GomokuBotMove.nodes` and elapsed time, plus native completed training-games count and current mode string. These are not "live confidence" or invented evaluation scores.
-4. **Exact tactical readout:** two counts of legal empty intersections which immediately complete five for each side; no coordinates revealed, no suggestion/probability claims. Pure read-only geometry.
-5. **Real advanced settings pane:** two sections Compute and Training. R16 wired `EclipseAdvancedOptions`: automatic/custom (5–300 seconds)/untimed, nodes 50K–2M, depth 3–12, R12 + R13 toggles; persist from next move. Training panel retains original native self-play and export controls.
-6. **Touch integrity:** original `VeilBoardTapSurface` and scroll gesture behavior unmodified. `eclipseConsoleStyle` remains opt-in but is disabled for the human match, so original board colors are retained, so BLE multiplayer and other boards remain unchanged.
-7. **Minor correctness fix:** board footer takes `controller.humanPlayer` instead of permanently assuming black.
+## Changed since R17.1
+1. `VeilLink/UI/GameLobbyView.swift`: measured live search dial with correct budget semantics; four measured game/engine statistics; snapshot-consistent node budget meter; numeric state transitions; tactical signal labels; active search status; throttle/ReduceMotion behavior.
+2. `VeilLink/UI/MiniGameViews.swift`: opt-in offline ECLIPSE-only mechanical orange move ring with a single 0.65s event-bound expansion and no gesture hooks.
+3. `VeilLink/UI/VeilEclipseIdentityAndTrace.swift`: quiet 16-tick mechanical bezel and an orange computing-only scan arc.
+4. `VeilLink/UI/VeilEclipseComputeConsole.swift`: actual elapsed time in preexisting decorative code screen; bounded clock-cycle LED strip with honest labeling; stable compact layout and low-power cadence.
+5. `VeilLink/Agent/Games/LocalAIGameController.swift`: record actual previous decision's node-limit snapshot once per move, preventing current slider changes from falsifying the gauge. No search algorithm altered.
 
-## Test results
-- Linux Swift 6 `swiftc -frontend -parse` on all submitted Swift files: PASS.
-- Linux Swift 6 native rule-based tactical readout scenarios: PASS (empty, both colors, 2-ended four, rotation, no false positive); source extracted from shipped `GameLobbyView.swift`.
-- Static contract checks: PASS (controllers bound, palette, no fake metrics, no board-touch rewrite).
-- Patch `git apply --check` and byte-for-byte reapplication: PASS.
-- **NOT claimed:** complete iOS/Xcode/SwiftUI module typecheck, iPhone 13/iPad layout screenshot, CPU/thermal metrics, upstream PR #220 CI, IPA, large-scale game strength gains.
+**Unchanged**: five other Swift files (R16 engine/search dependencies and R17.1 ThoughtField). The full 10-file candidate is supplied under `FILES/VeilLink/...`; do not apply source files to main without Governor dependency resolution.
 
-## Governor integration checks (mandatory)
-- Merge/rebase against approved V29.1/R14 base; first integrate R16 source if not already present. `R17_ADVISORY.patch` is relative to a documented hybrid source baseline, not `main`.
-- Xcode 26 compile of all UI and R16 search classes; ensure `VeilEclipseChrome` has a single declaration.
-- On 375pt/390pt/768pt widths verify no truncated controls; verify both color schemes and VoiceOver.
-- Open/close sheet; change time/limits/R12/R13 and test persistence; cancel an untimed search; verify no late move after restart.
-- Verify both Gomoku human-seat choices, archive restoration, no moves added by decor, and untouched BLE Gomoku board.
-- Monitor FPS/power/thermals when visualizer enabled; conditionally reduce animation if needed.
+## Payload
+- `FILES/`: 10 current Swift candidate sources
+- `R17_ADVISORY.patch`: full hybrid-baseline advisory diff
+- `R17_2_FROM_R17_1.patch`: incremental R17.1→R17.2 review diff
+- `COLOR_REGRESSION.md` and `MOTION_SPEC.md`: approved visuals and animation provenance
+- `RISKS.md`, `TEST_PLAN.md`, `SHA256.json` and `TESTS/`: verification/reproduction materials
 
-**Risk notes:** Native computation is still bounded by depth/nodes even in untimed mode. On-device iOS background scheduling cannot be guaranteed. `VeilEclipseComputeConsole` has labeled decorative stream; only numbered statistics described as measured reflect actual engine results.
+## Verified
+- Swift 6.2.1 syntax parse: **10/10 passed**, full Xcode typecheck **not run**
+- Rules tests: **7/7 passed**
+- Static animation/privacy/gesture audit: **passed**
+- `git apply --check` & exact-byte hybrid replay: **passed**
+
+**Not verified:** actual iPhone screenshot/animation smoothness, native UI typecheck, thermal load, IPA. This is a review candidate only.
