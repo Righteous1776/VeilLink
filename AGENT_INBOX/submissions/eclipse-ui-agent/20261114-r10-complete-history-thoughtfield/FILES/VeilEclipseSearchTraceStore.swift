@@ -21,16 +21,23 @@ final class VeilEclipseSearchTraceStore: @unchecked Sendable {
 
     @discardableResult
     func begin(sessionID: String, board: GomokuState) -> UUID? {
-        guard !sessionID.isEmpty, board.winner == nil, !board.isDraw else { return nil }
         lock.lock(); defer { lock.unlock() }
-        session = sessionID
-        token = UUID()
-        turn = board.moveCount
-        root = board
+        // Invalid attempts must revoke any prior session, never retain stale
+        // exploration events after a restart or damaged game restoration.
+        session = nil
+        token = nil
+        turn = -1
+        root = nil
         stored = []
         serial = 0
         lastTime = -1
-        return token
+        guard !sessionID.isEmpty, board.winner == nil, !board.isDraw else { return nil }
+        session = sessionID
+        let issued = UUID()
+        token = issued
+        turn = board.moveCount
+        root = board
+        return issued
     }
 
     func clear() {
@@ -51,30 +58,26 @@ final class VeilEclipseSearchTraceStore: @unchecked Sendable {
         guard (1...3).contains(indices.count), (1...2_000_000_000).contains(nodes) else { return false }
         lock.lock(); defer { lock.unlock() }
         guard expected == token, let root else { return false }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now >= lastTime, nodes >= (stored.last?.exploredNodes ?? 0) else { return false }
+        let withinThrottle = lastTime >= 0 && now - lastTime < 0.05
+        let previous = stored.last
+        let deeperSameRoot = withinThrottle && previous != nil
+            && previous!.indices.first == indices.first
+            && indices.count > previous!.indices.count
+        // Reject 99% of super-fast events before board replay/copy.
+        if withinThrottle && !deeperSameRoot { return false }
         var test = root
         for index in indices {
             guard (0..<225).contains(index),
                   test.apply(index: index, actor: test.currentPlayer) else { return false }
         }
-        let now = ProcessInfo.processInfo.systemUptime
-        guard now >= lastTime else { return false }
-        // Always capture first valid branch. Subsequent views are bounded,
-        // and nested steps can be visible if slower searches allow updates.
-        if lastTime >= 0 && now - lastTime < 0.05 {
-            // A deeper branch from the SAME explored root is real new evidence.
-            // Promote it in place instead of throttling it away behind a root-only
-            // ghost stone. Other rapid roots remain throttled to protect the UI.
-            if let previous = stored.last, let first = indices.first,
-               previous.indices.first == first,
-               indices.count > previous.indices.count,
-               nodes >= previous.exploredNodes {
-                stored[stored.count - 1] = Branch(
-                    indices: indices, exploredNodes: nodes,
-                    serial: previous.serial, emittedAtUptime: now
-                )
-                return true
-            }
-            return false
+        if deeperSameRoot, let previous {
+            stored[stored.count - 1] = Branch(
+                indices: indices, exploredNodes: nodes,
+                serial: previous.serial, emittedAtUptime: now
+            )
+            return true
         }
         serial &+= 1
         stored.append(Branch(indices: indices, exploredNodes: nodes, serial: serial, emittedAtUptime: now))
