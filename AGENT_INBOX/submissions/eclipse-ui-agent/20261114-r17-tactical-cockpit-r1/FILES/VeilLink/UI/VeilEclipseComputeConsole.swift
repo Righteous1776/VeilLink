@@ -14,6 +14,7 @@ struct VeilEclipseComputeConsole: View {
 
     @ObservedObject private var appearance = VeilAppearanceController.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
 
     private var active: Bool { isComputing && actualSearchStartedAt != nil }
@@ -35,37 +36,61 @@ struct VeilEclipseComputeConsole: View {
                     .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
             }
             if active, let startedAt = actualSearchStartedAt {
-                TimelineView(.animation(
-                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 / 9.0 : 1.0 / 24.0,
-                    paused: reduceMotion
+                TimelineView(.periodic(from: .now,
+                    by: scenePhase != .active ? 5 : (reduceMotion ? 0.5 : (ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.2 : 0.10))
                 )) { timeline in
                     let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
                     let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
                     let position = VeilEclipseConsoleStream.scrollPosition(
                         elapsedSeconds: reduceMotion ? 0 : elapsed, lowPower: lowPower
                     )
-                    let lineHeight: CGFloat = compact ? 11 : 15
-                    let visibleCount = compact ? 2 : 7
+                    let lineHeight: CGFloat = compact ? 10 : 15
+                    let visibleCount = compact ? 1 : 7
                     let rows = VeilEclipseConsoleStream.lines(
                         elapsedSeconds: reduceMotion ? 0 : elapsed,
                         visibleRows: visibleCount + 1,
                         lowPower: lowPower
                     )
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(0..<rows.count, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: compact ? 2 : 6) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "stopwatch")
+                                .font(.system(size: compact ? 7 : 9))
+                            Text(String(format: "REAL CLOCK  T+%.1fs", elapsed))
+                                .font(.system(size: compact ? 8 : 10, weight: .semibold, design: .monospaced))
+                                .monospacedDigit()
+                            Spacer(minLength: 0)
+                            Text("ELAPSED")
+                                .font(.system(size: compact ? 7 : 9, weight: .medium, design: .monospaced))
+                        }
+                        .foregroundColor(VeilEclipseChrome.accent)
+                        HStack(spacing: 2) {
+                            ForEach(0..<16, id: \.self) { tick in
+                                RoundedRectangle(cornerRadius: 1)
+                                    .fill(reduceMotion ? VeilEclipseChrome.line :
+                                          (tick == Int(elapsed * (lowPower ? 6 : 12)) % 16
+                                           ? VeilEclipseChrome.accent
+                                           : VeilEclipseChrome.silver.opacity(0.18)))
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .frame(height: 3)
+                        .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(0..<rows.count, id: \.self) { index in
                             Text(rows[index].text)
                                 .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
                                 .foregroundColor(tone(rows[index].tone))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
                                 .frame(height: lineHeight, alignment: .leading)
+                            }
                         }
+                        .offset(y: -CGFloat(position - floor(position)) * lineHeight)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
+                        .clipped()
+                        .accessibilityHidden(true)
                     }
-                    .offset(y: -CGFloat(position - floor(position)) * lineHeight)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
-                    .clipped()
-                    .accessibilityHidden(true)
                 }
             } else {
                 Text("vis.idle ()")
@@ -94,7 +119,7 @@ struct VeilEclipseComputeConsole: View {
         }
         .padding(compact ? 8 : 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: compact ? 55 : 166)
+        .frame(minHeight: compact ? 66 : 166)
         .background(
             RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
                 .fill(Color.black.opacity(0.97))
