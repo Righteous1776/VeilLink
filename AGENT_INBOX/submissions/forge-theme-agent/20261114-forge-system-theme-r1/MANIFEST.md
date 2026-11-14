@@ -15,6 +15,8 @@ asset_grant: none
 - `VeilLink/Core/VeilForgeMotionCore.swift`
 - `VeilLink/UI/VeilForgeVisualSystem.swift`
 - `VeilLinkTests/VeilForgeMotionCoreTests.swift`
+- `VeilLink/UI/SettingsView.swift`
+- `VeilLink/Core/VeilMotionKit.swift`
 
 ## Submission files
 MANIFEST.md, PROPOSAL.md, PATCH.diff, TEST_PLAN.md, RISKS.md
@@ -22,9 +24,17 @@ MANIFEST.md, PROPOSAL.md, PATCH.diff, TEST_PLAN.md, RISKS.md
 The repository product tree, main, version, workflows, signing, protocol and release surfaces were NOT modified.
 
 ## Checkpoint / R1 continuation
-- proposed_product_paths: 7
+- proposed_product_paths: 9
 - exact_base_hunk_replay: PASS
 - Swift Foundation-only smoke: PASS, 17 checks
 - theme regression XCTest: PROPOSED / NOT_RUN
 - Apple simulator, XCTest, iOS device, IPA: NOT_RUN
 - overlap: #231 (non-theme-specific animation), #229 (global particle removal); Governor review required
+
+## Screenshot-based R2 checkpoint
+- owner_basis: 3 uploaded live Gomoku/ECLIPSE screenshots (visual reference only; no screenshot uploaded to repository)
+- screenshot_palette: vivid orange on near-black graphite
+- changed paths: 9; unified diff hunks: 38; exact-source replay: PASS
+- new: FORGE module headers, selectable specimen, static theme information plate, scroll-safe gesture branch and decorative glow suppression
+- unchanged: GameLobbyView/ECLIPSE in-flight implementation, BLE protocol, database, builds, signing, main
+- iOS compile/XCTest/BLE/device: NOT_RUN
