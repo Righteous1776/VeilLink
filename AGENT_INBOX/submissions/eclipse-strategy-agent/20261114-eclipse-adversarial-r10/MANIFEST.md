@@ -1,0 +1,14 @@
+# ECLIPSE R10 | Governed Drop
+- agent_id: eclipse-strategy-agent
+- task_id: 20261114-eclipse-adversarial-r10
+- base_main_sha: eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0
+- status: DROPPED / INBOX_ONLY / not product-integrated
+- goal: adversarial plan search, opponent trap detection and V9 2x/4x/6x compute-tier synchronization
+- proposed product files: VeilLink/Agent/Games/VeilEclipseStrategicPlannerR10.swift; VeilLink/Agent/Games/VeilEclipseComputeContractR10.swift
+- full proposed source + complete source-add PATCH.diff + deterministic tests: owner-delivered ZIP VeilLink_ECLIPSE_R10_Adversarial_Planner_20261114.zip (22,314 bytes; archive SHA256 0784ad063681c568e184bdb6be3c2272dbb60ccf9cd3113912feb976036ffc86)
+- planner source SHA256: 5c462ae4b16bbfc3dcbb08dde3392ba8e796b5992896b49bdfc182b585c5869a; 17,336 bytes
+- compute contract source SHA256: c7ae7c83ca7d616051fa2375556fb9c06fafaffbe19114cba8ce3598dc517fb0
+- THIS Github drop includes the **review proposal and complete compute contract text**; full 378-line strategy code/full source patch shipped separately in owner ZIP to avoid mismatched/opaque partial mirrors. Do not mistake its Github PATCH.diff for the separate full implementation patch.
+- executed: Linux Swift 6.2.1 strict -O compile; planner 60 local deterministic checks PASS; 18 budget contract checks PASS; ZIP integrity PASS
+- NOT_RUN: iOS full Xcode CI, XCTest, actual real-device games, human-vs-engine benchmark, trained model and Elo
+- no binary/model weights, protocol/identity/storage, version, workflows, IPA, release or main edits
