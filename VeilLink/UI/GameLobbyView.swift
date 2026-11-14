@@ -13,13 +13,14 @@ struct GameLobbyView: View {
 
     var body: some View {
         VeilStableScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                hero.veilStaggeredEntrance(index: 0)
+            // Prefer lazy layout and native scrolling over decorative card gestures.
+            LazyVStack(alignment: .leading, spacing: 18) {
+                hero
                 VeilopolyMultiplayerLobby(model: model)
-                singlePlayerSection.veilStaggeredEntrance(index: 1)
-                realtimeArcadeSection.veilStaggeredEntrance(index: 2)
-                interactiveStorySection.veilStaggeredEntrance(index: 3)
-                nearbySection.veilStaggeredEntrance(index: 4)
+                singlePlayerSection
+                realtimeArcadeSection
+                interactiveStorySection
+                nearbySection
             }
         }
         .background(VeilAmbientBackground())
@@ -67,8 +68,6 @@ struct GameLobbyView: View {
             }
         }
         .veilCard(emphasized: true)
-        .veilSpatialPress(maximumTilt: 3.8, cornerRadius: 20, highlightColor: VeilTheme.goldBright)
-        .veilDynamicGlow(active: true, emphasized: true)
     }
 
     private var singlePlayerSection: some View {
@@ -88,37 +87,30 @@ struct GameLobbyView: View {
                 gameRow(.artillery, detail: "可视化弹道 · 确定性风力 · 本地参数搜索 Bot", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .lightTrail)) {
                 gameRow(.lightTrail, detail: "动态赛道 · 闪避与能量 · 本地预判 Bot", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .magneticHockey)) {
                 gameRow(.magneticHockey, detail: "固定步物理 · 磁场偏转 · 三球决胜", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .gomoku)) {
                 gameRow(.gomoku, detail: "可选黑白与先后手 · 四档棋力 · 个性化本地陪练", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .xiangqi)) {
                 gameRow(.xiangqi, detail: "可选红黑与先后手 · 四档棋力 · 自学习阵法预判", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: LocalAIGameView(model: model, game: .ludo)) {
                 gameRow(.ludo, detail: "确定性骰子 · 规则评分 Bot 自动完成回合", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
             NavigationLink(destination: TacticalV2SoloView(model: model)) {
                 gameRow(.tactical, detail: "48×27 官渡大战场 · 战争迷雾 · 补给 · 袁军实时行动", enabled: true)
             }
             .buttonStyle(VeilPressStyle())
-            .veilSpatialPress(maximumTilt: 4.2, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
         }
     }
 
@@ -162,7 +154,6 @@ struct GameLobbyView: View {
                         .overlay(VeilPanelShape(cut: 12, radius: 7).stroke(VeilTheme.hairline, lineWidth: 1))
                     }
                     .buttonStyle(VeilPressStyle())
-                    .veilSpatialPress(maximumTilt: 4.0, cornerRadius: 12, highlightColor: VeilTheme.goldBright)
                 }
             }
         }
