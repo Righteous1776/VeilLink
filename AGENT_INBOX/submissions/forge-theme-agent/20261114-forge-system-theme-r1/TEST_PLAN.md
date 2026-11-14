@@ -18,6 +18,11 @@
 - Verify no touch interception during chat keyboard, Slider/ScrollView, pair/accept, game board, and back swipe.
 - Apply #229 global particle deletion during a Governor-approved batch before claiming fully particle-free whole-app UX. Test no root particle overlay regardless of active theme.
 
-## Execution status
-- Exact source anchor edits and generated unified diff hunk counts PASS.
-- Apple Xcode/real-device/BLE/UI screenshot and full XCTest NOT_RUN.
+## Execution status (2026-11-14, R1 continuation)
+- Exact-source seven-path patch replay against `af3d823546c288169d19cb3033a6111977d28bd7`: **PASS 7/7**, including three proposed new files.
+- Unified-diff structure (29 hunks) and hunk line-count checks: **PASS**.
+- Theme registration and day/night palette checks: **PASS**, alongside a static audit that all `VeilTheme.*` color tokens used by the new instrumentation are declared.
+- Fixed a real draft compile blocker: `VeilTheme.metalTop/metalBottom` were not exposed. The Forge plate now reads existing `VeilAppearanceController.shared.palette.metalTop/metalBottom`.
+- Isolated Foundation-only `VeilForgeMotionCore.swift` compiled with Swift on Linux: **PASS**; **17 deterministic value checks PASS** for detent stepping, parked motor, invalid time values, BLE health clamping. This is NOT an iOS application build or XCTest run.
+- Added a new **proposed iOS XCTest** asserting `.forge` appears as a sixth switchable theme, retains the raw-value storage identity, and preserves existing Veil Original/Instrument themes; **NOT_RUN**.
+- Apple's Xcode, simulator, end-to-end theme picker, real BLE/CPU/gesture checks, full XCTest and IPA: **NOT_RUN** (Linux environment cannot provide them).
