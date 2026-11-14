@@ -60,7 +60,22 @@ final class VeilEclipseSearchTraceStore: @unchecked Sendable {
         guard now >= lastTime else { return false }
         // Always capture first valid branch. Subsequent views are bounded,
         // and nested steps can be visible if slower searches allow updates.
-        if lastTime >= 0 && now - lastTime < 0.05 { return false }
+        if lastTime >= 0 && now - lastTime < 0.05 {
+            // A deeper branch from the SAME explored root is real new evidence.
+            // Promote it in place instead of throttling it away behind a root-only
+            // ghost stone. Other rapid roots remain throttled to protect the UI.
+            if let previous = stored.last, let first = indices.first,
+               previous.indices.first == first,
+               indices.count > previous.indices.count,
+               nodes >= previous.exploredNodes {
+                stored[stored.count - 1] = Branch(
+                    indices: indices, exploredNodes: nodes,
+                    serial: previous.serial, emittedAtUptime: now
+                )
+                return true
+            }
+            return false
+        }
         serial &+= 1
         stored.append(Branch(indices: indices, exploredNodes: nodes, serial: serial, emittedAtUptime: now))
         if stored.count > 14 { stored.removeFirst(stored.count - 14) }
