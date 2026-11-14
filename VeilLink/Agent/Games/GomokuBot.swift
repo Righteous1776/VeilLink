@@ -39,6 +39,16 @@ struct GomokuBotBudget: Equatable, Sendable {
             return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: legacy ? 22 : 36, replyCandidateLimit: legacy ? 14 : 22, continuationCandidateLimit: legacy ? 6 : 14, timeLimitMilliseconds: legacy ? 240 : 520)
         case .master:
             return GomokuBotBudget(candidateRadius: legacy ? 2 : 3, rootCandidateLimit: legacy ? 28 : 48, replyCandidateLimit: legacy ? 16 : 30, continuationCandidateLimit: legacy ? 8 : 20, timeLimitMilliseconds: legacy ? 420 : 950)
+        case .grandmaster, .legendary, .zenith:
+            let master = forDifficulty(.master, profileLabel: profileLabel)
+            let factor = difficulty.searchBudgetMultiplier
+            return GomokuBotBudget(
+                candidateRadius: master.candidateRadius,
+                rootCandidateLimit: min(72, master.rootCandidateLimit + factor * 4),
+                replyCandidateLimit: min(48, master.replyCandidateLimit + factor * 2),
+                continuationCandidateLimit: min(36, master.continuationCandidateLimit + factor * 2),
+                timeLimitMilliseconds: master.timeLimitMilliseconds * factor
+            )
         }
     }
 
@@ -47,12 +57,12 @@ struct GomokuBotBudget: Equatable, Sendable {
         guard reinforcement > 0 else { return self }
         return GomokuBotBudget(
             candidateRadius: candidateRadius,
-            rootCandidateLimit: min(56, rootCandidateLimit + reinforcement * 2),
-            replyCandidateLimit: min(34, replyCandidateLimit + reinforcement),
+            rootCandidateLimit: min(max(56, rootCandidateLimit), rootCandidateLimit + reinforcement * 2),
+            replyCandidateLimit: min(max(34, replyCandidateLimit), replyCandidateLimit + reinforcement),
             continuationCandidateLimit: continuationCandidateLimit == 0
                 ? 0
-                : min(22, continuationCandidateLimit + reinforcement),
-            timeLimitMilliseconds: min(1_100, timeLimitMilliseconds + reinforcement * 45)
+                : min(max(22, continuationCandidateLimit), continuationCandidateLimit + reinforcement),
+            timeLimitMilliseconds: min(timeLimitMilliseconds > 1_100 ? timeLimitMilliseconds + 400 : 1_100, timeLimitMilliseconds + reinforcement * 45)
         )
     }
 
@@ -135,6 +145,19 @@ enum GomokuBot {
            ) {
             nodes += 1
             return result(index: forcing, score: winScore - 1, nodes: nodes, started: started)
+        }
+
+        // V9 applies only to new extended tiers. Inconclusive proof never claims a win.
+        let forcingDepth = BoardBotDifficulty(rawValue: difficultyRawValue ?? "")?.forcingDepth ?? 0
+        if forcingDepth > 0,
+           let proven = GomokuForcingSearchV9.provenMove(
+                in: state, for: player, candidates: candidates,
+                maxAttackerMoves: forcingDepth,
+                nodeCap: min(1_800, forcingDepth * 300),
+                deadline: deadline
+           ) {
+            nodes += proven.nodes
+            return result(index: proven.index, score: winScore - 2, nodes: nodes, started: started)
         }
 
         let urgentDefense = formationPreference.enabled

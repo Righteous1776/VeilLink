@@ -6,6 +6,29 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
     case balanced
     case advanced
     case master
+    case grandmaster
+    case legendary
+    case zenith
+
+    /// Additional compute-budget tiers apply only to Gomoku.
+    static let xiangqiCases: [BoardBotDifficulty] = [.relaxed, .balanced, .advanced, .master]
+    var isExtendedGomokuTier: Bool { self == .grandmaster || self == .legendary || self == .zenith }
+    var searchBudgetMultiplier: Int {
+        switch self {
+        case .grandmaster: return 2
+        case .legendary: return 4
+        case .zenith: return 6
+        default: return 1
+        }
+    }
+    var forcingDepth: Int {
+        switch self {
+        case .grandmaster: return 2
+        case .legendary: return 3
+        case .zenith: return 4
+        default: return 0
+        }
+    }
 
     var id: String { rawValue }
 
@@ -15,6 +38,9 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
         case .balanced: return "均衡"
         case .advanced: return "进阶"
         case .master: return "宗师"
+        case .grandmaster: return "棋圣 · 2×"
+        case .legendary: return "传奇 · 4×"
+        case .zenith: return "天元 · 6×"
         }
     }
 
@@ -24,6 +50,9 @@ enum BoardBotDifficulty: String, CaseIterable, Identifiable, Sendable {
         case .balanced: return "稳定策略与本地学习"
         case .advanced: return "更宽候选、更深反击搜索"
         case .master: return "更宽候选与更深搜索；可手动选择节能模式"
+        case .grandmaster: return "宗师约 2 倍搜索时间；有界连续冲四证明"
+        case .legendary: return "宗师约 4 倍搜索时间；扩大搜索"
+        case .zenith: return "宗师约 6 倍搜索时间；最深有界证明"
         }
     }
 }
@@ -176,6 +205,7 @@ final class LocalAIGameController: ObservableObject {
             boardMatchMoves = saved.moves
             sessionID = saved.sessionID
             boardDifficulty = BoardBotDifficulty(rawValue: saved.difficulty) ?? .balanced
+            if game == .xiangqi && boardDifficulty.isExtendedGomokuTier { boardDifficulty = .master }
             if game == .gomoku {
                 if let winner = gomoku.winner { outcome = winner == humanPlayer ? .humanWon : .aiWon }
                 else if gomoku.isDraw { outcome = .draw }
@@ -647,6 +677,7 @@ final class LocalAIGameController: ObservableObject {
 
     func setBoardDifficulty(_ difficulty: BoardBotDifficulty) {
         guard game == .gomoku || game == .xiangqi else { return }
+        guard game == .gomoku || !difficulty.isExtendedGomokuTier else { return }
         boardDifficulty = difficulty
     }
 

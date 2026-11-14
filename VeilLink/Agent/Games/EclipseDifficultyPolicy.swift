@@ -1,6 +1,6 @@
 import Foundation
 
-/// Search budgets for four product-compatible ECLIPSE levels.
+/// Search budgets for four original plus three optional Gomoku-only compute tiers.
 /// Every level uses the same fitted ordering and mandatory tactical gates.
 /// These are measured-compute levels, never strength/Elo multipliers.
 enum EclipseDifficultyPolicy {
@@ -14,9 +14,15 @@ enum EclipseDifficultyPolicy {
             (depth, width, nodes, milliseconds, forcing) = (2, 6, 384, 180, 1)
         case "advanced":
             (depth, width, nodes, milliseconds, forcing) = (3, 8, 1_000, 400, 2)
+        case "grandmaster":
+            (depth, width, nodes, milliseconds, forcing) = (5, 14, 10_000, 1_900, 4)
+        case "legendary":
+            (depth, width, nodes, milliseconds, forcing) = (6, 16, 20_000, 3_800, 5)
+        case "zenith":
+            (depth, width, nodes, milliseconds, forcing) = (7, 18, 30_000, 5_700, 6)
         default:
             // The four current stored difficulties remain compatible. Unknown
-            // future V9 names fall back to the validated master budget rather
+            // unknown names fall back to the validated master budget rather
             // than claiming an unmeasured higher strength tier.
             (depth, width, nodes, milliseconds, forcing) = (4, 12, 5_000, 950, 3)
         }

@@ -35,7 +35,8 @@ struct XiangqiBotBudget: Equatable, Sendable {
             return standard(profileLabel: profileLabel)
         case .advanced:
             return XiangqiBotBudget(maxDepth: legacy ? 5 : 7, quiescenceDepth: 3, timeLimitMilliseconds: legacy ? 380 : 760)
-        case .master:
+        case .master, .grandmaster, .legendary, .zenith:
+            // Legacy/foreign saves never expose the Gomoku-only tiers here.
             return XiangqiBotBudget(maxDepth: legacy ? 6 : 9, quiescenceDepth: legacy ? 2 : 4, timeLimitMilliseconds: legacy ? 650 : 1_350)
         }
     }
