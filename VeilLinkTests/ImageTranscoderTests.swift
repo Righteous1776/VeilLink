@@ -4,6 +4,25 @@ import XCTest
 @testable import VeilLink
 
 final class ImageTranscoderTests: XCTestCase {
+    func testAlreadyCancelledEncodingSkipsImageIODecode() async {
+        let task = Task.detached(priority: .utility) { () -> Bool in
+            // Deterministically cancel the executing work item itself.
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                _ = try ImageTranscoder.prepareSynchronously(
+                    at: URL(fileURLWithPath: "/nonexistent-veilimage.png")
+                )
+                return false
+            } catch is CancellationError {
+                return true
+            } catch {
+                return false
+            }
+        }
+        let didCancel = await task.value
+        XCTAssertTrue(didCancel)
+    }
+
     func testAggressiveOutputStaysDecodableAndWithinWireLimit() throws {
         let size = CGSize(width: 1_800, height: 1_200)
         let renderer = UIGraphicsImageRenderer(size: size)
