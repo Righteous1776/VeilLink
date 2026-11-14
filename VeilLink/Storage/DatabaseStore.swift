@@ -249,7 +249,7 @@ final class DatabaseStore {
             (
                 "UPDATE conversations SET updated_at = ?, last_message_preview = ?, unread_count = unread_count + ? WHERE id = ?;",
                 [
-                    .double(message.sentAt.timeIntervalSince1970), .blob(protectedPreview),
+                    .double(Date().timeIntervalSince1970), .blob(protectedPreview),
                     .int(message.isOutgoing ? 0 : 1), .text(message.conversationID)
                 ]
             )
@@ -864,6 +864,8 @@ final class DatabaseStore {
         let hasOlder: Bool
     }
 
+    /// Timeline order is the local durable insertion order, not peer-controlled wall clock time.
+    /// A remote device running minutes fast must not reorder its bubbles ahead of local replies.
     /// Normal chat rendering only needs a bounded tail of history. Decrypting an entire multi-year
     /// conversation for every ACK/progress update is especially expensive on A10 devices.
     func fetchRecentMessages(conversationID: String, limit: Int = 120) -> MessagePage {
@@ -873,7 +875,7 @@ final class DatabaseStore {
                    m.sent_at, m.is_outgoing, m.delivery_state, m.delivery_error, m.transfer_progress, a.id, a.mime_type, a.byte_count
             FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
             WHERE m.conversation_id = ?
-            ORDER BY m.sent_at DESC, m.rowid DESC
+            ORDER BY m.rowid DESC
             LIMIT \(safeLimit + 1);
             """, bindings: [.text(conversationID)]) { decodedMessage($0) }
         let hasOlder = rows.count > safeLimit
@@ -892,7 +894,7 @@ final class DatabaseStore {
 
     func fetchMessageIDs(conversationID: String) -> [String] {
         read(
-            "SELECT id FROM messages WHERE conversation_id = ? ORDER BY sent_at ASC, rowid ASC;",
+            "SELECT id FROM messages WHERE conversation_id = ? ORDER BY rowid ASC;",
             bindings: [.text(conversationID)]
         ) { text($0, 0) }
     }
@@ -902,7 +904,7 @@ final class DatabaseStore {
             SELECT m.id, m.conversation_id, m.sender_identity_id, m.body_ciphertext,
                    m.sent_at, m.is_outgoing, m.delivery_state, m.delivery_error, m.transfer_progress, a.id, a.mime_type, a.byte_count
             FROM messages m LEFT JOIN attachments a ON a.message_id = m.id
-            WHERE m.conversation_id = ? ORDER BY m.sent_at ASC, m.rowid ASC;
+            WHERE m.conversation_id = ? ORDER BY m.rowid ASC;
             """, bindings: [.text(conversationID)]) { decodedMessage($0) }
     }
 
@@ -941,7 +943,7 @@ final class DatabaseStore {
             bindings: [.text(messageID)]
         ) { text($0, 0) }
         let replacement = read(
-            "SELECT body_ciphertext, sent_at FROM messages WHERE conversation_id = ? AND id <> ? ORDER BY sent_at DESC LIMIT 1;",
+            "SELECT body_ciphertext, sent_at FROM messages WHERE conversation_id = ? AND id <> ? ORDER BY rowid DESC LIMIT 1;",
             bindings: [.text(conversationID), .text(messageID)]
         ) { statement in (data(statement, 0), sqlite3_column_double(statement, 1)) }.first
         let replacementPreview = try replacement.map { encryptedBody, sentAt -> (Data, Double) in
@@ -962,7 +964,7 @@ final class DatabaseStore {
         if let replacementPreview {
             statements.append((
                 "UPDATE conversations SET last_message_preview = ?, updated_at = ? WHERE id = ?;",
-                [.blob(replacementPreview.0), .double(replacementPreview.1), .text(conversationID)]
+                [.blob(replacementPreview.0), .double(Date().timeIntervalSince1970), .text(conversationID)]
             ))
         } else {
             statements.append((
