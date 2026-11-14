@@ -66,6 +66,9 @@ struct VeilToolCenterView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+                    if matches("文件 导入 files import zip npz 本地 收件箱") {
+                        toolLink("文件收件箱", detail: "多文件导入 · SHA-256 · 持久保存", icon: "folder.badge.plus", destination: VeilFileInboxView())
+                    }
                     if matches("效率 模板 差异 合并 时区 productivity") {
                         toolLink("效率实验室", detail: "模板 · 差异 · 合并 · 时区", icon: "wand.and.stars", destination: VeilProductivityLabView())
                     }
