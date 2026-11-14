@@ -425,6 +425,14 @@ struct LocalAIGameView: View {
                         openTrace: { showsEclipseTrace = true }
                     )
                     .veilCard()
+                    VeilEclipseRuntimeInstruments(
+                        running: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
+                        start: controller.eclipseSearchStartedAt,
+                        lastNodes: controller.lastDecisionNodes,
+                        lastMilliseconds: controller.lastDecisionMilliseconds,
+                        trainedGames: controller.trainedNativeGames
+                    )
+                    .veilCard()
                 } else if VeilOpponentAvatarPolicy.shouldRender(
                     enabled: grokBotEnabled, hasComputerOpponent: true
                 ) {

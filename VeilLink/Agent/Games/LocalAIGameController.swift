@@ -101,6 +101,7 @@ final class LocalAIGameController: ObservableObject {
     @Published private(set) var isAIThinking = false
     @Published private(set) var lastDecisionMode = "基础策略"
     @Published private(set) var lastDecisionMilliseconds: Int?
+    @Published private(set) var lastDecisionNodes: Int?
     @Published private(set) var eclipseSearchStartedAt: Date?
     @Published private(set) var eclipseVisualizationEnabled = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
     @Published private(set) var learningSummary: AdaptiveBoardLearningSummary
@@ -390,6 +391,7 @@ final class LocalAIGameController: ObservableObject {
         developerTeachingMode = false
         lastDecisionMode = "规则 Bot"
         lastDecisionMilliseconds = nil
+        lastDecisionNodes = nil
         eclipseSearchStartedAt = nil
         if startAI { scheduleAIIfNeeded() }
     }
@@ -861,6 +863,9 @@ final class LocalAIGameController: ObservableObject {
             self.eclipseSearchStartedAt = self.game == .gomoku ? started : nil
             let selected = await self.selectAIMove()
             guard !Task.isCancelled else { return }
+            if self.game == .gomoku {
+                self.lastDecisionNodes = selected.flatMap { $0.metadata["nodes"] }.flatMap(Int.init)
+            }
             if let selected { self.applyAI(selected) }
             if self.game == .gomoku { self.eclipseTraceStore.clear() }
             self.lastDecisionMilliseconds = Int(Date().timeIntervalSince(started) * 1_000)
