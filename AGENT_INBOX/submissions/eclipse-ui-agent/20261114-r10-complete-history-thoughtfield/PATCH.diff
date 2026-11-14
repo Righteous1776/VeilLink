@@ -74,7 +74,7 @@
 +                )) {
 +                    VStack(alignment: .leading, spacing: 2) {
 +                        Text("棋盘思考可视化").font(.caption.weight(.semibold))
-+                        Text("AI 计算时显示已探索的虚拟棋子与分支；非落子建议。")
++                        Text("仅原生搜索显示真实分支；可能透露策略，默认关闭。")
 +                            .font(.caption2).foregroundColor(VeilTheme.secondaryText)
 +                    }
 +                }
