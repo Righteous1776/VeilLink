@@ -1,0 +1,252 @@
+diff --git a/VeilLink/Media/ImageTranscoder.swift b/VeilLink/Media/ImageTranscoder.swift
+--- a/VeilLink/Media/ImageTranscoder.swift
++++ b/VeilLink/Media/ImageTranscoder.swift
+@@ -38,9 +38,34 @@
+     }
+ }
+ 
++/// Quality-first image encoding policy. JPEG/HEIC <=3 MB are passed through
++/// verbatim rather than being degraded toward the old 1.8 MB soft target.
++enum VeilHighFidelityPolicy {
++    static let initialQuality = 0.96
++    static let minimumQuality = 0.86
++    static let maximumAttemptsPerResolution = 3
++
++    static func nextQuality(after quality: Double, encodedBytes: Int, maximumBytes: Int) -> Double? {
++        guard maximumBytes > 0, encodedBytes > maximumBytes,
++              quality > minimumQuality + 0.005 else { return nil }
++        let ratio = max(0.05, min(1, Double(maximumBytes) / Double(encodedBytes)))
++        let estimate = quality * pow(ratio, 0.42)
++        let candidate = max(minimumQuality, min(quality - 0.035, estimate))
++        guard candidate < quality - 0.005 else { return nil }
++        return candidate
++    }
++
++    static func preserveOriginal(
++        byteCount: Int, maximumBytes: Int,
++        largestDimension: Int, dimensionLimit: Int
++    ) -> Bool {
++        byteCount > 0 && byteCount <= maximumBytes &&
++        largestDimension > 0 && largestDimension <= dimensionLimit
++    }
++}
++
+ enum ImageTranscoder {
+-    private static let qualitySteps: [CGFloat] = [0.94, 0.90, 0.86, 0.82, 0.78, 0.72, 0.66]
+-    private static let dimensionSteps = [4_096, 3_584, 3_072, 2_560, 2_048, 1_600]
++    private static let dimensionSteps = [4_096, 3_072, 2_560, 2_048, 1_600]
+ 
+     static func prepare(at url: URL) async throws -> PreparedImage {
+         try await Task.detached(priority: .userInitiated) {
+@@ -76,59 +101,84 @@
+             return preserved
+         }
+ 
+-        let preferredEncoding = preferredOutputEncoding()
+-        var bestUnderHardLimit: PreparedImage?
+-
+-        for dimension in effectiveDimensions(original: sourceInfo) {
+-            guard let cgImage = decodeImage(url: url, source: source, maximumDimension: dimension) else { continue }
+-            for quality in qualitySteps {
+-                guard let encoded = encode(cgImage, as: preferredEncoding.type, quality: quality) else { continue }
+-                let prepared = PreparedImage(
+-                    data: encoded,
+-                    mimeType: preferredEncoding.mimeType,
+-                    sourceFormat: sourceFormat,
+-                    outputFormat: preferredEncoding.label,
+-                    originalByteCount: originalByteCount,
+-                    pixelWidth: cgImage.width,
+-                    pixelHeight: cgImage.height,
+-                    wasTranscoded: true
+-                )
+-                if encoded.count <= MediaTransferPolicy.targetImageBytes { return prepared }
+-                if bestUnderHardLimit == nil, encoded.count <= MediaTransferPolicy.maximumImageBytes {
+-                    bestUnderHardLimit = prepared
+-                }
+-            }
+-        }
+-
+-        // Quality wins over hitting the soft target. If HEIC produced a high-quality image
+-        // under the hard protocol limit, keep it instead of needlessly switching codecs.
+-        if let bestUnderHardLimit { return bestUnderHardLimit }
++        let hardLimit = MediaTransferPolicy.maximumImageBytes
++        let dimensions = effectiveDimensions(original: sourceInfo)
+ 
+-        // HEIC encoding can be unavailable on unusual devices/OS builds. JPEG is the fallback.
+-        if preferredEncoding.mimeType != "image/jpeg" {
+-            for dimension in effectiveDimensions(original: sourceInfo) {
+-                guard let cgImage = decodeImage(url: url, source: source, maximumDimension: dimension) else { continue }
+-                for quality in qualitySteps {
+-                    guard let encoded = encode(cgImage, as: UTType.jpeg.identifier as CFString, quality: quality) else { continue }
+-                    let prepared = PreparedImage(
+-                        data: encoded,
+-                        mimeType: "image/jpeg",
++        // PNG's alpha channel must never be flattened by a lossy JPEG/HEIC
++        // fallback. Attempt lossless PNG re-encoding and then lower resolution
++        // while retaining alpha; fail explicitly if even that cannot fit.
++        if sourceType?.conforms(to: .png) == true {
++            var alphaObserved = false
++            for dimension in dimensions {
++                try Task.checkCancellation()
++                guard let cgImage = decodeImage(
++                    url: url, source: source, maximumDimension: dimension
++                ) else { continue }
++                alphaObserved = alphaObserved || imageHasAlpha(cgImage)
++                if let png = encode(cgImage, as: UTType.png.identifier as CFString, quality: 1),
++                   png.count <= hardLimit {
++                    return PreparedImage(
++                        data: png,
++                        mimeType: "image/png",
+                         sourceFormat: sourceFormat,
+-                        outputFormat: "JPEG",
++                        outputFormat: "PNG",
+                         originalByteCount: originalByteCount,
+                         pixelWidth: cgImage.width,
+                         pixelHeight: cgImage.height,
+                         wasTranscoded: true
+                     )
+-                    if encoded.count <= MediaTransferPolicy.targetImageBytes { return prepared }
+-                    if bestUnderHardLimit == nil, encoded.count <= MediaTransferPolicy.maximumImageBytes {
+-                        bestUnderHardLimit = prepared
++                }
++                if !alphaObserved { break }
++            }
++            if alphaObserved { throw ImagePreparationError.stillTooLarge }
++        }
++
++        let preferredEncoding = preferredOutputEncoding()
++        let encodings: [(type: CFString, mimeType: String, label: String)] =
++            preferredEncoding.mimeType == "image/jpeg"
++                ? [preferredEncoding]
++                : [
++                    preferredEncoding,
++                    (UTType.jpeg.identifier as CFString, "image/jpeg", "JPEG")
++                ]
++
++        // Highest possible pixels and quality first; prefer 0.86+ compression
++        // to shrinking the bitmap, but stop when under the hard 3 MB protocol
++        // limit. Do not re-encode repeatedly to chase an arbitrary 1.8 MB goal.
++        for encoding in encodings {
++            for dimension in dimensions {
++                try Task.checkCancellation()
++                guard let cgImage = decodeImage(
++                    url: url, source: source, maximumDimension: dimension
++                ) else { continue }
++
++                var quality = VeilHighFidelityPolicy.initialQuality
++                for _ in 0..<VeilHighFidelityPolicy.maximumAttemptsPerResolution {
++                    try Task.checkCancellation()
++                    guard let encoded = encode(
++                        cgImage, as: encoding.type, quality: CGFloat(quality)
++                    ) else { break }
++
++                    if encoded.count <= hardLimit {
++                        return PreparedImage(
++                            data: encoded,
++                            mimeType: encoding.mimeType,
++                            sourceFormat: sourceFormat,
++                            outputFormat: encoding.label,
++                            originalByteCount: originalByteCount,
++                            pixelWidth: cgImage.width,
++                            pixelHeight: cgImage.height,
++                            wasTranscoded: true
++                        )
+                     }
++                    guard let adjusted = VeilHighFidelityPolicy.nextQuality(
++                        after: quality, encodedBytes: encoded.count, maximumBytes: hardLimit
++                    ) else { break }
++                    quality = adjusted
+                 }
+             }
+         }
+ 
+-        if let bestUnderHardLimit { return bestUnderHardLimit }
+         throw sourceType?.conforms(to: .image) == true ? ImagePreparationError.stillTooLarge : ImagePreparationError.unsupported
+     }
+ 
+@@ -144,16 +194,22 @@
+ 
+         let mapping: (mime: String, label: String, limit: Int)?
+         if type.conforms(to: .jpeg) {
+-            mapping = ("image/jpeg", "JPEG", MediaTransferPolicy.targetImageBytes)
++            mapping = ("image/jpeg", "JPEG", MediaTransferPolicy.maximumImageBytes)
+         } else if type == .heic {
+-            mapping = ("image/heic", "HEIC", MediaTransferPolicy.targetImageBytes)
++            mapping = ("image/heic", "HEIC", MediaTransferPolicy.maximumImageBytes)
+         } else if type.conforms(to: .png) {
+             // Keep smaller screenshots/graphics lossless instead of forcing a lossy photo codec.
+             mapping = ("image/png", "PNG", MediaTransferPolicy.maximumImageBytes)
+         } else {
+             mapping = nil
+         }
+-        guard let mapping, byteCount <= mapping.limit else { return nil }
++        guard let mapping,
++              VeilHighFidelityPolicy.preserveOriginal(
++                  byteCount: byteCount,
++                  maximumBytes: mapping.limit,
++                  largestDimension: max(dimensions.width, dimensions.height),
++                  dimensionLimit: MediaTransferPolicy.maximumImageDimension
++              ) else { return nil }
+         let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+         guard data.count == byteCount else { throw ImagePreparationError.unreadable }
+         return PreparedImage(
+@@ -202,6 +258,13 @@
+         return CIContext(options: [.cacheIntermediates: false]).createCGImage(output, from: output.extent)
+     }
+ 
++    private static func imageHasAlpha(_ image: CGImage) -> Bool {
++        switch image.alphaInfo {
++        case .none, .noneSkipFirst, .noneSkipLast: return false
++        default: return true
++        }
++    }
++
+     private static func encode(_ image: CGImage, as type: CFString, quality: CGFloat) -> Data? {
+         let mutable = NSMutableData()
+         guard let destination = CGImageDestinationCreateWithData(mutable, type, 1, nil) else { return nil }
+diff --git a/VeilLinkTests/MediaTransferPolicyTests.swift b/VeilLinkTests/MediaTransferPolicyTests.swift
+--- a/VeilLinkTests/MediaTransferPolicyTests.swift
++++ b/VeilLinkTests/MediaTransferPolicyTests.swift
+@@ -2,6 +2,42 @@
+ @testable import VeilLink
+ 
+ final class MediaTransferPolicyTests: XCTestCase {
++    func testHighFidelityPreservesOriginalJPEGAndHEICAtFullWireLimit() {
++        XCTAssertTrue(VeilHighFidelityPolicy.preserveOriginal(
++            byteCount: 2_900_000, maximumBytes: 3_000_000,
++            largestDimension: 4_096, dimensionLimit: 4_096
++        ))
++        XCTAssertFalse(VeilHighFidelityPolicy.preserveOriginal(
++            byteCount: 3_100_000, maximumBytes: 3_000_000,
++            largestDimension: 4_096, dimensionLimit: 4_096
++        ))
++        XCTAssertFalse(VeilHighFidelityPolicy.preserveOriginal(
++            byteCount: 1_000_000, maximumBytes: 3_000_000,
++            largestDimension: 8_192, dimensionLimit: 4_096
++        ))
++    }
++
++    func testHighFidelityAdaptiveQualityNeverDropsBelowFloor() {
++        XCTAssertEqual(VeilHighFidelityPolicy.initialQuality, 0.96)
++        XCTAssertEqual(VeilHighFidelityPolicy.minimumQuality, 0.86)
++        XCTAssertEqual(VeilHighFidelityPolicy.maximumAttemptsPerResolution, 3)
++        XCTAssertNil(VeilHighFidelityPolicy.nextQuality(
++            after: 0.96, encodedBytes: 2_900_000, maximumBytes: 3_000_000
++        ))
++        let candidate = VeilHighFidelityPolicy.nextQuality(
++            after: 0.96, encodedBytes: 4_300_000, maximumBytes: 3_000_000
++        )
++        XCTAssertNotNil(candidate)
++        XCTAssertGreaterThanOrEqual(candidate ?? 0, 0.86)
++        XCTAssertLessThan(candidate ?? 1, 0.96)
++        XCTAssertNil(VeilHighFidelityPolicy.nextQuality(
++            after: 0.86, encodedBytes: 5_000_000, maximumBytes: 3_000_000
++        ))
++        XCTAssertNil(VeilHighFidelityPolicy.nextQuality(
++            after: 0.96, encodedBytes: 5_000_000, maximumBytes: 0
++        ))
++    }
++
+     func testTransferLayerAcceptsSafeOutputFormats() {
+         XCTAssertTrue(MediaTransferPolicy.supportsImageMIMEType("image/jpeg"))
+         XCTAssertTrue(MediaTransferPolicy.supportsImageMIMEType("image/heic"))

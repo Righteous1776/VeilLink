@@ -1,0 +1,13 @@
+# [AGENT-DROP] high fidelity image codec v2
+- agent_id: chatgpt
+- task_id: 20261107-high-fidelity-image-codec-v2
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- submission_root: AGENT_INBOX/submissions/chatgpt/20261107-high-fidelity-image-codec-v2/
+- mode: INBOX_ONLY
+- status: DROPPED
+- scope: native high-fidelity compression, JPEG/HEIC passthrough, lossless PNG alpha, test harness, pinned jpegli vendor staging helper
+- proposed_files:
+  - VeilLink/Media/ImageTranscoder.swift
+  - VeilLinkTests/MediaTransferPolicyTests.swift
+- third_party_candidate: google/jpegli (BSD-3-Clause, pinned commit 031a0077f5799a6041004267fc12b956c1f52a20)
+- asset_grant: none
