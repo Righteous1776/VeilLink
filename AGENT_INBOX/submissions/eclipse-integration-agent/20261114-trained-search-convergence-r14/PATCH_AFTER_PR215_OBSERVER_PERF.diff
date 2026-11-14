@@ -1,0 +1,103 @@
+diff --git a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+--- a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
++++ b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+@@ -30,7 +30,7 @@
+         var width: Int = 14
+         var forcedLineDepth: Int = 5
+         var candidateRadius: Int = 2
+-        // R13: opt-in exact incremental threat window index, disabled until A/B.
++        // R13 exact threat-index acceleration, disabled before iOS and arena gates.
+         var r13IncrementalThreatIndexEnabled: Bool = false
+         /// R12 is explicitly opt-in until full iOS/arena promotion.
+         var r12HorizonQuiescence: Bool = false
+@@ -121,7 +121,11 @@
+         let trainedPolicy: Bool
+         let trace: ((Trace) -> Void)?
+         let onExploredLine: (@Sendable ([Int], Int) -> Void)?
+-        var tracedRoot: Int? = nil
++        var exploredPath: [Int] = []
++        private var lastExploredSampleNodes = 0
++        private var lastExploredSampleDepth = 0
++        private var lastExploredSampleRoot = -1
++        private var lastExploredSampleUptime = -1.0
+         var hash: UInt64 = 0
+         var nodes = 0
+         var table: [UInt64: Entry] = [:]
+@@ -130,8 +134,7 @@
+         var r13Index: EclipseIncrementalThreatIndexR13?
+ 
+         init(position: Position, limits: Limits, allowedRoot: [Int]?,
+-             rootBonuses: [Int: Int], trainedPolicy: Bool,
+-             trace: ((Trace) -> Void)?,
++             rootBonuses: [Int: Int], trainedPolicy: Bool, trace: ((Trace) -> Void)?,
+              onExploredLine: (@Sendable ([Int], Int) -> Void)?) {
+             self.board = position.cells
+             self.player = position.toMove
+@@ -148,6 +151,27 @@
+             }
+         }
+ 
++        /// Do not lock/dispatch for every internal PVS node.
++        /// Real branches are emitted at most ~20/s. Immediate 2nd/3rd ply
++        /// progression of the same root is allowed for a visible thin line.
++        private mutating func emitExaminedBranch() {
++            guard let onExploredLine, !exploredPath.isEmpty else { return }
++            let root = exploredPath[0]
++            let depth = min(3, exploredPath.count)
++            let expandsSameRoot = root == lastExploredSampleRoot
++                && depth > lastExploredSampleDepth
++            if !expandsSameRoot && lastExploredSampleNodes > 0
++                && nodes - lastExploredSampleNodes < 128 { return }
++            let now = ProcessInfo.processInfo.systemUptime
++            if !expandsSameRoot && lastExploredSampleUptime >= 0
++                && now - lastExploredSampleUptime < 0.05 { return }
++            lastExploredSampleNodes = nodes
++            lastExploredSampleDepth = depth
++            lastExploredSampleRoot = root
++            lastExploredSampleUptime = now
++            onExploredLine(Array(exploredPath.prefix(3)), nodes)
++        }
++
+         private func opponent(_ side: UInt8) -> UInt8 { side == 1 ? 2 : 1 }
+         private func valid(_ r: Int, _ c: Int) -> Bool { (0..<boardSize).contains(r) && (0..<boardSize).contains(c) }
+ 
+@@ -464,10 +488,8 @@
+             var first = true
+             for i in moves {
+                 place(i, side)
+-                if let root = tracedRoot {
+-                    if ply == 1 { onExploredLine?([root, i], nodes) }
+-                    else if ply == 2 { onExploredLine?([root, last, i], nodes) }
+-                }
++                exploredPath.append(i)
++                emitExaminedBranch()
+                 var child: [Int] = []
+                 var score: Int
+                 if first {
+@@ -486,6 +508,7 @@
+                     }
+                 }
+                 unplace(i, side)
++                exploredPath.removeLast()
+                 if interrupted { return 0 }
+                 if score > best {
+                     best = score
+@@ -585,15 +608,15 @@
+                     nodes += 1
+                     if overBudget() { break }
+                     place(move, player)
+-                    tracedRoot = move
+-                    onExploredLine?([move], nodes)
++                    exploredPath = [move]
++                    emitExaminedBranch()
+                     var childPV: [Int] = []
+                     let value = -negamax(depth: depth - 1, alpha: -infinity,
+                                           beta: infinity,
+                                           toMove: opponent(player), last: move,
+                                           ply: 1, variation: &childPV)
+                     unplace(move, player)
+-                    tracedRoot = nil
++                    exploredPath.removeAll(keepingCapacity: true)
+                     if interrupted { break }
+                     let preference = min(2_000, max(-2_000, bonuses[move] ?? 0))
+                     let adjusted = abs(value) >= mate / 2 ? value : value + preference
