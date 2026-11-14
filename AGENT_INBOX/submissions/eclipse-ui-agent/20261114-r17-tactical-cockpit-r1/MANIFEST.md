@@ -1,6 +1,7 @@
-# ECLIPSE R17 — Tactical Cockpit / UI-overhaul Inbox Candidate
+# ECLIPSE R17.1 — Original Orange Theme Restoration / Inbox Candidate
 
 **Authority:** Agent `INBOX_ONLY`, no main/source mutation, no release/IPA, no Actions manually launched.
+**Correction:** User-provided real iPhone screenshots establish the approved baseline: orange navigation/lighting, dark grey material cards, warm brown chessboard, and black code stream. R17 green was not user-approved.
 **Scope:** Gomoku-only visual layer and the existing R16 advanced controls, plus one actual engine decision telemetry field. Other games and user training database unchanged.
 
 ## Source baselines / critical integration dependency
@@ -8,13 +9,20 @@
 - `MiniGameViews.swift`, `VeilEclipseIdentityAndTrace.swift`, `VeilEclipseComputeConsole.swift`, `VeilEclipseBoardThoughtField.swift`: PR #220 integration candidate `integration/v29-1-gomoku-eclipse-seven-tier-model-free-20261114` before R17 changes.
 - **Do NOT apply directly to main** until the Integration Governor resolves PR #220, confirms the R16 search baseline, and verifies Xcode project file membership. The patch deliberately does not touch `main`, release numbers, signing or `.pbxproj`.
 
+## Palette correction relative to original R17
+- All Gomoku-only `VeilEclipseChrome.green` usages are replaced with `VeilEclipseChrome.accent`, bound to `VeilTheme.gold` (the real app instrument orange).
+- Original ambient particle background and existing theme-elevated panel materials restored.
+- Player Gomoku board uses original warm-brown grid, black/white stones, orange last-move ring, and unchanged tap surface.
+- The existing ECLIPSE portrait and terminal stream preserve the orange ring and black display.
+- R16 search budgets, toggles, R12/R13, gameplay and AI training logic remain unchanged.
+
 ## What changed
-1. **ECLIPSE-only visual identity:** graphite/black surfaces, silver/white text, semantic green/amber/red. Retains the existing original avatar and `VeilEclipseComputeConsole` animation, rather than depicting pretend engine thoughts.
-2. **Distinct match cockpit:** seat picker, compact original model identity, dark 15×15 board, selected last-move green ring, clear status, quick difficulty and deep-search controls; rest of the lobby/game modes retain their style.
+1. **ECLIPSE-only visual identity:** graphite/black surfaces, silver/white text, original VeilLink orange accent, silver/white text, amber caution and red errors. Retains the existing original avatar and `VeilEclipseComputeConsole` animation, rather than depicting pretend engine thoughts.
+2. **Distinct match cockpit:** seat picker, compact original model identity, original dark warm-brown 15×15 board, original warm board with orange last-move ring, clear status, quick difficulty and deep-search controls; rest of the lobby/game modes retain their style.
 3. **Real telemetry:** last *completed* decision's actual `GomokuBotMove.nodes` and elapsed time, plus native completed training-games count and current mode string. These are not "live confidence" or invented evaluation scores.
 4. **Exact tactical readout:** two counts of legal empty intersections which immediately complete five for each side; no coordinates revealed, no suggestion/probability claims. Pure read-only geometry.
 5. **Real advanced settings pane:** two sections Compute and Training. R16 wired `EclipseAdvancedOptions`: automatic/custom (5–300 seconds)/untimed, nodes 50K–2M, depth 3–12, R12 + R13 toggles; persist from next move. Training panel retains original native self-play and export controls.
-6. **Touch integrity:** original `VeilBoardTapSurface` and scroll gesture behavior unmodified. `eclipseConsoleStyle` is opt-in, so BLE multiplayer and other boards remain unchanged.
+6. **Touch integrity:** original `VeilBoardTapSurface` and scroll gesture behavior unmodified. `eclipseConsoleStyle` remains opt-in but is disabled for the human match, so original board colors are retained, so BLE multiplayer and other boards remain unchanged.
 7. **Minor correctness fix:** board footer takes `controller.humanPlayer` instead of permanently assuming black.
 
 ## Test results
