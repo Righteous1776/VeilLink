@@ -110,6 +110,13 @@ final class LocalAIGameController: ObservableObject {
         UserDefaults.standard.string(forKey: "VeilLink.Board.SearchMode.v1")
     )
     /// Explicit local opt-in; the incumbent search remains the default and fallback.
+    @Published private(set) var gomokuThinkingStrength: Int = {
+        let stored = UserDefaults.standard.integer(forKey: "VeilLink.Gomoku.ThinkingStrength.v1")
+        return stored == 0 ? 5 : max(1, min(10, stored))
+    }()
+    @Published private(set) var gomokuUnlimitedThinking: Bool =
+        UserDefaults.standard.object(forKey: "VeilLink.Gomoku.UnlimitedThinking.v1") == nil
+        ? true : UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.UnlimitedThinking.v1")
     @Published private(set) var useExternalGomokuEngine = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.V2.Enabled")
     @Published private(set) var gomokuFormationMode = GomokuFormationMode(
         rawValue: UserDefaults.standard.string(forKey: "VeilLink.Gomoku.FormationMode.v1") ?? ""
@@ -698,6 +705,18 @@ final class LocalAIGameController: ObservableObject {
         UserDefaults.standard.set(mode.rawValue, forKey: "VeilLink.Board.SearchMode.v1")
     }
 
+    func setGomokuThinkingStrength(_ strength: Int) {
+        guard game == .gomoku else { return }
+        gomokuThinkingStrength = max(1, min(10, strength))
+        UserDefaults.standard.set(gomokuThinkingStrength, forKey: "VeilLink.Gomoku.ThinkingStrength.v1")
+    }
+
+    func setGomokuUnlimitedThinking(_ enabled: Bool) {
+        guard game == .gomoku else { return }
+        gomokuUnlimitedThinking = enabled
+        UserDefaults.standard.set(enabled, forKey: "VeilLink.Gomoku.UnlimitedThinking.v1")
+    }
+
     func setTacticalScenario(_ scenario: TacticalSoloScenario) {
         guard game == .tactical, tacticalScenario != scenario else { return }
         tacticalScenario = scenario
@@ -894,10 +913,12 @@ final class LocalAIGameController: ObservableObject {
                     nativeTrainingStore!.snapshot(), completedGames: trainedNativeGames
                 )
                 : humanLearning
-            let budget = GomokuBotBudget.forDifficulty(
+            var budget = GomokuBotBudget.forDifficulty(
                 boardDifficulty,
                 profileLabel: boardSearchMode.budgetProfileLabel
             ).reinforced(by: learning.trainingLevel)
+            budget.searchStrength = gomokuThinkingStrength
+            budget.unlimitedThinking = gomokuUnlimitedThinking
             let preference = GomokuFormationPreference(
                 mode: gomokuFormationMode,
                 aiHistory: learningPlies.filter { $0.actor == .guest }.compactMap { Int($0.action) },
@@ -920,14 +941,18 @@ final class LocalAIGameController: ObservableObject {
                 observer = nil
             }
             let rawDifficulty = boardDifficulty.rawValue
-            let chosen = await Task.detached(priority: .userInitiated) {
+            let worker = Task.detached(priority: .userInitiated) {
                 GomokuBot.chooseMove(
                     in: snapshot, for: computer, budget: budget,
                     learning: learning, formationPreference: preference,
                     difficultyRawValue: rawDifficulty,
                     onExploredLine: observer
                 )
-            }.value
+            }
+            let chosen = await withTaskCancellationHandler(
+                operation: { await worker.value },
+                onCancel: { worker.cancel() }
+            )
             guard let result = chosen else { return nil }
 
             var ruleGate = gomoku

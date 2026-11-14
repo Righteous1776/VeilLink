@@ -22,8 +22,8 @@ info=(ROOT/'VeilLink/Resources/Info.plist').read_text(encoding='utf-8')
 for key,value in [('CFBundleShortVersionString','$(MARKETING_VERSION)'),('CFBundleVersion','$(CURRENT_PROJECT_VERSION)')]:
  if not re.search(rf'<key>{key}</key>\s*<string>{re.escape(value)}</string>',info): raise SystemExit(f'FAIL plist {key}')
 project=(ROOT/'project.yml').read_text(encoding='utf-8')
-if 'MARKETING_VERSION: "29.2"' not in project or 'CURRENT_PROJECT_VERSION: "68"' not in project:
-    raise SystemExit('FAIL VeilLink 29.2 / Build 68 release identity')
+if 'MARKETING_VERSION: "29.2"' not in project or 'CURRENT_PROJECT_VERSION: "69"' not in project:
+    raise SystemExit('FAIL VeilLink 29.2 / Build 69 release identity')
 if 'NSMicrophoneUsageDescription' not in info: raise SystemExit('FAIL microphone usage description')
 # The live PTT path must remain trust-gated in SessionCoordinator.
 s=(ROOT/'VeilLink/Security/SessionCoordinator.swift').read_text(encoding='utf-8')

@@ -14,6 +14,8 @@ struct GomokuBotBudget: Equatable, Sendable {
     let replyCandidateLimit: Int
     let continuationCandidateLimit: Int
     let timeLimitMilliseconds: Int
+    var searchStrength: Int = 5
+    var unlimitedThinking: Bool = false
 
     static func standard(profileLabel: String) -> GomokuBotBudget {
         let upper = profileLabel.uppercased()
@@ -62,7 +64,9 @@ struct GomokuBotBudget: Equatable, Sendable {
                 ? 0
                 : min(22, continuationCandidateLimit + reinforcement),
             // Never shrink or clip an explicitly selected 2×/4×/6× tier.
-            timeLimitMilliseconds: min(max(1_100, timeLimitMilliseconds), timeLimitMilliseconds + reinforcement * 45)
+            timeLimitMilliseconds: min(max(1_100, timeLimitMilliseconds), timeLimitMilliseconds + reinforcement * 45),
+            searchStrength: searchStrength,
+            unlimitedThinking: unlimitedThinking
         )
     }
 
@@ -104,7 +108,9 @@ enum GomokuBot {
         if state.moveCount == 0 {
             return result(index: Self.size * Self.size / 2, score: 0, nodes: 1, started: started)
         }
-        let deadline = started + Double(max(30, budget.timeLimitMilliseconds)) / 1_000.0
+        let deadline = budget.unlimitedThinking
+            ? Double.infinity
+            : started + Double(max(30, budget.timeLimitMilliseconds)) / 1_000.0
         var nodes = 0
         var candidates = candidateIndices(in: state, radius: budget.candidateRadius)
 
@@ -191,7 +197,9 @@ enum GomokuBot {
         // ECLIPSE R10: preserve all incumbent mandatory rules and learned
         // root scores, then search with the trained entire-tree ordering.
         // The real rules below the bridge remain the final legality gate.
-        let remainingMilliseconds = Int(max(0, (deadline - Date.timeIntervalSinceReferenceDate) * 1_000))
+        let remainingMilliseconds = budget.unlimitedThinking
+            ? budget.timeLimitMilliseconds
+            : Int(max(0, (deadline - Date.timeIntervalSinceReferenceDate) * 1_000))
         let unifiedBudget = GomokuBotBudget(
             candidateRadius: budget.candidateRadius,
             rootCandidateLimit: budget.rootCandidateLimit,
@@ -199,7 +207,7 @@ enum GomokuBot {
             continuationCandidateLimit: budget.continuationCandidateLimit,
             timeLimitMilliseconds: remainingMilliseconds
         )
-        if diagnosticEclipseUnified, remainingMilliseconds >= 30,
+        if diagnosticEclipseUnified, (budget.unlimitedThinking || remainingMilliseconds >= 30),
            let unified = VeilGomokuUnifiedBridge.chooseMove(
                 in: state, for: player, budget: unifiedBudget,
                 permittedRoots: rankedRoots.map { $0.0 },
@@ -220,7 +228,7 @@ enum GomokuBot {
         var bestScore = Int.min
 
         for (index, priority) in rankedRoots {
-            guard Date.timeIntervalSinceReferenceDate < deadline else { break }
+            guard !Task.isCancelled, Date.timeIntervalSinceReferenceDate < deadline else { break }
             nodes += 1
             var next = state
             guard next.apply(index: index, actor: player) else { continue }
@@ -249,7 +257,7 @@ enum GomokuBot {
 
                 var worstReply = Int.max
                 for (reply, _) in replies {
-                    guard Date.timeIntervalSinceReferenceDate < deadline else { break }
+                    guard !Task.isCancelled, Date.timeIntervalSinceReferenceDate < deadline else { break }
                     nodes += 1
                     var afterReply = next
                     guard afterReply.apply(index: reply, actor: opponent) else { continue }
@@ -286,7 +294,7 @@ enum GomokuBot {
                             var bestContinuation = Int.min
                             for rankedIndex in 0..<continuationLimit {
                                 let continuation = continuationScores[rankedIndex].index
-                                guard Date.timeIntervalSinceReferenceDate < deadline else { break }
+                                guard !Task.isCancelled, Date.timeIntervalSinceReferenceDate < deadline else { break }
                                 nodes += 1
                                 var afterContinuation = afterReply
                                 guard afterContinuation.apply(index: continuation, actor: player) else { continue }
