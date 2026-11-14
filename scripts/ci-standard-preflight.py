@@ -222,7 +222,7 @@ def check_tests():
         "MiniGameTests.swift",
         "DatabaseStoreTests.swift",
         "CryptoEngineTests.swift",
-        "RealLocalInferenceSmokeTests.swift",
+        "LocalLanguageModelRemovalTests.swift",
         "AgentControlAndLocalGameTests.swift",
         "AgentGameExecutionValidationTests.swift",
         "A9RuntimeConstraintTests.swift",
