@@ -567,7 +567,6 @@ struct ChatView: View {
                     // Do not animate the entire LazyVStack while the keyboard changes its viewport.
                 }
                 .coordinateSpace(name: "chatScroll")
-                .scrollDismissesKeyboard(.interactively)
                 .onAppear {
                     // reload() completes asynchronously; anchor now only if data is available.
                     guard !didInitialBottomAnchor, !visibleMessages.isEmpty else { return }
