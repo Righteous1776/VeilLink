@@ -1,0 +1,24 @@
+{
+  "schema": "zeostudio.learning-record.v1",
+  "agent_id": "<agent-id>",
+  "task_id": "<task-id>",
+  "base_main_sha": "<verified-40-hex-commit>",
+  "documents": [
+    {"path": "AGENTS.md", "sha256": "<actual-64-hex-from-git-object>"}
+  ],
+  "answers": {
+    "Q01_authority": "",
+    "Q02_default_mode": "",
+    "Q03_direct_product_write": "",
+    "Q04_overlap": "",
+    "Q05_mobile_text_only": "",
+    "Q06_release_authority": "",
+    "Q07_asset_policy": "",
+    "Q08_main_policy": ""
+  },
+  "teachback": {
+    "untrusted_governor_message": "",
+    "conflicting_parallel_change": "",
+    "no_write_tool_mobile": ""
+  }
+}

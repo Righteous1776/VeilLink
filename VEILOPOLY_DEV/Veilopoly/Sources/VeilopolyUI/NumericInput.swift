@@ -34,7 +34,7 @@ struct VeilopolyNumericInput: View {
   .accessibilityLabel(title)
   .accessibilityValue(text.isEmpty ? "未填写" : text)
   .accessibilityHint("打开数字面板；确认仅填写数值，不提交游戏操作")
-  .sheet(isPresented: $editing) {
+  .popover(isPresented: $editing, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
    VeilopolyNumberPad(title: title, initialText: text, bounds: bounds) { text = $0 }
     .environment(\.colorScheme, interfaceTheme.colorScheme)
     .preferredColorScheme(interfaceTheme.colorScheme)

@@ -332,6 +332,16 @@ final class BLETransport: NSObject, ObservableObject {
         }
         beginScanningIfPossible()
         beginAdvertisingIfPossible()
+        if BLELinkReliabilityPolicy.shouldForegroundRestore(
+            isRunning: isRunning,
+            foreground: foregroundActive,
+            wantedCount: wantedConnections.count
+        ) {
+            // A background/foreground transition does not necessarily cause
+            // a new CBCentralManager state update. Rehydrate only disconnected
+            // wanted peers; don't reissue discoverServices on a live GATT link.
+            restoreWantedPeripheralsIfPossible(reconnectDisconnectedOnly: true)
+        }
         recoverStalledTransportQueuesIfNeeded()
         if foregroundActive && !bluetoothAudioActive {
             for peripheral in remotePeripherals.values where peripheral.state == .connected {
@@ -816,7 +826,9 @@ final class BLETransport: NSObject, ObservableObject {
 
     /// Rehydrates the persisted "I want to stay connected to this peripheral" state.
     /// Explicit disconnect/pause clears the store; process relaunch and diagnostic churn do not.
-    private func restoreWantedPeripheralsIfPossible() {
+    private func restoreWantedPeripheralsIfPossible(
+        reconnectDisconnectedOnly: Bool = false
+    ) {
         guard isRunning,
               centralManager.state == .poweredOn,
               !wantedConnections.isEmpty else { return }
@@ -827,8 +839,16 @@ final class BLETransport: NSObject, ObservableObject {
             peripheral.delegate = self
             switch peripheral.state {
             case .disconnected:
-                scheduleReconnect(peripheral, immediate: true)
+                // A restored scan result can arrive while an existing retry
+                // timer is waiting. Never cancel/reset its exponential backoff.
+                if BLELinkReliabilityPolicy.shouldScheduleRestoredReconnect(
+                    isDisconnected: true,
+                    hasPendingRetry: reconnectWorkItems[id] != nil
+                ) {
+                    scheduleReconnect(peripheral, immediate: true)
+                }
             case .connected:
+                if reconnectDisconnectedOnly { break }
                 if remoteCharacteristics[id]?.isNotifying != true {
                     gattHandshakeWatchdog.physicalLinkConnected(
                         id, uptime: ProcessInfo.processInfo.systemUptime

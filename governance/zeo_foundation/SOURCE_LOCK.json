@@ -1,0 +1,345 @@
+{
+  "schema": "veillink.zeo-source-lock.v1",
+  "author": "久野零 / ZeoStudio",
+  "upstream_entry_version": "1.5.0",
+  "base_main_sha": "eb487a1901c0ffddfb38b80b9fb56f6d7d749ba0",
+  "installation": "additive core integration; not the complete portable skill distribution",
+  "files": [
+    {
+      "path": ".agents/skills/zeo-agent-exchange-inbox/references/AGENT_EXCHANGE_PROTOCOL.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/references/AGENT_EXCHANGE_PROTOCOL.md",
+      "source_sha256": "dc4c9b60acff85e8adc48bb90434e32f136f3127364588590b62662e409bf4d0",
+      "installed_sha256": "dc4c9b60acff85e8adc48bb90434e32f136f3127364588590b62662e409bf4d0",
+      "adapted": false
+    },
+    {
+      "path": ".agents/skills/zeo-agent-exchange-inbox/references/COMMAND_REFERENCE.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/references/COMMAND_REFERENCE.md",
+      "source_sha256": "a218d3a299fa6837ca6ff0fd5b3a20b62c331b988e2e151ea2ae5c18ab86e8f5",
+      "installed_sha256": "a218d3a299fa6837ca6ff0fd5b3a20b62c331b988e2e151ea2ae5c18ab86e8f5",
+      "adapted": false
+    },
+    {
+      "path": ".agents/skills/zeo-agent-exchange-inbox/references/EXCHANGE_AND_ARCHIVE_BASIC_LAW.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/references/EXCHANGE_AND_ARCHIVE_BASIC_LAW.md",
+      "source_sha256": "707b001ade42784e434a14062de01384afd3912bb146e1a28416bb26e00df43e",
+      "installed_sha256": "707b001ade42784e434a14062de01384afd3912bb146e1a28416bb26e00df43e",
+      "adapted": false
+    },
+    {
+      "path": ".agents/skills/zeo-agent-exchange-inbox/references/MESSAGE_SCHEMA.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/references/MESSAGE_SCHEMA.json",
+      "source_sha256": "61d3488f7e9d8954b35c7136ee5cf7da078f2ce9add6709ef3506273780d9e6e",
+      "installed_sha256": "61d3488f7e9d8954b35c7136ee5cf7da078f2ce9add6709ef3506273780d9e6e",
+      "adapted": false
+    },
+    {
+      "path": ".agents/skills/zeo-agent-exchange-inbox/references/RECEIPT_SCHEMA.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/references/RECEIPT_SCHEMA.json",
+      "source_sha256": "d89b6cdab2ffc8eea582767aedbe066c26ec877310c0cb9143f16600281dc93c",
+      "installed_sha256": "d89b6cdab2ffc8eea582767aedbe066c26ec877310c0cb9143f16600281dc93c",
+      "adapted": false
+    },
+    {
+      "path": ".agents/skills/zeo-agent-exchange-inbox/references/SECURITY_AND_DELIVERY.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/references/SECURITY_AND_DELIVERY.md",
+      "source_sha256": "7955d78cd3cb56912ec2f37c55838cea1022f1d4091f93c09a750cd049febfe9",
+      "installed_sha256": "7955d78cd3cb56912ec2f37c55838cea1022f1d4091f93c09a750cd049febfe9",
+      "adapted": false
+    },
+    {
+      "path": "AGENT_EXCHANGE/CURRENT_DIGEST.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/assets/CURRENT_DIGEST.md",
+      "source_sha256": "dfc440e57c1e23997cd41f9821d958c768b0f820e838250a41a055f1b760119d",
+      "installed_sha256": "dfc440e57c1e23997cd41f9821d958c768b0f820e838250a41a055f1b760119d",
+      "adapted": false
+    },
+    {
+      "path": "AGENT_EXCHANGE/MESSAGE_SCHEMA.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/references/MESSAGE_SCHEMA.json",
+      "source_sha256": "61d3488f7e9d8954b35c7136ee5cf7da078f2ce9add6709ef3506273780d9e6e",
+      "installed_sha256": "61d3488f7e9d8954b35c7136ee5cf7da078f2ce9add6709ef3506273780d9e6e",
+      "adapted": false
+    },
+    {
+      "path": "AGENT_EXCHANGE/README.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/assets/AGENT_EXCHANGE_README.md",
+      "source_sha256": "41edbf05126630a6fb4a920010bde9995d7ad3f5511b98dfec2c04795c93157a",
+      "installed_sha256": "41edbf05126630a6fb4a920010bde9995d7ad3f5511b98dfec2c04795c93157a",
+      "adapted": false
+    },
+    {
+      "path": "AGENT_EXCHANGE/RECEIPT_SCHEMA.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/references/RECEIPT_SCHEMA.json",
+      "source_sha256": "d89b6cdab2ffc8eea582767aedbe066c26ec877310c0cb9143f16600281dc93c",
+      "installed_sha256": "d89b6cdab2ffc8eea582767aedbe066c26ec877310c0cb9143f16600281dc93c",
+      "adapted": false
+    },
+    {
+      "path": "AGENT_INBOX/07_LEARNING_GATE.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/C_governed_proposal/skills/agent-governance/assets/scaffold/AGENT_INBOX/07_LEARNING_GATE.md",
+      "source_sha256": "ba613102053a83d2d3703aed8473c6696115ea0454a0ece5ed1eeb4886159010",
+      "installed_sha256": "ba613102053a83d2d3703aed8473c6696115ea0454a0ece5ed1eeb4886159010",
+      "adapted": false
+    },
+    {
+      "path": "AGENT_INBOX/_template/STUDY_RECORD.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/C_governed_proposal/skills/agent-governance/assets/scaffold/AGENT_INBOX/_template/STUDY_RECORD.json",
+      "source_sha256": "a4e6d1f271cdb817284c3ffc70c01e769a630e81c02e8b723eeb1626e0085870",
+      "installed_sha256": "a4e6d1f271cdb817284c3ffc70c01e769a630e81c02e8b723eeb1626e0085870",
+      "adapted": false
+    },
+    {
+      "path": "AGENT_INBOX/tools/inbox_gate.py",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/C_governed_proposal/skills/agent-inbox/scripts/inbox_gate.py",
+      "source_sha256": "65a1cfca1c60a38d12231fad89f44ede18ec0cf1811c6b8e52e867771a56ca23",
+      "installed_sha256": "65a1cfca1c60a38d12231fad89f44ede18ec0cf1811c6b8e52e867771a56ca23",
+      "adapted": false
+    },
+    {
+      "path": "AGENT_INBOX/tools/study_gate.py",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/C_governed_proposal/skills/agent-inbox/scripts/study_gate.py",
+      "source_sha256": "086a773984ec65e81343e0ce3cee9cabea7c15873cec5512cc441effcb341fc6",
+      "installed_sha256": "086a773984ec65e81343e0ce3cee9cabea7c15873cec5512cc441effcb341fc6",
+      "adapted": false
+    },
+    {
+      "path": "governance/ACTIVE_TASK_INDEX.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/assets/ACTIVE_TASK_INDEX.json",
+      "source_sha256": "4273c1971535e4cd03fbbf866bbe1540b779141c05d416e825c26ffd4e2d9a7d",
+      "installed_sha256": "3bcf7993c701f400ebc9e28633929e8335b451c768bb8717c2d5d84a68eb721d",
+      "adapted": true
+    },
+    {
+      "path": "governance/AGENT_AUTONOMY_BASIC_LAW.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/references/AGENT_AUTONOMY_BASIC_LAW.md",
+      "source_sha256": "8c8eda061eca71eea2bb30eef81672bed8a259c46856dfe4e4d9cb2088920883",
+      "installed_sha256": "8c8eda061eca71eea2bb30eef81672bed8a259c46856dfe4e4d9cb2088920883",
+      "adapted": false
+    },
+    {
+      "path": "governance/AGENT_BOOTSTRAP_PROTOCOL.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/references/AGENT_BOOTSTRAP_PROTOCOL.md",
+      "source_sha256": "58ab305789a0f99fd28575d4a4f23a34fec45d99ea66491b8ad08d02bc5fbe88",
+      "installed_sha256": "58ab305789a0f99fd28575d4a4f23a34fec45d99ea66491b8ad08d02bc5fbe88",
+      "adapted": false
+    },
+    {
+      "path": "governance/BASIC_LAW_FRAMEWORK.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/references/BASIC_LAW_FRAMEWORK.md",
+      "source_sha256": "54d66ebb7400c61fb56adfdc03db4d5ab7cd8ce9ef1f067d60cf63101605d441",
+      "installed_sha256": "54d66ebb7400c61fb56adfdc03db4d5ab7cd8ce9ef1f067d60cf63101605d441",
+      "adapted": false
+    },
+    {
+      "path": "governance/CONSTITUTION_SEAL.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/assets/CONSTITUTION_SEAL.json",
+      "source_sha256": "d45a2fa283a607c2e5ad31e43e38a8409302342c95331b4ca0b51597ff7dd69b",
+      "installed_sha256": "0f6d82df6b84d3b53ba933e97a004a16934355ad1c2f6e4e42091041ba948c65",
+      "adapted": true
+    },
+    {
+      "path": "governance/DATA_AND_DELIVERY_BASIC_LAW.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/references/DATA_AND_DELIVERY_BASIC_LAW.md",
+      "source_sha256": "493d581192526c1e37e0d2d54596f1693e31fe225d7bc9d7a4d7b0ad64629985",
+      "installed_sha256": "493d581192526c1e37e0d2d54596f1693e31fe225d7bc9d7a4d7b0ad64629985",
+      "adapted": false
+    },
+    {
+      "path": "governance/EXCHANGE_AND_ARCHIVE_BASIC_LAW.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/references/EXCHANGE_AND_ARCHIVE_BASIC_LAW.md",
+      "source_sha256": "707b001ade42784e434a14062de01384afd3912bb146e1a28416bb26e00df43e",
+      "installed_sha256": "707b001ade42784e434a14062de01384afd3912bb146e1a28416bb26e00df43e",
+      "adapted": false
+    },
+    {
+      "path": "governance/GOVERNANCE_ORGANIC_BASIC_LAW.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/references/GOVERNANCE_ORGANIC_BASIC_LAW.md",
+      "source_sha256": "c7890ee550fdbefe369f1e750b92c0469eeda85052fec9c173bb92075566b7b3",
+      "installed_sha256": "c7890ee550fdbefe369f1e750b92c0469eeda85052fec9c173bb92075566b7b3",
+      "adapted": false
+    },
+    {
+      "path": "governance/GOVERNOR_REGISTRY.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/assets/GOVERNOR_REGISTRY.json",
+      "source_sha256": "ec2196b9219ec160e82789692d32648af88d390cfc659a6b858d718622fb1aa8",
+      "installed_sha256": "76f55c07b5ef9f3d80b58af27abb78adbb1dfda5e03b13b0ee7857fd179746a3",
+      "adapted": true
+    },
+    {
+      "path": "governance/INCIDENT_CONSTITUTION.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/references/INCIDENT_CONSTITUTION.md",
+      "source_sha256": "6af9bd72c4f3c856df3076e1890b66f50b5a7b0d9cd5c9471dd093352c21dbb7",
+      "installed_sha256": "6af9bd72c4f3c856df3076e1890b66f50b5a7b0d9cd5c9471dd093352c21dbb7",
+      "adapted": false
+    },
+    {
+      "path": "governance/MANDATORY_READ_SET.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/assets/MANDATORY_READ_SET.json",
+      "source_sha256": "11a0b586116bdbe4b032e6cb7f4826b043e1eb5c67cbda7f53e9d0147b67507e",
+      "installed_sha256": "52b279504ccb851a76cecc19784f3f2970402b807e7f116d41a9a4152d47b29e",
+      "adapted": true
+    },
+    {
+      "path": "governance/PR_AND_ACTION_PROTOCOL.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/references/PR_AND_ACTION_PROTOCOL.md",
+      "source_sha256": "8b650ba427685522a82b5fdccd739f18d7dfca01135fbbd2c4aaaa30501d0274",
+      "installed_sha256": "8b650ba427685522a82b5fdccd739f18d7dfca01135fbbd2c4aaaa30501d0274",
+      "adapted": false
+    },
+    {
+      "path": "governance/SESSION_CONTINUITY_PROTOCOL.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/references/SESSION_CONTINUITY_PROTOCOL.md",
+      "source_sha256": "c82f40b4789aedd0e9376b813de5d5de6a3d853dd511607b70f0824d216dbc8d",
+      "installed_sha256": "c82f40b4789aedd0e9376b813de5d5de6a3d853dd511607b70f0824d216dbc8d",
+      "adapted": false
+    },
+    {
+      "path": "governance/SUPREME_CONSTITUTION.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/references/SUPREME_CONSTITUTION.md",
+      "source_sha256": "fae8efec0c85290cf1aeaf8a574c6a4e760baeef17e1a83da561a853a7baf059",
+      "installed_sha256": "09a56c3774c3a74827ea34c5700e459b5a1a169512cf39edcc2ee989ece75d28",
+      "adapted": true
+    },
+    {
+      "path": "governance/TASK_MARKET.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/assets/TASK_MARKET.json",
+      "source_sha256": "f42e2bbed514a7f2210d670b1504291dfa0a33089e22e8c18cb5ce25f3914d21",
+      "installed_sha256": "4f8ba8ceb4e9d04dd816e9afa1c28ea1379f8691d6a7385246489228b0fafef9",
+      "adapted": true
+    },
+    {
+      "path": "governance/UNIFIED_OUTPUT_CONTRACT.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/references/UNIFIED_OUTPUT_CONTRACT.md",
+      "source_sha256": "e6008a790da89099f6e63296ed0457fce27d9641fd3792955a89fdbede4963d0",
+      "installed_sha256": "e6008a790da89099f6e63296ed0457fce27d9641fd3792955a89fdbede4963d0",
+      "adapted": false
+    },
+    {
+      "path": "governance/templates/HANDOFF.template.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/assets/HANDOFF.template.md",
+      "source_sha256": "d91652ef47eba1793b0e10b2e279cd54aa51a044798bbb66dddeb51aaff0e725",
+      "installed_sha256": "d91652ef47eba1793b0e10b2e279cd54aa51a044798bbb66dddeb51aaff0e725",
+      "adapted": false
+    },
+    {
+      "path": "governance/templates/SESSION_STATE.template.json",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/assets/SESSION_STATE.template.json",
+      "source_sha256": "f22864b3e3a7507a5275d2c936a1a5bab1e42d3cc28231a97fdd8eff3c2290c4",
+      "installed_sha256": "21bdd5d79c8dbd2bfe421be0a89a538d8f1e5284b85c9a71eb1ce336e763b28f",
+      "adapted": true
+    },
+    {
+      "path": "governance/zeo_foundation/upstream/EXCHANGE_SKILL.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/SKILL.md",
+      "source_sha256": "1054817656282ff9d24459a7c11af1821615a9ddaf5100eb1b28abf3fee1ecb3",
+      "installed_sha256": "1054817656282ff9d24459a7c11af1821615a9ddaf5100eb1b28abf3fee1ecb3",
+      "adapted": false
+    },
+    {
+      "path": "governance/zeo_foundation/upstream/REFERENCE_SKILL.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/SKILL.md",
+      "source_sha256": "7579eedbf1563a92d70ac17cbe870d5e3232e9c8217c513034b370bb1689ea93",
+      "installed_sha256": "7579eedbf1563a92d70ac17cbe870d5e3232e9c8217c513034b370bb1689ea93",
+      "adapted": false
+    },
+    {
+      "path": "governance/zeo_foundation/upstream/handbook/01_OPERATOR_ENTRY.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/handbook/01_OPERATOR_ENTRY.md",
+      "source_sha256": "6f51ba69ea9ed9c4b919e12952306e7640244974270c8f0ff319b33986bcd476",
+      "installed_sha256": "6f51ba69ea9ed9c4b919e12952306e7640244974270c8f0ff319b33986bcd476",
+      "adapted": false
+    },
+    {
+      "path": "governance/zeo_foundation/upstream/platforms/PLATFORM_ROUTER.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/platforms/PLATFORM_ROUTER.md",
+      "source_sha256": "be81c1e95794c31ec7d8553ed326dd04242824f28be296796a7592f90924d6ed",
+      "installed_sha256": "be81c1e95794c31ec7d8553ed326dd04242824f28be296796a7592f90924d6ed",
+      "adapted": false
+    },
+    {
+      "path": "governance/zeo_foundation/upstream/references/CONFLICT_MATRIX.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/references/CONFLICT_MATRIX.md",
+      "source_sha256": "da8a8cbe181a5d321040c75e943cfeeb2a084a9647dd3dd21514e7979140e426",
+      "installed_sha256": "da8a8cbe181a5d321040c75e943cfeeb2a084a9647dd3dd21514e7979140e426",
+      "adapted": false
+    },
+    {
+      "path": "governance/zeo_foundation/upstream/references/DUAL_LEARNING_GATE.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/references/DUAL_LEARNING_GATE.md",
+      "source_sha256": "f770928c74d37762eb268cec5e8a3b3f4c6367c24396e4900fa2cd90d7c0d044",
+      "installed_sha256": "f770928c74d37762eb268cec5e8a3b3f4c6367c24396e4900fa2cd90d7c0d044",
+      "adapted": false
+    },
+    {
+      "path": "governance/zeo_foundation/upstream/references/INSTALLATION_AND_MIGRATION.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/references/INSTALLATION_AND_MIGRATION.md",
+      "source_sha256": "b476a758750f8ee45f47d0cf7507d27cc2513b1d0595661231759e0bd0db5c81",
+      "installed_sha256": "b476a758750f8ee45f47d0cf7507d27cc2513b1d0595661231759e0bd0db5c81",
+      "adapted": false
+    },
+    {
+      "path": "governance/zeo_foundation/upstream/references/OPERATING_PLAYBOOK.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/references/OPERATING_PLAYBOOK.md",
+      "source_sha256": "e5ff44c15a8d8f4362c99590f4cfa82247255bbaf100d2b50f64e993d264030d",
+      "installed_sha256": "e5ff44c15a8d8f4362c99590f4cfa82247255bbaf100d2b50f64e993d264030d",
+      "adapted": false
+    },
+    {
+      "path": "governance/zeo_foundation/upstream/references/UNIFIED_CONSTITUTION_BRIDGE.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/references/UNIFIED_CONSTITUTION_BRIDGE.md",
+      "source_sha256": "755b14ffecedf35017ac1d4ca63569fe7c8cc324144f862a7636d0649bed7d11",
+      "installed_sha256": "755b14ffecedf35017ac1d4ca63569fe7c8cc324144f862a7636d0649bed7d11",
+      "adapted": false
+    },
+    {
+      "path": "tools/governance/agent_exchange.py",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-agent-exchange-inbox/scripts/agent_exchange.py",
+      "source_sha256": "80da2b7f41d7aea339079e8ecba6fb5509966c07af385579f8bbccacba7fd65e",
+      "installed_sha256": "80da2b7f41d7aea339079e8ecba6fb5509966c07af385579f8bbccacba7fd65e",
+      "adapted": false
+    },
+    {
+      "path": "tools/governance/governance_cli.py",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/components/B_exchange_continuity/skills/zeo-multi-agent-governance/scripts/governance_cli.py",
+      "source_sha256": "681fc861df60b9660c0590dacfeaebb20a122b2e9fa7c9bc23a5c4bd6eca231a",
+      "installed_sha256": "681fc861df60b9660c0590dacfeaebb20a122b2e9fa7c9bc23a5c4bd6eca231a",
+      "adapted": false
+    },
+    {
+      "path": "tools/governance/memory/README.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/memory/README.md",
+      "source_sha256": "b8e2b254d60227408c73814c817783fbeeae7b516661c513e1d26f4f51386a9e",
+      "installed_sha256": "b8e2b254d60227408c73814c817783fbeeae7b516661c513e1d26f4f51386a9e",
+      "adapted": false
+    },
+    {
+      "path": "tools/governance/memory/references/01_MEMORY_ARCHITECTURE.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/memory/references/01_MEMORY_ARCHITECTURE.md",
+      "source_sha256": "14cae60ef8e065b1ceb33ffa415723c8d5c8b775a1b5fa68d12996b3e7abd534",
+      "installed_sha256": "14cae60ef8e065b1ceb33ffa415723c8d5c8b775a1b5fa68d12996b3e7abd534",
+      "adapted": false
+    },
+    {
+      "path": "tools/governance/memory/references/03_AUTHORITY_AND_SCOPE.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/memory/references/03_AUTHORITY_AND_SCOPE.md",
+      "source_sha256": "4aa327c5b897c01cc4c0a0d2f42e385f2dd8290515f580ce793d5ca2f71bbaf4",
+      "installed_sha256": "4aa327c5b897c01cc4c0a0d2f42e385f2dd8290515f580ce793d5ca2f71bbaf4",
+      "adapted": false
+    },
+    {
+      "path": "tools/governance/memory/references/06_RESUME_ROUTER.md",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/memory/references/06_RESUME_ROUTER.md",
+      "source_sha256": "01d3439aeb7617dd3e530588775e1976cd6b8fdaba3c3d3746383ee4e6943dad",
+      "installed_sha256": "01d3439aeb7617dd3e530588775e1976cd6b8fdaba3c3d3746383ee4e6943dad",
+      "adapted": false
+    },
+    {
+      "path": "tools/governance/memory/zeo_memory.py",
+      "source_resource": "skill://plugins_6adc451aab0881919610ef57d67448d8/zeo-unified-agent-foundation/memory/zeo_memory.py",
+      "source_sha256": "ead1dea8b8205309aaa00e8648b4ce894f4d8ea569200d51a9ab7cc91b170916",
+      "installed_sha256": "ead1dea8b8205309aaa00e8648b4ce894f4d8ea569200d51a9ab7cc91b170916",
+      "adapted": false
+    }
+  ]
+}

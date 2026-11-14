@@ -7,8 +7,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: 5.9
-    MARKETING_VERSION: "29.0"
-    CURRENT_PROJECT_VERSION: "66"
+    MARKETING_VERSION: "29.1"
+    CURRENT_PROJECT_VERSION: "67"
     SWIFT_STRICT_CONCURRENCY: complete
     IPHONEOS_DEPLOYMENT_TARGET: 15.0
     TARGETED_DEVICE_FAMILY: "1,2"
@@ -36,12 +36,6 @@ targets:
           - Agent/MaleCNS
           - Agent/Games/TrainedGamePolicyRuntime.swift
           - Agent/Games/MaleCNSGameDecisionEncoder.swift
-          - Agent/Language/LlamaInferenceEngine.swift
-          - Agent/Language/LlamaLocalTextModelRuntime.swift
-          - Agent/Language/LlamaRuntimeConfiguration.swift
-          - Agent/Language/LlamaCancellationGate.swift
-          - Agent/Language/LocalModelCatalog.swift
-          - Agent/Language/LocalModelManager.swift
           - Resources/VeilFlyCore.vfly
           - Resources/VeilFlyLite.vfly
           - Resources/VeilFlyAssets.json
@@ -56,8 +50,6 @@ targets:
           - Resources/MaleCNSReadoutLiteV1.manifest.json
           - Resources/AgentModels/game_policy_ranker_v4.vlpol
           - Resources/AgentModels/game_policy_ranker_v4.manifest.json
-          - Resources/LocalAI-THIRD-PARTY-NOTICES.txt
-          - Resources/LocalAI/Vertex-0.6-35M-Instruct-Q4_K_M.gguf
           - Resources/MonogatariHost
           - Resources/VisualNovelBundle
           - Resources/GomokuEngineV2
@@ -119,8 +111,6 @@ targets:
           - MaleCNSNativeKernelTests.swift
           - MaleCNSNativeRolloutPoolTests.swift
           - MaleCNSVFLY1Tests.swift
-          - LocalModelCatalogTests.swift
-          - RealLocalInferenceSmokeTests.swift
           - Fixtures/MaleCNSFixture.vfly
           - Fixtures/MaleCNSFixture.vfly.manifest.json
       # These session/animation/lifecycle tests are conditionally excluded by

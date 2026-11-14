@@ -337,6 +337,7 @@ struct LocalAIGameView: View {
     @State private var showsBoardAdvanced = false
     @State private var showsLearningImporter = false
     @State private var showsLearningShare = false
+    @State private var showsEclipseTrace = false
     @State private var learningExportURL: URL?
     @State private var learningExchangeMessage: String?
     @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
@@ -360,7 +361,19 @@ struct LocalAIGameView: View {
         ScrollView {
             VStack(spacing: 14) {
                 statusCard
-                if VeilOpponentAvatarPolicy.shouldRender(
+                if game == .gomoku {
+                    VeilEclipseIdentityCard(
+                        // The controller starts a 180ms pre-search pause;
+                        // show actual computation effects only after its timestamp exists.
+                        isThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
+                        matchFinished: controller.outcome != .playing,
+                        lastCompletedMilliseconds: controller.lastDecisionMilliseconds,
+                        actualSearchStartedAt: controller.eclipseSearchStartedAt,
+                        difficultyTitle: controller.boardDifficulty.title,
+                        openTrace: { showsEclipseTrace = true }
+                    )
+                    .veilCard()
+                } else if VeilOpponentAvatarPolicy.shouldRender(
                     enabled: grokBotEnabled, hasComputerOpponent: true
                 ) {
                     HStack(spacing: 12) {
@@ -424,6 +437,23 @@ struct LocalAIGameView: View {
         }
         .sheet(isPresented: $showsTacticalGuide) {
             TacticalSoloGuideView()
+        }
+        .sheet(isPresented: $showsEclipseTrace) {
+            if game == .gomoku {
+                VeilEclipseTraceSheet(
+                    isThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
+                    matchFinished: controller.outcome != .playing,
+                    lastCompletedMilliseconds: controller.lastDecisionMilliseconds,
+                    actualSearchStartedAt: controller.eclipseSearchStartedAt,
+                    committedMoves: controller.eclipseCompletedMoveHistory,
+                    difficultyTitle: controller.boardDifficulty.title,
+                    searchModeTitle: controller.boardSearchMode.title,
+                    liveMetrics: nil, // No genuine R5/V9 streaming telemetry in main.
+                    archivedMatchPage: { offset, limit in
+                        controller.eclipseHistoryPage(offset: offset, limit: limit)
+                    }
+                )
+            }
         }
         .sheet(isPresented: $showsLearningShare, onDismiss: {
             if let learningExportURL {
@@ -524,6 +554,11 @@ struct LocalAIGameView: View {
                             .font(.caption2)
                             .foregroundColor(.orange)
                     }
+                    if let warning = controller.eclipseArchiveWarning, game == .gomoku {
+                        Text(warning)
+                            .font(.caption2)
+                            .foregroundColor(VeilTheme.danger)
+                    }
                 }
                 Spacer()
                 if controller.isAIThinking {
@@ -546,7 +581,7 @@ struct LocalAIGameView: View {
     private var boardQuickControls: some View {
         HStack(spacing: 12) {
             Menu {
-                ForEach(BoardBotDifficulty.allCases) { difficulty in
+                ForEach(game == .gomoku ? BoardBotDifficulty.allCases : BoardBotDifficulty.xiangqiCases) { difficulty in
                     Button {
                         controller.setBoardDifficulty(difficulty)
                         model.haptics.selection()
@@ -643,18 +678,28 @@ struct LocalAIGameView: View {
                 .fixedSize(horizontal: false, vertical: true)
             if game == .gomoku {
                 Toggle(isOn: Binding(
-                    get: { controller.useExternalGomokuEngine },
-                    set: { controller.setExternalGomokuEngineEnabled($0) }
+                    get: { controller.eclipseVisualizationEnabled },
+                    set: { controller.setEclipseVisualizationEnabled($0) }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("离线强力引擎 · PVS/VCF")
+                        Text("棋盘思考可视化").font(.caption.weight(.semibold))
+                        Text("仅原生搜索显示真实分支；可能透露策略，默认关闭。")
+                            .font(.caption2).foregroundColor(VeilTheme.secondaryText)
+                    }
+                }
+                .tint(VeilTheme.gold)
+                .accessibilityIdentifier("gomoku.eclipse.live-trace.toggle")
+                HStack(spacing: 8) {
+                    Image(systemName: "cpu").foregroundColor(VeilTheme.goldBright)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("ECLIPSE 原生搜索")
                             .font(.caption.weight(.semibold))
-                        Text("独立离线引擎；异常自动回退，不改写棋谱。")
+                            .foregroundColor(VeilTheme.text)
+                        Text("统一原生战术安全门、训练排序与深度搜索")
                             .font(.caption2)
                             .foregroundColor(VeilTheme.secondaryText)
                     }
                 }
-                .tint(VeilTheme.gold)
                 Menu {
                     ForEach(GomokuFormationMode.allCases) { mode in
                         Button {
@@ -828,7 +873,14 @@ struct LocalAIGameView: View {
                         && model.appLock.isEnabled
                         && !model.appLock.isLocked
                         && developerLearningGate.canImportTraining()
-                )
+                ),
+                eclipseThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
+                actualSearchStartedAt: controller.eclipseSearchStartedAt,
+                eclipseVisualizationEnabled: controller.eclipseVisualizationEnabled,
+                eclipseTraceStore: controller.eclipseTraceStore,
+                eclipseSessionID: controller.sessionID,
+                eclipseBoardTurn: controller.gomoku.moveCount,
+                eclipseMatchPlaying: controller.outcome == .playing
             ) { index in
                 if controller.developerTeachingMode,
                    ownerMode.isAuthorized(for: .developerTraining),
