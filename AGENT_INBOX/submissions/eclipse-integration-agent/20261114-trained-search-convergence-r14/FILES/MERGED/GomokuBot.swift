@@ -81,7 +81,8 @@ enum GomokuBot {
         diagnosticR8ForcedWin: Bool = true,
         diagnosticEclipseUnified: Bool = true,
         difficultyRawValue: String? = nil,
-        onExploredLine: (@Sendable ([Int], Int) -> Void)? = nil
+        onExploredLine: (@Sendable ([Int], Int) -> Void)? = nil,
+        onNativeTrace: (@Sendable (VeilGomokuUnifiedSearch.Trace) -> Void)? = nil
     ) -> GomokuBotMove? {
         guard state.winner == nil,
               !state.isDraw,
@@ -194,7 +195,8 @@ enum GomokuBot {
                 permittedRoots: rankedRoots.map { $0.0 },
                 rootScores: Dictionary(uniqueKeysWithValues: rankedRoots.map { ($0.0, $0.1) }),
                 difficultyRawValue: difficultyRawValue,
-                onExploredLine: onExploredLine
+                onExploredLine: onExploredLine,
+                onTrace: onNativeTrace
            ) {
             return unified
         }
