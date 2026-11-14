@@ -1,4 +1,4 @@
-# VeilScreen R2: Real system-wide capture candidate for iOS 26
+# VeilScreen R2: Real system-wide capture candidate for iOS 15+
 
 ## Why R1 would not work as shipped
 Newer ScreenCaptureKit full display capture on iOS starts with iOS 27; the user's iOS 26 devices require ReplayKit Broadcast Upload Extension. R1 also deliberately lacked system capture code and authenticated SessionCoordinator real-time media integration. R2 fixes the capture side but does not magically solve host app suspension / BLE media encryption binding.
@@ -22,3 +22,6 @@ https://developer.apple.com/documentation/replaykit/rpbroadcastsamplehandler
 https://developer.apple.com/documentation/replaykit/rpsystembroadcastpickerview
 https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-on-ios
 https://support.apple.com/en-gb/guide/security/seca5fc039dd/web
+
+## 2026-11-15 scope correction
+Both testing phones have **iOS 15**, per Owner. ReplayKit Broadcast Upload extension remains the intended public capture path, with target deployment `15.0`. R2.1 corrects the ReplayKit Swift override parameter type to `[String: NSObject]?` (previous `[String: NSCoding]?` does not match the SDK declaration). Need Xcode 15.0 deployment and two real iOS15 phones before promoting.

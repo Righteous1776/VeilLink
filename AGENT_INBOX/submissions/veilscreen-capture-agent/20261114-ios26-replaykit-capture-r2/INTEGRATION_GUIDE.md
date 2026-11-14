@@ -1,6 +1,6 @@
 # VeilScreen R2 — Governor-only integration guide
 
-This is an **implementation proposal**, NOT a signed, compiled or working two-phone screen-share feature. Do not ship its ReplayKit target until a real Apple iOS 26 build, signing and physical-device checks pass.
+This is an **implementation proposal**, NOT a signed, compiled or working two-phone screen-share feature. Do not ship its ReplayKit target until a real Apple iOS 15 build, signing and physical-device checks pass.
 
 ## Current source baseline
 - Canonical repository: `Righteous1776/VeilLink`, main `af3d823546c288169d19cb3033a6111977d28bd7`, v29.1 Build 67.
@@ -20,7 +20,7 @@ This is an **implementation proposal**, NOT a signed, compiled or working two-ph
 9. On disconnect/revoke/stop or identity change: send STOP when possible, stop broadcaster via system UI or extension, invalidate App Group session, delete shared keychain key and encrypted mailbox, empty scheduler/decoder/preview, and require new mutual consent to restart.
 
 ## Important architecture limit
-For iOS 26, ReplayKit upload **extension** may continue producing encrypted frames in the background, but VeilLink host process BLE send/poll may be suspended. The single-slot mailbox prevents unbounded storage but **does not guarantee live delivery while host is suspended**. TrollStore foreground/background modes are device-specific; do not advertise verified always-on BLE. iOS 27+ ScreenCaptureKit is a separate future adapter, not provided by this iOS 26 R2 implementation.
+For iOS 15, ReplayKit upload **extension** may continue producing encrypted frames in the background, but VeilLink host process BLE send/poll may be suspended. The single-slot mailbox prevents unbounded storage but **does not guarantee live delivery while host is suspended**. TrollStore foreground/background modes are device-specific; do not advertise verified always-on BLE. iOS 27+ ScreenCaptureKit is a separate future adapter, not provided by this iOS 26 R2 implementation.
 
 ## Non-negotiable privacy
 - Both participants agree; recording-side OS consent visibly shown.
@@ -28,3 +28,8 @@ For iOS 26, ReplayKit upload **extension** may continue producing encrypted fram
 - Screen pixels inherently reveal visible content; no claim that screenshots hide notifications or private data.
 - Never log JPEG, screen text, hashes or app names. Diagnostic counters may include frame ID/count/bytes only, with care.
 - App Group single-file ciphertext is transient local disk IPC, **not** zero disk writes. Do not claim otherwise.
+
+## iOS15 compatibility amendment (R2.1)
+Owner confirms both iPhones run iOS 15. Minimum target in `project-target-fragment.yml` is already `15.0`. `RPBroadcastSampleHandler.broadcastStarted` must override `([String: NSObject]?)` exactly; R2.1 fixes this compiler-blocking mismatch. `RPSystemBroadcastPickerView` and Broadcast Upload extensions operate through user-initiated system consent. No iOS26-specific ScreenCaptureKit implementation is linked into this target.
+
+On iOS15, Core Bluetooth state preservation/background modes are event-driven and cannot promise continuous 0.4 FPS BLE transfers when host is suspended. The ReplayKit extension receiving video is a different process and does not grant ongoing host runtime. The pilot is not accepted until actual signed iOS15 sender+viewer testing demonstrates video reception and stop/cleanup.

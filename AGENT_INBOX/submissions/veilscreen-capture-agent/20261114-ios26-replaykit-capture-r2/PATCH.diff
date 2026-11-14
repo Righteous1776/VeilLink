@@ -1,3 +1,105 @@
+diff --git a/VeilLink/Resources/VeilScreen.entitlements b/VeilLink/Resources/VeilScreen.entitlements
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Resources/VeilScreen.entitlements
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0"><dict>
++  <key>com.apple.security.application-groups</key>
++  <array><string>group.studio.zeo.veillink.screenshare</string></array>
++  <key>keychain-access-groups</key>
++  <array><string>$(AppIdentifierPrefix)studio.zeo.veillink.screenshare</string></array>
++</dict></plist>
+diff --git a/VeilLink/Resources/VeilScreenBroadcastUpload-Info.plist b/VeilLink/Resources/VeilScreenBroadcastUpload-Info.plist
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Resources/VeilScreenBroadcastUpload-Info.plist
+@@ -0,0 +1,16 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0"><dict>
++  <key>CFBundleDisplayName</key><string>VeilScreen</string>
++  <key>CFBundleName</key><string>VeilScreenBroadcastUpload</string>
++  <key>CFBundlePackageType</key><string>XPC!</string>
++  <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
++  <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
++  <key>VeilScreenAppGroup</key><string>group.studio.zeo.veillink.screenshare</string>
++  <key>VeilScreenKeychainGroup</key><string>$(AppIdentifierPrefix)studio.zeo.veillink.screenshare</string>
++  <key>NSExtension</key><dict>
++    <key>NSExtensionPointIdentifier</key><string>com.apple.broadcast-services-upload</string>
++    <key>NSExtensionPrincipalClass</key><string>$(PRODUCT_MODULE_NAME).VeilScreenBroadcastUploadHandler</string>
++    <key>RPBroadcastProcessMode</key><string>RPBroadcastProcessModeSampleBuffer</string>
++  </dict>
++</dict></plist>
+diff --git a/VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift b/VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift
+@@ -0,0 +1,63 @@
++#if os(iOS)
++import ReplayKit
++import Foundation
++import CoreMedia
++
++/// Broadcast Upload extension principal class on iOS 15 and later. User initiates the OS picker.
++/// No microphone capture, no photo library, no remote control, no video recording.
++final class VeilScreenBroadcastUploadHandler: RPBroadcastSampleHandler {
++    private var session: VeilScreenBroadcastSessionConfig?
++    private var mailbox: VeilScreenEncryptedMailbox?
++    private var encoder = VeilScreenReplayKitEncoder()
++    private var pacer = VeilScreenCapturePacer()
++    private var nextFrameID: UInt64 = 1
++
++    override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
++        guard let config = VeilScreenBroadcastSecurityConfig.load() else {
++            finishBroadcastWithError(VeilScreenBroadcastError.missingEntitlements)
++            return
++        }
++        let bridge = VeilScreenEncryptedMailbox(config: config)
++        guard let current = bridge.currentSession() else {
++            finishBroadcastWithError(VeilScreenBroadcastError.missingKey)
++            return
++        }
++        session = current
++        mailbox = bridge
++        pacer.reset()
++    }
++
++    override func broadcastPaused() { pacer.reset() }
++    override func broadcastResumed() { pacer.reset() }
++
++    override func broadcastFinished() {
++        if let current = session { mailbox?.deactivate(sessionID: current.sessionID) }
++        mailbox = nil
++        session = nil
++        pacer.reset()
++    }
++
++    override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer,
++                                      with sampleBufferType: RPSampleBufferType) {
++        // Audio is intentionally discarded. Only video frames leave this callback.
++        guard sampleBufferType == .video, let session else { return }
++        guard session.valid(at: Date()) else {
++            finishBroadcastWithError(VeilScreenBroadcastError.malformedFrame)
++            return
++        }
++        guard pacer.shouldEncode(at: ProcessInfo.processInfo.systemUptime,
++                                 minimumInterval: session.frameIntervalSeconds),
++              let (jpeg, width, height) = encoder.compress(sampleBuffer,
++                                      width: session.targetWidth,
++                                      byteBudget: session.byteBudget) else { return }
++        let image = VeilScreenMailboxFrame(sessionID: session.sessionID, frameID: nextFrameID,
++                      createdAt: Date(), width: width, height: height, jpeg: jpeg)
++        nextFrameID &+= 1
++        do { try mailbox?.publish(image, for: session) }
++        catch {
++            // Fail closed: no plaintext fallback. No pixel content in error logs.
++            finishBroadcastWithError(error)
++        }
++    }
++}
++#endif
 diff --git a/VeilLink/ScreenShare/VeilScreenBroadcastSecurity.swift b/VeilLink/ScreenShare/VeilScreenBroadcastSecurity.swift
 new file mode 100644
 --- /dev/null
@@ -96,6 +198,75 @@ new file mode 100644
 +    }
 +}
 +#endif
+diff --git a/VeilLink/ScreenShare/VeilScreenCapturePolicy.swift b/VeilLink/ScreenShare/VeilScreenCapturePolicy.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/ScreenShare/VeilScreenCapturePolicy.swift
+@@ -0,0 +1,64 @@
++import Foundation
++
++/// Selects supported public capture APIs, never probes private APIs or elevates privileges.
++enum VeilScreenCaptureRoute: String {
++    case replayKitBroadcastExtension
++    case screenCaptureKit
++    case unsupported
++
++    static func select(iOSMajor: Int) -> Self {
++        if iOSMajor >= 27 { return .screenCaptureKit }
++        if iOSMajor >= 12 { return .replayKitBroadcastExtension }
++        return .unsupported
++    }
++}
++
++/// Capture capability and transport continuity are distinct facts.
++enum VeilScreenDeliveryContinuity: Equatable {
++    case unverified
++    case foregroundOnly
++    case backgroundVerified
++}
++
++/// Deterministic sampler: limit pixel work before compression, never accumulate frames.
++struct VeilScreenCapturePacer {
++    private(set) var lastEncodedAt: TimeInterval?
++    private(set) var acceptedCount: UInt64 = 0
++    private(set) var skippedCount: UInt64 = 0
++
++    mutating func shouldEncode(at uptime: TimeInterval, minimumInterval: TimeInterval) -> Bool {
++        guard uptime.isFinite, uptime >= 0, minimumInterval.isFinite,
++              minimumInterval >= 0.25, minimumInterval <= 20 else {
++            skippedCount &+= 1
++            return false
++        }
++        if let previous = lastEncodedAt, uptime < previous || uptime - previous < minimumInterval {
++            skippedCount &+= 1
++            return false
++        }
++        lastEncodedAt = uptime
++        acceptedCount &+= 1
++        return true
++    }
++
++    mutating func reset() { lastEncodedAt = nil }
++}
++
++/// A session-local monotonic media freshness gate; obsolete frame data is discarded.
++struct VeilScreenLatestFrameGate {
++    private(set) var lastFrameID: UInt64?
++    private(set) var lastAcceptedAt: TimeInterval?
++
++    mutating func accept(frameID: UInt64, writtenAt: TimeInterval, now: TimeInterval,
++                         maximumAge: TimeInterval = 8) -> Bool {
++        guard writtenAt.isFinite, now.isFinite,
++              writtenAt <= now + 2,
++              now - writtenAt <= maximumAge,
++              lastFrameID.map({ frameID > $0 }) ?? true else { return false }
++        lastFrameID = frameID
++        lastAcceptedAt = now
++        return true
++    }
++
++    mutating func reset() { lastFrameID = nil; lastAcceptedAt = nil }
++}
 diff --git a/VeilLink/ScreenShare/VeilScreenEncryptedMailbox.swift b/VeilLink/ScreenShare/VeilScreenEncryptedMailbox.swift
 new file mode 100644
 --- /dev/null
@@ -205,122 +376,6 @@ new file mode 100644
 +    let width: Int
 +    let height: Int
 +    let jpeg: Data
-+}
-+#endif
-diff --git a/VeilLink/ScreenShare/VeilScreenCapturePolicy.swift b/VeilLink/ScreenShare/VeilScreenCapturePolicy.swift
-new file mode 100644
---- /dev/null
-+++ b/VeilLink/ScreenShare/VeilScreenCapturePolicy.swift
-@@ -0,0 +1,64 @@
-+import Foundation
-+
-+/// Selects supported public capture APIs, never probes private APIs or elevates privileges.
-+enum VeilScreenCaptureRoute: String {
-+    case replayKitBroadcastExtension
-+    case screenCaptureKit
-+    case unsupported
-+
-+    static func select(iOSMajor: Int) -> Self {
-+        if iOSMajor >= 27 { return .screenCaptureKit }
-+        if iOSMajor >= 12 { return .replayKitBroadcastExtension }
-+        return .unsupported
-+    }
-+}
-+
-+/// Capture capability and transport continuity are distinct facts.
-+enum VeilScreenDeliveryContinuity: Equatable {
-+    case unverified
-+    case foregroundOnly
-+    case backgroundVerified
-+}
-+
-+/// Deterministic sampler: limit pixel work before compression, never accumulate frames.
-+struct VeilScreenCapturePacer {
-+    private(set) var lastEncodedAt: TimeInterval?
-+    private(set) var acceptedCount: UInt64 = 0
-+    private(set) var skippedCount: UInt64 = 0
-+
-+    mutating func shouldEncode(at uptime: TimeInterval, minimumInterval: TimeInterval) -> Bool {
-+        guard uptime.isFinite, uptime >= 0, minimumInterval.isFinite,
-+              minimumInterval >= 0.25, minimumInterval <= 20 else {
-+            skippedCount &+= 1
-+            return false
-+        }
-+        if let previous = lastEncodedAt, uptime < previous || uptime - previous < minimumInterval {
-+            skippedCount &+= 1
-+            return false
-+        }
-+        lastEncodedAt = uptime
-+        acceptedCount &+= 1
-+        return true
-+    }
-+
-+    mutating func reset() { lastEncodedAt = nil }
-+}
-+
-+/// A session-local monotonic media freshness gate; obsolete frame data is discarded.
-+struct VeilScreenLatestFrameGate {
-+    private(set) var lastFrameID: UInt64?
-+    private(set) var lastAcceptedAt: TimeInterval?
-+
-+    mutating func accept(frameID: UInt64, writtenAt: TimeInterval, now: TimeInterval,
-+                         maximumAge: TimeInterval = 8) -> Bool {
-+        guard writtenAt.isFinite, now.isFinite,
-+              writtenAt <= now + 2,
-+              now - writtenAt <= maximumAge,
-+              lastFrameID.map({ frameID > $0 }) ?? true else { return false }
-+        lastFrameID = frameID
-+        lastAcceptedAt = now
-+        return true
-+    }
-+
-+    mutating func reset() { lastFrameID = nil; lastAcceptedAt = nil }
-+}
-diff --git a/VeilLink/ScreenShare/VeilScreenReplayKitEncoder.swift b/VeilLink/ScreenShare/VeilScreenReplayKitEncoder.swift
-new file mode 100644
---- /dev/null
-+++ b/VeilLink/ScreenShare/VeilScreenReplayKitEncoder.swift
-@@ -0,0 +1,42 @@
-+#if os(iOS)
-+import Foundation
-+import CoreImage
-+import CoreMedia
-+import CoreVideo
-+import ImageIO
-+import UniformTypeIdentifiers
-+
-+/// A standalone extension-safe codec: no references to the main-app session manager.
-+final class VeilScreenReplayKitEncoder {
-+    private let context = CIContext(options: [.useSoftwareRenderer: false])
-+
-+    func compress(_ sample: CMSampleBuffer, width targetWidth: Int,
-+                  byteBudget: Int) -> (Data, Int, Int)? {
-+        guard CMSampleBufferIsValid(sample), let pixel = CMSampleBufferGetImageBuffer(sample),
-+              (128...1024).contains(targetWidth), (512...32768).contains(byteBudget) else { return nil }
-+        let sw = CVPixelBufferGetWidth(pixel), sh = CVPixelBufferGetHeight(pixel)
-+        guard sw > 0, sh > 0 else { return nil }
-+        let original = CIImage(cvPixelBuffer: pixel).applyingFilter("CIColorControls", parameters: [
-+            kCIInputSaturationKey: 0, kCIInputContrastKey: 1.18
-+        ])
-+        // Quality vs readability: try full width first; only degrade size on byte budget failure.
-+        for w in [targetWidth, max(192, targetWidth * 3 / 4), max(128, targetWidth / 2)] {
-+            let width = min(w, sw)
-+            let factor = CGFloat(width) / CGFloat(sw)
-+            let height = Int(CGFloat(sh) * factor)
-+            guard (64...2048).contains(height) else { continue }
-+            let scaled = original.transformed(by: CGAffineTransform(scaleX: factor, y: factor))
-+            guard let cgImage = context.createCGImage(scaled, from: CGRect(x: 0, y: 0, width: width, height: height)) else { continue }
-+            for quality in [0.52, 0.34, 0.19, 0.10] {
-+                let output = NSMutableData()
-+                guard let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else { continue }
-+                CGImageDestinationAddImage(destination, cgImage, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
-+                guard CGImageDestinationFinalize(destination) else { continue }
-+                let bytes = output as Data
-+                if bytes.count <= byteBudget { return (bytes, width, height) }
-+            }
-+        }
-+        return nil  // Drop instead of building large queues that block chat.
-+    }
 +}
 +#endif
 diff --git a/VeilLink/ScreenShare/VeilScreenLegacyBroadcastHost.swift b/VeilLink/ScreenShare/VeilScreenLegacyBroadcastHost.swift
@@ -490,6 +545,53 @@ new file mode 100644
 +    }
 +}
 +#endif
+diff --git a/VeilLink/ScreenShare/VeilScreenReplayKitEncoder.swift b/VeilLink/ScreenShare/VeilScreenReplayKitEncoder.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/ScreenShare/VeilScreenReplayKitEncoder.swift
+@@ -0,0 +1,42 @@
++#if os(iOS)
++import Foundation
++import CoreImage
++import CoreMedia
++import CoreVideo
++import ImageIO
++import UniformTypeIdentifiers
++
++/// A standalone extension-safe codec: no references to the main-app session manager.
++final class VeilScreenReplayKitEncoder {
++    private let context = CIContext(options: [.useSoftwareRenderer: false])
++
++    func compress(_ sample: CMSampleBuffer, width targetWidth: Int,
++                  byteBudget: Int) -> (Data, Int, Int)? {
++        guard CMSampleBufferIsValid(sample), let pixel = CMSampleBufferGetImageBuffer(sample),
++              (128...1024).contains(targetWidth), (512...32768).contains(byteBudget) else { return nil }
++        let sw = CVPixelBufferGetWidth(pixel), sh = CVPixelBufferGetHeight(pixel)
++        guard sw > 0, sh > 0 else { return nil }
++        let original = CIImage(cvPixelBuffer: pixel).applyingFilter("CIColorControls", parameters: [
++            kCIInputSaturationKey: 0, kCIInputContrastKey: 1.18
++        ])
++        // Quality vs readability: try full width first; only degrade size on byte budget failure.
++        for w in [targetWidth, max(192, targetWidth * 3 / 4), max(128, targetWidth / 2)] {
++            let width = min(w, sw)
++            let factor = CGFloat(width) / CGFloat(sw)
++            let height = Int(CGFloat(sh) * factor)
++            guard (64...2048).contains(height) else { continue }
++            let scaled = original.transformed(by: CGAffineTransform(scaleX: factor, y: factor))
++            guard let cgImage = context.createCGImage(scaled, from: CGRect(x: 0, y: 0, width: width, height: height)) else { continue }
++            for quality in [0.52, 0.34, 0.19, 0.10] {
++                let output = NSMutableData()
++                guard let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else { continue }
++                CGImageDestinationAddImage(destination, cgImage, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
++                guard CGImageDestinationFinalize(destination) else { continue }
++                let bytes = output as Data
++                if bytes.count <= byteBudget { return (bytes, width, height) }
++            }
++        }
++        return nil  // Drop instead of building large queues that block chat.
++    }
++}
++#endif
 diff --git a/VeilLink/UI/VeilScreenLegacyBroadcastPicker.swift b/VeilLink/UI/VeilScreenLegacyBroadcastPicker.swift
 new file mode 100644
 --- /dev/null
@@ -499,7 +601,7 @@ new file mode 100644
 +import SwiftUI
 +import ReplayKit
 +
-+/// Host-app picker control for iOS 26, displayed ONLY after the viewer accepts.
++/// Host-app picker control for iOS 15+, displayed ONLY after the viewer accepts.
 +/// Unlike screen recorder startCapture(), ReplayKit broadcast captures OTHER APPS.
 +struct VeilScreenLegacyBroadcastPicker: UIViewRepresentable {
 +    let extensionBundleID: String
@@ -562,105 +664,3 @@ new file mode 100644
 +    }
 +}
 +#endif
-diff --git a/VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift b/VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift
-new file mode 100644
---- /dev/null
-+++ b/VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift
-@@ -0,0 +1,63 @@
-+#if os(iOS)
-+import ReplayKit
-+import Foundation
-+import CoreMedia
-+
-+/// Broadcast Upload extension principal class on iOS 26. User initiates the OS picker.
-+/// No microphone capture, no photo library, no remote control, no video recording.
-+final class VeilScreenBroadcastUploadHandler: RPBroadcastSampleHandler {
-+    private var session: VeilScreenBroadcastSessionConfig?
-+    private var mailbox: VeilScreenEncryptedMailbox?
-+    private var encoder = VeilScreenReplayKitEncoder()
-+    private var pacer = VeilScreenCapturePacer()
-+    private var nextFrameID: UInt64 = 1
-+
-+    override func broadcastStarted(withSetupInfo setupInfo: [String: NSCoding]?) {
-+        guard let config = VeilScreenBroadcastSecurityConfig.load() else {
-+            finishBroadcastWithError(VeilScreenBroadcastError.missingEntitlements)
-+            return
-+        }
-+        let bridge = VeilScreenEncryptedMailbox(config: config)
-+        guard let current = bridge.currentSession() else {
-+            finishBroadcastWithError(VeilScreenBroadcastError.missingKey)
-+            return
-+        }
-+        session = current
-+        mailbox = bridge
-+        pacer.reset()
-+    }
-+
-+    override func broadcastPaused() { pacer.reset() }
-+    override func broadcastResumed() { pacer.reset() }
-+
-+    override func broadcastFinished() {
-+        if let current = session { mailbox?.deactivate(sessionID: current.sessionID) }
-+        mailbox = nil
-+        session = nil
-+        pacer.reset()
-+    }
-+
-+    override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer,
-+                                      with sampleBufferType: RPSampleBufferType) {
-+        // Audio is intentionally discarded. Only video frames leave this callback.
-+        guard sampleBufferType == .video, let session else { return }
-+        guard session.valid(at: Date()) else {
-+            finishBroadcastWithError(VeilScreenBroadcastError.malformedFrame)
-+            return
-+        }
-+        guard pacer.shouldEncode(at: ProcessInfo.processInfo.systemUptime,
-+                                 minimumInterval: session.frameIntervalSeconds),
-+              let (jpeg, width, height) = encoder.compress(sampleBuffer,
-+                                      width: session.targetWidth,
-+                                      byteBudget: session.byteBudget) else { return }
-+        let image = VeilScreenMailboxFrame(sessionID: session.sessionID, frameID: nextFrameID,
-+                      createdAt: Date(), width: width, height: height, jpeg: jpeg)
-+        nextFrameID &+= 1
-+        do { try mailbox?.publish(image, for: session) }
-+        catch {
-+            // Fail closed: no plaintext fallback. No pixel content in error logs.
-+            finishBroadcastWithError(error)
-+        }
-+    }
-+}
-+#endif
-diff --git a/VeilLink/Resources/VeilScreenBroadcastUpload-Info.plist b/VeilLink/Resources/VeilScreenBroadcastUpload-Info.plist
-new file mode 100644
---- /dev/null
-+++ b/VeilLink/Resources/VeilScreenBroadcastUpload-Info.plist
-@@ -0,0 +1,16 @@
-+<?xml version="1.0" encoding="UTF-8"?>
-+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-+<plist version="1.0"><dict>
-+  <key>CFBundleDisplayName</key><string>VeilScreen</string>
-+  <key>CFBundleName</key><string>VeilScreenBroadcastUpload</string>
-+  <key>CFBundlePackageType</key><string>XPC!</string>
-+  <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
-+  <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
-+  <key>VeilScreenAppGroup</key><string>group.studio.zeo.veillink.screenshare</string>
-+  <key>VeilScreenKeychainGroup</key><string>$(AppIdentifierPrefix)studio.zeo.veillink.screenshare</string>
-+  <key>NSExtension</key><dict>
-+    <key>NSExtensionPointIdentifier</key><string>com.apple.broadcast-services-upload</string>
-+    <key>NSExtensionPrincipalClass</key><string>$(PRODUCT_MODULE_NAME).VeilScreenBroadcastUploadHandler</string>
-+    <key>RPBroadcastProcessMode</key><string>RPBroadcastProcessModeSampleBuffer</string>
-+  </dict>
-+</dict></plist>
-diff --git a/VeilLink/Resources/VeilScreen.entitlements b/VeilLink/Resources/VeilScreen.entitlements
-new file mode 100644
---- /dev/null
-+++ b/VeilLink/Resources/VeilScreen.entitlements
-@@ -0,0 +1,8 @@
-+<?xml version="1.0" encoding="UTF-8"?>
-+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-+<plist version="1.0"><dict>
-+  <key>com.apple.security.application-groups</key>
-+  <array><string>group.studio.zeo.veillink.screenshare</string></array>
-+  <key>keychain-access-groups</key>
-+  <array><string>$(AppIdentifierPrefix)studio.zeo.veillink.screenshare</string></array>
-+</dict></plist>

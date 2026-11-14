@@ -2,7 +2,7 @@
 import SwiftUI
 import ReplayKit
 
-/// Host-app picker control for iOS 26, displayed ONLY after the viewer accepts.
+/// Host-app picker control for iOS 15+, displayed ONLY after the viewer accepts.
 /// Unlike screen recorder startCapture(), ReplayKit broadcast captures OTHER APPS.
 struct VeilScreenLegacyBroadcastPicker: UIViewRepresentable {
     let extensionBundleID: String

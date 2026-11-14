@@ -1,6 +1,8 @@
 import Foundation
 @main struct VeilScreenR2CoreSmoke {
     static func main() {
+        precondition(VeilScreenCaptureRoute.select(iOSMajor: 15) == .replayKitBroadcastExtension)
+        precondition(VeilScreenCaptureRoute.select(iOSMajor: 16) == .replayKitBroadcastExtension)
         precondition(VeilScreenCaptureRoute.select(iOSMajor: 26) == .replayKitBroadcastExtension)
         precondition(VeilScreenCaptureRoute.select(iOSMajor: 27) == .screenCaptureKit)
         precondition(VeilScreenCaptureRoute.select(iOSMajor: 11) == .unsupported)

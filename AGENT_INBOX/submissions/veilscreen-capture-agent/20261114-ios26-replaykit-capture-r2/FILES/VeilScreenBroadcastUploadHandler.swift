@@ -3,7 +3,7 @@ import ReplayKit
 import Foundation
 import CoreMedia
 
-/// Broadcast Upload extension principal class on iOS 26. User initiates the OS picker.
+/// Broadcast Upload extension principal class on iOS 15 and later. User initiates the OS picker.
 /// No microphone capture, no photo library, no remote control, no video recording.
 final class VeilScreenBroadcastUploadHandler: RPBroadcastSampleHandler {
     private var session: VeilScreenBroadcastSessionConfig?
@@ -12,7 +12,7 @@ final class VeilScreenBroadcastUploadHandler: RPBroadcastSampleHandler {
     private var pacer = VeilScreenCapturePacer()
     private var nextFrameID: UInt64 = 1
 
-    override func broadcastStarted(withSetupInfo setupInfo: [String: NSCoding]?) {
+    override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
         guard let config = VeilScreenBroadcastSecurityConfig.load() else {
             finishBroadcastWithError(VeilScreenBroadcastError.missingEntitlements)
             return
