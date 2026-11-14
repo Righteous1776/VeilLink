@@ -65,3 +65,22 @@ Every new feature must declare its **coverage tier**: `ENTRY_ONLY`, `LIFECYCLE`,
 
 ### Five-evening storage
 Retention remains a configured 512 MiB ring, **not guaranteed five-day coverage**. Expected rates require measurement in real evening sessions, accounting for controller training and BLE reconnect bursts. Compression/age-partition/high-priority reserves/daily export remain future engineering gates.
+
+## R4 — real game subsystem collection added
+
+The proposal now hooks **actual state changes**, beyond the previous feature-library and game-lobby activation events:
+
+1. **Five-in-a-row/ECLIPSE & local AI:** LocalAIGameController records accepted Gomoku moves (board-cell index and ply count), AI search begin/end and duration, successful result transitions, native self-play training milestones, and local save errors. The other six shared-controller games emit accepted-turn and search-completion checkpoints. No full replay, imported training content or persistent match IDs are included.
+2. **Bluetooth:** BLETransport records connect/recover/disconnect intent, physical and logical data-link transitions, scheduled reconnect delay/attempt, numeric connection-failure codes and throttled queue-pressure counters. It never adds packet ciphertext/plaintext, session keys, peer identities or raw advertisement payloads. Existing link snapshots remain available for queue depth, stage and quality.
+3. **Veilopoly multiplayer bridge:** user invitation, accept/decline, room creation, packet submission and receive, synchronization and recovery failures, bounded control queue saturation. Control payload is never captured.
+4. **Veilopoly engine, including solo mode:** a fixed primitive-only NotificationCenter contract from isolated `VeilopolyUI.GameSessionModel` records reducer commit/reject, new/resumed match, save unavailable/failure and validated network snapshot. The main app validates an event allowlist plus a finite set of turn-phase states and translates them into typed diagnostic checkpoints (including phase code). It never transfers a card, move payload, game seed, player name, finance amount or room ID. Automatic high-frequency stock-market clock ticks are excluded.
+5. **Real-time games:** Rainline, Afterglow, SignalDive and Blackout record transitions of fault count, repair count, recovered items, node power, terminal outcome reason, plus a coarse 30-second tick window. LatticeClash records committed human move cell and AI response count; Prism Rift records discrete impacts, collections and boss/terminal events while omitting per-laser and per-render-frame events. These are sparse diagnostics, not all individual simulation steps.
+6. **Other arcade and story modules:** 14 additional game/experience entries in GameLobbyView have launch checkpoints, but their internal engines still need dedicated hooks and tests in a later integration lane.
+
+An on-device owner's diagnostic authority applies to owned application modules only; this submission does not request private iOS permissions, root or data from other apps. The five-evening preservation claim **still requires measured runtime/event write rates plus compression/age policies and physical device export tests**. No hidden sources or future features are declared fully covered.
+
+### Integration prerequisites
+
+- Verify SwiftUI/Swift Package (VeilopolyUI) compatibility and Checkpoint event delivery before enabling full runtime traces.
+- Add per-engine crash/transaction/recovery hooks where this patch records only sparse milestones.
+- Mark diagnostics coverage distinctly: `full internal`, `partial`, `entry only`, `unobserved`; observed event count is **not** proof of module completeness.
