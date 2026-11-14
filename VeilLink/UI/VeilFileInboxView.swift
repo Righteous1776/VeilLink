@@ -14,6 +14,7 @@ struct VeilFileInboxView: View {
     @State private var pendingRemoval: VeilFileInboxRecord?
     @State private var pendingBackup: VeilFileInboxRecord?
     @State private var pendingHTML: VeilFileInboxRecord?
+    @State private var pendingPreview: VeilFileInboxRecord?
     @State private var pendingTraining: VeilFileInboxRecord?
     @State private var pendingTrainingGame: MiniGameKind?
     @State private var sharedURL: URL?
@@ -107,6 +108,7 @@ struct VeilFileInboxView: View {
                     // For a single file, open its matching destination immediately.
                     // Multiple files remain categorized in this page for deliberate review.
                     if successful.count == 1, failures.isEmpty {
+                        resultMessage = nil
                         dispatch(successful[0].0, route: successful[0].1)
                     }
                 }
@@ -171,6 +173,11 @@ struct VeilFileInboxView: View {
                 )
             }
         }
+        .sheet(item: $pendingPreview) { record in
+            if let file = try? VeilFileInbox.fileURL(for: record) {
+                VeilFileInboxPreview(url: file)
+            }
+        }
         .sheet(isPresented: Binding(
             get: { sharedURL != nil },
             set: { if !$0 { sharedURL = nil } }
@@ -229,7 +236,10 @@ struct VeilFileInboxView: View {
                     case .boardLearning:
                         Button("导入训练档案") { dispatch(record, route: route) }
                             .buttonStyle(.bordered)
-                    case .image, .retained:
+                    case .image, .preview:
+                        Button("打开预览") { dispatch(record, route: route) }
+                            .buttonStyle(.bordered)
+                    case .retained:
                         EmptyView()
                     }
                 }
@@ -252,6 +262,7 @@ struct VeilFileInboxView: View {
         case .html: return "doc.richtext"
         case .boardLearning: return "checkerboard.rectangle"
         case .image: return "photo"
+        case .preview: return "doc.text.magnifyingglass"
         case .retained: return "tray.full"
         }
     }
@@ -292,10 +303,24 @@ struct VeilFileInboxView: View {
             }
             pendingTrainingGame = game
             pendingTraining = record
-        case .image:
-            resultMessage = "图片已保存在文件收件箱。可选择分享或后续在聊天中发送；不会自动向任何联系人发送。"
+        case .image, .preview:
+            openPreview(record)
         case .retained(let reason):
             resultMessage = reason
+        }
+    }
+
+    private func openPreview(_ record: VeilFileInboxRecord) {
+        Task { @MainActor in
+            do {
+                let allowed = try await Task.detached(priority: .userInitiated) {
+                    try VeilFileInbox.verify(record)
+                }.value
+                guard allowed else { throw VeilFileInboxError.corruptedCopy }
+                pendingPreview = record
+            } catch {
+                resultMessage = error.localizedDescription
+            }
         }
     }
 
