@@ -1428,3 +1428,236 @@ diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/Dee
  
          observers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
              Task { @MainActor in
+diff --git a/VeilLink/UI/RainlineLastTrainLabView.swift b/VeilLink/UI/RainlineLastTrainLabView.swift
+--- a/VeilLink/UI/RainlineLastTrainLabView.swift
++++ b/VeilLink/UI/RainlineLastTrainLabView.swift
+@@ -7,6 +7,10 @@
+     @Published private(set) var line = "广播：雨线已经压到高架桥。末班车不停站。"
+ 
+     let scene: RainlineLastTrainScene
++    private var lastFlightFaults = -1
++    private var lastFlightRepairs = -1
++    private var lastFlightWindow = -1
++    private var lastFlightOutcome: RainlineOutcome = .running
+     private var seed: UInt64
+ 
+     init() {
+@@ -19,6 +23,23 @@
+             Task { @MainActor [weak self] in
+                 guard let self else { return }
+                 snapshot = value
++                let window = value.tick / (60 * 30)
++                if value.activeFaults != lastFlightFaults ||
++                   value.repairedFaults != lastFlightRepairs ||
++                   value.outcome != lastFlightOutcome || window != lastFlightWindow {
++                    let terminal = value.outcome != .running
++                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                        module: "game.rainline", phase: terminal ? "outcome" : "runtime.milestone",
++                        counters: ["tick": value.tick, "faults": value.activeFaults,
++                                   "repairs": value.repairedFaults,
++                                   "lit_cars": value.litCars, "power_percent": Int(value.trainPower)],
++                        flags: ["terminal": terminal], level: terminal ? .info : .debug
++                    )
++                    lastFlightFaults = value.activeFaults
++                    lastFlightRepairs = value.repairedFaults
++                    lastFlightWindow = window
++                    lastFlightOutcome = value.outcome
++                }
+                 if let active = value.activeLine, active != line {
+                     line = active
+                 }
+@@ -32,6 +53,11 @@
+     func setReduceMotion(_ enabled: Bool) { scene.setReduceMotion(enabled) }
+ 
+     func restart() {
++        lastFlightFaults = -1; lastFlightRepairs = -1
++        lastFlightWindow = -1; lastFlightOutcome = .running
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.rainline", phase: "game.restart", level: .info
++        )
+         seed &+= 0x9E3779B97F4A7C15
+         line = "广播：雨线重启。把八节车厢带到终点。"
+         scene.restart(seed: seed)
+diff --git a/VeilLink/UI/AfterglowConvoyLabView.swift b/VeilLink/UI/AfterglowConvoyLabView.swift
+--- a/VeilLink/UI/AfterglowConvoyLabView.swift
++++ b/VeilLink/UI/AfterglowConvoyLabView.swift
+@@ -7,6 +7,8 @@
+     @Published private(set) var storyLine: String
+ 
+     let scene: AfterglowConvoyScene
++    private var lastFlightWindow = -1
++    private var lastFlightOutcome: AfterglowConvoyOutcome = .running
+     private var seed: UInt64
+ 
+     init() {
+@@ -24,6 +26,21 @@
+             Task { @MainActor [weak self] in
+                 guard let self else { return }
+                 self.snapshot = snapshot
++                let window = snapshot.tick / (60 * 30)
++                if window != self.lastFlightWindow || snapshot.outcome != self.lastFlightOutcome {
++                    let terminal = snapshot.outcome != .running
++                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                        module: "game.afterglow-convoy",
++                        phase: terminal ? "outcome" : "runtime.milestone",
++                        counters: ["tick": snapshot.tick,
++                                   "hull_percent": Int(snapshot.hull),
++                                   "beacon_percent": Int(snapshot.beacon),
++                                   "progress_percent": Int(snapshot.progress * 100)],
++                        flags: ["terminal": terminal], level: terminal ? .info : .debug
++                    )
++                    self.lastFlightWindow = window
++                    self.lastFlightOutcome = snapshot.outcome
++                }
+                 if let line = snapshot.storyLine, line != self.storyLine {
+                     self.storyLine = line
+                 }
+@@ -41,6 +58,10 @@
+     func setPaused(_ paused: Bool) { scene.isPaused = paused }
+ 
+     func restart() {
++        lastFlightWindow = -1; lastFlightOutcome = .running
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.afterglow-convoy", phase: "game.restart", level: .info
++        )
+         seed &+= 0x9E3779B97F4A7C15
+         storyLine = "信标：线路建立。我们再试一次。"
+         scene.restart(seed: seed)
+diff --git a/VeilLink/UI/SignalDiveLabView.swift b/VeilLink/UI/SignalDiveLabView.swift
+--- a/VeilLink/UI/SignalDiveLabView.swift
++++ b/VeilLink/UI/SignalDiveLabView.swift
+@@ -9,6 +9,9 @@
+     @Published private(set) var floodlight = true
+ 
+     let scene: SignalDiveScene
++    private var lastFlightRecovered = -1
++    private var lastFlightWindow = -1
++    private var lastFlightOutcome: SignalDiveOutcome = .running
+     private var seed: UInt64
+ 
+     init() {
+@@ -35,6 +38,21 @@
+                 }
+ 
+                 snapshot = value
++                let window = value.tick / (60 * 30)
++                if value.recovered != lastFlightRecovered ||
++                   value.outcome != lastFlightOutcome || window != lastFlightWindow {
++                    let terminal = value.outcome != .running
++                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                        module: "game.signal-dive",
++                        phase: terminal ? "outcome" : "runtime.milestone",
++                        counters: ["tick": value.tick, "beacons": value.recovered,
++                                   "hull_percent": Int(value.hull), "power_percent": Int(value.power)],
++                        flags: ["terminal": terminal], level: terminal ? .info : .debug
++                    )
++                    lastFlightRecovered = value.recovered
++                    lastFlightWindow = window
++                    lastFlightOutcome = value.outcome
++                }
+ 
+                 if let active =
+                         value.lastLine,
+@@ -102,6 +120,10 @@
+     }
+ 
+     func restart() {
++        lastFlightRecovered = -1; lastFlightWindow = -1; lastFlightOutcome = .running
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.signal-dive", phase: "game.restart", level: .info
++        )
+         seed &+=
+             0x9E3779B97F4A7C15
+ 
+diff --git a/VeilLink/UI/BlackoutDistrictLabView.swift b/VeilLink/UI/BlackoutDistrictLabView.swift
+--- a/VeilLink/UI/BlackoutDistrictLabView.swift
++++ b/VeilLink/UI/BlackoutDistrictLabView.swift
+@@ -8,6 +8,10 @@
+         "调度：暴雨导致多点电压波动。保持街区供电，优先关键节点。"
+ 
+     let scene: BlackoutDistrictScene
++    private var lastFlightFaults = -1
++    private var lastFlightPowered = -1
++    private var lastFlightWindow = -1
++    private var lastFlightOutcome: BlackoutOutcome = .running
+     private var seed: UInt64
+ 
+     init() {
+@@ -30,7 +34,26 @@
+                 @MainActor
+                 [weak self] in
+ 
++                guard let self else { return }
++                snapshot = value
++                let window = value.tick / (60 * 30)
++                if value.activeFaults != lastFlightFaults ||
++                   value.poweredNodes != lastFlightPowered ||
++                   value.outcome != lastFlightOutcome || window != lastFlightWindow {
++                    let terminal = value.outcome != .running
++                    RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                        module: "game.blackout-district",
++                        phase: terminal ? "outcome" : "runtime.milestone",
++                        counters: ["tick": value.tick, "faults": value.activeFaults,
++                                   "powered_nodes": value.poweredNodes,
++                                   "stability_percent": Int(value.gridStability)],
++                        flags: ["terminal": terminal], level: terminal ? .info : .debug
++                    )
++                    lastFlightFaults = value.activeFaults
++                    lastFlightPowered = value.poweredNodes
++                    lastFlightWindow = window
++                    lastFlightOutcome = value.outcome
++                }
+-                self?.snapshot = value
+             }
+         }
+ 
+@@ -85,6 +108,11 @@
+     }
+ 
+     func restart() {
++        lastFlightFaults = -1; lastFlightPowered = -1
++        lastFlightWindow = -1; lastFlightOutcome = .running
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.blackout-district", phase: "game.restart", level: .info
++        )
+         seed &+=
+             0x9E3779B97F4A7C15
+ 
+diff --git a/VeilLink/UI/LatticeClashLabView.swift b/VeilLink/UI/LatticeClashLabView.swift
+--- a/VeilLink/UI/LatticeClashLabView.swift
++++ b/VeilLink/UI/LatticeClashLabView.swift
+@@ -320,6 +320,11 @@
+             safety += 1
+         }
+ 
++        RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++            module: "game.lattice-clash", phase: "move.committed",
++            counters: ["human_cell": index, "ai_response_count": safety, "turn": next.turn],
++            flags: ["finished": next.isFinished], level: .info
++        )
+         withAnimation(.easeInOut(duration: 0.18)) {
+             state = next
+         }
+diff --git a/VeilLink/UI/PrismRift3DGameView.swift b/VeilLink/UI/PrismRift3DGameView.swift
+--- a/VeilLink/UI/PrismRift3DGameView.swift
++++ b/VeilLink/UI/PrismRift3DGameView.swift
+@@ -417,7 +417,19 @@
+ 
+     private func process(_ events: [PrismRiftEvent]) {
+         for event in events {
++            // Ignore high-frequency laser shots and boss-hit frames. Record
++            // only meaningful transitions, never frame-by-frame raw render data.
+             switch event.kind {
++            case .impact, .collected, .bossArrived, .bossDefeated, .escaped, .destroyed:
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "game.prism-rift", phase: "runtime.event",
++                    counters: ["tick": event.tick,
++                               "score": state.score, "wave": state.wave],
++                    flags: ["terminal": state.outcome != .running], level: .info
++                )
++            case .shot, .bossHit: break
++            }
++            switch event.kind {
+             case .impact:
+                 message = "护盾受击 · 重新校准航向"
+                 cameraNode.runAction(SCNAction.sequence([
