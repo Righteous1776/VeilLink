@@ -19,7 +19,8 @@ struct VeilEclipseIdentityCard: View {
 
     var body: some View {
         Button(action: openTrace) {
-            HStack(spacing: VeilSpacing.md) {
+            VStack(alignment: .leading, spacing: VeilSpacing.sm) {
+                HStack(spacing: VeilSpacing.md) {
                 VeilEclipseAvatar(isThinking: isThinking && !reduceMotion)
                     .frame(width: 76, height: 76)
                 VStack(alignment: .leading, spacing: VeilSpacing.xxs) {
@@ -54,6 +55,15 @@ struct VeilEclipseIdentityCard: View {
                     }
                 }
                 .foregroundColor(VeilTheme.tertiaryText)
+                }
+                // The black instrument is contained within existing VeilLink
+                // materials. It never receives candidates, PV or threat cells.
+                VeilEclipseComputeConsole(
+                    isComputing: isThinking,
+                    actualSearchStartedAt: actualSearchStartedAt,
+                    liveMetrics: nil,
+                    compact: true
+                )
             }
             // Outer .veilCard() is authoritative: the *existing* VeilCardModifier
             // owns cut corners, instrument plates, Apple Soft and Islet materials.
@@ -108,53 +118,11 @@ private struct VeilEclipseAvatar: View {
     }
 }
 
-/// Abstract eye-candy only: NOT a heatmap, PV tree or candidate-coordinate map.
-/// Animation is deliberately independent of the board and search values.
-private struct EclipseAbstractThoughtField: View {
-    let isThinking: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            TimelineView(.animation(minimumInterval: 1.0 / 12.0,
-                                    paused: !isThinking || reduceMotion)) { timeline in
-                let tick = isThinking ? timeline.date.timeIntervalSinceReferenceDate : 0
-                Canvas(opaque: false) { ctx, size in
-                    let points: [(CGFloat,CGFloat)] = [
-                        (0.11,0.52), (0.29,0.22), (0.28,0.79), (0.48,0.51),
-                        (0.68,0.23), (0.70,0.77), (0.90,0.40), (0.92,0.72)
-                    ]
-                    let edges = [(0,1), (0,2), (1,3), (2,3), (3,4), (3,5), (4,6), (5,7)]
-                    for (a,b) in edges {
-                        var line = Path()
-                        line.move(to: CGPoint(x: points[a].0 * size.width, y: points[a].1 * size.height))
-                        line.addLine(to: CGPoint(x: points[b].0 * size.width, y: points[b].1 * size.height))
-                        ctx.stroke(line, with: .color(VeilTheme.secondaryText.opacity(0.33)), lineWidth: 1)
-                    }
-                    for (i,p) in points.enumerated() {
-                        let wave = 0.54 + 0.46 * sin(tick * 2.4 + Double(i) * 0.76)
-                        let alpha = isThinking && !reduceMotion ? wave : 0.53
-                        let r: CGFloat = i == 3 ? 5 : 3
-                        let circle = Path(ellipseIn: CGRect(x: p.0 * size.width-r,
-                            y: p.1 * size.height-r, width: 2*r, height: 2*r))
-                        ctx.fill(circle, with: .color(VeilTheme.gold.opacity(alpha)))
-                    }
-                }
-            }
-            .frame(height: 82)
-            .accessibilityHidden(true)
-            Text("抽象计算动画 · 不对应真实棋盘坐标或候选走法")
-                .font(.caption2)
-                .foregroundColor(VeilTheme.secondaryText)
-        }
-        .veilCard()
-    }
-}
-
 struct VeilEclipseTraceSheet: View {
     let isThinking: Bool
     let matchFinished: Bool
     let lastCompletedMilliseconds: Int?
+    let actualSearchStartedAt: Date?
     let committedMoves: [VeilEclipseTracePolicy.PlacedMove]
     let difficultyTitle: String
     let searchModeTitle: String
@@ -207,7 +175,12 @@ struct VeilEclipseTraceSheet: View {
                             .font(.caption.weight(.semibold))
                         Spacer()
                     }
-                    EclipseAbstractThoughtField(isThinking: isThinking)
+                    VeilEclipseComputeConsole(
+                        isComputing: isThinking,
+                        actualSearchStartedAt: actualSearchStartedAt,
+                        liveMetrics: liveMetrics,
+                        compact: false
+                    )
                     VStack(alignment: .leading, spacing: VeilSpacing.xxs) {
                         HStack(spacing: VeilSpacing.sm) {
                             Text("当前棋力档位")
