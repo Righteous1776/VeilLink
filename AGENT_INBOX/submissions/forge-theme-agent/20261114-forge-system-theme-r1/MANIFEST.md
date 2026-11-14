@@ -38,3 +38,12 @@ The repository product tree, main, version, workflows, signing, protocol and rel
 - new: FORGE module headers, selectable specimen, static theme information plate, scroll-safe gesture branch and decorative glow suppression
 - unchanged: GameLobbyView/ECLIPSE in-flight implementation, BLE protocol, database, builds, signing, main
 - iOS compile/XCTest/BLE/device: NOT_RUN
+
+
+## R3 checkpoint / 2026-11-15
+
+- product diff paths: 9; hunks: 38; frozen-main replay PASS
+- five actuator types: 12Hz RF rotor, CPU opposing shutters, peer odometer, LAN sliding carriage, BLE eight-tick ratchet
+- new source helper: VeilForgeMotionCore.routeStage; Xcode XCTest cases staged
+- Swift Linux core compile with 21 determinism assertions PASS; Apple Xcode, XCTest, BLE, device and IPA NOT_RUN
+- no product/main mutation, no IPA and no additional PR
