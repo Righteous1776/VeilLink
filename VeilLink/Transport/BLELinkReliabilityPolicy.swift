@@ -27,6 +27,26 @@ struct BLELinkTuning: Equatable {
 enum BLELinkReliabilityPolicy {
     static let reconnectStabilityResetInterval: TimeInterval = 30
 
+    /// Reconcile persisted connection intent when the app becomes foreground
+    /// even when CBCentralManager never emitted a new poweredOn callback.
+    static func shouldForegroundRestore(
+        isRunning: Bool,
+        foreground: Bool,
+        wantedCount: Int
+    ) -> Bool {
+        isRunning && foreground && wantedCount > 0
+    }
+
+    /// Retrying a recovered peripheral must not cancel and replace a pending
+    /// exponential-backoff timer. The CoreBluetooth state itself remains the
+    /// authoritative source of whether it is disconnected.
+    static func shouldScheduleRestoredReconnect(
+        isDisconnected: Bool,
+        hasPendingRetry: Bool
+    ) -> Bool {
+        isDisconnected && !hasPendingRetry
+    }
+
     static func normalizedRSSI(_ sample: Int) -> Int? {
         guard sample != 127, sample < 0, sample >= -110 else { return nil }
         return min(-20, sample)

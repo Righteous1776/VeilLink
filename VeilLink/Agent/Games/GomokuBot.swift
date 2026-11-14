@@ -5,6 +5,7 @@ struct GomokuBotMove: Equatable, Sendable {
     let score: Int
     let nodes: Int
     let elapsedMilliseconds: Int
+    var engineLabel: String? = nil
 }
 
 struct GomokuBotBudget: Equatable, Sendable {
@@ -38,6 +39,16 @@ struct GomokuBotBudget: Equatable, Sendable {
             return GomokuBotBudget(candidateRadius: 2, rootCandidateLimit: legacy ? 22 : 36, replyCandidateLimit: legacy ? 14 : 22, continuationCandidateLimit: legacy ? 6 : 14, timeLimitMilliseconds: legacy ? 240 : 520)
         case .master:
             return GomokuBotBudget(candidateRadius: legacy ? 2 : 3, rootCandidateLimit: legacy ? 28 : 48, replyCandidateLimit: legacy ? 16 : 30, continuationCandidateLimit: legacy ? 8 : 20, timeLimitMilliseconds: legacy ? 420 : 950)
+        case .grandmaster, .legendary, .zenith:
+            let master = forDifficulty(.master, profileLabel: profileLabel)
+            let factor = difficulty.searchBudgetMultiplier
+            return GomokuBotBudget(
+                candidateRadius: master.candidateRadius,
+                rootCandidateLimit: min(72, master.rootCandidateLimit + factor * 4),
+                replyCandidateLimit: min(48, master.replyCandidateLimit + factor * 2),
+                continuationCandidateLimit: min(36, master.continuationCandidateLimit + factor * 2),
+                timeLimitMilliseconds: master.timeLimitMilliseconds * factor
+            )
         }
     }
 
@@ -46,12 +57,12 @@ struct GomokuBotBudget: Equatable, Sendable {
         guard reinforcement > 0 else { return self }
         return GomokuBotBudget(
             candidateRadius: candidateRadius,
-            rootCandidateLimit: min(56, rootCandidateLimit + reinforcement * 2),
-            replyCandidateLimit: min(34, replyCandidateLimit + reinforcement),
+            rootCandidateLimit: min(max(56, rootCandidateLimit), rootCandidateLimit + reinforcement * 2),
+            replyCandidateLimit: min(max(34, replyCandidateLimit), replyCandidateLimit + reinforcement),
             continuationCandidateLimit: continuationCandidateLimit == 0
                 ? 0
-                : min(22, continuationCandidateLimit + reinforcement),
-            timeLimitMilliseconds: min(1_100, timeLimitMilliseconds + reinforcement * 45)
+                : min(max(22, continuationCandidateLimit), continuationCandidateLimit + reinforcement),
+            timeLimitMilliseconds: min(timeLimitMilliseconds > 1_100 ? timeLimitMilliseconds + 400 : 1_100, timeLimitMilliseconds + reinforcement * 45)
         )
     }
 
@@ -77,7 +88,11 @@ enum GomokuBot {
         formationPreference: GomokuFormationPreference = .disabled,
         diagnosticCounterForkR4: Bool = true,
         diagnosticUseR6Defense: Bool = true,
-        diagnosticR8ForcedWin: Bool = true
+        diagnosticR8ForcedWin: Bool = true,
+        diagnosticEclipseUnified: Bool = true,
+        difficultyRawValue: String? = nil,
+        onExploredLine: (@Sendable ([Int], Int) -> Void)? = nil,
+        onSearchTrace: (@Sendable (VeilGomokuUnifiedSearch.Trace) -> Void)? = nil
     ) -> GomokuBotMove? {
         guard state.winner == nil,
               !state.isDraw,
@@ -132,6 +147,19 @@ enum GomokuBot {
             return result(index: forcing, score: winScore - 1, nodes: nodes, started: started)
         }
 
+        // V9 applies only to new extended tiers. Inconclusive proof never claims a win.
+        let forcingDepth = BoardBotDifficulty(rawValue: difficultyRawValue ?? "")?.forcingDepth ?? 0
+        if forcingDepth > 0,
+           let proven = GomokuForcingSearchV9.provenMove(
+                in: state, for: player, candidates: candidates,
+                maxAttackerMoves: forcingDepth,
+                nodeCap: min(1_800, forcingDepth * 300),
+                deadline: deadline
+           ) {
+            nodes += proven.nodes
+            return result(index: proven.index, score: winScore - 2, nodes: nodes, started: started)
+        }
+
         let urgentDefense = formationPreference.enabled
             && GomokuFormationPreference.opponentHasImmediateWin(in: state, player: player)
         let rootPosition = AdaptiveBoardPosition.gomoku(state)
@@ -173,6 +201,29 @@ enum GomokuBot {
             }
             .prefix(max(1, budget.rootCandidateLimit))
 
+        // ECLIPSE R10: preserve all incumbent mandatory rules and learned
+        // root scores, then search with the trained entire-tree ordering.
+        // The real rules below the bridge remain the final legality gate.
+        let remainingMilliseconds = Int(max(0, (deadline - Date.timeIntervalSinceReferenceDate) * 1_000))
+        let unifiedBudget = GomokuBotBudget(
+            candidateRadius: budget.candidateRadius,
+            rootCandidateLimit: budget.rootCandidateLimit,
+            replyCandidateLimit: budget.replyCandidateLimit,
+            continuationCandidateLimit: budget.continuationCandidateLimit,
+            timeLimitMilliseconds: remainingMilliseconds
+        )
+        if diagnosticEclipseUnified, remainingMilliseconds >= 30,
+           let unified = VeilGomokuUnifiedBridge.chooseMove(
+                in: state, for: player, budget: unifiedBudget,
+                permittedRoots: rankedRoots.map { $0.0 },
+                rootScores: Dictionary(uniqueKeysWithValues: rankedRoots.map { ($0.0, $0.1) }),
+                difficultyRawValue: difficultyRawValue,
+                onTrace: onSearchTrace,
+                onExploredLine: onExploredLine
+           ) {
+            return unified
+        }
+
         // A time budget is a *search-quality* bound, not permission to return
         // no move in an otherwise legal position. A delayed worker can enter
         // the root loop after its deadline, so retain the best ranked legal
@@ -186,6 +237,7 @@ enum GomokuBot {
             nodes += 1
             var next = state
             guard next.apply(index: index, actor: player) else { continue }
+            onExploredLine?([index], nodes)
 
             var score = priority + staticEvaluation(next, root: player)
             if next.winner == player {
@@ -214,6 +266,7 @@ enum GomokuBot {
                     nodes += 1
                     var afterReply = next
                     guard afterReply.apply(index: reply, actor: opponent) else { continue }
+                    onExploredLine?([index, reply], nodes)
                     var replyScore: Int
                     if afterReply.winner == opponent {
                         replyScore = lossScore
@@ -250,6 +303,7 @@ enum GomokuBot {
                                 nodes += 1
                                 var afterContinuation = afterReply
                                 guard afterContinuation.apply(index: continuation, actor: player) else { continue }
+                                onExploredLine?([index, reply, continuation], nodes)
                                 let continuationScore = afterContinuation.winner == player
                                     ? winScore
                                     : staticEvaluation(afterContinuation, root: player)

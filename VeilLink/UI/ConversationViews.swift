@@ -261,7 +261,8 @@ private struct ConversationRow: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 8) {
-                    Text(conversation.title)
+                    VeilInlineGlyphText.render(conversation.title)
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.title))
                         .font(.system(.body, design: .rounded).weight(.semibold))
                         .foregroundColor(VeilTheme.text)
                         .lineLimit(1)
@@ -293,7 +294,9 @@ private struct ConversationRow: View {
                         .tracking(0.8)
                         .foregroundColor(VeilTheme.mutedGold)
                     VeilLinkTrace(active: isSelected, width: 28)
-                    Text(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
+                    VeilInlineGlyphText.render(conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage)
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.lastMessage.isEmpty ? "安全会话已建立" : conversation.lastMessage))
                         .font(.subheadline)
                         .foregroundColor(VeilTheme.secondaryText)
                         .lineLimit(1)
@@ -354,6 +357,14 @@ struct ChatView: View {
     @State private var conversationWorkspaceSnapshot: ConversationWorkspaceSnapshot?
     @State private var pendingWorkspaceJumpID: String?
     @State private var showsMessageForge = false
+    // Session-only, explicit opt-in to an additional composer control.
+    @State private var showsComposerAccess = false
+    @State private var showsComposerOptions = false
+    @State private var confirmsComposerArtwork = false
+    @State private var composerAccessToken = ""
+    @State private var composerAccessDenied = false
+    @State private var composerAccessFailures = 0
+    @State private var composerOptionsEnabled = false
     @State private var messageWindowLimit = VeilDevicePerformance.current.messageWindowInitial
     @State private var hasOlderMessages = false
     @State private var messageReloadGeneration = 0
@@ -394,7 +405,11 @@ struct ChatView: View {
         }
     }
 
-    var body: some View {
+    var body: some View { conversationPresentation }
+
+    // Split the large SwiftUI expression so Xcode type-checks each subsystem
+    // independently. The rendered hierarchy and state bindings are unchanged.
+    private var conversationCore: some View {
         VStack(spacing: 0) {
             if showsSearchBar {
                 HStack(spacing: 8) {
@@ -613,7 +628,8 @@ struct ChatView: View {
                             Text("引用回复")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundColor(VeilTheme.gold)
-                            Text(ReplyTextCodec.quoteSource(for: replyingTo))
+                            VeilInlineGlyphText.render(ReplyTextCodec.quoteSource(for: replyingTo))
+                            .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: ReplyTextCodec.quoteSource(for: replyingTo)))
                                 .font(.caption)
                                 .foregroundColor(VeilTheme.secondaryText)
                                 .lineLimit(1)
@@ -659,6 +675,15 @@ struct ChatView: View {
                                 Label("导入图片或文本", systemImage: "doc.badge.plus")
                             }
                             Divider()
+                            Button {
+                                if composerOptionsEnabled {
+                                    showsComposerOptions = true
+                                } else {
+                                    showsComposerAccess = true
+                                }
+                            } label: {
+                                Label("输入扩展", systemImage: "keyboard")
+                            }
                             Menu {
                                 Button {
                                     model.veilopolyMultiplayer.invite(conversation,
@@ -706,6 +731,18 @@ struct ChatView: View {
                     } else {
                         TextField("加密消息", text: $draft)
                             .textFieldStyle(VeilTextFieldStyle())
+                        if composerOptionsEnabled {
+                            Button {
+                                showsComposerOptions = true
+                            } label: {
+                                Image(systemName: "square.grid.2x2")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .frame(width: 36, height: 36)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(VeilPressStyle())
+                            .accessibilityLabel("扩展输入")
+                        }
                         Button(action: send) {
                             ZStack {
                                 if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Circle().fill(VeilTheme.subtleFillStrong) }
@@ -734,6 +771,10 @@ struct ChatView: View {
                 .offset(y: -1)
             }
         }
+    }
+
+    private var conversationTopLevel: some View {
+        conversationCore
         .background(VeilAmbientBackground())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -790,6 +831,13 @@ struct ChatView: View {
         }
         .onDisappear {
             model.setConversationVisible(conversation.id, visible: false)
+            composerOptionsEnabled = false
+            composerAccessToken = ""
+            composerAccessFailures = 0
+            composerAccessDenied = false
+            showsComposerAccess = false
+            showsComposerOptions = false
+            confirmsComposerArtwork = false
             didInitialBottomAnchor = false
             isNearBottom = true
         }
@@ -804,6 +852,10 @@ struct ChatView: View {
                 reload(loadAll: true)
             }
         }
+    }
+
+    private var conversationPresentation: some View {
+        conversationTopLevel
         .sheet(isPresented: $showsPhotoPicker) {
             PhotoPicker(
                 onPicked: { imported in prepareAndSendImage(imported) },
@@ -826,6 +878,90 @@ struct ChatView: View {
                         DispatchQueue.main.async { pendingWorkspaceJumpID = messageID }
                     }
                 )
+            }
+        }
+        .sheet(isPresented: $showsComposerAccess) {
+            NavigationView {
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("输入扩展")
+                        .font(.headline)
+                    Text("此功能默认关闭。输入访问码后，本次会话内可使用附加内容。")
+                        .font(.footnote)
+                        .foregroundColor(VeilTheme.secondaryText)
+                    SecureField("八位访问码", text: $composerAccessToken)
+                        .keyboardType(.numberPad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(VeilTextFieldStyle())
+                        .onChange(of: composerAccessToken) { next in
+                            // unlockComposerOptions() clears the SecureField
+                            // programmatically. That empty-string change must
+                            // not erase the just-presented invalid-code error.
+                            if !next.isEmpty { composerAccessDenied = false }
+                        }
+                        .accessibilityLabel("输入八位访问码")
+                    if composerAccessDenied {
+                        Text("访问码不正确")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.danger)
+                    }
+                    Button("开启本次会话") { unlockComposerOptions() }
+                        .disabled(composerAccessFailures >= 5 || composerAccessToken.utf8.count != 8)
+                        .frame(minHeight: 44)
+                    if composerAccessFailures >= 5 {
+                        Text("尝试次数已达本次会话上限")
+                            .font(.caption)
+                            .foregroundColor(VeilTheme.secondaryText)
+                    }
+                    Spacer()
+                }
+                .padding(20)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") {
+                            composerAccessToken = ""
+                            showsComposerAccess = false
+                        }
+                    }
+                }
+            }
+        }
+        .confirmationDialog("输入选项", isPresented: $showsComposerOptions) {
+            Button("插入字符") { appendComposerSymbol() }
+            Button("发送图形…") {
+                // Let the first confirmation sheet dismiss before the alert.
+                DispatchQueue.main.async { confirmsComposerArtwork = true }
+            }
+            Button("关闭扩展") { composerOptionsEnabled = false }
+        }
+        // iOS15 already has several message-delete/cancel alerts on ChatView.
+        // An independent confirmation sheet avoids SwiftUI alert override.
+        .sheet(isPresented: $confirmsComposerArtwork) {
+            NavigationView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("确认发送图形")
+                        .font(.headline)
+                    Text("这是一张应用内生成的图片；确认后将通过原有加密图片通道发送。")
+                        .font(.subheadline)
+                        .foregroundColor(VeilTheme.secondaryText)
+                    HStack(spacing: 12) {
+                        Button("取消") {
+                            confirmsComposerArtwork = false
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        Button("发送图片") {
+                            confirmsComposerArtwork = false
+                            sendComposerArtwork()
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .disabled(isPreparingImage)
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer(minLength: 0)
+                }
+                .padding(20)
+                .navigationBarTitleDisplayMode(.inline)
             }
         }
         .sheet(isPresented: $showsMessageForge) {
@@ -1084,6 +1220,47 @@ struct ChatView: View {
         }
     }
 
+    private func unlockComposerOptions() {
+        // Local only, never emit the entered token in logs or analytics.
+        let allowed = VeilComposerOptionGate.accepts(composerAccessToken)
+        composerAccessToken = ""
+        guard allowed else {
+            composerAccessFailures += 1
+            composerAccessDenied = true
+            return
+        }
+        composerAccessDenied = false
+        composerAccessFailures = 0
+        composerOptionsEnabled = true
+        showsComposerAccess = false
+    }
+
+    private func appendComposerSymbol() {
+        guard composerOptionsEnabled else { return }
+        draft.append(VeilInlineGlyphText.emoji)
+        composerMode = .text
+        // Sending remains a separate user-confirmed tap.
+    }
+
+    private func sendComposerArtwork() {
+        guard composerOptionsEnabled, !isPreparingImage else { return }
+        // Generate inside this app. Existing image transcode / encryption /
+        // media-transfer limits apply exactly as for an imported photo.
+        let image = VeilInlineGlyphText.makeImage(size: CGSize(width: 480, height: 320))
+        guard let bytes = image.pngData() else {
+            model.alertMessage = "无法生成图片"
+            return
+        }
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vl-artwork-\(UUID().uuidString).png")
+        do {
+            try bytes.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            prepareAndSendImage(ImportedImageFile(url: file, shouldDeleteAfterUse: true))
+        } catch {
+            model.alertMessage = "无法准备图片：\(error.localizedDescription)"
+        }
+    }
+
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -1216,7 +1393,8 @@ private struct VeilChatIdentityTitle: View {
         HStack(spacing: 9) {
             VeilIdentityGlyph(seed: peerIdentityID, size: 30, active: true)
             VStack(alignment: .leading, spacing: 1) {
-                Text(title)
+                VeilInlineGlyphText.render(title)
+                    .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: title))
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundColor(VeilTheme.text)
                     .lineLimit(1)
@@ -1268,7 +1446,8 @@ private struct MessageBubble: View {
                     TransferShardView(image: nil, progress: progress, mode: .receiving)
                         .frame(width: 190)
                 } else if let gamePreview = MiniGameCodec.previewText(for: message.body) {
-                    Text(gamePreview)
+                    VeilInlineGlyphText.render(gamePreview)
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: gamePreview))
                         .font(.body.weight(.medium))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
@@ -1300,12 +1479,14 @@ private struct MessageBubble: View {
                             RoundedRectangle(cornerRadius: 1)
                                 .fill(message.isOutgoing ? Color.black.opacity(0.55) : VeilTheme.gold)
                                 .frame(width: 3)
-                            Text(reply.quote)
+                            VeilInlineGlyphText.render(reply.quote)
+                                .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: reply.quote))
                                 .font(.caption)
                                 .foregroundColor(message.isOutgoing ? Color.black.opacity(0.66) : VeilTheme.secondaryText)
                                 .lineLimit(2)
                         }
-                        Text(reply.reply)
+                        VeilInlineGlyphText.render(reply.reply)
+                            .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: reply.reply))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.horizontal, 14)
@@ -1319,7 +1500,8 @@ private struct MessageBubble: View {
                     )
                     .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
                 } else {
-                    Text(message.body)
+                    VeilInlineGlyphText.render(message.body)
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: message.body))
                         .font(.body)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
@@ -1631,7 +1813,8 @@ private struct ContactDetailsSheet: View {
                             .font(VeilType.terminalLabel)
                             .tracking(1.4)
                             .foregroundColor(VeilTheme.mutedGold)
-                        Text(conversation.title)
+                        VeilInlineGlyphText.render(conversation.title)
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: conversation.title))
                             .font(.system(.title3, design: .rounded).weight(.semibold))
                         VeilLinkTrace(active: false, width: 86)
                     }
