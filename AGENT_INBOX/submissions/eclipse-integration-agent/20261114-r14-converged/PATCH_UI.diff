@@ -1,0 +1,1431 @@
+diff --git a/VeilLink/UI/GameLobbyView.swift b/VeilLink/UI/GameLobbyView.swift
+--- a/VeilLink/UI/GameLobbyView.swift
++++ b/VeilLink/UI/GameLobbyView.swift
+@@ -337,6 +337,7 @@
+     @State private var showsBoardAdvanced = false
+     @State private var showsLearningImporter = false
+     @State private var showsLearningShare = false
++    @State private var showsEclipseTrace = false
+     @State private var learningExportURL: URL?
+     @State private var learningExchangeMessage: String?
+     @AppStorage(VeilOpponentAvatarPolicy.preferenceKey) private var grokBotEnabled = false
+@@ -360,7 +361,19 @@
+         ScrollView {
+             VStack(spacing: 14) {
+                 statusCard
+-                if VeilOpponentAvatarPolicy.shouldRender(
++                if game == .gomoku {
++                    VeilEclipseIdentityCard(
++                        // The controller starts a 180ms pre-search pause;
++                        // show actual computation effects only after its timestamp exists.
++                        isThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
++                        matchFinished: controller.outcome != .playing,
++                        lastCompletedMilliseconds: controller.lastDecisionMilliseconds,
++                        actualSearchStartedAt: controller.eclipseSearchStartedAt,
++                        difficultyTitle: controller.boardDifficulty.title,
++                        openTrace: { showsEclipseTrace = true }
++                    )
++                    .veilCard()
++                } else if VeilOpponentAvatarPolicy.shouldRender(
+                     enabled: grokBotEnabled, hasComputerOpponent: true
+                 ) {
+                     HStack(spacing: 12) {
+@@ -425,6 +438,23 @@
+         .sheet(isPresented: $showsTacticalGuide) {
+             TacticalSoloGuideView()
+         }
++        .sheet(isPresented: $showsEclipseTrace) {
++            if game == .gomoku {
++                VeilEclipseTraceSheet(
++                    isThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
++                    matchFinished: controller.outcome != .playing,
++                    lastCompletedMilliseconds: controller.lastDecisionMilliseconds,
++                    actualSearchStartedAt: controller.eclipseSearchStartedAt,
++                    committedMoves: controller.eclipseCompletedMoveHistory,
++                    difficultyTitle: controller.boardDifficulty.title,
++                    searchModeTitle: controller.boardSearchMode.title,
++                    liveMetrics: nil, // No genuine R5/V9 streaming telemetry in main.
++                    archivedMatchPage: { offset, limit in
++                        controller.eclipseHistoryPage(offset: offset, limit: limit)
++                    }
++                )
++            }
++        }
+         .sheet(isPresented: $showsLearningShare, onDismiss: {
+             if let learningExportURL {
+                 try? FileManager.default.removeItem(at: learningExportURL)
+@@ -524,6 +554,11 @@
+                             .font(.caption2)
+                             .foregroundColor(.orange)
+                     }
++                    if let warning = controller.eclipseArchiveWarning, game == .gomoku {
++                        Text(warning)
++                            .font(.caption2)
++                            .foregroundColor(VeilTheme.danger)
++                    }
+                 }
+                 Spacer()
+                 if controller.isAIThinking {
+@@ -643,18 +678,28 @@
+                 .fixedSize(horizontal: false, vertical: true)
+             if game == .gomoku {
+                 Toggle(isOn: Binding(
+-                    get: { controller.useExternalGomokuEngine },
+-                    set: { controller.setExternalGomokuEngineEnabled($0) }
++                    get: { controller.eclipseVisualizationEnabled },
++                    set: { controller.setEclipseVisualizationEnabled($0) }
+                 )) {
+                     VStack(alignment: .leading, spacing: 2) {
+-                        Text("离线强力引擎 · PVS/VCF")
++                        Text("棋盘思考可视化").font(.caption.weight(.semibold))
++                        Text("仅原生搜索显示真实分支；可能透露策略，默认关闭。")
++                            .font(.caption2).foregroundColor(VeilTheme.secondaryText)
++                    }
++                }
++                .tint(VeilTheme.gold)
++                .accessibilityIdentifier("gomoku.eclipse.live-trace.toggle")
++                HStack(spacing: 8) {
++                    Image(systemName: "cpu").foregroundColor(VeilTheme.goldBright)
++                    VStack(alignment: .leading, spacing: 2) {
++                        Text("ECLIPSE 原生搜索")
+                             .font(.caption.weight(.semibold))
+-                        Text("独立离线引擎；异常自动回退，不改写棋谱。")
++                            .foregroundColor(VeilTheme.text)
++                        Text("统一原生战术安全门、训练排序与深度搜索")
+                             .font(.caption2)
+                             .foregroundColor(VeilTheme.secondaryText)
+                     }
+                 }
+-                .tint(VeilTheme.gold)
+                 Menu {
+                     ForEach(GomokuFormationMode.allCases) { mode in
+                         Button {
+@@ -828,7 +873,14 @@
+                         && model.appLock.isEnabled
+                         && !model.appLock.isLocked
+                         && developerLearningGate.canImportTraining()
+-                )
++                ),
++                eclipseThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
++                actualSearchStartedAt: controller.eclipseSearchStartedAt,
++                eclipseVisualizationEnabled: controller.eclipseVisualizationEnabled,
++                eclipseTraceStore: controller.eclipseTraceStore,
++                eclipseSessionID: controller.sessionID,
++                eclipseBoardTurn: controller.gomoku.moveCount,
++                eclipseMatchPlaying: controller.outcome == .playing
+             ) { index in
+                 if controller.developerTeachingMode,
+                    ownerMode.isAuthorized(for: .developerTraining),
+diff --git a/VeilLink/UI/MiniGameViews.swift b/VeilLink/UI/MiniGameViews.swift
+--- a/VeilLink/UI/MiniGameViews.swift
++++ b/VeilLink/UI/MiniGameViews.swift
+@@ -1454,6 +1454,13 @@
+     let state: GomokuState
+     let localPlayer: MiniGamePlayer
+     let enabled: Bool
++    var eclipseThinking = false
++    var actualSearchStartedAt: Date? = nil
++    var eclipseVisualizationEnabled = false
++    var eclipseTraceStore: VeilEclipseSearchTraceStore? = nil
++    var eclipseSessionID = ""
++    var eclipseBoardTurn = 0
++    var eclipseMatchPlaying = true
+     let onMove: (Int) -> Void
+ 
+     private let starPoints = [48, 56, 112, 168, 176]
+@@ -1476,6 +1483,23 @@
+                     ForEach(starPoints, id: \.self) { index in
+                         let point = gomokuPoint(index: index, margin: margin, step: step)
+                         Circle().fill(Color.white.opacity(0.42)).frame(width: 4.2, height: 4.2).position(point)
++                    }
++
++                    // Purely decorative; has NO board data/search scores and
++                    // cannot intercept touches or provide a move recommendation.
++                    if eclipseThinking && eclipseVisualizationEnabled,
++                       let eclipseTraceStore {
++                        VeilEclipseBoardThoughtField(
++                            isThinking: eclipseThinking,
++                            actualSearchStartedAt: actualSearchStartedAt,
++                            enabled: eclipseVisualizationEnabled,
++                            searchTrace: eclipseTraceStore,
++                            sessionID: eclipseSessionID,
++                            turn: eclipseBoardTurn,
++                            matchPlaying: eclipseMatchPlaying
++                        )
++                        .frame(width: side, height: side)
++                        .allowsHitTesting(false)
+                     }
+ 
+                     if state.winningLine.count >= 5,
+diff --git a/VeilLink/UI/VeilEclipseBoardThoughtField.swift b/VeilLink/UI/VeilEclipseBoardThoughtField.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseBoardThoughtField.swift
+@@ -0,0 +1,83 @@
++import Foundation
++import SwiftUI
++
++/// Genuine *examined* hypothetical search branches, not random particles.
++/// Visible only while the native AI is searching and the user cannot move.
++/// Never retained as an active-game hint after the worker stops.
++struct VeilEclipseBoardThoughtField: View {
++    let isThinking: Bool
++    let actualSearchStartedAt: Date?
++    let enabled: Bool
++    let searchTrace: VeilEclipseSearchTraceStore
++    let sessionID: String
++    let turn: Int
++    let matchPlaying: Bool
++
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    var body: some View {
++        Group {
++            if enabled && isThinking && actualSearchStartedAt != nil && matchPlaying {
++                TimelineView(.animation(
++                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0/12.0 : 1.0/24.0,
++                    paused: reduceMotion
++                )) { _ in
++                    let now = ProcessInfo.processInfo.systemUptime
++                    let branches = searchTrace.snapshot(
++                        sessionID: sessionID, turn: turn,
++                        playing: matchPlaying, aiThinking: isThinking
++                    )
++                    Canvas(opaque: false, rendersAsynchronously: false) { context, area in
++                        let margin = min(area.width, area.height) * 0.055
++                        let step = (min(area.width, area.height) - margin * 2) / 14
++                        let tones = [VeilTheme.goldBright, VeilTheme.paleMetal,
++                                     VeilTheme.success, VeilTheme.mutedGold]
++                        for (rank, branch) in branches.enumerated() {
++                            let age = max(0, now - branch.emittedAtUptime)
++                            let fading = max(0, 1.0 - age / 1.35)
++                            guard fading > 0 else { continue }
++                            let tone = tones[rank % tones.count]
++                            let points = branch.indices.map { index in
++                                CGPoint(x: margin + CGFloat(index % 15) * step,
++                                        y: margin + CGFloat(index / 15) * step)
++                            }
++                            for hop in points.indices {
++                                let progress = reduceMotion ? 1.0 : min(1, max(0, (age - Double(hop) * 0.09) * 9.0))
++                                guard progress > 0 else { continue }
++                                if hop > 0 {
++                                    let a = points[hop - 1], b = points[hop]
++                                    let tip = CGPoint(
++                                        x: a.x + (b.x - a.x) * progress,
++                                        y: a.y + (b.y - a.y) * progress
++                                    )
++                                    var path = Path()
++                                    path.move(to: a)
++                                    path.addLine(to: tip)
++                                    context.stroke(path, with: .color(tone.opacity(0.65 * fading)),
++                                                   style: StrokeStyle(lineWidth: 1.15, lineCap: .round))
++                                }
++                                if progress >= 0.96 {
++                                    let r = max(3, step * 0.35)
++                                    let point = points[hop]
++                                    let oval = Path(ellipseIn: CGRect(
++                                        x: point.x - r, y: point.y - r,
++                                        width: r * 2, height: r * 2
++                                    ))
++                                    // Hollow/dashed: a hypothetical stone, not a placed stone.
++                                    context.fill(oval, with: .color(tone.opacity(0.10 * fading)))
++                                    context.stroke(oval, with: .color(tone.opacity(0.8 * fading)),
++                                                   style: StrokeStyle(lineWidth: 1,
++                                                                      lineCap: .round,
++                                                                      dash: [2, 2]))
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++        .allowsHitTesting(false)
++        .accessibilityHidden(true)
++        .accessibilityIdentifier("game.eclipse.live-examined-branches")
++    }
++}
+diff --git a/VeilLink/UI/VeilEclipseComputeConsole.swift b/VeilLink/UI/VeilEclipseComputeConsole.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseComputeConsole.swift
+@@ -0,0 +1,115 @@
++import SwiftUI
++import Foundation
++
++/// The black console sits INSIDE the original VeilLink themed card.
++/// It is a decorative display: no board coordinate, candidate, PV or
++/// protected engine reasoning object can enter its public interface.
++struct VeilEclipseComputeConsole: View {
++    let isComputing: Bool
++    let actualSearchStartedAt: Date?
++    let liveMetrics: VeilEclipseTracePolicy.LiveMetrics?
++    var compact: Bool = false
++
++    @ObservedObject private var appearance = VeilAppearanceController.shared
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    private var active: Bool { isComputing && actualSearchStartedAt != nil }
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: compact ? 3 : 7) {
++            HStack(spacing: 6) {
++                Circle()
++                    .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                    .frame(width: 5, height: 5)
++                Text("ECLIPSE // VISUAL STREAM")
++                    .font(.system(size: compact ? 8 : 10, weight: .bold, design: .monospaced))
++                    .foregroundColor(VeilTheme.paleMetal)
++                    .lineLimit(1)
++                Spacer(minLength: 0)
++                Text(active ? "RUN" : "IDLE")
++                    .foregroundColor(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                    .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
++            }
++            if active, let startedAt = actualSearchStartedAt {
++                TimelineView(.animation(
++                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 / 9.0 : 1.0 / 24.0,
++                    paused: reduceMotion
++                )) { timeline in
++                    let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
++                    let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
++                    let position = VeilEclipseConsoleStream.scrollPosition(
++                        elapsedSeconds: reduceMotion ? 0 : elapsed, lowPower: lowPower
++                    )
++                    let lineHeight: CGFloat = compact ? 11 : 15
++                    let visibleCount = compact ? 2 : 7
++                    let rows = VeilEclipseConsoleStream.lines(
++                        elapsedSeconds: reduceMotion ? 0 : elapsed,
++                        visibleRows: visibleCount + 1,
++                        lowPower: lowPower
++                    )
++                    VStack(alignment: .leading, spacing: 0) {
++                        ForEach(0..<rows.count, id: \.self) { index in
++                            Text(rows[index].text)
++                                .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
++                                .foregroundColor(tone(rows[index].tone))
++                                .lineLimit(1)
++                                .minimumScaleFactor(0.8)
++                                .frame(height: lineHeight, alignment: .leading)
++                        }
++                    }
++                    .offset(y: -CGFloat(position - floor(position)) * lineHeight)
++                    .frame(maxWidth: .infinity, alignment: .leading)
++                    .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
++                    .clipped()
++                    .accessibilityHidden(true)
++                }
++            } else {
++                Text("vis.idle ()")
++                    .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .frame(maxWidth: .infinity, alignment: .leading)
++                    .accessibilityHidden(true)
++            }
++            if !compact {
++                if active, let liveMetrics {
++                    let depth = liveMetrics.completedDepth.map { "D\($0)" } ?? "—"
++                    let nodes = liveMetrics.visitedNodes.map(String.init) ?? "—"
++                    Text("MEASURED · DEPTH \(depth) / NODES \(nodes)")
++                        .font(.system(size: 9, weight: .medium, design: .monospaced))
++                        .foregroundColor(VeilTheme.goldBright)
++                } else {
++                    Text("MEASURED · 暂无实时深度/节点数据")
++                        .font(.caption2)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++                Text(VeilEclipseConsoleStream.disclosure)
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .fixedSize(horizontal: false, vertical: true)
++            }
++        }
++        .padding(compact ? 8 : 12)
++        .frame(maxWidth: .infinity, alignment: .leading)
++        .frame(minHeight: compact ? 55 : 166)
++        .background(
++            RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
++                .fill(Color.black.opacity(0.97))
++        )
++        .overlay(
++            RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
++                .stroke(VeilTheme.gold.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
++        )
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .combine)
++        .accessibilityLabel("ECLIPSE 计算显示屏。\(active ? "计算中" : "待机")。装饰性编码流，不代表真实推理，也不会提示落点。")
++    }
++
++    private func tone(_ index: Int) -> Color {
++        switch index {
++        case 0: return VeilTheme.goldBright
++        case 1: return VeilTheme.paleMetal
++        case 2: return VeilTheme.success
++        default: return VeilTheme.secondaryText
++        }
++    }
++}
+diff --git a/VeilLink/UI/VeilEclipseConsoleStream.swift b/VeilLink/UI/VeilEclipseConsoleStream.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseConsoleStream.swift
+@@ -0,0 +1,44 @@
++import Foundation
++
++/// Decorative visual code. It does not receive search candidates, board cells,
++/// threat maps, principal variations or any private reasoning data.
++/// Genuine measured depth/nodes are shown separately, only if available.
++enum VeilEclipseConsoleStream {
++    struct Line: Equatable, Sendable {
++        let text: String
++        let tone: Int
++    }
++    private static let verbs = [
++        "vis.sync", "vis.phase", "vis.flux", "vis.orbit",
++        "vis.align", "vis.echo", "vis.fold", "vis.pulse"
++    ]
++    private static func mix(_ seed: UInt64) -> UInt64 {
++        var x = seed &+ 0x9e3779b97f4a7c15
++        x = (x ^ (x >> 30)) &* 0xbf58476d1ce4e5b9
++        x = (x ^ (x >> 27)) &* 0x94d049bb133111eb
++        return x ^ (x >> 31)
++    }
++    /// Visual row scrolls: 14 lines/s normal, 6 in Low Power Mode.
++    /// Uses only genuine elapsed calculation time; rate is decorative, not a
++    /// measure of model speed. The result is deterministic and bounded.
++    static func scrollPosition(elapsedSeconds: Double, lowPower: Bool = false) -> Double {
++        let elapsed = elapsedSeconds.isFinite ? max(0, min(86_400, elapsedSeconds)) : 0
++        return elapsed * (lowPower ? 6 : 14)
++    }
++    static func lines(elapsedSeconds: Double, visibleRows: Int, lowPower: Bool = false) -> [Line] {
++        let frame = UInt64(scrollPosition(elapsedSeconds: elapsedSeconds, lowPower: lowPower))
++        let rows = max(1, min(10, visibleRows))
++        return (0..<rows).map { row in
++            let k = mix((frame &+ UInt64(row)) &* 0x2545f4914f6cdd1d)
++            let operation = verbs[Int(k % UInt64(verbs.count))]
++            let channel = Int((k >> 7) & 0xf)
++            let phase = Int((k >> 12) & 0xff)
++            let mask = Int((k >> 21) & 0xffff)
++            return Line(
++                text: String(format: "%@ (ch:%X, phase:%02X, flux:%04X)", operation, channel, phase, mask),
++                tone: Int((k >> 40) & 3)
++            )
++        }
++    }
++    static let disclosure = "视觉编码流 · 非真实搜索日志，不表示候选落点或推理过程"
++}
+diff --git a/VeilLink/UI/VeilEclipseIdentityAndTrace.swift b/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
+@@ -0,0 +1,402 @@
++import Foundation
++import SwiftUI
++import Combine
++
++/// Five-in-a-row's own bot identity. No Grok-specific video/GIF asset or
++/// strings are borrowed; other game avatars keep their existing behavior.
++struct VeilEclipseIdentityCard: View {
++    let isThinking: Bool
++    let matchFinished: Bool
++    let lastCompletedMilliseconds: Int?
++    /// Actual engine calculation timestamp, not a fabricated progress indicator.
++    let actualSearchStartedAt: Date?
++    /// The current controller's actual tier, not an independently configured UI tier.
++    let difficultyTitle: String
++    let openTrace: () -> Void
++
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @ObservedObject private var appearance = VeilAppearanceController.shared
++
++    var body: some View {
++        Button(action: openTrace) {
++            VStack(alignment: .leading, spacing: VeilSpacing.sm) {
++                HStack(spacing: VeilSpacing.md) {
++                VeilEclipseAvatar(isThinking: isThinking && !reduceMotion)
++                    .frame(width: 76, height: 76)
++                VStack(alignment: .leading, spacing: VeilSpacing.xxs) {
++                    Text("ECLIPSE")
++                        .font(.headline.weight(.semibold))
++                        .foregroundColor(VeilTheme.text)
++                    Text(isThinking ? "正在思考" : matchFinished ? "本局结束 · 可查看回放" : "等待落子")
++                        .font(.caption)
++                        .foregroundColor(isThinking ? VeilTheme.goldBright : VeilTheme.secondaryText)
++                    Text("VeilLink Native Intelligence")
++                        .font(.caption2)
++                        .foregroundColor(VeilTheme.tertiaryText)
++                        .lineLimit(1)
++                        .minimumScaleFactor(0.8)
++                }
++                Spacer(minLength: 0)
++                VStack(alignment: .trailing, spacing: VeilSpacing.sm) {
++                    Image(systemName: "chevron.right")
++                        .font(.caption.weight(.semibold))
++                    Text(VeilEclipseTierPresentation.shortName(difficultyTitle))
++                        .font(.caption2.weight(.medium))
++                        .lineLimit(1)
++                    if isThinking, let started = actualSearchStartedAt {
++                        TimelineView(.periodic(from: .now, by: 0.1)) { clock in
++                            Text(String(format: "%.1fs", max(0, clock.date.timeIntervalSince(started))))
++                                .font(.caption2.monospacedDigit())
++                        }
++                    } else if let ms = lastCompletedMilliseconds, ms >= 0 {
++                        Text("\(ms)ms")
++                            .font(.caption2.monospacedDigit())
++                            .lineLimit(1)
++                    }
++                }
++                .foregroundColor(VeilTheme.tertiaryText)
++                }
++                // The black instrument is contained within existing VeilLink
++                // materials. It never receives candidates, PV or threat cells.
++                VeilEclipseComputeConsole(
++                    isComputing: isThinking,
++                    actualSearchStartedAt: actualSearchStartedAt,
++                    liveMetrics: nil,
++                    compact: true
++                )
++            }
++            // Outer .veilCard() is authoritative: the *existing* VeilCardModifier
++            // owns cut corners, instrument plates, Apple Soft and Islet materials.
++            .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
++            .contentShape(Rectangle())
++        }
++        .buttonStyle(.plain)
++        .accessibilityElement(children: .combine)
++        .accessibilityLabel("ECLIPSE，\(VeilEclipseTierPresentation.shortName(difficultyTitle))，\(isThinking ? "正在计算" : matchFinished ? "本局已结束" : "等待对局")，查看分析状态")
++        .accessibilityHint("对局期间不显示推荐落点；完成后可以回放已发生的棋步")
++        .accessibilityIdentifier("game.eclipse.identity")
++    }
++}
++
++/// The avatar borrows NO Grok media but inherits the current VeilLink palette.
++/// It intentionally uses the same circular icon footprint as the existing
++/// in-app bot card instead of adding an unrelated cyberpunk/blue-metal brand.
++private struct VeilEclipseAvatar: View {
++    let isThinking: Bool
++    @ObservedObject private var appearance = VeilAppearanceController.shared
++
++    var body: some View {
++        ZStack {
++            Circle()
++                .fill(VeilTheme.obsidian)
++            Circle()
++                .strokeBorder(VeilTheme.hairline, lineWidth: 1)
++            Circle()
++                .trim(from: 0.05, to: 0.79)
++                .stroke(VeilTheme.gold.opacity(appearance.isPlainline ? 0.42 : 0.68),
++                        style: StrokeStyle(lineWidth: appearance.isPlainline ? 1 : 1.7,
++                                           lineCap: .round))
++                .padding(7)
++                .rotationEffect(.degrees(-35))
++            // Theme-aware mask/eyes: Veil Original gold, Instrument amber,
++            // Apple Soft adaptive light/dark, Islet aurora, Plainline hairline.
++            HStack(spacing: 12) {
++                Capsule().fill(VeilTheme.text)
++                Capsule().fill(VeilTheme.text)
++            }
++            .frame(width: 34, height: isThinking ? 6 : 10)
++            .offset(y: -1)
++            if appearance.isInstrument {
++                VeilIndicatorLamp(active: isThinking, color: VeilTheme.gold)
++                    .offset(x: 21, y: 24)
++            }
++        }
++        .shadow(color: appearance.isPlainline ? .clear : VeilTheme.gold.opacity(0.07),
++                radius: 6, y: 2)
++        .accessibilityHidden(true)
++        .allowsHitTesting(false)
++    }
++}
++
++struct VeilEclipseTraceSheet: View {
++    let isThinking: Bool
++    let matchFinished: Bool
++    let lastCompletedMilliseconds: Int?
++    let actualSearchStartedAt: Date?
++    let committedMoves: [VeilEclipseTracePolicy.PlacedMove]
++    let difficultyTitle: String
++    let searchModeTitle: String
++    /// Only accepts coordinate-free, pre-redacted metrics. R5 integration will
++    /// sanitize engine traces BEFORE sending anything to this view.
++    /// Main currently passes nil and never fabricates depth/node totals.
++    let liveMetrics: VeilEclipseTracePolicy.LiveMetrics?
++    /// Loads a bounded page; returns nil on storage failure. Never reads chess
++    /// advice/analyses; only validated already committed game records.
++    let archivedMatchPage: (Int, Int) -> VeilGomokuMatchArchive.Page?
++
++    @Environment(\.presentationMode) private var presentationMode
++    @ObservedObject private var appearance = VeilAppearanceController.shared
++    @State private var replayPly = 0
++    @State private var playing = false
++    @State private var savedMatches: [VeilGomokuMatchArchive.Match] = []
++    @State private var selectedMatchID: String?
++    @State private var nextOffset: Int? = 0
++    @State private var knownMatchCount = 0
++    @State private var unreadableCount = 0
++
++    private var replayFrames: [VeilEclipseTracePolicy.ReplayFrame] {
++        let stored = savedMatches.first { $0.id == selectedMatchID }
++        return VeilEclipseTracePolicy.replayFrames(
++            stored?.placedMoves ?? committedMoves,
++            matchFinished: matchFinished,
++            separateReadOnlyPanel: true
++        )
++    }
++
++    private func loadArchivePage() {
++        guard matchFinished, let offset = nextOffset else { return }
++        guard let page = archivedMatchPage(offset, 25) else { nextOffset = nil; return }
++        let existingIDs = Set(savedMatches.map(\.id))
++        savedMatches += page.matches.filter { !existingIDs.contains($0.id) }
++        knownMatchCount = page.totalFiles
++        unreadableCount += page.invalidFiles
++        nextOffset = page.nextOffset
++    }
++
++
++    var body: some View {
++        NavigationView {
++            ScrollView {
++                VStack(alignment: .leading, spacing: 16) {
++                    HStack {
++                        Label(matchFinished ? "赛后只读回放" : "对局中 · 无落点提示",
++                              systemImage: matchFinished ? "lock.shield" : "eye.slash")
++                            .foregroundColor(VeilTheme.goldBright)
++                            .font(.caption.weight(.semibold))
++                        Spacer()
++                    }
++                    VeilEclipseComputeConsole(
++                        isComputing: isThinking,
++                        actualSearchStartedAt: actualSearchStartedAt,
++                        liveMetrics: liveMetrics,
++                        compact: false
++                    )
++                    VStack(alignment: .leading, spacing: VeilSpacing.xxs) {
++                        HStack(spacing: VeilSpacing.sm) {
++                            Text("当前棋力档位")
++                                .foregroundColor(VeilTheme.secondaryText)
++                            Spacer(minLength: 4)
++                            Text(VeilEclipseTierPresentation.shortName(difficultyTitle))
++                                .foregroundColor(VeilTheme.text)
++                            Text("· " + searchModeTitle)
++                                .foregroundColor(VeilTheme.secondaryText)
++                        }
++                        .font(.caption)
++                        if VeilEclipseTierPresentation.hasSearchBudgetMultiplier(difficultyTitle) {
++                            Text(VeilEclipseTierPresentation.multiplierDisclosure)
++                                .font(.caption2)
++                                .foregroundColor(VeilTheme.secondaryText)
++                        }
++                    }
++                    .veilCard()
++                    VStack(alignment: .leading, spacing: VeilSpacing.sm) {
++                        HStack(spacing: VeilSpacing.sm) {
++                            metric("完成深度", liveMetrics?.completedDepth.map { "D\($0)" } ?? "—")
++                            metric("搜索节点", liveMetrics?.visitedNodes.map(String.init) ?? "—")
++                            metric("上步耗时", lastCompletedMilliseconds.map { "\($0)ms" } ?? "—")
++                        }
++                        Text(liveMetrics == nil
++                             ? "当前版本尚无实时深度/节点流；数值不会伪造。"
++                             : "真实引擎指标 · 抽象图不代表搜索路径")
++                            .font(.caption2)
++                            .foregroundColor(VeilTheme.secondaryText)
++                    }
++                    .veilCard()
++                    if matchFinished {
++                        VStack(alignment: .leading, spacing: 9) {
++                            HStack {
++                                Text("历次对局 · \(knownMatchCount) 份")
++                                    .font(.headline)
++                                    .foregroundColor(VeilTheme.text)
++                                Spacer()
++                                if selectedMatchID != nil {
++                                    Button("返回本局") {
++                                        selectedMatchID = nil
++                                        replayPly = max(0, replayFrames.count - 1)
++                                        playing = false
++                                    }
++                                    .font(.caption.weight(.semibold))
++                                    .foregroundColor(VeilTheme.goldBright)
++                                }
++                            }
++                            ForEach(savedMatches) { saved in
++                                Button {
++                                    guard saved.isReplayable else { return }
++                                    selectedMatchID = saved.id
++                                    playing = false
++                                    replayPly = saved.moves.count
++                                } label: {
++                                    HStack(spacing: 8) {
++                                        Image(systemName: "clock.arrow.circlepath")
++                                            .foregroundColor(VeilTheme.gold)
++                                        VStack(alignment: .leading, spacing: 2) {
++                                            Text(saved.status.title + " · \(saved.moves.count) 手")
++                                                .font(.caption.weight(.semibold))
++                                            Text(saved.updatedAt.formatted(date: .abbreviated, time: .shortened))
++                                                .font(.caption2)
++                                                .foregroundColor(VeilTheme.secondaryText)
++                                        }
++                                        Spacer()
++                                        Image(systemName: selectedMatchID == saved.id ? "checkmark.circle.fill" : "chevron.right")
++                                            .foregroundColor(VeilTheme.goldBright)
++                                    }
++                                    .foregroundColor(VeilTheme.text)
++                                    .padding(8)
++                                    .background(VeilTheme.subtleFill, in: RoundedRectangle(cornerRadius: 9))
++                                }
++                                .buttonStyle(.plain)
++                                .disabled(!saved.isReplayable)
++                            }
++                            if nextOffset != nil {
++                                Button("加载更多历史对局") { loadArchivePage() }
++                                    .font(.caption.weight(.semibold))
++                                    .foregroundColor(VeilTheme.goldBright)
++                            }
++                            if unreadableCount > 0 {
++                                Text("另有 \(unreadableCount) 份棋谱校验失败，原始文件已保留。")
++                                    .font(.caption2)
++                                    .foregroundColor(VeilTheme.danger)
++                            }
++                        }
++                        .veilCard()
++                    }
++                    if matchFinished && replayFrames.count > 1 {
++                        Divider()
++                        Text("完整棋局 · 已发生落子")
++                            .font(.headline)
++                        Text("以下是存档中真实发生的棋步，不显示未落下的候选点、预测走法或风险提示。")
++                            .font(.caption)
++                            .foregroundColor(VeilTheme.secondaryText)
++                        EclipseCommittedBoard(frame: replayFrames[min(replayPly, replayFrames.count-1)])
++                            .aspectRatio(1, contentMode: .fit)
++                            .veilCard()
++                            .accessibilityLabel("已完成棋局，第 \(replayPly) 手，独立只读棋盘")
++                        HStack {
++                            Text("第 \(replayPly) / \(replayFrames.count - 1) 手")
++                                .font(.subheadline.monospacedDigit())
++                            Spacer()
++                            Button(playing ? "暂停" : "逐步播放") { playing.toggle() }
++                                .buttonStyle(.bordered)
++                        }
++                        Slider(value: Binding(
++                            get: { Double(replayPly) },
++                            set: { replayPly = Int($0); playing = false }
++                        ), in: 0...Double(replayFrames.count - 1), step: 1)
++                        HStack {
++                            Button("上一步") { playing = false; replayPly = max(0, replayPly-1) }
++                                .disabled(replayPly == 0)
++                            Spacer()
++                            Button("下一步") {
++                                playing = false
++                                replayPly = min(replayFrames.count-1, replayPly+1)
++                            }
++                                .disabled(replayPly == replayFrames.count-1)
++                        }
++                        .buttonStyle(.bordered)
++                    } else {
++                        Text(matchFinished ? "本局的已验证走子记录暂不可用。"
++                             : "为保证公平，对局进行时不会显示棋盘推演、推荐点、对方威胁位置或主变路线。赛后才能查看实际棋步。")
++                            .font(.subheadline)
++                            .foregroundColor(VeilTheme.secondaryText)
++                            .padding(.vertical, 12)
++                    }
++                }
++                .frame(maxWidth: 520)
++                .padding(18)
++            }
++            .background(VeilAmbientBackground())
++            .navigationTitle("ECLIPSE // TRACE")
++            .navigationBarTitleDisplayMode(.inline)
++            .toolbar {
++                ToolbarItem(placement: .navigationBarTrailing) {
++                    Button("完成") { presentationMode.wrappedValue.dismiss() }
++                }
++            }
++        }
++        .onAppear {
++            replayPly = replayFrames.count > 1 ? replayFrames.count - 1 : 0
++            playing = false
++            if matchFinished && savedMatches.isEmpty { loadArchivePage() }
++        }
++        .onDisappear { playing = false }
++        .onReceive(Timer.publish(every: 0.85, on: .main, in: .common).autoconnect()) { _ in
++            guard playing, matchFinished, replayFrames.count > 1 else { return }
++            if replayPly >= replayFrames.count - 1 { playing = false }
++            else { replayPly += 1 }
++        }
++        .accessibilityIdentifier("game.eclipse.trace")
++    }
++
++    private func metric(_ name: String, _ value: String) -> some View {
++        VStack(alignment: .leading, spacing: 5) {
++            Text(name).font(.caption2).foregroundColor(VeilTheme.secondaryText)
++            Text(value).font(.system(.subheadline, design: .monospaced).weight(.semibold))
++                .foregroundColor(VeilTheme.text)
++        }
++        .frame(maxWidth: .infinity, alignment: .leading)
++        .padding(VeilSpacing.sm)
++        .background(VeilTheme.subtleFill, in: VeilPanelShape(cut: 12, radius: 7))
++    }
++}
++
++/// A separate read-only board. Never overlays the interactive GomokuBoardView.
++private struct EclipseCommittedBoard: View {
++    let frame: VeilEclipseTracePolicy.ReplayFrame
++
++    var body: some View {
++        Canvas(opaque: false) { ctx, size in
++            let side = min(size.width, size.height)
++            let margin = side * 0.055
++            let spacing = (side - margin * 2) / 14
++            let background = CGRect(x: 0, y: 0, width: side, height: side)
++            // Same established board surface used by GomokuBoardView in
++            // VeilLink/UI/MiniGameViews.swift (not an invented light wood skin).
++            ctx.fill(Path(roundedRect: background, cornerRadius: 9),
++                     with: .color(Color(red: 0.42, green: 0.29, blue: 0.15).opacity(0.46)))
++            for step in 0..<15 {
++                let x = margin + CGFloat(step) * spacing
++                var vertical = Path()
++                vertical.move(to: CGPoint(x: x, y: margin))
++                vertical.addLine(to: CGPoint(x: x, y: side-margin))
++                ctx.stroke(vertical, with: .color(Color.white.opacity(0.27)), lineWidth: 0.65)
++                var horizontal = Path()
++                horizontal.move(to: CGPoint(x: margin, y: x))
++                horizontal.addLine(to: CGPoint(x: side-margin, y: x))
++                ctx.stroke(horizontal, with: .color(Color.white.opacity(0.27)), lineWidth: 0.65)
++            }
++            for star in [48, 56, 112, 168, 176] {
++                let x = margin + CGFloat(star % 15) * spacing
++                let y = margin + CGFloat(star / 15) * spacing
++                ctx.fill(Path(ellipseIn: CGRect(x: x-2.1, y: y-2.1,
++                                              width: 4.2, height: 4.2)),
++                         with: .color(Color.white.opacity(0.42)))
++            }
++            for (i, stone) in frame.cells.enumerated() where stone != 0 {
++                let x = margin + CGFloat(i % 15) * spacing
++                let y = margin + CGFloat(i / 15) * spacing
++                let diameter = spacing * 0.82
++                let circle = Path(ellipseIn: CGRect(x: x-diameter/2, y: y-diameter/2,
++                                                   width: diameter, height: diameter))
++                ctx.fill(circle, with: .color(stone == 1
++                    ? Color.black.opacity(0.96) : Color.white.opacity(0.96)))
++                if frame.lastCommittedIndex == i {
++                    let ring = Path(ellipseIn: CGRect(x: x-diameter*0.37, y: y-diameter*0.37,
++                                                     width: diameter*0.74, height: diameter*0.74))
++                    ctx.stroke(ring, with: .color(VeilTheme.gold), lineWidth: 1.7)
++                }
++            }
++        }
++        .allowsHitTesting(false)
++        .accessibilityHidden(true)
++    }
++}
+diff --git a/VeilLink/UI/VeilEclipseTracePolicy.swift b/VeilLink/UI/VeilEclipseTracePolicy.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseTracePolicy.swift
+@@ -0,0 +1,140 @@
++import Foundation
++
++/// The user's live game is NEVER a coaching surface. This policy is kept
++/// outside SwiftUI so privacy/safety rules are unit-testable on Linux and iOS.
++/// A finished game permits a read-only replay of actual, committed moves only.
++enum VeilEclipseTracePolicy {
++    static let size = 15
++    static let capacity = size * size
++
++    struct PlacedMove: Sendable, Equatable {
++        let index: Int
++        /// 1 = black/host, 2 = white/guest.
++        let stone: UInt8
++        init(index: Int, stone: UInt8) {
++            self.index = index
++            self.stone = stone
++        }
++    }
++
++    struct ReplayFrame: Sendable, Equatable {
++        let cells: [UInt8]
++        let lastCommittedIndex: Int?
++        let committedPlyCount: Int
++    }
++
++    enum SearchOrigin: Sendable {
++        case measuredEngine
++        case recordedEngine
++        case exampleOnly
++    }
++
++    /// Internal engine values, never handed directly to the presentation layer.
++    struct RawSearchEvent: Sendable {
++        let origin: SearchOrigin
++        let completedDepth: Int?
++        let visitedNodes: Int?
++        let principalVariation: [Int]
++        let consideredIndices: [Int]
++        let explanation: String?
++    }
++
++    /// The only type the live SwiftUI widget will accept from a searcher.
++    /// It has no coordinate-bearing fields by construction.
++    struct LiveMetrics: Sendable, Equatable {
++        let completedDepth: Int?
++        let visitedNodes: Int?
++    }
++
++    static func liveMetrics(from event: RawSearchEvent?) -> LiveMetrics? {
++        guard let event, event.origin == .measuredEngine else { return nil }
++        return LiveMetrics(
++            completedDepth: event.completedDepth.flatMap { (1...64).contains($0) ? $0 : nil },
++            visitedNodes: event.visitedNodes.flatMap { (0...500_000_000).contains($0) ? $0 : nil }
++        )
++    }
++
++    /// Sanitized public view model. During any active game, ALL coordinates,
++    /// scored candidates, variations and opponent threats are withheld.
++    struct PublicAnalysis: Sendable, Equatable {
++        let completedDepth: Int?
++        let visitedNodes: Int?
++        let canReplaySpatialData: Bool
++        let actualMoves: [Int]
++        let explanation: String?
++    }
++
++    static func publicAnalysis(
++        from event: RawSearchEvent?,
++        matchFinished: Bool,
++        separateReadOnlyPanel: Bool,
++        verifiedReplay: [ReplayFrame]
++    ) -> PublicAnalysis {
++        guard let event, event.origin != .exampleOnly else {
++            return PublicAnalysis(completedDepth: nil, visitedNodes: nil,
++                                  canReplaySpatialData: false,
++                                  actualMoves: [], explanation: nil)
++        }
++        let finishedAndVerified = matchFinished && separateReadOnlyPanel && !verifiedReplay.isEmpty
++        // Recorded/example events are never passed off as live engine progress.
++        let depth = event.origin == .measuredEngine
++            ? event.completedDepth.flatMap { (1...64).contains($0) ? $0 : nil } : nil
++        let nodes = event.origin == .measuredEngine
++            ? event.visitedNodes.flatMap { (0...500_000_000).contains($0) ? $0 : nil } : nil
++        // Never display raw PV/candidate coordinates from a still-running game.
++        // Even after the game, replay ONLY actual played moves, not guesses.
++        let replayedMoves = finishedAndVerified
++            ? verifiedReplay.compactMap(\.lastCommittedIndex) : []
++        return PublicAnalysis(completedDepth: depth, visitedNodes: nodes,
++                              canReplaySpatialData: finishedAndVerified,
++                              actualMoves: replayedMoves,
++                              explanation: nil) // Unreviewed private search text is never a public hint.
++    }
++
++    /// Replay is reconstructed from the saved match journal only after match
++    /// completion. It validates turn order, duplicate cells, terminal moves,
++    /// and that the final board matches the authoritative GomokuState.
++    static func replayFrames(
++        _ moves: [PlacedMove],
++        matchFinished: Bool,
++        separateReadOnlyPanel: Bool,
++        expectedFinalBoard: [UInt8]? = nil
++    ) -> [ReplayFrame] {
++        guard matchFinished, separateReadOnlyPanel,
++              !moves.isEmpty, moves.count <= capacity else { return [] }
++        var board = [UInt8](repeating: 0, count: capacity)
++        var frames: [ReplayFrame] = [ReplayFrame(cells: board, lastCommittedIndex: nil, committedPlyCount: 0)]
++        var next: UInt8 = 1
++        for (offset, move) in moves.enumerated() {
++            guard (0..<capacity).contains(move.index), move.stone == next,
++                  board[move.index] == 0 else { return [] }
++            board[move.index] = move.stone
++            frames.append(ReplayFrame(cells: board, lastCommittedIndex: move.index,
++                                      committedPlyCount: offset + 1))
++            if hasFive(board, through: move.index, stone: next), offset != moves.count - 1 {
++                return [] // A valid completed match has no moves after a win.
++            }
++            next = next == 1 ? 2 : 1
++        }
++        if let expectedFinalBoard, expectedFinalBoard != board { return [] }
++        return frames
++    }
++
++    private static func hasFive(_ board: [UInt8], through index: Int, stone: UInt8) -> Bool {
++        let r = index / size, c = index % size
++        for (dr, dc) in [(0,1), (1,0), (1,1), (1,-1)] {
++            var length = 1
++            for direction in [-1,1] {
++                var rr = r + dr * direction, cc = c + dc * direction
++                while (0..<size).contains(rr), (0..<size).contains(cc),
++                      board[rr * size + cc] == stone {
++                    length += 1
++                    rr += dr * direction
++                    cc += dc * direction
++                }
++            }
++            if length >= 5 { return true }
++        }
++        return false
++    }
++}
+diff --git a/VeilLink/UI/VeilEclipseTraceSessionGate.swift b/VeilLink/UI/VeilEclipseTraceSessionGate.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseTraceSessionGate.swift
+@@ -0,0 +1,118 @@
++import Foundation
++
++/// UI-only privacy boundary for future native Gomoku R5/V9 search events.
++/// It cannot receive or expose a proposed move through PublicMetrics.
++/// Not wired to a search producer until the Integration Governor promotes one.
++struct VeilEclipseTraceSessionGate: Sendable {
++    struct Ticket: Hashable, Sendable {
++        let sessionID: String
++        let turn: Int
++        let generation: UInt64
++        let boardFingerprint: UInt64
++
++        init(sessionID: String, turn: Int, generation: UInt64, boardFingerprint: UInt64) {
++            self.sessionID = sessionID
++            self.turn = turn
++            self.generation = generation
++            self.boardFingerprint = boardFingerprint
++        }
++    }
++
++    enum Origin: Sendable {
++        case measuredNative
++        case recorded
++        case demonstration
++    }
++
++    /// Private to the search/telemetry layer. Never bind this type to SwiftUI.
++    struct PrivateEvent: Sendable {
++        let ticket: Ticket
++        let origin: Origin
++        let completedDepth: Int?
++        let visitedNodes: Int?
++        let principalVariation: [Int]
++        let candidateIndices: [Int]
++        let analysisText: String?
++        let isFinal: Bool
++
++        init(ticket: Ticket, origin: Origin, completedDepth: Int?, visitedNodes: Int?,
++             principalVariation: [Int] = [], candidateIndices: [Int] = [],
++             analysisText: String? = nil, isFinal: Bool = false) {
++            self.ticket = ticket
++            self.origin = origin
++            self.completedDepth = completedDepth
++            self.visitedNodes = visitedNodes
++            self.principalVariation = principalVariation
++            self.candidateIndices = candidateIndices
++            self.analysisText = analysisText
++            self.isFinal = isFinal
++        }
++    }
++
++    private(set) var ticket: Ticket?
++    private var acceptedDepth: Int?
++    private var acceptedNodes: Int?
++    private var lastEmittedAtMilliseconds: UInt64?
++    private var finalEventReceived = false
++
++    mutating func begin(_ newTicket: Ticket) {
++        ticket = newTicket.sessionID.isEmpty || newTicket.turn < 0 ? nil : newTicket
++        acceptedDepth = nil
++        acceptedNodes = nil
++        lastEmittedAtMilliseconds = nil
++        finalEventReceived = false
++    }
++
++    mutating func end() {
++        ticket = nil
++        acceptedDepth = nil
++        acceptedNodes = nil
++        lastEmittedAtMilliseconds = nil
++        finalEventReceived = false
++    }
++
++    /// Return only genuine, coordinate-free metrics. Reject stale/late events,
++    /// out-of-order totals, example traces, invalid counts, and updates above 8 Hz.
++    /// `nowMilliseconds` must come from a monotonic clock supplied by the caller.
++    mutating func accept(
++        _ event: PrivateEvent,
++        matchIsPlaying: Bool,
++        nowMilliseconds: UInt64
++    ) -> VeilEclipseTracePolicy.LiveMetrics? {
++        guard matchIsPlaying, let ticket, event.ticket == ticket,
++              event.origin == .measuredNative, !finalEventReceived else { return nil }
++        guard event.completedDepth != nil || event.visitedNodes != nil else { return nil }
++        if let depth = event.completedDepth {
++            guard (1...64).contains(depth), depth >= (acceptedDepth ?? 0) else { return nil }
++        }
++        if let nodes = event.visitedNodes {
++            guard (0...500_000_000).contains(nodes), nodes >= (acceptedNodes ?? 0) else { return nil }
++        }
++        if let last = lastEmittedAtMilliseconds, nowMilliseconds < last { return nil }
++        if let depth = event.completedDepth { acceptedDepth = depth }
++        if let nodes = event.visitedNodes { acceptedNodes = nodes }
++        if event.isFinal { finalEventReceived = true }
++        if !event.isFinal, let last = lastEmittedAtMilliseconds,
++           nowMilliseconds - last < 125 { return nil }
++        lastEmittedAtMilliseconds = nowMilliseconds
++        return VeilEclipseTracePolicy.LiveMetrics(
++            completedDepth: acceptedDepth, visitedNodes: acceptedNodes
++        )
++    }
++}
++
++/// UI labels follow the actual BoardBotDifficulty and BoardSearchMode strings.
++/// V9's 2×/4×/6× are compute-budget factors, not proven playing-strength gains.
++enum VeilEclipseTierPresentation {
++    static func shortName(_ fullTitle: String) -> String {
++        let first = fullTitle.split(separator: "·", maxSplits: 1).first
++            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
++        return first.isEmpty ? "未设置" : first
++    }
++
++    static func hasSearchBudgetMultiplier(_ fullTitle: String) -> Bool {
++        fullTitle.contains("×")
++    }
++
++    static let multiplierDisclosure = "档位倍率表示搜索时间预算，并非已验证的棋力或胜率倍数。"
++}
+diff --git a/VeilLink/UI/VeilGomokuMatchArchive.swift b/VeilLink/UI/VeilGomokuMatchArchive.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilGomokuMatchArchive.swift
+@@ -0,0 +1,233 @@
++import Foundation
++
++/// Separate, append-only *per-match* history. Does not replace the existing
++/// LocalBoardMatchStore latest-match recovery file or the training database.
++/// Each match has its own UUID-named JSON file; there is NO fixed game-count cap.
++final class VeilGomokuMatchArchive {
++    enum Status: String, Codable, Sendable {
++        case playing, humanWon, aiWon, draw, interrupted
++        var isFinal: Bool { self != .playing }
++        var title: String {
++            switch self {
++            case .playing: return "进行中"
++            case .humanWon: return "玩家获胜"
++            case .aiWon: return "ECLIPSE 获胜"
++            case .draw: return "平局"
++            case .interrupted: return "中断棋局"
++            }
++        }
++    }
++
++    struct Move: Codable, Hashable, Sendable {
++        let index: Int
++        /// 1 = black / host, 2 = white / guest.
++        let stone: UInt8
++        init(index: Int, stone: UInt8) { self.index = index; self.stone = stone }
++    }
++
++    struct Match: Codable, Sendable, Identifiable {
++        static let version = 1
++        let version: Int
++        let id: String
++        let startedAt: Date
++        let updatedAt: Date
++        let completedAt: Date?
++        let status: Status
++        let difficulty: String
++        let humanStone: UInt8
++        let moves: [Move]
++
++        var placedMoves: [VeilEclipseTracePolicy.PlacedMove] {
++            moves.map { .init(index: $0.index, stone: $0.stone) }
++        }
++        var isReplayable: Bool {
++            !VeilEclipseTracePolicy.replayFrames(
++                placedMoves,
++                matchFinished: true,
++                separateReadOnlyPanel: true
++            ).isEmpty
++        }
++    }
++
++    struct Page {
++        let matches: [Match]
++        let totalFiles: Int
++        let nextOffset: Int?
++        let invalidFiles: Int
++    }
++
++    enum ArchiveError: LocalizedError {
++        case invalidSession, invalidMoves, conflict, corrupted, invalidStatus
++        var errorDescription: String? {
++            switch self {
++            case .invalidSession: return "棋局编号无效，未保存。"
++            case .invalidMoves: return "棋谱走子校验未通过，未覆盖原记录。"
++            case .conflict: return "同一棋局的旧记录与新走子不一致，旧记录已保护。"
++            case .corrupted: return "历史棋谱可能损坏，已保留原文件。"
++            case .invalidStatus: return "棋局结果与棋盘不一致，未归档。"
++            }
++        }
++    }
++
++    let directory: URL
++    private let manager: FileManager
++
++    init(directory: URL? = nil, fileManager: FileManager = .default) {
++        self.manager = fileManager
++        if let directory { self.directory = directory }
++        else {
++            let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
++                ?? fileManager.temporaryDirectory
++            self.directory = support
++                .appendingPathComponent("VeilLink", isDirectory: true)
++                .appendingPathComponent("GomokuMatchHistoryV1", isDirectory: true)
++        }
++    }
++
++    private func canonicalID(_ sessionID: String) throws -> String {
++        guard let uuid = UUID(uuidString: sessionID) else { throw ArchiveError.invalidSession }
++        return uuid.uuidString
++    }
++
++    private func url(for id: String) throws -> URL {
++        directory.appendingPathComponent(try canonicalID(id) + ".json", isDirectory: false)
++    }
++
++    func read(sessionID: String) throws -> Match? {
++        let path = try url(for: sessionID)
++        guard manager.fileExists(atPath: path.path) else { return nil }
++        // Bound untrusted/recovered archive bytes BEFORE decoding to prevent
++        // oversized or malformed JSON from exhausting memory during pagination.
++        let bytes = try path.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
++        guard (1...128_000).contains(bytes) else { throw ArchiveError.corrupted }
++        let data = try Data(contentsOf: path)
++        guard let match = try? JSONDecoder().decode(Match.self, from: data),
++              match.id == (try? canonicalID(sessionID)), validate(match) else {
++            throw ArchiveError.corrupted
++        }
++        return match
++    }
++
++    /// Called after each *committed* player/AI move and when the actual result
++    /// is known. A final match cannot be edited, replaced, or silently reset.
++    @discardableResult
++    func save(
++        sessionID: String,
++        moves: [Move],
++        difficulty: String,
++        humanStone: UInt8,
++        status: Status,
++        now: Date = Date()
++    ) throws -> Match? {
++        guard !moves.isEmpty else { return nil } // no phantom empty games
++        let id = try canonicalID(sessionID)
++        let prior = try read(sessionID: id)
++        if let prior {
++            guard prior.humanStone == humanStone,
++                  prior.moves.count <= moves.count,
++                  Array(moves.prefix(prior.moves.count)) == prior.moves else {
++                throw ArchiveError.conflict
++            }
++            if prior.status.isFinal {
++                // Retry after crash is safe; any alteration of final history is not.
++                guard prior.status == status, prior.moves == moves else { throw ArchiveError.conflict }
++                return prior
++            }
++        }
++        // The device clock may move backwards; retain monotone archive dates.
++        let effectiveNow = max(now, prior?.updatedAt ?? now)
++        let match = Match(
++            version: Match.version, id: id,
++            startedAt: prior?.startedAt ?? now,
++            updatedAt: effectiveNow,
++            completedAt: status.isFinal ? effectiveNow : nil,
++            status: status,
++            difficulty: prior?.difficulty ?? difficulty,
++            humanStone: humanStone, moves: moves
++        )
++        guard validate(match) else { throw ArchiveError.invalidMoves }
++        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
++        let data = try JSONEncoder().encode(match)
++        guard data.count <= 128_000 else { throw ArchiveError.invalidMoves }
++        var options: Data.WritingOptions = [.atomic]
++        #if canImport(UIKit)
++        options.insert(.completeFileProtectionUntilFirstUserAuthentication)
++        #endif
++        try data.write(to: try url(for: id), options: options)
++        return match
++    }
++
++    /// Paged listing reads only the requested slice, so old archives have no
++    /// fixed match-count or storage cap and browsing remains bounded.
++    func page(offset: Int = 0, limit: Int = 30) throws -> Page {
++        guard manager.fileExists(atPath: directory.path) else {
++            return Page(matches: [], totalFiles: 0, nextOffset: nil, invalidFiles: 0)
++        }
++        let files = try manager.contentsOfDirectory(
++            at: directory, includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
++            options: [.skipsHiddenFiles]
++        ).filter {
++            $0.pathExtension.lowercased() == "json"
++                && UUID(uuidString: $0.deletingPathExtension().lastPathComponent) != nil
++                && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
++        }
++            .sorted {
++                let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
++                let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
++                return a == b ? $0.lastPathComponent > $1.lastPathComponent : a > b
++            }
++        let start = min(max(0, offset), files.count)
++        let end = min(files.count, start + min(100, max(1, limit)))
++        var entries: [Match] = []
++        var invalid = 0
++        for url in files[start..<end] {
++            do {
++                if let item = try read(sessionID: url.deletingPathExtension().lastPathComponent) {
++                    entries.append(item)
++                }
++            } catch { invalid += 1 } // Never delete or silently rewrite a corrupt record.
++        }
++        return Page(matches: entries, totalFiles: files.count,
++                    nextOffset: end < files.count ? end : nil, invalidFiles: invalid)
++    }
++
++    private func validate(_ match: Match) -> Bool {
++        guard match.version == Match.version,
++              UUID(uuidString: match.id)?.uuidString == match.id,
++              (1...2).contains(match.humanStone),
++              !match.moves.isEmpty, match.moves.count <= 225,
++              match.completedAt == nil || match.status.isFinal,
++              match.status.isFinal == (match.completedAt != nil),
++              match.updatedAt >= match.startedAt,
++              (match.completedAt == nil || match.completedAt == match.updatedAt)
++        else { return false }
++        let frames = VeilEclipseTracePolicy.replayFrames(match.placedMoves,
++            matchFinished: true, separateReadOnlyPanel: true)
++        guard frames.count == match.moves.count + 1,
++              let board = frames.last?.cells,
++              let last = match.moves.last else { return false }
++        let won = makesFive(board, index: last.index, stone: last.stone)
++        switch match.status {
++        case .humanWon: return won && last.stone == match.humanStone
++        case .aiWon: return won && last.stone != match.humanStone
++        case .draw: return !won && match.moves.count == 225
++        case .interrupted: return !won && match.moves.count < 225
++        case .playing: return true // last winning move may precede status finalization
++        }
++    }
++
++    private func makesFive(_ board: [UInt8], index: Int, stone: UInt8) -> Bool {
++        let row = index / 15, col = index % 15
++        for (dr, dc) in [(1,0), (0,1), (1,1), (1,-1)] {
++            var count = 1
++            for sign in [-1,1] {
++                var r = row + dr * sign, c = col + dc * sign
++                while (0..<15).contains(r), (0..<15).contains(c), board[r*15+c] == stone {
++                    count += 1; r += dr*sign; c += dc*sign
++                }
++            }
++            if count >= 5 { return true }
++        }
++        return false
++    }
++}
+diff --git a/VeilLink/UI/VeilEclipseSearchTraceStore.swift b/VeilLink/UI/VeilEclipseSearchTraceStore.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseSearchTraceStore.swift
+@@ -0,0 +1,97 @@
++import Foundation
++
++/// Live, validated, voluntarily visible AI-search branches. Not human coaching.
++/// This gate has zero influence on move ordering, scores, or time budgets.
++/// Session token invalidation also drops late callbacks from cancelled workers.
++final class VeilEclipseSearchTraceStore: @unchecked Sendable {
++    struct Branch: Equatable, Sendable {
++        let indices: [Int]       // only positions the native search actually applied
++        let exploredNodes: Int   // real cumulative node counter, not a probability
++        let serial: UInt64
++        let emittedAtUptime: TimeInterval
++    }
++    private let lock = NSLock()
++    private var session: String?
++    private var token: UUID?
++    private var turn: Int = -1
++    private var root: GomokuState?
++    private var stored: [Branch] = []
++    private var serial: UInt64 = 0
++    private var lastTime: TimeInterval = -1
++
++    @discardableResult
++    func begin(sessionID: String, board: GomokuState) -> UUID? {
++        lock.lock(); defer { lock.unlock() }
++        // Invalid attempts must revoke any prior session, never retain stale
++        // exploration events after a restart or damaged game restoration.
++        session = nil
++        token = nil
++        turn = -1
++        root = nil
++        stored = []
++        serial = 0
++        lastTime = -1
++        guard !sessionID.isEmpty, board.winner == nil, !board.isDraw else { return nil }
++        session = sessionID
++        let issued = UUID()
++        token = issued
++        turn = board.moveCount
++        root = board
++        return issued
++    }
++
++    func clear() {
++        lock.lock(); defer { lock.unlock() }
++        session = nil
++        token = nil
++        turn = -1
++        root = nil
++        stored = []
++        serial = 0
++        lastTime = -1
++    }
++
++    /// Called only from an actual GomokuBot exploration branch. At most 20 events/s.
++    /// Returns false if the path is stale, fabricated, illegal, or out of turn.
++    @discardableResult
++    func record(_ indices: [Int], nodes: Int, token expected: UUID) -> Bool {
++        guard (1...3).contains(indices.count), (1...2_000_000_000).contains(nodes) else { return false }
++        lock.lock(); defer { lock.unlock() }
++        guard expected == token, let root else { return false }
++        let now = ProcessInfo.processInfo.systemUptime
++        guard now >= lastTime, nodes >= (stored.last?.exploredNodes ?? 0) else { return false }
++        let withinThrottle = lastTime >= 0 && now - lastTime < 0.05
++        let previous = stored.last
++        let deeperSameRoot = withinThrottle && previous != nil
++            && previous!.indices.first == indices.first
++            && indices.count > previous!.indices.count
++        // Reject 99% of super-fast events before board replay/copy.
++        if withinThrottle && !deeperSameRoot { return false }
++        var test = root
++        for index in indices {
++            guard (0..<225).contains(index),
++                  test.apply(index: index, actor: test.currentPlayer) else { return false }
++        }
++        if deeperSameRoot, let previous {
++            stored[stored.count - 1] = Branch(
++                indices: indices, exploredNodes: nodes,
++                serial: previous.serial, emittedAtUptime: now
++            )
++            return true
++        }
++        serial &+= 1
++        stored.append(Branch(indices: indices, exploredNodes: nodes, serial: serial, emittedAtUptime: now))
++        if stored.count > 14 { stored.removeFirst(stored.count - 14) }
++        lastTime = now
++        return true
++    }
++
++    /// No branch is visible outside the exact AI turn that produced it.
++    func snapshot(sessionID requestedSession: String, turn requestedTurn: Int,
++                  playing: Bool, aiThinking: Bool) -> [Branch] {
++        lock.lock(); defer { lock.unlock() }
++        guard playing, aiThinking, token != nil,
++              requestedSession == session, requestedTurn == turn else { return [] }
++        return stored
++    }
++}
