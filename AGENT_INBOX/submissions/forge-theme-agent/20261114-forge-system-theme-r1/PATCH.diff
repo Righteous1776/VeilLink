@@ -79,8 +79,8 @@ diff --git a/VeilLink/Core/AppearanceTheme.swift b/VeilLink/Core/AppearanceTheme
 +        panelSoft: Color(red: 0.158, green: 0.172, blue: 0.190),
 +        obsidian: Color(red: 0.015, green: 0.019, blue: 0.025),
 +        veil: Color(red: 0.048, green: 0.054, blue: 0.065),
-+        gold: Color(red: 1.00, green: 0.43, blue: 0.08),
-+        goldBright: Color(red: 1.00, green: 0.57, blue: 0.18),
++        gold: Color(red: 0.98, green: 0.38, blue: 0.11),
++        goldBright: Color(red: 1.00, green: 0.49, blue: 0.16),
 +        goldDeep: Color(red: 0.60, green: 0.19, blue: 0.02),
 +        mutedGold: Color(red: 0.66, green: 0.44, blue: 0.30),
 +        paleMetal: Color(red: 0.80, green: 0.83, blue: 0.87),
@@ -95,7 +95,7 @@ diff --git a/VeilLink/Core/AppearanceTheme.swift b/VeilLink/Core/AppearanceTheme
 +        recess: Color.black.opacity(0.80),
 +        keycapTop: Color(red: 0.245, green: 0.260, blue: 0.283),
 +        keycapBottom: Color(red: 0.080, green: 0.091, blue: 0.104),
-+        indicator: Color(red: 1.00, green: 0.47, blue: 0.09)
++        indicator: Color(red: 1.00, green: 0.39, blue: 0.11)
 +    )
 +
 +    /// Light-mode FORGE: industrial aluminum; darker orange preserves contrast.
@@ -218,9 +218,19 @@ diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
  
      init(model: AppModel) {
          self.model = model
-@@ -18,8 +19,16 @@
+@@ -17,9 +18,26 @@
+     var body: some View {
          VeilStableScrollView {
              VStack(spacing: 16) {
++                if appearance.isForge {
++                    VeilForgeModuleHeader(
++                        serial: "VL / RF-01",
++                        title: "近场链路",
++                        state: bluetooth.isRunning ? "SCANNING" : "STANDBY",
++                        active: bluetooth.isRunning
++                    )
++                }
++
                  HStack(spacing: 16) {
 +                    Group {
 +                        if appearance.isForge {
@@ -237,7 +247,7 @@ diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
  
                      VStack(alignment: .leading, spacing: 7) {
                          HStack(spacing: 7) {
-@@ -33,6 +42,13 @@
+@@ -33,6 +51,13 @@
                              .font(.footnote)
                              .foregroundColor(VeilTheme.secondaryText)
                              .fixedSize(horizontal: false, vertical: true)
@@ -251,7 +261,7 @@ diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
                      }
                      Spacer(minLength: 0)
                  }
-@@ -54,6 +70,13 @@
+@@ -54,6 +79,13 @@
                          Text(lanTurbo.dataPlaneSummary)
                              .font(.caption2.monospaced())
                              .foregroundColor((lanTurbo.totalPayloadBytesSent + lanTurbo.totalPayloadBytesReceived) > 0 ? VeilTheme.success : VeilTheme.secondaryText)
@@ -265,7 +275,7 @@ diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
                      }
                      Spacer()
                      VStack(alignment: .trailing, spacing: 3) {
-@@ -203,6 +226,7 @@
+@@ -203,6 +235,7 @@
  }
  
  private struct NearbyPeerCard: View {
@@ -273,7 +283,7 @@ diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
      @ObservedObject var model: AppModel
      @ObservedObject var bluetooth: BLETransport
      @ObservedObject var lanTurbo: LANTransport
-@@ -291,9 +315,14 @@
+@@ -291,9 +324,14 @@
                              .minimumScaleFactor(0.72)
                      }
                      Spacer(minLength: 6)
@@ -302,9 +312,19 @@ diff --git a/VeilLink/UI/AgentStatusView.swift b/VeilLink/UI/AgentStatusView.swi
  
      init(model: AppModel) {
          self.model = model
-@@ -27,11 +28,25 @@
+@@ -26,12 +27,35 @@
+ 
      var body: some View {
          VStack(alignment: .leading, spacing: 12) {
++            if appearance.isForge {
++                VeilForgeModuleHeader(
++                    serial: "VL / CPU-02",
++                    title: "本地计算核心",
++                    state: coordinator.runtimeState.displayName,
++                    active: coordinator.runtimeState == .generating
++                        || coordinator.runtimeState == .loading
++                )
++            }
              HStack(spacing: 12) {
 +                Group {
 +                    if appearance.isForge {
@@ -333,7 +353,7 @@ diff --git a/VeilLink/UI/AgentStatusView.swift b/VeilLink/UI/AgentStatusView.swi
                  VStack(alignment: .leading, spacing: 4) {
                      HStack(spacing: 7) {
                          Text("灵核")
-@@ -59,6 +74,15 @@
+@@ -59,6 +83,15 @@
                  }
              }
  
@@ -349,7 +369,7 @@ diff --git a/VeilLink/UI/AgentStatusView.swift b/VeilLink/UI/AgentStatusView.swi
              HStack(spacing: 8) {
                  AgentStatusChip(title: "RUNTIME", value: coordinator.runtimeManifest?.displayName ?? "未载入")
                  AgentStatusChip(title: "ENGINE", value: LocalTextModelRuntimeFactory.backendName)
-@@ -75,8 +99,18 @@
+@@ -75,8 +108,18 @@
              }
          }
          .padding(14)
@@ -400,7 +420,7 @@ diff --git a/VeilLink/UI/VeilForgeVisualSystem.swift b/VeilLink/UI/VeilForgeVisu
 new file mode 100644
 --- /dev/null
 +++ b/VeilLink/UI/VeilForgeVisualSystem.swift
-@@ -0,0 +1,254 @@
+@@ -0,0 +1,388 @@
 +import SwiftUI
 +import Foundation
 +
@@ -655,11 +675,145 @@ new file mode 100644
 +        .accessibilityHidden(true)
 +    }
 +}
++
++
++/// Header blueprint follows ECLIPSE's recognizable visual grammar:
++/// an explicit machine identity, readable state and bright active datum.
++struct VeilForgeModuleHeader: View {
++    let serial: String
++    let title: String
++    let state: String
++    let active: Bool
++
++    var body: some View {
++        HStack(alignment: .center, spacing: 10) {
++            Rectangle()
++                .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                .frame(width: 3, height: 32)
++
++            VStack(alignment: .leading, spacing: 3) {
++                Text(serial)
++                    .font(.system(size: 9, weight: .bold, design: .monospaced))
++                    .tracking(0.75)
++                    .foregroundColor(VeilTheme.mutedGold)
++                Text(title)
++                    .font(.system(size: 17, weight: .bold, design: .rounded))
++                    .foregroundColor(VeilTheme.text)
++            }
++
++            Spacer(minLength: 6)
++
++            VStack(alignment: .trailing, spacing: 3) {
++                HStack(spacing: 5) {
++                    Rectangle()
++                        .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                        .frame(width: 5, height: 5)
++                    Text(state)
++                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
++                        .foregroundColor(active ? VeilTheme.goldBright : VeilTheme.secondaryText)
++                        .lineLimit(1)
++                        .minimumScaleFactor(0.75)
++                }
++                Text("LOCAL // LIVE STATE")
++                    .font(.system(size: 8, weight: .medium, design: .monospaced))
++                    .foregroundColor(VeilTheme.tertiaryText)
++            }
++        }
++        .padding(.horizontal, 3)
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .combine)
++    }
++}
++
++/// A small, static instrument face for the actual theme chooser.
++/// Unlike a decorative animated preview, it costs no idle frames.
++struct VeilForgeThemePreview: View {
++    var body: some View {
++        ZStack {
++            VeilPanelShape(cut: 8, radius: 1)
++                .fill(Color(red: 0.11, green: 0.12, blue: 0.14))
++            VeilPanelShape(cut: 8, radius: 1)
++                .stroke(Color(red: 0.55, green: 0.27, blue: 0.16), lineWidth: 0.8)
++
++            Circle()
++                .trim(from: 0.04, to: 0.72)
++                .stroke(Color(red: 0.98, green: 0.38, blue: 0.11),
++                        style: StrokeStyle(lineWidth: 2.3, lineCap: .butt))
++                .frame(width: 27, height: 27)
++                .rotationEffect(.degrees(-45))
++
++            Text("F")
++                .font(.system(size: 14, weight: .black, design: .monospaced))
++                .foregroundColor(Color.white.opacity(0.92))
++
++            Rectangle()
++                .fill(Color(red: 1.0, green: 0.48, blue: 0.15))
++                .frame(width: 10, height: 2)
++                .offset(x: 11, y: 15)
++        }
++        .frame(width: 42, height: 42)
++        .allowsHitTesting(false)
++        .accessibilityHidden(true)
++    }
++}
++
++/// Selected-theme specification is informational, not fake telemetry.
++/// It helps users tell a full theme from a superficial color filter.
++struct VeilForgeThemeSpecification: View {
++    var body: some View {
++        VStack(alignment: .leading, spacing: 8) {
++            HStack(spacing: 8) {
++                Rectangle()
++                    .fill(VeilTheme.goldBright)
++                    .frame(width: 4, height: 22)
++                VStack(alignment: .leading, spacing: 2) {
++                    Text("FORGE // SYSTEM 06")
++                        .font(.system(size: 9, weight: .bold, design: .monospaced))
++                        .foregroundColor(VeilTheme.goldBright)
++                    Text("工业控制台 · 动态来自真实状态")
++                        .font(.system(size: 11, weight: .semibold, design: .rounded))
++                        .foregroundColor(VeilTheme.text)
++                }
++            }
++
++            HStack(spacing: 6) {
++                chip("RF", "RADIO")
++                chip("CPU", "RUNTIME")
++                chip("BLE", "LINK")
++            }
++
++            Text("静态金属结构 · 橙色状态标识 · 滚动优先 · 后台停止驱动")
++                .font(.system(size: 9, weight: .medium, design: .monospaced))
++                .foregroundColor(VeilTheme.secondaryText)
++                .fixedSize(horizontal: false, vertical: true)
++        }
++        .padding(12)
++        .background(VeilForgePlate(emphasized: true))
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .combine)
++    }
++
++    private func chip(_ a: String, _ b: String) -> some View {
++        HStack(spacing: 4) {
++            Text(a)
++                .foregroundColor(VeilTheme.goldBright)
++            Text(b)
++                .foregroundColor(VeilTheme.secondaryText)
++        }
++        .font(.system(size: 8, weight: .semibold, design: .monospaced))
++        .lineLimit(1)
++        .minimumScaleFactor(0.75)
++        .frame(maxWidth: .infinity)
++        .frame(height: 22)
++        .background(VeilTheme.subtleFillStrong)
++        .clipShape(VeilPanelShape(cut: 5, radius: 1))
++    }
++}
 diff --git a/VeilLinkTests/VeilForgeMotionCoreTests.swift b/VeilLinkTests/VeilForgeMotionCoreTests.swift
 new file mode 100644
 --- /dev/null
 +++ b/VeilLinkTests/VeilForgeMotionCoreTests.swift
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,39 @@
 +import XCTest
 +@testable import VeilLink
 +
@@ -693,8 +847,119 @@ new file mode 100644
 +        XCTAssertEqual(VeilAppearanceSelection.forge.rawValue, "forge")
 +        XCTAssertEqual(VeilAppearanceSelection(rawValue: "forge"), .forge)
 +        XCTAssertEqual(VeilAppearanceSelection.forge.title, "FORGE · 锻造")
++        XCTAssertEqual(VeilAppearanceSelection.switchableCases.count, 5)
 +        XCTAssertTrue(VeilAppearanceSelection.switchableCases.contains(.instrumentAuto))
 +        XCTAssertTrue(VeilAppearanceSelection.switchableCases.contains(.veilOriginal))
 +    }
 +
 +}
+diff --git a/VeilLink/UI/SettingsView.swift b/VeilLink/UI/SettingsView.swift
+--- a/VeilLink/UI/SettingsView.swift
++++ b/VeilLink/UI/SettingsView.swift
+@@ -283,13 +283,19 @@
+                     haptics.selection()
+                 } label: {
+                     HStack(spacing: 12) {
++                        Group {
++                            if choice == .forge {
++                                VeilForgeThemePreview()
++                            } else {
++                                ZStack {
++                                    RoundedRectangle(cornerRadius: 9)
++                                        .fill(choice.previewSurfaceColor)
++                                    Image(systemName: choice.previewSystemImage)
++                                        .foregroundColor(choice == appearance.selection ? VeilTheme.goldBright : VeilTheme.secondaryText)
++                                }
++                                .frame(width: 42, height: 42)
++                            }
+-                        ZStack {
+-                            RoundedRectangle(cornerRadius: 9)
+-                                .fill(choice.previewSurfaceColor)
+-                            Image(systemName: choice.previewSystemImage)
+-                                .foregroundColor(choice == appearance.selection ? VeilTheme.goldBright : VeilTheme.secondaryText)
+                         }
+-                        .frame(width: 42, height: 42)
+                         VStack(alignment: .leading, spacing: 3) {
+                             Text(choice.title).fontWeight(.semibold).foregroundColor(VeilTheme.text)
+                             Text(choice.subtitle).font(.caption).foregroundColor(VeilTheme.secondaryText)
+@@ -307,6 +313,9 @@
+                     Divider().background(VeilTheme.hairline)
+                 }
+             }
++            if appearance.isForge {
++                VeilForgeThemeSpecification()
++            }
+             Divider().background(VeilTheme.hairline)
+             Button {
+                 if appearance.isPlainline {
+diff --git a/VeilLink/Core/VeilMotionKit.swift b/VeilLink/Core/VeilMotionKit.swift
+--- a/VeilLink/Core/VeilMotionKit.swift
++++ b/VeilLink/Core/VeilMotionKit.swift
+@@ -107,6 +107,7 @@
+ /// Touch-position-aware spatial press effect. The surface tilts toward the finger, receives a
+ /// local radial specular highlight, compresses to 0.96 on capable hardware, then springs home.
+ struct VeilSpatialPressModifier: ViewModifier {
++    @ObservedObject private var appearance = VeilAppearanceController.shared
+     var maximumTilt: Double = VeilMotionPolicy.maxTiltDegrees
+     var cornerRadius: CGFloat = 16
+     var highlightColor: Color = .white
+@@ -116,6 +117,7 @@
+     @State private var measuredSize: CGSize = .zero
+     private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
+ 
++    @ViewBuilder
+     func body(content: Content) -> some View {
+         let point = press?.location ?? CGPoint(x: measuredSize.width * 0.5, y: measuredSize.height * 0.5)
+         let normalizedX = normalized(point.x, dimension: measuredSize.width)
+@@ -129,6 +131,12 @@
+         let isPressed = press != nil
+         let full = VeilMotionPolicy.allowsFullSpatialEffects && !motionReduced
+ 
++        if appearance.isForge {
++            // FORGE gives all drags to the ScrollView, keyboard and game surface.
++            // Native ButtonStyle still supplies its short mechanical press response.
++            // No zero-distance DragGesture is installed in this branch.
++            content
++        } else {
+         content
+             .background(
+                 GeometryReader { proxy in
+@@ -181,6 +189,7 @@
+                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                     .updating($press) { value, state, _ in state = value }
+             )
++        }
+     }
+ 
+     private func normalized(_ value: CGFloat, dimension: CGFloat) -> CGFloat {
+@@ -336,7 +345,7 @@
+         ZStack {
+             baseStroke
+ 
++            if active && !appearance.isForge {
+-            if active {
+                 Rectangle()
+                     .fill(
+                         AngularGradient(
+@@ -366,6 +375,7 @@
+         .onDisappear { stopRotation() }
+         .onChange(of: active) { _ in updateRotation() }
+         .onChange(of: reduceMotion) { _ in updateRotation() }
++        .onChange(of: appearance.selection) { _ in updateRotation() }
+     }
+ 
+     @ViewBuilder
+@@ -392,9 +402,11 @@
+ 
+     private func updateRotation() {
+         stopRotation()
++        guard active, !appearance.isForge, !motionReduced,
++              VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
+-        guard active, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
+         DispatchQueue.main.async {
++            guard active, !appearance.isForge, !motionReduced,
++                  VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
+-            guard active, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
+             withAnimation(.linear(duration: 5.5).repeatForever(autoreverses: false)) {
+                 rotates = true
+             }
