@@ -1,0 +1,401 @@
+diff --git a/VeilLink/UI/NearbyView.swift b/VeilLink/UI/NearbyView.swift
+--- a/VeilLink/UI/NearbyView.swift
++++ b/VeilLink/UI/NearbyView.swift
+@@ -5,7 +5,6 @@
+     @ObservedObject var bluetooth: BLETransport
+     @ObservedObject var lanTurbo: LANTransport
+     @ObservedObject var sessions: SessionCoordinator
+-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+ 
+     init(model: AppModel) {
+         self.model = model
+@@ -18,7 +17,7 @@
+         VeilStableScrollView {
+             VStack(spacing: 16) {
+                 HStack(spacing: 16) {
++                    VeilMechanicalRotor(kind: .radio, engaged: bluetooth.isRunning, working: bluetooth.isRunning)
+-                    RadarStatusView(isRunning: bluetooth.isRunning, reduceMotion: reduceMotion)
+                         .frame(width: 86, height: 86)
+ 
+                     VStack(alignment: .leading, spacing: 7) {
+@@ -33,6 +32,10 @@
+                             .font(.footnote)
+                             .foregroundColor(VeilTheme.secondaryText)
+                             .fixedSize(horizontal: false, vertical: true)
++                        Text("\(sessions.nearbyPeers.count) PEERS  //  \(bluetooth.isRunning ? "RF SCANNING" : "RF STANDBY")")
++                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
++                            .tracking(0.45)
++                            .foregroundColor(bluetooth.isRunning ? VeilTheme.goldBright : VeilTheme.tertiaryText)
+                     }
+                     Spacer(minLength: 0)
+                 }
+@@ -115,93 +118,6 @@
+     }
+ }
+ 
+-private struct RadarStatusView: View {
+-    let isRunning: Bool
+-    let reduceMotion: Bool
+-    @State private var pulse = false
+-    @State private var sweep = false
+-    private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
+-
+-    var body: some View {
+-        ZStack {
+-            Circle()
+-                .fill(
+-                    RadialGradient(
+-                        colors: [VeilTheme.gold.opacity(0.13), VeilTheme.obsidian.opacity(0.86)],
+-                        center: .center,
+-                        startRadius: 0,
+-                        endRadius: 42
+-                    )
+-                )
+-
+-            ForEach(0..<3, id: \.self) { ring in
+-                Circle()
+-                    .trim(from: 0.06 + CGFloat(ring) * 0.08, to: 0.70 + CGFloat(ring) * 0.05)
+-                    .stroke(
+-                        ring == 0 ? VeilTheme.gold.opacity(0.34) : VeilTheme.subtleStroke,
+-                        style: StrokeStyle(lineWidth: 1, lineCap: .round)
+-                    )
+-                    .scaleEffect(0.42 + CGFloat(ring) * 0.25)
+-                    .rotationEffect(.degrees(Double(ring * 79 - 28)))
+-            }
+-
+-            if isRunning {
+-                Rectangle()
+-                    .fill(
+-                        LinearGradient(
+-                            colors: [VeilTheme.goldBright.opacity(0.78), Color.clear],
+-                            startPoint: .top,
+-                            endPoint: .bottom
+-                        )
+-                    )
+-                    .frame(width: 1, height: 35)
+-                    .offset(y: -17.5)
+-                    .rotationEffect(.degrees(sweep ? 360 : 0), anchor: .bottom)
+-                    .opacity(motionReduced ? 0.28 : 0.72)
+-            }
+-
+-            if isRunning {
+-                Circle()
+-                    .stroke(VeilTheme.gold.opacity(0.36), lineWidth: 1)
+-                    .scaleEffect(pulse ? 1.0 : 0.68)
+-                    .opacity(pulse ? 0 : 0.55)
+-            }
+-
+-            ZStack {
+-                VeilPanelShape(cut: 3, radius: 1)
+-                    .fill(VeilTheme.goldBright)
+-                    .frame(width: 9, height: 9)
+-                VeilPanelShape(cut: 2, radius: 1)
+-                    .stroke(Color.black.opacity(0.50), lineWidth: 0.7)
+-                    .frame(width: 5, height: 5)
+-            }
+-            .shadow(color: VeilTheme.gold.opacity(0.55), radius: 8)
+-        }
+-        .overlay(alignment: .bottomTrailing) {
+-            Text(isRunning ? "SCAN" : "IDLE")
+-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+-                .tracking(0.8)
+-                .foregroundColor(isRunning ? VeilTheme.goldBright : VeilTheme.tertiaryText)
+-                .offset(x: 2, y: 2)
+-        }
+-        .onAppear { updateMotion() }
+-        .onChange(of: isRunning) { _ in updateMotion() }
+-        .onChange(of: reduceMotion) { _ in updateMotion() }
+-    }
+-
+-    private func updateMotion() {
+-        pulse = false
+-        sweep = false
+-        guard isRunning, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
+-        withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) {
+-            pulse = true
+-        }
+-        withAnimation(.linear(duration: 3.2).repeatForever(autoreverses: false)) {
+-            sweep = true
+-        }
+-    }
+-}
+-
+ private struct NearbyPeerCard: View {
+     @ObservedObject var model: AppModel
+     @ObservedObject var bluetooth: BLETransport
+@@ -291,9 +207,12 @@
+                             .minimumScaleFactor(0.72)
+                     }
+                     Spacer(minLength: 6)
++                    HStack(spacing: 5) {
++                        VeilMechanicalHealthGauge(healthScore: linkSnapshot.healthScore)
++                        Text("H\(linkSnapshot.healthScore)")
++                            .font(.system(size: 10, weight: .bold, design: .monospaced))
++                            .foregroundColor(VeilTheme.gold)
++                    }
+-                    Text("H\(linkSnapshot.healthScore)")
+-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+-                        .foregroundColor(VeilTheme.gold)
+                     if linkSnapshot.isRecovering {
+                         Button {
+                             bluetooth.recover(peer.transportID)
+diff --git a/VeilLink/UI/AgentStatusView.swift b/VeilLink/UI/AgentStatusView.swift
+--- a/VeilLink/UI/AgentStatusView.swift
++++ b/VeilLink/UI/AgentStatusView.swift
+@@ -27,11 +27,15 @@
+     var body: some View {
+         VStack(alignment: .leading, spacing: 12) {
+             HStack(spacing: 12) {
++                VeilMechanicalRotor(
++                    kind: .compute,
++                    engaged: coordinator.runtimeState == .ready
++                        || coordinator.runtimeState == .generating
++                        || coordinator.runtimeState == .loading,
++                    working: coordinator.runtimeState == .generating
++                        || coordinator.runtimeState == .loading
+-                VeilIdentityGlyph(
+-                    seed: "veillink-agent-foundation",
+-                    size: 46,
+-                    active: coordinator.runtimeState == .ready || coordinator.runtimeState == .generating
+                 )
++                .frame(width: 54, height: 54)
+                 VStack(alignment: .leading, spacing: 4) {
+                     HStack(spacing: 7) {
+                         Text("灵核")
+diff --git a/VeilLink/Core/VeilMechanicalMotionCore.swift b/VeilLink/Core/VeilMechanicalMotionCore.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Core/VeilMechanicalMotionCore.swift
+@@ -0,0 +1,22 @@
++import Foundation
++
++/// Deterministic, bounded instrument motion. Values are presentation geometry,
++/// never inferred network throughput, peer scores, CPU utilization or AI search depth.
++enum VeilMechanicalMotionCore {
++    static let segmentCount = 8
++
++    /// 12 stepper detents per second, 48 detents per revolution (7.5 degrees).
++    /// The actuator parks at 0 when not working, even if uptime is very large.
++    static func detentAngle(atSeconds seconds: TimeInterval, moving: Bool) -> Double {
++        guard moving, seconds.isFinite else { return 0 }
++        let cycle = max(0, seconds).truncatingRemainder(dividingBy: 4.0)
++        return floor(cycle * 12.0) * 7.5
++    }
++
++    /// Eight discrete health markers derived solely from an actual 0...100
++    /// BLE link health score. These are NOT a progress indicator.
++    static func healthSegments(score: Int) -> Int {
++        let clamped = min(100, max(0, score))
++        return (clamped * segmentCount + 99) / 100
++    }
++}
+diff --git a/VeilLink/UI/VeilMechanicalInstrumentation.swift b/VeilLink/UI/VeilMechanicalInstrumentation.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilMechanicalInstrumentation.swift
+@@ -0,0 +1,172 @@
++import SwiftUI
++import Foundation
++
++/// An ECLIPSE-inspired, explicit-state mechanical status instrument.
++/// This is NOT a global overlay or particle emitter. A motor turns only while
++/// its corresponding real subsystem is working and the app is foregrounded.
++struct VeilMechanicalRotor: View {
++    enum Kind {
++        case radio
++        case compute
++
++        var mark: String {
++            switch self {
++            case .radio: return "RF"
++            case .compute: return "CPU"
++            }
++        }
++
++        var spokenName: String {
++            switch self {
++            case .radio: return "蓝牙扫描仪表"
++            case .compute: return "灵核运算仪表"
++            }
++        }
++    }
++
++    let kind: Kind
++    let engaged: Bool
++    let working: Bool
++
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
++    @State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
++
++    private var motorEnabled: Bool {
++        working && engaged
++            && scenePhase == .active
++            && !reduceMotion
++            && !lowPowerMode
++            && VeilMotionPolicy.allowsContinuousDecorativeMotion
++    }
++
++    private var spokenStatus: String {
++        working ? "工作中" : (engaged ? "已就绪" : "待机")
++    }
++
++    var body: some View {
++        GeometryReader { proxy in
++            let diameter = max(1, min(proxy.size.width, proxy.size.height))
++            ZStack {
++                VeilPanelShape(cut: diameter * 0.10, radius: diameter * 0.035)
++                    .fill(VeilTheme.obsidian.opacity(0.94))
++
++                VeilPanelShape(cut: diameter * 0.10, radius: diameter * 0.035)
++                    .stroke(VeilTheme.hairline, lineWidth: 1)
++
++                // Stator: precisely spaced engraved notches, not particles.
++                ForEach(0..<24, id: \.self) { index in
++                    Rectangle()
++                        .fill(
++                            index.isMultiple(of: 6)
++                            ? VeilTheme.gold.opacity(engaged ? 0.90 : 0.27)
++                            : VeilTheme.paleMetal.opacity(0.29)
++                        )
++                        .frame(
++                            width: max(0.7, diameter * (index.isMultiple(of: 6) ? 0.021 : 0.012)),
++                            height: diameter * (index.isMultiple(of: 6) ? 0.085 : 0.047)
++                        )
++                        .offset(y: -diameter * 0.395)
++                        .rotationEffect(.degrees(Double(index) * 15))
++                }
++
++                Circle()
++                    .stroke(VeilTheme.hairline, lineWidth: 1)
++                    .frame(width: diameter * 0.66, height: diameter * 0.66)
++
++                // A 12 Hz quantized stepper motor. No repeatForever animations,
++                // gesture recognizers, infinite glow, or background timer.
++                TimelineView(.animation(
++                    minimumInterval: 1.0 / 12.0,
++                    paused: !motorEnabled
++                )) { timeline in
++                    let angle = VeilMechanicalMotionCore.detentAngle(
++                        atSeconds: timeline.date.timeIntervalSinceReferenceDate,
++                        moving: motorEnabled
++                    )
++
++                    ZStack {
++                        Circle()
++                            .trim(from: 0.03, to: 0.30)
++                            .stroke(
++                                VeilTheme.goldBright.opacity(engaged ? 0.93 : 0.21),
++                                style: StrokeStyle(lineWidth: max(1, diameter * 0.025), lineCap: .butt)
++                            )
++                            .rotationEffect(.degrees(angle - 90))
++
++                        Circle()
++                            .trim(from: 0.54, to: 0.85)
++                            .stroke(
++                                VeilTheme.paleMetal.opacity(engaged ? 0.72 : 0.19),
++                                style: StrokeStyle(lineWidth: max(0.8, diameter * 0.015), lineCap: .butt)
++                            )
++                            .padding(diameter * 0.062)
++                            .rotationEffect(.degrees(-angle * 0.5 + 45))
++
++                        Rectangle()
++                            .fill(VeilTheme.gold.opacity(engaged ? 0.62 : 0.16))
++                            .frame(width: diameter * 0.32, height: max(0.7, diameter * 0.010))
++                            .rotationEffect(.degrees(angle * 0.5))
++                    }
++                    .frame(width: diameter * 0.65, height: diameter * 0.65)
++                }
++
++                // Solid central carrier. Its contents never expose private payloads.
++                VeilPanelShape(cut: diameter * 0.035, radius: 2)
++                    .fill(VeilTheme.elevated)
++                    .frame(width: diameter * 0.34, height: diameter * 0.26)
++                    .overlay {
++                        VeilPanelShape(cut: diameter * 0.035, radius: 2)
++                            .stroke(VeilTheme.gold.opacity(engaged ? 0.72 : 0.18), lineWidth: 1)
++                    }
++
++                Text(kind.mark)
++                    .font(.system(size: max(8, diameter * 0.125), weight: .black, design: .monospaced))
++                    .tracking(-0.3)
++                    .foregroundColor(engaged ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++
++                // Actuator lock lamp. Static when the subsystem is parked.
++                Rectangle()
++                    .fill(working ? VeilTheme.goldBright : (engaged ? VeilTheme.success : VeilTheme.tertiaryText))
++                    .frame(width: diameter * 0.105, height: max(1.6, diameter * 0.025))
++                    .offset(x: diameter * 0.335, y: diameter * 0.337)
++            }
++            .frame(width: diameter, height: diameter)
++            .frame(maxWidth: .infinity, maxHeight: .infinity)
++        }
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .ignore)
++        .accessibilityLabel("\(kind.spokenName)：\(spokenStatus)")
++        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
++            lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
++        }
++    }
++}
++
++/// Actual BLE health, converted to machined discrete bars.
++struct VeilMechanicalHealthGauge: View {
++    let healthScore: Int
++
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    private var illuminated: Int {
++        VeilMechanicalMotionCore.healthSegments(score: healthScore)
++    }
++
++    var body: some View {
++        HStack(alignment: .bottom, spacing: 1.5) {
++            ForEach(0..<VeilMechanicalMotionCore.segmentCount, id: \.self) { index in
++                Rectangle()
++                    .fill(index < illuminated ? VeilTheme.goldBright : VeilTheme.hairline)
++                    .frame(width: 2.8, height: CGFloat(5 + (index % 4) * 2))
++            }
++        }
++        .frame(height: 12, alignment: .bottom)
++        .animation(
++            VeilMotionPolicy.animation(.resolve, reduceMotionRequested: reduceMotion),
++            value: illuminated
++        )
++        .allowsHitTesting(false)
++        .accessibilityHidden(true)
++    }
++}
+diff --git a/VeilLinkTests/VeilMechanicalMotionCoreTests.swift b/VeilLinkTests/VeilMechanicalMotionCoreTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/VeilMechanicalMotionCoreTests.swift
+@@ -0,0 +1,28 @@
++import XCTest
++@testable import VeilLink
++
++final class VeilMechanicalMotionCoreTests: XCTestCase {
++    func testDetentStepperIsQuantizedAndPeriodic() {
++        XCTAssertEqual(VeilMechanicalMotionCore.detentAngle(atSeconds: 0, moving: true), 0)
++        XCTAssertEqual(VeilMechanicalMotionCore.detentAngle(atSeconds: 0.09, moving: true), 7.5)
++        XCTAssertEqual(VeilMechanicalMotionCore.detentAngle(atSeconds: 0.18, moving: true), 15)
++        XCTAssertEqual(VeilMechanicalMotionCore.detentAngle(atSeconds: 4.09, moving: true), 7.5)
++    }
++
++    func testParkedAndInvalidStepperNeverMoves() {
++        XCTAssertEqual(VeilMechanicalMotionCore.detentAngle(atSeconds: 3.5, moving: false), 0)
++        XCTAssertEqual(VeilMechanicalMotionCore.detentAngle(atSeconds: -.infinity, moving: true), 0)
++        XCTAssertEqual(VeilMechanicalMotionCore.detentAngle(atSeconds: .nan, moving: true), 0)
++        XCTAssertEqual(VeilMechanicalMotionCore.detentAngle(atSeconds: -15, moving: true), 0)
++    }
++
++    func testHealthGaugeClampsAndUsesOnlyActualHealthScore() {
++        XCTAssertEqual(VeilMechanicalMotionCore.healthSegments(score: -200), 0)
++        XCTAssertEqual(VeilMechanicalMotionCore.healthSegments(score: 0), 0)
++        XCTAssertEqual(VeilMechanicalMotionCore.healthSegments(score: 1), 1)
++        XCTAssertEqual(VeilMechanicalMotionCore.healthSegments(score: 50), 4)
++        XCTAssertEqual(VeilMechanicalMotionCore.healthSegments(score: 75), 6)
++        XCTAssertEqual(VeilMechanicalMotionCore.healthSegments(score: 100), 8)
++        XCTAssertEqual(VeilMechanicalMotionCore.healthSegments(score: 300), 8)
++    }
++}
