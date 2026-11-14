@@ -1,0 +1,178 @@
+diff --git a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+--- a/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
++++ b/VeilLink/Agent/Games/VeilGomokuUnifiedSearch.swift
+@@ -30,6 +30,8 @@
+         var width: Int = 14
+         var forcedLineDepth: Int = 5
+         var candidateRadius: Int = 2
++        /// Opt-in until Governor tournament/thermal gates approve R12.
++        var r12HorizonQuiescence = false
+     }
+ 
+     enum Phase: String, Sendable {
+@@ -351,6 +353,38 @@
+             nodes += 1
+             if overBudget() { return 0 }
+             if last >= 0 && winningStone(at: last, side: opponent(side)) { return -mate + ply }
++            if depth == 0 && limits.r12HorizonQuiescence {
++                // A depth-limit leaf must not disguise an existing win or a
++                // double-five forced loss as a merely positional heuristic.
++                // R12 preserves the 48-tree learned move ordering upstream.
++                if let probe = EclipseHorizonQuiescenceR12.inspect(board, toMove: side) {
++                    if overBudget() { return 0 }
++                    if let certified = EclipseHorizonQuiescenceR12.certifiedScore(
++                        probe, mate: mate, ply: ply
++                    ) {
++                        switch probe {
++                        case .ownImmediateWin(let cell):
++                            variation = [cell]
++                        case .opponentDoubleFive(let cells):
++                            variation = Array(cells.prefix(2))
++                        case .forcedBlock, .quiet:
++                            break
++                        }
++                        return certified
++                    }
++                    if case .forcedBlock(let block) = probe {
++                        // Unique compulsory defense extends exactly one ply.
++                        // Its quiet score is not a proof of winning.
++                        place(block, side)
++                        nodes += 1
++                        if overBudget() { unplace(block, side); return 0 }
++                        let afterBlock = -staticValue(toMove: opponent(side))
++                        unplace(block, side)
++                        variation = [block]
++                        return afterBlock
++                    }
++                }
++            }
+             if depth == 0 || !board.contains(0) { return staticValue(toMove: side) }
+             let tableKey = hash ^ VeilGomokuUnifiedSearch.sideHash[Int(side)]
+             let oldAlpha = alpha
+diff --git a/VeilLink/Agent/Games/EclipseHorizonQuiescenceR12.swift b/VeilLink/Agent/Games/EclipseHorizonQuiescenceR12.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/Agent/Games/EclipseHorizonQuiescenceR12.swift
+@@ -0,0 +1,74 @@
++import Foundation
++
++/// ECLIPSE R12: bounded, exhaustive immediate-five classification for a
++/// freestyle 15x15 Gomoku PVS leaf. The trained 48-tree move ordering remains
++/// unchanged. Exact winning-completion detection is a *rule* check, not a new
++/// fitted model or a claim about general forced wins.
++///
++/// The caller must supply a valid, nonterminal board and authentic side to move.
++/// Intended as a gated replacement for `depth == 0 -> staticValue` only.
++enum EclipseHorizonQuiescenceR12 {
++    static let size = 15
++    static let capacity = 225
++    private static let axes = [(0, 1), (1, 0), (1, 1), (1, -1)]
++
++    /// The searcher may only treat `ownImmediateWin` and `opponentDoubleFive`
++    /// as proven short results. `forcedBlock` requires an additional quiet
++    /// evaluation after applying the unique legal block; no mate is assumed.
++    enum Probe: Equatable, Sendable {
++        case ownImmediateWin(Int)
++        case opponentDoubleFive([Int])
++        case forcedBlock(Int)
++        case quiet
++    }
++
++    /// Exhaustive over all 572 five-cell windows. Every exact completion
++    /// point is deduplicated so overlapping windows cannot fake two threats.
++    /// Passing invalid content yields nil; callers retain their old baseline.
++    static func inspect(_ cells: [UInt8], toMove: UInt8) -> Probe? {
++        guard cells.count == capacity, toMove == 1 || toMove == 2,
++              cells.allSatisfy({ $0 <= 2 }) else { return nil }
++        var own: Set<Int> = []
++        var enemy: Set<Int> = []
++        for (dr, dc) in axes {
++            for row in 0..<size {
++                for col in 0..<size {
++                    let rLast = row + dr * 4, cLast = col + dc * 4
++                    guard (0..<size).contains(rLast), (0..<size).contains(cLast) else { continue }
++                    var one = 0, two = 0, hole = -1
++                    for step in 0..<5 {
++                        let index = (row + dr * step) * size + col + dc * step
++                        switch cells[index] {
++                        case 1: one += 1
++                        case 2: two += 1
++                        default: hole = index
++                        }
++                    }
++                    if one == 4 && two == 0 && hole >= 0 {
++                        if toMove == 1 { own.insert(hole) } else { enemy.insert(hole) }
++                    }
++                    if two == 4 && one == 0 && hole >= 0 {
++                        if toMove == 2 { own.insert(hole) } else { enemy.insert(hole) }
++                    }
++                }
++            }
++        }
++        // The side to move wins *before* an opponent's existing threat.
++        if let win = own.min() { return .ownImmediateWin(win) }
++        let threats = enemy.sorted()
++        if threats.count >= 2 { return .opponentDoubleFive(threats) }
++        if let block = threats.first { return .forcedBlock(block) }
++        return .quiet
++    }
++
++    /// A purely tactical win/forced-loss score; no false certificate for quiet
++    /// or unique-block positions. Relative to side to move and search ply.
++    static func certifiedScore(_ probe: Probe, mate: Int, ply: Int) -> Int? {
++        guard mate > 100, ply >= 0 else { return nil }
++        switch probe {
++        case .ownImmediateWin: return mate - ply - 1
++        case .opponentDoubleFive: return -mate + ply + 2
++        case .forcedBlock, .quiet: return nil
++        }
++    }
++}
+diff --git a/VeilLinkTests/EclipseHorizonR12Tests.swift b/VeilLinkTests/EclipseHorizonR12Tests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/EclipseHorizonR12Tests.swift
+@@ -0,0 +1,43 @@
++import XCTest
++@testable import VeilLink
++
++/// Runs only after Codex #209 and R12 are applied to an iOS integration branch.
++final class EclipseHorizonR12Tests: XCTestCase {
++    func testDefaultRollbackIsSafe() {
++        XCTAssertFalse(VeilGomokuUnifiedSearch.Limits().r12HorizonQuiescence)
++    }
++
++    func testOpenFourIsAnExactImmediateWin() {
++        var b = [UInt8](repeating: 0, count: 225)
++        for at in [0, 1, 2, 3] { b[at] = 1 }
++        XCTAssertEqual(EclipseHorizonQuiescenceR12.inspect(b, toMove: 1), .ownImmediateWin(4))
++        XCTAssertEqual(EclipseHorizonQuiescenceR12.certifiedScore(
++            .ownImmediateWin(4), mate: 10_000_000, ply: 1
++        ), 9_999_998)
++    }
++
++    func testTwoDistinctOpponentFiveCompletionsAreForcedLoss() {
++        var b = [UInt8](repeating: 0, count: 225)
++        for at in [109, 110, 111, 112] { b[at] = 2 }
++        XCTAssertEqual(EclipseHorizonQuiescenceR12.inspect(b, toMove: 1),
++                       .opponentDoubleFive([108, 113]))
++    }
++
++    func testForcedBlockIsNotMistakenForProvenMate() {
++        var b = [UInt8](repeating: 0, count: 225)
++        for at in [0, 1, 2, 3] { b[at] = 2 }
++        b[5] = 1
++        XCTAssertEqual(EclipseHorizonQuiescenceR12.inspect(b, toMove: 1), .forcedBlock(4))
++        XCTAssertNil(EclipseHorizonQuiescenceR12.certifiedScore(
++            .forcedBlock(4), mate: 10_000_000, ply: 3
++        ))
++    }
++
++    func testRealCodexFrozenEvaluationPositionBlocks188() {
++        // Source: Codex #209, final-compact-a, pair 0, after ply 18.
++        let history = [112,66,83,157,158,156,185,173,189,172,140,171,170,155,154,126,186,202,187]
++        var b = [UInt8](repeating: 0, count: 225)
++        for (i, move) in history.enumerated() { b[move] = UInt8(i % 2 + 1) }
++        XCTAssertEqual(EclipseHorizonQuiescenceR12.inspect(b, toMove: 2), .forcedBlock(188))
++    }
++}
