@@ -8,3 +8,7 @@
 6. **Data truthfulness**: RF/CPU rotor only reflects state; cannot infer clock rates/search depth; actual BLE health score is a diagnostic scalar, not signal strength or throughput.
 7. **Theme token integration (corrected 2026-11-14)**: R1 initially referred to unavailable `VeilTheme.metalTop` and `VeilTheme.metalBottom` accessors. The Inbox patch has been corrected to use the existing appearance palette's metal fields. Still requires a full Xcode compile before promotion.
 8. **No release authority**: Inbox-only five-document submission; no product files, main, version, signing, workflows or IPA changed.
+
+9. **R2 shared motion-policy surface**: `VeilMotionKit.swift` now receives a FORGE-specific branch in `VeilSpatialPressModifier`, bypassing only the decorative zero-distance drag gesture. This is a global modifier definition, though behavior changes only under the selected FORGE theme; verify parent scrolling and button taps. The same source file disables infinite border rotation in FORGE only.
+10. **Game agent overlap**: user's screenshots reference `GameLobbyView.swift` and ECLIPSE search/training UI currently being developed separately. R2 deliberately does not edit these files; integration Governor must coordinate later component adoption.
+11. **Screenshot state is not source state**: screenshots capture an installed app with global dust/particles. The image alone does not prove frame-time causes; isolate #229 as root particle removal before claiming full elimination.
