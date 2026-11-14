@@ -1,0 +1,1118 @@
+diff --git a/VeilLink/App/VeilAppLifecycleCoordinator.swift b/VeilLink/App/VeilAppLifecycleCoordinator.swift
+index cc2be57341cd0f4dece7cb4c7672ed584d10ecc9..d4713c83047401da4574c01fa9e9bfe3499b8b09 100644
+--- a/VeilLink/App/VeilAppLifecycleCoordinator.swift
++++ b/VeilLink/App/VeilAppLifecycleCoordinator.swift
+@@ -47,6 +47,7 @@ final class VeilAppLifecycleCoordinator: ObservableObject {
+                 model.start()
+             case .setHostForeground(let active):
+                 DeviceStressTestController.shared.handleSceneActive(active)
++                RuntimeDiagnosticsBridge.shared.setApplicationActive(active)
+                 model.bluetooth.setForegroundActive(active)
+             case .enterForeground:
+                 model.handleForegroundTransition()
+diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostics/DiagnosticLogStore.swift
+index 451a838abbda215f555d3a208f5968d993f152fb..5d0ed842c98d452df1a33b8da3e8378f252871f8 100644
+--- a/VeilLink/Diagnostics/DiagnosticLogStore.swift
++++ b/VeilLink/Diagnostics/DiagnosticLogStore.swift
+@@ -108,13 +108,17 @@ private struct DiagnosticExportIndex: Codable {
+     let currentScreen: String
+ }
+ 
+-@MainActor
+-final class DiagnosticLogStore: ObservableObject {
++final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
+     static let shared = DiagnosticLogStore()
+ 
+-    @Published private(set) var recentEntries: [DiagnosticLogEntry] = []
+-    @Published private(set) var diskUsageBytes = 0
+-    @Published private(set) var lastRefreshAt: Date?
++    let objectWillChange = ObservableObjectPublisher()
++
++    private let logQueue = DispatchQueue(label: "veil.diagnostics.log", qos: .utility)
++    private let stateLock = NSLock()
++    private var recentEntriesStorage: [DiagnosticLogEntry] = []
++    private var diskUsageBytesStorage = 0
++    private var lastRefreshAtStorage: Date?
++    private var observerNotificationPending = false
+ 
+     private let fileManager = FileManager.default
+     private let rootDirectory: URL
+@@ -134,6 +138,18 @@ final class DiagnosticLogStore: ObservableObject {
+ 
+     let runtimeSessionID: String
+ 
++    var recentEntries: [DiagnosticLogEntry] {
++        withStateLock { recentEntriesStorage }
++    }
++
++    var diskUsageBytes: Int {
++        withStateLock { diskUsageBytesStorage }
++    }
++
++    var lastRefreshAt: Date? {
++        withStateLock { lastRefreshAtStorage }
++    }
++
+     init(rootDirectory: URL? = nil) {
+         runtimeSessionID = String(UUID().uuidString.prefix(8)).uppercased()
+ 
+@@ -190,62 +206,76 @@ final class DiagnosticLogStore: ObservableObject {
+         message: String = "",
+         metadata: [String: String] = [:]
+     ) {
+-        let entry = DiagnosticLogEntry(
+-            schemaVersion: 2,
+-            id: UUID().uuidString,
+-            sequence: nextSequence,
+-            timestamp: Date(),
+-            uptimeMilliseconds: UInt64(ProcessInfo.processInfo.systemUptime * 1_000),
+-            sessionID: runtimeSessionID,
+-            level: level,
+-            category: category,
+-            event: DiagnosticPrivacyFilter.sanitizeValue(event, limit: 128),
+-            screen: screen.map { DiagnosticPrivacyFilter.sanitizeValue($0, limit: 128) },
+-            message: DiagnosticPrivacyFilter.sanitizeValue(message, limit: 2_048),
+-            metadata: DiagnosticPrivacyFilter.sanitizeMetadata(metadata)
+-        )
+-        nextSequence &+= 1
+-
+-        recentEntries.append(entry)
+-        if recentEntries.count > maxRecentEntries {
+-            recentEntries.removeFirst(recentEntries.count - maxRecentEntries)
+-        }
++        logQueue.async { [weak self] in
++            guard let self else { return }
++            self.stateLock.lock()
++            let entry = DiagnosticLogEntry(
++                schemaVersion: 2,
++                id: UUID().uuidString,
++                sequence: self.nextSequence,
++                timestamp: Date(),
++                uptimeMilliseconds: UInt64(ProcessInfo.processInfo.systemUptime * 1_000),
++                sessionID: self.runtimeSessionID,
++                level: level,
++                category: category,
++                event: DiagnosticPrivacyFilter.sanitizeValue(event, limit: 128),
++                screen: screen.map { DiagnosticPrivacyFilter.sanitizeValue($0, limit: 128) },
++                message: DiagnosticPrivacyFilter.sanitizeValue(message, limit: 2_048),
++                metadata: DiagnosticPrivacyFilter.sanitizeMetadata(metadata)
++            )
++            self.nextSequence &+= 1
+ 
+-        guard let encoded = try? encoder.encode(entry) else { return }
+-        pendingBuffer.append(encoded)
+-        pendingBuffer.append(0x0A)
++            self.recentEntriesStorage.append(entry)
++            if self.recentEntriesStorage.count > self.maxRecentEntries {
++                self.recentEntriesStorage.removeFirst(self.recentEntriesStorage.count - self.maxRecentEntries)
++            }
+ 
+-        if pendingBuffer.count >= flushThresholdBytes {
+-            flushPendingBuffer()
+-        } else {
+-            scheduleFlush()
++            if let encoded = try? self.encoder.encode(entry) {
++                self.pendingBuffer.append(encoded)
++                self.pendingBuffer.append(0x0A)
++                if self.pendingBuffer.count >= self.flushThresholdBytes {
++                    self.flushPendingBufferUnsafe()
++                } else {
++                    self.scheduleFlushUnsafe()
++                }
++            }
++            self.stateLock.unlock()
++            self.notifyObservers()
+         }
+     }
+ 
+     func refreshFromDisk() {
+-        flushPendingBuffer()
+-        loadRecentEntriesFromDisk()
++        logQueue.async { [weak self] in
++            self?.flushPendingBuffer()
++            self?.loadRecentEntriesFromDisk()
++        }
+     }
+ 
+     func clear() {
+-        flushTask?.cancel()
+-        flushTask = nil
+-        pendingBuffer.removeAll(keepingCapacity: false)
+-        flushesSinceDiskUsageRefresh = 0
+-        for url in allLogURLs() {
+-            try? fileManager.removeItem(at: url)
+-        }
+-        for url in auxiliaryURLs() {
+-            try? fileManager.removeItem(at: url)
++        logQueue.sync {
++            stateLock.lock()
++            flushTask?.cancel()
++            flushTask = nil
++            pendingBuffer.removeAll(keepingCapacity: false)
++            flushesSinceDiskUsageRefresh = 0
++            for url in allLogURLs() {
++                try? fileManager.removeItem(at: url)
++            }
++            for url in auxiliaryURLs() {
++                try? fileManager.removeItem(at: url)
++            }
++            recentEntriesStorage.removeAll(keepingCapacity: false)
++            diskUsageBytesStorage = 0
++            nextSequence = 1
++            lastRefreshAtStorage = Date()
++            stateLock.unlock()
+         }
+-        recentEntries.removeAll(keepingCapacity: false)
+-        diskUsageBytes = 0
+-        nextSequence = 1
+-        lastRefreshAt = Date()
++        notifyObservers()
+     }
+ 
++    @MainActor
+     func exportBundle(context: String, extraFiles: [String: Data] = [:]) throws -> URL {
+-        flushPendingBuffer()
++        logQueue.sync { flushPendingBuffer() }
+ 
+         let staging = fileManager.temporaryDirectory
+             .appendingPathComponent("VeilLink-Diagnostics-\(UUID().uuidString)", isDirectory: true)
+@@ -344,51 +374,64 @@ final class DiagnosticLogStore: ObservableObject {
+     @discardableResult
+     func storeAuxiliaryArtifact(prefix: String, fileExtension: String, data: Data) -> String? {
+         guard !data.isEmpty, data.count <= 8 * 1_024 * 1_024 else { return nil }
+-        let formatter = DateFormatter()
+-        formatter.locale = Locale(identifier: "en_US_POSIX")
+-        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+-        let safePrefix = safeExportFileName(prefix)
+-        let safeExtension = safeExportFileName(fileExtension).replacingOccurrences(of: ".", with: "")
+-        let name = "\(safePrefix)-\(formatter.string(from: Date())).\(safeExtension.isEmpty ? "bin" : safeExtension)"
+-        let url = auxiliaryDirectory.appendingPathComponent(name)
+-        do {
+-            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+-            trimAuxiliaryArtifacts(maxFiles: 24, maxBytes: maxAuxiliaryBytes)
+-            refreshDiskUsage()
+-            return name
+-        } catch {
+-            return nil
++        let result: String? = logQueue.sync {
++            let formatter = DateFormatter()
++            formatter.locale = Locale(identifier: "en_US_POSIX")
++            formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
++            let safePrefix = safeExportFileName(prefix)
++            let safeExtension = safeExportFileName(fileExtension).replacingOccurrences(of: ".", with: "")
++            let name = "\(safePrefix)-\(formatter.string(from: Date())).\(safeExtension.isEmpty ? "bin" : safeExtension)"
++            let url = auxiliaryDirectory.appendingPathComponent(name)
++            do {
++                try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
++                trimAuxiliaryArtifacts(maxFiles: 24, maxBytes: maxAuxiliaryBytes)
++                refreshDiskUsage()
++                return name
++            } catch {
++                return nil
++            }
+         }
++        notifyObservers()
++        return result
+     }
+ 
++    @MainActor
+     private func makeExportIndex() -> DiagnosticExportIndex {
++        let entries = recentEntries
+         var categoryCounts: [String: Int] = [:]
+         var levelCounts: [String: Int] = [:]
+-        for entry in recentEntries {
++        for entry in entries {
+             categoryCounts[entry.category.rawValue, default: 0] += 1
+             levelCounts[entry.level.rawValue, default: 0] += 1
+         }
+         return DiagnosticExportIndex(
+             generatedAt: Date(),
+-            firstTimestamp: recentEntries.first?.timestamp,
+-            lastTimestamp: recentEntries.last?.timestamp,
+-            eventCount: recentEntries.count,
++            firstTimestamp: entries.first?.timestamp,
++            lastTimestamp: entries.last?.timestamp,
++            eventCount: entries.count,
+             categoryCounts: categoryCounts,
+             levelCounts: levelCounts,
+             currentScreen: DeepTelemetry.shared.currentScreen
+         )
+     }
+ 
+-    private func scheduleFlush() {
++    private func scheduleFlushUnsafe() {
+         guard flushTask == nil else { return }
+-        flushTask = Task { @MainActor [weak self] in
++        flushTask = Task { [weak self] in
+             try? await Task.sleep(nanoseconds: 1_500_000_000)
+             guard !Task.isCancelled else { return }
+-            self?.flushPendingBuffer()
++            self?.logQueue.async { [weak self] in self?.flushPendingBuffer() }
+         }
+     }
+ 
+     private func flushPendingBuffer() {
++        stateLock.lock()
++        flushPendingBufferUnsafe()
++        stateLock.unlock()
++        notifyObservers()
++    }
++
++    private func flushPendingBufferUnsafe() {
+         flushTask?.cancel()
+         flushTask = nil
+         guard !pendingBuffer.isEmpty else { return }
+@@ -399,15 +442,22 @@ final class DiagnosticLogStore: ObservableObject {
+         append(data)
+         flushesSinceDiskUsageRefresh += 1
+         if rotated || flushesSinceDiskUsageRefresh >= 8 {
+-            refreshDiskUsage()
++            refreshDiskUsageUnsafe()
+             flushesSinceDiskUsageRefresh = 0
+         } else {
+-            diskUsageBytes = min(retentionBytes, max(0, diskUsageBytes + data.count))
+-            lastRefreshAt = Date()
++            diskUsageBytesStorage = min(retentionBytes, max(0, diskUsageBytesStorage + data.count))
++            lastRefreshAtStorage = Date()
+         }
+     }
+ 
+     private func loadRecentEntriesFromDisk() {
++        stateLock.lock()
++        loadRecentEntriesFromDiskUnsafe()
++        stateLock.unlock()
++        notifyObservers()
++    }
++
++    private func loadRecentEntriesFromDiskUnsafe() {
+         var loaded: [DiagnosticLogEntry] = []
+         for url in orderedLogURLsForReading() {
+             guard let data = try? Data(contentsOf: url),
+@@ -421,10 +471,10 @@ final class DiagnosticLogStore: ObservableObject {
+         if loaded.count > maxRecentEntries {
+             loaded = Array(loaded.suffix(maxRecentEntries))
+         }
+-        recentEntries = loaded
++        recentEntriesStorage = loaded
+         nextSequence = (loaded.last?.sequence ?? 0) &+ 1
+-        lastRefreshAt = Date()
+-        refreshDiskUsage()
++        lastRefreshAtStorage = Date()
++        refreshDiskUsageUnsafe()
+     }
+ 
+     private func protectDirectory() {
+@@ -481,8 +531,15 @@ final class DiagnosticLogStore: ObservableObject {
+     }
+ 
+     private func refreshDiskUsage() {
+-        diskUsageBytes = existingLogURLs().reduce(0) { $0 + fileSize($1) }
++        stateLock.lock()
++        refreshDiskUsageUnsafe()
++        stateLock.unlock()
++    }
++
++    private func refreshDiskUsageUnsafe() {
++        diskUsageBytesStorage = existingLogURLs().reduce(0) { $0 + fileSize($1) }
+             + auxiliaryURLs().reduce(0) { $0 + fileSize($1) }
++        lastRefreshAtStorage = Date()
+     }
+ 
+     private func fileSize(_ url: URL) -> Int {
+@@ -528,6 +585,30 @@ final class DiagnosticLogStore: ObservableObject {
+         }
+     }
+ 
++    private func withStateLock<T>(_ body: () -> T) -> T {
++        stateLock.lock()
++        defer { stateLock.unlock() }
++        return body()
++    }
++
++    private func notifyObservers() {
++        stateLock.lock()
++        guard !observerNotificationPending else {
++            stateLock.unlock()
++            return
++        }
++        observerNotificationPending = true
++        stateLock.unlock()
++
++        DispatchQueue.main.async { [weak self] in
++            guard let self else { return }
++            self.stateLock.lock()
++            self.observerNotificationPending = false
++            self.stateLock.unlock()
++            self.objectWillChange.send()
++        }
++    }
++
+     private func safeExportFileName(_ raw: String) -> String {
+         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+         let scalars = raw.unicodeScalars.map { allowed.contains($0) ? Character(String($0)) : "_" }
+diff --git a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift b/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+index 010124a7f7524a6c44d680d064789611b75907a3..d0510e03022d0b33285e88fe8af9d1c55bf4f118 100644
+--- a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
++++ b/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift
+@@ -10,6 +10,10 @@ final class RuntimeDiagnosticsBridge {
+     private var cancellables = Set<AnyCancellable>()
+     private weak var attachedModel: AppModel?
+     private var previousLinkFingerprints: [UUID: String] = [:]
++    private var applicationActive = true
++    private var lastSnapshotLoggedAt: [String: Date] = [:]
++    private var snapshotSuppressed: [String: Int] = [:]
++    private let snapshotMinInterval: TimeInterval = 30
+ 
+     private init() {}
+ 
+@@ -50,70 +54,56 @@ final class RuntimeDiagnosticsBridge {
+         model.$messagesRevision
+             .removeDuplicates()
+             .sink { revision in
+-                Task { @MainActor in
+-                    self.store.log(
+-                        .debug,
+-                        .ui,
+-                        event: "ui.messages_revision",
+-                        screen: DeepTelemetry.shared.currentScreen,
+-                        metadata: ["revision": String(revision)]
+-                    )
+-                }
++                self.store.log(
++                    .debug,
++                    .ui,
++                    event: "ui.messages_revision",
++                    screen: DeepTelemetry.shared.currentScreen,
++                    metadata: ["revision": String(revision)]
++                )
+             }
+             .store(in: &cancellables)
+ 
+         model.bluetooth.$isRunning
+             .removeDuplicates()
+             .sink { running in
+-                Task { @MainActor in
+-                    self.store.log(.info, .bluetooth, event: "ble.running", screen: DeepTelemetry.shared.currentScreen, metadata: ["running": String(running)])
+-                }
++                self.store.log(.info, .bluetooth, event: "ble.running", screen: DeepTelemetry.shared.currentScreen, metadata: ["running": String(running)])
+             }
+             .store(in: &cancellables)
+ 
+         model.bluetooth.$statusText
+             .removeDuplicates()
+             .sink { status in
+-                Task { @MainActor in
+-                    self.store.log(.info, .bluetooth, event: "ble.status", screen: DeepTelemetry.shared.currentScreen, message: status)
+-                }
++                self.store.log(.info, .bluetooth, event: "ble.status", screen: DeepTelemetry.shared.currentScreen, message: status)
+             }
+             .store(in: &cancellables)
+ 
+         model.bluetooth.$connectedPeerCount
+             .removeDuplicates()
+             .sink { count in
+-                Task { @MainActor in
+-                    self.store.log(.info, .bluetooth, event: "ble.connected_peer_count", screen: DeepTelemetry.shared.currentScreen, metadata: ["count": String(count)])
+-                }
++                self.store.log(.info, .bluetooth, event: "ble.connected_peer_count", screen: DeepTelemetry.shared.currentScreen, metadata: ["count": String(count)])
+             }
+             .store(in: &cancellables)
+ 
+         model.bluetooth.$linkSnapshots
+             .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
+             .sink { snapshots in
+-                Task { @MainActor in self.recordLinkSnapshots(snapshots) }
++                guard self.applicationActive else { return }
++                self.recordLinkSnapshots(snapshots)
+             }
+             .store(in: &cancellables)
+ 
+         model.sessions.$nearbyPeers
+             .throttle(for: .milliseconds(750), scheduler: RunLoop.main, latest: true)
+             .sink { peers in
+-                Task { @MainActor in
+-                    self.store.log(
+-                        .debug,
+-                        .session,
+-                        event: "session.nearby_peers",
+-                        screen: DeepTelemetry.shared.currentScreen,
+-                        metadata: [
+-                            "count": String(peers.count),
+-                            "peers": peers.prefix(32).map {
+-                                let secureReady = model.sessions.hasSecureSession(for: $0.id)
+-                                return "\($0.transportID.uuidString):\($0.id):\($0.rssi):\(String(describing: $0.trustState)):secure=\(secureReady)"
+-                            }.joined(separator: "|")
+-                        ]
+-                    )
+-                }
++                guard self.applicationActive else { return }
++                self.logNearbyPeers(metadata: [
++                    "count": String(peers.count),
++                    "peers": peers.prefix(32).map {
++                        let secureReady = model.sessions.hasSecureSession(for: $0.id)
++                        return "\($0.transportID.uuidString):\($0.id):\($0.rssi):\(String(describing: $0.trustState)):secure=\(secureReady)"
++                    }.joined(separator: "|")
++                ])
+             }
+             .store(in: &cancellables)
+ 
+@@ -121,111 +111,100 @@ final class RuntimeDiagnosticsBridge {
+             .compactMap { $0 }
+             .removeDuplicates()
+             .sink { error in
+-                Task { @MainActor in
+-                    self.store.log(.error, .session, event: "session.error", screen: DeepTelemetry.shared.currentScreen, message: error)
+-                }
++                self.store.log(.error, .session, event: "session.error", screen: DeepTelemetry.shared.currentScreen, message: error)
+             }
+             .store(in: &cancellables)
+ 
+         model.sessions.$securityEvents
+             .sink { events in
+-                Task { @MainActor in
+-                    guard let latest = events.first else { return }
+-                    self.store.log(
+-                        .warning,
+-                        .security,
+-                        event: "security.event",
+-                        screen: DeepTelemetry.shared.currentScreen,
+-                        metadata: [
+-                            "count": String(events.count),
+-                            "length": String(latest.count),
+-                            "fingerprint": Self.stableFingerprint(latest)
+-                        ]
+-                    )
+-                }
++                guard let latest = events.first else { return }
++                self.store.log(
++                    .warning,
++                    .security,
++                    event: "security.event",
++                    screen: DeepTelemetry.shared.currentScreen,
++                    metadata: [
++                        "count": String(events.count),
++                        "length": String(latest.count),
++                        "fingerprint": Self.stableFingerprint(latest)
++                    ]
++                )
+             }
+             .store(in: &cancellables)
+ 
+         model.a9Health.$decision
+             .sink { decision in
+-                Task { @MainActor in
+-                    self.store.log(
+-                        decision.light == .red ? .warning : .debug,
+-                        .a9,
+-                        event: "a9.decision",
+-                        screen: DeepTelemetry.shared.currentScreen,
+-                        metadata: [
+-                            "light": decision.light.title,
+-                            "level": decision.level.shortTitle,
+-                            "health": String(decision.healthScore),
+-                            "risk": String(format: "%.2f", decision.riskPoints),
+-                            "persistence_seconds": String(decision.persistenceSeconds),
+-                            "transport_coverage": model.a9Health.transportCoverage.rawValue,
+-                            "reason": decision.reasonCode,
+-                            "cell": String(decision.latticeIndex),
+-                            "issues": String(decision.issues.count)
+-                        ]
+-                    )
+-                }
++                self.store.log(
++                    decision.light == .red ? .warning : .debug,
++                    .a9,
++                    event: "a9.decision",
++                    screen: DeepTelemetry.shared.currentScreen,
++                    metadata: [
++                        "light": decision.light.title,
++                        "level": decision.level.shortTitle,
++                        "health": String(decision.healthScore),
++                        "risk": String(format: "%.2f", decision.riskPoints),
++                        "persistence_seconds": String(decision.persistenceSeconds),
++                        "transport_coverage": model.a9Health.transportCoverage.rawValue,
++                        "reason": decision.reasonCode,
++                        "cell": String(decision.latticeIndex),
++                        "issues": String(decision.issues.count)
++                    ]
++                )
+             }
+             .store(in: &cancellables)
+ 
+         model.latticeKernel.$snapshot
+             .removeDuplicates()
+             .sink { snapshot in
+-                Task { @MainActor in
+-                    self.store.log(
+-                        snapshot.unexpectedDecisionDiffs > 0 ? .warning : .info,
+-                        .a9,
+-                        event: "kernel.integration_state",
+-                        screen: DeepTelemetry.shared.currentScreen,
+-                        metadata: [
+-                            "stage": snapshot.stage.rawValue,
+-                            "active_profile": snapshot.activeProfileID,
+-                            "candidate_profile": snapshot.candidateProfileID ?? "none",
+-                            "authority": snapshot.authority.rawValue,
+-                            "signal_bus": String(snapshot.signalBusVersion),
+-                            "unexpected_diffs": String(snapshot.unexpectedDecisionDiffs),
+-                            "compute_mode": snapshot.computeMode ?? "none"
+-                        ]
+-                    )
+-                }
++                self.store.log(
++                    snapshot.unexpectedDecisionDiffs > 0 ? .warning : .info,
++                    .a9,
++                    event: "kernel.integration_state",
++                    screen: DeepTelemetry.shared.currentScreen,
++                    metadata: [
++                        "stage": snapshot.stage.rawValue,
++                        "active_profile": snapshot.activeProfileID,
++                        "candidate_profile": snapshot.candidateProfileID ?? "none",
++                        "authority": snapshot.authority.rawValue,
++                        "signal_bus": String(snapshot.signalBusVersion),
++                        "unexpected_diffs": String(snapshot.unexpectedDecisionDiffs),
++                        "compute_mode": snapshot.computeMode ?? "none"
++                    ]
++                )
+             }
+             .store(in: &cancellables)
+ 
+         model.kernelRuntime.$mode
+             .sink { _ in
+-                Task { @MainActor in
+-                    let env = model.kernelRuntime.snapshot()
+-                    self.store.log(
+-                        env.mode.isExperimental ? .warning : .info,
+-                        .a9,
+-                        event: "kernel.runtime_mode",
+-                        screen: DeepTelemetry.shared.currentScreen,
+-                        metadata: [
+-                            "kernel_mode": env.mode.rawValue,
+-                            "mode_epoch": String(env.modeEpoch),
+-                            "mode_session_id": env.modeSessionID,
+-                            "selection_source": env.selectionSource,
+-                            "production_authority": env.productionAuthority,
+-                            "fallback_policy": env.fallbackPolicy,
+-                            "a9_enabled": String(env.a9EvaluationEnabled),
+-                            "ultra_enabled": String(env.ultraEvaluationEnabled),
+-                            "mutation_authority": String(env.mutationAuthority),
+-                            "production_cutover": env.productionCutover,
+-                            "last_fallback_reason": model.kernelRuntime.lastFallbackReason ?? "none"
+-                        ]
+-                    )
+-                }
++                let env = model.kernelRuntime.snapshot()
++                self.store.log(
++                    env.mode.isExperimental ? .warning : .info,
++                    .a9,
++                    event: "kernel.runtime_mode",
++                    screen: DeepTelemetry.shared.currentScreen,
++                    metadata: [
++                        "kernel_mode": env.mode.rawValue,
++                        "mode_epoch": String(env.modeEpoch),
++                        "mode_session_id": env.modeSessionID,
++                        "selection_source": env.selectionSource,
++                        "production_authority": env.productionAuthority,
++                        "fallback_policy": env.fallbackPolicy,
++                        "a9_enabled": String(env.a9EvaluationEnabled),
++                        "ultra_enabled": String(env.ultraEvaluationEnabled),
++                        "mutation_authority": String(env.mutationAuthority),
++                        "production_cutover": env.productionCutover,
++                        "last_fallback_reason": model.kernelRuntime.lastFallbackReason ?? "none"
++                    ]
++                )
+             }
+             .store(in: &cancellables)
+ 
+         model.a10Ultra.$lastRuntimeSample
+             .compactMap { $0 }
+             .sink { record in
+-                Task { @MainActor in
+-                    let env = record.environment
+-                    self.store.log(
++                let env = record.environment
++                self.store.log(
+                         record.fallbackEvent ? .warning : .debug,
+                         .a9,
+                         event: "kernel.runtime_sample",
+@@ -285,16 +264,14 @@ final class RuntimeDiagnosticsBridge {
+                             "vault_status": record.vaultStatus,
+                             "runtime_backend": record.runtimeBackend
+                         ]
+-                    )
+-                }
++                )
+             }
+             .store(in: &cancellables)
+ 
+         model.agent.$threeCoreSnapshot
+             .removeDuplicates()
+             .sink { snapshot in
+-                Task { @MainActor in
+-                    self.store.log(
++                self.store.log(
+                         snapshot.phase == .fallback ? .warning : .info,
+                         .agent,
+                         event: "agent.three_core_state",
+@@ -312,8 +289,7 @@ final class RuntimeDiagnosticsBridge {
+                             "legacy_shadow": snapshot.legacyGovernanceShadow,
+                             "fallback_reason": snapshot.fallbackReason ?? "none"
+                         ]
+-                    )
+-                }
++                )
+             }
+             .store(in: &cancellables)
+ 
+@@ -321,8 +297,7 @@ final class RuntimeDiagnosticsBridge {
+             .removeDuplicates()
+             .sink { snapshot in
+                 guard snapshot.result != "IDLE" else { return }
+-                Task { @MainActor in
+-                    self.store.log(
++                self.store.log(
+                         snapshot.result == "FAILED" ? .warning : .debug,
+                         .agent,
+                         event: "a10.m5.cognition_shadow",
+@@ -338,8 +313,7 @@ final class RuntimeDiagnosticsBridge {
+                             "output_text_logged": "false",
+                             "failure": snapshot.failure ?? "none"
+                         ]
+-                    )
+-                }
++                )
+             }
+             .store(in: &cancellables)
+ 
+@@ -347,8 +321,7 @@ final class RuntimeDiagnosticsBridge {
+             .removeDuplicates()
+             .sink { snapshot in
+                 guard snapshot.evaluatedAt != .distantPast else { return }
+-                Task { @MainActor in
+-                    self.store.log(
++                self.store.log(
+                         .debug,
+                         .a9,
+                         event: "a10.m5.governance_shadow",
+@@ -365,8 +338,7 @@ final class RuntimeDiagnosticsBridge {
+                             "mutation_authority": "0",
+                             "user_plaintext_logged": "false"
+                         ]
+-                    )
+-                }
++                )
+             }
+             .store(in: &cancellables)
+ 
+@@ -374,9 +346,7 @@ final class RuntimeDiagnosticsBridge {
+             .map { String(describing: $0) }
+             .removeDuplicates()
+             .sink { state in
+-                Task { @MainActor in
+-                    self.store.log(.info, .agent, event: "agent.runtime", screen: DeepTelemetry.shared.currentScreen, message: state)
+-                }
++                self.store.log(.info, .agent, event: "agent.runtime", screen: DeepTelemetry.shared.currentScreen, message: state)
+             }
+             .store(in: &cancellables)
+ 
+@@ -384,10 +354,8 @@ final class RuntimeDiagnosticsBridge {
+             .map { diagnostics in diagnostics.lastFailure ?? "ok" }
+             .removeDuplicates()
+             .sink { state in
+-                Task { @MainActor in
+-                    let level: DiagnosticLogLevel = state == "ok" ? .debug : .error
+-                    self.store.log(level, .agent, event: "agent.diagnostics", screen: DeepTelemetry.shared.currentScreen, message: state)
+-                }
++                let level: DiagnosticLogLevel = state == "ok" ? .debug : .error
++                self.store.log(level, .agent, event: "agent.diagnostics", screen: DeepTelemetry.shared.currentScreen, message: state)
+             }
+             .store(in: &cancellables)
+ 
+@@ -401,27 +369,22 @@ final class RuntimeDiagnosticsBridge {
+         model.appLock.$isLocked
+             .removeDuplicates()
+             .sink { locked in
+-                Task { @MainActor in
+-                    self.store.log(.info, .security, event: locked ? "app_lock.locked" : "app_lock.unlocked", screen: DeepTelemetry.shared.currentScreen)
+-                }
++                self.store.log(.info, .security, event: locked ? "app_lock.locked" : "app_lock.unlocked", screen: DeepTelemetry.shared.currentScreen)
+             }
+             .store(in: &cancellables)
+ 
+         model.appLock.$failedAttempts
+             .removeDuplicates()
+             .sink { attempts in
+-                Task { @MainActor in
+-                    guard attempts > 0 else { return }
+-                    self.store.log(.warning, .security, event: "app_lock.failed_attempt", screen: DeepTelemetry.shared.currentScreen, metadata: ["attempts": String(attempts)])
+-                }
++                guard attempts > 0 else { return }
++                self.store.log(.warning, .security, event: "app_lock.failed_attempt", screen: DeepTelemetry.shared.currentScreen, metadata: ["attempts": String(attempts)])
+             }
+             .store(in: &cancellables)
+ 
+         model.$alertMessage
+             .compactMap { $0 }
+             .sink { alert in
+-                Task { @MainActor in
+-                    self.store.log(
++                self.store.log(
+                         .warning,
+                         .ui,
+                         event: "ui.alert.present",
+@@ -430,9 +393,8 @@ final class RuntimeDiagnosticsBridge {
+                             "length": String(alert.count),
+                             "fingerprint": Self.stableFingerprint(alert)
+                         ]
+-                    )
+-                    DeepTelemetry.shared.captureUIHierarchy(reason: "alert", force: true)
+-                }
++                )
++                DeepTelemetry.shared.captureUIHierarchy(reason: "alert", force: true)
+             }
+             .store(in: &cancellables)
+     }
+@@ -456,6 +418,10 @@ final class RuntimeDiagnosticsBridge {
+         DeepTelemetry.shared.captureSystemSnapshot(reason: "lifecycle.\(state)")
+     }
+ 
++    func setApplicationActive(_ active: Bool) {
++        applicationActive = active
++    }
++
+     func recordMemoryPressure() {
+         store.log(.warning, .performance, event: "memory.warning", screen: DeepTelemetry.shared.currentScreen)
+         DeepTelemetry.shared.captureSystemSnapshot(reason: "memory.warning")
+@@ -527,27 +493,21 @@ final class RuntimeDiagnosticsBridge {
+             ].joined(separator: "|")
+             guard previousLinkFingerprints[id] != fingerprint else { continue }
+             previousLinkFingerprints[id] = fingerprint
+-            store.log(
+-                snapshot.healthScore < 40 ? .warning : .debug,
+-                .bluetooth,
+-                event: "ble.link_snapshot",
+-                screen: DeepTelemetry.shared.currentScreen,
+-                metadata: [
+-                    "transport_id": id.uuidString,
+-                    "connected": String(snapshot.isConnected),
+-                    "recovering": String(snapshot.isRecovering),
+-                    "transport_stage": snapshot.transportStage.rawValue,
+-                    "status": snapshot.statusTitle,
+-                    "quality": String(describing: snapshot.quality),
+-                    "health": String(snapshot.healthScore),
+-                    "pending_bytes": String(snapshot.pendingBytes),
+-                    "control_pending_packets": String(snapshot.controlPendingPackets),
+-                    "reconnect_attempt": String(snapshot.reconnectAttempt),
+-                    "stalled_ms": String(Int((snapshot.stalledFor ?? 0) * 1_000)),
+-                    "queue": snapshot.queueSummary,
+-                    "detail": snapshot.compactDetail
+-                ]
+-            )
++            logLinkSnapshot(transportID: id.uuidString, metadata: [
++                "transport_id": id.uuidString,
++                "connected": String(snapshot.isConnected),
++                "recovering": String(snapshot.isRecovering),
++                "transport_stage": snapshot.transportStage.rawValue,
++                "status": snapshot.statusTitle,
++                "quality": String(describing: snapshot.quality),
++                "health": String(snapshot.healthScore),
++                "pending_bytes": String(snapshot.pendingBytes),
++                "control_pending_packets": String(snapshot.controlPendingPackets),
++                "reconnect_attempt": String(snapshot.reconnectAttempt),
++                "stalled_ms": String(Int((snapshot.stalledFor ?? 0) * 1_000)),
++                "queue": snapshot.queueSummary,
++                "detail": snapshot.compactDetail
++            ])
+         }
+         for id in previousLinkFingerprints.keys where !liveIDs.contains(id) {
+             previousLinkFingerprints.removeValue(forKey: id)
+@@ -555,6 +515,41 @@ final class RuntimeDiagnosticsBridge {
+         }
+     }
+ 
++    private func logLinkSnapshot(transportID: String, metadata: [String: String]) {
++        let now = Date()
++        if let last = lastSnapshotLoggedAt[transportID], now.timeIntervalSince(last) < snapshotMinInterval {
++            snapshotSuppressed[transportID, default: 0] += 1
++            return
++        }
++        if let suppressed = snapshotSuppressed[transportID], suppressed > 0 {
++            var meta = metadata
++            meta["suppressed_count"] = String(suppressed)
++            meta["oscillation"] = "true"
++            store.log(.info, .bluetooth, event: "ble.link_oscillation", metadata: meta)
++            snapshotSuppressed[transportID] = 0
++        }
++        lastSnapshotLoggedAt[transportID] = now
++        store.log(.debug, .bluetooth, event: "ble.link_snapshot", metadata: metadata)
++    }
++
++    private func logNearbyPeers(metadata: [String: String]) {
++        let key = "session.nearby_peers"
++        let now = Date()
++        if let last = lastSnapshotLoggedAt[key], now.timeIntervalSince(last) < snapshotMinInterval {
++            snapshotSuppressed[key, default: 0] += 1
++            return
++        }
++        if let suppressed = snapshotSuppressed[key], suppressed > 0 {
++            var meta = metadata
++            meta["suppressed_count"] = String(suppressed)
++            meta["oscillation"] = "true"
++            store.log(.info, .session, event: "session.peer_churn", metadata: meta)
++            snapshotSuppressed[key] = 0
++        }
++        lastSnapshotLoggedAt[key] = now
++        store.log(.debug, .session, event: "session.nearby_peers", metadata: metadata)
++    }
++
+     private func recordModelSnapshot(_ model: AppModel, reason: String) {
+         store.log(
+             .info,
+diff --git a/VeilLink/Transport/BLELinkReliabilityPolicy.swift b/VeilLink/Transport/BLELinkReliabilityPolicy.swift
+index eda7c4ebc911f802cbd3e735e0681e54099863a4..84121dc138325a5a0f8a9ff453959359acf72364 100644
+--- a/VeilLink/Transport/BLELinkReliabilityPolicy.swift
++++ b/VeilLink/Transport/BLELinkReliabilityPolicy.swift
+@@ -25,6 +25,8 @@ struct BLELinkTuning: Equatable {
+ }
+ 
+ enum BLELinkReliabilityPolicy {
++    static let reconnectStabilityResetInterval: TimeInterval = 30
++
+     static func normalizedRSSI(_ sample: Int) -> Int? {
+         guard sample != 127, sample < 0, sample >= -110 else { return nil }
+         return min(-20, sample)
+@@ -100,4 +102,9 @@ enum BLELinkReliabilityPolicy {
+         default: return 30
+         }
+     }
++
++    static func shouldResetReconnectAttempt(stableSince: TimeInterval?, now: TimeInterval) -> Bool {
++        guard let stableSince else { return false }
++        return now - stableSince >= reconnectStabilityResetInterval
++    }
+ }
+diff --git a/VeilLink/Transport/BLETransport.swift b/VeilLink/Transport/BLETransport.swift
+index ef431d5b5f78a2a767e45d7898f53660c5d2fa88..dd74767296370dc8c7e23837e2fc953df275d56a 100644
+--- a/VeilLink/Transport/BLETransport.swift
++++ b/VeilLink/Transport/BLETransport.swift
+@@ -211,6 +211,7 @@ final class BLETransport: NSObject, ObservableObject {
+     private var centralOutboundQueues: [UUID: PeerOutboundQueue] = [:]
+     private var wantedConnections: Set<UUID> = []
+     private var reconnectAttempts: [UUID: Int] = [:]
++    private var reconnectStableSinceUptime: [UUID: TimeInterval] = [:]
+     private var reconnectWorkItems: [UUID: DispatchWorkItem] = [:]
+     private var centralDrainWorkItems: [UUID: DispatchWorkItem] = [:]
+     private var peripheralDrainWorkItems: [UUID: DispatchWorkItem] = [:]
+@@ -306,6 +307,7 @@ final class BLETransport: NSObject, ObservableObject {
+             connectionIntentStore.clear()
+         }
+         reconnectAttempts.removeAll()
++        reconnectStableSinceUptime.removeAll()
+         reconnectWorkItems.values.forEach { $0.cancel() }
+         reconnectWorkItems.removeAll()
+         centralDrainWorkItems.values.forEach { $0.cancel() }
+@@ -352,6 +354,7 @@ final class BLETransport: NSObject, ObservableObject {
+         if wantedConnections.insert(id).inserted {
+             connectionIntentStore.save(wantedConnections)
+         }
++        resetReconnectAttemptIfStable(id, nowUptime: ProcessInfo.processInfo.systemUptime)
+         tearDownTransportState(for: id, keepReconnectAttempt: true)
+         if let peripheral = remotePeripherals[id] {
+             if peripheral.state == .connected || peripheral.state == .connecting {
+@@ -366,6 +369,7 @@ final class BLETransport: NSObject, ObservableObject {
+ 
+     private func tearDownTransportState(for id: UUID, keepReconnectAttempt: Bool = false) {
+         if !keepReconnectAttempt { reconnectAttempts.removeValue(forKey: id) }
++        reconnectStableSinceUptime.removeValue(forKey: id)
+         reconnectWorkItems.removeValue(forKey: id)?.cancel()
+         centralDrainWorkItems.removeValue(forKey: id)?.cancel()
+         peripheralDrainWorkItems.removeValue(forKey: id)?.cancel()
+@@ -382,6 +386,7 @@ final class BLETransport: NSObject, ObservableObject {
+             connectionIntentStore.save(wantedConnections)
+         }
+         reconnectAttempts[id] = 0
++        reconnectStableSinceUptime.removeValue(forKey: id)
+         reconnectWorkItems.removeValue(forKey: id)?.cancel()
+         guard isRunning,
+               let peripheral = remotePeripherals[id],
+@@ -576,6 +581,7 @@ final class BLETransport: NSObject, ObservableObject {
+             smoothedRSSI.removeValue(forKey: id)
+             lastRSSIPublishAt.removeValue(forKey: id)
+             reconnectAttempts.removeValue(forKey: id)
++            reconnectStableSinceUptime.removeValue(forKey: id)
+             if remotePeripherals[id]?.state == .disconnected {
+                 remotePeripherals.removeValue(forKey: id)
+             }
+@@ -723,6 +729,8 @@ final class BLETransport: NSObject, ObservableObject {
+               peripheral.state == .disconnected else { return }
+ 
+         reconnectWorkItems[id]?.cancel()
++        resetReconnectAttemptIfStable(id, nowUptime: ProcessInfo.processInfo.systemUptime)
++        reconnectStableSinceUptime.removeValue(forKey: id)
+         let attempt = (reconnectAttempts[id] ?? 0) + 1
+         reconnectAttempts[id] = attempt
+         let baseDelay = immediate ? 0 : BLELinkReliabilityPolicy.reconnectDelay(attempt: attempt)
+@@ -852,6 +860,10 @@ final class BLETransport: NSObject, ObservableObject {
+ 
+     private func recoverStalledTransportQueuesIfNeeded() {
+         recoverStalledGATTHandshakesIfNeeded()
++        let uptime = ProcessInfo.processInfo.systemUptime
++        for id in Array(reconnectStableSinceUptime.keys) {
++            resetReconnectAttemptIfStable(id, nowUptime: uptime)
++        }
+         let now = Date().timeIntervalSinceReferenceDate
+         for id in Array(centralOutboundQueues.keys) {
+             guard let queue = centralOutboundQueues[id], !queue.isEmpty else { continue }
+@@ -878,6 +890,28 @@ final class BLETransport: NSObject, ObservableObject {
+         publishLinkSnapshots()
+     }
+ 
++    private func markDataChannelReady(_ id: UUID) {
++        guard (reconnectAttempts[id] ?? 0) > 0 else {
++            reconnectStableSinceUptime.removeValue(forKey: id)
++            return
++        }
++        reconnectStableSinceUptime[id] = ProcessInfo.processInfo.systemUptime
++    }
++
++    private func markPeerTraffic(_ id: UUID) {
++        reconnectAttempts[id] = 0
++        reconnectStableSinceUptime.removeValue(forKey: id)
++    }
++
++    private func resetReconnectAttemptIfStable(_ id: UUID, nowUptime: TimeInterval) {
++        guard BLELinkReliabilityPolicy.shouldResetReconnectAttempt(
++            stableSince: reconnectStableSinceUptime[id],
++            now: nowUptime
++        ) else { return }
++        reconnectAttempts[id] = 0
++        reconnectStableSinceUptime.removeValue(forKey: id)
++    }
++
+     /// The PHY can connect while service discovery/notify subscription never completes.
+     /// A monotonic timeout avoids indefinite PHY_CONNECTED and makes this failure diagnosable.
+     private func recoverStalledGATTHandshakesIfNeeded() {
+@@ -1077,7 +1111,7 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
+             return
+         }
+         gattHandshakeWatchdog.dataChannelReady(peripheral.identifier)
+-        reconnectAttempts[peripheral.identifier] = 0
++        markDataChannelReady(peripheral.identifier)
+         persistWantedConnectionIntent()
+         reconcileConnectionEvent(peripheral.identifier)
+     }
+@@ -1089,8 +1123,9 @@ extension BLETransport: @preconcurrency CBPeripheralDelegate {
+     ) {
+         guard error == nil,
+               characteristic.uuid == Self.dataUUID,
+-              let value = characteristic.value,
+-              let assembled = assembler.ingest(source: peripheral.identifier, packet: value) else { return }
++              let value = characteristic.value else { return }
++        markPeerTraffic(peripheral.identifier)
++        guard let assembled = assembler.ingest(source: peripheral.identifier, packet: value) else { return }
+         onReceive?(peripheral.identifier, assembled)
+     }
+ }
+@@ -1164,6 +1199,7 @@ extension BLETransport: @preconcurrency CBPeripheralManagerDelegate {
+             if request.characteristic.properties.contains(.write) {
+                 peripheral.respond(to: request, withResult: .success)
+             }
++            markPeerTraffic(request.central.identifier)
+             if let assembled = assembler.ingest(source: request.central.identifier, packet: value) {
+                 onReceive?(request.central.identifier, assembled)
+             }
+diff --git a/VeilLinkTests/BLELinkReliabilityPolicyTests.swift b/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
+index c06eb1230b0c554d90fc6cc040c17029c62113cd..92f18d0d4b5c353cbdc3dc104be9f16a0cefb3f9 100644
+--- a/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
++++ b/VeilLinkTests/BLELinkReliabilityPolicyTests.swift
+@@ -62,4 +62,11 @@ final class BLELinkReliabilityPolicyTests: XCTestCase {
+         XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 7), 30)
+         XCTAssertEqual(BLELinkReliabilityPolicy.reconnectDelay(attempt: 100), 30)
+     }
++
++    func testReconnectAttemptResetsOnlyAfterStableWindow() {
++        XCTAssertFalse(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: nil, now: 100))
++        XCTAssertFalse(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 70.001, now: 100))
++        XCTAssertTrue(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 70, now: 100))
++        XCTAssertTrue(BLELinkReliabilityPolicy.shouldResetReconnectAttempt(stableSince: 1, now: 100))
++    }
+ }
+diff --git a/VeilLinkTests/DiagnosticLogStoreTests.swift b/VeilLinkTests/DiagnosticLogStoreTests.swift
+index 40e2ab944c6b1c791b6ced3c7bab0313690f5060..2810a7f50c5532a26e431ad8b38e99f4dcaf8723 100644
+--- a/VeilLinkTests/DiagnosticLogStoreTests.swift
++++ b/VeilLinkTests/DiagnosticLogStoreTests.swift
+@@ -3,7 +3,7 @@ import XCTest
+ 
+ @MainActor
+ final class DiagnosticLogStoreTests: XCTestCase {
+-    func testRedactsSensitiveMetadataButKeepsTechnicalIdentifiers() throws {
++    func testRedactsSensitiveMetadataButKeepsTechnicalIdentifiers() async throws {
+         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+         defer { try? FileManager.default.removeItem(at: root) }
+         let store = DiagnosticLogStore(rootDirectory: root)
+@@ -19,6 +19,7 @@ final class DiagnosticLogStoreTests: XCTestCase {
+                 "typed_text": "private message"
+             ]
+         )
++        await waitForEntries(1, in: store)
+ 
+         let entry = try XCTUnwrap(store.recentEntries.last)
+         XCTAssertEqual(entry.metadata["device_id"], "DEVICE-1234")
+@@ -27,7 +28,7 @@ final class DiagnosticLogStoreTests: XCTestCase {
+         XCTAssertEqual(entry.metadata["typed_text"], "<redacted>")
+     }
+ 
+-    func testInputEventStoresLengthNotText() throws {
++    func testInputEventStoresLengthNotText() async throws {
+         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+         defer { try? FileManager.default.removeItem(at: root) }
+         let store = DiagnosticLogStore(rootDirectory: root)
+@@ -37,20 +38,47 @@ final class DiagnosticLogStoreTests: XCTestCase {
+             event: "input.field.change",
+             metadata: ["length": "12", "secure": "true"]
+         )
++        await waitForEntries(1, in: store)
+         let entry = try XCTUnwrap(store.recentEntries.last)
+         XCTAssertEqual(entry.metadata["length"], "12")
+         XCTAssertEqual(entry.metadata["secure"], "true")
+     }
+ 
+-    func testSequenceMonotonicallyIncreases() throws {
++    func testSequenceMonotonicallyIncreases() async throws {
+         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+         defer { try? FileManager.default.removeItem(at: root) }
+         let store = DiagnosticLogStore(rootDirectory: root)
+         store.log(.debug, .app, event: "one")
+         store.log(.debug, .app, event: "two")
++        await waitForEntries(2, in: store)
+         XCTAssertEqual(store.recentEntries.count, 2)
+         XCTAssertLessThan(store.recentEntries[0].sequence, store.recentEntries[1].sequence)
+     }
++
++    func testConcurrentLoggingProducesCompleteUniqueSequence() async {
++        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
++        defer { try? FileManager.default.removeItem(at: root) }
++        let store = DiagnosticLogStore(rootDirectory: root)
++
++        DispatchQueue.concurrentPerform(iterations: 100) { index in
++            store.log(.debug, .performance, event: "concurrent.\(index)")
++        }
++
++        await waitForEntries(100, in: store)
++        let sequences = store.recentEntries.map(\.sequence)
++        XCTAssertEqual(sequences.count, 100)
++        XCTAssertEqual(Set(sequences).count, 100)
++        XCTAssertEqual(sequences, sequences.sorted())
++    }
++
++    private func waitForEntries(_ count: Int, in store: DiagnosticLogStore) async {
++        for _ in 0..<200 {
++            if store.recentEntries.count >= count { return }
++            try? await Task.sleep(nanoseconds: 5_000_000)
++        }
++        XCTFail("Timed out waiting for \(count) diagnostic entries; observed \(store.recentEntries.count)")
++    }
++
+     func testStallPolicyRejectsSuspensionAndResumeGrace() {
+         XCTAssertFalse(DeepTelemetryStallPolicy.shouldReport(
+             delta: 3_600,
