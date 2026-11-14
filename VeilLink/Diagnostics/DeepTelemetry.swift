@@ -3,6 +3,18 @@ import SwiftUI
 import UIKit
 import ObjectiveC.runtime
 
+/// UIDevice.orientationDidChange does not guarantee a UI interface rotation.
+/// Treat repeated portrait callbacks as observations, not 19 actual rotations.
+enum DeepTelemetryOrientationPolicy {
+    static func event(previous: String?, current: String) -> String {
+        guard let previous, previous != "unknown",
+              current != "unknown", current != previous else {
+            return "ui.orientation_observed"
+        }
+        return "ui.orientation_change"
+    }
+}
+
 enum DeepTelemetryStallPolicy {
     static func shouldReport(
         delta: TimeInterval,
@@ -54,6 +66,7 @@ final class DeepTelemetry: ObservableObject {
     private var lastBrightnessSnapshotUptime: TimeInterval?
     private var lastCapturedBrightness: Double?
     private var postInteractionSnapshotTask: Task<Void, Never>?
+    private var lastObservedInterfaceOrientation: String?
 
     private init() {
         let defaults = UserDefaults.standard
@@ -76,6 +89,7 @@ final class DeepTelemetry: ObservableObject {
         UIActionDispatcherProbe.install()
         UIViewControllerLifecycleProbe.install()
         MetricKitTelemetryReceiver.shared.start()
+        lastObservedInterfaceOrientation = SystemDiagnosticsSnapshot.orientationMetadata()["interface_orientation"]
         installNotificationObservers()
         startHeartbeat()
         captureSystemSnapshot(reason: "telemetry.install")
@@ -307,8 +321,18 @@ final class DeepTelemetry: ObservableObject {
         })
         observers.append(center.addObserver(forName: UIDevice.orientationDidChangeNotification, object: nil, queue: .main) { _ in
             Task { @MainActor in
-                DeepTelemetry.shared.store.log(.debug, .ui, event: "ui.orientation_change", screen: DeepTelemetry.shared.currentScreen, metadata: SystemDiagnosticsSnapshot.orientationMetadata())
-                DeepTelemetry.shared.captureUIHierarchy(reason: "orientation", force: true)
+                let telemetry = DeepTelemetry.shared
+                var metadata = SystemDiagnosticsSnapshot.orientationMetadata()
+                let observed = metadata["interface_orientation"] ?? "unknown"
+                let previous = telemetry.lastObservedInterfaceOrientation
+                let event = DeepTelemetryOrientationPolicy.event(previous: previous, current: observed)
+                metadata["previous_interface_orientation"] = previous ?? "unknown"
+                telemetry.store.log(.debug, .ui, event: event,
+                                    screen: telemetry.currentScreen, metadata: metadata)
+                if observed != "unknown" { telemetry.lastObservedInterfaceOrientation = observed }
+                if event == "ui.orientation_change" {
+                    telemetry.captureUIHierarchy(reason: "orientation", force: true)
+                }
             }
         })
         observers.append(center.addObserver(forName: UIDevice.batteryLevelDidChangeNotification, object: nil, queue: .main) { _ in
