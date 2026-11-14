@@ -3768,3 +3768,611 @@ new file mode 100644
 +        .accessibilityHidden(true)
 +    }
 +}
+diff --git a/VeilLink/UI/VeilEclipseTracePolicy.swift b/VeilLink/UI/VeilEclipseTracePolicy.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseTracePolicy.swift
+@@ -0,0 +1,140 @@
++import Foundation
++
++/// The user's live game is NEVER a coaching surface. This policy is kept
++/// outside SwiftUI so privacy/safety rules are unit-testable on Linux and iOS.
++/// A finished game permits a read-only replay of actual, committed moves only.
++enum VeilEclipseTracePolicy {
++    static let size = 15
++    static let capacity = size * size
++
++    struct PlacedMove: Sendable, Equatable {
++        let index: Int
++        /// 1 = black/host, 2 = white/guest.
++        let stone: UInt8
++        init(index: Int, stone: UInt8) {
++            self.index = index
++            self.stone = stone
++        }
++    }
++
++    struct ReplayFrame: Sendable, Equatable {
++        let cells: [UInt8]
++        let lastCommittedIndex: Int?
++        let committedPlyCount: Int
++    }
++
++    enum SearchOrigin: Sendable {
++        case measuredEngine
++        case recordedEngine
++        case exampleOnly
++    }
++
++    /// Internal engine values, never handed directly to the presentation layer.
++    struct RawSearchEvent: Sendable {
++        let origin: SearchOrigin
++        let completedDepth: Int?
++        let visitedNodes: Int?
++        let principalVariation: [Int]
++        let consideredIndices: [Int]
++        let explanation: String?
++    }
++
++    /// The only type the live SwiftUI widget will accept from a searcher.
++    /// It has no coordinate-bearing fields by construction.
++    struct LiveMetrics: Sendable, Equatable {
++        let completedDepth: Int?
++        let visitedNodes: Int?
++    }
++
++    static func liveMetrics(from event: RawSearchEvent?) -> LiveMetrics? {
++        guard let event, event.origin == .measuredEngine else { return nil }
++        return LiveMetrics(
++            completedDepth: event.completedDepth.flatMap { (1...64).contains($0) ? $0 : nil },
++            visitedNodes: event.visitedNodes.flatMap { (0...500_000_000).contains($0) ? $0 : nil }
++        )
++    }
++
++    /// Sanitized public view model. During any active game, ALL coordinates,
++    /// scored candidates, variations and opponent threats are withheld.
++    struct PublicAnalysis: Sendable, Equatable {
++        let completedDepth: Int?
++        let visitedNodes: Int?
++        let canReplaySpatialData: Bool
++        let actualMoves: [Int]
++        let explanation: String?
++    }
++
++    static func publicAnalysis(
++        from event: RawSearchEvent?,
++        matchFinished: Bool,
++        separateReadOnlyPanel: Bool,
++        verifiedReplay: [ReplayFrame]
++    ) -> PublicAnalysis {
++        guard let event, event.origin != .exampleOnly else {
++            return PublicAnalysis(completedDepth: nil, visitedNodes: nil,
++                                  canReplaySpatialData: false,
++                                  actualMoves: [], explanation: nil)
++        }
++        let finishedAndVerified = matchFinished && separateReadOnlyPanel && !verifiedReplay.isEmpty
++        // Recorded/example events are never passed off as live engine progress.
++        let depth = event.origin == .measuredEngine
++            ? event.completedDepth.flatMap { (1...64).contains($0) ? $0 : nil } : nil
++        let nodes = event.origin == .measuredEngine
++            ? event.visitedNodes.flatMap { (0...500_000_000).contains($0) ? $0 : nil } : nil
++        // Never display raw PV/candidate coordinates from a still-running game.
++        // Even after the game, replay ONLY actual played moves, not guesses.
++        let replayedMoves = finishedAndVerified
++            ? verifiedReplay.compactMap(\.lastCommittedIndex) : []
++        return PublicAnalysis(completedDepth: depth, visitedNodes: nodes,
++                              canReplaySpatialData: finishedAndVerified,
++                              actualMoves: replayedMoves,
++                              explanation: nil) // Unreviewed private search text is never a public hint.
++    }
++
++    /// Replay is reconstructed from the saved match journal only after match
++    /// completion. It validates turn order, duplicate cells, terminal moves,
++    /// and that the final board matches the authoritative GomokuState.
++    static func replayFrames(
++        _ moves: [PlacedMove],
++        matchFinished: Bool,
++        separateReadOnlyPanel: Bool,
++        expectedFinalBoard: [UInt8]? = nil
++    ) -> [ReplayFrame] {
++        guard matchFinished, separateReadOnlyPanel,
++              !moves.isEmpty, moves.count <= capacity else { return [] }
++        var board = [UInt8](repeating: 0, count: capacity)
++        var frames: [ReplayFrame] = [ReplayFrame(cells: board, lastCommittedIndex: nil, committedPlyCount: 0)]
++        var next: UInt8 = 1
++        for (offset, move) in moves.enumerated() {
++            guard (0..<capacity).contains(move.index), move.stone == next,
++                  board[move.index] == 0 else { return [] }
++            board[move.index] = move.stone
++            frames.append(ReplayFrame(cells: board, lastCommittedIndex: move.index,
++                                      committedPlyCount: offset + 1))
++            if hasFive(board, through: move.index, stone: next), offset != moves.count - 1 {
++                return [] // A valid completed match has no moves after a win.
++            }
++            next = next == 1 ? 2 : 1
++        }
++        if let expectedFinalBoard, expectedFinalBoard != board { return [] }
++        return frames
++    }
++
++    private static func hasFive(_ board: [UInt8], through index: Int, stone: UInt8) -> Bool {
++        let r = index / size, c = index % size
++        for (dr, dc) in [(0,1), (1,0), (1,1), (1,-1)] {
++            var length = 1
++            for direction in [-1,1] {
++                var rr = r + dr * direction, cc = c + dc * direction
++                while (0..<size).contains(rr), (0..<size).contains(cc),
++                      board[rr * size + cc] == stone {
++                    length += 1
++                    rr += dr * direction
++                    cc += dc * direction
++                }
++            }
++            if length >= 5 { return true }
++        }
++        return false
++    }
++}
+diff --git a/VeilLink/UI/VeilEclipseTraceSessionGate.swift b/VeilLink/UI/VeilEclipseTraceSessionGate.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseTraceSessionGate.swift
+@@ -0,0 +1,118 @@
++import Foundation
++
++/// UI-only privacy boundary for future native Gomoku R5/V9 search events.
++/// It cannot receive or expose a proposed move through PublicMetrics.
++/// Not wired to a search producer until the Integration Governor promotes one.
++struct VeilEclipseTraceSessionGate: Sendable {
++    struct Ticket: Hashable, Sendable {
++        let sessionID: String
++        let turn: Int
++        let generation: UInt64
++        let boardFingerprint: UInt64
++
++        init(sessionID: String, turn: Int, generation: UInt64, boardFingerprint: UInt64) {
++            self.sessionID = sessionID
++            self.turn = turn
++            self.generation = generation
++            self.boardFingerprint = boardFingerprint
++        }
++    }
++
++    enum Origin: Sendable {
++        case measuredNative
++        case recorded
++        case demonstration
++    }
++
++    /// Private to the search/telemetry layer. Never bind this type to SwiftUI.
++    struct PrivateEvent: Sendable {
++        let ticket: Ticket
++        let origin: Origin
++        let completedDepth: Int?
++        let visitedNodes: Int?
++        let principalVariation: [Int]
++        let candidateIndices: [Int]
++        let analysisText: String?
++        let isFinal: Bool
++
++        init(ticket: Ticket, origin: Origin, completedDepth: Int?, visitedNodes: Int?,
++             principalVariation: [Int] = [], candidateIndices: [Int] = [],
++             analysisText: String? = nil, isFinal: Bool = false) {
++            self.ticket = ticket
++            self.origin = origin
++            self.completedDepth = completedDepth
++            self.visitedNodes = visitedNodes
++            self.principalVariation = principalVariation
++            self.candidateIndices = candidateIndices
++            self.analysisText = analysisText
++            self.isFinal = isFinal
++        }
++    }
++
++    private(set) var ticket: Ticket?
++    private var acceptedDepth: Int?
++    private var acceptedNodes: Int?
++    private var lastEmittedAtMilliseconds: UInt64?
++    private var finalEventReceived = false
++
++    mutating func begin(_ newTicket: Ticket) {
++        ticket = newTicket.sessionID.isEmpty || newTicket.turn < 0 ? nil : newTicket
++        acceptedDepth = nil
++        acceptedNodes = nil
++        lastEmittedAtMilliseconds = nil
++        finalEventReceived = false
++    }
++
++    mutating func end() {
++        ticket = nil
++        acceptedDepth = nil
++        acceptedNodes = nil
++        lastEmittedAtMilliseconds = nil
++        finalEventReceived = false
++    }
++
++    /// Return only genuine, coordinate-free metrics. Reject stale/late events,
++    /// out-of-order totals, example traces, invalid counts, and updates above 8 Hz.
++    /// `nowMilliseconds` must come from a monotonic clock supplied by the caller.
++    mutating func accept(
++        _ event: PrivateEvent,
++        matchIsPlaying: Bool,
++        nowMilliseconds: UInt64
++    ) -> VeilEclipseTracePolicy.LiveMetrics? {
++        guard matchIsPlaying, let ticket, event.ticket == ticket,
++              event.origin == .measuredNative, !finalEventReceived else { return nil }
++        guard event.completedDepth != nil || event.visitedNodes != nil else { return nil }
++        if let depth = event.completedDepth {
++            guard (1...64).contains(depth), depth >= (acceptedDepth ?? 0) else { return nil }
++        }
++        if let nodes = event.visitedNodes {
++            guard (0...500_000_000).contains(nodes), nodes >= (acceptedNodes ?? 0) else { return nil }
++        }
++        if let last = lastEmittedAtMilliseconds, nowMilliseconds < last { return nil }
++        if let depth = event.completedDepth { acceptedDepth = depth }
++        if let nodes = event.visitedNodes { acceptedNodes = nodes }
++        if event.isFinal { finalEventReceived = true }
++        if !event.isFinal, let last = lastEmittedAtMilliseconds,
++           nowMilliseconds - last < 125 { return nil }
++        lastEmittedAtMilliseconds = nowMilliseconds
++        return VeilEclipseTracePolicy.LiveMetrics(
++            completedDepth: acceptedDepth, visitedNodes: acceptedNodes
++        )
++    }
++}
++
++/// UI labels follow the actual BoardBotDifficulty and BoardSearchMode strings.
++/// V9's 2×/4×/6× are compute-budget factors, not proven playing-strength gains.
++enum VeilEclipseTierPresentation {
++    static func shortName(_ fullTitle: String) -> String {
++        let first = fullTitle.split(separator: "·", maxSplits: 1).first
++            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
++        return first.isEmpty ? "未设置" : first
++    }
++
++    static func hasSearchBudgetMultiplier(_ fullTitle: String) -> Bool {
++        fullTitle.contains("×")
++    }
++
++    static let multiplierDisclosure = "档位倍率表示搜索时间预算，并非已验证的棋力或胜率倍数。"
++}
+diff --git a/VeilLink/UI/VeilGomokuMatchArchive.swift b/VeilLink/UI/VeilGomokuMatchArchive.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilGomokuMatchArchive.swift
+@@ -0,0 +1,233 @@
++import Foundation
++
++/// Separate, append-only *per-match* history. Does not replace the existing
++/// LocalBoardMatchStore latest-match recovery file or the training database.
++/// Each match has its own UUID-named JSON file; there is NO fixed game-count cap.
++final class VeilGomokuMatchArchive {
++    enum Status: String, Codable, Sendable {
++        case playing, humanWon, aiWon, draw, interrupted
++        var isFinal: Bool { self != .playing }
++        var title: String {
++            switch self {
++            case .playing: return "进行中"
++            case .humanWon: return "玩家获胜"
++            case .aiWon: return "ECLIPSE 获胜"
++            case .draw: return "平局"
++            case .interrupted: return "中断棋局"
++            }
++        }
++    }
++
++    struct Move: Codable, Hashable, Sendable {
++        let index: Int
++        /// 1 = black / host, 2 = white / guest.
++        let stone: UInt8
++        init(index: Int, stone: UInt8) { self.index = index; self.stone = stone }
++    }
++
++    struct Match: Codable, Sendable, Identifiable {
++        static let version = 1
++        let version: Int
++        let id: String
++        let startedAt: Date
++        let updatedAt: Date
++        let completedAt: Date?
++        let status: Status
++        let difficulty: String
++        let humanStone: UInt8
++        let moves: [Move]
++
++        var placedMoves: [VeilEclipseTracePolicy.PlacedMove] {
++            moves.map { .init(index: $0.index, stone: $0.stone) }
++        }
++        var isReplayable: Bool {
++            !VeilEclipseTracePolicy.replayFrames(
++                placedMoves,
++                matchFinished: true,
++                separateReadOnlyPanel: true
++            ).isEmpty
++        }
++    }
++
++    struct Page {
++        let matches: [Match]
++        let totalFiles: Int
++        let nextOffset: Int?
++        let invalidFiles: Int
++    }
++
++    enum ArchiveError: LocalizedError {
++        case invalidSession, invalidMoves, conflict, corrupted, invalidStatus
++        var errorDescription: String? {
++            switch self {
++            case .invalidSession: return "棋局编号无效，未保存。"
++            case .invalidMoves: return "棋谱走子校验未通过，未覆盖原记录。"
++            case .conflict: return "同一棋局的旧记录与新走子不一致，旧记录已保护。"
++            case .corrupted: return "历史棋谱可能损坏，已保留原文件。"
++            case .invalidStatus: return "棋局结果与棋盘不一致，未归档。"
++            }
++        }
++    }
++
++    let directory: URL
++    private let manager: FileManager
++
++    init(directory: URL? = nil, fileManager: FileManager = .default) {
++        self.manager = fileManager
++        if let directory { self.directory = directory }
++        else {
++            let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
++                ?? fileManager.temporaryDirectory
++            self.directory = support
++                .appendingPathComponent("VeilLink", isDirectory: true)
++                .appendingPathComponent("GomokuMatchHistoryV1", isDirectory: true)
++        }
++    }
++
++    private func canonicalID(_ sessionID: String) throws -> String {
++        guard let uuid = UUID(uuidString: sessionID) else { throw ArchiveError.invalidSession }
++        return uuid.uuidString
++    }
++
++    private func url(for id: String) throws -> URL {
++        directory.appendingPathComponent(try canonicalID(id) + ".json", isDirectory: false)
++    }
++
++    func read(sessionID: String) throws -> Match? {
++        let path = try url(for: sessionID)
++        guard manager.fileExists(atPath: path.path) else { return nil }
++        // Bound untrusted/recovered archive bytes BEFORE decoding to prevent
++        // oversized or malformed JSON from exhausting memory during pagination.
++        let bytes = try path.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
++        guard (1...128_000).contains(bytes) else { throw ArchiveError.corrupted }
++        let data = try Data(contentsOf: path)
++        guard let match = try? JSONDecoder().decode(Match.self, from: data),
++              match.id == (try? canonicalID(sessionID)), validate(match) else {
++            throw ArchiveError.corrupted
++        }
++        return match
++    }
++
++    /// Called after each *committed* player/AI move and when the actual result
++    /// is known. A final match cannot be edited, replaced, or silently reset.
++    @discardableResult
++    func save(
++        sessionID: String,
++        moves: [Move],
++        difficulty: String,
++        humanStone: UInt8,
++        status: Status,
++        now: Date = Date()
++    ) throws -> Match? {
++        guard !moves.isEmpty else { return nil } // no phantom empty games
++        let id = try canonicalID(sessionID)
++        let prior = try read(sessionID: id)
++        if let prior {
++            guard prior.humanStone == humanStone,
++                  prior.moves.count <= moves.count,
++                  Array(moves.prefix(prior.moves.count)) == prior.moves else {
++                throw ArchiveError.conflict
++            }
++            if prior.status.isFinal {
++                // Retry after crash is safe; any alteration of final history is not.
++                guard prior.status == status, prior.moves == moves else { throw ArchiveError.conflict }
++                return prior
++            }
++        }
++        // The device clock may move backwards; retain monotone archive dates.
++        let effectiveNow = max(now, prior?.updatedAt ?? now)
++        let match = Match(
++            version: Match.version, id: id,
++            startedAt: prior?.startedAt ?? now,
++            updatedAt: effectiveNow,
++            completedAt: status.isFinal ? effectiveNow : nil,
++            status: status,
++            difficulty: prior?.difficulty ?? difficulty,
++            humanStone: humanStone, moves: moves
++        )
++        guard validate(match) else { throw ArchiveError.invalidMoves }
++        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
++        let data = try JSONEncoder().encode(match)
++        guard data.count <= 128_000 else { throw ArchiveError.invalidMoves }
++        var options: Data.WritingOptions = [.atomic]
++        #if canImport(UIKit)
++        options.insert(.completeFileProtectionUntilFirstUserAuthentication)
++        #endif
++        try data.write(to: try url(for: id), options: options)
++        return match
++    }
++
++    /// Paged listing reads only the requested slice, so old archives have no
++    /// fixed match-count or storage cap and browsing remains bounded.
++    func page(offset: Int = 0, limit: Int = 30) throws -> Page {
++        guard manager.fileExists(atPath: directory.path) else {
++            return Page(matches: [], totalFiles: 0, nextOffset: nil, invalidFiles: 0)
++        }
++        let files = try manager.contentsOfDirectory(
++            at: directory, includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
++            options: [.skipsHiddenFiles]
++        ).filter {
++            $0.pathExtension.lowercased() == "json"
++                && UUID(uuidString: $0.deletingPathExtension().lastPathComponent) != nil
++                && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
++        }
++            .sorted {
++                let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
++                let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
++                return a == b ? $0.lastPathComponent > $1.lastPathComponent : a > b
++            }
++        let start = min(max(0, offset), files.count)
++        let end = min(files.count, start + min(100, max(1, limit)))
++        var entries: [Match] = []
++        var invalid = 0
++        for url in files[start..<end] {
++            do {
++                if let item = try read(sessionID: url.deletingPathExtension().lastPathComponent) {
++                    entries.append(item)
++                }
++            } catch { invalid += 1 } // Never delete or silently rewrite a corrupt record.
++        }
++        return Page(matches: entries, totalFiles: files.count,
++                    nextOffset: end < files.count ? end : nil, invalidFiles: invalid)
++    }
++
++    private func validate(_ match: Match) -> Bool {
++        guard match.version == Match.version,
++              UUID(uuidString: match.id)?.uuidString == match.id,
++              (1...2).contains(match.humanStone),
++              !match.moves.isEmpty, match.moves.count <= 225,
++              match.completedAt == nil || match.status.isFinal,
++              match.status.isFinal == (match.completedAt != nil),
++              match.updatedAt >= match.startedAt,
++              (match.completedAt == nil || match.completedAt == match.updatedAt)
++        else { return false }
++        let frames = VeilEclipseTracePolicy.replayFrames(match.placedMoves,
++            matchFinished: true, separateReadOnlyPanel: true)
++        guard frames.count == match.moves.count + 1,
++              let board = frames.last?.cells,
++              let last = match.moves.last else { return false }
++        let won = makesFive(board, index: last.index, stone: last.stone)
++        switch match.status {
++        case .humanWon: return won && last.stone == match.humanStone
++        case .aiWon: return won && last.stone != match.humanStone
++        case .draw: return !won && match.moves.count == 225
++        case .interrupted: return !won && match.moves.count < 225
++        case .playing: return true // last winning move may precede status finalization
++        }
++    }
++
++    private func makesFive(_ board: [UInt8], index: Int, stone: UInt8) -> Bool {
++        let row = index / 15, col = index % 15
++        for (dr, dc) in [(1,0), (0,1), (1,1), (1,-1)] {
++            var count = 1
++            for sign in [-1,1] {
++                var r = row + dr * sign, c = col + dc * sign
++                while (0..<15).contains(r), (0..<15).contains(c), board[r*15+c] == stone {
++                    count += 1; r += dr*sign; c += dc*sign
++                }
++            }
++            if count >= 5 { return true }
++        }
++        return false
++    }
++}
+diff --git a/VeilLink/UI/VeilEclipseSearchTraceStore.swift b/VeilLink/UI/VeilEclipseSearchTraceStore.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseSearchTraceStore.swift
+@@ -0,0 +1,97 @@
++import Foundation
++
++/// Live, validated, voluntarily visible AI-search branches. Not human coaching.
++/// This gate has zero influence on move ordering, scores, or time budgets.
++/// Session token invalidation also drops late callbacks from cancelled workers.
++final class VeilEclipseSearchTraceStore: @unchecked Sendable {
++    struct Branch: Equatable, Sendable {
++        let indices: [Int]       // only positions the native search actually applied
++        let exploredNodes: Int   // real cumulative node counter, not a probability
++        let serial: UInt64
++        let emittedAtUptime: TimeInterval
++    }
++    private let lock = NSLock()
++    private var session: String?
++    private var token: UUID?
++    private var turn: Int = -1
++    private var root: GomokuState?
++    private var stored: [Branch] = []
++    private var serial: UInt64 = 0
++    private var lastTime: TimeInterval = -1
++
++    @discardableResult
++    func begin(sessionID: String, board: GomokuState) -> UUID? {
++        lock.lock(); defer { lock.unlock() }
++        // Invalid attempts must revoke any prior session, never retain stale
++        // exploration events after a restart or damaged game restoration.
++        session = nil
++        token = nil
++        turn = -1
++        root = nil
++        stored = []
++        serial = 0
++        lastTime = -1
++        guard !sessionID.isEmpty, board.winner == nil, !board.isDraw else { return nil }
++        session = sessionID
++        let issued = UUID()
++        token = issued
++        turn = board.moveCount
++        root = board
++        return issued
++    }
++
++    func clear() {
++        lock.lock(); defer { lock.unlock() }
++        session = nil
++        token = nil
++        turn = -1
++        root = nil
++        stored = []
++        serial = 0
++        lastTime = -1
++    }
++
++    /// Called only from an actual GomokuBot exploration branch. At most 20 events/s.
++    /// Returns false if the path is stale, fabricated, illegal, or out of turn.
++    @discardableResult
++    func record(_ indices: [Int], nodes: Int, token expected: UUID) -> Bool {
++        guard (1...3).contains(indices.count), (1...2_000_000_000).contains(nodes) else { return false }
++        lock.lock(); defer { lock.unlock() }
++        guard expected == token, let root else { return false }
++        let now = ProcessInfo.processInfo.systemUptime
++        guard now >= lastTime, nodes >= (stored.last?.exploredNodes ?? 0) else { return false }
++        let withinThrottle = lastTime >= 0 && now - lastTime < 0.05
++        let previous = stored.last
++        let deeperSameRoot = withinThrottle && previous != nil
++            && previous!.indices.first == indices.first
++            && indices.count > previous!.indices.count
++        // Reject 99% of super-fast events before board replay/copy.
++        if withinThrottle && !deeperSameRoot { return false }
++        var test = root
++        for index in indices {
++            guard (0..<225).contains(index),
++                  test.apply(index: index, actor: test.currentPlayer) else { return false }
++        }
++        if deeperSameRoot, let previous {
++            stored[stored.count - 1] = Branch(
++                indices: indices, exploredNodes: nodes,
++                serial: previous.serial, emittedAtUptime: now
++            )
++            return true
++        }
++        serial &+= 1
++        stored.append(Branch(indices: indices, exploredNodes: nodes, serial: serial, emittedAtUptime: now))
++        if stored.count > 14 { stored.removeFirst(stored.count - 14) }
++        lastTime = now
++        return true
++    }
++
++    /// No branch is visible outside the exact AI turn that produced it.
++    func snapshot(sessionID requestedSession: String, turn requestedTurn: Int,
++                  playing: Bool, aiThinking: Bool) -> [Branch] {
++        lock.lock(); defer { lock.unlock() }
++        guard playing, aiThinking, token != nil,
++              requestedSession == session, requestedTurn == turn else { return [] }
++        return stored
++    }
++}
