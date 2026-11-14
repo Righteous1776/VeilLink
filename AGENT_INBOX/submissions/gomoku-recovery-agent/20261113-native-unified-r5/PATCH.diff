@@ -1,0 +1,19 @@
+diff --git a/docs/GomokuNativeR5IntegrationGate.md b/docs/GomokuNativeR5IntegrationGate.md
+new file mode 100644
+--- /dev/null
++++ b/docs/GomokuNativeR5IntegrationGate.md
+@@ -0,0 +1,14 @@
++# VeilLink Native Gomoku R5 — Integration Gate
++
++1. Source from owner artifact: VeilGomokuUnifiedSearch.swift, VeilGomokuUnifiedBridge.swift.
++2. Verify source hashes against the owner's R5 manifest.
++3. Reconcile draft PR #186, #187, and #190 before applying product edits.
++4. Native GomokuBot mandatory win/block/R4/R6/R8 gates stay authoritative.
++5. Learning and formation bonuses may rank safe choices, never waive tactical rules.
++6. Review async search telemetry generation token and iOS MainActor isolation.
++7. Require full current-main git apply --check, iOS simulator build, XCTest, real-device tests.
++8. Verify 212 fork positions and rotation/mirror invariants using private owner fixtures.
++9. Run matched equal-budget games to establish playing strength rather than proxy accuracy.
++10. Complete proof-grade VCT before claiming that feature is fully migrated.
++11. Preserve existing user training archive, storage, profile, and backup behavior.
++12. Remove old JSCore adapter and resources only after parity and license review.
