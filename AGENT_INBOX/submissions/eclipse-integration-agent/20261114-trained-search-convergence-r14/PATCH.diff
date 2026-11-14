@@ -4376,3 +4376,179 @@ new file mode 100644
 +        return stored
 +    }
 +}
+diff --git a/VeilLinkTests/EclipseHorizonR12Tests.swift b/VeilLinkTests/EclipseHorizonR12Tests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/EclipseHorizonR12Tests.swift
+@@ -0,0 +1,46 @@
++import XCTest
++@testable import VeilLink
++
++/// R12 tests require PR #209 trained kernel plus R12 opt-in overlay applied
++/// on a dedicated Governor integration branch; not compiled on V29 main.
++final class EclipseHorizonR12Tests: XCTestCase {
++    func testDefaultKeepsFrozenCodexPolicyUnchanged() {
++        XCTAssertFalse(VeilGomokuUnifiedSearch.Limits().r12HorizonQuiescence)
++        XCTAssertEqual(VeilGomokuUnifiedSearch.Limits().r12MaxForcedBlocks, 2)
++    }
++
++    func testOwnWinOutranksEnemyFiveThreat() {
++        var b = [UInt8](repeating: 0, count: 225)
++        for at in [0, 1, 2, 3] { b[at] = 1 }
++        for at in [60, 76, 92, 108] { b[at] = 2 }
++        XCTAssertEqual(EclipseHorizonQuiescenceR12.inspect(b, toMove: 1), .ownImmediateWin(4))
++        XCTAssertEqual(EclipseHorizonQuiescenceR12.certifiedScore(
++            .ownImmediateWin(4), mate: 10_000_000, ply: 1
++        ), 9_999_998)
++    }
++
++    func testTwoDistinctOpponentFiveCompletionsProveShortLoss() {
++        var b = [UInt8](repeating: 0, count: 225)
++        for at in [109, 110, 111, 112] { b[at] = 2 }
++        XCTAssertEqual(EclipseHorizonQuiescenceR12.inspect(b, toMove: 1),
++                       .opponentDoubleFive([108, 113]))
++    }
++
++    func testSingleForcedDefenseIsNotMistakenForMate() {
++        var b = [UInt8](repeating: 0, count: 225)
++        for at in [0, 1, 2, 3] { b[at] = 2 }
++        b[5] = 1
++        XCTAssertEqual(EclipseHorizonQuiescenceR12.inspect(b, toMove: 1), .forcedBlock(4))
++        XCTAssertNil(EclipseHorizonQuiescenceR12.certifiedScore(
++            .forcedBlock(4), mate: 10_000_000, ply: 3
++        ))
++    }
++
++    func testCodexArenaRealPreMovePositionMustBlock188() {
++        // Frozen PR #209 final-compact-a, pair0, after 19 played stones.
++        let history = [112,66,83,157,158,156,185,173,189,172,140,171,170,155,154,126,186,202,187]
++        var b = [UInt8](repeating: 0, count: 225)
++        for (i, move) in history.enumerated() { b[move] = UInt8(i % 2 + 1) }
++        XCTAssertEqual(EclipseHorizonQuiescenceR12.inspect(b, toMove: 2), .forcedBlock(188))
++    }
++}
+diff --git a/VeilLinkTests/EclipseIncrementalThreatIndexR13Tests.swift b/VeilLinkTests/EclipseIncrementalThreatIndexR13Tests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/EclipseIncrementalThreatIndexR13Tests.swift
+@@ -0,0 +1,37 @@
++import XCTest
++@testable import VeilLink
++
++final class EclipseIncrementalThreatIndexR13Tests: XCTestCase {
++    func testImmediateFivesAndUndo() throws {
++        var board = [UInt8](repeating: 0, count: 225)
++        for i in [108, 109, 110, 111] { board[i] = 1 }
++        var index = try XCTUnwrap(EclipseIncrementalThreatIndexR13(cells: board))
++        XCTAssertEqual(index.winningSquares(stone: 1), [107, 112])
++        XCTAssertTrue(index.place(107, stone: 1))
++        XCTAssertFalse(index.winsImmediately(stone: 1, at: 107))
++        XCTAssertTrue(index.undo(107, stone: 1))
++        XCTAssertEqual(index.winningSquares(stone: 1), [107, 112])
++    }
++
++    func testForkDeduplicatesCompletionEndpoints() throws {
++        var board = [UInt8](repeating: 0, count: 225)
++        for i in [109, 110, 111] { board[i] = 1 }
++        let index = try XCTUnwrap(EclipseIncrementalThreatIndexR13(cells: board))
++        XCTAssertTrue(index.forkSquares(stone: 1).contains(108))
++        XCTAssertTrue(index.forkSquares(stone: 1).contains(112))
++    }
++
++    func testIllegalMoveCannotCorruptIndex() throws {
++        let empty = [UInt8](repeating: 0, count: 225)
++        var index = try XCTUnwrap(EclipseIncrementalThreatIndexR13(cells: empty))
++        XCTAssertTrue(index.place(100, stone: 1))
++        XCTAssertFalse(index.place(100, stone: 2))
++        XCTAssertFalse(index.undo(100, stone: 2))
++        XCTAssertTrue(index.undo(100, stone: 1))
++        XCTAssertEqual(index.cells, empty)
++    }
++
++    func testFrozenCodexDefaultIsOffUntilGovernorEnables() {
++        XCTAssertFalse(VeilGomokuUnifiedSearch.Limits().r13IncrementalThreatIndexEnabled)
++    }
++}
+diff --git a/VeilLinkTests/EclipseR14NativeIntegrationTests.swift b/VeilLinkTests/EclipseR14NativeIntegrationTests.swift
+new file mode 100644
+--- /dev/null
++++ b/VeilLinkTests/EclipseR14NativeIntegrationTests.swift
+@@ -0,0 +1,78 @@
++import XCTest
++import Foundation
++@testable import VeilLink
++
++/// R14 integration regression; must be executed on Apple's iOS XCTest host.
++/// This checks the merged Codex R10 + horizon R12 + threat-index R13 kernel
++/// without enabling unvalidated experimental search flags.
++final class EclipseR14NativeIntegrationTests: XCTestCase {
++    final class CapturedBranches: @unchecked Sendable {
++        private let lock = NSLock()
++        private var entries: [([Int], Int)] = []
++        func append(_ path: [Int], nodes: Int) {
++            lock.lock(); defer { lock.unlock() }
++            entries.append((path, nodes))
++        }
++        func snapshot() -> [([Int], Int)] {
++            lock.lock(); defer { lock.unlock() }
++            return entries
++        }
++    }
++
++    func testResearchOptimizationsDefaultOff() {
++        let limits = VeilGomokuUnifiedSearch.Limits()
++        XCTAssertFalse(limits.r12HorizonQuiescence)
++        XCTAssertFalse(limits.r13IncrementalThreatIndexEnabled)
++    }
++
++    func testRecordedNativeBranchesPreserveMoveChoice() throws {
++        var cells = [UInt8](repeating: 0, count: 225)
++        cells[112] = 1
++        cells[113] = 2
++        cells[97] = 1
++        cells[98] = 2
++        let p = try XCTUnwrap(VeilGomokuUnifiedSearch.Position(cells: cells, toMove: 1))
++        var limits = VeilGomokuUnifiedSearch.Limits()
++        limits.maxDepth = 2
++        limits.width = 5
++        limits.maxNodes = 8_000
++        limits.maxMilliseconds = 10_000
++        limits.forcedLineDepth = 0
++        let uninstrumented = try XCTUnwrap(VeilGomokuUnifiedSearch.decide(
++            p, limits: limits, trainedPolicy: true
++        ))
++        let observed = CapturedBranches()
++        let instrumented = try XCTUnwrap(VeilGomokuUnifiedSearch.decide(
++            p, limits: limits, trainedPolicy: true,
++            onExploredLine: { indices, nodes in
++                observed.append(indices, nodes: nodes)
++            }
++        ))
++        XCTAssertEqual(uninstrumented.index, instrumented.index)
++        XCTAssertEqual(uninstrumented.score, instrumented.score)
++        XCTAssertEqual(uninstrumented.completedDepth, instrumented.completedDepth)
++        XCTAssertTrue((0..<225).contains(instrumented.index))
++        let events = observed.snapshot()
++        XCTAssertFalse(events.isEmpty)
++        for (path, nodes) in events {
++            XCTAssertTrue((1...3).contains(path.count))
++            XCTAssertGreaterThan(nodes, 0)
++            var board = cells
++            for index in path {
++                XCTAssertTrue((0..<225).contains(index))
++                XCTAssertEqual(board[index], 0)
++                board[index] = board.filter { $0 != 0 }.count.isMultiple(of: 2) ? 1 : 2
++            }
++        }
++    }
++
++    func testNoModelReFitInMergedKernel() {
++        // This is a rollback contract, not an Elo measurement.
++        let disabled = VeilGomokuUnifiedSearch.Limits()
++        XCTAssertFalse(disabled.r12HorizonQuiescence)
++        XCTAssertFalse(disabled.r13IncrementalThreatIndexEnabled)
++        let empty = [UInt8](repeating: 0, count: 225)
++        XCTAssertNotNil(VeilGomokuUnifiedSearch.Position(cells: empty, toMove: 1))
++        XCTAssertNil(VeilGomokuUnifiedSearch.Position(cells: empty + [0], toMove: 1))
++    }
++}
