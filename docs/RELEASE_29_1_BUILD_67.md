@@ -5,7 +5,7 @@ Incremental ECLIPSE R14 integration on top of V29.0 Build 66; all existing commu
 ## Gomoku
 - Unified native PVS with frozen trained 48-tree Swift ordering policy; no NPZ model/weights are added.
 - Original R4/R6/R8 mandatory tactics and R6 formation/learning priority are preserved in the selected move arbiter.
-- Four original persisted difficulty levels remain compatible; uncalibrated V9 seven-tier research is NOT integrated. Search budgets are not Elo/strength multipliers.
+- Seven Gomoku tiers: original four persisted values plus 棋圣 2× / 传奇 4× / 天元 6×, with larger native ECLIPSE search-time budgets and XCTest coverage. Xiangqi remains four-tier. Budget multipliers are NOT measured Elo, win-rate or literal playing-strength multipliers.
 - Experimental R12 horizon and R13 exact incremental threat acceleration remain OFF by default pending controlled A/B tests.
 - Optional genuine per-session board search trace (OFF by default), VeilLink-theme compute console, and per-match game history/archive. Existing JS assets and notices retained for provenance and rollback.
 

@@ -234,7 +234,9 @@ struct SettingsView: View {
                         .font(VeilType.terminalLabel)
                         .tracking(1.25)
                         .foregroundColor(VeilTheme.mutedGold)
-                    Text(identity.activeIdentity?.displayName ?? "未创建")
+                    VeilInlineGlyphText.render(identity.activeIdentity?.displayName ?? "未创建")
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
+                        .accessibilityLabel(VeilInlineGlyphText.accessibilityDescription(for: identity.activeIdentity?.displayName ?? "未创建"))
                         .font(.system(.title3, design: .rounded).weight(.semibold))
                     HStack(spacing: 7) {
                         Text(String((identity.activeIdentity?.id ?? "offline").prefix(12)).uppercased())
@@ -806,16 +808,19 @@ struct SettingsView: View {
         let ultraDecision = ultraSample?.ultraDecision
         let ultraBudget = ultraSample?.ultraBudget
         let engineName = usesUltra ? "A10 Ultra Ω" : "A9"
-        let shownLevel = usesUltra ? (ultraDecision.map { "L\($0.level)" } ?? "--") : decision.level.shortTitle
-        let shownHealth = usesUltra ? (ultraDecision.map { String($0.healthScore) } ?? "--") : String(decision.healthScore)
-        let shownLight = usesUltra ? (ultraDecision?.light ?? "等待首个样本") : decision.light.title
-        let shownRisk = usesUltra ? (ultraDecision.map { String(format: "%.0f", Double($0.riskBasisPoints) / 100) } ?? "--") : String(format: "%.0f", decision.riskPoints)
-        let shownPersistence = usesUltra ? (ultraDecision.map { "\($0.persistenceSeconds)s" } ?? "--") : "\(decision.persistenceRuns)"
-        let shownCell = usesUltra ? (ultraDecision.map { "\($0.latticeCell)" } ?? "--") : "\(decision.latticeIndex)"
+        let a9Evaluated = a9Health.lastEvaluatedAt != nil
+        // Before the first sampling pass, the default A9 decision is green/100
+        // for initialization only. It is NOT a real measured health result.
+        let shownLevel = usesUltra ? (ultraDecision.map { "L\($0.level)" } ?? "--") : (a9Evaluated ? decision.level.shortTitle : "--")
+        let shownHealth = usesUltra ? (ultraDecision.map { String($0.healthScore) } ?? "--") : (a9Evaluated ? String(decision.healthScore) : "--")
+        let shownLight = usesUltra ? (ultraDecision?.light ?? "等待首个样本") : (a9Evaluated ? decision.light.title : "未评估")
+        let shownRisk = usesUltra ? (ultraDecision.map { String(format: "%.0f", Double($0.riskBasisPoints) / 100) } ?? "--") : (a9Evaluated ? String(format: "%.0f", decision.riskPoints) : "--")
+        let shownPersistence = usesUltra ? (ultraDecision.map { "\($0.persistenceSeconds)s" } ?? "--") : (a9Evaluated ? "\(decision.persistenceRuns)" : "--")
+        let shownCell = usesUltra ? (ultraDecision.map { "\($0.latticeCell)" } ?? "--") : (a9Evaluated ? "\(decision.latticeIndex)" : "--")
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Circle()
-                    .fill(usesUltra ? VeilTheme.goldBright : a9LightColor)
+                    .fill(usesUltra ? VeilTheme.goldBright : (a9Evaluated ? a9LightColor : VeilTheme.tertiaryText))
                     .frame(width: 9, height: 9)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(engineName) 健康治理")
@@ -828,7 +833,7 @@ struct SettingsView: View {
                 Spacer()
                 Text("\(shownLevel) · H\(shownHealth)")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(usesUltra ? VeilTheme.goldBright : a9LightColor)
+                    .foregroundColor(usesUltra ? VeilTheme.goldBright : (a9Evaluated ? a9LightColor : VeilTheme.tertiaryText))
             }
 
             HStack(spacing: 8) {
@@ -870,6 +875,10 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundColor(VeilTheme.secondaryText)
                 }
+            } else if !a9Evaluated {
+                Text("A9 本轮尚未完成健康评估。H-- 不代表连接、存储或系统健康。")
+                    .font(.caption)
+                    .foregroundColor(VeilTheme.secondaryText)
             } else if decision.issues.isEmpty {
                 Text("当前没有需要裁决的异常。A9 不会主动断链、删数据或修改游戏状态。")
                     .font(.caption)
