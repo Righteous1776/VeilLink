@@ -13,6 +13,8 @@ import Foundation
         guard let t = store.begin(sessionID: "s", board: board) else { fatalError("begin") }
         check(store.record([112], nodes: 1, token: t), "real first move")
         check(store.snapshot(sessionID: "s", turn: 0, playing: true, aiThinking: true).count == 1, "real snapshot")
+        check(store.record([112, 113], nodes: 2, token: t), "real reply promotes line under throttle")
+        check(store.snapshot(sessionID: "s", turn: 0, playing: true, aiThinking: true).last?.indices == [112,113], "line connects 2 ghosts")
         check(store.snapshot(sessionID: "s", turn: 1, playing: true, aiThinking: true).isEmpty, "reject future turn")
         check(store.snapshot(sessionID: "old", turn: 0, playing: true, aiThinking: true).isEmpty, "reject old session")
         check(store.snapshot(sessionID: "s", turn: 0, playing: false, aiThinking: true).isEmpty, "reject finished")
@@ -25,7 +27,7 @@ import Foundation
         check(!store.record([100], nodes: 0, token: t), "reject zero nodes")
         check(!store.record([100], nodes: -1, token: t), "reject negative nodes")
         check(!store.record([100], nodes: 2, token: UUID()), "reject foreign token")
-        check(store.snapshot(sessionID: "s", turn: 0, playing: true, aiThinking: true).first?.indices == [112], "no invalid contamination")
+        check(store.snapshot(sessionID: "s", turn: 0, playing: true, aiThinking: true).first?.indices == [112,113], "no invalid contamination")
         store.clear()
         check(store.snapshot(sessionID: "s", turn: 0, playing: true, aiThinking: true).isEmpty, "clear")
         check(!store.record([100], nodes: 2, token: t), "late callback rejected")
