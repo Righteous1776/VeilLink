@@ -21,3 +21,17 @@ This is a new core theme lane, more comprehensive than #231's standalone all-the
 
 ## Continuation verification record (2026-11-14)
 The staged patch has been repaired to use the existing palette metal fields and replayed against the exact base for all seven product files. The deterministic Foundation motion core compiled on Linux and passed 17 value checks. App-level and theme case XCTest remain unrun until Apple CI. The required palette-selection regression XCTest is now included in the proposed test file. This is **not** a merged or released change.
+
+## R2 screenshot-grounded redesign (owner's three live Gomoku screenshots)
+
+These photos show: (1) saturated orange reserved for high-priority controls, dark graphite background with floating dust from legacy particles; (2) a thick charcoal ECLIPSE ID card with near-black `VISUAL STREAM`, bold white name, clear orange accent and a large chess board; (3) training/settings dense with nested gray plates, orange action switches, many simultaneous telemetry labels and scrolling. The referenced ECLIPSE compute stream is decorative by its existing code's own disclosure; FORGE must not misrepresent synthetic visual code as real engine metrics.
+
+**New R2 changes**, all still inside this exact-base Inbox patch:
+- Night palette's signal orange is adjusted to a screenshot-derived vivid orange (`Color(red:0.98,green:0.38,blue:0.11)`) instead of gold/yellow. Existing day-mode separate contrast palette retained.
+- Two context-sensitive, **non-interactive** system headings inspired by ECLIPSE's hardware ID plate: `VL / RF-01` real scanning/standby status; `VL / CPU-02` real native runtime state. Source values only.
+- The Settings theme selector now has its own static 42pt chip motif rather than a generic SF Symbol, plus a compact FORGE specification with RF/CPU/BLE role labels when selected. No rendered fake percentages or continuous animation.
+- Existing shared `VeilSpatialPressModifier` now **does not install its zero-distance `DragGesture` in FORGE**. This avoids adding any ornamental gesture competitor to Nearby scrolling, chat input and game touch. Existing native `ButtonStyle` press behavior is preserved.
+- Existing `VeilDynamicGlowBorder` no longer performs repeat-forever perimeter glows in FORGE and safely resets on theme switching. Other legacy themes preserve their own behavior.
+- Game-specific ECLIPSE code, learned positions, training and visual-trace logic remain untouched to avoid collision with the ongoing Gomoku agent work.
+
+These changes are an independent, theme-wide visual foundation; they do NOT alter the screenshots' third-party navigation bar or claim to repair existing keyboard/scroll issues. The global dust/particle layer requires the separately queued PR #229.
