@@ -1,0 +1,461 @@
+--- R17.1/VeilLink/Agent/Games/LocalAIGameController.swift
++++ R17.2/VeilLink/Agent/Games/LocalAIGameController.swift
+@@ -106,6 +106,7 @@
+     @Published private(set) var lastDecisionMode = "基础策略"
+     @Published private(set) var lastDecisionMilliseconds: Int?
+     @Published private(set) var lastDecisionNodes: Int?
++    @Published private(set) var lastDecisionNodeCeiling: Int? // Captured for the measured move, not current settings
+     @Published private(set) var eclipseSearchStartedAt: Date?
+     @Published private(set) var eclipseVisualizationEnabled = UserDefaults.standard.bool(forKey: "VeilLink.Gomoku.EclipseTraceEnabled.v1")
+     @Published private(set) var eclipseAdvancedOptions = EclipseAdvancedOptions.load()
+@@ -413,6 +414,7 @@
+         lastDecisionMode = "规则 Bot"
+         lastDecisionMilliseconds = nil
+         lastDecisionNodes = nil
++        lastDecisionNodeCeiling = nil
+         eclipseSearchStartedAt = nil
+         if startAI { scheduleAIIfNeeded() }
+     }
+@@ -912,11 +914,15 @@
+             guard !Task.isCancelled else { return }
+             let started = Date()
+             self.eclipseSearchStartedAt = self.game == .gomoku ? started : nil
++            // Snapshot the active limit before await: users may change sliders mid-search.
++            let measuredNodeCeiling: Int? = self.game == .gomoku && self.eclipseAdvancedOptions.thinkingMode != .automatic
++                ? self.eclipseAdvancedOptions.maxNodes : nil
+             let selected = await self.selectAIMove()
+             guard !Task.isCancelled else { return }
+             if let selected {
+                 if self.game == .gomoku {
+                     self.lastDecisionNodes = selected.metadata["nodes"].flatMap(Int.init)
++                    self.lastDecisionNodeCeiling = self.lastDecisionNodes == nil ? nil : measuredNodeCeiling
+                 }
+                 self.applyAI(selected)
+             }
+--- R17.1/VeilLink/UI/GameLobbyView.swift
++++ R17.2/VeilLink/UI/GameLobbyView.swift
+@@ -62,6 +62,121 @@
+             if qualifies { threats += 1 }
+         }
+         return threats
++    }
++}
++
++// A measured stopwatch instrument. The sweep represents elapsed wall time ONLY;
++// it never claims to be search progress, internal reasoning or an evaluation score.
++private struct VeilEclipseSearchDial: View {
++    let searchStartedAt: Date?
++    let isThinking: Bool
++    let mode: EclipseThinkingMode
++    let secondsLimit: Int
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
++
++    private var active: Bool { isThinking && searchStartedAt != nil }
++    private var budget: Double? { mode == .custom ? Double(max(1, secondsLimit)) : nil }
++
++    var body: some View {
++        TimelineView(.periodic(from: .now, by: active && scenePhase == .active ? (reduceMotion ? 0.5 :
++                 (ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.25 : 0.1)) : 5)) { clock in
++            let elapsed = active ? max(0, clock.date.timeIntervalSince(searchStartedAt ?? clock.date)) : 0
++            let fraction = budget.map { min(1, elapsed / $0) }
++            HStack(spacing: 14) {
++                ZStack {
++                    Circle().stroke(VeilEclipseChrome.line, lineWidth: 3)
++                    ForEach(0..<20, id: \.self) { tick in
++                        Capsule()
++                            .fill(tick % 5 == 0 ? VeilEclipseChrome.silver.opacity(0.85)
++                                                  : VeilEclipseChrome.muted.opacity(0.35))
++                            .frame(width: 1, height: tick % 5 == 0 ? 5 : 3)
++                            .offset(y: -31)
++                            .rotationEffect(.degrees(Double(tick) * 18))
++                    }
++                    Circle()
++                        .trim(from: 0, to: active ? (fraction ?? 0.16) : 0)
++                        .stroke(VeilEclipseChrome.accent,
++                                style: StrokeStyle(lineWidth: 3, lineCap: .round))
++                        .rotationEffect(.degrees(fraction == nil && active && !reduceMotion
++                            ? elapsed.truncatingRemainder(dividingBy: 3) * 120 - 90
++                            : -90))
++                    Image(systemName: active ? "cpu" : "pause.fill")
++                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
++                        .foregroundColor(active ? VeilEclipseChrome.accent : VeilEclipseChrome.silver)
++                }
++                .frame(width: 66, height: 66)
++                .accessibilityHidden(true)
++                VStack(alignment: .leading, spacing: 4) {
++                    HStack {
++                        Text(active ? "SEARCH CLOCK / LIVE" : "SEARCH CLOCK / STANDBY")
++                            .foregroundColor(active ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
++                        Spacer(minLength: 3)
++                        Text(mode == .untimed ? "NO TIMER" : mode == .custom ? "CUSTOM" : "AUTO")
++                            .foregroundColor(VeilEclipseChrome.silver)
++                    }
++                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
++                    Text(active ? String(format: "T+ %.1f s", elapsed) : "T+ —")
++                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
++                        .contentTransition(.numericText())
++                        .foregroundColor(VeilEclipseChrome.white)
++                    Text(active && budget != nil
++                         ? "已用时间 / 自定上限 · 不是搜索完成进度"
++                         : "仅记录真实耗时 · 不推测搜索完成比例")
++                        .font(.system(size: 9, weight: .regular, design: .monospaced))
++                        .foregroundColor(VeilEclipseChrome.muted)
++                        .lineLimit(2)
++                }
++            }
++            .padding(10)
++            .background(VeilEclipseChrome.black, in: RoundedRectangle(cornerRadius: 11))
++            .overlay(RoundedRectangle(cornerRadius: 11)
++                .stroke(VeilEclipseChrome.line, lineWidth: 0.7))
++            .accessibilityElement(children: .ignore)
++            .accessibilityLabel(active ? "ECLIPSE 正在搜索，已耗时 \(String(format: "%.1f", elapsed)) 秒" : "ECLIPSE 搜索计时待机")
++        }
++        .allowsHitTesting(false)
++    }
++}
++
++// Counts are real search statistics from the LAST committed AI decision.
++// The marked ratio only exists when users explicitly configured a node ceiling.
++private struct VeilEclipseNodeGauge: View {
++    let visitedNodes: Int?
++    let configuredCeiling: Int?
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 6) {
++            HStack {
++                Text("MEASURED NODE USE / LAST MOVE")
++                    .foregroundColor(VeilEclipseChrome.silver)
++                Spacer(minLength: 4)
++                if let used = visitedNodes, let ceiling = configuredCeiling, ceiling > 0 {
++                    Text("\(used.formatted()) / \(ceiling.formatted())")
++                        .foregroundColor(VeilEclipseChrome.white)
++                } else {
++                    Text("NO COMPARABLE BUDGET")
++                        .foregroundColor(VeilEclipseChrome.muted)
++                }
++            }
++            .font(.system(size: 8, weight: .medium, design: .monospaced))
++            GeometryReader { geometry in
++                let fraction = min(1, CGFloat(max(0, visitedNodes ?? 0)) /
++                    CGFloat(max(1, configuredCeiling ?? 1)))
++                ZStack(alignment: .leading) {
++                    RoundedRectangle(cornerRadius: 2)
++                        .fill(VeilEclipseChrome.line)
++                    RoundedRectangle(cornerRadius: 2)
++                        .fill(VeilEclipseChrome.accent)
++                        .frame(width: max(0, geometry.size.width * fraction))
++                        .animation(.easeOut(duration: 0.34), value: fraction)
++                }
++            }
++            .frame(height: 5)
++        }
++        .padding(10)
++        .background(VeilEclipseChrome.black, in: RoundedRectangle(cornerRadius: 9))
++        .allowsHitTesting(false)
+     }
+ }
+ 
+@@ -684,9 +799,14 @@
+                             .lineLimit(1)
+                             .minimumScaleFactor(0.8)
+                         Spacer(minLength: 0)
+-                        Circle()
+-                            .fill(controller.isAIThinking ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
+-                            .frame(width: 7, height: 7)
++                        HStack(spacing: 5) {
++                            Circle()
++                                .fill(controller.eclipseSearchStartedAt != nil ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
++                                .frame(width: 6, height: 6)
++                            Text(controller.eclipseSearchStartedAt != nil ? "COMPUTE" : "READY")
++                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
++                                .foregroundColor(controller.eclipseSearchStartedAt != nil ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
++                        }
+                     }
+                     HStack(alignment: .firstTextBaseline) {
+                         Text(controller.statusText)
+@@ -763,7 +883,7 @@
+         VeilEclipseDeckSurface {
+             VStack(alignment: .leading, spacing: 10) {
+                 HStack {
+-                    Text("01  /  SEARCH TELEMETRY")
++                    Text("01  /  SEARCH INSTRUMENTS")
+                         .font(.system(size: 10, weight: .bold, design: .monospaced))
+                         .foregroundColor(VeilEclipseChrome.silver)
+                     Spacer()
+@@ -771,11 +891,22 @@
+                         .font(.system(size: 9, weight: .medium, design: .monospaced))
+                         .foregroundColor(VeilEclipseChrome.muted)
+                 }
+-                HStack(spacing: 8) {
++                VeilEclipseSearchDial(
++                    searchStartedAt: controller.eclipseSearchStartedAt,
++                    isThinking: controller.isAIThinking,
++                    mode: controller.eclipseAdvancedOptions.thinkingMode,
++                    secondsLimit: controller.eclipseAdvancedOptions.seconds
++                )
++                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                     eclipseMetric("VISITED NODES", controller.lastDecisionNodes.map { "\($0)" } ?? "—")
+                     eclipseMetric("THINK TIME", controller.lastDecisionMilliseconds.map { "\($0) ms" } ?? "—")
+-                    eclipseMetric("TRAINED", "\(controller.trainedNativeGames) G")
+-                }
++                    eclipseMetric("NODES / SEC", eclipseThroughput)
++                    eclipseMetric("TRAINED GAMES", "\(controller.trainedNativeGames)")
++                }
++                VeilEclipseNodeGauge(
++                    visitedNodes: controller.lastDecisionNodes,
++                    configuredCeiling: controller.lastDecisionNodeCeiling
++                )
+                 Text(controller.lastDecisionMode)
+                     .font(.system(size: 10, weight: .regular, design: .monospaced))
+                     .foregroundColor(VeilEclipseChrome.muted)
+@@ -788,12 +919,20 @@
+         }
+     }
+ 
++    private var eclipseThroughput: String {
++        guard let count = controller.lastDecisionNodes, count >= 0,
++              let millis = controller.lastDecisionMilliseconds, millis > 0 else { return "—" }
++        return "\(Int((Double(count) * 1_000.0 / Double(millis)).rounded()).formatted())"
++    }
++
+     private func eclipseMetric(_ label: String, _ value: String) -> some View {
+         VStack(alignment: .leading, spacing: 4) {
+             Text(label).font(.system(size: 8, weight: .bold, design: .monospaced))
+                 .foregroundColor(VeilEclipseChrome.muted)
+                 .lineLimit(1).minimumScaleFactor(0.7)
+             Text(value).font(.system(size: 16, weight: .semibold, design: .monospaced))
++                .contentTransition(.numericText())
++                .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: value)
+                 .foregroundColor(VeilEclipseChrome.white)
+                 .lineLimit(1).minimumScaleFactor(0.7)
+         }
+@@ -820,6 +959,16 @@
+                     eclipseThreatBox("ECLIPSE 即时成五点", count: ai, accent: VeilEclipseChrome.accent)
+                     eclipseThreatBox("我方即时成五点", count: human, accent: human > 0 ? VeilEclipseChrome.amber : VeilEclipseChrome.silver)
+                 }
++                HStack(spacing: 7) {
++                    Image(systemName: ai > 0 ? "bolt.fill" : human > 0 ? "shield.lefthalf.filled" : "checkmark.shield")
++                        .foregroundColor(ai > 0 ? VeilEclipseChrome.accent : human > 0 ? VeilEclipseChrome.amber : VeilEclipseChrome.muted)
++                    Text(ai > 0 ? "进攻信号 / ECLIPSE 当前存在一步成五机会"
++                         : human > 0 ? "防守信号 / 我方存在一步成五机会"
++                         : "攻防信号 / 双方暂无一步成五点")
++                        .foregroundColor(VeilEclipseChrome.silver)
++                }
++                .font(.system(size: 10, weight: .medium, design: .monospaced))
++                .accessibilityElement(children: .combine)
+                 Text("仅统计当前棋盘一步成五的空点数量，不展示坐标，不是模型置信度。")
+                     .font(.caption2)
+                     .foregroundColor(VeilEclipseChrome.muted)
+@@ -839,6 +988,8 @@
+                     .lineLimit(2)
+                 Text("\(count)")
+                     .font(.system(size: 23, weight: .bold, design: .monospaced))
++                    .contentTransition(.numericText())
++                    .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: count)
+                     .foregroundColor(count > 0 ? accent : VeilEclipseChrome.silver)
+             }
+             Spacer(minLength: 0)
+@@ -1487,7 +1638,8 @@
+                 eclipseSessionID: controller.sessionID,
+                 eclipseBoardTurn: controller.gomoku.moveCount,
+                 eclipseMatchPlaying: controller.outcome == .playing,
+-                eclipseConsoleStyle: false
++                eclipseConsoleStyle: false,
++                eclipseMotionEnabled: true
+             ) { index in
+                 if controller.developerTeachingMode,
+                    ownerMode.isAuthorized(for: .developerTraining),
+--- R17.1/VeilLink/UI/MiniGameViews.swift
++++ R17.2/VeilLink/UI/MiniGameViews.swift
+@@ -1548,6 +1548,7 @@
+ 
+ struct GomokuBoardView: View {
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @State private var impactExpanded = true
+     let state: GomokuState
+     let localPlayer: MiniGamePlayer
+     let enabled: Bool
+@@ -1559,6 +1560,7 @@
+     var eclipseBoardTurn = 0
+     var eclipseMatchPlaying = true
+     var eclipseConsoleStyle = false
++    var eclipseMotionEnabled = false
+     let onMove: (Int) -> Void
+ 
+ 
+@@ -1639,6 +1641,20 @@
+                     }
+ 
+ 
++                    // Short event-bound mechanical lock pulse for a REAL committed move.
++                    // No continuous board animation and no new drag/gesture recognizer.
++                    if eclipseMotionEnabled && !reduceMotion,
++                       let last = state.lastMove, state.value(at: last) != 0 {
++                        let impactPoint = gomokuPoint(index: last, margin: margin, step: step)
++                        Circle()
++                            .stroke(VeilEclipseChrome.accent.opacity(impactExpanded ? 0 : 0.8),
++                                    style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
++                            .frame(width: impactExpanded ? step * 1.8 : step * 0.85,
++                                   height: impactExpanded ? step * 1.8 : step * 0.85)
++                            .position(impactPoint)
++                            .allowsHitTesting(false)
++                    }
++
+                     VeilBoardTapSurface(enabled: enabled) { location in
+                         guard enabled, step > 0 else { return }
+                         let col = Int(round((location.x - margin) / step))
+@@ -1668,6 +1684,14 @@
+             .foregroundColor(eclipseConsoleStyle
+                 ? (enabled ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
+                 : (enabled ? VeilTheme.gold : VeilTheme.secondaryText))
++        }
++        .onChange(of: state.lastMove) { last in
++            guard eclipseMotionEnabled, !reduceMotion, last != nil else { return }
++            impactExpanded = false
++            // Begin on the following run loop so SwiftUI renders the collapsed state first.
++            DispatchQueue.main.async {
++                withAnimation(.easeOut(duration: 0.65)) { impactExpanded = true }
++            }
+         }
+         .accessibilityElement(children: .ignore)
+         .accessibilityLabel("五子棋棋盘，已进行 \(state.moveCount) 手，\(enabled ? "轮到你落子" : "等待对方落子")")
+--- R17.1/VeilLink/UI/VeilEclipseComputeConsole.swift
++++ R17.2/VeilLink/UI/VeilEclipseComputeConsole.swift
+@@ -14,6 +14,7 @@
+ 
+     @ObservedObject private var appearance = VeilAppearanceController.shared
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
+ 
+ 
+     private var active: Bool { isComputing && actualSearchStartedAt != nil }
+@@ -35,37 +36,61 @@
+                     .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
+             }
+             if active, let startedAt = actualSearchStartedAt {
+-                TimelineView(.animation(
+-                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 / 9.0 : 1.0 / 24.0,
+-                    paused: reduceMotion
++                TimelineView(.periodic(from: .now,
++                    by: scenePhase != .active ? 5 : (reduceMotion ? 0.5 : (ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.2 : 0.10))
+                 )) { timeline in
+                     let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
+                     let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+                     let position = VeilEclipseConsoleStream.scrollPosition(
+                         elapsedSeconds: reduceMotion ? 0 : elapsed, lowPower: lowPower
+                     )
+-                    let lineHeight: CGFloat = compact ? 11 : 15
+-                    let visibleCount = compact ? 2 : 7
++                    let lineHeight: CGFloat = compact ? 10 : 15
++                    let visibleCount = compact ? 1 : 7
+                     let rows = VeilEclipseConsoleStream.lines(
+                         elapsedSeconds: reduceMotion ? 0 : elapsed,
+                         visibleRows: visibleCount + 1,
+                         lowPower: lowPower
+                     )
+-                    VStack(alignment: .leading, spacing: 0) {
+-                        ForEach(0..<rows.count, id: \.self) { index in
++                    VStack(alignment: .leading, spacing: compact ? 2 : 6) {
++                        HStack(spacing: 5) {
++                            Image(systemName: "stopwatch")
++                                .font(.system(size: compact ? 7 : 9))
++                            Text(String(format: "REAL CLOCK  T+%.1fs", elapsed))
++                                .font(.system(size: compact ? 8 : 10, weight: .semibold, design: .monospaced))
++                                .monospacedDigit()
++                            Spacer(minLength: 0)
++                            Text("ELAPSED")
++                                .font(.system(size: compact ? 7 : 9, weight: .medium, design: .monospaced))
++                        }
++                        .foregroundColor(VeilEclipseChrome.accent)
++                        HStack(spacing: 2) {
++                            ForEach(0..<16, id: \.self) { tick in
++                                RoundedRectangle(cornerRadius: 1)
++                                    .fill(reduceMotion ? VeilEclipseChrome.line :
++                                          (tick == Int(elapsed * (lowPower ? 6 : 12)) % 16
++                                           ? VeilEclipseChrome.accent
++                                           : VeilEclipseChrome.silver.opacity(0.18)))
++                                    .frame(maxWidth: .infinity)
++                            }
++                        }
++                        .frame(height: 3)
++                        .accessibilityHidden(true)
++                        VStack(alignment: .leading, spacing: 0) {
++                            ForEach(0..<rows.count, id: \.self) { index in
+                             Text(rows[index].text)
+                                 .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
+                                 .foregroundColor(tone(rows[index].tone))
+                                 .lineLimit(1)
+                                 .minimumScaleFactor(0.8)
+                                 .frame(height: lineHeight, alignment: .leading)
++                            }
+                         }
++                        .offset(y: -CGFloat(position - floor(position)) * lineHeight)
++                        .frame(maxWidth: .infinity, alignment: .leading)
++                        .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
++                        .clipped()
++                        .accessibilityHidden(true)
+                     }
+-                    .offset(y: -CGFloat(position - floor(position)) * lineHeight)
+-                    .frame(maxWidth: .infinity, alignment: .leading)
+-                    .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
+-                    .clipped()
+-                    .accessibilityHidden(true)
+                 }
+             } else {
+                 Text("vis.idle ()")
+@@ -94,7 +119,7 @@
+         }
+         .padding(compact ? 8 : 12)
+         .frame(maxWidth: .infinity, alignment: .leading)
+-        .frame(minHeight: compact ? 55 : 166)
++        .frame(minHeight: compact ? 66 : 166)
+         .background(
+             RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
+                 .fill(Color.black.opacity(0.97))
+--- R17.1/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
++++ R17.2/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
+@@ -17,6 +17,7 @@
+ 
+ 
+     @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @Environment(\.scenePhase) private var scenePhase
+     @ObservedObject private var appearance = VeilAppearanceController.shared
+ 
+ 
+@@ -87,6 +88,7 @@
+ /// in-app bot card instead of adding an unrelated cyberpunk/blue-metal brand.
+ private struct VeilEclipseAvatar: View {
+     let isThinking: Bool
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+     @ObservedObject private var appearance = VeilAppearanceController.shared
+ 
+ 
+@@ -103,6 +105,27 @@
+                                            lineCap: .round))
+                 .padding(7)
+                 .rotationEffect(.degrees(-35))
++            ForEach(0..<16, id: \.self) { tick in
++                Capsule()
++                    .fill(tick % 4 == 0 ? VeilEclipseChrome.accent.opacity(0.62)
++                                          : VeilEclipseChrome.silver.opacity(0.20))
++                    .frame(width: 1, height: tick % 4 == 0 ? 5 : 3)
++                    .offset(y: -33)
++                    .rotationEffect(.degrees(Double(tick) * 22.5))
++            }
++            if isThinking && !reduceMotion && scenePhase == .active {
++                TimelineView(.animation(minimumInterval:
++                    ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.125 : 0.05)) { timeline in
++                    Circle()
++                        .trim(from: 0, to: 0.20)
++                        .stroke(VeilEclipseChrome.accent,
++                                style: StrokeStyle(lineWidth: 1.7, lineCap: .square))
++                        .padding(2)
++                        .rotationEffect(.degrees(timeline.date.timeIntervalSinceReferenceDate
++                            .truncatingRemainder(dividingBy: 2.6) / 2.6 * 360))
++                }
++                .allowsHitTesting(false)
++            }
+             // Theme-aware mask/eyes: Veil Original gold, Instrument amber,
+             // Apple Soft adaptive light/dark, Islet aurora, Plainline hairline.
+             HStack(spacing: 12) {
