@@ -50,3 +50,17 @@ Owner explicitly requested a broader FORGE motion language with structurally dif
 | BLE link-health ratchet | linkSnapshot.healthScore | Eight discrete bars, each settles with a bounded stagger on actual score change |
 
 Mechanical language: rotary / aperture / vertical rolling digits / horizontal sliding carriage / segmented ratchet. Each localized device is visually different. New devices do not add gestures or persistent timers; decorative layers do not intercept touches. Non-FORGE appearance branches and the in-flight Gomoku engine remain untouched. Global particle deletion still requires separately proposed #229.
+
+
+## R4 — FORGE Chat: E2EE communication instruments (2026-11-15)
+
+Owner explicitly requested bringing FORGE's differentiated industrial animation vocabulary into the chat area. New theme-specific work is deliberately scoped to the existing ConversationViews.swift and two new UI/XCTest files; transport, storage, message sequencing, game messages, searching and ScrollViewReader logic are not edited.
+
+- Conversation row: machined graphite plate and short orange selection/unread latch, animating only on actual selection/unread-state change; existing list swipe actions stay native.
+- Unread: fixed-size orange metal count indicator, using the actual conversation.unreadCount (99+ is the usual display clamp).
+- Bubble: distinct dark graphite inbound and vivid orange outbound machined shapes, in the existing background slot; original content, widths, local actions and timestamps remain unchanged.
+- Delivery: mutually exclusive three-stop metallic rail driven only by real ChatMessage.DeliveryState; QUEUE / TX / ACK, with explicit HOLD / STOP / ERR exceptions; NOT throughput, latency or percentage progress. Preserves underlying delivery labels and retries.
+- Composer: fixed 36pt plunger as the existing native Button label, and a fixed-position TX ARMED / TX STANDBY top-line latch driven by the presence of draft text and composer mode. Adds no keyboard-space consumption and no keyboard-focus interceptors.
+- Performance: no global message-count spring, no scale insertion on FORGE timeline rows, no gesture recognizers/timers. Pass forgeStyle into message bubbles from the observed ChatView instead of creating a theme observer for each message row.
+
+No claim of fixing legacy keyboard obstruction / scroll anchoring / clock-skew message order is made here. These functional bugs are separately tracked and must not be masked with animations. R4 only avoids introducing new geometry or list-level animated reflow.
