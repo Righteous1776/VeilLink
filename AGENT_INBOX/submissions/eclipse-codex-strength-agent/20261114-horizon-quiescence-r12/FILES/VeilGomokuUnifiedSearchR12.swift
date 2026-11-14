@@ -353,7 +353,6 @@ enum VeilGomokuUnifiedSearch {
             nodes += 1
             if overBudget() { return 0 }
             if last >= 0 && winningStone(at: last, side: opponent(side)) { return -mate + ply }
-            if !board.contains(0) { return 0 }
             if depth == 0 && limits.r12HorizonQuiescence {
                 // A depth-limit leaf must not disguise an existing win or a
                 // double-five forced loss as a merely positional heuristic.
@@ -386,7 +385,7 @@ enum VeilGomokuUnifiedSearch {
                     }
                 }
             }
-            if depth == 0 { return staticValue(toMove: side) }
+            if depth == 0 || !board.contains(0) { return staticValue(toMove: side) }
             let tableKey = hash ^ VeilGomokuUnifiedSearch.sideHash[Int(side)]
             let oldAlpha = alpha
             if let hit = table[tableKey], hit.depth >= depth {
