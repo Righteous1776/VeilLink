@@ -1,70 +1,113 @@
-name: iOS CI
+name: VeilLink Unified CI + IPA
 
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'AGENT_INBOX/**'
   pull_request:
-    paths-ignore:
-      - 'AGENT_INBOX/**'
   workflow_dispatch:
-  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ios-ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: veillink-unified-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  ci-ipa:
+    name: CI / Test / Unsigned IPA
     runs-on: macos-15
-    timeout-minutes: 50
+    timeout-minutes: 80
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce single active workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflows=$(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) -print | sort)
+          printf 'Active workflow files:\n%s\n' "$workflows"
+          count=$(printf '%s\n' "$workflows" | sed '/^$/d' | wc -l | tr -d ' ')
+          test "$count" -eq 1
+          test "$workflows" = ".github/workflows/ios-ci.yml"
+
+      - name: Validate Agent Inbox governance when applicable
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -q '^AGENT_INBOX/'; then
+            python3 scripts/ci-agent-inbox-gate.py
+          else
+            echo "No AGENT_INBOX changes; governance gate not applicable."
+          fi
 
       - name: Prepare evidence directory
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p ci-artifacts
           {
             echo "HEAD=$(git rev-parse HEAD)"
+            echo "EVENT=${{ github.event_name }}"
             xcodebuild -version
             sw_vers
             echo "RUNNER_ARCH=${RUNNER_ARCH:-unknown}"
             df -h .
+            du -sh VeilLink/Resources 2>/dev/null || true
           } 2>&1 | tee ci-artifacts/environment.log
 
       - name: Static standard preflight
+        shell: bash
         run: |
           set -o pipefail
           python3 scripts/ci-standard-preflight.py 2>&1 | tee ci-artifacts/static-preflight.log
 
-      - name: Test offline Veilopoly package before expensive native preparation
+      - name: Test offline Veilopoly package
+        shell: bash
         run: |
           set -o pipefail
           python3 scripts/test-verify-veilopoly-release.py 2>&1 | tee ci-artifacts/veilopoly-resource-gate-tests.log
           swift test --package-path VEILOPOLY_DEV/Veilopoly --jobs 2 2>&1 | tee ci-artifacts/veilopoly-package-tests.log
 
-      - name: Install XcodeGen
-        run: brew install xcodegen cmake 2>&1 | tee ci-artifacts/install-xcodegen.log
-
-      - name: Record XcodeGen version
-        run: xcodegen --version | tee ci-artifacts/xcodegen-version.log
+      - name: Install Xcode build tools
+        shell: bash
+        run: |
+          set -o pipefail
+          brew install xcodegen cmake 2>&1 | tee ci-artifacts/install-build-tools.log
+          xcodegen --version | tee ci-artifacts/xcodegen-version.log
 
       - name: Generate Xcode project
+        shell: bash
         run: |
           set -o pipefail
           xcodegen generate --spec project.yml 2>&1 | tee ci-artifacts/xcodegen.log
           cp VeilLink.xcodeproj/project.pbxproj ci-artifacts/project.pbxproj
 
-      - name: Build for iOS Simulator
+      - name: Build iOS Simulator
+        shell: bash
         run: |
           set -o pipefail
           rm -rf ci-artifacts/BuildResults.xcresult
           set +e
-          xcodebuild             -project VeilLink.xcodeproj             -scheme VeilLink             -configuration Debug             -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             -resultBundlePath ci-artifacts/BuildResults.xcresult             CODE_SIGNING_ALLOWED=NO             build 2>&1 | tee ci-artifacts/ios-simulator-build.log
+          xcodebuild \
+            -project VeilLink.xcodeproj \
+            -scheme VeilLink \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -resultBundlePath ci-artifacts/BuildResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee ci-artifacts/ios-simulator-build.log
           build_status=${PIPESTATUS[0]}
           set -e
           if [ "$build_status" -ne 0 ]; then
@@ -80,20 +123,23 @@ jobs:
           fi
 
       - name: Run unit and UI smoke tests
+        shell: bash
         run: |
           set -o pipefail
           rm -rf TestResults.xcresult
           bash scripts/ci-test.sh 2>&1 | tee ci-artifacts/unit-tests.log
           python3 scripts/ci-collect-evidence.py \
-            --workflow "iOS CI" \
+            --workflow "VeilLink Unified CI + IPA" \
             --status success \
             --artifact-dir ci-artifacts \
             --output ci-artifacts/CI_TEST_EVIDENCE.json \
             --require-tests-passed
 
-      - name: Compile Release for iPhoneOS (unsigned candidate)
+      - name: Build unsigned Release for iPhoneOS
+        shell: bash
         run: |
           set -o pipefail
+          rm -rf DerivedData ci-artifacts/DeviceBuild.xcresult
           xcodebuild \
             -project VeilLink.xcodeproj \
             -scheme VeilLink \
@@ -101,50 +147,81 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath DerivedData \
+            -resultBundlePath ci-artifacts/DeviceBuild.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee ci-artifacts/ios-device-release-build.log
 
-      - name: Package and verify unsigned PR candidate IPA
-        if: github.event_name == 'pull_request'
+      - name: Read built release identity
+        id: release_identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          INFO="DerivedData/Build/Products/Release-iphoneos/VeilLink.app/Info.plist"
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO")
+          BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "VeilLink $VERSION · Build $BUILD" | tee ci-artifacts/release-identity.log
+
+      - name: Package unsigned IPA
+        shell: bash
         run: |
           set -o pipefail
-          bash scripts/package-unsigned-ipa.sh 2>&1 | tee ci-artifacts/unsigned-pr-package.log
+          bash scripts/package-unsigned-ipa.sh 2>&1 | tee ci-artifacts/package-unsigned-ipa.log
+
+      - name: Verify unsigned IPA
+        shell: bash
+        run: |
+          set -o pipefail
           python3 scripts/verify-core-release.py \
             --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
             --ipa "build/VeilLink-unsigned.ipa" \
             --manifest CORE_RELEASE_MANIFEST.json \
             --provenance CORE_RELEASE_PROVENANCE.json \
-            --sums CORE_RELEASE_SHA256SUMS.txt 2>&1 | tee ci-artifacts/unsigned-pr-verify.log
-          cp CORE_RELEASE_MANIFEST.json CORE_RELEASE_PROVENANCE.json CORE_RELEASE_SHA256SUMS.txt ci-artifacts/
+            --sums CORE_RELEASE_SHA256SUMS.txt 2>&1 | tee ci-artifacts/core-release-gate.log
+          cp \
+            CORE_RELEASE_MANIFEST.json \
+            CORE_RELEASE_PROVENANCE.json \
+            CORE_RELEASE_SHA256SUMS.txt \
+            ci-artifacts/
 
-      - name: Upload unsigned PR candidate IPA
-        if: success() && github.event_name == 'pull_request'
+      - name: Collect CI evidence
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          set +e
+          if [ -d TestResults.xcresult ]; then
+            ditto TestResults.xcresult ci-artifacts/TestResults.xcresult
+          fi
+          python3 scripts/ci-collect-evidence.py \
+            --workflow "VeilLink Unified CI + IPA" \
+            --phase "ci-test-build-package" \
+            --status "$JOB_STATUS" \
+            --artifact-dir ci-artifacts \
+            --output ci-artifacts/CI_EVIDENCE.json
+          exit 0
+
+      - name: Upload CI evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VeilLink-PR-unsigned-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          name: VeilLink-CI-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-artifacts
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload unsigned IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilLink-unsigned-v${{ steps.release_identity.outputs.version }}-b${{ steps.release_identity.outputs.build }}
           path: |
             build/VeilLink-unsigned.ipa
             CORE_RELEASE_MANIFEST.json
             CORE_RELEASE_PROVENANCE.json
             CORE_RELEASE_SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 14
-
-      - name: Collect CI evidence
-        if: always()
-        env:
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          if [ -d TestResults.xcresult ]; then
-            ditto TestResults.xcresult ci-artifacts/TestResults.xcresult
-          fi
-          python3 scripts/ci-collect-evidence.py             --workflow "iOS CI"             --phase "standard-preflight"             --status "$JOB_STATUS"             --artifact-dir ci-artifacts             --output ci-artifacts/CI_EVIDENCE.json
-
-      - name: Upload CI evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: VeilLink-iOS-CI-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ci-artifacts
-          if-no-files-found: error
-          retention-days: 14
+          compression-level: 0
+          retention-days: 30
