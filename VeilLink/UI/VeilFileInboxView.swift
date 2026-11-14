@@ -76,9 +76,17 @@ struct VeilFileInboxView: View {
                 resultMessage = error.localizedDescription
             case .success(let urls):
                 guard !urls.isEmpty else { return }
+                // Files grants are obtained in the picker's callback, not later
+                // in an unrelated async task after the picker has disappeared.
+                let securedSelections = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
                 isImporting = true
                 Task { @MainActor in
-                    defer { isImporting = false }
+                    defer {
+                        for (url, granted) in securedSelections where granted {
+                            url.stopAccessingSecurityScopedResource()
+                        }
+                        isImporting = false
+                    }
                     var successful: [(VeilFileInboxRecord, VeilUnifiedImportRoute)] = []
                     var failures: [String] = []
                     for selected in urls {
