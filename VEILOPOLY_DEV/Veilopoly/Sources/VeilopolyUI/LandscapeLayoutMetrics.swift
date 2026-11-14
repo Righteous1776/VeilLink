@@ -66,3 +66,17 @@ public enum VeilopolyLandscapeLayout {
  }
 
 }
+
+ 
+/// Pure Swift portrait split: board uses at most the upper half of the
+/// available safe-area rectangle; controls/widgets own the lower remainder.
+public enum VeilopolyPortraitLayout {
+ public static func allocate(availableWidth: Double, availableHeight: Double)
+  -> (boardHeight: Double, workspaceHeight: Double) {
+  let width = availableWidth.isFinite ? max(0, availableWidth) : 0
+  let height = availableHeight.isFinite ? max(0, availableHeight) : 0
+  let aspectBound = max(0, width - 12) / VeilopolyLandscapeLayout.boardAspect + 8
+  let boardHeight = min(height * 0.5, aspectBound)
+  return (boardHeight, max(0, height - boardHeight))
+ }
+}

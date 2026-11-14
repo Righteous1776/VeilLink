@@ -8,15 +8,16 @@ import VeilopolyEngine
 struct VeilopolyAssetBrowser: View {
  let game: GameState
  @State private var selectedPlayer: Int
- @State private var section: VeilopolyManagementSection = .property
+ @State private var section: VeilopolyManagementSection
  @State private var showAllTiles = false
  @State private var selectedSymbol = "VTL"
  @State private var showAchievementJournal = false
  @Environment(\.dismiss) private var dismiss
 
- init(game: GameState, initialPlayer: Int) {
+ init(game: GameState, initialPlayer: Int, initialSection: VeilopolyManagementSection = .property) {
   self.game = game
   _selectedPlayer = State(initialValue: initialPlayer)
+  _section = State(initialValue: initialSection)
  }
 
  private var snapshot: VeilopolyAssetBrowserSnapshot? {

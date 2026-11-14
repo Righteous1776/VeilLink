@@ -405,8 +405,8 @@ final class GameBoardScene: SKScene {
  }
 
  /// Tap-to-inspect: game input remains in the SwiftUI coordinator.
- func highlightTile(_ index: Int) {
-  guard tiles[index] != nil else { inspectionMarker.isHidden = true; return }
+ func highlightTile(_ index: Int?) {
+  guard let index, tiles[index] != nil else { inspectionMarker.isHidden = true; return }
   configureMarker(inspectionMarker, at: index)
   inspectionMarker.isHidden = false
  }

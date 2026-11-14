@@ -548,4 +548,30 @@ final class GomokuBotTests: XCTestCase {
     }
 
 
+    func testEclipseSevenGomokuTiersPreserveFourXiangqiTiers() {
+        XCTAssertEqual(BoardBotDifficulty.allCases.count, 7)
+        XCTAssertEqual(BoardBotDifficulty.xiangqiCases.count, 4)
+        XCTAssertEqual(BoardBotDifficulty.xiangqiCases.map(\.rawValue),
+                       ["relaxed", "balanced", "advanced", "master"])
+        let master = GomokuBotBudget.forDifficulty(.master, profileLabel: "HIGH")
+        for (tier, multiplier, maxDepth) in [
+            (BoardBotDifficulty.grandmaster, 2, 5),
+            (.legendary, 4, 6),
+            (.zenith, 6, 7)
+        ] {
+            let budget = GomokuBotBudget.forDifficulty(tier, profileLabel: "HIGH")
+            XCTAssertEqual(budget.timeLimitMilliseconds, master.timeLimitMilliseconds * multiplier)
+            XCTAssertGreaterThanOrEqual(budget.reinforced(by: 8).timeLimitMilliseconds,
+                                        budget.timeLimitMilliseconds)
+            let limits = EclipseDifficultyPolicy.limits(rawValue: tier.rawValue,
+                                                         maximumMilliseconds: budget.timeLimitMilliseconds)
+            XCTAssertEqual(limits.maxMilliseconds, 950 * multiplier)
+            XCTAssertEqual(limits.maxDepth, maxDepth)
+        }
+        XCTAssertEqual(XiangqiBotBudget.forDifficulty(.zenith, profileLabel: "HIGH"),
+                       XiangqiBotBudget.forDifficulty(.master, profileLabel: "HIGH"))
+        XCTAssertEqual(EclipseDifficultyPolicy.limits(rawValue: "not-a-tier",
+                          maximumMilliseconds: 950).maxDepth, 4)
+    }
+
 }

@@ -134,6 +134,17 @@ final class RuntimeDiagnosticsBridge {
 
         model.a9Health.$decision
             .sink { decision in
+                // Combine publishes the initial .green/100 placeholder before
+                // any health evaluation. Label it honestly rather than
+                // inventing a healthy, connected/validated link.
+                guard model.a9Health.lastEvaluatedAt != nil else {
+                    self.store.log(
+                        .debug, .a9, event: "a9.not_evaluated",
+                        screen: DeepTelemetry.shared.currentScreen,
+                        metadata: ["evaluation": "not-evaluated"]
+                    )
+                    return
+                }
                 self.store.log(
                     decision.light == .red ? .warning : .debug,
                     .a9,

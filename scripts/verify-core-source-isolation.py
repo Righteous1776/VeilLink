@@ -11,19 +11,11 @@ CORE_SOURCE_EXCLUDES = [
     "Agent/MaleCNS",
     "Agent/Games/TrainedGamePolicyRuntime.swift",
     "Agent/Games/MaleCNSGameDecisionEncoder.swift",
-    "Agent/Language/LlamaInferenceEngine.swift",
-    "Agent/Language/LlamaLocalTextModelRuntime.swift",
-    "Agent/Language/LlamaRuntimeConfiguration.swift",
-    "Agent/Language/LlamaCancellationGate.swift",
-    "Agent/Language/LocalModelCatalog.swift",
-    "Agent/Language/LocalModelManager.swift",
 ]
 CORE_TEST_EXCLUDES = [
     "MaleCNSNativeKernelTests.swift",
     "MaleCNSNativeRolloutPoolTests.swift",
     "MaleCNSVFLY1Tests.swift",
-    "LocalModelCatalogTests.swift",
-    "RealLocalInferenceSmokeTests.swift",
     "Fixtures/MaleCNSFixture.vfly",
     "Fixtures/MaleCNSFixture.vfly.manifest.json",
 ]
@@ -35,12 +27,6 @@ PRESERVE_ROOTS = [
 PRESERVE_FILES = [
     "VeilLink/Agent/Games/TrainedGamePolicyRuntime.swift",
     "VeilLink/Agent/Games/MaleCNSGameDecisionEncoder.swift",
-    "VeilLink/Agent/Language/LlamaInferenceEngine.swift",
-    "VeilLink/Agent/Language/LlamaLocalTextModelRuntime.swift",
-    "VeilLink/Agent/Language/LlamaRuntimeConfiguration.swift",
-    "VeilLink/Agent/Language/LlamaCancellationGate.swift",
-    "VeilLink/Agent/Language/LocalModelCatalog.swift",
-    "VeilLink/Agent/Language/LocalModelManager.swift",
     "VeilLink/Resources/VeilFlyCore.vfly",
     "VeilLink/Resources/VeilFlyLite.vfly",
     "VeilLink/Resources/AgentModels/game_policy_ranker_v4.vlpol",
@@ -131,7 +117,7 @@ def main():
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "schema": 1,
-            "checkpoint": "VeilLink V0.10.2 LEAN_RUNTIME R4",
+            "checkpoint": "VeilLink V29.1 MODEL_FREE_CORE",
             "policy": "preserve-in-place; excluded from Core target; no destructive migration",
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
             "files": records,
