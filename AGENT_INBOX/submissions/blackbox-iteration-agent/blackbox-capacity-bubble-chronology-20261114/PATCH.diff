@@ -1,16 +1,26 @@
 diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostics/DiagnosticLogStore.swift
 --- a/VeilLink/Diagnostics/DiagnosticLogStore.swift
 +++ b/VeilLink/Diagnostics/DiagnosticLogStore.swift
-@@ -145,10 +145,12 @@
+@@ -109,6 +109,8 @@
+     let inMemoryEventCount: Int
+     let invalidLineCount: Int
+     let logWriteFailureCount: Int
++    let rotationEvictionCount: Int
++    let retainedTimeSpanHours: Double?
+     let droppedUnpersistedLineCount: Int
+     let unpersistedBytes: Int
+     let logFileCount: Int
+@@ -145,14 +147,21 @@
      private let rootDirectory: URL
      private let auxiliaryDirectory: URL
      private let currentLogURL: URL
-+    // 16 bounded 8-MiB JSONL segments + 64 MiB of auxiliary evidence.
-+    // Keep the pending RAM buffer small even when disk retention grows.
-+    private let maxFileBytes = 8 * 1_024 * 1_024
-+    private let rotatedFileCount = 15
++    // Five-night diagnostic baseline: 24 bounded JSONL files (384 MiB)
++    // and 128 MiB of auxiliary evidence. This is a byte budget, NOT a
++    // guaranteed five-day window: rotation/loss must be auditable.
++    private let maxFileBytes = 16 * 1_024 * 1_024
++    private let rotatedFileCount = 23
 +    private let maxRecentEntries = 6_000
-+    private let maxAuxiliaryBytes = 64 * 1_024 * 1_024
++    private let maxAuxiliaryBytes = 128 * 1_024 * 1_024
 -    private let maxFileBytes = 2_000_000
 -    private let rotatedFileCount = 7
 -    private let maxRecentEntries = 2_000
@@ -18,7 +28,51 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
      private let flushThresholdBytes = 256 * 1_024
      // Keep diagnostics failures from turning into an unbounded RAM leak.
      private let maxPendingBufferBytes = 4 * 1_024 * 1_024
-@@ -333,7 +335,7 @@
+     private var logWriteFailureCount = 0
++    private var rotationEvictionCount = 0
++    private var retentionCounterURL: URL {
++        rootDirectory.appendingPathComponent("retention-evictions.json")
++    }
+     private var droppedUnpersistedLineCount = 0
+     private var nextPersistRetryUptime: TimeInterval = 0
+     private let encoder: JSONEncoder
+@@ -205,6 +214,10 @@
+         try? fileManager.createDirectory(at: resolvedRoot, withIntermediateDirectories: true)
+         try? fileManager.createDirectory(at: auxiliaryDirectory, withIntermediateDirectories: true)
+         protectDirectory()
++        if let payload = try? Data(contentsOf: retentionCounterURL),
++           let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Int] {
++            rotationEvictionCount = object["rotated_file_evictions"] ?? 0
++        }
+         loadRecentEntriesFromDisk()
+     }
+ 
+@@ -224,6 +237,15 @@
+         existingLogURLs().count
+     }
+ 
++    var rotationEvictions: Int {
++        withStateLock { rotationEvictionCount }
++    }
++
++    var retentionPressurePercent: Int {
++        guard retentionBytes > 0 else { return 0 }
++        return min(100, Int(Double(diskUsageBytes) / Double(retentionBytes) * 100))
++    }
++
+     func log(
+         _ level: DiagnosticLogLevel,
+         _ category: DiagnosticLogCategory,
+@@ -295,6 +317,8 @@
+             recentEntriesStorage.removeAll(keepingCapacity: false)
+             diskUsageBytesStorage = 0
+             nextSequence = 1
++            rotationEvictionCount = 0
++            try? fileManager.removeItem(at: retentionCounterURL)
+             lastRefreshAtStorage = Date()
+             stateLock.unlock()
+         }
+@@ -333,7 +357,7 @@
          }
  
          // Index and manifest derive from copied files only, never recentEntries.
@@ -27,7 +81,17 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          // survived file rotation or failed writes on an iOS 15 device.
          let index = try makeExportIndex(from: logURLs)
          let manifest = DiagnosticExportManifest(
-@@ -352,7 +354,7 @@
+@@ -347,12 +371,17 @@
+             inMemoryEventCount: recentEntries.count,
+             invalidLineCount: index.invalidLineCount,
+             logWriteFailureCount: withStateLock { logWriteFailureCount },
++            rotationEvictionCount: rotationEvictions,
++            retainedTimeSpanHours: {
++                guard let first = index.firstTimestamp, let last = index.lastTimestamp else { return nil }
++                return max(0, last.timeIntervalSince(first) / 3_600)
++            }(),
+             droppedUnpersistedLineCount: withStateLock { droppedUnpersistedLineCount },
+             unpersistedBytes: withStateLock { pendingBuffer.count },
              logFileCount: logURLs.count,
              files: index.files,
              retentionBytes: retentionBytes,
@@ -36,7 +100,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          )
  
          let prettyEncoder = JSONEncoder()
-@@ -393,6 +395,8 @@
+@@ -393,6 +422,8 @@
          passwords, app-lock PINs, identity private keys, session keys, pairing codes and AI prompts.
  
          Text input telemetry records field type/state and character length only, never the content.
@@ -45,25 +109,25 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          Generic UI touch telemetry records coordinates, view classes and accessibility identifiers,
          but does not scrape arbitrary accessibility labels or rendered text.
  
-@@ -413,7 +417,7 @@
+@@ -413,7 +444,7 @@
  
      @discardableResult
      func storeAuxiliaryArtifact(prefix: String, fileExtension: String, data: Data) -> String? {
-+        guard !data.isEmpty, data.count <= 16 * 1_024 * 1_024 else { return nil }
++        guard !data.isEmpty, data.count <= 32 * 1_024 * 1_024 else { return nil }
 -        guard !data.isEmpty, data.count <= 8 * 1_024 * 1_024 else { return nil }
          let result: String? = logQueue.sync {
              let formatter = DateFormatter()
              formatter.locale = Locale(identifier: "en_US_POSIX")
-@@ -424,7 +428,7 @@
+@@ -424,7 +455,7 @@
              let url = auxiliaryDirectory.appendingPathComponent(name)
              do {
                  try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-+                trimAuxiliaryArtifacts(maxFiles: 48, maxBytes: maxAuxiliaryBytes)
++                trimAuxiliaryArtifacts(maxFiles: 96, maxBytes: maxAuxiliaryBytes)
 -                trimAuxiliaryArtifacts(maxFiles: 24, maxBytes: maxAuxiliaryBytes)
                  refreshDiskUsage()
                  return name
              } catch {
-@@ -436,7 +440,7 @@
+@@ -436,7 +467,7 @@
      }
  
      /// Read exactly what was staged for the ZIP, not the in-memory cache.
@@ -72,7 +136,7 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
      /// while an older 2 GB RAM device is preparing its crash report.
      @MainActor
      private func makeExportIndex(from stagedLogURLs: [URL]) throws -> DiagnosticExportIndex {
-@@ -615,21 +619,22 @@
+@@ -615,21 +646,22 @@
      }
  
      private func loadRecentEntriesFromDiskUnsafe() {
@@ -105,7 +169,29 @@ diff --git a/VeilLink/Diagnostics/DiagnosticLogStore.swift b/VeilLink/Diagnostic
          lastRefreshAtStorage = Date()
          refreshDiskUsageUnsafe()
      }
-@@ -795,7 +800,8 @@
+@@ -680,7 +712,20 @@
+         guard currentBytes + incomingBytes > maxFileBytes else { return false }
+ 
+         let oldest = rotatedURL(rotatedFileCount)
++        if fileManager.fileExists(atPath: oldest.path) {
++            do {
++                try fileManager.removeItem(at: oldest)
++                rotationEvictionCount += 1
++                let value = ["rotated_file_evictions": rotationEvictionCount]
++                if let data = try? JSONSerialization.data(withJSONObject: value) {
++                    try? data.write(to: retentionCounterURL,
++                                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
++                }
++            } catch {
++                // Never pretend that a full retention archive can be deleted.
++                return false
++            }
++        }
+-        try? fileManager.removeItem(at: oldest)
+ 
+         if rotatedFileCount > 1 {
+             for index in stride(from: rotatedFileCount - 1, through: 1, by: -1) {
+@@ -795,7 +840,8 @@
          "access_token", "refresh_token", "pairing_code", "pairingcode",
          "message_body", "message_text", "plaintext", "typed_text", "prompt",
          "media_payload", "image_payload", "attachment_payload", "raw_audio",
@@ -143,7 +229,7 @@ diff --git a/VeilLink/UI/DiagnosticsLogView.swift b/VeilLink/UI/DiagnosticsLogVi
  
                  Toggle("仅当前界面", isOn: $onlyCurrentScreen)
              } footer: {
-+                Text("内存显示最近 6,000 条；磁盘约 \(store.retentionText) 环形保留。可记录聊天气泡的顺序、方向及送达状态，但不记录消息文字。系统访问仍受 iOS 沙盒和用户授权限制。")
++                Text("内存显示最近 6,000 条；磁盘预算 \(store.retentionText)，已使用约 \(store.retentionPressurePercent)%。已淘汰日志段：\(store.rotationEvictions)。记录气泡顺序和状态但不含文字。容量不足可能无法保留五个夜晚。")
 -                Text("内存显示最近 2,000 条；磁盘约 \(store.retentionText) 环形保留。UI 点击、手势、页面、输入生命周期、BLE、A9、Agent 与系统快照统一按时间序列记录。")
              }
  
@@ -164,7 +250,7 @@ diff --git a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift b/VeilLink/Diag
  
      private init() {}
  
-@@ -410,6 +416,89 @@
+@@ -410,6 +416,144 @@
              .store(in: &cancellables)
      }
  
@@ -251,10 +337,65 @@ diff --git a/VeilLink/Diagnostics/RuntimeDiagnosticsBridge.swift b/VeilLink/Diag
 +        return value
 +    }
 +
++
++    /// Source-of-truth feature inventory; being registered is NOT equivalent
++    /// to having deep diagnostic coverage. No titles or free-text are emitted.
++    func recordFeatureInventory(_ registry: VeilFeatureRegistry) {
++        let audit = registry.audit()
++        store.log(.info, .app, event: "diagnostics.feature_registry.inventory",
++                  metadata: [
++                    "feature_count": String(audit.featureCount),
++                    "pack_count": String(audit.packCounts.count),
++                    "pack_ids": audit.packCounts.keys.sorted().joined(separator: ","),
++                    "coverage_status": "inventory_only",
++                    "deep_hooks_verified": "false"
++                  ])
++    }
++
++    /// An app-owned module may report structured numeric state without granting
++    /// access to other apps, raw text, keys, or OS-private telemetry.
++    func recordModuleCheckpoint(
++        module: String,
++        phase: String,
++        counters: [String: Int] = [:],
++        flags: [String: Bool] = [:],
++        level: DiagnosticLogLevel = .debug
++    ) {
++        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-")
++        let safeModule = String(module.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(64))
++        let safePhase = String(phase.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(48))
++        guard !safeModule.isEmpty, !safePhase.isEmpty else { return }
++        var metadata: [String: String] = [
++            "module": safeModule,
++            "phase": safePhase,
++            "schema": "module-checkpoint.v1",
++            "plaintext_recorded": "false"
++        ]
++        for (key, number) in counters.prefix(12) {
++            let safe = String(key.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(40))
++            if !safe.isEmpty { metadata["counter." + safe] = String(number) }
++        }
++        for (key, flag) in flags.prefix(12) {
++            let safe = String(key.lowercased().unicodeScalars.filter { allowed.contains($0) }.prefix(40))
++            if !safe.isEmpty { metadata["flag." + safe] = flag ? "true" : "false" }
++        }
++        store.log(level, .app, event: "diagnostics.module.checkpoint", metadata: metadata)
++    }
++
++    func recordFeatureOpening(_ feature: VeilFeatureDescriptor) {
++        recordModuleCheckpoint(
++            module: feature.packID,
++            phase: "feature.open",
++            counters: ["feature_count": 1],
++            flags: ["experimental": feature.isExperimental],
++            level: .info
++        )
++    }
++
      func recordStartupBegin() {
          store.log(.info, .app, event: "startup.begin", metadata: ["build": VeilBuildInfo.display])
      }
-@@ -680,3 +769,31 @@
+@@ -680,3 +824,31 @@
      }
  }
  
@@ -355,7 +496,7 @@ diff --git a/VeilLinkTests/PreConsentBlackBoxTests.swift b/VeilLinkTests/PreCons
 diff --git a/VeilLinkTests/DiagnosticLogStoreTests.swift b/VeilLinkTests/DiagnosticLogStoreTests.swift
 --- a/VeilLinkTests/DiagnosticLogStoreTests.swift
 +++ b/VeilLinkTests/DiagnosticLogStoreTests.swift
-@@ -71,6 +71,39 @@
+@@ -71,6 +71,41 @@
          XCTAssertEqual(sequences, sequences.sorted())
      }
  
@@ -364,12 +505,14 @@ diff --git a/VeilLinkTests/DiagnosticLogStoreTests.swift b/VeilLinkTests/Diagnos
 +            .appendingPathComponent(UUID().uuidString, isDirectory: true)
 +        defer { try? FileManager.default.removeItem(at: root) }
 +        let store = DiagnosticLogStore(rootDirectory: root)
-+        XCTAssertEqual(store.retentionBytes, 192 * 1_024 * 1_024)
++        XCTAssertEqual(store.retentionBytes, 512 * 1_024 * 1_024)
 +        for index in 0..<12 { store.log(.debug, .ui, event: "order.\(index)") }
 +        let snapshot = try store.exportBundle(context: "test.cold-reload")
 +        defer { try? FileManager.default.removeItem(at: snapshot) }
 +        let reloaded = DiagnosticLogStore(rootDirectory: root)
 +        XCTAssertEqual(reloaded.recentEntries.count, 12)
++        XCTAssertEqual(reloaded.rotationEvictions, 0)
++        XCTAssertEqual(reloaded.retentionPressurePercent >= 0, true)
 +        XCTAssertEqual(reloaded.recentEntries.map(\.sequence), Array(1...12).map(UInt64.init))
 +        XCTAssertEqual(reloaded.recentEntries.last?.event, "order.11")
 +    }
@@ -402,7 +545,7 @@ diff --git a/VeilLinkTests/BlackBoxExportIntegrityTests.swift b/VeilLinkTests/Bl
          defer { try? FileManager.default.removeItem(at: root) }
          let store = DiagnosticLogStore(rootDirectory: root)
  
-+        let oldest = root.appendingPathComponent("runtime.15.jsonl")
++        let oldest = root.appendingPathComponent("runtime.23.jsonl")
 -        let oldest = root.appendingPathComponent("runtime.7.jsonl")
          let sentinel = Data("keep-existing-diagnostics".utf8)
          try sentinel.write(to: oldest, options: .atomic)
@@ -416,3 +559,57 @@ diff --git a/VeilLinkTests/BlackBoxExportIntegrityTests.swift b/VeilLinkTests/Bl
          let largeMessage = String(repeating: "x", count: 2_048)
          for i in 0..<1_500 {
              store.log(.info, .app, event: "retry.\(i)", message: largeMessage)
+diff --git a/VeilLink/UI/VeilFeatureLibraryView.swift b/VeilLink/UI/VeilFeatureLibraryView.swift
+--- a/VeilLink/UI/VeilFeatureLibraryView.swift
++++ b/VeilLink/UI/VeilFeatureLibraryView.swift
+@@ -47,6 +47,9 @@
+         .navigationBarTitleDisplayMode(.inline)
+         .onChange(of: query) { _ in offset = 0 }
+         .onChange(of: domain) { _ in offset = 0 }
++        .onAppear {
++            RuntimeDiagnosticsBridge.shared.recordFeatureInventory(registry)
++        }
+     }
+ 
+     private var header: some View {
+@@ -121,7 +124,10 @@
+     private func featureRow(_ feature: VeilFeatureDescriptor) -> some View {
+         let decision = registry.launchDecision(for: feature.id, profile: profile, passedGates: passedGates)
+         return Button {
++            if decision.canLaunch {
++                RuntimeDiagnosticsBridge.shared.recordFeatureOpening(feature)
++                onOpen(feature.id)
++            }
+-            if decision.canLaunch { onOpen(feature.id) }
+         } label: {
+             HStack(alignment: .top, spacing: 12) {
+                 Image(systemName: icon(feature.domain))
+diff --git a/VeilLink/UI/OwnerConsoleView.swift b/VeilLink/UI/OwnerConsoleView.swift
+--- a/VeilLink/UI/OwnerConsoleView.swift
++++ b/VeilLink/UI/OwnerConsoleView.swift
+@@ -342,6 +342,25 @@
+ 
+             Divider().background(VeilTheme.hairline)
+ 
++            Button {
++                // This is explicit in-app owner consent, not an iOS privilege escalation.
++                telemetry.rawTouchCaptureEnabled = true
++                telemetry.inputLifecycleCaptureEnabled = true
++                telemetry.postInteractionSnapshotsEnabled = true
++                telemetry.performanceWatchEnabled = true
++                RuntimeDiagnosticsBridge.shared.recordModuleCheckpoint(
++                    module: "diagnostics", phase: "owner.enable_full_local",
++                    flags: ["raw_touch": true, "input_lifecycle": true, "ui_snapshot": true, "performance": true],
++                    level: .info
++                )
++            } label: {
++                Label("开启全部本机诊断采集", systemImage: "waveform.path.ecg")
++            }
++            .buttonStyle(.bordered)
++            .tint(VeilTheme.gold)
++            Text("仅采集 VeilLink 自身可访问的结构化事件；不会取得其他 App 或系统私有日志的权限。各开关将保持开启，直到手动关闭。")
++                .font(.caption2).foregroundColor(VeilTheme.secondaryText)
++
+             LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
+                 Button("立即抓取状态") {
+                     RuntimeDiagnosticsBridge.shared.recordSemanticAction("owner.telemetry.capture_now")
