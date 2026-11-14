@@ -71,6 +71,41 @@ final class DiagnosticLogStoreTests: XCTestCase {
         XCTAssertEqual(sequences, sequences.sorted())
     }
 
+    func testExpandedRetentionAndColdReloadOrdering() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DiagnosticLogStore(rootDirectory: root)
+        XCTAssertEqual(store.retentionBytes, 512 * 1_024 * 1_024)
+        for index in 0..<12 { store.log(.debug, .ui, event: "order.\(index)") }
+        let snapshot = try store.exportBundle(context: "test.cold-reload")
+        defer { try? FileManager.default.removeItem(at: snapshot) }
+        let reloaded = DiagnosticLogStore(rootDirectory: root)
+        XCTAssertEqual(reloaded.recentEntries.count, 12)
+        XCTAssertEqual(reloaded.rotationEvictions, 0)
+        XCTAssertEqual(reloaded.retentionPressurePercent >= 0, true)
+        XCTAssertEqual(reloaded.recentEntries.map(\.sequence), Array(1...12).map(UInt64.init))
+        XCTAssertEqual(reloaded.recentEntries.last?.event, "order.11")
+    }
+
+    func testBubbleTraceMetadataContainsNoTextOrPersistentIdentifiers() {
+        let fields = DiagnosticBubbleTracePolicy.metadata(
+            conversationToken: 7, bubbleToken: 11, tokenEpoch: 0,
+            ordinal: 2, outgoing: true, delivery: .delivered,
+            sentAt: Date(timeIntervalSince1970: 1_700_000_000),
+            hasAttachment: false
+        )
+        XCTAssertEqual(fields["ordinal"], "2")
+        XCTAssertEqual(fields["direction"], "outbound")
+        XCTAssertEqual(fields["delivery"], "delivered")
+        XCTAssertEqual(fields["plaintext_recorded"], "false")
+        XCTAssertEqual(Set(fields.keys), Set([
+            "conversation_token", "bubble_token", "token_epoch", "ordinal",
+            "direction", "delivery", "sent_at_ms", "has_attachment", "plaintext_recorded"
+        ]))
+        XCTAssertFalse(fields.values.joined(separator: "|").contains("private"))
+    }
+
     private func waitForEntries(_ count: Int, in store: DiagnosticLogStore) async {
         // The existing export API synchronizes the serial log queue before
         // reading it. Use that real completion barrier instead of assuming

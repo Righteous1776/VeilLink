@@ -65,7 +65,7 @@ struct DiagnosticsLogView: View {
 
                 Toggle("仅当前界面", isOn: $onlyCurrentScreen)
             } footer: {
-                Text("内存显示最近 2,000 条；磁盘约 \(store.retentionText) 环形保留。UI 点击、手势、页面、输入生命周期、BLE、A9、Agent 与系统快照统一按时间序列记录。")
+                Text("内存显示最近 6,000 条；磁盘预算 \(store.retentionText)，已使用约 \(store.retentionPressurePercent)%。已淘汰日志段：\(store.rotationEvictions)。记录气泡顺序和状态但不含文字。容量不足可能无法保留五个夜晚。")
             }
 
             Section("时间线") {

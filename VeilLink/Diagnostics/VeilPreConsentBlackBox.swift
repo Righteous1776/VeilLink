@@ -69,7 +69,7 @@ final class VeilPreConsentBlackBox {
     private let directory: URL
     private let eventURL: URL
     private let session = String(UUID().uuidString.prefix(8))
-    private let limit = 128
+    private let limit = 512
     private(set) var entries: [Entry]
 
     init(rootDirectory: URL? = nil) {
@@ -81,7 +81,7 @@ final class VeilPreConsentBlackBox {
         eventURL = directory.appendingPathComponent("events.json")
         if let data = try? Data(contentsOf: eventURL),
            let saved = try? JSONDecoder().decode([Entry].self, from: data) {
-            entries = Array(saved.suffix(128))
+            entries = Array(saved.suffix(512))
         } else {
             entries = []
         }

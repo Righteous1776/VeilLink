@@ -107,6 +107,7 @@ private struct VeilMotionSizePreferenceKey: PreferenceKey {
 /// Touch-position-aware spatial press effect. The surface tilts toward the finger, receives a
 /// local radial specular highlight, compresses to 0.96 on capable hardware, then springs home.
 struct VeilSpatialPressModifier: ViewModifier {
+    @ObservedObject private var appearance = VeilAppearanceController.shared
     var maximumTilt: Double = VeilMotionPolicy.maxTiltDegrees
     var cornerRadius: CGFloat = 16
     var highlightColor: Color = .white
@@ -116,6 +117,7 @@ struct VeilSpatialPressModifier: ViewModifier {
     @State private var measuredSize: CGSize = .zero
     private var motionReduced: Bool { VeilMotionPolicy.usesReducedMotion(reduceMotion) }
 
+    @ViewBuilder
     func body(content: Content) -> some View {
         let point = press?.location ?? CGPoint(x: measuredSize.width * 0.5, y: measuredSize.height * 0.5)
         let normalizedX = normalized(point.x, dimension: measuredSize.width)
@@ -129,6 +131,12 @@ struct VeilSpatialPressModifier: ViewModifier {
         let isPressed = press != nil
         let full = VeilMotionPolicy.allowsFullSpatialEffects && !motionReduced
 
+        if appearance.isForge {
+            // FORGE gives all drags to the ScrollView, keyboard and game surface.
+            // Native ButtonStyle still supplies its short mechanical press response.
+            // No zero-distance DragGesture is installed in this branch.
+            content
+        } else {
         content
             .background(
                 GeometryReader { proxy in
@@ -181,6 +189,7 @@ struct VeilSpatialPressModifier: ViewModifier {
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .updating($press) { value, state, _ in state = value }
             )
+        }
     }
 
     private func normalized(_ value: CGFloat, dimension: CGFloat) -> CGFloat {
@@ -336,7 +345,7 @@ struct VeilDynamicGlowBorder: View {
         ZStack {
             baseStroke
 
-            if active {
+            if active && !appearance.isForge {
                 Rectangle()
                     .fill(
                         AngularGradient(
@@ -366,6 +375,7 @@ struct VeilDynamicGlowBorder: View {
         .onDisappear { stopRotation() }
         .onChange(of: active) { _ in updateRotation() }
         .onChange(of: reduceMotion) { _ in updateRotation() }
+        .onChange(of: appearance.selection) { _ in updateRotation() }
     }
 
     @ViewBuilder
@@ -392,9 +402,11 @@ struct VeilDynamicGlowBorder: View {
 
     private func updateRotation() {
         stopRotation()
-        guard active, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
+        guard active, !appearance.isForge, !motionReduced,
+              VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
         DispatchQueue.main.async {
-            guard active, !motionReduced, VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
+            guard active, !appearance.isForge, !motionReduced,
+                  VeilMotionPolicy.allowsContinuousDecorativeMotion else { return }
             withAnimation(.linear(duration: 5.5).repeatForever(autoreverses: false)) {
                 rotates = true
             }

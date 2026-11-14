@@ -109,6 +109,8 @@ private struct DiagnosticExportManifest: Codable {
     let inMemoryEventCount: Int
     let invalidLineCount: Int
     let logWriteFailureCount: Int
+    let rotationEvictionCount: Int
+    let retainedTimeSpanHours: Double?
     let droppedUnpersistedLineCount: Int
     let unpersistedBytes: Int
     let logFileCount: Int
@@ -126,6 +128,12 @@ private struct DiagnosticExportIndex: Codable {
     let files: [DiagnosticExportFileSummary]
     let categoryCounts: [String: Int]
     let levelCounts: [String: Int]
+    /// An observed module checkpoint means an in-app hook actually ran.
+    let moduleCheckpointCounts: [String: Int]
+    /// A registered feature pack without a checkpoint is unobserved, NOT
+    /// necessarily broken. Future versions automatically appear here.
+    let registeredFeaturePacks: [String]
+    let unobservedRegisteredPacks: [String]
     let currentScreen: String
 }
 
@@ -145,14 +153,21 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
     private let rootDirectory: URL
     private let auxiliaryDirectory: URL
     private let currentLogURL: URL
-    private let maxFileBytes = 2_000_000
-    private let rotatedFileCount = 7
-    private let maxRecentEntries = 2_000
-    private let maxAuxiliaryBytes = 24 * 1_024 * 1_024
+    // Five-night diagnostic baseline: 24 bounded JSONL files (384 MiB)
+    // and 128 MiB of auxiliary evidence. This is a byte budget, NOT a
+    // guaranteed five-day window: rotation/loss must be auditable.
+    private let maxFileBytes = 16 * 1_024 * 1_024
+    private let rotatedFileCount = 23
+    private let maxRecentEntries = 6_000
+    private let maxAuxiliaryBytes = 128 * 1_024 * 1_024
     private let flushThresholdBytes = 256 * 1_024
     // Keep diagnostics failures from turning into an unbounded RAM leak.
     private let maxPendingBufferBytes = 4 * 1_024 * 1_024
     private var logWriteFailureCount = 0
+    private var rotationEvictionCount = 0
+    private var retentionCounterURL: URL {
+        rootDirectory.appendingPathComponent("retention-evictions.json")
+    }
     private var droppedUnpersistedLineCount = 0
     private var nextPersistRetryUptime: TimeInterval = 0
     private let encoder: JSONEncoder
@@ -205,6 +220,10 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         try? fileManager.createDirectory(at: resolvedRoot, withIntermediateDirectories: true)
         try? fileManager.createDirectory(at: auxiliaryDirectory, withIntermediateDirectories: true)
         protectDirectory()
+        if let payload = try? Data(contentsOf: retentionCounterURL),
+           let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Int] {
+            rotationEvictionCount = object["rotated_file_evictions"] ?? 0
+        }
         loadRecentEntriesFromDisk()
     }
 
@@ -222,6 +241,15 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
 
     var exportedFileCount: Int {
         existingLogURLs().count
+    }
+
+    var rotationEvictions: Int {
+        withStateLock { rotationEvictionCount }
+    }
+
+    var retentionPressurePercent: Int {
+        guard retentionBytes > 0 else { return 0 }
+        return min(100, Int(Double(diskUsageBytes) / Double(retentionBytes) * 100))
     }
 
     func log(
@@ -295,6 +323,8 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             recentEntriesStorage.removeAll(keepingCapacity: false)
             diskUsageBytesStorage = 0
             nextSequence = 1
+            rotationEvictionCount = 0
+            try? fileManager.removeItem(at: retentionCounterURL)
             lastRefreshAtStorage = Date()
             stateLock.unlock()
         }
@@ -333,7 +363,7 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         }
 
         // Index and manifest derive from copied files only, never recentEntries.
-        // In particular, 2,000 entries in memory do not imply 2,000 records
+        // In particular, 6,000 entries in memory do not imply 6,000 records
         // survived file rotation or failed writes on an iOS 15 device.
         let index = try makeExportIndex(from: logURLs)
         let manifest = DiagnosticExportManifest(
@@ -347,12 +377,17 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             inMemoryEventCount: recentEntries.count,
             invalidLineCount: index.invalidLineCount,
             logWriteFailureCount: withStateLock { logWriteFailureCount },
+            rotationEvictionCount: rotationEvictions,
+            retainedTimeSpanHours: {
+                guard let first = index.firstTimestamp, let last = index.lastTimestamp else { return nil }
+                return max(0, last.timeIntervalSince(first) / 3_600)
+            }(),
             droppedUnpersistedLineCount: withStateLock { droppedUnpersistedLineCount },
             unpersistedBytes: withStateLock { pendingBuffer.count },
             logFileCount: logURLs.count,
             files: index.files,
             retentionBytes: retentionBytes,
-            privacy: "No message plaintext, media payload, password/PIN, private/session key, pairing code or AI prompt is intentionally recorded. Technical identifiers may be included for correlation."
+            privacy: "No chat-bubble plaintext, typed text, media payload, password/PIN, private/session key, pairing code or AI prompt is intentionally recorded. Bubble order uses session-local ephemeral tokens, positions, direction, timestamps and delivery status only. Technical identifiers may be included in other diagnostic categories."
         )
 
         let prettyEncoder = JSONEncoder()
@@ -393,6 +428,8 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         passwords, app-lock PINs, identity private keys, session keys, pairing codes and AI prompts.
 
         Text input telemetry records field type/state and character length only, never the content.
+        Chat bubble telemetry records only ephemeral identifiers, visible order, direction,
+        delivery status, timestamp and attachment presence; never message text or message IDs.
         Generic UI touch telemetry records coordinates, view classes and accessibility identifiers,
         but does not scrape arbitrary accessibility labels or rendered text.
 
@@ -413,7 +450,7 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
 
     @discardableResult
     func storeAuxiliaryArtifact(prefix: String, fileExtension: String, data: Data) -> String? {
-        guard !data.isEmpty, data.count <= 8 * 1_024 * 1_024 else { return nil }
+        guard !data.isEmpty, data.count <= 32 * 1_024 * 1_024 else { return nil }
         let result: String? = logQueue.sync {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -424,7 +461,7 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             let url = auxiliaryDirectory.appendingPathComponent(name)
             do {
                 try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-                trimAuxiliaryArtifacts(maxFiles: 24, maxBytes: maxAuxiliaryBytes)
+                trimAuxiliaryArtifacts(maxFiles: 96, maxBytes: maxAuxiliaryBytes)
                 refreshDiskUsage()
                 return name
             } catch {
@@ -436,12 +473,14 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
     }
 
     /// Read exactly what was staged for the ZIP, not the in-memory cache.
-    /// Streaming 64 KiB chunks avoids allocating a second ~16 MB log image
+    /// Streaming 64 KiB chunks avoids allocating a second large log image
     /// while an older 2 GB RAM device is preparing its crash report.
     @MainActor
     private func makeExportIndex(from stagedLogURLs: [URL]) throws -> DiagnosticExportIndex {
         var categoryCounts: [String: Int] = [:]
         var levelCounts: [String: Int] = [:]
+        var moduleCheckpointCounts: [String: Int] = [:]
+        var registeredFeaturePacks = Set<String>()
         var firstTimestamp: Date?
         var lastTimestamp: Date?
         var totalEvents = 0
@@ -470,6 +509,14 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
                 totalEvents += 1
                 categoryCounts[entry.category.rawValue, default: 0] += 1
                 levelCounts[entry.level.rawValue, default: 0] += 1
+                if entry.event == "diagnostics.module.checkpoint",
+                   let module = entry.metadata["module"] {
+                    moduleCheckpointCounts[module, default: 0] += 1
+                }
+                if entry.event == "diagnostics.feature_registry.inventory",
+                   let packIDs = entry.metadata["pack_ids"] {
+                    registeredFeaturePacks.formUnion(packIDs.split(separator: ",").map(String.init))
+                }
                 if let old = firstTimestamp {
                     firstTimestamp = min(old, entry.timestamp)
                 } else {
@@ -531,6 +578,9 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
             files: files,
             categoryCounts: categoryCounts,
             levelCounts: levelCounts,
+            moduleCheckpointCounts: moduleCheckpointCounts,
+            registeredFeaturePacks: registeredFeaturePacks.sorted(),
+            unobservedRegisteredPacks: registeredFeaturePacks.subtracting(Set(moduleCheckpointCounts.keys)).sorted(),
             currentScreen: DeepTelemetry.shared.currentScreen
         )
     }
@@ -615,21 +665,22 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
     }
 
     private func loadRecentEntriesFromDiskUnsafe() {
-        var loaded: [DiagnosticLogEntry] = []
-        for url in orderedLogURLsForReading() {
-            guard let data = try? Data(contentsOf: url),
+        // Visit newest segments and lines first. A 192-MiB retention budget
+        // must not require decoding every historic record during UI refresh.
+        var newestFirst: [DiagnosticLogEntry] = []
+        for url in orderedLogURLsForReading().reversed() {
+            guard newestFirst.count < maxRecentEntries,
+                  let data = try? Data(contentsOf: url),
                   let string = String(data: data, encoding: .utf8) else { continue }
-            for rawLine in string.split(separator: "\n", omittingEmptySubsequences: true) {
+            for rawLine in string.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+                guard newestFirst.count < maxRecentEntries else { break }
                 guard let lineData = String(rawLine).data(using: .utf8),
                       let entry = try? decoder.decode(DiagnosticLogEntry.self, from: lineData) else { continue }
-                loaded.append(entry)
+                newestFirst.append(entry)
             }
         }
-        if loaded.count > maxRecentEntries {
-            loaded = Array(loaded.suffix(maxRecentEntries))
-        }
-        recentEntriesStorage = loaded
-        nextSequence = (loaded.last?.sequence ?? 0) &+ 1
+        recentEntriesStorage = Array(newestFirst.reversed())
+        nextSequence = (newestFirst.first?.sequence ?? 0) &+ 1
         lastRefreshAtStorage = Date()
         refreshDiskUsageUnsafe()
     }
@@ -680,7 +731,20 @@ final class DiagnosticLogStore: ObservableObject, @unchecked Sendable {
         guard currentBytes + incomingBytes > maxFileBytes else { return false }
 
         let oldest = rotatedURL(rotatedFileCount)
-        try? fileManager.removeItem(at: oldest)
+        if fileManager.fileExists(atPath: oldest.path) {
+            do {
+                try fileManager.removeItem(at: oldest)
+                rotationEvictionCount += 1
+                let value = ["rotated_file_evictions": rotationEvictionCount]
+                if let data = try? JSONSerialization.data(withJSONObject: value) {
+                    try? data.write(to: retentionCounterURL,
+                                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                }
+            } catch {
+                // Never pretend that a full retention archive can be deleted.
+                return false
+            }
+        }
 
         if rotatedFileCount > 1 {
             for index in stride(from: rotatedFileCount - 1, through: 1, by: -1) {
@@ -795,7 +859,8 @@ enum DiagnosticPrivacyFilter {
         "access_token", "refresh_token", "pairing_code", "pairingcode",
         "message_body", "message_text", "plaintext", "typed_text", "prompt",
         "media_payload", "image_payload", "attachment_payload", "raw_audio",
-        "raw_video"
+        "raw_video", "bubble_body", "bubble_text", "chat_body", "chat_text",
+        "message_content", "reply_body", "attachment_name"
     ]
 
     static func sanitizeMetadata(_ metadata: [String: String]) -> [String: String] {

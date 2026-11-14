@@ -11,6 +11,32 @@ enum MediaTransferPolicy {
     static let maximumImageDimension = 4_096
     static let minimumImageDimension = 1_600
 
+    // Screen content is the primary BLE use case. Preserve an aggressively
+    // downsampled *short edge* rather than shrinking the longest edge of a
+    // scrolling screenshot until all text is microscopic.
+    static let screenshotShortEdge = 500
+    static let screenshotMaximumLongEdge = maximumImageDimension
+    static let screenshotLossyQuality = 0.18
+
+    // Ordinary photos still use a stricter longest-edge byte-saving path.
+    static let photoLongestEdge = 640
+    static let photoLossyQuality = 0.28
+
+    static func compressedLongestEdge(
+        originalWidth: Int, originalHeight: Int, isLikelyTextOrGraphic: Bool
+    ) -> Int {
+        let longest = max(1, max(originalWidth, originalHeight))
+        guard isLikelyTextOrGraphic else { return min(longest, photoLongestEdge) }
+        let shortest = max(1, min(originalWidth, originalHeight))
+        let ratio = Double(longest) / Double(shortest)
+        let preferred = Int((Double(screenshotShortEdge) * ratio).rounded(.up))
+        return max(1, min(longest, screenshotMaximumLongEdge, preferred))
+    }
+
+    static func extremeQuality(isLikelyTextOrGraphic: Bool) -> Double {
+        isLikelyTextOrGraphic ? screenshotLossyQuality : photoLossyQuality
+    }
+
     // BLE preferences, not admission restrictions.
     static let bleTargetBytes = 200_000
     static let blePreferredBytes = 384_000
