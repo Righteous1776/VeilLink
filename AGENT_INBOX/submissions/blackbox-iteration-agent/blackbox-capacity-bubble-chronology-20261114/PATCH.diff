@@ -1569,7 +1569,7 @@ diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/Dee
 +        var maxDistance: CGFloat
 +        var fingers: Int
 +        let inputView: Bool
-+        let target: UIView?
++        let targetDescriptor: [String: String]
 +    }
 +
 +    private static var attempted = false
@@ -1628,7 +1628,7 @@ diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/Dee
 +                    beganAt: now, start: point, maxDistance: 0,
 +                    fingers: max(1, activeCount),
 +                    inputView: DeepTelemetry.touchesTextInput(touch.view),
-+                    target: touch.view
++                    targetDescriptor: DeepTelemetry.describeView(touch.view)
 +                )
 +            case .moved:
 +                guard var item = contacts[id] else { continue }
@@ -1644,7 +1644,7 @@ diff --git a/VeilLink/Diagnostics/DeepTelemetry.swift b/VeilLink/Diagnostics/Dee
 +                let gesture = DeepTelemetryTouchPolicy.kind(
 +                    duration: duration, distance: dist, dx: dx, dy: dy, fingers: item.fingers
 +                )
-+                var descriptor = DeepTelemetry.describeView(item.target)
++                var descriptor = item.targetDescriptor
 +                descriptor["touch_count"] = String(item.fingers)
 +                descriptor["capture_source"] = "uiwindow.send_event"
 +                descriptor["secure_context"] = String(
