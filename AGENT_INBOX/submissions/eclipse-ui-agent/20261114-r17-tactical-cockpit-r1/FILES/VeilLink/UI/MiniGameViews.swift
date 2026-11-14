@@ -1548,6 +1548,7 @@ private struct VeilBoardTapSurface: UIViewRepresentable {
 
 struct GomokuBoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var impactExpanded = true
     let state: GomokuState
     let localPlayer: MiniGamePlayer
     let enabled: Bool
@@ -1559,6 +1560,7 @@ struct GomokuBoardView: View {
     var eclipseBoardTurn = 0
     var eclipseMatchPlaying = true
     var eclipseConsoleStyle = false
+    var eclipseMotionEnabled = false
     let onMove: (Int) -> Void
 
 
@@ -1639,6 +1641,20 @@ struct GomokuBoardView: View {
                     }
 
 
+                    // Short event-bound mechanical lock pulse for a REAL committed move.
+                    // No continuous board animation and no new drag/gesture recognizer.
+                    if eclipseMotionEnabled && !reduceMotion,
+                       let last = state.lastMove, state.value(at: last) != 0 {
+                        let impactPoint = gomokuPoint(index: last, margin: margin, step: step)
+                        Circle()
+                            .stroke(VeilEclipseChrome.accent.opacity(impactExpanded ? 0 : 0.8),
+                                    style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                            .frame(width: impactExpanded ? step * 1.8 : step * 0.85,
+                                   height: impactExpanded ? step * 1.8 : step * 0.85)
+                            .position(impactPoint)
+                            .allowsHitTesting(false)
+                    }
+
                     VeilBoardTapSurface(enabled: enabled) { location in
                         guard enabled, step > 0 else { return }
                         let col = Int(round((location.x - margin) / step))
@@ -1668,6 +1684,14 @@ struct GomokuBoardView: View {
             .foregroundColor(eclipseConsoleStyle
                 ? (enabled ? VeilEclipseChrome.accent : VeilEclipseChrome.muted)
                 : (enabled ? VeilTheme.gold : VeilTheme.secondaryText))
+        }
+        .onChange(of: state.lastMove) { last in
+            guard eclipseMotionEnabled, !reduceMotion, last != nil else { return }
+            impactExpanded = false
+            // Begin on the following run loop so SwiftUI renders the collapsed state first.
+            DispatchQueue.main.async {
+                withAnimation(.easeOut(duration: 0.65)) { impactExpanded = true }
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("五子棋棋盘，已进行 \(state.moveCount) 手，\(enabled ? "轮到你落子" : "等待对方落子")")
