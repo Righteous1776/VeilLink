@@ -21,7 +21,7 @@
 +                    .veilCard()
 +                } else if VeilOpponentAvatarPolicy.shouldRender(
                      enabled: grokBotEnabled, hasComputerOpponent: true
-@@ -93,2 +106,18 @@
+@@ -93,2 +106,19 @@
          }
 +        .sheet(isPresented: $showsEclipseTrace) {
 +            if game == .gomoku {
@@ -29,6 +29,7 @@
 +                    isThinking: controller.isAIThinking && controller.eclipseSearchStartedAt != nil,
 +                    matchFinished: controller.outcome != .playing,
 +                    lastCompletedMilliseconds: controller.lastDecisionMilliseconds,
++                    actualSearchStartedAt: controller.eclipseSearchStartedAt,
 +                    committedMoves: controller.eclipseCompletedMoveHistory,
 +                    difficultyTitle: controller.boardDifficulty.title,
 +                    searchModeTitle: controller.boardSearchMode.title,
@@ -40,7 +41,7 @@
 +            }
 +        }
          .sheet(isPresented: $showsLearningShare, onDismiss: {
-@@ -120,2 +149,7 @@
+@@ -120,2 +150,7 @@
                      }
 +                    if let warning = controller.eclipseArchiveWarning, game == .gomoku {
 +                        Text(warning)
@@ -48,7 +49,7 @@
 +                            .foregroundColor(VeilTheme.danger)
 +                    }
                  }
-@@ -142,3 +176,5 @@
+@@ -142,3 +177,5 @@
                          && developerLearningGate.canImportTraining()
 -                )
 +                ),
@@ -267,7 +268,7 @@
 +}
 --- /dev/null
 +++ b/VeilLink/UI/VeilEclipseIdentityAndTrace.swift
-@@ -0,0 +1,429 @@
+@@ -0,0 +1,402 @@
 +import Foundation
 +import SwiftUI
 +import Combine
@@ -289,7 +290,8 @@
 +
 +    var body: some View {
 +        Button(action: openTrace) {
-+            HStack(spacing: VeilSpacing.md) {
++            VStack(alignment: .leading, spacing: VeilSpacing.sm) {
++                HStack(spacing: VeilSpacing.md) {
 +                VeilEclipseAvatar(isThinking: isThinking && !reduceMotion)
 +                    .frame(width: 76, height: 76)
 +                VStack(alignment: .leading, spacing: VeilSpacing.xxs) {
@@ -324,6 +326,15 @@
 +                    }
 +                }
 +                .foregroundColor(VeilTheme.tertiaryText)
++                }
++                // The black instrument is contained within existing VeilLink
++                // materials. It never receives candidates, PV or threat cells.
++                VeilEclipseComputeConsole(
++                    isComputing: isThinking,
++                    actualSearchStartedAt: actualSearchStartedAt,
++                    liveMetrics: nil,
++                    compact: true
++                )
 +            }
 +            // Outer .veilCard() is authoritative: the *existing* VeilCardModifier
 +            // owns cut corners, instrument plates, Apple Soft and Islet materials.
@@ -378,53 +389,11 @@
 +    }
 +}
 +
-+/// Abstract eye-candy only: NOT a heatmap, PV tree or candidate-coordinate map.
-+/// Animation is deliberately independent of the board and search values.
-+private struct EclipseAbstractThoughtField: View {
-+    let isThinking: Bool
-+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-+
-+    var body: some View {
-+        VStack(alignment: .leading, spacing: 7) {
-+            TimelineView(.animation(minimumInterval: 1.0 / 12.0,
-+                                    paused: !isThinking || reduceMotion)) { timeline in
-+                let tick = isThinking ? timeline.date.timeIntervalSinceReferenceDate : 0
-+                Canvas(opaque: false) { ctx, size in
-+                    let points: [(CGFloat,CGFloat)] = [
-+                        (0.11,0.52), (0.29,0.22), (0.28,0.79), (0.48,0.51),
-+                        (0.68,0.23), (0.70,0.77), (0.90,0.40), (0.92,0.72)
-+                    ]
-+                    let edges = [(0,1), (0,2), (1,3), (2,3), (3,4), (3,5), (4,6), (5,7)]
-+                    for (a,b) in edges {
-+                        var line = Path()
-+                        line.move(to: CGPoint(x: points[a].0 * size.width, y: points[a].1 * size.height))
-+                        line.addLine(to: CGPoint(x: points[b].0 * size.width, y: points[b].1 * size.height))
-+                        ctx.stroke(line, with: .color(VeilTheme.secondaryText.opacity(0.33)), lineWidth: 1)
-+                    }
-+                    for (i,p) in points.enumerated() {
-+                        let wave = 0.54 + 0.46 * sin(tick * 2.4 + Double(i) * 0.76)
-+                        let alpha = isThinking && !reduceMotion ? wave : 0.53
-+                        let r: CGFloat = i == 3 ? 5 : 3
-+                        let circle = Path(ellipseIn: CGRect(x: p.0 * size.width-r,
-+                            y: p.1 * size.height-r, width: 2*r, height: 2*r))
-+                        ctx.fill(circle, with: .color(VeilTheme.gold.opacity(alpha)))
-+                    }
-+                }
-+            }
-+            .frame(height: 82)
-+            .accessibilityHidden(true)
-+            Text("抽象计算动画 · 不对应真实棋盘坐标或候选走法")
-+                .font(.caption2)
-+                .foregroundColor(VeilTheme.secondaryText)
-+        }
-+        .veilCard()
-+    }
-+}
-+
 +struct VeilEclipseTraceSheet: View {
 +    let isThinking: Bool
 +    let matchFinished: Bool
 +    let lastCompletedMilliseconds: Int?
++    let actualSearchStartedAt: Date?
 +    let committedMoves: [VeilEclipseTracePolicy.PlacedMove]
 +    let difficultyTitle: String
 +    let searchModeTitle: String
@@ -477,7 +446,12 @@
 +                            .font(.caption.weight(.semibold))
 +                        Spacer()
 +                    }
-+                    EclipseAbstractThoughtField(isThinking: isThinking)
++                    VeilEclipseComputeConsole(
++                        isComputing: isThinking,
++                        actualSearchStartedAt: actualSearchStartedAt,
++                        liveMetrics: liveMetrics,
++                        compact: false
++                    )
 +                    VStack(alignment: .leading, spacing: VeilSpacing.xxs) {
 +                        HStack(spacing: VeilSpacing.sm) {
 +                            Text("当前棋力档位")
@@ -1244,5 +1218,170 @@
 +            if count >= 5 { return true }
 +        }
 +        return false
++    }
++}
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseConsoleStream.swift
+@@ -0,0 +1,44 @@
++import Foundation
++
++/// Decorative visual code. It does not receive search candidates, board cells,
++/// threat maps, principal variations or any private reasoning data.
++/// Genuine measured depth/nodes are shown separately, only if available.
++enum VeilEclipseConsoleStream {
++    struct Line: Equatable, Sendable {
++        let text: String
++        let tone: Int
++    }
++    private static let verbs = [
++        "vis.sync", "vis.phase", "vis.flux", "vis.orbit",
++        "vis.align", "vis.echo", "vis.fold", "vis.pulse"
++    ]
++    private static func mix(_ seed: UInt64) -> UInt64 {
++        var x = seed &+ 0x9e3779b97f4a7c15
++        x = (x ^ (x >> 30)) &* 0xbf58476d1ce4e5b9
++        x = (x ^ (x >> 27)) &* 0x94d049bb133111eb
++        return x ^ (x >> 31)
++    }
++    /// Visual row scrolls: 14 lines/s normal, 6 in Low Power Mode.
++    /// Uses only genuine elapsed calculation time; rate is decorative, not a
++    /// measure of model speed. The result is deterministic and bounded.
++    static func scrollPosition(elapsedSeconds: Double, lowPower: Bool = false) -> Double {
++        let elapsed = elapsedSeconds.isFinite ? max(0, min(86_400, elapsedSeconds)) : 0
++        return elapsed * (lowPower ? 6 : 14)
++    }
++    static func lines(elapsedSeconds: Double, visibleRows: Int, lowPower: Bool = false) -> [Line] {
++        let frame = UInt64(scrollPosition(elapsedSeconds: elapsedSeconds, lowPower: lowPower))
++        let rows = max(1, min(10, visibleRows))
++        return (0..<rows).map { row in
++            let k = mix((frame &+ UInt64(row)) &* 0x2545f4914f6cdd1d)
++            let operation = verbs[Int(k % UInt64(verbs.count))]
++            let channel = Int((k >> 7) & 0xf)
++            let phase = Int((k >> 12) & 0xff)
++            let mask = Int((k >> 21) & 0xffff)
++            return Line(
++                text: String(format: "%@ (ch:%X, phase:%02X, flux:%04X)", operation, channel, phase, mask),
++                tone: Int((k >> 40) & 3)
++            )
++        }
++    }
++    static let disclosure = "视觉编码流 · 非真实搜索日志，不表示候选落点或推理过程"
++}
+--- /dev/null
++++ b/VeilLink/UI/VeilEclipseComputeConsole.swift
+@@ -0,0 +1,115 @@
++import SwiftUI
++import Foundation
++
++/// The black console sits INSIDE the original VeilLink themed card.
++/// It is a decorative display: no board coordinate, candidate, PV or
++/// protected engine reasoning object can enter its public interface.
++struct VeilEclipseComputeConsole: View {
++    let isComputing: Bool
++    let actualSearchStartedAt: Date?
++    let liveMetrics: VeilEclipseTracePolicy.LiveMetrics?
++    var compact: Bool = false
++
++    @ObservedObject private var appearance = VeilAppearanceController.shared
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++
++    private var active: Bool { isComputing && actualSearchStartedAt != nil }
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: compact ? 3 : 7) {
++            HStack(spacing: 6) {
++                Circle()
++                    .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                    .frame(width: 5, height: 5)
++                Text("ECLIPSE // VISUAL STREAM")
++                    .font(.system(size: compact ? 8 : 10, weight: .bold, design: .monospaced))
++                    .foregroundColor(VeilTheme.paleMetal)
++                    .lineLimit(1)
++                Spacer(minLength: 0)
++                Text(active ? "RUN" : "IDLE")
++                    .foregroundColor(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
++                    .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
++            }
++            if active, let startedAt = actualSearchStartedAt {
++                TimelineView(.animation(
++                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 / 9.0 : 1.0 / 24.0,
++                    paused: reduceMotion
++                )) { timeline in
++                    let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
++                    let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
++                    let position = VeilEclipseConsoleStream.scrollPosition(
++                        elapsedSeconds: reduceMotion ? 0 : elapsed, lowPower: lowPower
++                    )
++                    let lineHeight: CGFloat = compact ? 11 : 15
++                    let visibleCount = compact ? 2 : 7
++                    let rows = VeilEclipseConsoleStream.lines(
++                        elapsedSeconds: reduceMotion ? 0 : elapsed,
++                        visibleRows: visibleCount + 1,
++                        lowPower: lowPower
++                    )
++                    VStack(alignment: .leading, spacing: 0) {
++                        ForEach(0..<rows.count, id: \.self) { index in
++                            Text(rows[index].text)
++                                .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
++                                .foregroundColor(tone(rows[index].tone))
++                                .lineLimit(1)
++                                .minimumScaleFactor(0.8)
++                                .frame(height: lineHeight, alignment: .leading)
++                        }
++                    }
++                    .offset(y: -CGFloat(position - floor(position)) * lineHeight)
++                    .frame(maxWidth: .infinity, alignment: .leading)
++                    .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
++                    .clipped()
++                    .accessibilityHidden(true)
++                }
++            } else {
++                Text("vis.idle ()")
++                    .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .frame(maxWidth: .infinity, alignment: .leading)
++                    .accessibilityHidden(true)
++            }
++            if !compact {
++                if active, let liveMetrics {
++                    let depth = liveMetrics.completedDepth.map { "D\($0)" } ?? "—"
++                    let nodes = liveMetrics.visitedNodes.map(String.init) ?? "—"
++                    Text("MEASURED · DEPTH \(depth) / NODES \(nodes)")
++                        .font(.system(size: 9, weight: .medium, design: .monospaced))
++                        .foregroundColor(VeilTheme.goldBright)
++                } else {
++                    Text("MEASURED · 暂无实时深度/节点数据")
++                        .font(.caption2)
++                        .foregroundColor(VeilTheme.secondaryText)
++                }
++                Text(VeilEclipseConsoleStream.disclosure)
++                    .font(.caption2)
++                    .foregroundColor(VeilTheme.secondaryText)
++                    .fixedSize(horizontal: false, vertical: true)
++            }
++        }
++        .padding(compact ? 8 : 12)
++        .frame(maxWidth: .infinity, alignment: .leading)
++        .frame(minHeight: compact ? 55 : 166)
++        .background(
++            RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
++                .fill(Color.black.opacity(0.97))
++        )
++        .overlay(
++            RoundedRectangle(cornerRadius: appearance.isPlainline ? 2 : 10, style: .continuous)
++                .stroke(VeilTheme.gold.opacity(appearance.isInstrument ? 0.24 : 0.12), lineWidth: 0.8)
++        )
++        .allowsHitTesting(false)
++        .accessibilityElement(children: .combine)
++        .accessibilityLabel("ECLIPSE 计算显示屏。\(active ? "计算中" : "待机")。装饰性编码流，不代表真实推理，也不会提示落点。")
++    }
++
++    private func tone(_ index: Int) -> Color {
++        switch index {
++        case 0: return VeilTheme.goldBright
++        case 1: return VeilTheme.paleMetal
++        case 2: return VeilTheme.success
++        default: return VeilTheme.secondaryText
++        }
 +    }
 +}
