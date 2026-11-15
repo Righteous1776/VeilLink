@@ -381,8 +381,9 @@ final class VeilAppearanceController: ObservableObject {
     /// #B03C0A is the copper shadow, not the luminous face; #E66314 / #FF7C23
     /// provide readable warm-orange highlights on deep neutral charcoal.
     static let forgeNight = VeilThemePalette(
-        background: Color(red: 0.045, green: 0.043, blue: 0.047),
-        backgroundLift: Color(red: 0.075, green: 0.071, blue: 0.078),
+        // Pixel-aligned base with the existing 拟物仪器 / Instrument Night theme.
+        background: Color(red: 0.035, green: 0.036, blue: 0.038),
+        backgroundLift: Color(red: 0.10, green: 0.10, blue: 0.105),
         elevated: Color(red: 0.142, green: 0.137, blue: 0.145),
         panel: Color(red: 0.186, green: 0.180, blue: 0.190),
         panelSoft: Color(red: 0.220, green: 0.212, blue: 0.222),
@@ -410,8 +411,9 @@ final class VeilAppearanceController: ObservableObject {
     /// Light FORGE uses a warm paper/pearl substrate, not cold blue aluminum.
     /// Active orange is toned down sufficiently to remain legible on ivory.
     static let forgeDay = VeilThemePalette(
-        background: Color(red: 0.954, green: 0.943, blue: 0.926),
-        backgroundLift: Color(red: 0.984, green: 0.978, blue: 0.964),
+        // Pixel-aligned base with the existing 拟物仪器 / Instrument Day theme.
+        background: Color(red: 0.934, green: 0.931, blue: 0.910),
+        backgroundLift: Color(red: 0.977, green: 0.974, blue: 0.958),
         elevated: Color(red: 0.991, green: 0.985, blue: 0.976),
         panel: Color(red: 0.940, green: 0.922, blue: 0.902),
         panelSoft: Color(red: 0.997, green: 0.992, blue: 0.984),

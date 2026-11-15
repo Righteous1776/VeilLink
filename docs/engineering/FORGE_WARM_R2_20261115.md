@@ -7,6 +7,11 @@ candidate `9a2a91bb6c53e95024c8830bb26316d524d25d8b`.
 
 ## Implemented
 - Warm neutral charcoal and pearl-light palettes replace cold blue-gray industrial aluminum.
+- IMPORTANT: interpreted the spoken "礼物" reference as the existing "拟物仪器"
+  appearance. FORGE now uses the **identical** Instrument Day/Night background
+  RGB tokens and **the same VeilInstrumentBackground compositor**, rather than
+  an approximate gradient. The background matches the canonical instrument
+  theme while panels and signal accents remain FORGE-specific.
 - Deep copper reference `#B03C0A` is **shadow**, not the bright foreground.
   Dark bright orange `#FF7C23`, active/base `#E66314`.
 - FORGE panels and chat bubbles use continuous rounded geometry; no hard cut corners.
@@ -21,11 +26,12 @@ candidate `9a2a91bb6c53e95024c8830bb26316d524d25d8b`.
 - Other appearances, BLE protocol, chat ordering, keyboard geometry, game engine,
   database and release workflow intentionally unchanged.
 
-## Known reference limitation
-The current VeilLink repository does not contain an unambiguous component literally
-called `礼物` (Gift), so its exact background RGB could not be source-verified.
-Warm soft neutral graphite is used provisionally; inspect a user-provided visual
-reference before claiming pixel-exact color parity.
+## Reference interpretation
+Previous conversation vocabulary refers to "礼物" in the context of
+"拟物化" / skeuomorphic styling. The existing "拟物仪器"
+theme is the canonical in-repository reference; FORGE's day/night background
+tokens and rendering path now match that theme exactly.
+The end-device appearance still requires visual acceptance on iPhone.
 
 ## Verification required
 - SwiftUI typecheck and iOS simulator snapshot comparison (light/dark FORGE,

@@ -1,31 +1,14 @@
 import SwiftUI
 import Foundation
 
-/// Warm soft graphite with a single, low-energy orange light wash.
-/// No hard engineering grid, ambient particles, timers, gestures or overlays.
+/// FORGE R2 shares the *exact* background compositor with the existing
+/// "拟物仪器" theme. The new orange language lives in surface/indicator accents,
+/// not in a separate ambient grid or blue-tinted base.
 struct VeilForgeBackground: View {
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [VeilTheme.backgroundLift, VeilTheme.background, VeilTheme.obsidian],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            RadialGradient(
-                colors: [VeilTheme.gold.opacity(0.085), Color.clear],
-                center: .topTrailing,
-                startRadius: 0,
-                endRadius: 380
-            )
-            LinearGradient(
-                colors: [Color.white.opacity(0.025), Color.clear],
-                startPoint: .topLeading,
-                endPoint: .center
-            )
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        VeilInstrumentBackground()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
