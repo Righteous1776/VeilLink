@@ -81,7 +81,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
         case .veilOriginal: return "保留现有黑金、切角面板与 Veil 动效。"
         case .appleSoft: return "苹果式软质拟物；iOS 26 自动接入底层 Liquid Glass。"
         case .instrumentAuto: return "柔和仪器拟物；完整支持浅色、深色与跟随系统。"
-        case .forge: return "工业硬核｜橙色控制台、金属切角面板与状态驱动的机械仪表。"
+        case .forge: return "暖灰黑柔质拟物｜ECLIPSE 式亮橙圆形仪表、圆润面板与真实状态显示。"
         case .plainline: return "极简字排版面：无材质无阴影，仅留白、发丝线与文字。"
         case .islet: return "深海极光上的浮岛：内容浮起，导航收成一枚罗经胶囊。"
         }
@@ -103,7 +103,7 @@ enum VeilAppearanceSelection: String, CaseIterable, Identifiable, Codable {
         case .veilOriginal: return Color(red: 0.02, green: 0.02, blue: 0.03)
         case .appleSoft: return Color(red: 0.91, green: 0.93, blue: 0.97)
         case .instrumentAuto: return Color(red: 0.38, green: 0.38, blue: 0.40)
-        case .forge: return Color(red: 0.085, green: 0.095, blue: 0.11)
+        case .forge: return Color(red: 0.115, green: 0.110, blue: 0.120)
         case .plainline: return Color(red: 0.96, green: 0.955, blue: 0.94)
         case .islet: return Color(red: 0.05, green: 0.09, blue: 0.14)
         }
@@ -377,61 +377,63 @@ final class VeilAppearanceController: ObservableObject {
         indicator: Color(red: 1.0, green: 0.31, blue: 0.04)
     )
 
-    /// FORGE: dedicated industrial control-surface identity. No ambient particles.
-    /// Dark graphite, sharp machined metal, high-visibility orange telemetry.
+    /// FORGE R2: warm, soft graphite modeled after the ECLIPSE robot module.
+    /// #B03C0A is the copper shadow, not the luminous face; #E66314 / #FF7C23
+    /// provide readable warm-orange highlights on deep neutral charcoal.
     static let forgeNight = VeilThemePalette(
-        background: Color(red: 0.035, green: 0.040, blue: 0.048),
-        backgroundLift: Color(red: 0.065, green: 0.074, blue: 0.084),
-        elevated: Color(red: 0.100, green: 0.112, blue: 0.125),
-        panel: Color(red: 0.124, green: 0.137, blue: 0.150),
-        panelSoft: Color(red: 0.158, green: 0.172, blue: 0.190),
-        obsidian: Color(red: 0.015, green: 0.019, blue: 0.025),
-        veil: Color(red: 0.048, green: 0.054, blue: 0.065),
-        gold: Color(red: 0.98, green: 0.38, blue: 0.11),
-        goldBright: Color(red: 1.00, green: 0.49, blue: 0.16),
-        goldDeep: Color(red: 0.60, green: 0.19, blue: 0.02),
-        mutedGold: Color(red: 0.66, green: 0.44, blue: 0.30),
-        paleMetal: Color(red: 0.80, green: 0.83, blue: 0.87),
+        background: Color(red: 0.045, green: 0.043, blue: 0.047),
+        backgroundLift: Color(red: 0.075, green: 0.071, blue: 0.078),
+        elevated: Color(red: 0.142, green: 0.137, blue: 0.145),
+        panel: Color(red: 0.186, green: 0.180, blue: 0.190),
+        panelSoft: Color(red: 0.220, green: 0.212, blue: 0.222),
+        obsidian: Color(red: 0.019, green: 0.018, blue: 0.021),
+        veil: Color(red: 0.110, green: 0.105, blue: 0.115),
+        gold: Color(red: 0.902, green: 0.388, blue: 0.078),
+        goldBright: Color(red: 1.00, green: 0.486, blue: 0.137),
+        goldDeep: Color(red: 0.690, green: 0.235, blue: 0.039),
+        mutedGold: Color(red: 0.695, green: 0.534, blue: 0.454),
+        paleMetal: Color(red: 0.805, green: 0.795, blue: 0.790),
         text: Color.white.opacity(0.96),
-        secondaryText: Color.white.opacity(0.69),
-        tertiaryText: Color.white.opacity(0.46),
-        hairline: Color.white.opacity(0.15),
+        secondaryText: Color.white.opacity(0.68),
+        tertiaryText: Color.white.opacity(0.42),
+        hairline: Color.white.opacity(0.115),
         danger: Color(red: 1.00, green: 0.29, blue: 0.20),
         success: Color(red: 0.28, green: 0.83, blue: 0.59),
-        metalTop: Color(red: 0.235, green: 0.251, blue: 0.271),
-        metalBottom: Color(red: 0.072, green: 0.080, blue: 0.092),
-        recess: Color.black.opacity(0.80),
-        keycapTop: Color(red: 0.245, green: 0.260, blue: 0.283),
-        keycapBottom: Color(red: 0.080, green: 0.091, blue: 0.104),
-        indicator: Color(red: 1.00, green: 0.39, blue: 0.11)
+        metalTop: Color(red: 0.255, green: 0.247, blue: 0.260),
+        metalBottom: Color(red: 0.129, green: 0.125, blue: 0.134),
+        recess: Color.black.opacity(0.64),
+        keycapTop: Color(red: 0.265, green: 0.257, blue: 0.273),
+        keycapBottom: Color(red: 0.168, green: 0.161, blue: 0.177),
+        indicator: Color(red: 1.00, green: 0.486, blue: 0.137)
     )
 
-    /// Light-mode FORGE: industrial aluminum; darker orange preserves contrast.
+    /// Light FORGE uses a warm paper/pearl substrate, not cold blue aluminum.
+    /// Active orange is toned down sufficiently to remain legible on ivory.
     static let forgeDay = VeilThemePalette(
-        background: Color(red: 0.900, green: 0.916, blue: 0.932),
-        backgroundLift: Color(red: 0.951, green: 0.960, blue: 0.969),
-        elevated: Color(red: 0.969, green: 0.976, blue: 0.982),
-        panel: Color(red: 0.918, green: 0.933, blue: 0.944),
-        panelSoft: Color(red: 0.978, green: 0.983, blue: 0.988),
-        obsidian: Color(red: 0.828, green: 0.849, blue: 0.869),
-        veil: Color(red: 0.876, green: 0.892, blue: 0.907),
-        gold: Color(red: 0.74, green: 0.27, blue: 0.015),
-        goldBright: Color(red: 0.84, green: 0.32, blue: 0.02),
-        goldDeep: Color(red: 0.43, green: 0.16, blue: 0.01),
-        mutedGold: Color(red: 0.47, green: 0.30, blue: 0.20),
-        paleMetal: Color(red: 0.36, green: 0.42, blue: 0.47),
-        text: Color.black.opacity(0.92),
-        secondaryText: Color.black.opacity(0.66),
-        tertiaryText: Color.black.opacity(0.45),
-        hairline: Color.black.opacity(0.17),
+        background: Color(red: 0.954, green: 0.943, blue: 0.926),
+        backgroundLift: Color(red: 0.984, green: 0.978, blue: 0.964),
+        elevated: Color(red: 0.991, green: 0.985, blue: 0.976),
+        panel: Color(red: 0.940, green: 0.922, blue: 0.902),
+        panelSoft: Color(red: 0.997, green: 0.992, blue: 0.984),
+        obsidian: Color(red: 0.820, green: 0.790, blue: 0.774),
+        veil: Color(red: 0.920, green: 0.901, blue: 0.885),
+        gold: Color(red: 0.736, green: 0.267, blue: 0.035),
+        goldBright: Color(red: 0.804, green: 0.320, blue: 0.047),
+        goldDeep: Color(red: 0.516, green: 0.180, blue: 0.028),
+        mutedGold: Color(red: 0.457, green: 0.331, blue: 0.273),
+        paleMetal: Color(red: 0.453, green: 0.434, blue: 0.424),
+        text: Color.black.opacity(0.90),
+        secondaryText: Color.black.opacity(0.63),
+        tertiaryText: Color.black.opacity(0.43),
+        hairline: Color.black.opacity(0.10),
         danger: Color(red: 0.74, green: 0.13, blue: 0.13),
         success: Color(red: 0.07, green: 0.46, blue: 0.28),
-        metalTop: Color(red: 0.986, green: 0.989, blue: 0.994),
-        metalBottom: Color(red: 0.823, green: 0.851, blue: 0.873),
-        recess: Color.black.opacity(0.13),
-        keycapTop: Color.white.opacity(0.98),
-        keycapBottom: Color(red: 0.858, green: 0.877, blue: 0.898),
-        indicator: Color(red: 0.78, green: 0.27, blue: 0.015)
+        metalTop: Color(red: 1.00, green: 0.996, blue: 0.985),
+        metalBottom: Color(red: 0.912, green: 0.891, blue: 0.870),
+        recess: Color.black.opacity(0.09),
+        keycapTop: Color.white.opacity(0.99),
+        keycapBottom: Color(red: 0.928, green: 0.907, blue: 0.890),
+        indicator: Color(red: 0.820, green: 0.315, blue: 0.047)
     )
 
     /// Plainline （白描）: ink-on-paper minimalism. Depth channels collapse to flat values so
