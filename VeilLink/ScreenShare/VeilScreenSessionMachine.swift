@@ -145,7 +145,9 @@ struct VeilScreenSessionRegistry {
         guard var current = active, current.sessionID == sessionID,
               current.peerIdentityID == peerID else { return false }
         let result = current.transition(event, at: now)
-        if result { active = current }
+        // An expired invitation rejects the attempted action, but the terminal
+        // expiration must still be persisted so stale invites cannot be reused.
+        if result || current.isTerminal { active = current }
         return result
     }
 
