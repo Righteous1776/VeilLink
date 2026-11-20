@@ -6,7 +6,8 @@ import SwiftUI
 struct VeilScreenReplayKitConsentView: View {
     let sessionID: UUID
     let onCancel: () -> Void
-    @StateObject private var host = VeilScreenLegacyBroadcastHost()
+    @ObservedObject var host: VeilScreenLegacyBroadcastHost
+    let onPrepare: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -27,9 +28,7 @@ struct VeilScreenReplayKitConsentView: View {
                 }
             } else {
                 Text(host.status).foregroundStyle(.secondary).font(.footnote)
-                Button("准备屏幕共享") {
-                    _ = host.prepare(sessionID: sessionID)
-                }
+                Button("准备屏幕共享", action: onPrepare)
                 .buttonStyle(.borderedProminent)
             }
             Button("取消共享", role: .cancel) {

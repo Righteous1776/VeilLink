@@ -4,14 +4,15 @@ import Foundation
 /// isSecureBLE MUST verify the current authenticated E2EE identity and BLE route.
 /// sendControl MUST encrypt with fresh AEAD sequence and a screen-control domain.
 struct VeilScreenSessionHooks {
-    let isSecureBLE: (String) -> Bool
-    let sendControl: (VeilScreenShareControl, String) -> Bool
-    let requestSystemPicker: (UUID) -> Void
-    let stopCapture: () -> Void
+    let isSecureBLE: @MainActor (String) -> Bool
+    let sendControl: @MainActor (VeilScreenShareControl, String) -> Bool
+    let requestSystemPicker: @MainActor (UUID) -> Void
+    let stopCapture: @MainActor () -> Void
 }
 
 /// Entirely ephemeral: no timers, disk, chat messages, or private capture APIs.
 /// Call tick() on app lifecycle/timer, receiveControl() only AFTER decrypt+auth.
+@MainActor
 struct VeilScreenSessionWorkflow {
     private(set) var registry = VeilScreenSessionRegistry()
     private(set) var latestImage: VeilScreenShareFrame?
@@ -20,6 +21,12 @@ struct VeilScreenSessionWorkflow {
     private let hooks: VeilScreenSessionHooks
 
     init(hooks: VeilScreenSessionHooks) { self.hooks = hooks }
+
+    mutating func clearFinishedSession() {
+        registry.clearEnded()
+        latestImage = nil
+        captureStartedAt = nil
+    }
 
     @discardableResult
     mutating func invite(peerID: String, now: TimeInterval) -> Bool {
