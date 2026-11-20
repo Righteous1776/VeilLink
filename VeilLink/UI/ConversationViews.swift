@@ -557,6 +557,12 @@ struct ChatView: View {
                                 .id(message.id)
                             }
                         }
+                        // A transient live card is NOT persisted to message SQLite.
+                        VeilScreenConversationHost(
+                            screen: model.screenShare,
+                            peerID: conversation.peerIdentityID,
+                            peerDisplayName: conversation.title
+                        )
                         // Stable target even if the last stored packet is hidden game traffic.
                         Color.clear
                             .frame(height: 1)
@@ -589,6 +595,11 @@ struct ChatView: View {
                     guard !didInitialBottomAnchor, !visibleMessages.isEmpty else { return }
                     didInitialBottomAnchor = true
                     DispatchQueue.main.async { proxy.scrollTo(chatBottomAnchorID, anchor: .bottom) }
+                }
+                .onReceive(model.screenShare.$snapshot) { candidate in
+                    guard candidate?.peerIdentityID == conversation.peerIdentityID,
+                          isNearBottom || composerFocused else { return }
+                    scrollToBottomRequest &+= 1
                 }
                 .onChange(of: visibleMessages.last?.id) { _ in
                     guard !showsSearchBar, !visibleMessages.isEmpty else { return }
@@ -709,6 +720,15 @@ struct ChatView: View {
                             } label: {
                                 Label("导入图片或文本", systemImage: "doc.badge.plus")
                             }
+                            Button {
+                                if !model.screenShare.invite(peerID: conversation.peerIdentityID) {
+                                    model.alertMessage = "屏幕共享需要双方 V30 加密蓝牙会话和系统广播授权。"
+                                }
+                            } label: {
+                                Label("邀请屏幕共享", systemImage: "rectangle.on.rectangle")
+                            }
+                            .disabled(!model.screenShare.canInvite(peerID: conversation.peerIdentityID))
+                            .accessibilityIdentifier("chat.veilscreen.invite")
                             Divider()
                             Button {
                                 if composerOptionsEnabled {

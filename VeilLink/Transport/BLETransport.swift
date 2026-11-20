@@ -503,6 +503,12 @@ final class BLETransport: NSObject, ObservableObject {
     }
 
     @discardableResult
+    /// Actual per-transport queue size, never a made-up progress percentage.
+    func pendingBytesForScreenShare(to transportID: UUID) -> Int {
+        max(centralOutboundQueues[transportID]?.pendingBytes ?? 0,
+            peripheralOutboundQueues[transportID]?.pendingBytes ?? 0)
+    }
+
     func send(_ data: Data, to transportID: UUID, priority: BLESendPriority = .bulk) -> TransportSendResult {
         if let peripheral = remotePeripherals[transportID],
            let characteristic = remoteCharacteristics[transportID],

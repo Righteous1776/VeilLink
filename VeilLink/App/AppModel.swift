@@ -35,6 +35,8 @@ struct VeilTransportHealthRollup: Equatable {
 final class AppModel: ObservableObject {
     lazy var veilopolyMultiplayer = VeilopolyMultiplayerBridge(sessions: sessions,
         localIdentity: { [weak self] in self?.identity.activeIdentity?.id })
+    /// Ephemeral authenticated BLE-only screen sharing; no history persistence.
+    lazy var screenShare = VeilScreenCoordinator(sessions: sessions, bluetooth: bluetooth)
     private static let startupSignposter = OSSignposter(
         subsystem: "studio.zeo.veillink",
         category: "startup"
@@ -245,6 +247,9 @@ final class AppModel: ObservableObject {
         sessions.onPTTAudioFrame = { [weak walkieTalkie] incoming in
             walkieTalkie?.receiveAudio(incoming)
         }
+        // Install screen-share callbacks at startup so an incoming invitation
+        // can be received without first visiting a chat view.
+        _ = screenShare
         sessions.relayProvisionSecretProvider = { [weak relayCapabilities] peerIdentityID in
             relayCapabilities?.provisioningSecretIfOwner(for: peerIdentityID)
         }

@@ -176,6 +176,7 @@ final class SessionCoordinator: ObservableObject {
     // and MUST NOT write screen data into chat SQLite/outbox/backup/logs.
     var onScreenControl: ((String, VeilScreenShareControl) -> Void)?
     var onScreenMediaChunk: ((String, VeilScreenShareChunk) -> Void)?
+    var onScreenLinkLost: ((String) -> Void)?
     var onTrustEstablished: (() -> Void)?
     var onMeshPayload: ((UUID, Data) -> Void)?
     var relayProvisionSecretProvider: ((String) -> Data?)?
@@ -290,6 +291,7 @@ final class SessionCoordinator: ObservableObject {
             }
         }
 
+        if let remoteIdentityID { onScreenLinkLost?(remoteIdentityID) }
         if peerTransport.isEmpty {
             clearOutboundAttachmentCache()
             retryTaskGeneration &+= 1
@@ -412,6 +414,10 @@ final class SessionCoordinator: ObservableObject {
 
     func hasSecureScreenBLE(for peerIdentityID: String) -> Bool {
         screenTransport(for: peerIdentityID) != nil
+    }
+
+    func secureScreenBLETransportID(for peerIdentityID: String) -> UUID? {
+        screenTransport(for: peerIdentityID)
     }
 
     /// Ephemeral encrypted control event. Admission is not radio delivery.

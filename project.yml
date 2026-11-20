@@ -72,6 +72,8 @@ targets:
       - package: ZIPFoundation
       - target: VeilBackgroundWidget
         embed: true
+      - target: VeilScreenBroadcastUpload
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink
@@ -80,11 +82,32 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SWIFT_OBJC_BRIDGING_HEADER: VeilLink/Native/VeilLink-Bridging-Header.h
+        CODE_SIGN_ENTITLEMENTS: VeilLink/Resources/VeilScreen.entitlements
         SUPPORTS_MACCATALYST: NO
     scheme:
       testTargets:
         - VeilLinkTests
         - VeilLinkUITests
+  VeilScreenBroadcastUpload:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: VeilScreenBroadcastUpload/VeilScreenBroadcastUploadHandler.swift
+      - path: VeilLink/ScreenShare/VeilScreenBroadcastSecurity.swift
+      - path: VeilLink/ScreenShare/VeilScreenEncryptedMailbox.swift
+      - path: VeilLink/ScreenShare/VeilScreenCapturePolicy.swift
+      - path: VeilLink/ScreenShare/VeilScreenReplayKitEncoder.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.zeo.veillink.screenshare
+        PRODUCT_NAME: VeilScreenBroadcastUpload
+        INFOPLIST_FILE: VeilLink/Resources/VeilScreenBroadcastUpload-Info.plist
+        CODE_SIGN_ENTITLEMENTS: VeilLink/Resources/VeilScreen.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        SUPPORTS_MACCATALYST: NO
+
   VeilBackgroundWidget:
     type: app-extension
     platform: iOS

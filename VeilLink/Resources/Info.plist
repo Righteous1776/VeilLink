@@ -77,6 +77,11 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- Verified at runtime: unresolved entitlement expansion fails closed. -->
+	<key>VeilScreenAppGroup</key>
+	<string>group.studio.zeo.veillink.screenshare</string>
+	<key>VeilScreenKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)studio.zeo.veillink.screenshare</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
