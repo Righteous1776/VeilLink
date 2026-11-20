@@ -42,3 +42,9 @@ improvements, FORGE soft orange overhaul, and V30 screen-sharing code.
 - IPA CRC/Info.plist identity and SHA256 parity.
 - Owner-signed host/extension entitlement verification and real BLE two-phone
   screen/video/stop/privacy acceptance logs, without pixel/chat contents.
+
+## V30 publication guard
+- A CI-green **unsigned** IPA is not evidence that iOS ReplayKit + App Group or two-device encrypted BLE screen sharing works.
+- Github Release publication is now guarded by an unset-by-default explicit repository variable `VEILLINK_V30_DEVICE_ACCEPTED_20261120=true`, to be authorized only after independently documented signed iPhone-to-iPhone screen test (system consent, first frame, link drops, revoke, chat priority). No other automatic release path has been enabled.
+- Source CI checks also run `verify-v30-eclipse-owner-regressions.py`, locking removal of the rejected lower ECLIPSE / 实测仪表 card and landing ripple, and the actual native PVS budget inheritance.
+- No source marker or CI script can substitute for signed device acceptance. Do not claim release success merely because a PR's macOS workflow reports green.

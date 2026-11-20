@@ -77,6 +77,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/verify-inbox-integration.py --output ci-artifacts/INBOX_INTEGRATION_AUDIT.json
+          # Owner non-regression: no duplicate ECLIPSE dashboard or board ripple,
+          # and actual 1–10 / untimed controls survive the native PVS handoff.
+          python3 scripts/verify-v30-eclipse-owner-regressions.py
           python3 scripts/verify-v30-release-contract.py --enforce --json ci-artifacts/V30_SOURCE_GATE.json
 
       - name: Test offline Veilopoly package
@@ -247,7 +250,9 @@ jobs:
 
       # Only main may publish, only after this exact run's full tests + IPA verification.
       - name: Publish immutable verified GitHub Release
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # V30 may not auto-publish merely because an unsigned IPA compiled.
+        # Owner's independent signed hardware/ReplayKit/BLE acceptance is required.
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.VEILLINK_V30_DEVICE_ACCEPTED_20261120 == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
