@@ -83,6 +83,7 @@ final class AppModel: ObservableObject {
     let bluetooth: BLETransport
     let lanTurbo: LANTransport
     let sessions: SessionCoordinator
+    let screenShare: VeilScreenBridgeController
     let meshRouter: VeilMeshOverlayRouter
     let community: VeilCommunityStore
     let relayCapabilities: VeilRelayCapabilityStore
@@ -162,6 +163,7 @@ final class AppModel: ObservableObject {
         internetRelay = InternetRelayTransport(identity: identity, database: database, capabilities: relayCapabilities)
         remotePairing = VeilRemotePairingCoordinator(identity: identity, database: database, capabilities: relayCapabilities)
         sessions = SessionCoordinator(identity: identity, database: database)
+        screenShare = VeilScreenBridgeController(sessions: sessions, bluetooth: bluetooth)
         meshRouter = VeilMeshOverlayRouter()
         community = VeilCommunityStore(keychain: keychain, identity: identity)
         backups = BackupManager(database: database, identity: identity)
@@ -187,6 +189,7 @@ final class AppModel: ObservableObject {
             computeGovernor: computeGovernor
         )
         agent.attachA10UltraShadowRuntime(m5CognitionRuntime)
+        screenShare.configure()
         performanceOverrides.onChange = { [weak self] in
             self?.applyPerformanceOverrideChange()
         }
@@ -197,8 +200,9 @@ final class AppModel: ObservableObject {
         bluetooth.onConnected = { [weak sessions] id in
             sessions?.connected(transportID: id)
         }
-        bluetooth.onDisconnected = { [weak sessions] id in
+        bluetooth.onDisconnected = { [weak sessions, weak screenShare] id in
             sessions?.disconnected(transportID: id)
+            screenShare?.linkChanged()
         }
         bluetooth.onReceive = { [weak sessions] id, data in sessions?.receive(transportID: id, data: data) }
         lanTurbo.onConnected = { [weak sessions] id in
@@ -244,6 +248,13 @@ final class AppModel: ObservableObject {
         }
         sessions.onPTTAudioFrame = { [weak walkieTalkie] incoming in
             walkieTalkie?.receiveAudio(incoming)
+        }
+        // Only authenticated, replay-checked screen packets reach the controller.
+        sessions.onScreenShareControl = { [weak screenShare] packet, peerID in
+            screenShare?.receiveControl(packet, peerID: peerID)
+        }
+        sessions.onScreenShareChunk = { [weak screenShare] chunk, peerID in
+            screenShare?.receiveChunk(chunk, peerID: peerID)
         }
         sessions.relayProvisionSecretProvider = { [weak relayCapabilities] peerIdentityID in
             relayCapabilities?.provisioningSecretIfOwner(for: peerIdentityID)

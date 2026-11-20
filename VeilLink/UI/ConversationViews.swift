@@ -557,6 +557,13 @@ struct ChatView: View {
                                 .id(message.id)
                             }
                         }
+                        if !showsSearchBar {
+                            VeilScreenChatAttachment(
+                                controller: model.screenShare,
+                                peerIdentityID: conversation.peerIdentityID,
+                                peerDisplayName: conversation.title
+                            )
+                        }
                         // Stable target even if the last stored packet is hidden game traffic.
                         Color.clear
                             .frame(height: 1)
@@ -710,6 +717,15 @@ struct ChatView: View {
                                 Label("导入图片或文本", systemImage: "doc.badge.plus")
                             }
                             Divider()
+                            Button {
+                                if !model.screenShare.invite(peerID: conversation.peerIdentityID) {
+                                    model.alertMessage = model.screenShare.lastFailure
+                                        ?? "当前无法通过可信蓝牙连接发起 VeilScreen。"
+                                }
+                            } label: {
+                                Label("邀请屏幕共享", systemImage: "rectangle.on.rectangle")
+                            }
+                            .accessibilityIdentifier("veilscreen.chat.invite")
                             Button {
                                 if composerOptionsEnabled {
                                     showsComposerOptions = true
@@ -889,6 +905,11 @@ struct ChatView: View {
         .onAppear {
             reload()
             model.setConversationVisible(conversation.id, visible: true)
+        }
+        .onReceive(model.screenShare.$snapshot) { snapshot in
+            guard let snapshot, snapshot.peerIdentityID == conversation.peerIdentityID,
+                  !snapshot.isTerminal, isNearBottom else { return }
+            scrollToBottomRequest &+= 1
         }
         .onDisappear {
             model.setConversationVisible(conversation.id, visible: false)
