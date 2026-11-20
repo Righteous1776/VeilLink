@@ -43,14 +43,23 @@ enum ImageTranscoder {
     static func prepare(
         at url: URL, profile: ImageTransportProfile = .bluetooth
     ) async throws -> PreparedImage {
-        try await Task.detached(priority: .userInitiated) {
+        // ImageIO encoding is CPU-intensive; keep it below UI/gesture QoS.
+        // Detached tasks do not inherit caller cancellation, so explicitly
+        // propagate it to avoid stale photo work after a send is dismissed.
+        let worker = Task.detached(priority: .utility) {
             try prepareSynchronously(at: url, profile: profile)
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     static func prepareSynchronously(
         at url: URL, profile: ImageTransportProfile = .bluetooth
     ) throws -> PreparedImage {
+        try Task.checkCancellation()
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else {
             // Some RAW variants are only exposed through Core Image. Keep going if CI can open it.
             guard CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) != nil else {
@@ -79,9 +88,11 @@ enum ImageTranscoder {
             originalHeight: sourceInfo?.height ?? MediaTransferPolicy.maximumImageDimension,
             isLikelyTextOrGraphic: textSensitive
         )
+        try Task.checkCancellation()
         guard let bitmap = decodeImage(
             url: url, source: source, maximumDimension: requestedEdge
         ) else { throw ImagePreparationError.unsupported }
+        try Task.checkCancellation()
 
         var smallest: PreparedImage?
 

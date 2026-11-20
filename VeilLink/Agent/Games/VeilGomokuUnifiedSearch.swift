@@ -317,11 +317,16 @@ enum VeilGomokuUnifiedSearch {
         }
 
         private mutating func overBudget() -> Bool {
+            if Task.isCancelled {
+                interrupted = true
+                return true
+            }
             if nodes >= max(1, limits.maxNodes) {
                 interrupted = true
                 return true
             }
-            if Date.timeIntervalSinceReferenceDate - started >= Double(max(1, limits.maxMilliseconds)) / 1000 {
+            if limits.maxMilliseconds > 0 &&
+                Date.timeIntervalSinceReferenceDate - started >= Double(limits.maxMilliseconds) / 1000 {
                 interrupted = true
                 return true
             }
@@ -334,8 +339,9 @@ enum VeilGomokuUnifiedSearch {
             nodes += 1
             // Reserve at least 70% of the wall budget for ordinary PVS.
             // Missing a VCF proof is acceptable; a false proof is not.
-            if Date.timeIntervalSinceReferenceDate - started >
-                Double(max(1, limits.maxMilliseconds)) * 0.30 / 1000 { return false }
+            if limits.maxMilliseconds > 0 &&
+                Date.timeIntervalSinceReferenceDate - started >
+                    Double(limits.maxMilliseconds) * 0.30 / 1000 { return false }
             if overBudget() || remaining <= 0 { return false }
             let opponentSide = opponent(side)
             let all = neighbors(radius: limits.candidateRadius)

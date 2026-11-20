@@ -4,6 +4,32 @@ import Foundation
 /// Pass exactly the R4-vetted root candidates and the incumbent root scores.
 /// This bridge never touches the old JavaScriptCore engine or user archives.
 enum VeilGomokuUnifiedBridge {
+    /// Actual native search limits, derived from the visible Gomoku thinking slider.
+    static func searchLimits(
+        for budget: GomokuBotBudget, difficultyRawValue: String?
+    ) -> VeilGomokuUnifiedSearch.Limits {
+        var limits = VeilGomokuUnifiedSearch.Limits()
+        limits.maxMilliseconds = max(30, budget.timeLimitMilliseconds)
+        limits.maxNodes = max(2_000, min(180_000, budget.timeLimitMilliseconds * 125))
+        limits.maxDepth = budget.continuationCandidateLimit > 0 ? 6 : 3
+        limits.width = max(4, min(24, budget.rootCandidateLimit))
+        limits.candidateRadius = budget.candidateRadius
+        limits.forcedLineDepth = budget.continuationCandidateLimit > 0 ? 6 : 3
+        if let difficultyRawValue {
+            limits = EclipseDifficultyPolicy.limits(
+                rawValue: difficultyRawValue,
+                maximumMilliseconds: budget.timeLimitMilliseconds
+            )
+            limits.candidateRadius = budget.candidateRadius
+        }
+        let strength = max(1, min(10, budget.searchStrength))
+        limits.maxNodes = max(64, min(240_000, limits.maxNodes * strength / 5))
+        limits.maxDepth = max(1, min(10, limits.maxDepth + (strength - 5) / 2))
+        limits.width = max(2, min(32, limits.width + strength - 5))
+        if budget.unlimitedThinking { limits.maxMilliseconds = 0 }
+        return limits
+    }
+
     static func chooseMove(
         in state: GomokuState,
         for player: MiniGamePlayer,
@@ -40,21 +66,7 @@ enum VeilGomokuUnifiedBridge {
             let offset = rank * 4_000 / max(1, ranked.count - 1)
             bonuses[entry.key] = 2_000 - offset
         }
-        var limits = VeilGomokuUnifiedSearch.Limits()
-        limits.maxMilliseconds = max(30, budget.timeLimitMilliseconds)
-        limits.maxNodes = max(2_000, min(180_000, budget.timeLimitMilliseconds * 125))
-        limits.maxDepth = budget.continuationCandidateLimit > 0 ? 6 : 3
-        limits.width = max(4, min(24, budget.rootCandidateLimit))
-        limits.candidateRadius = budget.candidateRadius
-        limits.forcedLineDepth = budget.continuationCandidateLimit > 0 ? 6 : 3
-
-        if let difficultyRawValue {
-            limits = EclipseDifficultyPolicy.limits(
-                rawValue: difficultyRawValue,
-                maximumMilliseconds: budget.timeLimitMilliseconds
-            )
-            limits.candidateRadius = budget.candidateRadius
-        }
+        let limits = searchLimits(for: budget, difficultyRawValue: difficultyRawValue)
 
         guard let decision = VeilGomokuUnifiedSearch.decide(
             position, limits: limits,

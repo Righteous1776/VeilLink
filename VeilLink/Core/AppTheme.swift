@@ -207,8 +207,12 @@ struct VeilPanelShape: Shape {
         if VeilAppearanceController.shared.isInstrument {
             return RoundedRectangle(cornerRadius: max(12, radius * 1.8), style: .continuous).path(in: rect)
         }
+        if VeilAppearanceController.shared.isForge {
+            // FORGE R2: all reusable panels/bubbles share a soft continuous silhouette.
+            return RoundedRectangle(cornerRadius: max(14, radius * 2.1), style: .continuous).path(in: rect)
+        }
         let c = min(cut, min(rect.width, rect.height) * 0.28)
-        let r = min(VeilAppearanceController.shared.isForge ? 2 : radius, c * 0.7)
+        let r = min(radius, c * 0.7)
         var p = Path()
         p.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
         p.addLine(to: CGPoint(x: rect.maxX - c, y: rect.minY))

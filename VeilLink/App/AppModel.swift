@@ -83,6 +83,7 @@ final class AppModel: ObservableObject {
     let bluetooth: BLETransport
     let lanTurbo: LANTransport
     let sessions: SessionCoordinator
+    let screenShare: VeilScreenBridgeController
     let meshRouter: VeilMeshOverlayRouter
     let community: VeilCommunityStore
     let relayCapabilities: VeilRelayCapabilityStore
@@ -162,6 +163,7 @@ final class AppModel: ObservableObject {
         internetRelay = InternetRelayTransport(identity: identity, database: database, capabilities: relayCapabilities)
         remotePairing = VeilRemotePairingCoordinator(identity: identity, database: database, capabilities: relayCapabilities)
         sessions = SessionCoordinator(identity: identity, database: database)
+        screenShare = VeilScreenBridgeController(sessions: sessions, bluetooth: bluetooth)
         meshRouter = VeilMeshOverlayRouter()
         community = VeilCommunityStore(keychain: keychain, identity: identity)
         backups = BackupManager(database: database, identity: identity)
@@ -187,6 +189,7 @@ final class AppModel: ObservableObject {
             computeGovernor: computeGovernor
         )
         agent.attachA10UltraShadowRuntime(m5CognitionRuntime)
+        screenShare.configure()
         performanceOverrides.onChange = { [weak self] in
             self?.applyPerformanceOverrideChange()
         }
@@ -197,8 +200,9 @@ final class AppModel: ObservableObject {
         bluetooth.onConnected = { [weak sessions] id in
             sessions?.connected(transportID: id)
         }
-        bluetooth.onDisconnected = { [weak sessions] id in
+        bluetooth.onDisconnected = { [weak sessions, weak screenShare] id in
             sessions?.disconnected(transportID: id)
+            screenShare?.linkChanged()
         }
         bluetooth.onReceive = { [weak sessions] id, data in sessions?.receive(transportID: id, data: data) }
         lanTurbo.onConnected = { [weak sessions] id in
@@ -244,6 +248,13 @@ final class AppModel: ObservableObject {
         }
         sessions.onPTTAudioFrame = { [weak walkieTalkie] incoming in
             walkieTalkie?.receiveAudio(incoming)
+        }
+        // Only authenticated, replay-checked screen packets reach the controller.
+        sessions.onScreenShareControl = { [weak screenShare] packet, peerID in
+            screenShare?.receiveControl(packet, peerID: peerID)
+        }
+        sessions.onScreenShareChunk = { [weak screenShare] chunk, peerID in
+            screenShare?.receiveChunk(chunk, peerID: peerID)
         }
         sessions.relayProvisionSecretProvider = { [weak relayCapabilities] peerIdentityID in
             relayCapabilities?.provisioningSecretIfOwner(for: peerIdentityID)
@@ -714,6 +725,8 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     private func suspendCommunicationStack(reason: String, resetRemotePairing: Bool = true) -> TransportResumePlan {
+        // Revoke capture and authenticated invitation before suspending BLE.
+        screenShare.stop()
         let plan = TransportResumePlan(
             bluetoothWasRunning: bluetooth.isRunning,
             lanWasRunning: lanTurbo.isRunning
@@ -733,6 +746,8 @@ final class AppModel: ObservableObject {
     }
 
     private func resetIdentityScopedRuntimeState() {
+        // Revoke the sender/receiver session BEFORE replacing any identity keys.
+        screenShare.stop()
         sessions.resetForIdentityChange()
         gameIntelligence.clear()
         selectedConversation = nil
@@ -753,6 +768,7 @@ final class AppModel: ObservableObject {
     }
 
     func sealForLegalWithdrawal() {
+        screenShare.stop()
         _ = suspendCommunicationStack(reason: "已撤回当前版本使用授权")
         sessions.clearTransientCaches()
         database.clearTransientCaches()
@@ -887,6 +903,9 @@ final class AppModel: ObservableObject {
     func setTrust(for peerIdentityID: String, blocked: Bool) {
         guard let localIdentityID = identity.activeIdentity?.id else { return }
         do {
+            if screenShare.snapshot?.peerIdentityID == peerIdentityID {
+                screenShare.stop() // send authenticated STOP while trust still exists
+            }
             try database.setPeerTrust(localIdentityID: localIdentityID, identityID: peerIdentityID, blocked: blocked)
             sessions.invalidatePeer(peerIdentityID)
             alertMessage = blocked ? "已拉黑该身份。历史记录仍保留。" : "已取消信任。重新通信前需要再次核对六码。"

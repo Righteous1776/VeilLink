@@ -77,6 +77,12 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- The true App Group and keychain access group require an owner-provisioned signature.
+	     Unsigned IPA cannot guarantee ReplayKit cross-process IPC. -->
+	<key>VeilScreenAppGroup</key>
+	<string>group.studio.zeo.veillink.screenshare</string>
+	<key>VeilScreenKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)studio.zeo.veillink.screenshare</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

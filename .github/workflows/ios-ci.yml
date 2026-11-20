@@ -177,6 +177,15 @@ jobs:
             --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
             --output ci-artifacts/INBOX_INTEGRATION_AUDIT.json
 
+      - name: Verify V30 compiled screen extension and source acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-v30-release-contract.py \
+            --enforce \
+            --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
+            --json ci-artifacts/V30_ACCEPTANCE.json
+
       - name: Package unsigned IPA
         shell: bash
         run: |
@@ -237,13 +246,16 @@ jobs:
             CORE_RELEASE_PROVENANCE.json
             CORE_RELEASE_SHA256SUMS.txt
             ci-artifacts/INBOX_INTEGRATION_AUDIT.json
+            ci-artifacts/V30_ACCEPTANCE.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
 
       # Only main may publish, only after this exact run's full tests + IPA verification.
       - name: Publish immutable verified GitHub Release
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # Do not publish V30 merely because a source/Xcode test is green.
+        # Requires owner-controlled signed device acceptance (not set by CI).
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.VEILLINK_V30_DEVICE_ACCEPTED == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -265,5 +277,6 @@ jobs:
               CORE_RELEASE_MANIFEST.json \
               CORE_RELEASE_PROVENANCE.json \
               CORE_RELEASE_SHA256SUMS.txt \
-              "ci-artifacts/INBOX_INTEGRATION_AUDIT.json#INBOX_INTEGRATION_AUDIT.json"
+              "ci-artifacts/INBOX_INTEGRATION_AUDIT.json#INBOX_INTEGRATION_AUDIT.json" \
+              "ci-artifacts/V30_ACCEPTANCE.json#V30_ACCEPTANCE.json"
           fi

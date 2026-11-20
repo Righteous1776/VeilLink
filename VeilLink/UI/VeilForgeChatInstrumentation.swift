@@ -7,7 +7,7 @@ struct VeilForgeConversationPlate: View {
     let unreadCount: Int
 
     var body: some View {
-        let shape = VeilPanelShape(cut: 15, radius: 2)
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         shape
             .fill(selected ? VeilTheme.panelSoft : VeilTheme.elevated)
             .overlay(shape.stroke(
@@ -15,7 +15,7 @@ struct VeilForgeConversationPlate: View {
                 lineWidth: 1
             ))
             .overlay(alignment: .leading) {
-                Rectangle()
+                Capsule()
                     .fill(selected ? VeilTheme.goldBright :
                           unreadCount > 0 ? VeilTheme.gold : VeilTheme.hairline)
                     .frame(width: 3)
@@ -25,7 +25,7 @@ struct VeilForgeConversationPlate: View {
                     .animation(.easeOut(duration: 0.15), value: unreadCount > 0)
             }
             .overlay(alignment: .topLeading) {
-                Rectangle()
+                Capsule()
                     .fill(selected ? VeilTheme.goldBright : VeilTheme.paleMetal.opacity(0.32))
                     .frame(width: selected ? 34 : 14, height: 1)
                     .padding(.leading, 11)
@@ -40,7 +40,7 @@ struct VeilForgeUnreadLatch: View {
 
     var body: some View {
         ZStack {
-            VeilPanelShape(cut: 5, radius: 1)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(VeilTheme.goldBright)
             HStack(spacing: 2) {
                 Text(count > 99 ? "99+" : String(max(0, count)))
@@ -89,7 +89,7 @@ struct VeilForgeDeliveryRail: View {
     var body: some View {
         HStack(spacing: 3) {
             ForEach(0..<3, id: \.self) { index in
-                Rectangle()
+                Capsule()
                     .fill(index == stage
                           ? (failed ? VeilTheme.danger :
                              halted ? VeilTheme.mutedGold : VeilTheme.goldBright)
@@ -121,7 +121,7 @@ struct VeilForgeBubbleSurface: View {
     let outgoing: Bool
 
     var body: some View {
-        let shape = VeilPanelShape(cut: 11, radius: 2)
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
         shape
             .fill(outgoing ? VeilTheme.goldBright : VeilTheme.panel)
             .overlay(shape.stroke(
@@ -129,7 +129,7 @@ struct VeilForgeBubbleSurface: View {
                 lineWidth: 1
             ))
             .overlay(alignment: outgoing ? .bottomTrailing : .topLeading) {
-                Rectangle()
+                Capsule()
                     .fill(outgoing ? Color.black.opacity(0.42) : VeilTheme.gold.opacity(0.75))
                     .frame(width: 15, height: 2)
                     .padding(.horizontal, 9)
@@ -147,18 +147,14 @@ struct VeilForgeSendPlunger: View {
 
     var body: some View {
         ZStack {
-            VeilPanelShape(cut: 9, radius: 2)
+            Circle()
                 .fill(armed ? VeilTheme.goldBright : VeilTheme.panelSoft)
-            VeilPanelShape(cut: 9, radius: 2)
+            Circle()
                 .stroke(armed ? VeilTheme.gold : VeilTheme.hairline, lineWidth: 1)
             Image(systemName: "arrow.up")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundColor(armed ? Color.black.opacity(0.90) : VeilTheme.tertiaryText)
                 .offset(y: armed ? -1 : 1)
-            Rectangle()
-                .fill(armed ? Color.black.opacity(0.55) : VeilTheme.tertiaryText)
-                .frame(width: 11, height: 1)
-                .offset(y: 11)
         }
         .frame(width: 36, height: 36)
         .animation(
@@ -177,19 +173,13 @@ struct VeilForgeComposerLatch: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Rectangle()
-                .fill(VeilTheme.hairline)
-                .frame(maxWidth: .infinity, maxHeight: 1)
-            Rectangle()
+            Capsule()
                 .fill(armed ? VeilTheme.goldBright : VeilTheme.tertiaryText)
-                .frame(width: armed ? 22 : 8, height: 2)
-            Text(armed ? "TX ARMED" : "TX STANDBY")
-                .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                .foregroundColor(armed ? VeilTheme.goldBright : VeilTheme.tertiaryText)
-                .frame(width: 72)
-            Rectangle()
+                .frame(width: armed ? 24 : 10, height: 2)
+            Capsule()
                 .fill(VeilTheme.hairline)
-                .frame(maxWidth: .infinity, maxHeight: 1)
+                .frame(maxWidth: .infinity)
+                .frame(height: 1)
         }
         .frame(height: 2)
         .animation(

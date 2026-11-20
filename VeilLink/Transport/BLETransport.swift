@@ -503,6 +503,13 @@ final class BLETransport: NSObject, ObservableObject {
     }
 
     @discardableResult
+    /// Observed encrypted packet backlog for the lossy VeilScreen scheduler.
+    /// It never bypasses BLE admission limits or advertises radio delivery.
+    func pendingOutboundBytes(for transportID: UUID) -> Int {
+        (centralOutboundQueues[transportID]?.pendingBytes ?? 0)
+            + (peripheralOutboundQueues[transportID]?.pendingBytes ?? 0)
+    }
+
     func send(_ data: Data, to transportID: UUID, priority: BLESendPriority = .bulk) -> TransportSendResult {
         if let peripheral = remotePeripherals[transportID],
            let characteristic = remoteCharacteristics[transportID],

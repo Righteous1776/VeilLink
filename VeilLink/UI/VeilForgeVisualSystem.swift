@@ -1,95 +1,67 @@
 import SwiftUI
 import Foundation
 
-/// Industrial atmosphere is static, bounded and input-transparent.
+/// FORGE R2 shares the *exact* background compositor with the existing
+/// "拟物仪器" theme. The new orange language lives in surface/indicator accents,
+/// not in a separate ambient grid or blue-tinted base.
 struct VeilForgeBackground: View {
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [VeilTheme.backgroundLift, VeilTheme.background, VeilTheme.obsidian],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            VeilForgeGrid(spacing: 36)
-                .stroke(VeilTheme.hairline.opacity(0.35), lineWidth: 0.5)
-
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [VeilTheme.gold.opacity(0.70), Color.clear],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(height: 1.5)
-                Spacer(minLength: 0)
-                Rectangle().fill(VeilTheme.hairline).frame(height: 1)
-            }
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        VeilInstrumentBackground()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
-private struct VeilForgeGrid: Shape {
-    let spacing: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        guard rect.width > 0, rect.height > 0, spacing > 0 else { return path }
-        for step in 0...Int(rect.width / spacing) {
-            let x = CGFloat(step) * spacing
-            path.move(to: CGPoint(x: x, y: 0))
-            path.addLine(to: CGPoint(x: x, y: rect.height))
-        }
-        for step in 0...Int(rect.height / spacing) {
-            let y = CGFloat(step) * spacing
-            path.move(to: CGPoint(x: 0, y: y))
-            path.addLine(to: CGPoint(x: rect.width, y: y))
-        }
-        return path
-    }
+/// Shared FORGE R2 soft-card measurements: borrowed from the robot module's
+/// charcoal rounded enclosure, never a chamfered steel sheet.
+enum VeilForgeSoftDesign {
+    static let cardCornerRadius: CGFloat = 20
+    static let emphasizedCornerRadius: CGFloat = 24
+    static let previewCornerRadius: CGFloat = 13
 }
 
-/// Consistent cut metal, engraved crossbars, orange datum mark.
-/// An underlay only: it must never absorb drag/keyboard/pairing gestures.
 struct VeilForgePlate: View {
     let emphasized: Bool
 
     var body: some View {
-        let shape = VeilPanelShape(cut: emphasized ? 20 : 14, radius: 2)
+        let radius = emphasized
+            ? VeilForgeSoftDesign.emphasizedCornerRadius
+            : VeilForgeSoftDesign.cardCornerRadius
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         shape
             .fill(
                 LinearGradient(
-                    colors: [VeilAppearanceController.shared.palette.metalTop.opacity(0.70),
-                             VeilTheme.panel,
-                             VeilAppearanceController.shared.palette.metalBottom.opacity(0.73)],
+                    colors: [
+                        VeilAppearanceController.shared.palette.metalTop,
+                        VeilTheme.panel,
+                        VeilAppearanceController.shared.palette.metalBottom
+                    ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
-            .overlay(shape.stroke(VeilTheme.gold.opacity(emphasized ? 0.55 : 0.24), lineWidth: 1))
+            .overlay(shape.stroke(VeilTheme.hairline, lineWidth: 1))
             .overlay(alignment: .topLeading) {
-                HStack(spacing: 4) {
-                    Rectangle()
-                        .fill(VeilTheme.goldBright)
-                        .frame(width: emphasized ? 37 : 23, height: 2)
-                    Rectangle()
-                        .fill(VeilTheme.paleMetal.opacity(0.38))
-                        .frame(width: 12, height: 2)
-                }
-                .padding(.leading, 12)
-                .padding(.top, 1)
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [VeilTheme.goldBright.opacity(emphasized ? 0.83 : 0.42), Color.clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: emphasized ? 55 : 30, height: 2)
+                    .padding(.top, 3)
+                    .padding(.leading, 21)
             }
-            .overlay(alignment: .bottomTrailing) {
-                HStack(spacing: 4) {
-                    Circle().fill(VeilTheme.paleMetal.opacity(0.38)).frame(width: 2.5, height: 2.5)
-                    Circle().fill(VeilTheme.paleMetal.opacity(0.38)).frame(width: 2.5, height: 2.5)
-                }
-                .padding(.trailing, 13)
-                .padding(.bottom, 8)
-            }
-            .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 2)
+            .shadow(
+                color: Color.black.opacity(
+                    VeilAppearanceController.shared.isDarkAppearance ? 0.25 : 0.10
+                ),
+                radius: emphasized ? 14 : 9,
+                x: 0,
+                y: emphasized ? 7 : 4
+            )
             .allowsHitTesting(false)
     }
 }
@@ -102,7 +74,7 @@ struct VeilForgeDataRail: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Rectangle()
+            Capsule()
                 .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
                 .frame(width: 3, height: 10)
             Text(label)
@@ -159,13 +131,13 @@ struct VeilForgeRotor: View {
         GeometryReader { proxy in
             let diameter = max(1, min(proxy.size.width, proxy.size.height))
             ZStack {
-                VeilPanelShape(cut: diameter * 0.11, radius: 2)
+                Circle()
                     .fill(VeilTheme.obsidian)
-                VeilPanelShape(cut: diameter * 0.11, radius: 2)
+                Circle()
                     .stroke(VeilTheme.gold.opacity(engaged ? 0.44 : 0.15), lineWidth: 1)
 
                 ForEach(0..<24, id: \.self) { index in
-                    Rectangle()
+                    Capsule()
                         .fill(index.isMultiple(of: 6)
                               ? VeilTheme.gold.opacity(engaged ? 0.88 : 0.22)
                               : VeilTheme.paleMetal.opacity(0.25))
@@ -204,20 +176,20 @@ struct VeilForgeRotor: View {
                     .frame(width: diameter * 0.69, height: diameter * 0.69)
                 }
 
-                VeilPanelShape(cut: diameter * 0.027, radius: 2)
+                RoundedRectangle(cornerRadius: diameter * 0.07, style: .continuous)
                     .fill(VeilTheme.elevated)
                     .frame(width: diameter * 0.38, height: diameter * 0.28)
                     .overlay {
-                        VeilPanelShape(cut: diameter * 0.027, radius: 2)
+                        RoundedRectangle(cornerRadius: diameter * 0.07, style: .continuous)
                             .stroke(VeilTheme.gold.opacity(engaged ? 0.64 : 0.20), lineWidth: 1)
                     }
                 Text(kind.mark)
                     .font(.system(size: max(8, diameter * 0.125), weight: .black, design: .monospaced))
                     .foregroundColor(engaged ? VeilTheme.goldBright : VeilTheme.tertiaryText)
 
-                Rectangle()
+                Circle()
                     .fill(working ? VeilTheme.goldBright : (engaged ? VeilTheme.success : VeilTheme.tertiaryText))
-                    .frame(width: diameter * 0.11, height: 2)
+                    .frame(width: diameter * 0.075, height: diameter * 0.075)
                     .offset(x: diameter * 0.33, y: diameter * 0.34)
             }
             .frame(width: diameter, height: diameter)
@@ -241,7 +213,7 @@ struct VeilForgeHealthGauge: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 1.5) {
             ForEach(0..<VeilForgeMotionCore.healthBarCount, id: \.self) { index in
-                Rectangle()
+                Capsule()
                     .fill(index < count ? VeilTheme.goldBright : VeilTheme.hairline)
                     .frame(width: 2.8, height: CGFloat(5 + (index % 4) * 2))
                     .scaleEffect(x: 1, y: index < count ? 1 : 0.42, anchor: .bottom)
@@ -271,7 +243,7 @@ struct VeilForgeModuleHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Rectangle()
+            Capsule()
                 .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
                 .frame(width: 3, height: 32)
 
@@ -289,7 +261,7 @@ struct VeilForgeModuleHeader: View {
 
             VStack(alignment: .trailing, spacing: 3) {
                 HStack(spacing: 5) {
-                    Rectangle()
+                    Circle()
                         .fill(active ? VeilTheme.goldBright : VeilTheme.tertiaryText)
                         .frame(width: 5, height: 5)
                     Text(state)
@@ -309,31 +281,44 @@ struct VeilForgeModuleHeader: View {
     }
 }
 
-/// A small, static instrument face for the actual theme chooser.
-/// Unlike a decorative animated preview, it costs no idle frames.
+/// Static, rounded robot-like accent: a preview rather than fake telemetry.
 struct VeilForgeThemePreview: View {
     var body: some View {
         ZStack {
-            VeilPanelShape(cut: 8, radius: 1)
-                .fill(Color(red: 0.11, green: 0.12, blue: 0.14))
-            VeilPanelShape(cut: 8, radius: 1)
-                .stroke(Color(red: 0.55, green: 0.27, blue: 0.16), lineWidth: 0.8)
+            RoundedRectangle(
+                cornerRadius: VeilForgeSoftDesign.previewCornerRadius,
+                style: .continuous
+            )
+            .fill(
+                LinearGradient(
+                    colors: [Color(red: 0.22, green: 0.21, blue: 0.23),
+                             Color(red: 0.10, green: 0.095, blue: 0.11)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: VeilForgeSoftDesign.previewCornerRadius,
+                    style: .continuous
+                )
+                .stroke(Color.white.opacity(0.15), lineWidth: 0.8)
+            }
 
             Circle()
-                .trim(from: 0.04, to: 0.72)
-                .stroke(Color(red: 0.98, green: 0.38, blue: 0.11),
-                        style: StrokeStyle(lineWidth: 2.3, lineCap: .butt))
-                .frame(width: 27, height: 27)
-                .rotationEffect(.degrees(-45))
+                .stroke(Color(red: 0.69, green: 0.24, blue: 0.04).opacity(0.65),
+                        lineWidth: 1.5)
+                .frame(width: 31, height: 31)
+            Circle()
+                .trim(from: 0.04, to: 0.71)
+                .stroke(Color(red: 1.00, green: 0.486, blue: 0.137),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .frame(width: 31, height: 31)
+                .rotationEffect(.degrees(-90))
 
             Text("F")
-                .font(.system(size: 14, weight: .black, design: .monospaced))
-                .foregroundColor(Color.white.opacity(0.92))
-
-            Rectangle()
-                .fill(Color(red: 1.0, green: 0.48, blue: 0.15))
-                .frame(width: 10, height: 2)
-                .offset(x: 11, y: 15)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundColor(Color.white.opacity(0.95))
         }
         .frame(width: 42, height: 42)
         .allowsHitTesting(false)
@@ -354,7 +339,7 @@ struct VeilForgeThemeSpecification: View {
                     Text("FORGE // SYSTEM 06")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .foregroundColor(VeilTheme.goldBright)
-                    Text("工业控制台 · 动态来自真实状态")
+                    Text("柔和仪器 · 动态只来自真实状态")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundColor(VeilTheme.text)
                 }
@@ -366,7 +351,7 @@ struct VeilForgeThemeSpecification: View {
                 chip("BLE", "LINK")
             }
 
-            Text("静态金属结构 · 橙色状态标识 · 滚动优先 · 后台停止驱动")
+            Text("暖灰黑底 · 明亮橙色 · 圆润仪表 · 手势优先")
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundColor(VeilTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -390,76 +375,23 @@ struct VeilForgeThemeSpecification: View {
         .frame(maxWidth: .infinity)
         .frame(height: 22)
         .background(VeilTheme.subtleFillStrong)
-        .clipShape(VeilPanelShape(cut: 5, radius: 1))
+        .clipShape(Capsule())
     }
 }
 
 
-/// A CPU aperture is a different actuator family from the RF stepper rotor.
-/// Opening shutters mean the actual local runtime is loading or generating;
-/// the instrument makes no claim about synthetic CPU load percentages.
+/// CPU uses the same restrained circular instrument grammar as the
+/// ECLIPSE robot and RF dial. No fake gauges or ornamental shutters.
 struct VeilForgeComputeShutter: View {
     let engaged: Bool
     let working: Bool
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
-        GeometryReader { proxy in
-            let size = max(1, min(proxy.size.width, proxy.size.height))
-            ZStack {
-                VeilPanelShape(cut: size * 0.10, radius: 2)
-                    .fill(VeilTheme.obsidian)
-                VeilPanelShape(cut: size * 0.10, radius: 2)
-                    .stroke(VeilTheme.gold.opacity(engaged ? 0.55 : 0.18), lineWidth: 1)
-
-                // Stator rails remain fixed; the jaws slide sideways.
-                ForEach([-1.0, 1.0], id: \.self) { direction in
-                    Rectangle()
-                        .fill(VeilTheme.paleMetal.opacity(0.22))
-                        .frame(width: size * 0.68, height: 1)
-                        .offset(y: direction * size * 0.31)
-                }
-
-                Rectangle()
-                    .fill(working ? VeilTheme.goldBright : VeilTheme.hairline)
-                    .frame(width: size * 0.075, height: size * 0.40)
-                    .opacity(engaged ? 1 : 0.20)
-
-                HStack(spacing: size * 0.06) {
-                    shutterLeaf(size: size)
-                        .offset(x: working ? -size * 0.16 : 0)
-                    shutterLeaf(size: size)
-                        .offset(x: working ? size * 0.16 : 0)
-                }
-                .frame(width: size * 0.65)
-
-                Text("CPU")
-                    .font(.system(size: max(8, size * 0.14), weight: .heavy, design: .monospaced))
-                    .foregroundColor(engaged ? VeilTheme.goldBright : VeilTheme.tertiaryText)
-                    .padding(.horizontal, 2)
-                    .background(VeilTheme.obsidian.opacity(0.92))
-            }
-            .animation(
-                VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion),
-                value: working
+        VeilForgeRotor(kind: .compute, engaged: engaged, working: working)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                "本地计算模块：\(working ? "运行中" : (engaged ? "就绪" : "未运行"))"
             )
-            .frame(width: size, height: size)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .allowsHitTesting(false)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("本地计算模块：\(working ? "运行中" : (engaged ? "就绪" : "未运行"))")
-    }
-
-    private func shutterLeaf(size: CGFloat) -> some View {
-        VeilPanelShape(cut: size * 0.04, radius: 1)
-            .fill(VeilTheme.panelSoft)
-            .frame(width: size * 0.25, height: size * 0.50)
-            .overlay {
-                VeilPanelShape(cut: size * 0.04, radius: 1)
-                    .stroke(VeilTheme.paleMetal.opacity(0.50), lineWidth: 0.7)
-            }
     }
 }
 
@@ -506,14 +438,14 @@ struct VeilForgeRouteRail: View {
         GeometryReader { proxy in
             let cellWidth = max(1, proxy.size.width / 3)
             ZStack(alignment: .leading) {
-                VeilPanelShape(cut: 6, radius: 1)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(VeilTheme.obsidian.opacity(0.76))
 
-                Rectangle()
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(VeilTheme.gold.opacity(0.23))
                     .frame(width: cellWidth, height: 26)
                     .overlay {
-                        Rectangle()
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
                             .stroke(VeilTheme.goldBright.opacity(0.70), lineWidth: 1)
                     }
                     .offset(x: CGFloat(stage) * cellWidth)
@@ -525,7 +457,7 @@ struct VeilForgeRouteRail: View {
                 }
             }
             .frame(height: 26)
-            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             .animation(
                 VeilMotionPolicy.animation(.transit, reduceMotionRequested: reduceMotion),
                 value: stage
