@@ -12,6 +12,10 @@ enum WireKind: UInt8 {
     case relayProvision = 9
     case controlEvent = 10
     case controlReceipt = 11
+    // Optional v4-compatible screen packets, only to separately authenticated
+    // peers advertising a signed VeilScreen capability.
+    case screenControl = 12
+    case screenMedia = 13
 }
 
 struct WireEnvelope {
