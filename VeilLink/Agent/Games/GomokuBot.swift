@@ -70,6 +70,23 @@ struct GomokuBotBudget: Equatable, Sendable {
         )
     }
 
+    /// Preserve the owner's real thinking slider and no-wall-clock choice
+    /// when the tactical safety gate hands permitted roots to native PVS.
+    /// Rebuilding the budget without these options silently reset to 5/timed.
+    static func nativeContinuationBudget(
+        from selected: GomokuBotBudget, remainingMilliseconds: Int
+    ) -> GomokuBotBudget {
+        GomokuBotBudget(
+            candidateRadius: selected.candidateRadius,
+            rootCandidateLimit: selected.rootCandidateLimit,
+            replyCandidateLimit: selected.replyCandidateLimit,
+            continuationCandidateLimit: selected.continuationCandidateLimit,
+            timeLimitMilliseconds: max(0, remainingMilliseconds),
+            searchStrength: selected.searchStrength,
+            unlimitedThinking: selected.unlimitedThinking
+        )
+    }
+
     static let deterministicTest = GomokuBotBudget(
         candidateRadius: 2,
         rootCandidateLimit: 18,
@@ -200,12 +217,8 @@ enum GomokuBot {
         let remainingMilliseconds = budget.unlimitedThinking
             ? budget.timeLimitMilliseconds
             : Int(max(0, (deadline - Date.timeIntervalSinceReferenceDate) * 1_000))
-        let unifiedBudget = GomokuBotBudget(
-            candidateRadius: budget.candidateRadius,
-            rootCandidateLimit: budget.rootCandidateLimit,
-            replyCandidateLimit: budget.replyCandidateLimit,
-            continuationCandidateLimit: budget.continuationCandidateLimit,
-            timeLimitMilliseconds: remainingMilliseconds
+        let unifiedBudget = GomokuBotBudget.nativeContinuationBudget(
+            from: budget, remainingMilliseconds: remainingMilliseconds
         )
         if diagnosticEclipseUnified, (budget.unlimitedThinking || remainingMilliseconds >= 30),
            let unified = VeilGomokuUnifiedBridge.chooseMove(

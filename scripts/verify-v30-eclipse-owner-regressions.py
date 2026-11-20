@@ -19,6 +19,7 @@ b=files["VeilLink/UI/MiniGameViews.swift"]
 c=files["VeilLink/UI/VeilEclipseComputeConsole.swift"]
 engine=files["VeilLink/Agent/Games/LocalAIGameController.swift"]
 bridge=files["VeilLink/Agent/Games/VeilGomokuUnifiedBridge.swift"]
+native=(root/"VeilLink/Agent/Games/GomokuBot.swift").read_text(encoding="utf-8")
 require("gomoku.thinking.strength.slider" in g, "real strength slider missing")
 require("gomoku.thinking.no-time-limit.toggle" in g, "no-time-cutoff toggle missing")
 require("VeilEclipseRuntimeInstruments(" not in g, "rejected lower measured instruments card returned")
@@ -32,4 +33,8 @@ require("gomokuThinkingStrength" in engine and "gomokuUnlimitedThinking" in engi
         "V29.2 Build69 real search budget settings regressed")
 require("if budget.unlimitedThinking { limits.maxMilliseconds = 0 }" in bridge,
         "fixed search-time cap is back")
+require("GomokuBotBudget.nativeContinuationBudget(" in native
+        and "searchStrength: selected.searchStrength" in native
+        and "unlimitedThinking: selected.unlimitedThinking" in native,
+        "AI search budget silently discarded user's thinking slider or untimed option")
 print("V30 ECLIPSE OWNER SOURCE REGRESSION PASS")

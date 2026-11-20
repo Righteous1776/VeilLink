@@ -31,6 +31,39 @@ final class GomokuThinkingBudgetTests: XCTestCase {
         XCTAssertEqual(reinforced.searchStrength, 9)
         XCTAssertTrue(reinforced.unlimitedThinking)
     }
+    func testActualGomokuToNativePVSHandoffPreservesUserControls() {
+        var selected = GomokuBotBudget.forDifficulty(.zenith, profileLabel: "HIGH")
+        selected.searchStrength = 10
+        selected.unlimitedThinking = true
+
+        let native = GomokuBotBudget.nativeContinuationBudget(
+            from: selected, remainingMilliseconds: selected.timeLimitMilliseconds
+        )
+        XCTAssertEqual(native.searchStrength, 10)
+        XCTAssertTrue(native.unlimitedThinking)
+        XCTAssertEqual(native.rootCandidateLimit, selected.rootCandidateLimit)
+        XCTAssertEqual(native.candidateRadius, selected.candidateRadius)
+        let limits = VeilGomokuUnifiedBridge.searchLimits(
+            for: native, difficultyRawValue: BoardBotDifficulty.zenith.rawValue
+        )
+        XCTAssertEqual(limits.maxMilliseconds, 0)
+        XCTAssertGreaterThan(limits.maxNodes, 0)
+
+        selected.searchStrength = 1
+        selected.unlimitedThinking = false
+        let timed = GomokuBotBudget.nativeContinuationBudget(
+            from: selected, remainingMilliseconds: 75
+        )
+        XCTAssertEqual(timed.searchStrength, 1)
+        XCTAssertFalse(timed.unlimitedThinking)
+        XCTAssertEqual(timed.timeLimitMilliseconds, 75)
+        XCTAssertGreaterThan(
+            VeilGomokuUnifiedBridge.searchLimits(
+                for: timed, difficultyRawValue: BoardBotDifficulty.zenith.rawValue
+            ).maxMilliseconds, 0
+        )
+    }
+
     func testTimedModeStillUsesFiniteDeadline() {
         var budget = GomokuBotBudget.forDifficulty(.balanced, profileLabel: "HIGH")
         budget.unlimitedThinking = false
