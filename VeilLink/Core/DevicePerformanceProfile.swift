@@ -124,6 +124,30 @@ enum DevicePerformancePolicy {
                 shouldPrecomputeTransferShards: true,
                 aggressiveBackgroundCacheTrim: false
             )
+        case "iPhone14,4", "iPhone14,5": // iPhone 13 mini / 13, A15 / 4 GB
+            // Keep full chat/image budgets, but lower transient animation and
+            // eager transfer-shard work on these 4 GB devices. This is a
+            // conservative latency policy, not a measured performance claim.
+            return DevicePerformanceProfile(
+                label: "A15-4GB-SMOOTH",
+                messageWindowInitial: 120,
+                messageWindowIncrement: 120,
+                messageWindowMaximum: 2_000,
+                decryptedBodyCacheEntries: 512,
+                imagePreviewMaxPixelSize: 1_024,
+                imagePreviewCacheCount: 8,
+                imagePreviewCacheBytes: 32 * 1_024 * 1_024,
+                outboundAttachmentCacheBytes: 6 * 1_024 * 1_024,
+                bleQueuePacketLimit: 16_384,
+                bleQueueByteLimit: 2_500_000,
+                bleReassemblyMessageLimit: 32,
+                bleReassemblyPerSourceLimit: 8,
+                bleReassemblyByteLimit: 768_000,
+                messageRefreshDebounceNanoseconds: 110_000_000,
+                transferVisualComplexity: .balanced,
+                shouldPrecomputeTransferShards: false,
+                aggressiveBackgroundCacheTrim: false
+            )
         case "iPhone14,2": // iPhone 13 Pro, A15 / 6 GB
             return DevicePerformanceProfile(
                 label: "13PRO-HIGH",

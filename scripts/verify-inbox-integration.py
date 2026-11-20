@@ -52,10 +52,24 @@ FEATURES = {
     "particle-overlay-removal": {
         "VeilLink/App/VeilLinkApp.swift": [],
     },
+    "veilscreen-r1-r2-source-integration": {
+        "VeilLink/ScreenShare/VeilScreenSessionWorkflow.swift": ["VeilScreenSessionWorkflow"],
+        "VeilLink/ScreenShare/VeilScreenEncryptedMailbox.swift": ["VeilScreenEncryptedMailbox"],
+        "VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift": ["RPBroadcastSampleHandler"],
+        "VeilLink/UI/ConversationViews.swift": ["邀请屏幕共享"],
+        "VeilLink/App/AppModel.swift": ["screenShare", "onScreenShareChunk"],
+        "VeilLink/Core/WireCodec.swift": ["screenControl", "screenMedia"],
+        "VeilLink/Security/SessionCoordinator.swift": ["screen-control-v1", "screen-media-v1"],
+        "project.yml": ["VeilScreenBroadcastUpload", "CODE_SIGN_ENTITLEMENTS"],
+    },
 }
 NOT_SHIPPED = [
-    "VeilScreen R1/R2.1 system-level BLE screen sharing",
-    "ECLIPSE R17.2 mechanical cockpit",
+    "ECLIPSE R17.2 unreviewed mechanical cockpit (conflicts with owner UI changes)",
+]
+DEVICE_UNVERIFIED = [
+    "VeilScreen signed App Group + Keychain entitlements",
+    "VeilScreen real two-phone BLE transmission and ReplayKit consent",
+    "Background continuous BLE delivery not guaranteed",
 ]
 NOT_PRESENT = [
     "VeilLink/UI/VeilAdaptiveParticleLayer.swift",
@@ -73,8 +87,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     project = (ROOT / "project.yml").read_text(encoding="utf-8")
-    if 'MARKETING_VERSION: "29.2"' not in project or 'CURRENT_PROJECT_VERSION: "68"' not in project:
-        error("Build 68 release source identity not present")
+    if 'MARKETING_VERSION: "30.0"' not in project or 'CURRENT_PROJECT_VERSION: "70"' not in project:
+        error("V30 Build 70 source identity not present")
     if "path: VeilLink" not in project or "VeilLinkTests" not in project:
         error("expected iOS application/test targets are absent")
     for excluded in NOT_PRESENT:
@@ -95,12 +109,14 @@ def main():
             hashes[feature_id][rel] = hashlib.sha256(data).hexdigest()
     receipt = {
         "schema": "VEILLINK_INBOX_SOURCE_GATE_V1",
-        "release": "29.2",
-        "build": "68",
+        "release": "30.0",
+        "build": "70",
         "source_gate": "PASS",
         "accepted_features": hashes,
         "excluded_unfinished_features": NOT_SHIPPED,
+        "device_unverified": DEVICE_UNVERIFIED,
         "build_app_verified": False,
+        "embedded_veilscreen_extension": False,
     }
     if args.app is not None:
         app = args.app
@@ -111,8 +127,12 @@ def main():
         if not binary_path.is_file() or not info_path.is_file():
             error("compiled application executable/Info.plist missing")
         info = plistlib.loads(info_path.read_bytes())
-        if (info.get("CFBundleShortVersionString"), str(info.get("CFBundleVersion"))) != ("29.2", "68"):
-            error("built application identity does not match source")
+        if (info.get("CFBundleShortVersionString"), str(info.get("CFBundleVersion"))) != ("30.0", "70"):
+            error("built application identity does not match V30 source")
+        ext = app / "PlugIns" / "VeilScreenBroadcastUpload.appex"
+        if not ext.is_dir() or not (ext / "Info.plist").is_file():
+            error("V30 compiled app has no embedded VeilScreen Broadcast Upload extension")
+        receipt["embedded_veilscreen_extension"] = True
         receipt["build_app_verified"] = True
         receipt["device_executable_sha256"] = hashlib.sha256(binary_path.read_bytes()).hexdigest()
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -120,6 +140,7 @@ def main():
     print("VEILLINK_INBOX_INTEGRATION_SOURCE_GATE_PASS", len(FEATURES), "accepted features")
     print("COMPILED_APP_CHECK", receipt["build_app_verified"])
     print("UNSHIPPED_FEATURES", ", ".join(NOT_SHIPPED))
+    print("DEVICE_UNVERIFIED", ", ".join(DEVICE_UNVERIFIED))
 
 
 if __name__ == "__main__":

@@ -24,6 +24,22 @@ final class DevicePerformancePolicyTests: XCTestCase {
         XCTAssertTrue(profile.shouldPrecomputeTransferShards)
     }
 
+    func testIPhone13AndMiniUseBalancedFourGigabytePolicy() {
+        for identifier in ["iPhone14,4", "iPhone14,5"] {
+            let profile = DevicePerformancePolicy.profile(
+                machineIdentifier: identifier, osMajorVersion: 26
+            )
+            XCTAssertEqual(profile.label, "A15-4GB-SMOOTH")
+            XCTAssertEqual(profile.messageWindowMaximum, 2_000)
+            XCTAssertEqual(profile.transferVisualComplexity, .balanced)
+            XCTAssertFalse(profile.shouldPrecomputeTransferShards)
+            XCTAssertLessThanOrEqual(
+                profile.imagePreviewCacheBytes,
+                DevicePerformanceProfile.genericModern.imagePreviewCacheBytes
+            )
+        }
+    }
+
     func testIPhone13ProGetsHighPerformanceBudget() {
         let profile = DevicePerformancePolicy.profile(machineIdentifier: "iPhone14,2", osMajorVersion: 18)
         XCTAssertEqual(profile.label, "13PRO-HIGH")
