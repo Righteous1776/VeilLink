@@ -74,6 +74,17 @@ def check_plist():
     project = (ROOT / "project.yml").read_text(encoding="utf-8")
     if 'MARKETING_VERSION: "30.0"' not in project or 'CURRENT_PROJECT_VERSION: "70"' not in project:
         fail("V30 Build 70 source identity missing from project.yml")
+    upload_info = RES / "VeilScreenBroadcastUpload-Info.plist"
+    with upload_info.open("rb") as f:
+        ext_plist = plistlib.load(f)
+    if ext_plist.get("CFBundleIdentifier") != "$(PRODUCT_BUNDLE_IDENTIFIER)":
+        fail("ReplayKit Upload extension must inherit the Xcode product bundle ID")
+    if ext_plist.get("NSExtension", {}).get("NSExtensionPointIdentifier") != "com.apple.broadcast-services-upload":
+        fail("ReplayKit Upload extension point is missing")
+    if ext_plist.get("CFBundleVersion") != "$(CURRENT_PROJECT_VERSION)":
+        fail("ReplayKit Upload extension build must inherit the host build")
+    if "VeilScreenBroadcastUpload" not in project:
+        fail("ReplayKit Upload target must be embedded into the app")
     modes = set(plist.get("UIBackgroundModes", []))
     if not {"bluetooth-central", "bluetooth-peripheral"} <= modes:
         fail("Bluetooth background modes missing")
