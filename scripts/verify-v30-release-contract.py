@@ -93,6 +93,10 @@ def run(app=None):
                 data = plistlib.loads(extension_info.read_bytes())
                 if data.get("NSExtension", {}).get("NSExtensionPointIdentifier") != "com.apple.broadcast-services-upload":
                     failures.append("Wrong broadcast upload extension point")
+                if data.get("CFBundleIdentifier") != "studio.zeo.veillink.screenshare":
+                    failures.append("ReplayKit embedded binary CFBundleIdentifier missing/mismatched")
+                if not data.get("CFBundleExecutable"):
+                    failures.append("ReplayKit embedded executable name missing")
         result["compiled_ipa_checked"] = True
         result["compiled_app"] = {"status": "BLOCKED" if failures else "EXTENSION_PRESENT_NOT_DEVICE_VERIFIED",
                                   "failures": failures}

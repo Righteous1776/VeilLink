@@ -25,7 +25,14 @@ def check_manifest():
     assert "xcodebuild" in workflow and "verify-v30-release-contract.py" in workflow
     assert "VeilScreenBroadcastUpload" in project
     assert "ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift" in project
-    print("PASS: version, build, ReplayKit target and unified CI metadata")
+    with (ROOT / "VeilLink/Resources/VeilScreenBroadcastUpload-Info.plist").open("rb") as stream:
+        extension = plistlib.load(stream)
+    assert extension.get("CFBundleIdentifier") == "$(PRODUCT_BUNDLE_IDENTIFIER)", (
+        "ReplayKit CFBundleIdentifier missing: Xcode embedded binary validation would fail"
+    )
+    assert extension.get("CFBundleExecutable") == "$(EXECUTABLE_NAME)"
+    assert extension.get("NSExtension", {}).get("NSExtensionPointIdentifier") == "com.apple.broadcast-services-upload"
+    print("PASS: V30 identity, ReplayKit bundle metadata and unified CI manifest")
 
 def check_python():
     paths = sorted((ROOT / "scripts").glob("*.py"))
