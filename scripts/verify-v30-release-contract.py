@@ -37,18 +37,24 @@ FEATURES = {
     "screen_share": {
         "VeilLink/ScreenShare/VeilScreenShareWire.swift": ["VeilScreenShareChunk", "maximumFrameBytes"],
         "VeilLink/ScreenShare/VeilScreenSessionWorkflow.swift": ["VeilScreenSessionWorkflow"],
+        "VeilLink/ScreenShare/VeilScreenBridgeController.swift": ["class VeilScreenBridgeController", "captureRevoked", "supportsAuthenticatedBLEScreenShare", "prepareCapture", "snapshot != current"],
+        "VeilLink/UI/VeilScreenChatAttachment.swift": ["VeilScreenInviteCard", "VeilScreenViewerView", "VeilScreenReplayKitConsentView"],
         "VeilLink/ScreenShare/VeilScreenLegacyBroadcastHost.swift": ["VeilScreen"],
         "VeilLink/ScreenShare/VeilScreenLegacyMailboxPump.swift": ["VeilScreen"],
         "VeilLink/ScreenShare/VeilScreenBroadcastSecurity.swift": ["VeilScreen"],
         "VeilLink/ScreenShare/VeilScreenEncryptedMailbox.swift": ["VeilScreen"],
         "VeilLink/ScreenShare/VeilScreenReplayKitEncoder.swift": ["VeilScreen"],
         "VeilLink/ScreenShare/VeilScreenReplayKitConsentView.swift": ["VeilScreen"],
+        "VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift": ["RPBroadcastSampleHandler"],
+        "VeilLink/Resources/VeilScreenBroadcastUpload-Info.plist": ["com.apple.broadcast-services-upload"],
         "VeilLink/UI/VeilScreenShareViews.swift": ["VeilScreenViewerView"],
         "VeilLink/UI/ConversationViews.swift": ["邀请屏幕共享"],
         "VeilLink/Core/WireCodec.swift": ["screenControl", "screenMedia"],
         "VeilLink/Security/SessionCoordinator.swift": ["screen-control", "screen-media"],
-        "VeilLink/App/AppModel.swift": ["screenShare"],
-        "project.yml": ["VeilScreenBroadcastUpload", "VeilScreenBroadcastUploadHandler.swift"],
+        "VeilLink/App/AppModel.swift": ["screenShare", "onScreenShareControl", "onScreenShareChunk"],
+        "VeilLinkTests/VeilScreenTransportIntegrationTests.swift": ["testSignedScreenShareCapabilityAndLegacyPeer", "testManipulationFailsClosed", "testTypedScreenChannelsRemainDistinctFromChat"],
+        "VeilLink/Resources/VeilScreen.entitlements": ["com.apple.security.application-groups", "keychain-access-groups"],
+        "project.yml": ["VeilScreenBroadcastUpload", "VeilScreenBroadcastUploadHandler.swift", "CODE_SIGN_ENTITLEMENTS", "embed: true"],
     },
 }
 def run(app=None):
@@ -67,7 +73,8 @@ def run(app=None):
         results[key] = {"status": "BLOCKED" if missing else "SOURCE_MARKERS_PRESENT", "missing": missing}
     result = {"schema": "VEILLINK_V30_ACCEPTANCE_V1", "source_only": True,
               "false_positive_warning": "source markers are insufficient to claim functionality",
-              "features": results, "compiled_ipa_checked": False, "signed_device_tested": False}
+              "features": results, "compiled_app_checked": False,
+              "compiled_ipa_checked": False, "signed_device_tested": False}
     if app is not None:
         path = Path(app)
         info = path / "Info.plist"
@@ -80,16 +87,23 @@ def run(app=None):
             if (str(data.get("CFBundleShortVersionString")), str(data.get("CFBundleVersion"))) != ("30.0", "70"):
                 failures.append("Wrong V30.0 Build70 compiled identity")
         if not ext.is_dir():
-            failures.append("Signed-ready ReplayKit Broadcast Upload .appex missing from built .app")
+            failures.append("ReplayKit Broadcast Upload .appex missing from built .app")
         else:
+            extension_binary = ext / "VeilScreenBroadcastUpload"
             extension_info = ext / "Info.plist"
+            if not extension_binary.is_file() or extension_binary.stat().st_size <= 0:
+                failures.append("ReplayKit upload extension executable missing or empty")
             if not extension_info.is_file():
                 failures.append("ReplayKit extension Info.plist missing")
             else:
                 data = plistlib.loads(extension_info.read_bytes())
                 if data.get("NSExtension", {}).get("NSExtensionPointIdentifier") != "com.apple.broadcast-services-upload":
                     failures.append("Wrong broadcast upload extension point")
-        result["compiled_ipa_checked"] = True
+                if data.get("CFBundleIdentifier") != "studio.zeo.veillink.screenshare":
+                    failures.append("Wrong ReplayKit extension bundle ID")
+                if (str(data.get("CFBundleShortVersionString")), str(data.get("CFBundleVersion"))) != ("30.0", "70"):
+                    failures.append("Wrong ReplayKit extension release identity")
+        result["compiled_app_checked"] = True
         result["compiled_app"] = {"status": "BLOCKED" if failures else "EXTENSION_PRESENT_NOT_DEVICE_VERIFIED",
                                   "failures": failures}
     return result
