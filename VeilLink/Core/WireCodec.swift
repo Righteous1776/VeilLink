@@ -12,6 +12,10 @@ enum WireKind: UInt8 {
     case relayProvision = 9
     case controlEvent = 10
     case controlReceipt = 11
+    // Explicitly gated, authenticated BLE-only screen media; legacy v4 peers
+    // never receive these kinds unless they signed the optional capability.
+    case screenControl = 12
+    case screenMedia = 13
 }
 
 struct WireEnvelope {

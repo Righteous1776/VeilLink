@@ -67,6 +67,29 @@ struct HelloPacket: Codable, Equatable {
     var capabilitySchema: Int? = nil
     var capabilityBits: Int? = nil
     var capabilitySignature: Data? = nil
+    /// Independent, signed optional capability. Do NOT change the legacy v4
+    /// feature bits 0..2: old peers reject unknown bit 3.
+    var screenShareSchema: Int? = nil
+    var screenShareSignature: Data? = nil
+
+    var signedScreenSharePayload: Data? {
+        guard screenShareSchema == 1 else { return nil }
+        var transcript = Data("VeilLink/ScreenCapability/v1|".utf8)
+        transcript.append(signedPayload)
+        transcript.append(signature)
+        return transcript
+    }
+
+    func verifiedScreenShareCapability() -> Bool {
+        guard screenShareSchema == 1,
+              let signature = screenShareSignature, signature.count == 64,
+              let transcript = signedScreenSharePayload,
+              (try? CryptoEngine.verify(signature: signature,
+                  for: transcript, publicKey: identityPublicKey)) != nil else {
+            return false
+        }
+        return true
+    }
 
     var signedPayload: Data {
         var value = Data("VeilLink/Hello/v4|\(protocolVersion)|\(identityID)|\(displayName)|".utf8)
@@ -149,6 +172,10 @@ final class SessionCoordinator: ObservableObject {
     var onDeliveryConfirmed: (() -> Void)?
     var onPTTControl: ((VeilPTTIncomingControl) -> Void)?
     var onPTTAudioFrame: ((VeilPTTIncomingAudio) -> Void)?
+    // Transient only. The consumer must validate the current session UUID
+    // and MUST NOT write screen data into chat SQLite/outbox/backup/logs.
+    var onScreenControl: ((String, VeilScreenShareControl) -> Void)?
+    var onScreenMediaChunk: ((String, VeilScreenShareChunk) -> Void)?
     var onTrustEstablished: (() -> Void)?
     var onMeshPayload: ((UUID, Data) -> Void)?
     var relayProvisionSecretProvider: ((String) -> Data?)?
@@ -323,6 +350,8 @@ final class SessionCoordinator: ObservableObject {
             case .relayProvision: try handleRelayProvision(transportID: transportID, data: envelope.payload)
             case .controlEvent: try handleControlEvent(transportID: transportID, data: envelope.payload)
             case .controlReceipt: try handleControlReceipt(transportID: transportID, data: envelope.payload)
+            case .screenControl: try handleScreenControl(transportID: transportID, data: envelope.payload)
+            case .screenMedia: try handleScreenMedia(transportID: transportID, data: envelope.payload)
             }
             packetAbuseLimiter.reset(transportID)
         } catch {
@@ -368,6 +397,120 @@ final class SessionCoordinator: ObservableObject {
     func hasSecureSession(for peerIdentityID: String) -> Bool {
         guard let transportID = peerTransport[peerIdentityID] else { return false }
         return isSecureSessionTransport(transportID, for: peerIdentityID)
+    }
+
+    /// The screen capability is signed in the v4 Hello, independent of the
+    /// legacy numeric bits, and is valid only for the authenticated BLE peer.
+    private func screenTransport(for peerIdentityID: String) -> UUID? {
+        let candidates = peerTransports[peerIdentityID] ?? []
+        return candidates.sorted { $0.uuidString < $1.uuidString }.first {
+            transportKinds[$0] == .ble
+                && isSecureSessionTransport($0, for: peerIdentityID)
+                && sessions[$0]?.remoteHello?.verifiedScreenShareCapability() == true
+        }
+    }
+
+    func hasSecureScreenBLE(for peerIdentityID: String) -> Bool {
+        screenTransport(for: peerIdentityID) != nil
+    }
+
+    /// Ephemeral encrypted control event. Admission is not radio delivery.
+    @discardableResult
+    func sendScreenControl(_ packet: VeilScreenShareControl,
+                           to peerIdentityID: String) -> TransportSendResult {
+        guard let transportID = screenTransport(for: peerIdentityID),
+              var context = sessions[transportID], let keys = context.keys else {
+            return .unsupportedLink
+        }
+        do {
+            let clear = packet.encode()
+            let encrypted = try CryptoEngine.encrypt(
+                clear, key: keys.sendKey, messageID: packet.sessionID.uuidString,
+                sequence: context.nextSendSequence, context: "veil-screen-control-v1"
+            )
+            let envelope = try WireCodec.encodeEnvelope(
+                version: UInt8(WireProtocol.version), kind: .screenControl,
+                payload: try WireCodec.encodeEncryptedPayload(encrypted)
+            )
+            guard envelope.count <= 512 else { return .unsupportedLink }
+            context.nextSendSequence += 1
+            sessions[transportID] = context
+            return transportSend?(transportID, envelope, .control) ?? .temporarilyUnavailable
+        } catch { return .unsupportedLink }
+    }
+
+    /// Screen media is strictly lowest priority, authenticated and disposable.
+    /// Never queue through persistent chat or attachment pathways.
+    @discardableResult
+    func sendScreenMedia(_ chunk: VeilScreenShareChunk,
+                         to peerIdentityID: String) -> TransportSendResult {
+        guard let transportID = screenTransport(for: peerIdentityID),
+              var context = sessions[transportID], let keys = context.keys,
+              let clear = try? chunk.encode() else {
+            return .unsupportedLink
+        }
+        do {
+            let encrypted = try CryptoEngine.encrypt(
+                clear, key: keys.sendKey, messageID: chunk.sessionID.uuidString,
+                sequence: context.nextSendSequence, context: "veil-screen-media-v1"
+            )
+            let envelope = try WireCodec.encodeEnvelope(
+                version: UInt8(WireProtocol.version), kind: .screenMedia,
+                payload: try WireCodec.encodeEncryptedPayload(encrypted)
+            )
+            guard envelope.count <= 512 else { return .unsupportedLink }
+            context.nextSendSequence += 1
+            sessions[transportID] = context
+            return transportSend?(transportID, envelope, .bulk) ?? .temporarilyUnavailable
+        } catch { return .unsupportedLink }
+    }
+
+    private func handleScreenControl(transportID: UUID, data: Data) throws {
+        guard data.count <= 512, transportKinds[transportID] == .ble,
+              var context = sessions[transportID], let keys = context.keys,
+              let remote = context.remoteHello,
+              remote.verifiedScreenShareCapability(),
+              isSecureSessionTransport(transportID, for: remote.identityID) else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        let payload = try WireCodec.decodeEncryptedPayload(data)
+        guard context.replayWindow.isPotentiallyFresh(payload.sequence) else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        let clear = try CryptoEngine.decrypt(
+            payload, key: keys.receiveKey, context: "veil-screen-control-v1"
+        )
+        let packet = try VeilScreenShareControl.decode(clear)
+        guard packet.sessionID.uuidString == payload.messageID,
+              context.replayWindow.accept(payload.sequence) else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        sessions[transportID] = context
+        onScreenControl?(remote.identityID, packet)
+    }
+
+    private func handleScreenMedia(transportID: UUID, data: Data) throws {
+        guard data.count <= 512, transportKinds[transportID] == .ble,
+              var context = sessions[transportID], let keys = context.keys,
+              let remote = context.remoteHello,
+              remote.verifiedScreenShareCapability(),
+              isSecureSessionTransport(transportID, for: remote.identityID) else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        let payload = try WireCodec.decodeEncryptedPayload(data)
+        guard context.replayWindow.isPotentiallyFresh(payload.sequence) else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        let clear = try CryptoEngine.decrypt(
+            payload, key: keys.receiveKey, context: "veil-screen-media-v1"
+        )
+        let chunk = try VeilScreenShareChunk.decode(clear)
+        guard chunk.sessionID.uuidString == payload.messageID,
+              context.replayWindow.accept(payload.sequence) else {
+            throw CryptoEngineError.invalidCiphertext
+        }
+        sessions[transportID] = context
+        onScreenMediaChunk?(remote.identityID, chunk)
     }
 
     /// Diagnostics-only ephemeral E2EE lane. The peer must already be trusted and secure-ready.
@@ -764,6 +907,11 @@ final class SessionCoordinator: ObservableObject {
         hello.capabilityBits = VeilPeerCapabilityPolicy.advertisedFeatureBits
         if let signedExtension = hello.signedCapabilitiesPayload {
             hello.capabilitySignature = try identity.signingKey().signature(for: signedExtension)
+        }
+        // Independently authenticated, optional and backward-compatible.
+        hello.screenShareSchema = 1
+        if let proof = hello.signedScreenSharePayload {
+            hello.screenShareSignature = try identity.signingKey().signature(for: proof)
         }
         sessions[transportID] = SessionContext(transportID: transportID, localEphemeral: ephemeral, localHello: hello)
         let envelope = try WireCodec.encodeEnvelope(version: UInt8(WireProtocol.version), kind: .hello, payload: try encoder.encode(hello))
