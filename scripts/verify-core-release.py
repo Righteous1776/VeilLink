@@ -12,8 +12,8 @@ import zipfile
 
 MAX_IPA_BYTES = 80 * 1024 * 1024
 MAX_APP_BYTES = 120 * 1024 * 1024
-EXPECTED_VERSION = "29.2"
-EXPECTED_BUILD = "69"
+EXPECTED_VERSION = "30.0"
+EXPECTED_BUILD = "70"
 VERTEX_NAME = "Vertex-0.6-35M-Instruct-Q4_K_M.gguf"
 VERTEX_BYTES = 29_203_168
 VERTEX_SHA256 = "c55c3c32740d5a283c505fc9f9b7313e4b3f0c98bb11efd21b651651d5cb36b5"
@@ -211,6 +211,23 @@ def verify_app(app, expected_version, expected_build, experimental_vertex=False)
     if actual_build != expected_build:
         fail(f"expected build {expected_build}, got {actual_build}")
 
+    # A successful host build without ReplayKit .appex is NOT V30.
+    upload = app / "PlugIns/VeilScreenBroadcastUpload.appex"
+    upload_info = upload / "Info.plist"
+    upload_bin = upload / "VeilScreenBroadcastUpload"
+    for required in (upload_info, upload_bin):
+        if not required.is_file() or required.stat().st_size <= 0:
+            fail(f"ReplayKit Broadcast Upload missing from compiled app: {required}")
+    info_upload = plistlib.loads(upload_info.read_bytes())
+    if info_upload.get("CFBundleIdentifier") != "studio.zeo.veillink.screenshare":
+        fail("VeilScreen extension bundle ID mismatch")
+    if info_upload.get("CFBundleShortVersionString") != expected_version or str(info_upload.get("CFBundleVersion")) != expected_build:
+        fail("VeilScreen extension does not inherit V30 Build70 identity")
+    if info_upload.get("NSExtension", {}).get("NSExtensionPointIdentifier") != "com.apple.broadcast-services-upload":
+        fail("VeilScreen is not a ReplayKit Broadcast Upload extension")
+    if (upload / "_CodeSignature").exists() or (upload / "embedded.mobileprovision").exists():
+        fail("unsigned VeilScreen extension unexpectedly contains signed material")
+
     linked = subprocess.check_output(["otool", "-L", str(app / "VeilLink")], text=True)
     if not experimental_vertex and "llama.framework" in linked:
         fail("Core executable unexpectedly links llama.framework")
@@ -233,6 +250,12 @@ def verify_app(app, expected_version, expected_build, experimental_vertex=False)
         "bundle_id": "studio.zeo.veillink",
         "version": actual_version,
         "build": actual_build,
+        "veilscreen_upload_extension": {
+            "bundle_id": "studio.zeo.veillink.screenshare",
+            "binary_sha256": sha256_file(upload_bin),
+            "plist_sha256": sha256_file(upload_info),
+            "signed_device_acceptance": False,
+        },
         "payload_bytes": app_bytes,
         "payload_budget_bytes": MAX_APP_BYTES,
         "executable_sha256": sha256_file(app / "VeilLink"),
@@ -281,7 +304,11 @@ def verify_ipa(app, ipa, expected_version, expected_build, experimental_vertex=F
         elif ggufs:
             fail("standard Core IPA contains a GGUF model")
 
-        for rel in ["VeilLink", "Assets.car"]:
+        for rel in [
+            "VeilLink", "Assets.car",
+            "PlugIns/VeilScreenBroadcastUpload.appex/VeilScreenBroadcastUpload",
+            "PlugIns/VeilScreenBroadcastUpload.appex/Info.plist",
+        ]:
             entry = prefix + rel
             if entry not in names:
                 fail(f"IPA missing {rel}")
@@ -333,6 +360,8 @@ def verify_ipa(app, ipa, expected_version, expected_build, experimental_vertex=F
         "sha256": sha256_file(ipa),
         "bytes": ipa.stat().st_size,
         "budget_bytes": MAX_IPA_BYTES,
+        "veilscreen_extension_embedded": True,
+        "signed_two_device_acceptance_pending": True,
     }
 
 def write_json(path, obj):
@@ -362,7 +391,8 @@ def main():
     manifest = {
         "schema": 1,
         "result": "PASS",
-        "release_eligible": True,
+        "release_eligible": False,  # An unsigned IPA is not signed/physical-device accepted
+        "unsigned_ipa_candidate_eligible": True,
         "edition": "Core+ExperimentalVertex" if args.experimental_vertex else "Core",
         "unsigned": True,
         "size_policy": {
