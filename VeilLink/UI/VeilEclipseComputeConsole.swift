@@ -12,6 +12,7 @@ struct VeilEclipseComputeConsole: View {
 
     @ObservedObject private var appearance = VeilAppearanceController.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     private var active: Bool { isComputing && actualSearchStartedAt != nil }
 
@@ -31,37 +32,33 @@ struct VeilEclipseComputeConsole: View {
                     .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
             }
             if active, let startedAt = actualSearchStartedAt {
-                TimelineView(.animation(
-                    minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 / 9.0 : 1.0 / 24.0,
-                    paused: reduceMotion
+                // R17 selective adoption: a REAL elapsed clock in the retained
+                // robot console. No fake code scroll, pseudo-search progress,
+                // extra telemetry card, board ripple or decorative frame timer.
+                TimelineView(.periodic(
+                    from: .now,
+                    by: scenePhase != .active ? 5.0 :
+                        (reduceMotion || ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 : 0.5)
                 )) { timeline in
                     let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
-                    let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-                    let position = VeilEclipseConsoleStream.scrollPosition(
-                        elapsedSeconds: reduceMotion ? 0 : elapsed, lowPower: lowPower
-                    )
-                    let lineHeight: CGFloat = compact ? 11 : 15
-                    let visibleCount = compact ? 2 : 7
-                    let rows = VeilEclipseConsoleStream.lines(
-                        elapsedSeconds: reduceMotion ? 0 : elapsed,
-                        visibleRows: visibleCount + 1,
-                        lowPower: lowPower
-                    )
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(0..<rows.count, id: \.self) { index in
-                            Text(rows[index].text)
-                                .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
-                                .foregroundColor(tone(rows[index].tone))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                                .frame(height: lineHeight, alignment: .leading)
+                    VStack(alignment: .leading, spacing: compact ? 3 : 7) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "stopwatch")
+                                .font(.system(size: compact ? 8 : 11))
+                            Text(String(format: "REAL CLOCK  T+%.1fs", elapsed))
+                                .font(.system(size: compact ? 8 : 10, weight: .semibold, design: .monospaced))
+                                .monospacedDigit()
+                            Spacer(minLength: 0)
+                            Text("ELAPSED")
+                                .font(.system(size: compact ? 7 : 9, weight: .medium, design: .monospaced))
+                                .foregroundColor(VeilTheme.goldBright)
                         }
+                        .foregroundColor(VeilTheme.paleMetal)
+                        Text("vis.compute ()")
+                            .font(.system(size: compact ? 8 : 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(VeilTheme.secondaryText)
                     }
-                    .offset(y: -CGFloat(position - floor(position)) * lineHeight)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: lineHeight * CGFloat(visibleCount), alignment: .top)
-                    .clipped()
-                    .accessibilityHidden(true)
                 }
             } else {
                 Text("vis.idle ()")
@@ -82,7 +79,7 @@ struct VeilEclipseComputeConsole: View {
                         .font(.caption2)
                         .foregroundColor(VeilTheme.secondaryText)
                 }
-                Text(VeilEclipseConsoleStream.disclosure)
+                Text("仅显示真实时长和可用测量值，不模拟思考过程、节点或搜索完成百分比。")
                     .font(.caption2)
                     .foregroundColor(VeilTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -101,15 +98,7 @@ struct VeilEclipseComputeConsole: View {
         )
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("ECLIPSE 计算显示屏。\(active ? "计算中" : "待机")。装饰性编码流，不代表真实推理，也不会提示落点。")
+        .accessibilityLabel("ECLIPSE 实时计算状态。\(active ? "计算中，显示真实已用时长" : "待机")。不会预测落点。")
     }
 
-    private func tone(_ index: Int) -> Color {
-        switch index {
-        case 0: return VeilTheme.goldBright
-        case 1: return VeilTheme.paleMetal
-        case 2: return VeilTheme.success
-        default: return VeilTheme.secondaryText
-        }
-    }
 }
