@@ -219,14 +219,31 @@ final class VeilScreenBridgeController: ObservableObject {
 
     private func tick() {
         guard var current = workflow else { return }
-        current.tick(now: Date().timeIntervalSince1970)
+        // A user can stop the iOS broadcast from Control Center without
+        // touching VeilLink. The extension then revokes its shared key/session;
+        // never keep announcing a stale LIVE stream to the receiving device.
+        if let state = current.registry.active,
+           state.role == .sender, state.hasStartedCapture,
+           let config = VeilScreenBroadcastSecurityConfig.load(),
+           VeilScreenEncryptedMailbox(config: config).currentSession()?.sessionID != state.sessionID {
+            current.close(.captureRevoked, now: Date().timeIntervalSince1970, notifyPeer: true)
+        } else {
+            current.tick(now: Date().timeIntervalSince1970)
+        }
         workflow = current
         synchronize()
     }
 
     private func synchronize() {
         let current = workflow?.registry.active
-        snapshot = current
+        // Do not invalidate SwiftUI's chat timeline once a second just to
+        // repaint an unchanged screen-sharing card.
+        if snapshot != current { snapshot = current }
+        if current?.role == .sender && current?.phase == .live {
+            // The system picker sheet is no longer needed after the peer's
+            // READY-ACK. Leaving it mounted made a blank full-screen sheet.
+            showsConsent = false
+        }
         if current?.isTerminal == true || current == nil {
             stopCaptureResources()
             receivedFrame = nil

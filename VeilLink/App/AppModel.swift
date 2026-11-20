@@ -725,6 +725,9 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     private func suspendCommunicationStack(reason: String, resetRemotePairing: Bool = true) -> TransportResumePlan {
+        // Screen capture is tied to the current identity and trusted peer.
+        // Revoke BEFORE transports are suspended, even during backup restore.
+        screenShare.stop()
         let plan = TransportResumePlan(
             bluetoothWasRunning: bluetooth.isRunning,
             lanWasRunning: lanTurbo.isRunning
@@ -744,6 +747,7 @@ final class AppModel: ObservableObject {
     }
 
     private func resetIdentityScopedRuntimeState() {
+        screenShare.stop()
         sessions.resetForIdentityChange()
         gameIntelligence.clear()
         selectedConversation = nil
@@ -898,6 +902,9 @@ final class AppModel: ObservableObject {
     func setTrust(for peerIdentityID: String, blocked: Bool) {
         guard let localIdentityID = identity.activeIdentity?.id else { return }
         do {
+            if screenShare.snapshot?.peerIdentityID == peerIdentityID {
+                screenShare.stop() // authenticated revoke before trust destruction
+            }
             try database.setPeerTrust(localIdentityID: localIdentityID, identityID: peerIdentityID, blocked: blocked)
             sessions.invalidatePeer(peerIdentityID)
             alertMessage = blocked ? "已拉黑该身份。历史记录仍保留。" : "已取消信任。重新通信前需要再次核对六码。"
