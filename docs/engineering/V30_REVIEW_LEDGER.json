@@ -3,7 +3,7 @@
   "snapshot": {
     "as_of": "2026-11-20",
     "base_main_sha": "0e4b51e990ee1ab2c13c8b1b16bdb94ee8ee5f32",
-    "candidate_source_sha": "d59e2c47f9af357c4ffc650596491789d7aee586",
+    "candidate_source_sha": "65dc9e14a60684d32172f3455a7895d6a35e5b98",
     "latest_release": "v29.2-b68",
     "pr_count": 234,
     "open_prs": 153,
@@ -11,20 +11,34 @@
     "merged_prs": 66,
     "main_swift_source_count": 335,
     "main_test_tree_entries": 157,
-    "main_inbox_submission_groups": 36
+    "main_inbox_submission_groups": 36,
+    "updated_on": "2026-11-20",
+    "v30_branch": "integration/v30-full-inbox-recovery-20261120"
   },
   "release_requirements": {
     "VeilScreen": {
-      "status": "blocked",
+      "status": "source_staged",
+      "source_commit": "65dc9e14a60684d32172f3455a7895d6a35e5b98",
       "owner_prs": [
         232,
         236
       ],
+      "implemented": [
+        "R1 protocol/session state machine in VeilLink/ScreenShare",
+        "typed authenticated v4 BLE screen-control and screen-media AEAD",
+        "signed optional Hello screen capability without changing old feature bits",
+        "R2.1 ReplayKit Broadcast Upload extension with app group/keychain config",
+        "app-scoped invite/accept/stop/viewer coordinator and chat + entry",
+        "bounded BLE bulk queue with actual pending bytes"
+      ],
       "blockers": [
-        "typed AEAD encrypted ephemeral screen envelope not in SessionCoordinator",
-        "ReplayKit app + extension not signed or configured",
-        "no chat + invite wired to actual secure link",
-        "no signed two-device video receive evidence"
+        "XcodeGen and simulator/iPhoneOS Swift compile NOT_RUN",
+        "unit and UI XCTest NOT_RUN against V30 exact head",
+        "Apple signed App Group / Keychain entitlements NOT_VERIFIED",
+        "two consented physical iPhones capture/receive/stop/privacy NOT_RUN",
+        "no evidence of background host BLE continuity",
+        "legibility, latency, 10-minute thermal and BLE queue safety NOT_RUN",
+        "release app 30.0 / build70 identity not yet set; final IPA absent"
       ]
     },
     "ECLIPSE_V30": {
@@ -2860,5 +2874,12 @@
       "evidence_note": "Indexed from GitHub PR metadata; no product integration claim",
       "reviewed": false
     }
-  ]
+  ],
+  "local_preflight": {
+    "python_gate_selftest": "PASS",
+    "github_exact_tree_static_marker_checks": "13/13",
+    "swift_compiler": "NOT_RUN",
+    "ios_sdk_compile": "NOT_RUN",
+    "real_ci": "NOT_RUN"
+  }
 }
