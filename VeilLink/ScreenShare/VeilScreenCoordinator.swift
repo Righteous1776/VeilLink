@@ -114,7 +114,7 @@ final class VeilScreenCoordinator: ObservableObject {
         }
         guard let frame = try? assembler?.receive(
             chunk, at: ProcessInfo.processInfo.systemUptime
-        ), let frame,
+        ),
         workflow.receiveFrame(frame, from: peer,
             sessionID: chunk.sessionID, now: Date().timeIntervalSince1970) else { return }
         let received = Date().timeIntervalSince1970
