@@ -77,6 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/verify-inbox-integration.py --output ci-artifacts/INBOX_INTEGRATION_AUDIT.json
+          python3 scripts/verify-v30-release-contract.py --enforce --json ci-artifacts/V30_SOURCE_GATE.json
 
       - name: Test offline Veilopoly package
         shell: bash
@@ -176,6 +177,9 @@ jobs:
           python3 scripts/verify-inbox-integration.py \
             --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
             --output ci-artifacts/INBOX_INTEGRATION_AUDIT.json
+          python3 scripts/verify-v30-release-contract.py --enforce \
+            --app "DerivedData/Build/Products/Release-iphoneos/VeilLink.app" \
+            --json ci-artifacts/V30_COMPILED_APP_GATE.json
 
       - name: Package unsigned IPA
         shell: bash

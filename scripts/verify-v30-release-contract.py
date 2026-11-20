@@ -3,7 +3,8 @@
 
 Usage: python3 scripts/verify-v30-release-contract.py [--app PATH] [--enforce] [--json PATH]
 Without --enforce: collect blockers for early review. With --enforce: blockers exit nonzero.
-Keep this gate outside product CI until the full V30 integration batch is ready.
+The V30 candidate CI invokes this gate on source and on compiled app; it does
+NOT certify Apple-signed physical-device or two-device behavior.
 """
 import argparse
 import json
