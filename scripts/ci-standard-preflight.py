@@ -72,8 +72,8 @@ def check_plist():
     if widget.get("CFBundleShortVersionString") != "$(MARKETING_VERSION)" or widget.get("CFBundleVersion") != "$(CURRENT_PROJECT_VERSION)":
         fail("widget release identity must inherit the app build settings")
     project = (ROOT / "project.yml").read_text(encoding="utf-8")
-    if 'MARKETING_VERSION: "29.2"' not in project or 'CURRENT_PROJECT_VERSION: "69"' not in project:
-        fail("VeilLink 29.2 / Build 69 release identity missing from project.yml")
+    if 'MARKETING_VERSION: "30.0"' not in project or 'CURRENT_PROJECT_VERSION: "70"' not in project:
+        fail("V30 Build 70 source identity missing from project.yml")
     modes = set(plist.get("UIBackgroundModes", []))
     if not {"bluetooth-central", "bluetooth-peripheral"} <= modes:
         fail("Bluetooth background modes missing")
@@ -257,6 +257,10 @@ def main():
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-voice-ptt-r10.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-runtime-maintenance-r12.py")], cwd=ROOT)
     subprocess.check_call([sys.executable, str(ROOT / "scripts" / "verify-r5-sqlite-contract.py")], cwd=ROOT)
+    # Fail before spending an Xcode simulator cycle when a V30 P0 feature
+    # has only an Inbox proposal or its product hook was accidentally omitted.
+    run([sys.executable, "scripts/verify-v30-release-contract.py", "--enforce"])
+    run([sys.executable, "scripts/verify-v30-eclipse-owner-regressions.py"])
     check_repo_hygiene()
     check_plist()
     check_appicon()

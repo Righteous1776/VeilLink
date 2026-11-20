@@ -52,10 +52,22 @@ FEATURES = {
     "particle-overlay-removal": {
         "VeilLink/App/VeilLinkApp.swift": [],
     },
+    "veilscreen-system-share-product-wiring": {
+        "VeilLink/Core/WireCodec.swift": ["case screenControl", "case screenMedia"],
+        "VeilLink/Security/SessionCoordinator.swift": ["sendScreenShareControl", "sendScreenShareChunk", "screen-control-v1", "screen-media-v1"],
+        "VeilLink/ScreenShare/VeilScreenBridgeController.swift": ["captureRevoked", "receiveChunk", "prepareCapture"],
+        "VeilLink/UI/ConversationViews.swift": ["邀请屏幕共享"],
+        "VeilLink/UI/VeilScreenChatAttachment.swift": ["VeilScreenInviteCard", "VeilScreenReplayKitConsentView"],
+        "VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift": ["RPBroadcastSampleHandler"],
+        "project.yml": ["VeilScreenBroadcastUpload", "embed: true"],
+    },
+    "eclipse-owner-preserved-thinking-and-robot": {
+        "VeilLink/UI/GameLobbyView.swift": ["gomoku.thinking.strength.slider", "gomoku.thinking.no-time-limit.toggle"],
+        "VeilLink/UI/VeilEclipseComputeConsole.swift": ["REAL CLOCK  T+", "actualSearchStartedAt"],
+    },
 }
 NOT_SHIPPED = [
-    "VeilScreen R1/R2.1 system-level BLE screen sharing",
-    "ECLIPSE R17.2 mechanical cockpit",
+    "ECLIPSE R17.2 redundant telemetry dashboard and board pulse (owner rejected)",
 ]
 NOT_PRESENT = [
     "VeilLink/UI/VeilAdaptiveParticleLayer.swift",
@@ -73,8 +85,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     project = (ROOT / "project.yml").read_text(encoding="utf-8")
-    if 'MARKETING_VERSION: "29.2"' not in project or 'CURRENT_PROJECT_VERSION: "69"' not in project:
-        error("Build 69 release source identity not present")
+    if 'MARKETING_VERSION: "30.0"' not in project or 'CURRENT_PROJECT_VERSION: "70"' not in project:
+        error("V30 Build70 release source identity not present")
     if "path: VeilLink" not in project or "VeilLinkTests" not in project:
         error("expected iOS application/test targets are absent")
     for excluded in NOT_PRESENT:
@@ -95,11 +107,16 @@ def main():
             hashes[feature_id][rel] = hashlib.sha256(data).hexdigest()
     receipt = {
         "schema": "VEILLINK_INBOX_SOURCE_GATE_V1",
-        "release": "29.2",
-        "build": "69",
+        "release": "30.0",
+        "build": "70",
         "source_gate": "PASS",
         "accepted_features": hashes,
         "excluded_unfinished_features": NOT_SHIPPED,
+        "device_verification_pending": [
+            "VeilScreen signed App Group + ReplayKit system capture",
+            "VeilScreen authenticated BLE frame exchange on two physical iPhones",
+            "ECLIPSE native search slider, cancellation and UI regression",
+        ],
         "build_app_verified": False,
     }
     if args.app is not None:
@@ -111,7 +128,7 @@ def main():
         if not binary_path.is_file() or not info_path.is_file():
             error("compiled application executable/Info.plist missing")
         info = plistlib.loads(info_path.read_bytes())
-        if (info.get("CFBundleShortVersionString"), str(info.get("CFBundleVersion"))) != ("29.2", "69"):
+        if (info.get("CFBundleShortVersionString"), str(info.get("CFBundleVersion"))) != ("30.0", "70"):
             error("built application identity does not match source")
         receipt["build_app_verified"] = True
         receipt["device_executable_sha256"] = hashlib.sha256(binary_path.read_bytes()).hexdigest()
