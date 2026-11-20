@@ -725,6 +725,8 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     private func suspendCommunicationStack(reason: String, resetRemotePairing: Bool = true) -> TransportResumePlan {
+        // Revoke capture and authenticated invitation before suspending BLE.
+        screenShare.stop()
         let plan = TransportResumePlan(
             bluetoothWasRunning: bluetooth.isRunning,
             lanWasRunning: lanTurbo.isRunning
@@ -901,10 +903,10 @@ final class AppModel: ObservableObject {
     func setTrust(for peerIdentityID: String, blocked: Bool) {
         guard let localIdentityID = identity.activeIdentity?.id else { return }
         do {
-            try database.setPeerTrust(localIdentityID: localIdentityID, identityID: peerIdentityID, blocked: blocked)
             if screenShare.snapshot?.peerIdentityID == peerIdentityID {
-                screenShare.stop()
+                screenShare.stop() // send authenticated STOP while trust still exists
             }
+            try database.setPeerTrust(localIdentityID: localIdentityID, identityID: peerIdentityID, blocked: blocked)
             sessions.invalidatePeer(peerIdentityID)
             alertMessage = blocked ? "已拉黑该身份。历史记录仍保留。" : "已取消信任。重新通信前需要再次核对六码。"
         } catch {
