@@ -28,7 +28,7 @@ struct VeilScreenChatAttachment: View {
         .sheet(isPresented: $controller.showsConsent) {
             if let state = controller.snapshot, state.role == .sender,
                state.peerIdentityID == peerIdentityID,
-               state.phase == .connecting {
+               (state.phase == .connecting || state.phase == .live || state.phase == .stalled) {
                 VeilScreenReplayKitConsentView(
                     sessionID: state.sessionID,
                     onCancel: { controller.stop() },

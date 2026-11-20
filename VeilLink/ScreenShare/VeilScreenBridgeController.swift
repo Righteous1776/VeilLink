@@ -224,14 +224,26 @@ final class VeilScreenBridgeController: ObservableObject {
 
     private func tick() {
         guard var current = workflow else { return }
-        current.tick(now: Date().timeIntervalSince1970)
+        // The ReplayKit broadcast may stop in iOS without an in-app stop tap.
+        if let state = current.registry.active,
+           state.role == .sender, state.hasStartedCapture,
+           let config = VeilScreenBroadcastSecurityConfig.load(),
+           VeilScreenEncryptedMailbox(config: config).currentSession()?.sessionID != state.sessionID {
+            current.close(.captureRevoked, now: Date().timeIntervalSince1970,
+                          notifyPeer: true)
+        } else {
+            current.tick(now: Date().timeIntervalSince1970)
+        }
         workflow = current
         synchronize()
     }
 
     private func synchronize() {
         let current = workflow?.registry.active
-        snapshot = current
+        if snapshot != current { snapshot = current }
+        if current?.role == .sender && current?.phase == .live {
+            showsConsent = false
+        }
         if current?.isTerminal == true || current == nil {
             stopCaptureResources()
             receivedFrame = nil

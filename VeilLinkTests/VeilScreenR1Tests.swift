@@ -28,6 +28,20 @@ final class VeilScreenR1Tests: XCTestCase {
         XCTAssertEqual(session.phase, .live)
     }
 
+    func testSystemBroadcastRevocationEndsLiveSession() {
+        var sender = VeilScreenSnapshot.outgoing(peerID: "alice", at: 100)
+        XCTAssertTrue(sender.transition(.peerAccepted, at: 101))
+        XCTAssertTrue(sender.transition(.systemPickerOpened, at: 102))
+        XCTAssertTrue(sender.transition(.captureStarted, at: 103))
+        XCTAssertTrue(sender.transition(.viewerReady, at: 104))
+        XCTAssertEqual(sender.phase, .live)
+        XCTAssertTrue(sender.transition(.captureRevoked, at: 105))
+        XCTAssertEqual(sender.phase, .ended)
+        XCTAssertEqual(sender.endReason, .revoked)
+        XCTAssertFalse(sender.transition(.viewerReady, at: 106))
+        XCTAssertNil(sender.lastFrameID)
+    }
+
     func testStopClearsFrameAndRejectsLateCallback() {
         var session = VeilScreenSnapshot.incoming(peerID: "alice", at: 100, id: UUID())
         XCTAssertTrue(session.transition(.localAccepted, at: 101))

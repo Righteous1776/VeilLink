@@ -38,6 +38,9 @@ FEATURES = {
     "screen_share": {
         "VeilLink/ScreenShare/VeilScreenShareWire.swift": ["VeilScreenShareChunk", "maximumFrameBytes"],
         "VeilLink/ScreenShare/VeilScreenSessionWorkflow.swift": ["VeilScreenSessionWorkflow"],
+        "VeilLink/ScreenShare/VeilScreenBridgeController.swift": ["VeilScreenBridgeController", "captureRevoked", "supportsAuthenticatedBLEScreenShare"],
+        "VeilLink/UI/VeilScreenChatAttachment.swift": ["VeilScreenInviteCard", "VeilScreenViewerView"],
+        "VeilLink/ScreenShare/Broadcast/VeilScreenBroadcastUploadHandler.swift": ["RPBroadcastSampleHandler"],
         "VeilLink/ScreenShare/VeilScreenLegacyBroadcastHost.swift": ["VeilScreen"],
         "VeilLink/ScreenShare/VeilScreenLegacyMailboxPump.swift": ["VeilScreen"],
         "VeilLink/ScreenShare/VeilScreenBroadcastSecurity.swift": ["VeilScreen"],
