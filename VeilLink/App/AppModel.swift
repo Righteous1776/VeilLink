@@ -744,6 +744,8 @@ final class AppModel: ObservableObject {
     }
 
     private func resetIdentityScopedRuntimeState() {
+        // Revoke the sender/receiver session BEFORE replacing any identity keys.
+        screenShare.stop()
         sessions.resetForIdentityChange()
         gameIntelligence.clear()
         selectedConversation = nil
@@ -764,6 +766,7 @@ final class AppModel: ObservableObject {
     }
 
     func sealForLegalWithdrawal() {
+        screenShare.stop()
         _ = suspendCommunicationStack(reason: "已撤回当前版本使用授权")
         sessions.clearTransientCaches()
         database.clearTransientCaches()
@@ -899,6 +902,9 @@ final class AppModel: ObservableObject {
         guard let localIdentityID = identity.activeIdentity?.id else { return }
         do {
             try database.setPeerTrust(localIdentityID: localIdentityID, identityID: peerIdentityID, blocked: blocked)
+            if screenShare.snapshot?.peerIdentityID == peerIdentityID {
+                screenShare.stop()
+            }
             sessions.invalidatePeer(peerIdentityID)
             alertMessage = blocked ? "已拉黑该身份。历史记录仍保留。" : "已取消信任。重新通信前需要再次核对六码。"
         } catch {

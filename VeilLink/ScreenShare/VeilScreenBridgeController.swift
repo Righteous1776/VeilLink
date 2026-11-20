@@ -45,7 +45,12 @@ final class VeilScreenBridgeController: ObservableObject {
     }
 
     var isAvailable: Bool {
-        VeilScreenBroadcastSecurityConfig.load() != nil
+        // An Info.plist string alone is NOT an App Group entitlement.
+        // Fail closed on unsigned/incorrectly provisioned host installations.
+        guard let config = VeilScreenBroadcastSecurityConfig.load() else { return false }
+        return FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: config.appGroupID
+        ) != nil
     }
 
     func canInvite(peerID: String) -> Bool {
