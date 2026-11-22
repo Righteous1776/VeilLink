@@ -1,0 +1,55 @@
+--- a/VeilLink/Core/VeilFileInbox.swift
++++ b/VeilLink/Core/VeilFileInbox.swift
+@@ -100,8 +100,11 @@
+             && cleanExtension.utf8.allSatisfy { byte in
+                 (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57)
+             }
+-        let storedName = MediaTransferPolicy.safeGenericFilename(originalName)
++        let candidateName = MediaTransferPolicy.safeGenericFilename(originalName)
+             ?? (isSafeExtension ? "content." + cleanExtension : "content.bin")
++        // Keep the private manifest and the imported bytes in distinct files.
++        let storedName = candidateName.caseInsensitiveCompare(manifestName) == .orderedSame
++            ? "content.json" : candidateName
+         let pending = root.appendingPathComponent(".pending-" + id.uuidString, isDirectory: true)
+         let published = root.appendingPathComponent(id.uuidString, isDirectory: true)
+         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+@@ -133,7 +136,7 @@
+         )
+         let encoder = JSONEncoder()
+         let metadata = try encoder.encode(record)
+-        try metadata.write(to: pending.appendingPathComponent(manifestName), options: .atomic)
++        try metadata.write(to: pending.appendingPathComponent(manifestName), options: .withoutOverwriting)
+         try fileManager.moveItem(at: pending, to: published)
+         didPublish = true
+         return record
+--- a/VeilLinkTests/VeilFileInboxTests.swift
++++ b/VeilLinkTests/VeilFileInboxTests.swift
+@@ -39,6 +39,28 @@
+ 
+         VeilImportedFileAccess.removeStagedCopy(staged)
+         XCTAssertTrue(fm.fileExists(atPath: try VeilFileInbox.fileURL(for: record, root: inboxRoot).path))
++    }
++
++    func testManifestNameVariantsPreserveImportedBytesAfterStagingCleanup() throws {
++        for name in ["record.json", "ReCoRd.JsOn", " record.json "] {
++            let original = root.appendingPathComponent(name)
++            let payload = Data(#"{"message":"keep me"}"#.utf8)
++            try payload.write(to: original)
++            let staged = try VeilImportedFileAccess.materialize(original)
++            defer { VeilImportedFileAccess.removeStagedCopy(staged) }
++            let record = try VeilFileInbox.importStaged(staged, root: inboxRoot)
++            VeilImportedFileAccess.removeStagedCopy(staged)
++
++            XCTAssertEqual(record.displayName, name)
++            XCTAssertNotEqual(record.storedName.lowercased(), "record.json")
++            XCTAssertEqual(try VeilFileInbox.list(root: inboxRoot), [record])
++            let saved = try VeilFileInbox.fileURL(for: record, root: inboxRoot)
++            XCTAssertEqual(try Data(contentsOf: saved), payload)
++            XCTAssertTrue(try VeilFileInbox.verify(record, root: inboxRoot))
++            try VeilFileInbox.remove(record, root: inboxRoot)
++            XCTAssertTrue(try VeilFileInbox.list(root: inboxRoot).isEmpty)
++            XCTAssertEqual(try Data(contentsOf: original), payload)
++        }
+     }
+ 
+     func testUnownedProviderPathCannotBypassStagingBoundary() {
