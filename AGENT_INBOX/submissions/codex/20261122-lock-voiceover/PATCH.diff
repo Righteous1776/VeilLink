@@ -1,0 +1,29 @@
+--- a/VeilLink/UI/LockScreenView.swift
++++ b/VeilLink/UI/LockScreenView.swift
+@@ -66,6 +66,9 @@
+                 }
+             }
+             .frame(height: 22)
++            .accessibilityElement(children: .ignore)
++            .accessibilityLabel("密码输入进度")
++            .accessibilityValue("已输入 \(pin.count) 位，共 6 位")
+ 
+             if let error = controller.errorMessage {
+                 Text(error)
+@@ -98,6 +101,7 @@
+             }
+             .buttonStyle(VeilPressStyle())
+             .frame(width: keySize, height: keySize)
++            .accessibilityLabel("使用生物识别解锁")
+ 
+             key("0", size: keySize)
+ 
+@@ -111,6 +115,8 @@
+             }
+             .buttonStyle(VeilPressStyle())
+             .frame(width: keySize, height: keySize)
++            .accessibilityLabel("删除上一位数字")
++            .disabled(pin.isEmpty)
+         }
+         .foregroundColor(VeilTheme.text)
+         .frame(maxWidth: 270)
