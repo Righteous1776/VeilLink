@@ -1,0 +1,13 @@
+# D1A partial functional drop — files picker + text drafts
+- agent_id: chatgpt
+- task_id: 20261106-bugfix-batch-d1-safe-import
+- base_main_sha: ccafebab147e069fbabfff579dbf323b0d54f191
+- status: DROPPED (partial; general binary attachment send NOT implemented)
+- scope: ChatView Files picker accepts .item; pictures retain existing image pipeline; UTF-8 TXT/MD/JSON/CSV at <=16KiB import to editable draft without auto-send; others explicitly rejected.
+- proposed_files: VeilLink/UI/ConversationViews.swift, VeilLink/Core/VeilImportedFileAccess.swift, VeilLinkTests/VeilImportedFileAccessTests.swift
+- protected_surfaces: no wire, SQLite schema, protocol version, release, signing, or identity changes.
+- overlaps: PR #129 import staging lifecycle (ConversationViews.swift), PR #138 image route (ConversationViews.swift), PR #139 chat scroll (ConversationViews.swift).
+- source: owner 2026-11-06 bugfix package / Verified Build64 main; exact source anchors checked.
+- acceptance: partial mitigation only. No claim of PDF/ZIP transmission or full ⑨ closure.
+- Apple SDK/Xcode/XCTest/device: NOT_RUN.
+- asset_grant: not applicable.
