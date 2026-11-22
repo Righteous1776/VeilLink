@@ -1,0 +1,10 @@
+diff --git a/VeilLink/UI/ToolCenterView.swift b/VeilLink/UI/ToolCenterView.swift
+--- a/VeilLink/UI/ToolCenterView.swift
++++ b/VeilLink/UI/ToolCenterView.swift
+@@ -68,3 +68,6 @@
+                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
++                    if matches("稀有 能力 rare lab 拓扑 割点 触控死区 信任 连续性") {
++                        toolLink("稀有能力实验室", detail: "40 项离线异常诊断 · 用户输入", icon: "point.3.connected.trianglepath.dotted", destination: VeilRareLabView())
++                    }
+                     if matches("手电筒信标 手电筒 信标 闪光灯 sos flashlight beacon") {
+                         toolLink("手电筒信标", detail: "常亮 · 脉冲 · SOS", icon: "flashlight.on.fill", destination: VeilBeaconView())
