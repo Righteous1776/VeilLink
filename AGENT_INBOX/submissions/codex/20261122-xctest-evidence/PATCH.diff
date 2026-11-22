@@ -1,0 +1,153 @@
+--- a/scripts/ci-collect-evidence.py
++++ b/scripts/ci-collect-evidence.py
+@@ -72,35 +72,68 @@
+     return errors[:250], warnings[:500]
+ 
+ 
++XCTEST_ROOT = re.compile(
++    r"^[ \t]*Test Suite 'All tests' (started|passed|failed) at\b[^\n]*", re.MULTILINE
++)
++# XCTest prints the root totals on the next line. Nested suites use the same format.
++XCTEST_TOTALS = re.compile(
++    r"\n[ \t]*Executed (\d+) tests?, with (?:(\d+) tests? skipped and )?"
++    r"(\d+) failures? \((\d+) unexpected\)"
++)
++
++
+ def extract_xctest_summary(log_path):
+-    """Structured XCTest report: distinguishes no tests, failures and passes."""
++    """Report the totals from the last root suite and judge the whole invocation."""
++    result = {
++        "status": "not_run", "all_suites": 0, "failed_cases": [],
++        "latest_reported_tests": None, "latest_reported_failures": None,
++        "latest_reported_unexpected": None, "latest_reported_skipped": None,
++        "note": "Latest counts are for the last reported root suite.",
++    }
+     if not log_path.is_file():
+-        return {"status": "not_run", "all_suites": 0, "failed_cases": [],
+-                "latest_reported_tests": None, "latest_reported_failures": None}
+-    log = log_path.read_text(encoding="utf-8", errors="replace")
+-    suites = re.findall(r"Test Suite 'All tests' (passed|failed) at", log)
+-    totals = re.findall(
+-        r"Executed\s+(\d+)\s+tests?,\s+with\s+(\d+)\s+failures?"
+-        r"\s+\((\d+)\s+unexpected\)", log
++        return result
++    log = ANSI_RE.sub("", log_path.read_text(encoding="utf-8", errors="replace"))
++    failed_cases = re.findall(
++        r"^[ \t]*Test Case '(?:-\[([^\]\n]+)\]|([^'\n]+))' failed\b", log, re.MULTILINE
+     )
+-    failed_cases = sorted(set(re.findall(
+-        r"Test Case '-\[(.*?)\]' failed", log
+-    )))
+-    if not suites or not totals:
+-        status = "unverified"
+-    elif any(x == "failed" for x in suites) or failed_cases or int(totals[-1][1]):
+-        status = "failed"
++    result["failed_cases"] = sorted({apple or swift for apple, swift in failed_cases})[:100]
++    runner_failed = re.search(r"^\*\* TEST (?:EXECUTE )?FAILED \*\*$", log, re.MULTILINE)
++    failed = bool(failed_cases or runner_failed)
++    open_suites = 0
++    incomplete = False
++    ran_tests = False
++    for suite in XCTEST_ROOT.finditer(log):
++        state = suite.group(1)
++        if state == "started":
++            open_suites += 1
++            continue
++        open_suites = max(0, open_suites - 1)
++        result["all_suites"] += 1
++        failed = failed or state == "failed"
++        totals = XCTEST_TOTALS.match(log, suite.end())
++        if totals:
++            tests, skipped, failures, unexpected = (int(n or 0) for n in totals.groups())
++            incomplete = incomplete or skipped > tests
++            ran_tests = ran_tests or tests > skipped
++            failed = failed or failures > 0 or unexpected > 0
++        else:
++            tests = skipped = failures = unexpected = None
++            incomplete = True
++        result.update(
++            latest_reported_tests=tests,
++            latest_reported_skipped=skipped,
++            latest_reported_failures=failures,
++            latest_reported_unexpected=unexpected,
++        )
++
++    if failed:
++        result["status"] = "failed"
++    elif incomplete or open_suites or not ran_tests:
++        result["status"] = "unverified"
+     else:
+-        status = "passed"
+-    return {
+-        "status": status,
+-        "all_suites": len(suites),
+-        "failed_cases": failed_cases[:100],
+-        "latest_reported_tests": int(totals[-1][0]) if totals else None,
+-        "latest_reported_failures": int(totals[-1][1]) if totals else None,
+-        "latest_reported_unexpected": int(totals[-1][2]) if totals else None,
+-        "note": "Latest reported count is for the final XCTest suite, not a sum of all nested suites.",
+-    }
++        result["status"] = "passed"
++    return result
++
+ 
+ def main():
+     parser = argparse.ArgumentParser()
+--- a/scripts/tests/test_ci_evidence.py
++++ b/scripts/tests/test_ci_evidence.py
+@@ -33,6 +33,54 @@
+         self.assertEqual(result["status"], "failed")
+         self.assertEqual(len(result["failed_cases"]), 1)
+ 
++    def test_empty_or_entirely_skipped_invocation_is_unverified(self):
++        for counts in ["0 tests, with 0 failures", "1 test, with 1 test skipped and 0 failures"]:
++            with self.subTest(counts=counts):
++                self.assertEqual(self.inspect(
++                    "Test Suite 'All tests' passed at 12:00\n"
++                    f"  Executed {counts} (0 unexpected)\n"
++                )["status"], "unverified")
++
++    def test_partially_skipped_run_reports_root_counts(self):
++        result = self.inspect(
++            "Test Suite 'All tests' passed at 12:00\n"
++            "\t Executed 3 tests, with 2 tests skipped and 0 failures (0 unexpected) in 1 second\n"
++        )
++        self.assertEqual(result["status"], "passed")
++        self.assertEqual(result["latest_reported_tests"], 3)
++        self.assertEqual(result["latest_reported_skipped"], 2)
++
++    def test_nested_totals_cannot_complete_truncated_root(self):
++        result = self.inspect(
++            "Test Suite 'Inner' passed at 12:00\n"
++            "Executed 2 tests, with 0 failures (0 unexpected)\n"
++            "Test Suite 'All tests' passed at 12:00\n"
++        )
++        self.assertEqual(result["status"], "unverified")
++        self.assertIsNone(result["latest_reported_tests"])
++
++    def test_every_started_bundle_must_finish(self):
++        first = (
++            "Test Suite 'All tests' started at 12:00\n"
++            "Test Suite 'All tests' passed at 12:01\n"
++            "Executed 2 tests, with 0 failures (0 unexpected)\n"
++        )
++        second = "Test Suite 'All tests' started at 12:02\n"
++        self.assertEqual(self.inspect(first + second)["status"], "unverified")
++        result = self.inspect(first + second + "Test Suite 'All tests' passed at 12:03\n"
++                              "Executed 1 test, with 0 failures (0 unexpected)\n")
++        self.assertEqual(result["status"], "passed")
++        self.assertEqual(result["all_suites"], 2)
++        self.assertEqual(result["latest_reported_tests"], 1)
++
++    def test_failure_takes_precedence_over_missing_totals(self):
++        for evidence in ["Test Suite 'All tests' failed at 12:00",
++                         "Test Case '-[Bundle Tests]' failed (0.3 seconds).",
++                         "Test Case 'Bundle.Tests' failed (0.3 seconds).",
++                         "** TEST EXECUTE FAILED **"]:
++            with self.subTest(evidence=evidence):
++                self.assertEqual(self.inspect(evidence)["status"], "failed")
++
+     def test_no_summary_is_unverified(self):
+         self.assertEqual(self.inspect("** TEST SUCCEEDED **")["status"], "unverified")
+ 
