@@ -1,0 +1,245 @@
+diff --git a/VeilLink/Core/VeilMessageForge.swift b/VeilLink/Core/VeilMessageForge.swift
+index 54730b9..77bc88e 100644
+--- a/VeilLink/Core/VeilMessageForge.swift
++++ b/VeilLink/Core/VeilMessageForge.swift
+@@ -98,11 +98,15 @@ enum VeilMessageForge {
+                 }
+                 .joined(separator: "\n")
+         case .bullets:
+-            let lines = normalized.split(separator: "\n").flatMap { line in
+-                line.split(whereSeparator: { ".。;；".contains($0) })
+-            }
+-            return lines.map { "• " + $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+-                .filter { $0 != "• " }.joined(separator: "\n")
++            // A period inside a token can be part of a URL, filename or decimal.
++            let lines = normalized.replacingOccurrences(
++                of: #"[。;；]|\.(?=\s|$)"#, with: "\n", options: .regularExpression
++            )
++            return lines.split(separator: "\n")
++                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
++                .filter { !$0.isEmpty }
++                .map { "• " + $0 }
++                .joined(separator: "\n")
+         case .politeRequest:
+             let hasGreeting = normalized.hasPrefix("你好") || normalized.hasPrefix("您好")
+             let hasThanks = normalized.hasSuffix("谢谢") || normalized.hasSuffix("谢谢。")
+@@ -129,24 +133,20 @@ enum VeilMessageForge {
+         guard !normalized.isEmpty else { return [] }
+         var segments: [String] = []
+         var current = ""
+-
+-        func flush() {
+-            let value = current.trimmingCharacters(in: .whitespacesAndNewlines)
+-            if !value.isEmpty { segments.append(value) }
+-            current = ""
+-        }
+-
++        var currentBytes = 0
+         for character in normalized {
+-            let candidate = current + String(character)
+-            if candidate.utf8.count > maximumBytes {
+-                flush()
+-                current = String(character)
+-                if current.utf8.count > maximumBytes { flush() }
+-            } else {
+-                current = candidate
++            let byteCount = character.utf8.count
++            // No complete segmentation can fit an indivisible character over budget.
++            guard byteCount <= maximumBytes else { return [] }
++            if byteCount > maximumBytes - currentBytes {
++                segments.append(current)
++                current = ""
++                currentBytes = 0
+             }
++            current.append(character)
++            currentBytes += byteCount
+         }
+-        flush()
++        segments.append(current)
+         return segments
+     }
+ 
+diff --git a/VeilLink/Core/VeilProductivityEngine.swift b/VeilLink/Core/VeilProductivityEngine.swift
+index 58b8d54..5547d4d 100644
+--- a/VeilLink/Core/VeilProductivityEngine.swift
++++ b/VeilLink/Core/VeilProductivityEngine.swift
+@@ -97,6 +97,9 @@ enum VeilProductivityEngine {
+         var malformed = false
+ 
+         while let open = template.range(of: "{{", range: cursor..<template.endIndex) {
++            if template[cursor..<open.lowerBound].contains("}}") {
++                malformed = true
++            }
+             guard let close = template.range(of: "}}", range: open.upperBound..<template.endIndex) else {
+                 malformed = true
+                 break
+@@ -278,6 +281,7 @@ enum VeilProductivityEngine {
+     }
+ 
+     private static func lines(_ text: String) -> [String] {
+-        text.isEmpty ? [] : text.components(separatedBy: .newlines)
++        guard !text.isEmpty else { return [] }
++        return text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
+     }
+ }
+diff --git a/VeilLink/LiveTools/VeilScreenMetronome.swift b/VeilLink/LiveTools/VeilScreenMetronome.swift
+index 3554832..93394f8 100644
+--- a/VeilLink/LiveTools/VeilScreenMetronome.swift
++++ b/VeilLink/LiveTools/VeilScreenMetronome.swift
+@@ -45,16 +45,19 @@ final class VeilMetronomeController: ObservableObject {
+     }
+ 
+     func registerTap(at date: Date = Date()) {
+-        tapDates = tapDates.filter { date.timeIntervalSince($0) < 3 }
++        if let lastTap = tapDates.last {
++            let interval = date.timeIntervalSince(lastTap)
++            guard interval > 0.2 else { return }
++            if interval > VeilLiveToolMath.metronomeInterval(bpm: 30) {
++                tapDates.removeAll()
++            }
++        }
++        tapDates.removeAll { date.timeIntervalSince($0) >= 3 }
+         tapDates.append(date)
+-        guard tapDates.count >= 2 else { return }
+-        let intervals = zip(tapDates.dropFirst(), tapDates).map { newer, older in
+-            newer.timeIntervalSince(older)
+-        }.filter { $0 > 0.2 && $0 < 2 }
+-        guard !intervals.isEmpty else { return }
+-        let average = intervals.reduce(0, +) / Double(intervals.count)
+-        updateTempo(60 / average)
+         if tapDates.count > 6 { tapDates.removeFirst(tapDates.count - 6) }
++        guard tapDates.count >= 2, let firstTap = tapDates.first else { return }
++        let average = date.timeIntervalSince(firstTap) / Double(tapDates.count - 1)
++        updateTempo(60 / average)
+     }
+ 
+     func visualProgress(at date: Date) -> Double {
+diff --git a/VeilLink/UI/VeilMessageForgeView.swift b/VeilLink/UI/VeilMessageForgeView.swift
+index 4737743..2a34d40 100644
+--- a/VeilLink/UI/VeilMessageForgeView.swift
++++ b/VeilLink/UI/VeilMessageForgeView.swift
+@@ -155,7 +155,10 @@ struct VeilMessageForgeView: View {
+                 .padding(12)
+                 .background(VeilTheme.subtleFill)
+                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+-            if analysis.segments.count > 1 {
++            if !output.isEmpty && analysis.segments.isEmpty {
++                Text("有单个字符超过消息字节上限，无法完整分段。请编辑内容后重试。")
++                    .font(.caption).foregroundColor(VeilTheme.danger)
++            } else if analysis.segments.count > 1 {
+                 Text("当前内容需要拆成 \(analysis.segments.count) 条消息。为避免部分发送，锻造台只提供预览，不会自动连发。")
+                     .font(.caption).foregroundColor(VeilTheme.gold)
+             }
+diff --git a/VeilLinkTests/RealtimeArcadeAndLiveToolTests.swift b/VeilLinkTests/RealtimeArcadeAndLiveToolTests.swift
+index d112b23..200e1ca 100644
+--- a/VeilLinkTests/RealtimeArcadeAndLiveToolTests.swift
++++ b/VeilLinkTests/RealtimeArcadeAndLiveToolTests.swift
+@@ -38,6 +38,35 @@ final class RealtimeArcadeAndLiveToolTests: XCTestCase {
+         XCTAssertLessThanOrEqual(first.snapshot.player.position.y, first.configuration.arenaHeight)
+     }
+ 
++    @MainActor
++    func testTapTempoAcceptsTwoSecondBeats() {
++        let controller = VeilMetronomeController()
++        let start = Date(timeIntervalSinceReferenceDate: 0)
++        controller.registerTap(at: start)
++        controller.registerTap(at: start.addingTimeInterval(2))
++        XCTAssertEqual(controller.bpm, 30)
++    }
++
++    @MainActor
++    func testTapTempoIgnoresAccidentalDoubleTap() {
++        let controller = VeilMetronomeController()
++        let start = Date(timeIntervalSinceReferenceDate: 0)
++        for offset in [0.0, 0.5, 0.6, 1.0] {
++            controller.registerTap(at: start.addingTimeInterval(offset))
++        }
++        XCTAssertEqual(controller.bpm, 120)
++    }
++
++    @MainActor
++    func testTapTempoRestartsMeasurementAfterPause() {
++        let controller = VeilMetronomeController()
++        let start = Date(timeIntervalSinceReferenceDate: 0)
++        for offset in [0.0, 0.5, 2.6, 2.85] {
++            controller.registerTap(at: start.addingTimeInterval(offset))
++        }
++        XCTAssertEqual(controller.bpm, 240)
++    }
++
+     func testLiveToolMathBoundsHardwareReadingsAndGeometry() {
+         let silence = VeilLiveToolMath.soundReading(rms: 0, peak: 0)
+         XCTAssertEqual(silence.decibels, -80)
+diff --git a/VeilLinkTests/VeilMessageForgeTests.swift b/VeilLinkTests/VeilMessageForgeTests.swift
+index db5529c..1c10d2a 100644
+--- a/VeilLinkTests/VeilMessageForgeTests.swift
++++ b/VeilLinkTests/VeilMessageForgeTests.swift
+@@ -14,6 +14,14 @@ final class VeilMessageForgeTests: XCTestCase {
+         XCTAssertEqual(VeilMessageForge.render("第一项。第二项\n第三项", style: .bullets), "• 第一项\n• 第二项\n• 第三项")
+     }
+ 
++    func testBulletsPreserveDotsInsideMessageContent() {
++        let source = "Open https://example.com/a.txt. Pay 3.50; email me@example.com。"
++        XCTAssertEqual(
++            VeilMessageForge.render(source, style: .bullets),
++            "• Open https://example.com/a.txt\n• Pay 3.50\n• email me@example.com"
++        )
++    }
++
+     func testPoliteRequestDoesNotDuplicateGreetingOrThanks() {
+         XCTAssertEqual(VeilMessageForge.render("请处理", style: .politeRequest), "你好，\n请处理\n谢谢。")
+         XCTAssertEqual(VeilMessageForge.render("你好，请处理\n谢谢。", style: .politeRequest), "你好，请处理\n谢谢。")
+@@ -31,6 +39,19 @@ final class VeilMessageForgeTests: XCTestCase {
+         XCTAssertEqual(VeilMessageForge.split(family + family, maximumBytes: family.utf8.count), [family, family])
+     }
+ 
++    func testSplitKeepsInternalWhitespaceAtChunkBoundaries() {
++        let segments = VeilMessageForge.split("  ab    cd  ", maximumBytes: 2)
++        XCTAssertEqual(segments.joined(), "ab    cd")
++        XCTAssertTrue(segments.allSatisfy { !$0.isEmpty && $0.utf8.count <= 2 })
++    }
++
++    func testOversizedGraphemeHasNoCompleteSegmentation() {
++        let family = "👨‍👩‍👧‍👦"
++        let analysis = VeilMessageForge.analyze("a" + family, maximumBytes: family.utf8.count - 1)
++        XCTAssertFalse(analysis.withinSingleMessageLimit)
++        XCTAssertTrue(analysis.segments.isEmpty)
++    }
++
+     func testPrivateKeyAndTokenAreCriticalWithoutReturningSecret() {
+         let text = "-----BEGIN PRIVATE KEY-----\nBearer abcdefghijklmnopqrstuvwxyz"
+         let findings = VeilMessageForge.safetyFindings(in: text)
+diff --git a/VeilLinkTests/VeilProductivityEngineTests.swift b/VeilLinkTests/VeilProductivityEngineTests.swift
+index 5d41d3b..3da73b1 100644
+--- a/VeilLinkTests/VeilProductivityEngineTests.swift
++++ b/VeilLinkTests/VeilProductivityEngineTests.swift
+@@ -22,6 +22,29 @@ final class VeilProductivityEngineTests: XCTestCase {
+         }
+     }
+ 
++    func testTemplateRejectsStrayClosingDelimitersBeforeAPlaceholder() throws {
++        for template in ["}} {{name}}", "{{name}} }} {{name}}"] {
++            XCTAssertTrue(try VeilProductivityEngine.analyzeTemplate(template).malformed)
++            XCTAssertThrowsError(try VeilProductivityEngine.renderTemplate(template, values: ["name": "A"])) {
++                XCTAssertEqual($0 as? VeilProductivityError, .malformedPlaceholder)
++            }
++        }
++    }
++
++    func testLineDiffTreatsCRLFAsOneLineBreakAndPreservesBlankLines() throws {
++        let result = try VeilProductivityEngine.diff(old: "a\r\n\r\nb\r\n", new: "a\n\nb\n")
++        XCTAssertEqual(result, ["a", "", "b", ""].map { VeilDiffLine(kind: .unchanged, text: $0) })
++    }
++
++    func testDiffAppliesTheLogicalLineLimitToCRLFText() throws {
++        let lines = Array(repeating: "x", count: 400)
++        let delta = try VeilProductivityEngine.diff(old: lines.joined(separator: "\r\n"), new: "")
++        XCTAssertEqual(delta.count, lines.count)
++        XCTAssertThrowsError(try VeilProductivityEngine.diff(old: (lines + ["x"]).joined(separator: "\r\n"), new: "")) {
++            XCTAssertEqual($0 as? VeilProductivityError, .diffTooLarge)
++        }
++    }
++
+     func testLineDiffProducesStableEditScript() throws {
+         XCTAssertEqual(
+             try VeilProductivityEngine.diff(old: "one\ntwo\nthree", new: "one\nTWO\nthree\nfour"),
